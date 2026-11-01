@@ -1,7 +1,7 @@
 //! Screens. They only draw a state snapshot and never touch the engine.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
@@ -319,6 +319,9 @@ pub struct Pads {
     pub bank_fill: [u16; BANKS],
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
+    /// The splash at start (73): while it is `Some`, the strip shows it instead of the
+    /// wave, until the first sound.
+    pub splash: Option<Splash>,
     /// The piece of the selected pad with its envelope, or nothing on an empty pad.
     pub big: Option<BigView>,
     /// The filter curve while the FILTER page is picked (44); it takes the strip.
@@ -385,6 +388,72 @@ pub struct Help<'a> {
 
 pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
     draw_inner(frame, s, screen, help, None);
+}
+
+/// The logo of the splash (73), byte-exact: 4 lines of 10 characters, trailing spaces
+/// kept.
+#[rustfmt::skip]
+pub const SPLASH_LOGO: [&str; 4] = [
+    "          ",
+    "  _ _/_ __",
+    " /_// _\\/ ",
+    "/         ",
+];
+
+/// What the splash shows besides the logo (73).
+pub struct Splash {
+    /// The version of the build.
+    pub version: &'static str,
+    /// What loads now, `ready` when all is loaded, or a file that did not load.
+    pub loading: String,
+}
+
+/// The splash in the wave strip at start (73): the logo on the left, the name, the
+/// version and the loading line on its right, instead of the wave, until the first sound.
+fn splash_strip(frame: &mut Frame, area: Rect, s: &Splash) {
+    if area.height < 4 {
+        // a very low terminal: one line says the name and what loads
+        let line = Line::from(vec![
+            Span::styled("ptsr", Style::new().fg(CYAN).bold()),
+            Span::styled(format!(" · {}", s.loading), Style::new().fg(TEXT)),
+        ]);
+        let [a] = Layout::vertical([Constraint::Length(1)])
+            .flex(Flex::Center)
+            .areas(area);
+        frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), a);
+        return;
+    }
+    let logo_w = SPLASH_LOGO
+        .iter()
+        .map(|l| Line::from(*l).width())
+        .max()
+        .unwrap_or(0) as u16;
+    let info = vec![
+        Line::from("ptsr - PT's SampleR").fg(CYAN).bold(),
+        Line::from(s.version).fg(DIM),
+        Line::from(s.loading.as_str()).fg(TEXT),
+    ];
+    let info_w = info.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+    let [mid] = Layout::vertical([Constraint::Length(4)])
+        .flex(Flex::Center)
+        .areas(area);
+    let [logo, _, text] = Layout::horizontal([
+        Constraint::Length(logo_w),
+        Constraint::Length(2),
+        Constraint::Length(info_w),
+    ])
+    .flex(Flex::Center)
+    .areas(mid);
+    frame.render_widget(
+        Paragraph::new(
+            SPLASH_LOGO
+                .iter()
+                .map(|l| Line::from(*l).fg(TEXT))
+                .collect::<Vec<_>>(),
+        ),
+        logo,
+    );
+    frame.render_widget(Paragraph::new(info), text);
 }
 
 /// The frame with kitty graphics (04b): the wave areas are left blank and their
@@ -869,6 +938,7 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     // into the file; the pad edit draws the pad's envelope over its piece; else the output
     match (p.edit, &p.big) {
         _ if s.recording => envelope_strip(frame, f.strip, &p.out_wave, MAGENTA),
+        _ if p.splash.is_some() => splash_strip(frame, f.strip, p.splash.as_ref().unwrap()),
         (Some(_), _) if p.curve.is_some() => filter_strip(
             frame,
             f.strip,
@@ -2432,6 +2502,7 @@ mod tests {
             // pads 1 and W of the current bank (2) hold a sound
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -2493,6 +2564,69 @@ mod tests {
         ] {
             assert!(text.contains(want), "{want} missing");
         }
+    }
+
+    /// 73 "The splash at start", the drawing: while no sound went, the wave strip shows
+    /// the logo, the name, the version and the loading line instead of the wave; the rest
+    /// of the screen shows as always. The logo is byte-exact, trailing spaces kept.
+    #[test]
+    fn the_splash_takes_the_wave_strip_until_the_first_sound() {
+        let (w, h) = (100, 44);
+        let f = frame_at(w, h);
+        let mut p = idle_pads();
+        p.splash = Some(Splash {
+            version: "0.1.0",
+            loading: "loading the session, 2 samples".into(),
+        });
+        let rows = render_pads_at(p, w, h);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|r| r.iter().map(|(s, _, _)| s.as_str()).collect())
+            .collect();
+        // the splash lives inside the strip, above the pad grid
+        let grid = f.grid.y as usize;
+        let at = text[..grid]
+            .iter()
+            .rposition(|r| r.contains("ptsr - PT's SampleR"))
+            .expect("the name is in the strip");
+        assert!(at + 1 < grid, "the name sits above the grid");
+        let pad = text[at].find("ptsr").unwrap();
+        // the logo stands left of the name, byte-exact, 10 characters a line; its first
+        // line is spaces, the block runs down from the name's row
+        let logo_x = pad - 2 - 10;
+        assert!(text[at][logo_x..logo_x + 10].chars().all(|c| c == ' '));
+        for (i, want) in SPLASH_LOGO.iter().enumerate().skip(1) {
+            assert_eq!(&text[at + i][logo_x..logo_x + 10], *want, "logo line {i}");
+        }
+        assert_eq!(&text[at + 1][pad..pad + 5], "0.1.0");
+        assert_eq!(
+            &text[at + 2][pad..pad + "loading the session, 2 samples".len()],
+            "loading the session, 2 samples"
+        );
+        // no wave draws under the splash: the strip rows hold no braille dots
+        for (r, row) in rows
+            .iter()
+            .enumerate()
+            .take(f.strip.bottom() as usize)
+            .skip(f.strip.y as usize)
+        {
+            assert!(
+                !row.iter().any(|(s, _, _)| s.as_str() > "\u{2800}"),
+                "strip row {r} draws no wave while the splash shows"
+            );
+        }
+        // the first sound ends the splash: with it gone the strip shows the wave again
+        let mut p = idle_pads();
+        for pad in &mut p.pads {
+            pad.wave = vec![1.0; 1200];
+        }
+        let rows = render_pads_at(p, w, h);
+        assert!(
+            rows[f.strip.y as usize..f.strip.bottom() as usize]
+                .iter()
+                .any(|r| r.iter().any(|(s, _, _)| s.as_str() > "\u{2800}")),
+            "the strip draws the wave once the splash is gone"
+        );
     }
 
     /// Scenario "Project picker" (11): the status line names the open project on every
@@ -2818,6 +2952,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -4042,6 +4177,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -4438,6 +4574,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -4614,6 +4751,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -4821,6 +4959,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -4915,6 +5054,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),
@@ -5454,6 +5594,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0xFFFF; BANKS],
             out_wave: Vec::new(),
+            splash: None,
             big: None,
             curve: None,
             learn: Vec::new(),

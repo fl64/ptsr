@@ -467,6 +467,9 @@ struct App {
     /// Startup notices (config, session, keymap, terminal): the first key event of the
     /// session clears them (22), until then they hold the notice line.
     startup: Vec<String>,
+    /// The splash in the wave strip at start (73): `true` until the first sound — a note
+    /// that plays or a recording that starts.
+    splash: bool,
     /// The running recording: its source and when it started.
     recording: Option<(u8, Instant)>,
     /// Test only: every command the app sent, for asserting on the engine's input.
@@ -735,6 +738,15 @@ impl App {
     }
 
     fn send(&mut self, cmd: Command) {
+        // the first sound ends the splash (73): a note that can sound, or a preview
+        let sounds = match &cmd {
+            Command::PadPress { pad, .. } => self.pad_sounds(*pad),
+            Command::Preview { sound: Some(_), .. } => true,
+            _ => false,
+        };
+        if sounds {
+            self.splash = false;
+        }
         #[cfg(test)]
         self.sent.push(cmd.clone());
         if let Some(a) = &mut self.audio {
@@ -950,6 +962,8 @@ impl App {
             }
         }
         self.recording = Some((source, Instant::now()));
+        // a recording is sound too: the splash ends (73)
+        self.splash = false;
         // the microphone joins the graph only now; the link settles within a block or two
         if source == audio::SOURCE_MIC {
             self.reroute();
@@ -4101,6 +4115,11 @@ impl App {
             midi::Event::PadHit { abs } if self.browser.in_hand.is_some() => self.put_in_hand(abs),
             midi::Event::PadHit { abs } if self.pad_in_hand.is_some() => self.swap_with(abs),
             midi::Event::PadHit { abs } => {
+                // the note already went to the engine from the midi reader: a pad with
+                // a sound ends the splash (73)
+                if self.pad_sounds(abs) {
+                    self.splash = false;
+                }
                 self.meters.hit(Instant::now());
                 self.pads.hit(abs)
             }
@@ -4939,6 +4958,40 @@ impl App {
     fn dismiss_startup(&mut self) {
         self.startup.clear();
     }
+
+    /// The splash view while no sound went (73); `None` draws the wave in the strip.
+    fn splash_view(&self) -> Option<tui::Splash> {
+        self.splash.then(|| tui::Splash {
+            version: env!("CARGO_PKG_VERSION"),
+            loading: self.splash_line(),
+        })
+    }
+
+    /// A pad that can sound now: a loaded sample, not still loading, not failed (73).
+    fn pad_sounds(&self, pad: usize) -> bool {
+        self.pads.file[pad].is_some() && !self.pads.missing[pad] && self.pads.loading[pad].is_none()
+    }
+
+    /// The loading line of the splash (73): what loads now, `ready` when all is loaded,
+    /// or a file that did not load.
+    fn splash_line(&self) -> String {
+        if let Some(pad) = (0..PADS).find(|&p| self.pads.missing[p] && self.pads.file[p].is_some())
+        {
+            return format!(
+                "cannot load {}",
+                file_name(self.pads.file[pad].as_deref().unwrap_or(Path::new("")))
+            );
+        }
+        let loading = self.pads.loading.iter().filter(|l| l.is_some()).count();
+        if loading > 0 {
+            format!(
+                "loading the session, {loading} {}",
+                if loading == 1 { "sample" } else { "samples" }
+            )
+        } else {
+            "ready".into()
+        }
+    }
     /// A saved device that is missing now: (what, saved name, where audio goes).
     fn missing(&self) -> Option<(&'static str, &str, Option<&str>)> {
         self.audio_alive()?.devices()?;
@@ -5130,6 +5183,8 @@ fn main() -> std::io::Result<()> {
         input_level: 0.0,
         flash: None,
         startup: Vec::new(),
+        // the splash shows from the first frame on and lives until the first sound (73)
+        splash: true,
         recording: None,
         #[cfg(test)]
         sent: Vec::new(),
@@ -5377,7 +5432,7 @@ fn main() -> std::io::Result<()> {
                     pads: {
                         let mut v = tui::Pads {
                             hidden: app.ui.hide_pads,
-                            ..pads_view(&mut app.pads, None, app.pad_in_hand, out, app.rate)
+                            ..pads_view(&mut app.pads, None, app.pad_in_hand, out, None, app.rate)
                         };
                         app.learn_grid(&mut v.pads);
                         v
@@ -5392,7 +5447,15 @@ fn main() -> std::io::Result<()> {
                         Some(abs) => Some(in_hand_line(&app.pads, abs)),
                         None => app.pickup.as_ref().map(|p| p.0.clone()),
                     };
-                    let mut view = pads_view(&mut app.pads, pickup, app.pad_in_hand, out, app.rate);
+                    let splash = app.splash_view();
+                    let mut view = pads_view(
+                        &mut app.pads,
+                        pickup,
+                        app.pad_in_hand,
+                        out,
+                        splash,
+                        app.rate,
+                    );
                     if app.screen == Screen::Pads {
                         view.edit_key = keys(&keymap, Screen::Pads, &[Action::PadEdit]);
                     }
@@ -5778,6 +5841,7 @@ fn pads_view(
     pickup: Option<String>,
     in_hand: Option<usize>,
     out_wave: Vec<f32>,
+    splash: Option<tui::Splash>,
     rate: u32,
 ) -> tui::Pads {
     let pads = (0..PADS_PER_BANK)
@@ -5852,6 +5916,7 @@ fn pads_view(
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
         out_wave,
+        splash,
         big: big_view(p, rate),
         curve: None,
         learn: Vec::new(),
@@ -6282,6 +6347,7 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
                     out_wave: Vec::new(),
+                    splash: None,
                     big: None,
                     curve: None,
                     learn: Vec::new(),
@@ -6391,6 +6457,7 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: bank_fill(p),
                     out_wave: Vec::new(),
+                    splash: None,
                     big: None,
                     curve: None,
                     learn: Vec::new(),
@@ -6502,6 +6569,7 @@ fn chop_view<'a>(
                     param: tui::PadParam::Volume,
                     scope: String::new(),
                     out_wave: Vec::new(),
+                    splash: None,
                     big: None,
                     curve: None,
                     learn: Vec::new(),
@@ -8054,6 +8122,7 @@ mod tests {
             input_level: 0.0,
             flash: None,
             startup: Vec::new(),
+            splash: false,
             recording: None,
             #[cfg(test)]
             sent: Vec::new(),
@@ -8081,6 +8150,120 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ptsr-rec-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    /// 73 "The splash at start": the wave strip holds the splash until the first sound;
+    /// the loading line names what loads now, then `ready`. No time and no key ends the
+    /// splash by itself.
+    #[test]
+    fn the_splash_at_start() {
+        let mut app = test_app();
+        app.splash = true;
+        let view = app
+            .splash_view()
+            .expect("the splash is up before any sound");
+        assert_eq!(view.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(view.loading, "ready", "nothing loads yet");
+        // while samples load, the line names the session and the number of samples
+        app.pads.loading[2] = Some(40);
+        app.pads.loading[5] = Some(0);
+        assert_eq!(
+            app.splash_view().unwrap().loading,
+            "loading the session, 2 samples"
+        );
+        app.pads.loading[2] = None;
+        app.pads.loading[5] = None;
+        // a screen change alone does not end it: only sound does
+        app.screen = Screen::Files;
+        assert!(app.splash_view().is_some());
+        app.screen = Screen::Pads;
+        // the drawing of the strip is the tui test; nothing here waits on time
+    }
+
+    /// 73 "A pad hit during the splash": the key of pad `Q` plays at once and the splash
+    /// ends — the strip shows the wave from then on.
+    #[test]
+    fn a_pad_hit_during_the_splash() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = laid_out_break();
+        app.screen = Screen::Pads;
+        app.splash = true;
+        pads_key(&mut app, KeyCode::Char('q'), M::NONE);
+        assert!(
+            app.sent
+                .iter()
+                .any(|c| matches!(c, Command::PadPress { pad: 4, .. })),
+            "pad Q (4) plays"
+        );
+        assert!(!app.splash, "the note ended the splash");
+    }
+
+    /// 73 "A command key during the splash": F3 opens the chop screen and the splash
+    /// stays until the first sound.
+    #[test]
+    fn a_command_key_during_the_splash() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = chop_from_pad(0);
+        app.screen = Screen::Pads;
+        app.splash = true;
+        pads_key(&mut app, KeyCode::F(3), M::NONE);
+        assert_eq!(app.screen, Screen::Chop);
+        assert!(app.splash, "no sound went: the splash stays");
+    }
+
+    /// 73 "A missing sample on the splash": the session names a sample file that does
+    /// not exist, the loading line names that file.
+    #[test]
+    fn a_missing_sample_on_the_splash() {
+        let mut app = test_app();
+        app.splash = true;
+        let gone = tmp_dir("splash-gone").join("gone.wav");
+        let sess = super::session::Session {
+            pads: std::collections::BTreeMap::from([(
+                "0".into(),
+                super::session::PadState {
+                    file: Some(gone),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        app.apply_session(sess);
+        let view = app.splash_view().expect("the splash is up");
+        assert!(view.loading.contains("gone.wav"), "{}", view.loading);
+    }
+
+    /// 73: a hit on a pad with no sound does not end the splash, and neither does a note
+    /// of the controller on such a pad — no sound went.
+    #[test]
+    fn an_empty_pad_does_not_end_the_splash() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = laid_out_break();
+        app.screen = Screen::Pads;
+        app.splash = true;
+        const PAD_KEYS: [char; 16] = [
+            '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
+        ];
+        let empty = (0..16)
+            .find(|&p| app.pads.file[p].is_none())
+            .expect("an empty pad exists in the fixture");
+        pads_key(&mut app, KeyCode::Char(PAD_KEYS[empty]), M::NONE);
+        assert!(app.splash, "an empty pad makes no sound");
+        app.midi_event(super::midi::Event::PadHit { abs: empty });
+        assert!(
+            app.splash,
+            "a controller note on an empty pad makes no sound"
+        );
+    }
+
+    /// 73: a note of the controller on a pad with a sound ends the splash too.
+    #[test]
+    fn a_controller_note_ends_the_splash() {
+        let mut app = laid_out_break();
+        app.splash = true;
+        assert!(app.pads.file[4].is_some(), "pad Q has a sample");
+        app.midi_event(super::midi::Event::PadHit { abs: 4 });
+        assert!(!app.splash, "the controller note ended the splash");
     }
 
     /// The config and data bases under one temp folder, with the old folders filled as
@@ -10649,7 +10832,7 @@ mod tests {
         );
         let lines = app.learn_lines().unwrap();
         assert!(lines[0].contains("picked: pad Q"), "{lines:?}");
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert!(app.mark_pads(v).pads[4].in_hand, "pad Q is lit");
     }
 
@@ -10716,7 +10899,7 @@ mod tests {
         }
         assert!(app.learn_lines().unwrap()[0].contains("now cc 24"));
         turn_knob(&mut app, 26);
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let v = app.mark_pads(v);
         assert!(
             v.learn
@@ -10809,7 +10992,7 @@ mod tests {
         }
         turn_knob(&mut app, 28);
         assert_eq!(app.learn_taken().map(|t| t.0), Some("pad.volume"));
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let v = app.mark_pads(v);
         assert!(
             v.learn
@@ -12423,7 +12606,7 @@ mod tests {
 
     /// The curve the strip shows now.
     fn curve(app: &mut super::App) -> tui::FilterCurve {
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         app.mark_pads(v)
             .curve
             .expect("the FILTER page shows a curve")
@@ -12505,7 +12688,7 @@ mod tests {
         while app.pads.page().0 != "TONE" {
             app.apply(input::Action::ParamNext);
         }
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert!(
             app.mark_pads(v).curve.is_none(),
             "the wave and the envelope again"
@@ -12694,7 +12877,7 @@ mod tests {
             Some(super::Lit::Pad(P::Volume)),
             "outside the mode too"
         );
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let v = app.mark_pads(v);
         assert_eq!(v.lit, Some(tui::PadParam::Volume));
         assert_eq!(v.edit, None, "no frame while the mode is closed");
@@ -12709,7 +12892,7 @@ mod tests {
             fine: false,
         });
         assert_eq!(app.lit_now(), Some(super::Lit::Pad(P::Attack)));
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let v = app.mark_pads(v);
         assert_eq!(v.edit, Some("ENV"));
         assert_eq!(
@@ -13762,7 +13945,7 @@ mod tests {
 
     /// The panel as the screen draws it now, the edit marks included.
     fn panel_now(app: &mut super::App) -> tui::Pads {
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         app.mark_pads(v)
     }
 
@@ -13896,7 +14079,7 @@ mod tests {
         let mut app = undo_app();
         app.pads.group[4] = 1;
         app.pads.group[6] = 8;
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert_eq!(v.pads[4].glyphs, "①");
         assert_eq!(v.pads[6].glyphs, "⑧");
         assert!(
@@ -14004,7 +14187,7 @@ mod tests {
                 "the engine knows pad {pad}"
             );
         }
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert_eq!(v.pads[v.selected].group, 1);
         assert_eq!(app.pads.param_value(), "1");
     }
@@ -14244,7 +14427,7 @@ mod tests {
     }
 
     fn glyphs(app: &mut super::App, abs: usize) -> String {
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         v.pads[abs].glyphs.clone()
     }
 
@@ -14279,7 +14462,7 @@ mod tests {
         app.pads.cutoff_hz[0] = 1_100.0;
         app.pads.reso[0] = 20;
         assert_eq!(glyphs(&mut app, 0), "");
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert!(v.pads[0].changed.is_empty(), "{:?}", v.pads[0].changed);
         app.pads.filter[0] = engine::filter::FilterKind::LowPass;
         assert_eq!(glyphs(&mut app, 0), "∿", "on: it counts");
@@ -14296,14 +14479,14 @@ mod tests {
         assert_eq!(glyphs(&mut app, 0), "", "the whole break: no square");
         app.pads.pitch[0] = -5;
         app.pads.filter[0] = engine::filter::FilterKind::LowPass;
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let changed = &v.pads[0].changed;
         assert!(changed.contains(&W::Pitch) && changed.contains(&W::Filter));
         assert!(!changed.contains(&W::Attack) && !changed.contains(&W::Source));
     }
 
     fn panel_line(app: &mut super::App, abs: usize) -> String {
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         v.pads[abs].detail.clone().unwrap_or_default()
     }
 
@@ -15170,7 +15353,7 @@ mod tests {
     #[test]
     fn new_pad() {
         let mut app = test_app();
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert_eq!(v.pads[0].name, "empty");
         assert_eq!(v.pads[0].detail.as_deref(), Some("empty · test tone A2"));
     }
@@ -16364,7 +16547,7 @@ mod tests {
 
     /// The pads screen as a 120×40 terminal draws it, one string per row.
     fn pads_screen(app: &mut super::App) -> Vec<String> {
-        let view = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let view = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let view = app.mark_pads(view);
         let status = tui::Status {
             backend: Some("jack"),
@@ -16422,7 +16605,7 @@ mod tests {
         app.pads.pitch[5] = 3;
         pads_key(&mut app, KeyCode::Char('w'), M::NONE);
         assert_eq!(app.pads.selected, 5);
-        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000);
+        let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert!(v.pads[5].flash, "pad 6 flashes");
         assert_eq!(v.selected, 5);
         let rows = pads_screen(&mut app);
@@ -16442,7 +16625,7 @@ mod tests {
     fn held_pad_stays_lit() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let lit = |app: &mut super::App| {
-            super::pads_view(&mut app.pads, None, None, Vec::new(), 48_000).pads[4].flash
+            super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000).pads[4].flash
         };
         let two_seconds_ago = std::time::Instant::now() - std::time::Duration::from_secs(2);
         let mut app = test_app();
