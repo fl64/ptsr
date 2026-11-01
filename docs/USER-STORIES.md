@@ -49,6 +49,20 @@ Notes:
 5. `[64]` If the file has an error, its path and line number show at the bottom. All
    built-in keys work. The pad keys (`Q`, `Shift+Q` and others) do not become commands.
 
+## The splash screen
+
+1. `[73]` Start the program. The wave strip above the pad grid shows the splash: the
+   logo, `ptsr - PT's SampleR`, the version of the build, and the loading line. The pads,
+   the help line and the status line show as always.
+2. `[73]` The loading line names what loads now: `loading the session, 2 samples`. When all
+   samples are loaded, it says `ready`.
+3. `[73]` If the session names a sample file that does not exist, the line names this file:
+   `cannot load gone.wav`. The program starts without this sound.
+4. `[73]` The splash stays until the first sound. Nothing blocks the keys meanwhile: `F3`
+   opens the chop screen, `Enter` opens the pad edit, and the splash stays.
+5. `[73]` Make a sound: hit a pad, play a note on the controller, or start a recording.
+   The splash ends and the strip shows the wave from then on.
+
 ## Play a beat
 
 1. Hit a pad. The program plays the sound of this pad.
