@@ -51,9 +51,10 @@ Notes:
 
 ## The splash screen
 
-1. `[73]` Start the program. The logo, `ptsr - PT's SampleR`, the version of the build, and
-   the loading line show in the middle of the screen. The line `any key: start` is below
-   them. No pads, no hint lines, and no status line show.
+1. `[73]` Start the program. A box in the middle of the screen shows the logo,
+   `ptsr - PT's SampleR`, the version of the build, and the loading line. The line
+   `any key: start` is below them. The interface of the last session stays behind the box
+   and shows around it.
 2. `[73]` The loading line names what loads now: `loading the session, 2 samples`. When all
    samples are loaded, it says `ready`.
 3. `[73]` If the session names a sample file that does not exist, the line names this file:
@@ -62,7 +63,7 @@ Notes:
    closes, and the key or the control does its action at once: a hit on `Q` plays the pad,
    `F3` opens the chop screen.
 5. `[73]` Do not press a key. After 6.4 seconds the splash closes. The pads screen of the
-   last session opens.
+   last session stays.
 
 ## Play a beat
 

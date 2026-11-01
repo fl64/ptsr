@@ -5527,12 +5527,21 @@ fn main() -> std::io::Result<()> {
             learn: learn_lines.as_deref(),
         };
         let mut want = Vec::new();
-        // the splash replaces the whole screen: no pads, no help line, no status line (73)
+        // the splash is a box over the interface: the screen draws first, the box on top (73)
         let splash = app.splash_view();
-        let drawn = match (&splash, graphics) {
-            (Some(s), _) => term.draw(|f| tui::splash(f, s)),
-            (None, true) => term.draw(|f| tui::draw_gfx(f, &status, &screen, &help, &mut want)),
-            (None, false) => term.draw(|f| tui::draw(f, &status, &screen, &help)),
+        let drawn = match graphics {
+            true => term.draw(|f| {
+                tui::draw_gfx(f, &status, &screen, &help, &mut want);
+                if let Some(s) = &splash {
+                    tui::splash(f, s);
+                }
+            }),
+            false => term.draw(|f| {
+                tui::draw(f, &status, &screen, &help);
+                if let Some(s) = &splash {
+                    tui::splash(f, s);
+                }
+            }),
         };
         if let Err(e) = drawn {
             break Err(e);

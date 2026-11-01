@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Padding, Paragraph, Wrap};
 
 mod kitty;
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
@@ -405,24 +405,34 @@ pub struct Splash {
     pub loading: String,
 }
 
-/// The splash at start (73): the whole screen shows the logo, the name, the version,
-/// the loading line and `any key: start`, centered, and nothing else.
+/// The splash at start (73): a box in the middle over the interface that stays behind it.
+/// The caller draws the screen first, then this box on top.
 pub fn splash(frame: &mut Frame, s: &Splash) {
-    frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
     let mut lines: Vec<Line> = SPLASH_LOGO.map(Line::from).to_vec();
     lines.push(Line::from("ptsr - PT's SampleR").fg(CYAN).bold());
     lines.push(Line::from(s.version).fg(DIM));
     lines.push(Line::from(s.loading.clone()).fg(TEXT));
     lines.push(Line::from("any key: start").fg(DIM));
-    let [area] = Layout::vertical([Constraint::Length(lines.len() as u16)])
+    let text_w = lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+    // two borders and one space of padding on each side: the logo keeps its shape
+    let w = text_w + 6;
+    let h = lines.len() as u16 + 4;
+    let [area] = Layout::vertical([Constraint::Length(h)])
         .flex(Flex::Center)
         .areas(frame.area());
-    let width = lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
-    let [area] = Layout::horizontal([Constraint::Length(width)])
+    let [area] = Layout::horizontal([Constraint::Length(w)])
         .flex(Flex::Center)
         .areas(area);
-    // the block is centered, its lines stay left-aligned: the logo keeps its shape
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_style(Style::new().fg(CYAN))
+                .bg(PANEL)
+                .padding(Padding::horizontal(2)),
+        ),
+        area,
+    );
 }
 
 /// The frame with kitty graphics (04b): the wave areas are left blank and their
@@ -2533,18 +2543,27 @@ mod tests {
         }
     }
 
-    /// 73 "The splash at start", the drawing: the logo, the name, the version, the
-    /// loading line and `any key: start` in one centered block, and nothing else on the
-    /// screen. The logo is byte-exact, trailing spaces kept.
+    /// 73 "The splash at start", the drawing: a bordered box in the middle with the logo,
+    /// the name, the version, the loading line and `any key: start`. The interface behind
+    /// the box stays: what the box does not cover is not touched. The logo is byte-exact,
+    /// trailing spaces kept.
     #[test]
-    fn splash_shows_the_logo_and_the_lines_and_nothing_else() {
+    fn splash_shows_the_logo_and_the_lines_in_a_box_over_the_screen() {
         let (cols, rows_n) = (80, 24);
         let s = Splash {
             version: "0.1.0",
             loading: "loading the session, 2 samples".into(),
         };
         let mut term = Terminal::new(TestBackend::new(cols, rows_n)).unwrap();
-        term.draw(|f| splash(f, &s)).unwrap();
+        term.draw(|f| {
+            // the interface behind: a marker line the box must not touch
+            f.render_widget(
+                Paragraph::new("the interface behind"),
+                ratatui::layout::Rect::new(0, 0, cols, 1),
+            );
+            splash(f, &s);
+        })
+        .unwrap();
         let rows: Vec<String> = term
             .backend()
             .buffer()
@@ -2552,29 +2571,38 @@ mod tests {
             .chunks(cols as usize)
             .map(|row| row.iter().map(|c| c.symbol()).collect())
             .collect();
+        // the box sits in the middle: the interface behind it shows around it
+        assert!(
+            rows[0].contains("the interface behind"),
+            "the row above the box keeps the interface"
+        );
         let at = rows
             .iter()
             .position(|r| r.contains("ptsr - PT's SampleR"))
             .expect("the name is on the screen");
         let pad = rows[at].find("ptsr").unwrap();
+        // the box has borders around its text (the border glyph spans several bytes:
+        // count characters, not bytes, up to the name)
+        assert!(
+            rows[at - 5].contains('┌'),
+            "the top border is above the logo"
+        );
+        assert!(
+            rows[at + 6].contains('└'),
+            "the bottom border is below the lines"
+        );
+        let pad_c = rows[at][..pad].chars().count();
+        assert_eq!(rows[at].chars().nth(pad_c - 3), Some('│'));
         // the logo sits over the name, byte-exact: each line is 10 characters wide
         for (i, want) in SPLASH_LOGO.into_iter().enumerate() {
             assert_eq!(&rows[at - 4 + i][pad..pad + 10], want, "logo line {i}");
         }
         assert_eq!(&rows[at + 1][pad..pad + s.version.len()], s.version);
         assert_eq!(
-            rows[at + 2][pad..].trim_end(),
+            &rows[at + 2][pad..pad + s.loading.len()],
             "loading the session, 2 samples"
         );
-        assert_eq!(rows[at + 3][pad..].trim_end(), "any key: start");
-        // the splash owns the whole screen: the rows outside the block are blank
-        for (y, row) in rows.iter().enumerate() {
-            let left = row[..pad].chars().all(|c| c == ' ');
-            assert!(left, "row {y} is not centered");
-            if !(at - 4..at + 4).contains(&y) {
-                assert!(row.chars().all(|c| c == ' '), "row {y} is not blank");
-            }
-        }
+        assert_eq!(&rows[at + 3][pad..pad + 14], "any key: start");
     }
 
     /// Scenario "Project picker" (11): the status line names the open project on every
