@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: The splash screen
-The system SHALL show at start, over the screen of the last session, a splash box in the
-middle of the screen for 6.4 seconds. The box shows these lines, from top to bottom: the
-logo, `ptsr - PT's SampleR`, the version of the build, a loading line and
-`any key: start`. The logo is this text, character by character:
+The system SHALL show at start, over the screen of the last session, a splash box for 6.4
+seconds: as wide as the screen and in the middle of its height. The box shows these lines,
+centered, from top to bottom: the logo, `ptsr - PT's SampleR`, the version of the build, a
+loading line and `any key: start`. The logo is this text, character by character:
 
 ```
           
@@ -19,9 +19,9 @@ Any key or controller event closes the splash and does its own action at once. W
 
 #### Scenario: The splash at start
 - **WHEN** the owner starts ptsr
-- **THEN** a box in the middle shows the logo, `ptsr - PT's SampleR`, the version, the
-  loading line and `any key: start`, over the pads screen of the last session; 6.4 seconds
-  later the box closes and the pads screen stays
+- **THEN** a box as wide as the screen shows, centered, the logo, `ptsr - PT's SampleR`,
+  the version, the loading line and `any key: start`, over the pads screen of the last
+  session; 6.4 seconds later the box closes and the pads screen stays
 
 #### Scenario: A pad hit during the splash
 - **WHEN** the splash shows and the owner hits pad `Q`

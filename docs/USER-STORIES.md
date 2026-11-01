@@ -51,10 +51,10 @@ Notes:
 
 ## The splash screen
 
-1. `[73]` Start the program. A box in the middle of the screen shows the logo,
-   `ptsr - PT's SampleR`, the version of the build, and the loading line. The line
-   `any key: start` is below them. The interface of the last session stays behind the box
-   and shows around it.
+1. `[73]` Start the program. A box as wide as the screen, in the middle of its height,
+   shows the logo, `ptsr - PT's SampleR`, the version of the build, and the loading line,
+   every line centered. The line `any key: start` is below them. The interface of the last
+   session stays behind the box and shows above and below it.
 2. `[73]` The loading line names what loads now: `loading the session, 2 samples`. When all
    samples are loaded, it says `ready`.
 3. `[73]` If the session names a sample file that does not exist, the line names this file:

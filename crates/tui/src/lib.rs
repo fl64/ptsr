@@ -1,10 +1,10 @@
 //! Screens. They only draw a state snapshot and never touch the engine.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 mod kitty;
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
@@ -405,31 +405,25 @@ pub struct Splash {
     pub loading: String,
 }
 
-/// The splash at start (73): a box in the middle over the interface that stays behind it.
-/// The caller draws the screen first, then this box on top.
+/// The splash at start (73): a box as wide as the screen, over the interface that stays
+/// behind it. The lines are centered; the gray frame keeps the neon accents for the
+/// interface, the name alone is cyan.
 pub fn splash(frame: &mut Frame, s: &Splash) {
     let mut lines: Vec<Line> = SPLASH_LOGO.map(Line::from).to_vec();
     lines.push(Line::from("ptsr - PT's SampleR").fg(CYAN).bold());
     lines.push(Line::from(s.version).fg(DIM));
     lines.push(Line::from(s.loading.clone()).fg(TEXT));
     lines.push(Line::from("any key: start").fg(DIM));
-    let text_w = lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
-    // two borders and one space of padding on each side: the logo keeps its shape
-    let w = text_w + 6;
     let h = lines.len() as u16 + 4;
     let [area] = Layout::vertical([Constraint::Length(h)])
         .flex(Flex::Center)
         .areas(frame.area());
-    let [area] = Layout::horizontal([Constraint::Length(w)])
-        .flex(Flex::Center)
-        .areas(area);
     frame.render_widget(Clear, area);
     frame.render_widget(
-        Paragraph::new(lines).block(
+        Paragraph::new(lines).alignment(Alignment::Center).block(
             Block::bordered()
-                .border_style(Style::new().fg(CYAN))
-                .bg(PANEL)
-                .padding(Padding::horizontal(2)),
+                .border_style(Style::new().fg(BORDER))
+                .bg(PANEL),
         ),
         area,
     );
@@ -2543,10 +2537,11 @@ mod tests {
         }
     }
 
-    /// 73 "The splash at start", the drawing: a bordered box in the middle with the logo,
-    /// the name, the version, the loading line and `any key: start`. The interface behind
-    /// the box stays: what the box does not cover is not touched. The logo is byte-exact,
-    /// trailing spaces kept.
+    /// 73 "The splash at start", the drawing: a box as wide as the screen, in the middle
+    /// of its height, with the logo, the name, the version, the loading line and
+    /// `any key: start`, every line centered. The interface behind the box stays: what
+    /// the box does not cover is not touched. The logo is byte-exact, trailing spaces
+    /// kept.
     #[test]
     fn splash_shows_the_logo_and_the_lines_in_a_box_over_the_screen() {
         let (cols, rows_n) = (80, 24);
@@ -2580,29 +2575,39 @@ mod tests {
             .iter()
             .position(|r| r.contains("ptsr - PT's SampleR"))
             .expect("the name is on the screen");
-        let pad = rows[at].find("ptsr").unwrap();
-        // the box has borders around its text (the border glyph spans several bytes:
-        // count characters, not bytes, up to the name)
+        // the box spans the full width: its borders are the first glyphs of their rows
         assert!(
-            rows[at - 5].contains('┌'),
+            rows[at - 5].starts_with('┌'),
             "the top border is above the logo"
         );
         assert!(
-            rows[at + 6].contains('└'),
+            rows[at + 6].starts_with('└'),
             "the bottom border is below the lines"
         );
-        let pad_c = rows[at][..pad].chars().count();
-        assert_eq!(rows[at].chars().nth(pad_c - 3), Some('│'));
+        assert_eq!(rows[at].chars().next(), Some('│'), "the left border");
+        // the lines are centered: the byte column of a line of width `w` is the border
+        // glyph (3 bytes) plus half of the inner width without the line, rounded up
+        let inner = cols as usize - 2;
+        let col = |w: usize| 3 + (inner - w).div_ceil(2);
         // the logo sits over the name, byte-exact: each line is 10 characters wide
         for (i, want) in SPLASH_LOGO.into_iter().enumerate() {
-            assert_eq!(&rows[at - 4 + i][pad..pad + 10], want, "logo line {i}");
+            assert_eq!(
+                &rows[at - 4 + i][col(10)..col(10) + 10],
+                want,
+                "logo line {i}"
+            );
         }
-        assert_eq!(&rows[at + 1][pad..pad + s.version.len()], s.version);
+        let name = "ptsr - PT's SampleR";
         assert_eq!(
-            &rows[at + 2][pad..pad + s.loading.len()],
+            &rows[at][col(name.len())..col(name.len()) + name.len()],
+            name
+        );
+        assert_eq!(&rows[at + 1][col(5)..col(5) + 5], s.version);
+        assert_eq!(
+            &rows[at + 2][col(s.loading.len())..col(s.loading.len()) + s.loading.len()],
             "loading the session, 2 samples"
         );
-        assert_eq!(&rows[at + 3][pad..pad + 14], "any key: start");
+        assert_eq!(&rows[at + 3][col(14)..col(14) + 14], "any key: start");
     }
 
     /// Scenario "Project picker" (11): the status line names the open project on every
