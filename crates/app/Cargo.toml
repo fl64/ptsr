@@ -1,0 +1,24 @@
+[package]
+name = "ptsr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpal = "0.18.2"
+engine = { version = "0.1.0", path = "../engine" }
+input = { version = "0.1.0", path = "../input" }
+jack = "0.13.5"
+log = "0.4.34"
+midir = "0.11.1"
+ratatui = "0.30.2"
+rtrb = "0.4.1"
+rubato = "5.0.1"
+serde = { version = "1.0.229", features = ["derive"] }
+simplelog = "0.12.2"
+symphonia = { version = "0.6.1", features = ["aiff", "mp3"] }
+toml = "1.1.8"
+tui = { version = "0.1.0", path = "../tui" }
+
+[dev-dependencies]
+hound = "3.5.1"

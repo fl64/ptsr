@@ -1,0 +1,1 @@
+- [x] 1. The scenario says what the program does; the test checks the gate pad too; commit.

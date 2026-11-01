@@ -1,0 +1,13 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hound = "3.5.1"
+rtrb = "0.4.1"
+
+[[bench]]
+name = "callback"
+harness = false

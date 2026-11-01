@@ -1,0 +1,31 @@
+# M-VAVE SMC-PAD profile (template). Fill in after purchase using aseqdump -p <port>.
+# Encoders are endless: type = "relative" (check which kind of relative CC the device sends).
+
+[device]
+name = "SMC-PAD"
+match_port = "SMC-PAD"
+channel = ??
+
+[controls.pads]          # 16 velocity pads -> notes
+p1 = { note = ?? }
+# … p2–p16
+
+[controls.knobs]         # 8 encoders
+e1 = { cc = ??, type = "relative" }
+# … e2–e8
+
+[controls.buttons]
+# function buttons -> note or cc
+
+[screens.global]
+# p1-p16 -> pad.trigger 1-16 (default, may be omitted)
+
+[screens.chop]
+e1 = "slice.start"
+e2 = "slice.end"
+e3 = "slice.attack"
+e4 = "slice.fade"
+e5 = "slice.fade_curve"
+e6 = "slice.pitch"
+e7 = "slice.gain"
+e8 = "slice.reverse"

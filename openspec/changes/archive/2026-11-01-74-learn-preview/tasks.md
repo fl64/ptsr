@@ -1,0 +1,3 @@
+- [x] 1. F12: pending control, the taken row, the `stays` lines, Enter saves, Esc drops; tests for each scenario; commit.
+- [x] 2. User stories; commit.
+- [x] 3. Live check with the owner and the X-Session Pro: moved to docs/LIVE-CHECKS.md.

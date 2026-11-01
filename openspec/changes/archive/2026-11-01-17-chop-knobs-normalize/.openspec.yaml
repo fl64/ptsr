@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-10-30
+goal: Controller knobs for the chop cursor, zoom and region; Ctrl+N normalizes the pad volume

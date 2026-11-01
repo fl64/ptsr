@@ -1,0 +1,6 @@
+# Audio defaults. Read from the directory the program runs in;
+# choices on the settings screen (F12) are saved on top, in ~/.config/ptsr/config.toml.
+
+[audio]
+backend = "auto"     # "auto": JACK, or cpal if JACK is unavailable; "jack"; "cpal"
+buffer_size = 128    # buffer size in samples: smaller means lower latency but more risk of crackles
