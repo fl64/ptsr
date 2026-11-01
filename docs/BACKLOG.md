@@ -1,0 +1,31 @@
+# Backlog — agreed ideas waiting for their change
+
+Each becomes a separate small change (proposal → spec → code). The order below is the plan; the owner can reshuffle it at any moment.
+
+Already covered by active changes (not repeated below, except `11-project-dir`, which keeps row 1 so the `BACKLOG #` references stay valid): the pad envelope, the big view of the piece and the kitty waveform (`04b-chop-comfort`), auto-chop by hits (`Ctrl+Y`, the threshold; `04d-auto-chop`); the tempo grid left 04d for a later change, cuts kept without pads and assign-just-heard (`04e-chop-keep`), projects (`11-project-dir`; done, waits for the owner's live check), chop knobs on the controller and normalize (`17-chop-knobs-normalize`), the edit mode and the parameter standard (`21-edit-mode`), startup notices and the save flash (`22-notices`), `Enter` loads a file onto the pad and the preview rests (`23-files-enter`), the chop screen opens in silence (`24-chop-hush`), the recording on the strip (`25-record-strip`), the microphone is linked only when it is needed (`26-mic-on-demand`), every pad says what it plays: all, slice N or its own bounds (`27-pad-source`).
+
+| # | Change | What | Notes |
+|---|--------|------|-------|
+| 1 | `11-project-dir` | Projects: a folder with `project.toml` + `samples/`; configurable roots `~/ptsr/projects`, `~/ptsr/samples`; config at `~/ptsr/config.toml`; Ctrl+P switcher; scratch session without a project stays | active change; proposal only: the spec deltas are missing |
+| 2 | `12-rename-ptsr` | The program is named **ptsr**: crates, `~/ptsr` layout, JACK client name, docs; migrate `~/.config/arasaka-404/` | mechanical, after 11 |
+| 3 | `13-session-overview` | On the pads screen above the grid: a 3-row envelope of the current bank (a slot per pad, empty = a line, "I see what plays"); at the right, L/R meters in dB with peak hold and a latching overload light (green with red) | engine exposes output peaks as atomics; the loader computes a per-pad envelope; owner reconfirmed 2026-10-29 |
+| 4 | `06d` rest | `[colors]` in the config (migration) and the envelope gradient by loudness (quiet dim, loud accent) | bank colors themselves are done |
+| 5 | `editor home` | The editor works without a pad: open on an empty pad, open a file directly, record mic or output from inside it, then put the result on a pad | extends `09`; needs a talk about the flow |
+| 6 | `editor navigation` | Horizontal scrollbar at the bottom of the wave: shows where we are and the slices; scroll left/right when the wave does not fit; fine cursor/edge tuning while a modifier is held (steps get smaller) | scrollbar with slices is new; zoom itself is `09` |
+| 7 | `bpm & metronome` | Detect the BPM of a sample (aubio), show it; project BPM; a metronome | how the two BPMs meet (sample vs project) — to discuss |
+| 8 | `pad loop & pattern` | Loop mode per pad; play patterns like 1000/0100/1100 per pad or group | what a pattern binds to (pad, group, bank) — to discuss |
+| 9 | `mute groups` | Pads in one mute group cut each other (a hit stops the neighbors of the group), like choke on drums | group editing UX — to discuss |
+| 10 | `resample` | Bounce a pad (or a group) into a new standalone sample: the current sound with pitch/volume/effects printed in | which source (pad, group, whole bank) — to discuss |
+| 11 | `pad envelopes` | One envelope (volume?) per pad — set for one pad, a group, or all at once | which envelope (volume ADSR? filter?) — to discuss; large slice view is `04b` |
+| 12 | `chromatic mode` | Pads play chromatic steps of one sample? | owner marked with a question mark — needs a talk |
+| 13 | `tabs on top` | Screens as real tabs drawn at the top of the window, not only F-keys | touches every screen |
+| 14 | `values on knobs` | Anything adjusted by ±/arrows can be MIDI-learned to a knob (with soft takeover) | `09` starts this for chop; generalize after |
+| 15 | `pad geometry` | Squarer pads (width ≈ 2× height, terminal cells are 1:2), adaptive to the window; compact pads on F6 | |
+| 16 | `rename pad` | A custom pad name instead of the file name; kept in the session; an input line like the filter (`/`) | |
+| 17 | `pad icons` | One-shot/gate and volume as glyphs (braille) instead of text | |
+| 18 | `pitch on pad` | Pitch/speed of the sample on pad level (slices are `04b`) | |
+| 19 | `save the edit` | Save the edited result (region/cuts) as a file onto the same or another pad; plain-words question before overwriting; the file on disk is never touched without asking | |
+| 20 | `pad group actions` | Think through what can be done to several pads at once and make it handy: now pads can be marked (`M`, the change scope `Ctrl+A`), but what to do with them next is unclear or awkward | the owner, 2026-11-01: "I can pick several, but what to do with them is unclear, or it is just awkward"; start from the owner's scenarios (copy settings to the group, clear, move, effects for all) and from how MPC and SP-404 do it; marks across banks: the panel says "20 marked" while the open bank shows only some of them, it is not clear where the rest are (2026-11-01) |
+| 21 | `sections always on` | The page knobs and the page keys (b3/b4, `Tab`) turn the sections of the selected pad with no edit open, as on the Digitakt; the edit stays for the keyboard | the owner, 2026-11-01: "leave it as it is for now"; today the sections live only in the pad edit, the page knobs are bound in F12, PADS · EDIT |
+| 22 | `ten banks` | Ten banks instead of eight, bank 10 on `Ctrl+0` | built and taken back on 2026-11-01: Ghostty takes `Ctrl+0` for "reset font size" (`keybind = ctrl+0=reset_font_size` by default), the key never reaches the program; the owner: "then bring back 8 banks". Comes back with a key for bank 10 that terminals leave alone, or with `ctrl+0=unbind` in Ghostty |
+| 23 | `mute target` | A pad cuts the pads of another group without being cut by them: the kick cuts the tail of the cymbal, the cymbal leaves the kick alone (MPC "mute target") | the owner, 2026-11-01: "for now the simple way, mute target maybe later"; 70 gives one group number per pad; the way the agent sees it: a `cuts` parameter on TONE that defaults to the pad's own group, so the projects of 70 stay as they are; picking targets by hitting pads (as MPC does) belongs with row 20 |

@@ -1,0 +1,3 @@
+- [x] 1. Code: the package, the binary, the folders, the clients, the texts are `ptsr`; the copy from the old folders at start with its status line; a test for each scenario; commit.
+- [x] 2. Docs: every path and name in `README.md`, `AGENTS.md`, `docs/` says `ptsr`; commit.
+- [x] 3. Live check with the owner: moved to docs/LIVE-CHECKS.md.

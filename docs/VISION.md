@@ -1,0 +1,448 @@
+> **This is a vision, not requirements.** We wrote this document before development started. It will almost certainly change after the first working version. The source of truth is `openspec/specs/` and the active changes. We take ideas for future changes from this document. We do not implement anything "along the way".
+
+# Technical brief: the ptsr terminal sampler
+
+Version 2 · 28.10.2026 · project name: ptsr.
+
+## 1. Goal and context
+
+ptsr is a terminal sampler-groovebox for Linux. You control it from MIDI pads and from the keyboard, without a mouse. It is a hybrid of two schools:
+
+- **From Akai MPC**: the data model. This is a shared sample pool, programs, pads with layers, keygroup instruments, tracks and an arrangement.
+- **From Roland SP-404 MK2**: live work. This is effect buses, a performance effect, skip back, one-button resampling, DJ mode and a looper.
+
+The main difference from both: patterns and audio clips launch in parallel, like "blocks" in a clip launcher. The model is Session View in Ableton and Clip Launcher in Bitwig. On the SP-404, one pattern plays at a time. Here, any number of tracks play at the same time.
+
+The sound reference is the glitch ambient of Access To Arasaka: chopped beats, digital debris, stretched textures.
+
+The instrument has two equal purposes:
+
+- **Live play**: nothing blocks the sound or crashes the program. All important controls are under the fingers.
+- **Studio**: non-destructive editing, resampling, PaulStretch, and assembly of a full track inside the sampler.
+
+An AI agent writes the code. The project owner does not read the code. Thus an automated test with a WAV render checks each feature, and the owner checks it by ear (section 21).
+
+The owner's priorities: 1) chopping and the sample editor, 2) live effects, 3) the sequencer and the launcher, 4) PaulStretch and textures.
+
+## 2. Platform and stack
+
+The target platform is Linux on a laptop or a PC. Raspberry Pi is possible in the future. Thus the code must not depend on x86, and we measure the CPU load.
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Language | Rust (stable) | the compiler finds thread races, no garbage collector |
+| Sound | `jack` through PipeWire-JACK, fallback `cpal` | low latency, routing in qpwgraph |
+| MIDI | `midir` (ALSA) | more than one device, hotplug |
+| Interface | `ratatui` + `crossterm` | terminal UI, kitty keyboard protocol |
+| Waveform | `ratatui-image` (kitty graphics / sixel), fallback mode: Braille characters | pixel graphics in the terminal |
+| Audio read and write | `symphonia` (WAV, FLAC, AIFF, MP3, OGG), `hound` | |
+| DSP | `fundsp`, own code, Faust → Rust | basic blocks and high-quality effects |
+| FFT | `rustfft` | PaulStretch, vocoder, analysis |
+| Transients and BPM | `aubio` (bindings) | chopping by hits, tempo detection |
+| Time stretch | Signalsmith Stretch or Rubber Band | tempo sync of clips |
+| Configs and projects | `serde` + TOML | a person can read and edit them by hand |
+| Queues between threads | `rtrb` (lock-free) | no locks in the audio thread |
+
+The project license is **GPL-3.0**. The project can use GPL code (PaulXStretch, Rubber Band) and LGPL Faust libraries. The agent checks the license of each new dependency for compatibility with GPL-3.0.
+
+The target terminal is kitty, WezTerm, foot or Ghostty. The program needs the extended keyboard protocol (physical keys, release events) and graphics. In other terminals, the program uses a simplified mode and shows a warning at startup.
+
+## 3. Hardware and MIDI
+
+| Device | Role | Connection |
+| --- | --- | --- |
+| M-VAVE SMC-PAD | main controller: 16 velocity pads, 8 encoders, utility buttons | USB-MIDI (the first versions do not support Bluetooth) |
+| Roland SP-404 MK2 | controller, sound card, external instrument that follows the MIDI clock | USB (audio + MIDI), no hub |
+| Computer keyboard | pads, navigation, commands | terminal with the kitty protocol |
+| Any MIDI device | notes and CC through the mapping from the config | USB-MIDI |
+
+Requirements:
+
+- More than one MIDI input and output operate at the same time.
+- Hotplug and unplug occur without a restart and without a sound dropout.
+- The device mapping is a TOML file: notes → pads, CC → encoders, buttons → commands. The program identifies the device by its port name.
+- MIDI learn: you select a command or a parameter and turn a knob. The program binds the knob and saves the binding to the mapping.
+- The SMC-PAD encoders are endless. The program supports absolute and relative CC. The mapping sets the type.
+- MIDI debug screen: it shows the latest incoming messages with device, channel, note/CC and value.
+
+The keyboard pads are a 4×4 block of **physical** keys: `1 2 3 4` / `Q W E R` / `A S D F` / `Z X C V`. They operate with all layouts, the Russian layout too. They send the key release for gate mode. Keyboard velocity is fixed (100 by default). With Shift, it is 127.
+
+## 4. Architecture
+
+The program has separate threads. Thus the sound never waits for the interface, the disk or MIDI.
+
+```mermaid
+flowchart TB
+  MIDI["MIDI thread<br/>SMC-PAD, SP-404, others"] --> Q
+  UI["Interface thread<br/>keyboard, screens"] --> Q
+  BG["Background threads<br/>loading, disk streaming,<br/>file writing, PaulStretch, export"] --> Q
+  Q["Lock-free queues: events, samples, audio from disk"] --> A
+  subgraph A["Audio thread: JACK callback, no allocation, locks or I/O"]
+    direction LR
+    CL["Launcher and sequencer"] --> V["Pad voices<br/>and audio clips"]
+    V --> PFX["Pad / track FX"]
+    PFX --> BUS["Buses 1–2 (send)"]
+    PFX --> M["Master: performance FX"]
+    BUS --> M
+    M --> L["Limiter"]
+    IN["Input"] --> IFX["Input FX"] --> REC["Recording, skip back,<br/>looper, resampling"]
+    L --> REC
+  end
+  A --> OUT["JACK / PipeWire output<br/>(master + separate tracks)"]
+  A --> ST["State → interface"]
+  A --> FILES["Recorded audio → files"]
+```
+
+All threads communicate with the audio thread only through lock-free queues. In the other direction, the audio thread sends state snapshots for the screen and audio for the file writer.
+
+The code is a workspace of separate crates:
+
+- `engine`: the audio engine. It contains voices, tracks, the launcher, the sequencer, buses and timing. It does not depend on the interface. It operates with JACK and in offline render for tests.
+- `dsp`: effects, PaulStretch, time stretch. These are pure functions on buffers.
+- `midi`: devices, mappings, MIDI learn, clock.
+- `library` and `project`: the sample library, the project model, packing.
+- `tui`: screens, hotkeys, the command palette.
+- `app`: assembly into a program, configs, logs.
+
+With this split, we can add a web editor on top of the same engine later.
+
+## 5. Data model
+
+```
+Library (shared by all projects)
+└── Sample (BLAKE3 hash, metadata, tags)
+
+Project
+├── Programs
+│   ├── Drum program: 16 pads × 8 banks = 128 pads
+│   │   └── Pad: up to 4 layers → each layer = sample reference + chopping + parameters
+│   └── Keygroup program: zones by notes, each zone has up to 4 layers
+├── Tracks (up to 32)
+│   ├── MIDI track → plays one program
+│   └── Audio track → plays audio clips
+├── Launcher: grid of tracks × scenes (up to 64 scenes)
+│   └── Clip = pattern (for a MIDI track) or audio clip (for an audio track)
+├── Arrangement: a linear timeline that holds clips
+├── Buses, performance effect, master
+└── Mappings, keymap, project settings
+```
+
+All editing is non-destructive. Samples in the library do not change. The project keeps chopping, trims and fades as parameters. "Bake" is a separate command. It renders the result into a new library sample.
+
+## 6. Sample library and projects
+
+**Library** (`~/ptsr/samples/`):
+
+- The library keeps each file one time, under its BLAKE3 hash. There are no duplicates.
+- Import copies the file into the library. The source file does not change. Formats: WAV, FLAC, AIFF, MP3, OGG.
+- Metadata: original name, duration, sample rate, channels, BPM (if detected), tags, date added.
+- Search by name and tags. Filters by tags and duration. Preview directly from the list (loops play in the project tempo).
+- Input recordings, resamples and baked results go into the library immediately, with the tags `rec`, `resample`, `baked`.
+
+**Project** (`~/ptsr/projects/<name>/`):
+
+- `project.toml`: tempo, programs, tracks, clips, scenes, arrangement, buses, mappings.
+- Autosave every 60 seconds and on exit. The program also keeps the 20 latest versions for rollback.
+
+**Transfer:**
+
+- "Pack project" collects `project.toml` and all used samples into a folder or a `.tar.zst` file.
+- "Unpack" on a different machine adds the samples to the local library without duplicates. Then it restores the project.
+- The program marks a missing sample as missing on the pad or the clip. The program does not crash.
+
+## 7. Programs and pads
+
+**Drum program**: 128 pads (8 banks of 16). Buttons or PageUp / PageDown switch the bank.
+
+**Pad:**
+
+- Up to 4 layers. Layer mode: by velocity (you set the ranges), round robin (in sequence), random, all at the same time (stack).
+- Playback mode: one-shot, gate, loop (forward or ping-pong), reverse.
+- Volume, pan, pitch (semitones and cents), envelope (attack, hold, decay, release), filter.
+- Mute group: the pads in the group silence each other. Example: closed and open hi-hat.
+- **Pad link**: one press triggers a group of pads.
+- 2 effect slots, send to buses 1 and 2, output (master or a separate JACK channel).
+- BPM sync: time stretch makes a loop follow the project tempo.
+
+**16 Levels:** the program spreads the selected pad across 16 pads. On these pads, one parameter changes in steps from pad to pad. This parameter is pitch, volume, filter, decay or start point. The result is new pads in the same program. The source pad does not change.
+
+**Keygroup program:** a sample or a set of samples plays by notes. The notes come from a MIDI keyboard, from the pads in chromatic mode, or from the piano roll. In chromatic mode, 16 pads are 16 degrees of the selected scale. Note zones have a root note, with up to 4 layers in a zone. Polyphony or mono with legato and portamento. This replaces the chromatic mode of the SP-404. It gives melodies and bass lines from samples.
+
+**Live mode:** it locks all functions that you do not need on stage (deletion, project change, editors). One button toggles it. The status line shows its state.
+
+## 8. Editor and chopping
+
+The editor is the core of the first version. It chops a sample into slices and lays them out on pads. You can do all of this from the controller and the keyboard.
+
+**Chopping modes:**
+
+1. Equal parts: 2, 4, 8, 16, 32 slices.
+2. By transients: aubio detector, threshold on an encoder. Markers appear and disappear immediately when you turn the encoder.
+3. By the tempo grid: markers on beats (1/4, 1/8, 1/16). The program detects the BPM automatically, or you set it.
+4. Manually: add, move or delete a marker.
+
+The chopping result is a new drum program. Or it is slices on the pads of the current program, from the selected pad onward. The source sample does not change.
+
+**Operations on a sample or a slice:** trim, snap of points to zero crossings, fades with a curve shape, normalize, gain, reverse, loop points, "bake", resampling of a slice with effects to a new pad.
+
+**Encoders on the chopping screen:**
+
+| Encoder | Function |
+| --- | --- |
+| 1 | cursor or marker, coarse |
+| 2 | cursor or marker, fine |
+| 3 | zoom |
+| 4 | transient threshold |
+| 5 | slice pitch |
+| 6 | slice filter |
+| 7 | fade of the selected edge |
+| 8 | slice volume |
+
+During chopping, the pads preview the slices. Undo/redo applies to all project edits. The history keeps at least 100 steps.
+
+Waveform: pixel graphics through the kitty protocol. In other terminals, Braille characters. The waveform shows the markers, the selected slice and the playback position.
+
+## 9. Recording, skip back, resampling, looper
+
+- **Recording source**: any JACK/PipeWire input, mono or stereo. Monitoring has a level meter and a clipping warning.
+- **Recording to a pad**: start immediately, on a volume threshold, or at the start of a bar.
+- **Recording to an audio clip** on an audio track: into the selected launcher cell. The length is a multiple of bars, or free.
+- **Skip back**: the program always records the last 60 seconds of the input and the master. You can configure the length. One button saves this audio to a pad or a clip.
+- **Resampling**: the program records the master, a bus or a track, with its effects, to a new pad or a clip.
+- **Looper**: live loop recording with layer overdub and undo of the last layer. The loop length is in bars, in sync with the tempo. You can save the result to a clip or a pad.
+- **Input effect**: processing during recording (section 10).
+
+The program saves recordings as 32-bit float WAV at the system sample rate. The recordings go into the library immediately. A separate thread writes the files. The audio thread only puts data into a queue.
+
+## 10. Effects
+
+Effects are in five locations:
+
+- **Pad**: 2 slots, "glued" to the sound.
+- **Track**: 2 slots on each launcher track.
+- **Buses 1 and 2 (send)**: a chain of up to 3 effects. By default, bus 1 is a reverb and bus 2 is a delay.
+- **Performance effect on the master**: one active "live" effect. When you select it, encoders 1–8 immediately become its knobs. Hold the button to turn it on temporarily.
+- **Input**: one slot. It operates during recording and monitoring.
+
+Each effect has up to 8 parameters, dry/wet and bypass. The program smooths parameter changes without clicks. Patterns record parameters and effect on/off as automation. The limiter on the master is always on.
+
+**Effect set by stage:**
+
+| Stage | Effects | Source |
+| --- | --- | --- |
+| 1 | filter (LP/HP/BP, resonance), bitcrush, sample rate reduction, distortion and saturation, delay with a filter in the feedback, simple reverb | own code + fundsp |
+| 2 | tempo-synced stutter and retrigger, DJFX looper (loops a piece of the master), isolator (3 bands), tremolo and autopan, tempo-synced gate, "vinyl" and "cassette", back spin, compressor and limiter | own code + Faust |
+| 3 | granular delay, granular "freeze", zita_rev reverb, chromatic pitch shifter, resonator, chorus and flanger | own code + Faust |
+| 3 | vocal: vocoder (carrier: pad, track or keygroup), autopitch, harmonizer | own code + Faust |
+| later | installed LV2 plugins (LSP, Calf, x42, Dragonfly) | `lilv` |
+
+## 11. Clip launcher and scenes
+
+The launcher is the main screen for live play. It is a grid. The columns are tracks, the rows are scenes, and the cells are clips ("blocks").
+
+- Each track plays one clip. The tracks sound in parallel.
+- Launch is quantized: at the next bar (default), on beats, on 2/4/8 bars, or immediately.
+- A scene launches its full row at the same time. A "stop" button is on each track and on the full launcher.
+- Clip: a pattern (MIDI track) or an audio clip (audio track). A clip has a name, a color, a length, loop on/off and an end action. End actions: repeat, next clip, stop, random (for generative sets).
+- You can copy, duplicate and drag clips between cells from the keyboard and the controller.
+- Each track has mute, solo, volume and send to buses.
+
+**SMC-PAD in launcher mode:** 16 pads are a window of 4 tracks × 4 scenes. Arrows (or buttons) move the window on the grid. Pad lights show empty, stopped, playing and launch-pending clips.
+
+## 12. Pattern sequencer
+
+A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio thread counts timing in samples, not with the system timer.
+
+- Length from 1 to 64 bars, time signature 4/4 (others later), tempo 40–300 BPM.
+- Real-time recording with quantization (off, 1/4, 1/8, 1/16, 1/32, triplets) and overdub.
+- **Step mode (like TR-REC):** a step grid. A pad adds or deletes a hit.
+- **Substeps (ratchets):** 2, 3, 4, 6, 8 hits in a step, with decreasing or increasing volume.
+- **Per-step parameters:** velocity, pitch, gate length, reverse, sample start point, trigger probability, off-grid shift (microtiming).
+- **Piano roll** for keygroup programs.
+- Swing 50–75 %, note repeat (roll) at the selected beat.
+- Automation recording for effects and pads, effect on/off included.
+- **Pad mute mode** during playback.
+- Operations: copy, paste, double length, clear pad, shift by one step, change program.
+- Metronome with a separate output (you can send it to headphones only).
+
+## 13. Audio tracks and audio clips
+
+- An audio clip is a reference to a library sample, with start, end and loop points.
+- The program does not load long files into memory fully. A background thread reads them from disk with a read-ahead buffer (at least 2 seconds). A buffer underrun does not stop the sound. The problem counter records it.
+- **Warp:** time stretch makes the clip follow the project tempo. The program detects the source tempo automatically, or you set it. Modes: "rhythmic" and "tonal".
+- Fades at the clip edges, volume, pitch without tempo change.
+- You can chop an audio clip onto pads (this opens the editor). You can also do the opposite: put a slice from a pad as a clip.
+
+## 14. Song mode and arrangement
+
+You assemble a full track inside the sampler.
+
+1. **Performance recording:** the arrangement record button captures clip and scene launches from the launcher onto a linear timeline. Thus "block" juggling becomes a track.
+2. **Arrangement timeline:** tracks are vertical, time is horizontal. You can move, trim and copy clips. Section markers: intro, verse, break.
+3. **Timeline automation** for volume, send and effect parameters.
+4. You can switch "launcher ↔ timeline" at any time. A clip launch from the launcher temporarily overrides the timeline on that track.
+
+First we implement item 1 and a simple timeline without automation. The other items come later.
+
+## 15. DJ mode
+
+- Two decks. Each deck plays a sample, an audio clip or a pattern.
+- Crossfader with a curve selection. Volume and filter on each deck.
+- Deck tempo sync, pitch bend for manual beatmatching.
+- Up to 8 cue points per sample: launch from a point, set a point during play.
+- Quick loop (roll) by beat. The performance effect operates on top.
+- Control: pads are cue points and loops. Encoders are the crossfader, volume, filters and tempo.
+
+## 16. PaulStretch and textures
+
+PaulStretch turns any sample, slice or clip into a long ambient texture. The reference is [PaulXStretch](https://sonosaurus.com/paulxstretch/) (GPL-3.0, we can use its code).
+
+Algorithm: the program cuts the sound into overlapping windows and calculates an FFT for each window. It replaces the phases with random phases. It assembles the windows again. It reads the windows from the source more slowly than it plays them.
+
+- **Offline stretch** (×2 … ×1000): a background render with progress. The result is a new pad, a new clip and a new library sample. The sound and the interface do not slow down.
+- **Live "freeze":** while you hold a pad, the sound stays at one point. An encoder moves the point across the sample.
+- **Parameters on encoders:** stretch, window size, position, pitch, spectral spread, tonal/noise, filter, volume.
+- Spectral processing from PaulXStretch (harmonics, frequency shift, compression): after the basic version.
+
+## 17. Interface and control
+
+You do all work without a mouse. The left hand is on the pads (1234/QWER/ASDF/ZXCV). The right hand is on navigation. Functions are on F-keys and Ctrl. There is no vim style. The mouse is an addition (clicks, drag of markers and clips). No function needs the mouse.
+
+**Screens:**
+
+| Key | Screen | Content |
+| --- | --- | --- |
+| F1 | Launcher | grid of tracks × scenes, launch of clips and scenes |
+| F2 | Pads | 4×4 program, layers and parameters of the selected pad, levels |
+| F3 | Chop | waveform, markers, slices |
+| F4 | Sequencer | steps, substeps, step parameters, piano roll |
+| F5 | Effects | pad, track, buses, performance, input |
+| F6 | Arrangement | timeline, sections, automation |
+| F7 | Mixer | tracks, buses, master, outputs |
+| F8 | Recording | input, monitoring, skip back, looper, resampling |
+| F9 | Stretch | PaulStretch: parameters, render, "freeze" |
+| F10 | DJ | two decks, crossfader, cue points |
+| F11 | Library | search, tags, preview, import |
+| F12 | Settings | sound, MIDI devices, mappings, MIDI debug |
+
+**Permanent elements:** the top line shows project, BPM, bar, transport, program and bank, live mode, audio latency and buffer dropouts. The bottom line shows hotkey hints for the current screen.
+
+**Keyboard:**
+
+- Arrows: navigation. Enter: confirm. Esc: back or cancel. Space: start/stop.
+- PageUp / PageDown: bank. Tab / Shift+Tab: next/previous element.
+- Ctrl+letter: actions. Ctrl+Z / Ctrl+Y: undo and redo. Ctrl+S: save. Ctrl+R: record. Ctrl+B: bake. Ctrl+D: duplicate.
+- **Ctrl+K: command palette.** Fuzzy search in Russian and English. It shows the hotkey of each command.
+- You can remap all hotkeys in `keymap.toml`.
+
+**Controller:** the default SMC-PAD utility buttons are bank ±, screen ±, shift, start/stop, record. The screen shows the pads and encoders in their physical layout.
+
+**Stage protection:** destructive actions need a confirmation. Live mode blocks them fully.
+
+The interface operates in a separate thread and only reads the engine state. If the interface hangs, the sound does not stop. Redraw rate: 30–60 frames per second.
+
+## 18. Export
+
+The default format is 24-bit WAV at the system sample rate. Options: 16-bit, 32-bit float, FLAC.
+
+- **Samples and slices:** a pad, a slice or a program into separate files with clear names (`drums_B05_03_snr.wav`). With or without the pad effects.
+- **Render:** a clip, a scene or the full arrangement. Offline, faster than real time. Master and stems (tracks and buses as separate files). The program writes effect tails until they decay.
+- **Live set recording:** the master output goes to a file while you play, without sound dropouts.
+- **Multichannel output to JACK:** you can send tracks and buses as separate channels for recording in a DAW.
+
+Export writes to the project `exports/` folder. It does not block the interface.
+
+## 19. Integration with SP-404 MK2
+
+The SP-404 MK2 connects through USB as class-compliant audio and MIDI (without a USB hub). It has three roles, by stage:
+
+1. **Controller:** the SP-404 pads play the program pads. The program can play the SP-404 pads through the MIDI output.
+2. **Sound card and external effects:** program or track output → SP-404 (process or record there). SP-404 output → recording and resampling in the program. The program warns about a feedback loop.
+3. **MIDI clock:** the program is the master (clock, start, stop). On the SP-404, the sync source is USB. Or the program is the slave: it follows an external clock and smooths the jitter.
+
+The official SP-404 editor is only for Mac and Windows. To transfer samples, use the SD card or resampling through USB audio.
+
+## 20. Development stages
+
+The next stage starts only after the previous stage passes the automated tests and the listening check.
+
+### Version 0.1: a playable sampler
+
+0. **Skeleton.** Sound through JACK/PipeWire. One keyboard pad plays a sample. Offline render to WAV. Measurement of the audio callback. *Done when:* 10 minutes without clicks, and the render test passes.
+1. **Programs and pads.** The full data model from section 5 (also the parts that are not in use yet). Drum program 8×16. Velocity and round robin layers. Pad modes, mute groups. SMC-PAD and the 4×4 keyboard. TOML mappings, pads screen, MIDI debug, a minimal command palette. *Done when:* I play from the SMC-PAD and the keyboard at the same time, and gate operates with the Russian layout.
+2. **Library and projects.** Import, hashes, tags, search, preview, `project.toml`, autosave. *Done when:* after a restart, the project opens in the same state.
+3. **Editor and chopping.** All chopping modes, chopping into a new program, operations, undo/redo, waveform. *Done when:* I chop a break by transients from the controller, without the keyboard.
+4. **Effects, stage 1.** Pad slots, two buses, performance effect, limiter, MIDI learn. *Done when:* I turn the filter and the bitcrush live, without clicks.
+5. **Recording.** Input, monitoring, recording to a pad, skip back, resampling.
+
+### Version 0.2: patterns and the launcher
+
+6. **Pattern sequencer:** recording, quantization, overdub, step mode with substeps and step parameters, swing, note repeat, pad mute.
+7. **Clip launcher and scenes**, tracks, mixer, launcher mode on the SMC-PAD.
+8. **Time stretch, audio tracks and audio clips** with disk streaming and warp. Pad BPM sync.
+9. **Pad link, live mode, 16 Levels.**
+10. **Export** of samples, clips, stems. Set recording. Project packing.
+
+### Version 0.3: a full track
+
+11. **Song mode:** performance recording onto the timeline, a simple arrangement timeline.
+12. **Keygroup programs**, chromatic mode on the pads, piano roll.
+13. **SP-404 MK2:** MIDI clock (master and slave), audio routing, multichannel output to JACK.
+14. **Timeline:** automation, sections, clip editing on the timeline.
+
+### Version 0.4: textures and live features
+
+15. **PaulStretch** offline and "freeze".
+16. **Effects, stages 2–3** and vocal effects.
+17. **Looper.**
+18. **DJ mode.**
+19. **UX polish:** command palette for all commands, mappings, themes.
+
+## 21. Testing and rules for the agent
+
+The agent does not hear sound. Thus three checks apply to each feature: an automated test with offline render, a performance measurement, and a listening check by the owner. These rules move to `AGENTS.md` at the repository root.
+
+**Real time (do not break these rules):**
+
+- In the audio callback: no memory allocation, mutexes, I/O, logging or panics.
+- Communication between threads: only lock-free queues and atomics.
+- The program loads samples for pads into memory in advance. A background thread streams long audio clips. File load and file write occur in separate threads.
+- The program smooths parameter changes. This prevents clicks.
+
+**Tests:**
+
+- Offline engine: it renders a scenario (hits, clip launches, parameters, time) to WAV without a sound card.
+- Automated render checks: no NaN and infinities, no clipping above a set level, silence where silence is necessary, length and volume within tolerance.
+- Reference renders for DSP blocks: the test shows the difference from the reference explicitly.
+- Timing: pattern hits and clip launches land on the correct sample, with ±1 sample accuracy.
+- Benchmark: the test load is 32 voices, 8 tracks and a full effect chain. With this load, the audio callback uses no more than 50 % of the buffer budget at 128 samples / 48 kHz.
+
+**Observability:** the status line shows the CPU load of the audio thread, the buffer dropout counter (xruns) and the counter of streaming buffer underruns. The program writes a log to a file, with levels. The audio thread writes no logs.
+
+**Process:**
+
+- One feature is one branch or a series of commits. Make a commit after each working feature.
+- After each development step, the agent puts WAV files into `renders/` for listening. The agent writes what the owner must check by ear.
+- The agent does not add dependencies with a license that is not compatible with GPL-3.0.
+- The agent does not change the `project.toml` format without a migration of old projects.
+
+## 22. Open questions
+
+- [ ] Which notes, CC and buttons the SMC-PAD sends by default. Capture them on the MIDI debug screen and write the mapping.
+- [ ] The MIDI TRS wiring type of the SMC-PAD (A or B). Is an adapter necessary for a direct connection to the SP-404?
+- [ ] Absolute or relative CC on the SMC-PAD encoders. Can CubeSuite change this?
+- [ ] SMC-PAD pad lights: can MIDI control the colors? The launcher needs this.
+- [ ] The final project name.
+- [ ] Is a web editor on top of the same engine necessary later?
+- [ ] Raspberry Pi: decide before version 0.4. This lets us reserve a CPU budget for PaulStretch and granular effects.
+
+## 23. Decisions after version 2
+
+- **Controller independence.** The program operates with logical actions. Device profiles in TOML bind controls to actions for each screen. Few knobs → parameter pages. Many knobs → all parameters at the same time. No knobs → keyboard. Control labels come from the profile.
+- **Soft takeover** for absolute knobs and faders, separately for each device.
+- **More than one controller at the same time.** Example: SMC-PAD pads + X-Session Pro knobs.
+- **M-Audio X-Session Pro**: the test controller. It has 12 knobs, 4 faders, a crossfader, 10 buttons and no pads.
+- **Keyboard:** the left half is pads only. Commands are on the right half, arrows, F-keys and Ctrl+letter. Shift on pads is only hit strength. With arrows, Shift makes a smaller increment (fine step).
+- **Help at the bottom of the screen**, by groups, with toggle states and a hint about the next action. Full help is on `?`.
+- **Chopping:** "on beat" with snap to hits. Coarse and fine marker moves. A large slice view with the envelope. Slice parameters pop up on change, instead of permanent tiles.
+- **Work order:** SDD with OpenSpec. The first stage is loading, chopping, assignment to pads and pad play.

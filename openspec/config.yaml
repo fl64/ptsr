@@ -1,0 +1,17 @@
+schema: spec-driven
+
+context: |
+  ptsr — a terminal sampler for Linux written in Rust (JACK/PipeWire, midir, ratatui + crossterm with the kitty keyboard protocol, symphonia, aubio, rtrb, TOML). License GPL-3.0.
+  The owner is a musician and does not read code: they check the specs, the renders in renders/ and the program by hand. Write all artifacts in English; all UI text is in English. The owner is Russian-speaking, so keep proposals short, plain and jargon-free. OpenSpec keywords (SHALL, WHEN, THEN) stay as they are.
+  Stage 1: loading samples, chopping, assigning to pads, playing pads — equally easy from the keyboard and from MIDI (several controllers at once). Everything else comes later.
+  Requirements are drafts and will change. docs/VISION.md is a guide, not a requirement.
+  Hard rules (real time, keyboard, tests) are in AGENTS.md.
+
+rules:
+  proposal:
+    - Write short and without jargon; the owner is not a programmer
+    - Always state what is out of scope
+    - End with a "How to verify" section — steps by hand and what to listen for
+  tasks:
+    - Every audio task ends with a render in renders/ or an automated render test
+    - Tasks are small; each one ends in a working state and a commit

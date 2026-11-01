@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+tasks:
+  default:
+    desc: List tasks
+    cmd: task --list
+    silent: true
+
+  build:
+    desc: Build the program into target/release/ptsr
+    cmd: cargo build --release -p ptsr
+
+  run:
+    desc: Build and run in the current terminal
+    interactive: true
+    cmd: cargo run --release -p ptsr
+
+  test:
+    desc: Tests; renders go to renders/
+    cmd: cargo test --workspace
+
+  bench:
+    desc: Audio callback benchmark (32 voices, buffer 128, 48 kHz)
+    cmd: cargo bench -p engine
+
+  lint:
+    desc: Clippy, warnings are errors
+    cmd: cargo clippy --workspace --all-targets -- -D warnings
+
+  fmt:
+    desc: Format the code
+    cmd: cargo fmt --all
+
+  check:
+    desc: Everything before a commit - format, clippy, tests, benchmark
+    cmds:
+      - cargo fmt --all --check
+      - task: lint
+      - task: test
+      - task: bench

@@ -1,0 +1,85 @@
+# M-Audio X-Session Pro profile for ptsr
+#
+# Numbers were read with aseqdump on 2026-10-28 (port "USB X-Session MIDI 1", channel 1).
+# Physical positions are not known yet: k1-k12 and b1-b10 follow the MIDI numbers in order.
+# The input debug tab (F12) shows what every control sends.
+#
+# X-Session Pro knobs and faders are absolute (with end stops); how they catch a value is the
+# knob response of the settings (F12, MIDI tab): jump, pickup or scale.
+
+[device]
+name = "X-Session Pro"
+match_port = "X-Session"       # the port is "USB X-Session MIDI 1"
+channel = 1
+
+[controls.knobs]               # 12 knobs; the crossfader also sends CC 20 mirrored, ignored
+k1  = { cc = 24, type = "absolute" }
+k2  = { cc = 25, type = "absolute" }
+k3  = { cc = 26, type = "absolute" }
+k4  = { cc = 27, type = "absolute" }
+k5  = { cc = 28, type = "absolute" }
+k6  = { cc = 29, type = "absolute" }
+k7  = { cc = 31, type = "absolute" }
+k8  = { cc = 32, type = "absolute" }
+k9  = { cc = 33, type = "absolute" }
+k10 = { cc = 34, type = "absolute" }
+k11 = { cc = 35, type = "absolute" }
+k12 = { cc = 36, type = "absolute" }
+
+[controls.faders]
+fader_a   = { cc = 12, type = "absolute" }   # left/right by capture order
+fader_b   = { cc = 11, type = "absolute" }
+pitch_a   = { cc = 14, type = "absolute" }
+pitch_b   = { cc = 15, type = "absolute" }
+crossfade = { cc = 17, type = "absolute" }
+
+[controls.buttons]             # 10 buttons send notes (velocity 127 on press, note off on release)
+b1  = { note = 43 }
+b2  = { note = 44 }
+b3  = { note = 45 }
+b4  = { note = 46 }
+b5  = { note = 56 }
+b6  = { note = 57 }
+b7  = { note = 58 }
+b8  = { note = 59 }
+b9  = { note = 69 }
+b10 = { note = 70 }
+
+# What the controls do on the pads screen. Which physical knob is k1 is still unknown:
+# turn knobs on F12 -> Input and put the one you like here.
+[screens.pads]
+k1 = "pad.volume"
+b1 = "bank.prev"
+b2 = "bank.next"
+b3 = "pad.mode_next"
+b10 = "pad.edit"               # the edit of the selected pad, as Enter
+
+# What the controls do on the chop screen (logical actions of the program)
+[screens.chop]
+k1  = "slice.start"
+k2  = "slice.end"
+k3  = "chop.cursor_pos"
+k4  = "chop.region_start_pos"
+k5  = "chop.region_end_pos"
+k11 = "chop.threshold"
+k12 = "chop.zoom"
+b1  = "transport.play_stop"
+b2  = "chop.cut"
+b3  = "marker.prev"
+b4  = "marker.next"
+b5  = "marker.delete"
+b6  = "chop.snap_toggle"
+b7  = "chop.hits"
+b8  = "edit.undo"
+b9  = "chop.commit"            # no plan: the slices in order from the selected pad; again: apply
+b10 = "chop.edit"              # the slice edit, as Enter
+
+# While an edit mode is open, on any screen, these stand over the screen roles above.
+# The knobs are page slots: k1 turns the 1st parameter of the page shown, k2 the 2nd.
+[edit]
+k1  = "edit.param_1"
+k2  = "edit.param_2"
+k3  = "edit.param_3"
+b3  = "edit.page_prev"          # as Shift+Tab: a knob turns its parameter, no pick needed
+b4  = "edit.page_next"          # as Tab
+b10 = "ui.back"                 # closes the edit, so b10 toggles it
