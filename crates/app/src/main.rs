@@ -5052,6 +5052,16 @@ fn step_in(list: &[String], current: Option<&str>, step: isize) -> Option<String
     Some(list[(i + step).rem_euclid(list.len() as isize) as usize].clone())
 }
 
+/// Whether a controller event is owner input that closes the splash (73). The connected
+/// and disconnected notes are the program's own bookkeeping, not owner input: two ports
+/// greet at start and would kill the splash before the owner sees it.
+fn closes_splash(ev: &midi::Event) -> bool {
+    !matches!(
+        ev,
+        midi::Event::Connected { .. } | midi::Event::Disconnected { .. }
+    )
+}
+
 fn main() -> std::io::Result<()> {
     init_log();
     // before anything reads the config, the keymap or the session (12)
@@ -5277,8 +5287,10 @@ fn main() -> std::io::Result<()> {
             .map(|m| m.events.try_iter().collect())
             .unwrap_or_default();
         for ev in events {
-            // a controller event closes the splash and acts (73)
-            app.splash = None;
+            // a controller input closes the splash and acts (73)
+            if closes_splash(&ev) {
+                app.splash = None;
+            }
             app.midi_event(ev);
         }
         if let Some((profile, key)) = app.learning.as_mut().and_then(|l| l.poll(Instant::now())) {
@@ -8139,6 +8151,22 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ptsr-rec-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    /// 73: the program's own port notes do not close the splash; controller input does.
+    /// Two ports of a controller greet with `Connected` at start — the splash stays.
+    #[test]
+    fn a_port_notice_does_not_close_the_splash() {
+        use super::{closes_splash, midi};
+        assert!(!closes_splash(&midi::Event::Connected {
+            port: "p".into(),
+            profile: "x".into()
+        }));
+        assert!(!closes_splash(&midi::Event::Disconnected {
+            port: "p".into()
+        }));
+        assert!(closes_splash(&midi::Event::PadHit { abs: 4 }));
+        assert!(closes_splash(&midi::Event::PadRelease { abs: 4 }));
     }
 
     /// 73 "The splash at start": the logo, `ptsr - PT's SampleR`, the version, the

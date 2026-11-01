@@ -6,6 +6,10 @@
 - The time is 6.4 s (owner). A key closes it earlier and acts: pads always play (AGENTS.md).
 - The version comes from the build (`CARGO_PKG_VERSION`).
 
+## Defaults taken by the agent
+
+- The splash closes on owner input from a controller (a message, a pad hit or release). The program's own port notes (`Connected`, `Disconnected`) are bookkeeping and do not close it: two ports greet at start and killed the splash before the owner saw it.
+
 ## Open questions
 
 - The logo in the full help (F1) too? Default: no, only on the splash.
