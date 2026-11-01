@@ -99,6 +99,8 @@ const NUDGE_MS: i32 = 20;
 const NUDGE_FINE_MS: i32 = 4;
 /// Session changes are written this long after the last one.
 const SESSION_SAVE: Duration = Duration::from_secs(1);
+/// How long the splash screen stays up at start (73).
+const SPLASH: Duration = Duration::from_millis(6400);
 
 /// A step that loses what lies on pads, waiting for the owner's answer. `lines` is what the
 /// question showed: if the pads change before Enter, the question is shown again.
@@ -467,6 +469,9 @@ struct App {
     /// Startup notices (config, session, keymap, terminal): the first key event of the
     /// session clears them (22), until then they hold the notice line.
     startup: Vec<String>,
+    /// The splash screen at start (73): when it opened; `None` once a key or a controller
+    /// event closed it, or the 6.4 s are over.
+    splash: Option<Instant>,
     /// The running recording: its source and when it started.
     recording: Option<(u8, Instant)>,
     /// Test only: every command the app sent, for asserting on the engine's input.
@@ -4939,6 +4944,45 @@ impl App {
     fn dismiss_startup(&mut self) {
         self.startup.clear();
     }
+
+    /// The 6.4 s of the splash are over (73).
+    fn splash_expired(&self) -> bool {
+        self.splash.is_some_and(|at| at.elapsed() >= SPLASH)
+    }
+
+    /// The splash view while it is up (73); `None` sends the loop back to the screen of
+    /// the session.
+    fn splash_view(&self) -> Option<tui::Splash> {
+        self.splash?;
+        if self.splash_expired() {
+            return None;
+        }
+        Some(tui::Splash {
+            version: env!("CARGO_PKG_VERSION"),
+            loading: self.splash_line(),
+        })
+    }
+
+    /// The loading line of the splash (73): what loads now, `ready` when all is loaded,
+    /// or a file that did not load.
+    fn splash_line(&self) -> String {
+        if let Some(pad) = (0..PADS).find(|&p| self.pads.missing[p] && self.pads.file[p].is_some())
+        {
+            return format!(
+                "cannot load {}",
+                file_name(self.pads.file[pad].as_deref().unwrap_or(Path::new("")))
+            );
+        }
+        let loading = self.pads.loading.iter().filter(|l| l.is_some()).count();
+        if loading > 0 {
+            format!(
+                "loading the session, {loading} {}",
+                if loading == 1 { "sample" } else { "samples" }
+            )
+        } else {
+            "ready".into()
+        }
+    }
     /// A saved device that is missing now: (what, saved name, where audio goes).
     fn missing(&self) -> Option<(&'static str, &str, Option<&str>)> {
         self.audio_alive()?.devices()?;
@@ -5130,6 +5174,7 @@ fn main() -> std::io::Result<()> {
         input_level: 0.0,
         flash: None,
         startup: Vec::new(),
+        splash: None,
         recording: None,
         #[cfg(test)]
         sent: Vec::new(),
@@ -5219,13 +5264,21 @@ fn main() -> std::io::Result<()> {
 
     let mut load_peak = 0.0;
     let mut load_taken = Instant::now();
+    // the splash shows from the first frame on (73)
+    app.splash = Some(Instant::now());
     let result = loop {
+        // the 6.4 s of the splash are over: the screen of the session is next (73)
+        if app.splash_expired() {
+            app.splash = None;
+        }
         let events: Vec<_> = app
             .midi
             .as_ref()
             .map(|m| m.events.try_iter().collect())
             .unwrap_or_default();
         for ev in events {
+            // a controller event closes the splash and acts (73)
+            app.splash = None;
             app.midi_event(ev);
         }
         if let Some((profile, key)) = app.learning.as_mut().and_then(|l| l.poll(Instant::now())) {
@@ -5462,10 +5515,12 @@ fn main() -> std::io::Result<()> {
             learn: learn_lines.as_deref(),
         };
         let mut want = Vec::new();
-        let drawn = if graphics {
-            term.draw(|f| tui::draw_gfx(f, &status, &screen, &help, &mut want))
-        } else {
-            term.draw(|f| tui::draw(f, &status, &screen, &help))
+        // the splash replaces the whole screen: no pads, no help line, no status line (73)
+        let splash = app.splash_view();
+        let drawn = match (&splash, graphics) {
+            (Some(s), _) => term.draw(|f| tui::splash(f, s)),
+            (None, true) => term.draw(|f| tui::draw_gfx(f, &status, &screen, &help, &mut want)),
+            (None, false) => term.draw(|f| tui::draw(f, &status, &screen, &help)),
         };
         if let Err(e) = drawn {
             break Err(e);
@@ -5499,6 +5554,8 @@ fn main() -> std::io::Result<()> {
         }) else {
             continue;
         };
+        // any key closes the splash and goes on to act (73)
+        app.splash = None;
         // any key event at all means the startup notices were read
         app.dismiss_startup();
         // the project picker is open: its keys go first, raw, like the filter line (11)
@@ -8054,6 +8111,7 @@ mod tests {
             input_level: 0.0,
             flash: None,
             startup: Vec::new(),
+            splash: None,
             recording: None,
             #[cfg(test)]
             sent: Vec::new(),
@@ -8081,6 +8139,117 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ptsr-rec-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    /// 73 "The splash at start": the logo, `ptsr - PT's SampleR`, the version, the
+    /// loading line and `any key: start`; 6.4 seconds later the pads screen of the last
+    /// session opens.
+    #[test]
+    fn the_splash_at_start() {
+        use super::SPLASH;
+        use std::time::{Duration, Instant};
+        let mut app = test_app();
+        app.splash = Some(Instant::now());
+        let view = app.splash_view().expect("the splash is up");
+        assert_eq!(view.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(view.loading, "ready", "nothing loads yet");
+        // the drawing carries the logo and the fixed lines; the layout is the tui test
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        term.draw(|f| tui::splash(f, &view)).unwrap();
+        let text: String = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        for want in [
+            "  _ _/_ __",
+            " /_// _\\/ ",
+            "ptsr - PT's SampleR",
+            "any key: start",
+        ] {
+            assert!(text.contains(want), "{want} missing");
+        }
+        // while samples load, the line names the session and the number of samples
+        app.pads.loading[2] = Some(40);
+        app.pads.loading[5] = Some(0);
+        assert_eq!(
+            app.splash_view().unwrap().loading,
+            "loading the session, 2 samples"
+        );
+        app.pads.loading[2] = None;
+        app.pads.loading[5] = None;
+        assert_eq!(app.splash_view().unwrap().loading, "ready");
+        // just before 6.4 s the splash is still up
+        app.splash = Some(Instant::now() - SPLASH + Duration::from_millis(1));
+        assert!(!app.splash_expired());
+        // when the 6.4 s are over the splash closes and the session screen is next
+        app.splash = Some(Instant::now() - SPLASH);
+        assert!(app.splash_expired());
+        app.splash = None;
+        assert!(app.splash_view().is_none());
+        assert_eq!(app.screen, Screen::Pads, "the pads screen of the session");
+    }
+
+    /// 73 "A pad hit during the splash": the key of pad `Q` closes the splash and plays
+    /// the pad at once.
+    #[test]
+    fn a_pad_hit_during_the_splash() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        use std::time::Instant;
+        let mut app = laid_out_break();
+        app.screen = Screen::Pads;
+        app.splash = Some(Instant::now());
+        // the loop closes the splash before the key acts, then the key resolves as on
+        // the pads screen
+        app.splash = None;
+        pads_key(&mut app, KeyCode::Char('q'), M::NONE);
+        assert!(app.splash.is_none());
+        assert!(
+            app.sent
+                .iter()
+                .any(|c| matches!(c, Command::PadPress { pad: 4, .. })),
+            "pad Q (4) plays"
+        );
+    }
+
+    /// 73 "A command key during the splash": F3 closes the splash and opens the chop
+    /// screen.
+    #[test]
+    fn a_command_key_during_the_splash() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        use std::time::Instant;
+        let mut app = chop_from_pad(0);
+        app.screen = Screen::Pads;
+        app.splash = Some(Instant::now());
+        app.splash = None;
+        pads_key(&mut app, KeyCode::F(3), M::NONE);
+        assert!(app.splash.is_none());
+        assert_eq!(app.screen, Screen::Chop);
+    }
+
+    /// 73 "A missing sample on the splash": the session names a sample file that does
+    /// not exist, the loading line names that file.
+    #[test]
+    fn a_missing_sample_on_the_splash() {
+        use std::time::Instant;
+        let mut app = test_app();
+        app.splash = Some(Instant::now());
+        let gone = tmp_dir("splash-gone").join("gone.wav");
+        let sess = super::session::Session {
+            pads: std::collections::BTreeMap::from([(
+                "0".into(),
+                super::session::PadState {
+                    file: Some(gone),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        app.apply_session(sess);
+        let view = app.splash_view().expect("the splash is up");
+        assert!(view.loading.contains("gone.wav"), "{}", view.loading);
     }
 
     /// The config and data bases under one temp folder, with the old folders filled as

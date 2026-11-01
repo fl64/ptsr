@@ -387,6 +387,44 @@ pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
     draw_inner(frame, s, screen, help, None);
 }
 
+/// The logo of the splash (73), byte-exact: 4 lines of 10 characters, trailing spaces
+/// kept.
+#[rustfmt::skip]
+pub const SPLASH_LOGO: [&str; 4] = [
+    "          ",
+    "  _ _/_ __",
+    " /_// _\\/ ",
+    "/         ",
+];
+
+/// What the splash shows besides the logo (73).
+pub struct Splash {
+    /// The version of the build.
+    pub version: &'static str,
+    /// What loads now, `ready` when all is loaded, or a file that did not load.
+    pub loading: String,
+}
+
+/// The splash at start (73): the whole screen shows the logo, the name, the version,
+/// the loading line and `any key: start`, centered, and nothing else.
+pub fn splash(frame: &mut Frame, s: &Splash) {
+    frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
+    let mut lines: Vec<Line> = SPLASH_LOGO.map(Line::from).to_vec();
+    lines.push(Line::from("ptsr - PT's SampleR").fg(CYAN).bold());
+    lines.push(Line::from(s.version).fg(DIM));
+    lines.push(Line::from(s.loading.clone()).fg(TEXT));
+    lines.push(Line::from("any key: start").fg(DIM));
+    let [area] = Layout::vertical([Constraint::Length(lines.len() as u16)])
+        .flex(Flex::Center)
+        .areas(frame.area());
+    let width = lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+    let [area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(area);
+    // the block is centered, its lines stay left-aligned: the logo keeps its shape
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
 /// The frame with kitty graphics (04b): the wave areas are left blank and their
 /// pictures are described in `images` for the caller to send to the terminal. The
 /// drawing is otherwise the same as [`draw`].
@@ -2492,6 +2530,50 @@ mod tests {
             "load 40%",
         ] {
             assert!(text.contains(want), "{want} missing");
+        }
+    }
+
+    /// 73 "The splash at start", the drawing: the logo, the name, the version, the
+    /// loading line and `any key: start` in one centered block, and nothing else on the
+    /// screen. The logo is byte-exact, trailing spaces kept.
+    #[test]
+    fn splash_shows_the_logo_and_the_lines_and_nothing_else() {
+        let (cols, rows_n) = (80, 24);
+        let s = Splash {
+            version: "0.1.0",
+            loading: "loading the session, 2 samples".into(),
+        };
+        let mut term = Terminal::new(TestBackend::new(cols, rows_n)).unwrap();
+        term.draw(|f| splash(f, &s)).unwrap();
+        let rows: Vec<String> = term
+            .backend()
+            .buffer()
+            .content()
+            .chunks(cols as usize)
+            .map(|row| row.iter().map(|c| c.symbol()).collect())
+            .collect();
+        let at = rows
+            .iter()
+            .position(|r| r.contains("ptsr - PT's SampleR"))
+            .expect("the name is on the screen");
+        let pad = rows[at].find("ptsr").unwrap();
+        // the logo sits over the name, byte-exact: each line is 10 characters wide
+        for (i, want) in SPLASH_LOGO.into_iter().enumerate() {
+            assert_eq!(&rows[at - 4 + i][pad..pad + 10], want, "logo line {i}");
+        }
+        assert_eq!(&rows[at + 1][pad..pad + s.version.len()], s.version);
+        assert_eq!(
+            rows[at + 2][pad..].trim_end(),
+            "loading the session, 2 samples"
+        );
+        assert_eq!(rows[at + 3][pad..].trim_end(), "any key: start");
+        // the splash owns the whole screen: the rows outside the block are blank
+        for (y, row) in rows.iter().enumerate() {
+            let left = row[..pad].chars().all(|c| c == ' ');
+            assert!(left, "row {y} is not centered");
+            if !(at - 4..at + 4).contains(&y) {
+                assert!(row.chars().all(|c| c == ' '), "row {y} is not blank");
+            }
         }
     }
 
