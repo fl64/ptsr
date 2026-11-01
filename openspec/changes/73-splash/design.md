@@ -3,13 +3,23 @@
 ## Decisions
 
 - The logo is the owner's text, byte-exact (4 lines of 10 characters, trailing spaces kept).
-- The time is 6.4 s (owner). A key closes it earlier and acts: pads always play (AGENTS.md).
+- The splash lives in the wave strip above the pad grid and stays until the first sound
+  (owner, 2026-11-01): a note that plays or a recording that starts, whichever comes first.
+  The 6.4 s timer and the `any key: start` line are gone: nothing blocks the keys.
 - The version comes from the build (`CARGO_PKG_VERSION`).
-- The splash is a box over the interface (owner, 2026-11-01), not a full-screen replacement: the screen of the session stays behind it and shows around it. The box is as wide as the screen (owner, 2026-11-01: the centered box looked cramped); its lines are centered.
+- The first big box and the full-width box came before this decision; the strip replaced
+  them (owner: "draw it where the wave shows, until the wave actually goes").
 
 ## Defaults taken by the agent
 
-- The splash closes on owner input from a controller (a message, a pad hit or release). The program's own port notes (`Connected`, `Disconnected`) are bookkeeping and do not close it: two ports greet at start and killed the splash before the owner saw it.
+- A hit on a pad with no sound (an empty pad, a sample still loading, a file that did not
+  load) does not end the splash: no sound went.
+- The pad edit views still take the strip while the splash shows (they are editing aids,
+  not the output wave); the splash replaces only the plain output wave.
+- The splash ends on the app side when the note goes to the engine, not by watching the
+  output history: the event is exact and testable.
+- The program's own MIDI port notes (`Connected`, `Disconnected`) are bookkeeping, not
+  owner input; they never end anything.
 
 ## Open questions
 

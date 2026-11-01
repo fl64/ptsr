@@ -51,19 +51,17 @@ Notes:
 
 ## The splash screen
 
-1. `[73]` Start the program. A box as wide as the screen, in the middle of its height,
-   shows the logo, `ptsr - PT's SampleR`, the version of the build, and the loading line,
-   every line centered. The line `any key: start` is below them. The interface of the last
-   session stays behind the box and shows above and below it.
+1. `[73]` Start the program. The wave strip above the pad grid shows the splash: the
+   logo, `ptsr - PT's SampleR`, the version of the build, and the loading line. The pads,
+   the help line and the status line show as always.
 2. `[73]` The loading line names what loads now: `loading the session, 2 samples`. When all
    samples are loaded, it says `ready`.
 3. `[73]` If the session names a sample file that does not exist, the line names this file:
    `cannot load gone.wav`. The program starts without this sound.
-4. `[73]` Press any key. Or press a button or turn a knob of the controller. The splash
-   closes, and the key or the control does its action at once: a hit on `Q` plays the pad,
-   `F3` opens the chop screen.
-5. `[73]` Do not press a key. After 6.4 seconds the splash closes. The pads screen of the
-   last session stays.
+4. `[73]` The splash stays until the first sound. Nothing blocks the keys meanwhile: `F3`
+   opens the chop screen, `Enter` opens the pad edit, and the splash stays.
+5. `[73]` Make a sound: hit a pad, play a note on the controller, or start a recording.
+   The splash ends and the strip shows the wave from then on.
 
 ## Play a beat
 
