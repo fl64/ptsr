@@ -5903,30 +5903,28 @@ fn pad_changes(p: &pads::Pads, abs: usize) -> Vec<tui::PadParam> {
     out
 }
 
-/// The frame glyphs of a pad (55), in this order: `⇕` pitch, `⩘` the envelope, `∿` the
-/// filter, `◻` a part of the file. The volume takes none: the mode line shows it. The mute
-/// group is drawn after them from the pad's `group`, as a digit on a plate (77).
-fn pad_glyphs(changed: &[tui::PadParam], kinds: [engine::fx::FxKind; 2]) -> String {
+/// The mark at the end of a pad's mode line (77): `✱` when the pad has settings the line
+/// does not show already: pitch, envelope, filter on, drive, sends. Not the volume, the
+/// mode, the group (on the line) or the source (a slice shows in the name).
+fn pad_glyphs(changed: &[tui::PadParam]) -> String {
     use tui::PadParam as W;
-    let any = |ws: &[W]| ws.iter().any(|w| changed.contains(w));
-    // a send shows the glyph of what its slot holds (56)
-    let send = |k: usize| match kinds[k] {
-        engine::fx::FxKind::Reverb => '◌',
-        engine::fx::FxKind::Delay => '⋯',
-    };
-    [
-        (any(&[W::Pitch]), '⇕'),
-        // not `◣`: an ambiguous-width glyph, a font draws it over the frame (77)
-        (any(&[W::Attack, W::Decay, W::Release]), '⩘'),
-        (any(&[W::Filter, W::Cutoff, W::Reso]), '∿'),
-        (any(&[W::Source]), '◻'),
-        (any(&[W::Drive]), '↯'),
-        (any(&[W::Send1]), send(0)),
-        (any(&[W::Send2]), send(1)),
-    ]
-    .into_iter()
-    .filter_map(|(on, g)| on.then_some(g))
-    .collect()
+    let more = [
+        W::Pitch,
+        W::Attack,
+        W::Decay,
+        W::Release,
+        W::Filter,
+        W::Cutoff,
+        W::Reso,
+        W::Drive,
+        W::Send1,
+        W::Send2,
+    ];
+    if more.iter().any(|w| changed.contains(w)) {
+        "✱".into()
+    } else {
+        String::new()
+    }
 }
 
 fn pads_view(
@@ -5942,7 +5940,7 @@ fn pads_view(
             let abs = p.bank * PADS_PER_BANK + i;
             let changed = pad_changes(p, abs);
             tui::PadView {
-                glyphs: pad_glyphs(&changed, p.fx.map(|f| f.kind)),
+                glyphs: pad_glyphs(&changed),
                 changed,
                 dim: false,
                 dashed: false,
@@ -7676,17 +7674,14 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
             rows.extend(section);
         }
     }
-    // the glyphs on the pad frames and the dots in the panel (55)
+    // the mode line of a pad and the dots in the panel (55, 77)
     if matches!(screen, Screen::Pads | Screen::Files) {
         rows.push((String::new(), "GLYPHS ON A PAD".to_string()));
         for (glyph, text) in [
-            ("⇕", "pitch changed"),
-            ("⩘", "envelope set: attack, decay or release"),
-            ("◻", "plays a part of the file: a slice or its own piece"),
-            ("∿", "filter on: low-pass, high-pass or band"),
-            ("↯", "drive set"),
-            ("◌", "sends to a slot that holds a reverb"),
-            ("⋯", "sends to a slot that holds a delay"),
+            (
+                "✱",
+                "more settings, see the panel: pitch, envelope, filter, drive or sends",
+            ),
             (
                 "mute N",
                 "its group: a hit stops the other pads of the group",
@@ -13200,29 +13195,24 @@ mod tests {
         assert!(super::NO_AUDIO_SERVER.starts_with("No sound:"));
     }
 
-    /// Scenario "Terminal without the kitty protocol" (22): the warning is shown until
-    /// the first keypress of any kind, then the hint line is back, and the status keeps
-    /// 55 "F1 names the glyphs".
+    /// 77 "F1 names the mark": `✱` and the mode glyphs, no frame glyph.
     #[test]
-    fn f1_names_the_glyphs() {
+    fn f1_names_the_mark() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let rows = super::full_help(&keymap, input::Screen::Pads, true);
-        for (glyph, word) in [
-            ("⇕", "pitch"),
-            ("⩘", "envelope"),
-            ("∿", "filter"),
-            ("◻", "part of the file"),
-            ("↯", "drive"),
-            ("◌", "reverb"),
-            ("⋯", "delay"),
-        ] {
+        for (glyph, word) in [("✱", "more settings"), ("⇥", "one-shot"), ("⇢", "gate")] {
             assert!(
                 rows.iter().any(|(k, t)| k == glyph && t.contains(word)),
                 "{glyph}: {rows:?}"
             );
         }
+        for old in ["⇕", "⩘", "∿", "◻", "↯", "◌", "⋯"] {
+            assert!(!rows.iter().any(|(k, _)| k == old), "{old}: {rows:?}");
+        }
     }
 
+    /// Scenario "Terminal without the kitty protocol" (22): the warning is shown until
+    /// the first keypress of any kind, then the hint line is back, and the status keeps
     /// the "no releases" marker for the session.
     #[test]
     fn terminal_without_the_kitty_protocol() {
@@ -14197,19 +14187,15 @@ mod tests {
         );
     }
 
-    /// 56 "The send lights its glyph" and "Two reverbs on the frame".
+    /// 77 "A send marks the pad": a send above 0 or the drive gives the one mark `✱`.
     #[test]
-    fn the_send_lights_its_glyph() {
-        use engine::fx::FxKind;
+    fn a_send_marks_the_pad() {
         let mut app = laid_out_break();
         app.pads.sends[0] = [0, 20];
-        assert_eq!(glyphs(&mut app, 0), "⋯");
-        app.pads.sends[0] = [20, 20];
-        assert_eq!(glyphs(&mut app, 0), "◌⋯");
-        app.pads.fx[1].kind = FxKind::Reverb;
-        assert_eq!(glyphs(&mut app, 0), "◌◌", "two reverbs");
+        assert_eq!(glyphs(&mut app, 0), "✱");
+        app.pads.sends[0] = [0, 0];
         app.pads.drive[0] = 10;
-        assert_eq!(glyphs(&mut app, 0), "↯◌◌");
+        assert_eq!(glyphs(&mut app, 0), "✱", "the drive too");
     }
 
     /// A pads-screen app with the X-Session knob 1 bound to the pad volume, for the undo.
@@ -14255,7 +14241,7 @@ mod tests {
         assert_eq!(app.pads.region[abs], region);
         assert!(app.pads.file[abs].is_some());
         assert!(app.edit, "the edit stays open");
-        assert_eq!(glyphs(&mut app, abs), "◻");
+        assert_eq!(glyphs(&mut app, abs), "", "no mark: a slice is no setting");
     }
 
     /// 76 pad-playback "The question names the pads" and "Esc keeps".
@@ -14827,33 +14813,33 @@ mod tests {
         v.pads[abs].glyphs.clone()
     }
 
-    /// 55 "A filter on the pad", "A clean pad", "Back to the default".
+    /// 77 "A filter marks the pad", "A fresh pad has no mark", "The mark goes with the
+    /// setting".
     #[test]
-    fn a_filter_on_the_pad() {
+    fn a_filter_marks_the_pad() {
         use engine::filter::FilterKind;
         let mut app = laid_out_break();
         assert_eq!(
             glyphs(&mut app, 0),
             "",
-            "a clean pad: the whole file, nothing set"
+            "a fresh pad: the whole file, nothing set"
         );
         app.pads.filter[0] = FilterKind::LowPass;
-        assert_eq!(glyphs(&mut app, 0), "∿", "the filter and no other glyph");
+        assert_eq!(glyphs(&mut app, 0), "✱");
         app.pads.filter[0] = FilterKind::Off;
         app.pads.pitch[0] = 2;
-        assert_eq!(glyphs(&mut app, 0), "⇕");
+        assert_eq!(glyphs(&mut app, 0), "✱");
         app.pads.pitch[0] = 0;
-        assert_eq!(glyphs(&mut app, 0), "", "back to the default");
+        assert_eq!(glyphs(&mut app, 0), "", "the mark goes with the setting");
         app.pads.decay_ms[0] = 40;
-        app.pads.pitch[0] = -5;
-        assert_eq!(glyphs(&mut app, 0), "⇕⩘", "in the order pitch, envelope");
+        assert_eq!(glyphs(&mut app, 0), "✱", "the envelope");
         assert_eq!(glyphs(&mut app, 3), "", "an empty pad has none");
     }
 
-    /// 55 "A filter that is off": the cutoff moved with the filter off gives no glyph and
-    /// no change.
+    /// 77 "A filter that is off marks nothing": the cutoff moved with the filter off gives
+    /// no mark and no change.
     #[test]
-    fn a_filter_that_is_off() {
+    fn a_filter_that_is_off_marks_nothing() {
         let mut app = laid_out_break();
         app.pads.cutoff_hz[0] = 1_100.0;
         app.pads.reso[0] = 20;
@@ -14861,18 +14847,25 @@ mod tests {
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert!(v.pads[0].changed.is_empty(), "{:?}", v.pads[0].changed);
         app.pads.filter[0] = engine::filter::FilterKind::LowPass;
-        assert_eq!(glyphs(&mut app, 0), "∿", "on: it counts");
+        assert_eq!(glyphs(&mut app, 0), "✱", "on: it counts");
     }
 
-    /// 55 "Chopped pads carry the square" and "The panel shows the change" (the values).
+    /// 77 "A slice is not a setting", "Volume and group are not counted twice" and "The
+    /// panel names the settings" (the values).
     #[test]
-    fn chopped_pads_carry_the_square() {
+    fn a_slice_is_not_a_setting() {
         use tui::PadParam as W;
         let mut app = laid_out_break();
         for abs in 4..12 {
-            assert_eq!(glyphs(&mut app, abs), "◻", "pad {abs} plays a slice");
+            assert_eq!(glyphs(&mut app, abs), "", "pad {abs} plays a slice");
         }
-        assert_eq!(glyphs(&mut app, 0), "", "the whole break: no square");
+        app.pads.volume_db[4] = -6;
+        app.pads.group[4] = 2;
+        assert_eq!(
+            glyphs(&mut app, 4),
+            "",
+            "volume and group are on the line already"
+        );
         app.pads.pitch[0] = -5;
         app.pads.filter[0] = engine::filter::FilterKind::LowPass;
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);

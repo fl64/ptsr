@@ -149,7 +149,7 @@ pub struct ProjectPickerView {
 }
 
 pub struct PadView {
-    /// The glyphs of what is set on the pad (55), on its top frame: `⇕ ⩘ ∿ ◻`.
+    /// `✱` when the pad has more settings than its mode line shows (77), or empty.
     pub glyphs: String,
     /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
     pub changed: Vec<PadParam>,
@@ -1631,13 +1631,6 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         .title(key)
         .border_style(Style::new().fg(border))
         .style(Style::new().bg(bg).fg(fg));
-    if !pad.glyphs.is_empty() {
-        block = block.title_top(
-            Line::from(format!(" {} ", pad.glyphs))
-                .right_aligned()
-                .fg(if pad.flash { BG } else { BRIGHT }),
-        );
-    }
     if pad.dashed {
         block = block.border_set(ratatui::symbols::border::Set {
             vertical_left: "┆",
@@ -1655,6 +1648,10 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
     }
     if pad.group > 0 {
         second = format!("{second} mute {}", pad.group);
+    }
+    // `✱`: the pad has more settings, the panel names them (77); the frame stays clean
+    if !pad.glyphs.is_empty() {
+        second = format!("{second} {}", pad.glyphs);
     }
     let second = match (pad.missing, pad.loading, &pad.note) {
         (_, Some(p), _) => Line::from(format!(" load {p}%")).fg(CYAN),
@@ -4019,14 +4016,14 @@ mod tests {
         assert_eq!(color(tone, "TONE"), DIM);
     }
 
-    /// 55 "The panel shows the change" (drawing): a changed value bright, a default one dim,
-    /// the blocks with a change carry a dot; the frame of the pad carries its glyphs.
+    /// 77 "The panel names the settings" (drawing): a changed value bright, a default one
+    /// dim, the blocks with a change carry a dot; the mode line of the pad ends with `✱`.
     #[test]
     fn the_panel_shows_the_change() {
         let mut p = idle_pads();
         let sel = p.selected;
         p.pads[sel].changed = vec![PadParam::Pitch, PadParam::Filter];
-        p.pads[sel].glyphs = "⇕∿".into();
+        p.pads[sel].glyphs = "✱".into();
         let rows = render_pads_at(p, 100, TALL);
         let text: Vec<String> = rows
             .iter()
@@ -4037,7 +4034,7 @@ mod tests {
         assert!(has("─ FILTER ● ─"));
         assert!(has("─ ENV ─") && !has("ENV ●"));
         assert!(has("─ SOURCE ─") && !has("SOURCE ●"));
-        assert!(has("⇕∿"), "the glyphs on the pad frame");
+        assert!(has("│ ⇥ ✱"), "the mark on the mode line");
         let color = |name: &str, value: &str| {
             let line = text.iter().position(|r| r.contains(name)).unwrap();
             let x = text[line].find(value).unwrap();
