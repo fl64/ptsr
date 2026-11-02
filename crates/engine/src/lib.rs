@@ -244,6 +244,8 @@ struct Voice {
     fade: Option<u32>,
     /// What `fade` counts down from: the release ramp divides by it.
     fade_total: u32,
+    /// Gain at the start of a shortened project-switch fade.
+    fade_gain: f32,
     /// Where the voice started in the sound: attack counts from here.
     pos0: usize,
     /// Envelope windows of the pad when the voice started, in frames.
@@ -294,8 +296,6 @@ pub struct Engine {
     started: u64,
     /// Samples the audio thread lets go of are sent back here to be freed elsewhere.
     garbage: Option<rtrb::Producer<Arc<Sample>>>,
-    /// Samples leaked because the garbage queue was full (never freed in the audio thread).
-    leaked: u64,
     /// Where the preview plays, in frames; `usize::MAX` when it is silent.
     preview_pos: Option<Arc<AtomicUsize>>,
     /// Where the engine reports its output peaks for the UI meters.
@@ -303,18 +303,32 @@ pub struct Engine {
     /// The shared effect slots and their send buses, left and right per slot (56).
     slots: [fx::Slot; FX_SLOTS],
     bus: Vec<[f32; 2 * FX_SLOTS]>,
+    switch_fade: Option<u32>,
+    switch_clear: Option<(usize, usize)>,
+    reset_pad: Option<usize>,
 }
 
 /// Hands a sample the engine no longer needs to the garbage queue; without a queue
 /// (offline render, tests) it is simply dropped.
-fn retire(garbage: &mut Option<rtrb::Producer<Arc<Sample>>>, leaked: &mut u64, sound: Arc<Sample>) {
-    if let Some(g) = garbage
-        && let Err(rtrb::PushError::Full(s)) = g.push(sound)
-    {
-        // freeing memory here could stall the audio thread; a leak is the lesser evil
-        std::mem::forget(s);
-        *leaked += 1;
+fn retire(garbage: &mut Option<rtrb::Producer<Arc<Sample>>>, sound: Arc<Sample>) {
+    if let Some(g) = garbage {
+        // The caller reserves a slot before removing the reference from its owner.
+        assert!(g.push(sound).is_ok());
     }
+}
+
+fn retire_slot(
+    garbage: &mut Option<rtrb::Producer<Arc<Sample>>>,
+    sound: &mut Option<Arc<Sample>>,
+) -> bool {
+    if sound.is_none() {
+        return true;
+    }
+    if garbage.as_ref().is_some_and(|g| g.slots() == 0) {
+        return false;
+    }
+    retire(garbage, sound.take().unwrap());
+    true
 }
 
 impl Engine {
@@ -363,7 +377,6 @@ impl Engine {
             preview_as: None,
             started: 0,
             garbage: None,
-            leaked: 0,
             preview_pos: None,
             stats: None,
             // a new project: a reverb in FX 1, a delay in FX 2 (56)
@@ -375,6 +388,9 @@ impl Engine {
                 )
             }),
             bus: vec![[0.0; 2 * FX_SLOTS]; BUS_FRAMES],
+            switch_fade: None,
+            switch_clear: None,
+            reset_pad: None,
         }
     }
 
@@ -394,9 +410,100 @@ impl Engine {
         self.stats = Some(stats);
     }
 
-    /// Samples leaked because the garbage queue was full.
-    pub fn leaked(&self) -> u64 {
-        self.leaked
+    /// Whether the garbage queue can accept the references released by a command.
+    pub fn can_handle(&self, cmd: &Command) -> bool {
+        let needed = match cmd {
+            Command::SetPadSound { pad, sound } => {
+                if *pad < PADS {
+                    usize::from(self.pads[*pad].sound.is_some())
+                } else {
+                    usize::from(sound.is_some())
+                }
+            }
+            Command::Preview { sound: Some(_), .. }
+            | Command::Click { .. }
+            | Command::PadPress { .. } => {
+                usize::from(self.voices.iter().all(|v| v.sound.is_some()))
+            }
+            _ => 0,
+        };
+        self.garbage.as_ref().is_none_or(|g| g.slots() >= needed)
+    }
+
+    pub fn can_discard(&self, cmd: &Command) -> bool {
+        let needed = matches!(
+            cmd,
+            Command::SetPadSound { sound: Some(_), .. } | Command::Preview { sound: Some(_), .. }
+        );
+        !needed || self.garbage.as_ref().is_none_or(|g| g.slots() > 0)
+    }
+
+    /// Begin a project transition without releasing samples on the audio thread.
+    pub fn switch_project(&mut self) {
+        for v in &mut self.voices {
+            if v.sound.is_some() && v.fade.is_none_or(|f| f > self.fade_len) {
+                if let Some(f) = v.fade {
+                    v.fade_gain *= f as f32 / v.fade_total.max(1) as f32;
+                }
+                v.fade = Some(self.fade_len);
+                v.fade_total = self.fade_len;
+            }
+        }
+        if self.switch_clear.is_none() && self.switch_fade.is_none() {
+            self.switch_fade = Some(self.fade_len);
+        }
+    }
+
+    /// Advance bounded transition work; true means restore commands may run.
+    pub fn project_transition_step(&mut self) -> bool {
+        if self.switch_fade.is_some() {
+            return false;
+        }
+        if let Some((slot, mut cursor)) = self.switch_clear {
+            if self.slots[slot].clear_step(&mut cursor, 4096) {
+                self.switch_clear = (slot + 1 < FX_SLOTS).then_some((slot + 1, 0));
+            } else {
+                self.switch_clear = Some((slot, cursor));
+            }
+        }
+        if let Some(mut cursor) = self.reset_pad {
+            while cursor < PADS {
+                let p = &mut self.pads[cursor];
+                if !retire_slot(&mut self.garbage, &mut p.sound) {
+                    break;
+                }
+                Self::reset_pad_settings(p);
+                cursor += 1;
+            }
+            self.reset_pad = (cursor < PADS).then_some(cursor);
+        }
+        self.switch_clear.is_none() && self.reset_pad.is_none()
+    }
+
+    fn reset_pad_settings(p: &mut Pad) {
+        p.region = Region::WHOLE;
+        p.mode = PadMode::OneShot;
+        p.gain = 1.0;
+        p.gain_from = 1.0;
+        p.rate = 1.0;
+        p.attack = 0.0;
+        p.decay = 0.0;
+        p.release_frames = 0;
+        p.filter = filter::Target::BYPASS;
+        p.drive = 0.0;
+        p.drive_from = 0.0;
+        p.sends = [0.0; FX_SLOTS];
+        p.sends_from = [0.0; FX_SLOTS];
+        p.group = 0;
+    }
+
+    /// Retire sample references in an obsolete command.
+    pub fn discard(&mut self, cmd: Command) {
+        match cmd {
+            Command::SetPadSound { sound: Some(s), .. }
+            | Command::Preview { sound: Some(s), .. } => retire(&mut self.garbage, s),
+            _ => {}
+        }
     }
 
     /// Runs the command `offset` samples after the start of the next block.
@@ -491,12 +598,10 @@ impl Engine {
             Command::SetPadSound { pad, sound } if pad < PADS => {
                 self.pads[pad].region = Region::WHOLE;
                 if let Some(old) = std::mem::replace(&mut self.pads[pad].sound, sound) {
-                    retire(&mut self.garbage, &mut self.leaked, old);
+                    retire(&mut self.garbage, old);
                 }
             }
-            Command::SetPadSound { sound: Some(s), .. } => {
-                retire(&mut self.garbage, &mut self.leaked, s)
-            }
+            Command::SetPadSound { sound: Some(s), .. } => retire(&mut self.garbage, s),
             Command::SetPadRegion { pad, region } if pad < PADS => self.pads[pad].region = region,
             Command::SetMasterGain { gain } => self.master = gain.max(0.0),
             Command::SwapPads { a, b } if a < PADS && b < PADS => {
@@ -636,7 +741,7 @@ impl Engine {
             });
         self.started += 1;
         if let Some(old) = self.voices[slot].sound.take() {
-            retire(&mut self.garbage, &mut self.leaked, old);
+            retire(&mut self.garbage, old);
         }
         let end = region.end.min(sound.len());
         let rate = pad.map_or(1.0, |p| self.pads[p].rate);
@@ -661,6 +766,7 @@ impl Engine {
             preview,
             fade: None,
             fade_total: 0,
+            fade_gain: 1.0,
             pos0: pos,
             attack,
             decay,
@@ -771,7 +877,7 @@ impl Engine {
                     v.fade_in -= 1;
                 }
                 if let Some(f) = v.fade.as_mut() {
-                    g *= *f as f32 / v.fade_total.max(1) as f32;
+                    g *= v.fade_gain * *f as f32 / v.fade_total.max(1) as f32;
                     *f -= 1;
                 }
                 // linear interpolation between the frames around the read position
@@ -819,10 +925,10 @@ impl Engine {
             }
             v.delay = 0;
             // a looping preview ends only when it is stopped
-            if ((v.pos >= v.end && looping.is_none()) || v.fade == Some(0))
-                && let Some(s) = v.sound.take()
-            {
-                retire(&mut self.garbage, &mut self.leaked, s);
+            if (v.pos >= v.end && looping.is_none()) || v.fade == Some(0) {
+                // A completed voice stays silent in its slot until garbage has room.
+                v.fade = Some(0);
+                retire_slot(&mut self.garbage, &mut v.sound);
             }
         }
         for p in self.pads.iter_mut() {
@@ -831,11 +937,27 @@ impl Engine {
             p.sends_from = p.sends;
         }
         // the shared slots add their wet sound to the pads' own (56)
-        for (k, slot) in self.slots.iter_mut().enumerate() {
-            for (i, frame) in bus.iter().enumerate() {
-                let [wl, wr] = slot.tick([frame[2 * k], frame[2 * k + 1]]);
-                left[i] += wl;
-                right[i] += wr;
+        if self.switch_clear.is_none() {
+            for (k, slot) in self.slots.iter_mut().enumerate() {
+                for (i, frame) in bus.iter().enumerate() {
+                    let [wl, wr] = slot.tick([frame[2 * k], frame[2 * k + 1]]);
+                    let gain = self.switch_fade.map_or(1.0, |f| {
+                        f.saturating_sub(i as u32) as f32 / self.fade_len as f32
+                    });
+                    left[i] += wl * gain;
+                    right[i] += wr * gain;
+                }
+            }
+        }
+        if let Some(f) = self.switch_fade {
+            if f as usize <= n {
+                self.switch_fade = None;
+                self.reset_pad = Some(0);
+                self.preview_loop = None;
+                self.preview_as = None;
+                self.switch_clear = Some((0, 0));
+            } else {
+                self.switch_fade = Some(f - n as u32);
             }
         }
         if let Some(at) = &self.preview_pos {

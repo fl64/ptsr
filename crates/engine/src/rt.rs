@@ -151,10 +151,37 @@ impl Stats {
     }
 }
 
+/// A message tagged when its producer receives the input.
+#[derive(Debug)]
+pub struct ProjectCommand {
+    pub epoch: u64,
+    /// For pad hits, true only if ready equalled epoch at input time.
+    pub ready_at_send: bool,
+    pub command: ProjectMessage,
+}
+
+#[derive(Debug)]
+pub enum ProjectMessage {
+    Command(Command),
+    Ready,
+}
+
+/// Zero is the initial, ready project. Publish switches with Release ordering.
+#[derive(Default)]
+pub struct ProjectState {
+    pub epoch: AtomicU64,
+    pub ready: AtomicU64,
+}
+
 pub struct Realtime {
     engine: Engine,
     /// One queue per writer thread (UI, MIDI): rtrb is single-producer.
     commands: Vec<rtrb::Consumer<Command>>,
+    project_commands: Vec<rtrb::Consumer<ProjectCommand>>,
+    held: Vec<Option<ProjectCommand>>,
+    project: Option<Arc<ProjectState>>,
+    epoch: u64,
+    marker: bool,
     stats: Arc<Stats>,
     sample_rate: u32,
 }
@@ -170,17 +197,112 @@ impl Realtime {
         Self {
             engine,
             commands,
+            project_commands: Vec::new(),
+            held: Vec::new(),
+            project: None,
+            epoch: 0,
+            marker: true,
             stats,
             sample_rate,
         }
+    }
+
+    pub fn with_project(
+        engine: Engine,
+        commands: Vec<rtrb::Consumer<ProjectCommand>>,
+        stats: Arc<Stats>,
+        sample_rate: u32,
+        project: Arc<ProjectState>,
+    ) -> Self {
+        let mut rt = Self::new(engine, Vec::new(), stats, sample_rate);
+        rt.held = (0..commands.len()).map(|_| None).collect();
+        rt.project_commands = commands;
+        rt.project = Some(project);
+        rt
     }
 
     /// Called from the audio callback: no allocation, no locks, no I/O.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let started = Instant::now();
         for queue in self.commands.iter_mut() {
-            while let Ok(cmd) = queue.pop() {
+            for _ in 0..256 {
+                let Ok(cmd) = queue.peek() else { break };
+                if !self.engine.can_handle(cmd) {
+                    break;
+                }
+                let Ok(cmd) = queue.pop() else { break };
                 self.engine.handle(0, cmd);
+            }
+        }
+        if let Some(project) = &self.project {
+            use std::sync::atomic::Ordering::{Acquire, Release};
+            let epoch = project.epoch.load(Acquire);
+            if epoch != self.epoch {
+                self.epoch = epoch;
+                self.marker = false;
+                self.engine.switch_project();
+            }
+            let transition_done = self.engine.project_transition_step();
+            for (index, queue) in self.project_commands.iter_mut().enumerate() {
+                for _ in 0..256 {
+                    let msg = self.held[index].as_ref().or_else(|| queue.peek().ok());
+                    let Some(msg) = msg else { break };
+                    if let ProjectMessage::Command(cmd) = &msg.command {
+                        let hit =
+                            matches!(cmd, Command::PadPress { .. } | Command::PadRelease { .. });
+                        let discard = msg.epoch != epoch
+                            || (hit
+                                && (!msg.ready_at_send
+                                    || !transition_done
+                                    || !self.marker
+                                    || project.ready.load(Acquire) != epoch));
+                        let can_run = if discard {
+                            self.engine.can_discard(cmd)
+                        } else {
+                            self.engine.can_handle(cmd)
+                        };
+                        if !can_run {
+                            break;
+                        }
+                    }
+                    let Some(msg) = self.held[index].take().or_else(|| queue.pop().ok()) else {
+                        break;
+                    };
+                    if msg.epoch != epoch {
+                        if let ProjectMessage::Command(cmd) = msg.command {
+                            self.engine.discard(cmd);
+                        }
+                        continue;
+                    }
+                    let hit = matches!(
+                        &msg.command,
+                        ProjectMessage::Command(
+                            Command::PadPress { .. } | Command::PadRelease { .. }
+                        )
+                    );
+                    if !transition_done && !hit {
+                        self.held[index] = Some(msg);
+                        break;
+                    }
+                    match msg.command {
+                        ProjectMessage::Ready => self.marker = true,
+                        ProjectMessage::Command(cmd) => {
+                            if hit
+                                && (!msg.ready_at_send
+                                    || !transition_done
+                                    || !self.marker
+                                    || project.ready.load(Acquire) != epoch)
+                            {
+                                self.engine.discard(cmd);
+                            } else {
+                                self.engine.handle(0, cmd);
+                            }
+                        }
+                    }
+                }
+            }
+            if transition_done && self.marker && project.epoch.load(Acquire) == epoch {
+                project.ready.store(epoch, Release);
             }
         }
         self.engine.process(left, right);
@@ -194,6 +316,117 @@ impl Realtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_switch_rejects_queued_hits_and_restores_in_order() {
+        use std::sync::atomic::Ordering::{Acquire, Release};
+        let state = Arc::new(ProjectState::default());
+        let (mut ui, ui_rx) = rtrb::RingBuffer::new(8);
+        let (mut midi, midi_rx) = rtrb::RingBuffer::new(8);
+        let mut engine = Engine::with_sounds(48_000, vec![], vec![vec![0.5; 48_000]]);
+        let (garbage, _rx) = rtrb::RingBuffer::new(512);
+        engine.set_garbage(garbage);
+        let mut rt = Realtime::with_project(
+            engine,
+            vec![ui_rx, midi_rx],
+            Arc::new(Stats::default()),
+            48_000,
+            state.clone(),
+        );
+        let msg = |epoch, ready_at_send, command| ProjectCommand {
+            epoch,
+            ready_at_send,
+            command,
+        };
+        let hit = || {
+            ProjectMessage::Command(Command::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            })
+        };
+        ui.push(msg(0, true, hit())).unwrap();
+        let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+        rt.process(&mut l, &mut r);
+        assert!(l.iter().any(|x| *x > 0.0));
+        midi.push(msg(0, true, hit())).unwrap();
+        state.epoch.store(1, Release);
+        ui.push(msg(1, false, ProjectMessage::Ready)).unwrap();
+        midi.push(msg(1, false, hit())).unwrap();
+        for _ in 0..300 {
+            rt.process(&mut l, &mut r);
+            if state.ready.load(Acquire) == 1 {
+                break;
+            }
+        }
+        assert_eq!(state.ready.load(Acquire), 1);
+        for _ in 0..5 {
+            rt.process(&mut l, &mut r);
+            assert!(l.iter().all(|x| *x == 0.0));
+        }
+        midi.push(msg(1, true, hit())).unwrap();
+        rt.process(&mut l, &mut r);
+        assert!(l.iter().all(|x| *x == 0.0));
+        state.epoch.store(2, Release);
+        ui.push(msg(
+            2,
+            false,
+            ProjectMessage::Command(Command::SetPadSound {
+                pad: 0,
+                sound: Some(Arc::new(crate::Sample::mono(vec![0.25; 4096]))),
+            }),
+        ))
+        .unwrap();
+        ui.push(msg(2, false, ProjectMessage::Ready)).unwrap();
+        for _ in 0..300 {
+            rt.process(&mut l, &mut r);
+            if state.ready.load(Acquire) == 2 {
+                break;
+            }
+        }
+        assert_eq!(state.ready.load(Acquire), 2);
+        midi.push(msg(2, true, hit())).unwrap();
+        rt.process(&mut l, &mut r);
+        assert!(l.iter().any(|x| *x > 0.0));
+    }
+
+    #[test]
+    fn second_switch_invalidates_marker_and_held_restore() {
+        use std::sync::atomic::Ordering::{Acquire, Release};
+        let state = Arc::new(ProjectState::default());
+        let (mut tx, rx) = rtrb::RingBuffer::new(8);
+        let mut engine = Engine::new(48_000);
+        let (garbage, _rx) = rtrb::RingBuffer::new(512);
+        engine.set_garbage(garbage);
+        let mut rt = Realtime::with_project(
+            engine,
+            vec![rx],
+            Arc::new(Stats::default()),
+            48_000,
+            state.clone(),
+        );
+        let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+        state.epoch.store(1, Release);
+        tx.push(ProjectCommand {
+            epoch: 1,
+            ready_at_send: false,
+            command: ProjectMessage::Ready,
+        })
+        .unwrap();
+        rt.process(&mut l, &mut r);
+        state.epoch.store(2, Release);
+        for _ in 0..300 {
+            rt.process(&mut l, &mut r);
+        }
+        assert_ne!(state.ready.load(Acquire), 2);
+        tx.push(ProjectCommand {
+            epoch: 2,
+            ready_at_send: false,
+            command: ProjectMessage::Ready,
+        })
+        .unwrap();
+        rt.process(&mut l, &mut r);
+        assert_eq!(state.ready.load(Acquire), 2);
+    }
 
     /// recording 25: "The output recording on the strip" — the history holds the peaks of
     /// what is recorded, newest last, and the silence before the recording as zeros.

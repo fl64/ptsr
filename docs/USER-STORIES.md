@@ -81,6 +81,9 @@ Notes:
    `~/ptsr/projects` and opens the project. The project name is in the status line.
 3. `[11]` Press `Ctrl+P` again. `I` `K` select a project. `Enter` opens it. Each project
    has its own pads, cuts and volumes.
+   `[79]` The old project's sounds fade out without a click. Empty pads are silent on the
+   keyboard and MIDI controller. Hits while the project opens are silent and do not play
+   later. When you return, its pads play their saved samples and slices with their settings.
 4. `[11]` After a restart, the last project opens.
 5. `[35]` While `samples` of a new project is empty, `F6` opens where you were. Mark the
    folder with sounds as a favorite (`Ctrl+B`). It is first in each folder. In its parent

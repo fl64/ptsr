@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
+use engine::rt::{ProjectCommand, ProjectMessage};
 use engine::{Command, PADS, PADS_PER_BANK, Region, Sample, test_tone_name};
 use input::midi::{Move, Param, Profile, Takeover};
 use input::{Action, HeldPads, Keymap, Screen};
@@ -355,6 +356,10 @@ impl Ask {
 
 struct App {
     audio: Option<Audio>,
+    pending_audio: std::collections::VecDeque<ProjectCommand>,
+    audio_held: [Option<u64>; PADS],
+    restoring_project: bool,
+    midi_preview_blocked: bool,
     cfg: AudioConfig,
     /// Where to save choices; `None` means the user file is broken and left alone.
     user_path: Option<PathBuf>,
@@ -544,6 +549,15 @@ impl App {
     /// pads, the chops. The start and the project open/switch both come here; everything
     /// of the previous state is dropped — nothing leaks between projects.
     fn apply_session(&mut self, sess: session::Session) {
+        self.pending_audio.clear();
+        self.audio_held.fill(None);
+        self.restoring_project = false;
+        if let Some(audio) = &self.audio {
+            audio
+                .project
+                .epoch
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
         let favorites = std::mem::take(&mut self.browser.favorites);
         let was = self.browser.dir.clone();
         let mut browser = browser::Browser::new(
@@ -569,6 +583,10 @@ impl App {
         self.plan = None;
         self.plan_undo.clear();
         self.history.clear();
+        // Replies from the previous session must not apply to this one.
+        for generation in &mut self.load_gen {
+            *generation += 1;
+        }
         self.followers.clear();
         let cmds = self.pads.restore(&sess, self.rate);
         for cmd in cmds {
@@ -606,8 +624,10 @@ impl App {
             if let Some(&leader) = first_pad.get(&path) {
                 self.follow(leader, abs, region);
             } else if path.exists() {
-                first_pad.insert(path.clone(), abs);
-                self.load_pad(abs, path, region);
+                self.load_pad(abs, path.clone(), region);
+                if self.pads.loading[abs].is_some() {
+                    first_pad.insert(path, abs);
+                }
             } else {
                 log::warn!("session: {} is gone", path.display());
                 self.pads.missing[abs] = true;
@@ -617,7 +637,27 @@ impl App {
                 });
             }
         }
+        self.restoring_project = true;
+        self.finish_project_restore();
         self.session_dirty = None;
+    }
+
+    fn finish_project_restore(&mut self) {
+        if !self.restoring_project || self.pads.loading.iter().any(Option::is_some) {
+            return;
+        }
+        self.restoring_project = false;
+        if let Some(audio) = &self.audio {
+            self.pending_audio.push_back(ProjectCommand {
+                epoch: audio
+                    .project
+                    .epoch
+                    .load(std::sync::atomic::Ordering::Acquire),
+                ready_at_send: false,
+                command: ProjectMessage::Ready,
+            });
+            self.flush_audio();
+        }
     }
 
     fn paths_set(&mut self, which: usize, at: PathBuf) {
@@ -761,9 +801,58 @@ impl App {
         }
         #[cfg(test)]
         self.sent.push(cmd.clone());
-        if let Some(a) = &mut self.audio {
-            // queue full: the command is dropped, audio never waits
-            let _ = a.commands.push(cmd);
+        if let Some(a) = &self.audio {
+            use std::sync::atomic::Ordering::Acquire;
+            let epoch = a.project.epoch.load(Acquire);
+            let ready = a.project.ready.load(Acquire) == epoch;
+            if self.screen == Screen::Chop
+                && matches!(&cmd, Command::Preview { sound: Some(_), .. })
+                && (!ready || !self.pending_audio.is_empty() || self.midi_preview_blocked)
+            {
+                return;
+            }
+            match &cmd {
+                Command::PadPress { pad, .. } => {
+                    if !ready || !self.pending_audio.is_empty() || *pad >= PADS {
+                        return;
+                    }
+                    self.audio_held[*pad] = Some(epoch);
+                }
+                Command::PadRelease { pad } => {
+                    if *pad >= PADS || self.audio_held[*pad].take() != Some(epoch) || !ready {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            let press = if let Command::PadPress { pad, .. } = &cmd {
+                Some(*pad)
+            } else {
+                None
+            };
+            let message = ProjectCommand {
+                epoch,
+                ready_at_send: ready,
+                command: ProjectMessage::Command(cmd),
+            };
+            if let Some(pad) = press {
+                if self.audio.as_mut().unwrap().commands.push(message).is_err() {
+                    self.audio_held[pad] = None;
+                }
+            } else {
+                self.pending_audio.push_back(message);
+                self.flush_audio();
+            }
+        }
+    }
+
+    fn flush_audio(&mut self) {
+        let Some(audio) = &mut self.audio else { return };
+        while let Some(cmd) = self.pending_audio.pop_front() {
+            if let Err(rtrb::PushError::Full(cmd)) = audio.commands.push(cmd) {
+                self.pending_audio.push_front(cmd);
+                break;
+            }
         }
     }
 
@@ -2748,12 +2837,21 @@ impl App {
         self.request(abs, path, self.load_gen[abs]);
     }
 
-    fn request(&self, pad: usize, path: PathBuf, generation: u64) {
-        if let Some((tx, _)) = &self.loader {
-            let _ = tx.send(loader::Request {
+    fn request(&mut self, pad: usize, path: PathBuf, generation: u64) {
+        let sent = self.loader.as_ref().is_some_and(|(tx, _)| {
+            tx.send(loader::Request {
                 pad,
-                path,
+                path: path.clone(),
                 generation,
+            })
+            .is_ok()
+        });
+        if !sent {
+            self.loader_reply(loader::Reply::Failed {
+                pad,
+                generation,
+                path,
+                error: "Loader unavailable".into(),
             });
         }
     }
@@ -2846,8 +2944,15 @@ impl App {
     }
 
     fn loader_reply(&mut self, reply: loader::Reply) {
-        // pads waiting for this load get the same result, even when it is stale for its own pad
-        if let loader::Reply::Loaded { pad, .. } | loader::Reply::Failed { pad, .. } = &reply {
+        // A stale leader reply must not consume followers of a newer load.
+        if let loader::Reply::Loaded {
+            pad, generation, ..
+        }
+        | loader::Reply::Failed {
+            pad, generation, ..
+        } = &reply
+            && *generation == self.load_gen[*pad]
+        {
             let pad = *pad;
             let waiting: Vec<_> = self
                 .followers
@@ -2987,6 +3092,7 @@ impl App {
             // a newer load for the same pad was started
             _ => {}
         }
+        self.finish_project_restore();
     }
 
     /// The group a binding of the learn mode goes to (53): the group of the layer in sight,
@@ -3988,6 +4094,15 @@ impl App {
             .unwrap_or(self.midi_row);
     }
 
+    fn midi_ui_event(&mut self, ev: midi::UiEvent) {
+        let preview_ready = ev.preview_ready();
+        if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
+            self.midi_preview_blocked = !preview_ready;
+            self.midi_event(ev);
+            self.midi_preview_blocked = false;
+        }
+    }
+
     fn midi_event(&mut self, ev: midi::Event) {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
@@ -4069,10 +4184,7 @@ impl App {
         if self.screen_learn.is_some()
             && matches!(
                 ev,
-                midi::Event::PadHit { .. }
-                    | midi::Event::PadRelease { .. }
-                    | midi::Event::Action(_)
-                    | midi::Event::Param { .. }
+                midi::Event::PadHit { .. } | midi::Event::Action(_) | midi::Event::Param { .. }
             )
         {
             return;
@@ -5216,6 +5328,10 @@ fn main() -> std::io::Result<()> {
     let sess = with_resolved_paths(sess, start_project.as_ref().map(|p| p.folder.as_path()));
     let mut app = App {
         audio,
+        pending_audio: Default::default(),
+        audio_held: [None; PADS],
+        restoring_project: false,
+        midi_preview_blocked: false,
         cfg,
         user_path: loaded.user_path,
         path_picker: None,
@@ -5331,6 +5447,7 @@ fn main() -> std::io::Result<()> {
         maps,
         app.seeded.clone(),
         app.audio.as_mut().and_then(|a| a.midi_commands.take()),
+        app.audio.as_ref().map(|a| a.project.clone()),
         shared.clone(),
     ));
     if let Some(d) = app.audio.as_ref().and_then(|a| a.devices()) {
@@ -5372,13 +5489,15 @@ fn main() -> std::io::Result<()> {
     let mut load_peak = 0.0;
     let mut load_taken = Instant::now();
     let result = loop {
+        app.finish_project_restore();
+        app.flush_audio();
         let events: Vec<_> = app
             .midi
             .as_ref()
             .map(|m| m.events.try_iter().collect())
             .unwrap_or_default();
         for ev in events {
-            app.midi_event(ev);
+            app.midi_ui_event(ev);
         }
         if let Some((profile, key)) = app.learning.as_mut().and_then(|l| l.poll(Instant::now())) {
             app.learned(profile, key);
@@ -8188,6 +8307,10 @@ mod tests {
         use super::*;
         App {
             audio: None,
+            pending_audio: Default::default(),
+            audio_held: [None; PADS],
+            restoring_project: false,
+            midi_preview_blocked: false,
             cfg: AudioConfig::default(),
             user_path: None,
             path_picker: None,
@@ -9293,6 +9416,513 @@ mod tests {
             app.window_title()
         );
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// 79: A late sample from the old project must not fill or sound an empty pad.
+    #[test]
+    fn a_late_sample_from_the_old_project() {
+        let root = tmp_dir("late-project-sample");
+        let mut app = test_app();
+        app.paths.projects = root.clone();
+        app.project = Some(super::Project {
+            name: "old".into(),
+            folder: root.join("old"),
+        });
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+
+        let path = root.join("old/sample.wav");
+        app.load_pad(0, path.clone(), Region::WHOLE);
+        let request = incoming.try_recv().unwrap();
+        app.create_project("empty".into());
+        assert_eq!(app.project.as_ref().unwrap().name, "empty");
+        assert!(app.pads.sound[0].is_none());
+        let mut left = vec![0.0; 4096];
+        let mut right = vec![0.0; 4096];
+        for _ in 0..16 {
+            rt.process(&mut left, &mut right);
+        }
+
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: request.pad,
+            generation: request.generation,
+            path,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 2048])),
+        });
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        rt.process(&mut left, &mut right);
+        let peak = left
+            .iter()
+            .chain(&right)
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        let empty = app.pads.file[0].is_none() && app.pads.sound[0].is_none();
+        std::fs::remove_dir_all(&root).ok();
+        assert!(
+            empty && peak < 1e-6,
+            "late sample filled the pad: {}; peak: {peak}",
+            !empty
+        );
+    }
+
+    #[test]
+    fn a_late_sample_from_the_old_project_does_not_consume_new_followers() {
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let old = std::path::PathBuf::from("old.wav");
+        let new = std::path::PathBuf::from("new.wav");
+        app.load_pad(0, old.clone(), Region::WHOLE);
+        let old_request = incoming.try_recv().unwrap();
+        app.apply_session(super::session::Session::default());
+        app.load_pad(0, new.clone(), Region::WHOLE);
+        let new_request = incoming.try_recv().unwrap();
+        app.follow(0, 1, Region::WHOLE);
+
+        app.loader_reply(super::loader::Reply::Failed {
+            pad: 0,
+            generation: old_request.generation,
+            path: old.clone(),
+            error: "old error".into(),
+        });
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: 0,
+            generation: old_request.generation,
+            path: old,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 16])),
+        });
+        assert!(app.pads.sound[1].is_none());
+        assert_eq!(app.followers.len(), 1);
+
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: 0,
+            generation: new_request.generation,
+            path: new.clone(),
+            sound: std::sync::Arc::new(Sample::mono(vec![0.25; 16])),
+        });
+        assert_eq!(app.pads.file[1].as_ref(), Some(&new));
+        assert!(app.pads.sound[1].is_some());
+        assert!(app.followers.is_empty());
+    }
+
+    #[test]
+    fn chop_preview_while_the_project_opens_does_not_play_later() {
+        use std::sync::atomic::Ordering::Acquire;
+        let mut app = test_app();
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.apply_session(super::session::Session::default());
+        app.screen = Screen::Chop;
+        let mut chop = chop_with_parts(0);
+        chop.sound = std::sync::Arc::new(Sample::mono(vec![0.5; 96_000]));
+        app.chop = Some(chop);
+        app.apply(Action::ChopPlay);
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        app.midi_event(super::midi::Event::PadHit { abs: 0 });
+        let delayed = super::midi::UiEvent::stamped(
+            super::midi::Event::Action(Action::ChopPlay),
+            &app.audio.as_ref().unwrap().project,
+        );
+        let mut left = vec![0.0; 4096];
+        let mut right = left.clone();
+        for _ in 0..300 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+            assert!(left.iter().chain(&right).all(|s| s.abs() < 1e-6));
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 1
+                && app.pending_audio.is_empty()
+            {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        app.midi_ui_event(delayed);
+        rt.process(&mut left, &mut right);
+        assert!(left.iter().chain(&right).all(|s| s.abs() < 1e-6));
+        app.apply(Action::ChopPlay);
+        rt.process(&mut left, &mut right);
+        assert!(left.iter().chain(&right).any(|s| s.abs() > 1e-6));
+    }
+
+    #[test]
+    fn project_ready_waits_for_loaded_slices_and_failed_followers() {
+        use std::sync::atomic::Ordering::Acquire;
+        let root = tmp_dir("project-ready-loads");
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.wav");
+        let second = root.join("second.wav");
+        std::fs::write(&first, b"placeholder").unwrap();
+        std::fs::write(&second, b"placeholder").unwrap();
+        let mut session = super::session::Session::default();
+        for (pad, path) in [(0, &first), (1, &first), (2, &second)] {
+            session.pads.insert(
+                pad.to_string(),
+                super::session::PadState {
+                    file: Some(path.clone()),
+                    start: Some(0.01),
+                    end: Some(0.02),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.apply_session(session);
+        let one = incoming.try_recv().unwrap();
+        let two = incoming.try_recv().unwrap();
+        let mut left = vec![0.0; 4096];
+        let mut right = left.clone();
+        for _ in 0..40 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+        }
+        assert_ne!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: one.pad,
+            generation: one.generation,
+            path: one.path,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 2048])),
+        });
+        for _ in 0..40 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+        }
+        assert_ne!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        app.loader_reply(super::loader::Reply::Failed {
+            pad: two.pad,
+            generation: two.generation,
+            path: two.path,
+            error: "bad file".into(),
+        });
+        for _ in 0..40 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        assert!(app.pads.missing[2]);
+        for pad in [0, 1] {
+            assert!(app.pads.sound[pad].is_some());
+            assert_ne!(app.pads.region[pad], Region::WHOLE);
+        }
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn project_ready_ignores_late_load_after_second_switch() {
+        use std::sync::atomic::Ordering::Acquire;
+        let root = tmp_dir("project-ready-switch");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("sound.wav");
+        std::fs::write(&path, b"placeholder").unwrap();
+        let mut session = super::session::Session::default();
+        session.pads.insert(
+            "0".into(),
+            super::session::PadState {
+                file: Some(path.clone()),
+                ..Default::default()
+            },
+        );
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.apply_session(session);
+        let old = incoming.try_recv().unwrap();
+        app.apply_session(super::session::Session::default());
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: old.pad,
+            generation: old.generation,
+            path,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 2048])),
+        });
+        let mut left = vec![0.0; 4096];
+        let mut right = left.clone();
+        for _ in 0..300 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 2 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 2);
+        assert!(app.pads.sound[0].is_none());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn project_ready_when_loader_is_unavailable() {
+        let root = tmp_dir("project-ready-no-loader");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("sound.wav");
+        std::fs::write(&path, b"placeholder").unwrap();
+        let mut session = super::session::Session::default();
+        for pad in 0..2 {
+            session.pads.insert(
+                pad.to_string(),
+                super::session::PadState {
+                    file: Some(path.clone()),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut app = test_app();
+        app.loader = None;
+        app.apply_session(session);
+        assert!(!app.restoring_project);
+        assert!(app.pads.missing[0] && app.pads.missing[1]);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    /// 79: A sounding slice fades on a switch and plays again on return.
+    #[test]
+    fn playing_sounds_stop_at_a_project_switch_and_return_to_a_project_with_sounds() {
+        use engine::checks::{first_loud, first_non_finite, max_step, peak};
+        use std::sync::{Arc, atomic::Ordering::Acquire};
+
+        const BLOCK: usize = 128;
+        const RATE: u32 = 48_000;
+        fn block(
+            app: &mut super::App,
+            rt: &mut engine::rt::Realtime,
+            l: &mut Vec<f32>,
+            r: &mut Vec<f32>,
+        ) {
+            app.flush_audio();
+            let mut left = [0.0; BLOCK];
+            let mut right = [0.0; BLOCK];
+            rt.process(&mut left, &mut right);
+            l.extend_from_slice(&left);
+            r.extend_from_slice(&right);
+            app.audio.as_mut().unwrap().free_garbage();
+        }
+
+        let root = tmp_dir("render-project-switch");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("slice.wav");
+        std::fs::write(&path, b"placeholder").unwrap();
+        let tone = Arc::new(Sample::mono(
+            (0..RATE as usize * 2)
+                .map(|i| 0.3 * (i as f32 * 110.0 * std::f32::consts::TAU / RATE as f32).sin())
+                .collect(),
+        ));
+        let mut session = super::session::Session::default();
+        session.pads.insert(
+            "0".into(),
+            super::session::PadState {
+                file: Some(path.clone()),
+                start: Some(0.1),
+                end: Some(1.5),
+                volume_db: -6,
+                ..Default::default()
+            },
+        );
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(RATE);
+        app.audio = Some(audio);
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        let load = |app: &mut super::App| {
+            let request = incoming.try_recv().unwrap();
+            app.loader_reply(super::loader::Reply::Loaded {
+                pad: request.pad,
+                generation: request.generation,
+                path: request.path,
+                sound: tone.clone(),
+            });
+        };
+        let session_path = root.join("project.toml");
+        super::session::save(&session_path, &session).unwrap();
+        app.apply_session(super::session::load(&session_path).unwrap());
+        load(&mut app);
+        for _ in 0..1000 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 1 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        left.clear();
+        right.clear();
+        let press = |app: &mut super::App| {
+            app.apply(Action::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            });
+        };
+        press(&mut app);
+        for _ in 0..113 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        let switch = left.len();
+        assert!(
+            peak(&left[switch - 1024..switch]) > 0.05,
+            "slice is still playing"
+        );
+        app.apply_session(super::session::Session::default());
+        press(&mut app); // A hit before readiness must not play later.
+        for _ in 0..1000 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 2 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 2);
+        for _ in 0..75 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        press(&mut app);
+        for _ in 0..75 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        let return_switch = left.len();
+        app.apply_session(session);
+        load(&mut app);
+        for _ in 0..1000 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 3 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 3);
+        let return_hit = left.len();
+        press(&mut app);
+        for _ in 0..113 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        for channel in [&left, &right] {
+            assert!(first_non_finite(channel).is_none());
+            assert!(peak(channel) <= 1.0, "no clipping");
+            assert!(max_step(channel) < 0.01, "click: {}", max_step(channel));
+            assert!(
+                peak(&channel[switch + 960..return_hit]) < 1e-6,
+                "silence after fade and empty-pad hit"
+            );
+            assert!(
+                peak(&channel[return_hit + 1024..]) > 0.05,
+                "slice plays after return"
+            );
+            let first = first_loud(channel, 0..1024, 1e-6).unwrap();
+            let again =
+                first_loud(channel, return_hit..return_hit + 1024, 1e-6).unwrap() - return_hit;
+            assert!(
+                first <= 2 && first.abs_diff(again) <= 1,
+                "hit timing: {first} vs {again}"
+            );
+            assert!(
+                channel[..1024]
+                    .iter()
+                    .zip(&channel[return_hit..return_hit + 1024])
+                    .all(|(a, b)| (a - b).abs() < 1e-6),
+                "saved slice and settings sound the same"
+            );
+            assert!(peak(&channel[return_switch..return_hit]) < 1e-6);
+        }
+        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../renders/79-project-switch.wav");
+        engine::offline::write_wav(&out, RATE, &left, &right).unwrap();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    /// 79: Empty pads after a project switch, with the real UI queue full.
+    #[test]
+    fn empty_pads_after_a_project_switch() {
+        use std::sync::Arc;
+
+        let mut app = test_app();
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        let sound = Arc::new(Sample::mono(vec![0.5; 2048]));
+        app.send(Command::SetPadSound {
+            pad: 0,
+            sound: Some(sound),
+        });
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        let mut left = vec![0.0; 4096];
+        let mut right = vec![0.0; 4096];
+        rt.process(&mut left, &mut right);
+        assert!(
+            left.iter().any(|s| s.abs() > 0.01),
+            "old project must sound"
+        );
+
+        let queue = &mut app.audio.as_mut().unwrap().commands;
+        let mut filled = 0;
+        while queue
+            .push(super::ProjectCommand {
+                epoch: 0,
+                ready_at_send: true,
+                command: super::ProjectMessage::Command(Command::PadRelease { pad: 0 }),
+            })
+            .is_ok()
+        {
+            filled += 1;
+        }
+        assert_eq!(filled, 1024, "fill the real UI command queue");
+        app.apply_session(super::session::Session::default());
+        assert!(app.pads.sound[0].is_none(), "new project pad is empty");
+        for _ in 0..300 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+            if app.pending_audio.is_empty()
+                && app
+                    .audio
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .ready
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    == 1
+            {
+                break;
+            }
+        }
+        assert!(app.pending_audio.is_empty());
+        assert_eq!(
+            app.audio
+                .as_ref()
+                .unwrap()
+                .project
+                .ready
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
+
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        rt.process(&mut left, &mut right);
+        let peak = left
+            .iter()
+            .chain(&right)
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            peak < 1e-6,
+            "empty project pad played the old sound: peak {peak}"
+        );
     }
 
     /// Scenario "Create a project from the picker" (11): typing a name in the picker opens

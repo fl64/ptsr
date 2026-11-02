@@ -271,7 +271,7 @@ impl Slot {
         if kind != self.kind {
             // back to the kind still fading out: it carries on; any other starts empty
             let back = matches!(self.leaving, Some((k, _)) if k == kind);
-            if !back {
+            if !back && !self.quiet {
                 match kind {
                     FxKind::Reverb => self.reverb.clear(),
                     FxKind::Delay => self.delay.clear(),
@@ -303,6 +303,45 @@ impl Slot {
         match kind {
             FxKind::Reverb => self.reverb.tick(input, self.glide),
             FxKind::Delay => self.delay.tick(input, self.glide),
+        }
+    }
+
+    /// Clear at most `budget` stored samples. Do not tick the slot while clearing.
+    pub(crate) fn clear_step(&mut self, cursor: &mut usize, budget: usize) -> bool {
+        let mut skip = *cursor;
+        let mut left = budget;
+        let mut clear = |buf: &mut [f32]| {
+            if skip >= buf.len() {
+                skip -= buf.len();
+                return;
+            }
+            let n = (buf.len() - skip).min(left);
+            buf[skip..skip + n].fill(0.0);
+            left -= n;
+            skip = 0;
+        };
+        for b in &mut self.delay.buf {
+            clear(b);
+        }
+        for side in 0..2 {
+            for c in &mut self.reverb.combs[side] {
+                clear(&mut c.buf);
+                c.store = 0.0;
+            }
+            for a in &mut self.reverb.allpasses[side] {
+                clear(&mut a.buf);
+            }
+        }
+        *cursor += budget - left;
+        if left > 0 {
+            self.leaving = None;
+            self.quiet = true;
+            self.delay.time_now = self.delay.time;
+            self.reverb.feedback_now = self.reverb.feedback;
+            self.reverb.damp_now = self.reverb.damp;
+            true
+        } else {
+            false
         }
     }
 

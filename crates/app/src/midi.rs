@@ -1,15 +1,17 @@
 //! MIDI input: finds ports, connects and drops them on the fly, sends pad hits straight to the
 //! audio thread (no UI frame delay) and everything else to the UI.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
+use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
 use input::midi::{Key, Msg, Param, Profile, Resolved, Scope};
 use input::{Action, Group, Screen};
+use std::sync::atomic::Ordering::Acquire;
 
 /// midir does not report hotplug, so ports are polled.
 const SCAN: Duration = Duration::from_secs(1);
@@ -66,18 +68,67 @@ pub struct Shared {
 enum Raw {
     Connected(String),
     Disconnected(String),
-    Msg(String, Msg),
+    Msg(String, Msg, Stamp),
     /// New learned assignments of a profile in a group.
     Learned(String, Scope, HashMap<Key, String>),
     /// The roles of a profile are copied into the learned maps (59): only those act now.
     Seeded(String),
 }
 
+#[derive(Clone, Copy)]
+struct Stamp {
+    epoch: u64,
+    ready: bool,
+}
+
+impl Stamp {
+    fn capture(project: Option<&ProjectState>) -> Self {
+        let Some(project) = project else {
+            return Self {
+                epoch: 0,
+                ready: false,
+            };
+        };
+        let epoch = project.epoch.load(Acquire);
+        let ready = project.ready.load(Acquire) == epoch;
+        Self { epoch, ready }
+    }
+}
+
 /// Learned assignments per (profile name, group scope; 28).
 pub type LearnedMaps = HashMap<(String, Scope), HashMap<Key, String>>;
 
+pub struct UiEvent {
+    pub event: Event,
+    stamp: Option<Stamp>,
+}
+
+impl UiEvent {
+    #[cfg(test)]
+    pub fn stamped(event: Event, project: &ProjectState) -> Self {
+        Self {
+            event,
+            stamp: Some(Stamp::capture(Some(project))),
+        }
+    }
+
+    pub fn preview_ready(&self) -> bool {
+        self.stamp.is_none_or(|stamp| stamp.ready)
+    }
+
+    pub fn current(self, project: Option<&ProjectState>) -> Option<Event> {
+        let valid = self.stamp.is_none_or(|stamp| {
+            project.is_none_or(|project| {
+                stamp.epoch == project.epoch.load(Acquire)
+                    && (stamp.ready || !matches!(self.event, Event::PadHit { .. }))
+            })
+        });
+        valid.then_some(self.event)
+    }
+}
+
 pub struct Midi {
-    pub events: Receiver<Event>,
+    pub events: Receiver<UiEvent>,
     updates: Sender<Raw>,
 }
 
@@ -138,7 +189,8 @@ pub fn start(
     mut profiles: Vec<Profile>,
     learned: LearnedMaps,
     seeded: Vec<String>,
-    commands: Option<rtrb::Producer<Command>>,
+    commands: Option<rtrb::Producer<ProjectCommand>>,
+    project: Option<Arc<ProjectState>>,
     shared: Arc<Shared>,
 ) -> Midi {
     for p in profiles.iter_mut() {
@@ -148,13 +200,18 @@ pub fn start(
     let (raw_tx, raw_rx) = mpsc::channel();
     let (tx, rx) = mpsc::channel();
     let scan_tx = raw_tx.clone();
+    let scan_project = project.clone();
     std::thread::Builder::new()
         .name("midi-scan".into())
-        .spawn(move || scan(scan_tx))
+        .spawn(move || scan(scan_tx, scan_project))
         .expect("spawn midi-scan");
     std::thread::Builder::new()
         .name("midi".into())
-        .spawn(move || dispatch(raw_rx, tx, profiles, learned, seeded, commands, shared))
+        .spawn(move || {
+            dispatch(
+                raw_rx, tx, profiles, learned, seeded, commands, project, shared,
+            )
+        })
         .expect("spawn midi");
     Midi {
         events: rx,
@@ -162,7 +219,7 @@ pub fn start(
     }
 }
 
-fn scan(tx: Sender<Raw>) {
+fn scan(tx: Sender<Raw>, project: Option<Arc<ProjectState>>) {
     let mut connections: HashMap<String, midir::MidiInputConnection<()>> = HashMap::new();
     let scanner = match midir::MidiInput::new("ptsr scan") {
         Ok(s) => s,
@@ -199,12 +256,14 @@ fn scan(tx: Sender<Raw>) {
                 }
             };
             let (cb_tx, cb_name) = (tx.clone(), name.clone());
+            let cb_project = project.clone();
             let conn = input.connect(
                 &port,
                 "ptsr-in",
                 move |_, bytes, _| {
                     if let Some(msg) = Msg::parse(bytes) {
-                        let _ = cb_tx.send(Raw::Msg(cb_name.clone(), msg));
+                        let stamp = Stamp::capture(cb_project.as_deref());
+                        let _ = cb_tx.send(Raw::Msg(cb_name.clone(), msg, stamp));
                     }
                 },
                 (),
@@ -222,45 +281,77 @@ fn scan(tx: Sender<Raw>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dispatch(
     rx: Receiver<Raw>,
-    tx: Sender<Event>,
+    tx: Sender<UiEvent>,
     mut profiles: Vec<Profile>,
     mut learned: LearnedMaps,
     mut seeded: Vec<String>,
-    mut commands: Option<rtrb::Producer<Command>>,
+    mut commands: Option<rtrb::Producer<ProjectCommand>>,
+    _project: Option<Arc<ProjectState>>,
     shared: Arc<Shared>,
 ) {
-    let mut defaults: HashMap<String, Profile> = HashMap::new();
-    // (port, pad key) -> absolute pad, so a release reaches the pad that was pressed
-    let mut pressed: HashMap<(String, usize), usize> = HashMap::new();
-    let mut send = |cmd| {
-        if let Some(c) = commands.as_mut() {
-            // queue full: the hit is dropped, audio never waits
-            let _ = c.push(cmd);
-        }
+    let send = |event, stamp| {
+        let _ = tx.send(UiEvent { event, stamp });
     };
-
-    for raw in rx {
-        let (port, msg) = match raw {
+    let mut defaults: HashMap<String, Profile> = HashMap::new();
+    // (port, control) -> absolute pad, so a release reaches the pad that was pressed
+    let mut pressed: HashMap<(String, Key), Vec<(usize, u64)>> = HashMap::new();
+    let mut pending = VecDeque::new();
+    let mut closed = false;
+    loop {
+        while let Some(command) = pending.pop_front() {
+            let Some(queue) = commands.as_mut() else {
+                break;
+            };
+            if queue.is_abandoned() {
+                pending.clear();
+                break;
+            }
+            if let Err(rtrb::PushError::Full(command)) = queue.push(command) {
+                pending.push_front(command);
+                break;
+            }
+        }
+        if closed && pending.is_empty() {
+            break;
+        }
+        let raw = match rx.recv_timeout(Duration::from_millis(2)) {
+            Ok(raw) => raw,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                closed = true;
+                if !pending.is_empty() {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                continue;
+            }
+        };
+        let (port, msg, stamp) = match raw {
             Raw::Connected(port) => {
                 let profile = profiles
                     .iter()
                     .find(|p| p.matches(&port))
                     .map_or("default".into(), |p| p.name.clone());
-                let _ = tx.send(Event::Connected { port, profile });
+                send(Event::Connected { port, profile }, None);
                 continue;
             }
             Raw::Disconnected(port) => {
                 // a held gate pad would hang without its note off
-                pressed.retain(|(p, _), abs| {
+                pressed.retain(|(p, _), held| {
                     if *p == port {
-                        send(Command::PadRelease { pad: *abs });
-                        let _ = tx.send(Event::PadRelease { abs: *abs });
+                        for &(abs, epoch) in held.iter() {
+                            pending.push_back(release_command(abs, epoch));
+                            send(
+                                Event::PadRelease { abs },
+                                Some(Stamp { epoch, ready: true }),
+                            );
+                        }
                     }
                     *p != port
                 });
-                let _ = tx.send(Event::Disconnected { port });
+                send(Event::Disconnected { port }, None);
                 continue;
             }
             Raw::Learned(name, scope, map) => {
@@ -281,7 +372,7 @@ fn dispatch(
                 seeded.push(name);
                 continue;
             }
-            Raw::Msg(port, msg) => (port, msg),
+            Raw::Msg(port, msg, stamp) => (port, msg, stamp),
         };
         let profile = match profiles.iter().find(|p| p.matches(&port)) {
             Some(p) => p,
@@ -304,36 +395,66 @@ fn dispatch(
             Some(Resolved::Action(a)) => format!("{a:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
         };
-        let _ = tx.send(Event::Message {
-            port: port.clone(),
-            profile: profile.name.clone(),
-            msg,
-            meaning,
-        });
+        send(
+            Event::Message {
+                port: port.clone(),
+                profile: profile.name.clone(),
+                msg,
+                meaning,
+            },
+            Some(stamp),
+        );
         if shared.learn.load(Relaxed) {
+            if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+                for (abs, epoch) in pressed.remove(&(port, msg.key())).unwrap_or_default() {
+                    pending.push_back(release_command(abs, epoch));
+                    send(
+                        Event::PadRelease { abs },
+                        Some(Stamp { epoch, ready: true }),
+                    );
+                }
+            }
             continue;
         }
 
         match resolved {
             Some(Resolved::Action(Action::PadPress { pad, .. })) if shared.hand.load(Relaxed) => {
                 let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
-                let _ = tx.send(Event::PadHit { abs });
+                send(Event::PadHit { abs }, Some(stamp));
             }
             Some(Resolved::Action(Action::PadPress { pad, velocity })) => {
                 let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
-                pressed.insert((port, pad), abs);
-                send(Command::PadPress { pad: abs, velocity });
-                let _ = tx.send(Event::PadHit { abs });
+                if stamp.ready && pending.is_empty() {
+                    let command = ProjectCommand {
+                        epoch: stamp.epoch,
+                        ready_at_send: stamp.ready,
+                        command: ProjectMessage::Command(Command::PadPress { pad: abs, velocity }),
+                    };
+                    if commands.as_mut().is_some_and(|c| c.push(command).is_ok()) {
+                        let held = pressed.entry((port, msg.key())).or_default();
+                        if !held.contains(&(abs, stamp.epoch)) {
+                            held.push((abs, stamp.epoch));
+                        }
+                    }
+                }
+                send(Event::PadHit { abs }, Some(stamp));
             }
             Some(Resolved::Action(Action::PadRelease { pad })) => {
-                let abs = pressed
-                    .remove(&(port, pad))
-                    .unwrap_or(shared.bank.load(Relaxed) * PADS_PER_BANK + pad);
-                send(Command::PadRelease { pad: abs });
-                let _ = tx.send(Event::PadRelease { abs });
+                let held = pressed.remove(&(port, msg.key())).unwrap_or_default();
+                if held.is_empty() {
+                    let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
+                    send(Event::PadRelease { abs }, Some(stamp));
+                }
+                for (abs, epoch) in held {
+                    pending.push_back(release_command(abs, epoch));
+                    send(
+                        Event::PadRelease { abs },
+                        Some(Stamp { epoch, ready: true }),
+                    );
+                }
             }
             Some(Resolved::Action(a)) => {
-                let _ = tx.send(Event::Action(a));
+                send(Event::Action(a), Some(stamp));
             }
             Some(Resolved::Param {
                 control,
@@ -341,16 +462,27 @@ fn dispatch(
                 value,
                 takeover,
             }) => {
-                let _ = tx.send(Event::Param {
-                    port,
-                    control,
-                    param,
-                    value,
-                    takeover,
-                });
+                send(
+                    Event::Param {
+                        port,
+                        control,
+                        param,
+                        value,
+                        takeover,
+                    },
+                    Some(stamp),
+                );
             }
             None => {}
         }
+    }
+}
+
+fn release_command(pad: usize, epoch: u64) -> ProjectCommand {
+    ProjectCommand {
+        epoch,
+        ready_at_send: true,
+        command: ProjectMessage::Command(Command::PadRelease { pad }),
     }
 }
 
@@ -397,6 +529,283 @@ pub fn load_profiles(dir: &str) -> (Vec<Profile>, Vec<String>) {
 mod tests {
     use super::*;
     use input::{Screen, midi::Key};
+
+    #[test]
+    fn hits_while_the_project_opens_and_old_releases_stay_in_their_epoch() {
+        use std::sync::atomic::Ordering::Release;
+        let state = Arc::new(ProjectState::default());
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let (producer, mut consumer) = rtrb::RingBuffer::new(16);
+        let project = state.clone();
+        let thread = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![],
+                LearnedMaps::new(),
+                vec![],
+                Some(producer),
+                Some(project),
+                Arc::new(Shared::default()),
+            )
+        });
+        let port = "controller".to_string();
+        let sync = |msg| {
+            raw_tx
+                .send(Raw::Msg(port.clone(), msg, Stamp::capture(Some(&state))))
+                .unwrap();
+            while !matches!(
+                rx.recv().unwrap().event,
+                Event::PadHit { .. } | Event::PadRelease { .. }
+            ) {}
+        };
+        sync(note_on(36));
+        let first = consumer.pop().unwrap();
+        assert!(matches!(
+            first.command,
+            ProjectMessage::Command(Command::PadPress { .. })
+        ));
+        state.epoch.store(1, Release);
+        sync(Msg::NoteOff { ch: 1, note: 36 });
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let release = loop {
+            if let Ok(command) = consumer.pop() {
+                break command;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "release was not delivered"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(release.epoch, 0);
+        assert!(release.ready_at_send);
+        sync(note_on(36));
+        assert!(consumer.pop().is_err());
+        state.ready.store(1, Release);
+        sync(Msg::NoteOff { ch: 1, note: 36 });
+        assert!(consumer.pop().is_err());
+        sync(note_on(36));
+        let hit = consumer.pop().unwrap();
+        assert_eq!(hit.epoch, 1);
+        assert!(hit.ready_at_send);
+        drop(raw_tx);
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn ui_events_keep_the_callback_epoch_and_drop_unready_hits() {
+        use std::sync::atomic::Ordering::Release;
+        let state = Arc::new(ProjectState::default());
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        raw_tx.send(Raw::Connected("controller".into())).unwrap();
+        raw_tx
+            .send(Raw::Msg(
+                "controller".into(),
+                note_on(36),
+                Stamp::capture(Some(&state)),
+            ))
+            .unwrap();
+        state.epoch.store(1, Release);
+        raw_tx
+            .send(Raw::Msg(
+                "controller".into(),
+                note_on(37),
+                Stamp::capture(Some(&state)),
+            ))
+            .unwrap();
+        state.ready.store(1, Release);
+        raw_tx
+            .send(Raw::Msg(
+                "controller".into(),
+                note_on(38),
+                Stamp::capture(Some(&state)),
+            ))
+            .unwrap();
+        drop(raw_tx);
+        dispatch(
+            raw_rx,
+            tx,
+            vec![],
+            LearnedMaps::new(),
+            vec![],
+            None,
+            Some(state.clone()),
+            Arc::new(Shared::default()),
+        );
+        let events: Vec<_> = rx
+            .try_iter()
+            .filter_map(|e| e.current(Some(&state)))
+            .collect();
+        assert!(matches!(events[0], Event::Connected { .. }));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::PadHit { .. }))
+                .count(),
+            1
+        );
+        assert!(events.iter().any(|e| matches!(e, Event::PadHit { abs: 2 })));
+        assert!(!events.iter().any(|e| matches!(
+            e,
+            Event::Message {
+                msg: Msg::NoteOn { note: 36, .. },
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn note_off_during_learn_releases_a_previously_held_pad() {
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let (producer, mut consumer) = rtrb::RingBuffer::new(8);
+        let shared = Arc::new(Shared::default());
+        let worker_shared = shared.clone();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![],
+                LearnedMaps::new(),
+                vec![],
+                Some(producer),
+                None,
+                worker_shared,
+            )
+        });
+        raw_tx
+            .send(Raw::Msg("controller".into(), note_on(36), test_stamp()))
+            .unwrap();
+        while !matches!(rx.recv().unwrap().event, Event::PadHit { .. }) {}
+        assert!(matches!(
+            consumer.pop().unwrap().command,
+            ProjectMessage::Command(Command::PadPress { .. })
+        ));
+        shared
+            .learn
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        raw_tx
+            .send(Raw::Msg(
+                "controller".into(),
+                Msg::NoteOff { ch: 1, note: 36 },
+                test_stamp(),
+            ))
+            .unwrap();
+        while !matches!(rx.recv().unwrap().event, Event::PadRelease { .. }) {}
+        drop(raw_tx);
+        worker.join().unwrap();
+        assert!(matches!(
+            consumer.pop().unwrap().command,
+            ProjectMessage::Command(Command::PadRelease { pad: 0 })
+        ));
+    }
+
+    #[test]
+    fn queued_messages_keep_the_callback_stamp() {
+        use std::sync::atomic::Ordering::Release;
+        let state = Arc::new(ProjectState::default());
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, _rx) = mpsc::channel();
+        let (producer, mut consumer) = rtrb::RingBuffer::new(8);
+        raw_tx
+            .send(Raw::Msg(
+                "controller".into(),
+                note_on(36),
+                Stamp::capture(Some(&state)),
+            ))
+            .unwrap();
+        state.epoch.store(1, Release);
+        raw_tx
+            .send(Raw::Msg(
+                "controller".into(),
+                note_on(37),
+                Stamp::capture(Some(&state)),
+            ))
+            .unwrap();
+        state.ready.store(1, Release);
+        drop(raw_tx);
+        dispatch(
+            raw_rx,
+            tx,
+            vec![],
+            LearnedMaps::new(),
+            vec![],
+            Some(producer),
+            Some(state),
+            Arc::new(Shared::default()),
+        );
+        let hit = consumer.pop().unwrap();
+        assert_eq!(hit.epoch, 0);
+        assert!(hit.ready_at_send);
+        assert!(consumer.pop().is_err());
+    }
+
+    #[test]
+    fn full_queue_retries_release_after_repeated_hit_and_disconnect() {
+        for disconnect in [false, true] {
+            let (raw_tx, raw_rx) = mpsc::channel();
+            let (tx, rx) = mpsc::channel();
+            let (producer, mut consumer) = rtrb::RingBuffer::new(1);
+            let thread = std::thread::spawn(move || {
+                dispatch(
+                    raw_rx,
+                    tx,
+                    vec![],
+                    LearnedMaps::new(),
+                    vec![],
+                    Some(producer),
+                    Some(Arc::new(ProjectState::default())),
+                    Arc::new(Shared::default()),
+                )
+            });
+            let port = "controller".to_string();
+            raw_tx
+                .send(Raw::Msg(port.clone(), note_on(36), test_stamp()))
+                .unwrap();
+            raw_tx
+                .send(Raw::Msg(port.clone(), note_on(36), test_stamp()))
+                .unwrap();
+            if disconnect {
+                raw_tx.send(Raw::Disconnected(port)).unwrap();
+            } else {
+                raw_tx
+                    .send(Raw::Msg(
+                        port,
+                        Msg::NoteOff { ch: 1, note: 36 },
+                        test_stamp(),
+                    ))
+                    .unwrap();
+            }
+            while !matches!(
+                rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+                Event::PadRelease { .. }
+            ) {}
+            assert!(matches!(
+                consumer.pop().unwrap().command,
+                ProjectMessage::Command(Command::PadPress { pad: 0, .. })
+            ));
+            drop(raw_tx);
+            let deadline = std::time::Instant::now() + Duration::from_secs(1);
+            let release = loop {
+                if let Ok(command) = consumer.pop() {
+                    break command;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "release was not delivered"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            assert!(matches!(
+                release.command,
+                ProjectMessage::Command(Command::PadRelease { pad: 0 })
+            ));
+            thread.join().unwrap();
+        }
+    }
 
     /// 28 midi-learn: an old config without the edit groups loads unchanged; the new
     /// `pads_edit` and `chop_edit` keys land in the edit scopes.
@@ -454,6 +863,13 @@ mod tests {
 
     const XS: &str = "USB X-Session MIDI 1";
 
+    fn test_stamp() -> Stamp {
+        Stamp {
+            epoch: 0,
+            ready: true,
+        }
+    }
+
     fn note_on(note: u8) -> Msg {
         Msg::NoteOn {
             ch: 1,
@@ -484,13 +900,16 @@ mod tests {
             LearnedMaps::new(),
             Vec::new(),
             Some(producer),
+            Some(Arc::new(ProjectState::default())),
             shared,
         );
         let mut commands = Vec::new();
         while let Ok(c) = consumer.pop() {
-            commands.push(c);
+            if let ProjectMessage::Command(command) = c.command {
+                commands.push(command);
+            }
         }
-        (rx.try_iter().collect(), commands)
+        (rx.try_iter().map(|event| event.event).collect(), commands)
     }
 
     /// A control learned for `action` in GLOBAL, then `msgs` from it.
@@ -500,7 +919,7 @@ mod tests {
             Scope::Global,
             [(key, action.to_string())].into(),
         )];
-        raw.extend(msgs.iter().map(|m| Raw::Msg(XS.into(), *m)));
+        raw.extend(msgs.iter().map(|m| Raw::Msg(XS.into(), *m, test_stamp())));
         dispatched(raw, vec![xsession()], shared).1
     }
 
@@ -593,9 +1012,9 @@ mod tests {
         let raw = vec![
             Raw::Connected(PADS.into()),
             Raw::Connected(XS.into()),
-            Raw::Msg(PADS.into(), note_on(36)),
-            Raw::Msg(XS.into(), knob(24, 100)),
-            Raw::Msg(PADS.into(), note_on(37)),
+            Raw::Msg(PADS.into(), note_on(36), test_stamp()),
+            Raw::Msg(XS.into(), knob(24, 100), test_stamp()),
+            Raw::Msg(PADS.into(), note_on(37), test_stamp()),
         ];
         let (events, sent) = dispatched(raw, vec![xsession()], on_screen(0, 0));
         assert!(matches!(
@@ -617,11 +1036,11 @@ mod tests {
         let raw = vec![
             Raw::Connected(XS.into()),
             Raw::Connected(PADS.into()),
-            Raw::Msg(PADS.into(), note_on(36)),
+            Raw::Msg(PADS.into(), note_on(36), test_stamp()),
             Raw::Disconnected(PADS.into()),
             Raw::Disconnected(XS.into()),
             Raw::Connected(XS.into()),
-            Raw::Msg(XS.into(), knob(24, 64)),
+            Raw::Msg(XS.into(), knob(24, 64), test_stamp()),
         ];
         let (events, sent) = dispatched(raw, vec![xsession()], on_screen(0, 0));
         assert!(matches!(
@@ -650,7 +1069,7 @@ mod tests {
     fn new_controller() {
         let port = "Some Keys MIDI 1";
         let mut raw = vec![Raw::Connected(port.into())];
-        raw.extend((36..=52).map(|n| Raw::Msg(port.into(), note_on(n))));
+        raw.extend((36..=52).map(|n| Raw::Msg(port.into(), note_on(n), test_stamp())));
         let (events, sent) = dispatched(raw, vec![xsession()], on_screen(0, 0));
         let pads: Vec<usize> = sent
             .iter()
@@ -690,7 +1109,7 @@ mod tests {
         assert!(e.contains("smc-pad.toml:4:"), "the file and the line: {e}");
         let raw = vec![
             Raw::Connected(PADS.into()),
-            Raw::Msg(PADS.into(), note_on(36)),
+            Raw::Msg(PADS.into(), note_on(36), test_stamp()),
         ];
         let (events, sent) = dispatched(raw, profiles, on_screen(0, 0));
         assert_eq!(connected(&events), ["default"]);
@@ -703,8 +1122,8 @@ mod tests {
     fn reading_the_layout() {
         let raw = vec![
             Raw::Connected(XS.into()),
-            Raw::Msg(XS.into(), knob(24, 64)),
-            Raw::Msg(XS.into(), knob(99, 10)),
+            Raw::Msg(XS.into(), knob(24, 64), test_stamp()),
+            Raw::Msg(XS.into(), knob(99, 10), test_stamp()),
         ];
         let (events, _) = dispatched(raw, vec![xsession()], on_screen(0, 0));
         let seen: Vec<String> = events
