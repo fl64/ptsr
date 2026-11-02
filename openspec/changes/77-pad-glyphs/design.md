@@ -4,7 +4,7 @@
 
 - `⩘` (U+2A58) for the envelope.
 - The mute group as a digit on a light plate (Q1.1), then, after the screenshot of the
-  plate: the group moves to the mode line as `· mute 2` (owner: "maybe show it here?",
+  plate: the group moves to the mode line as `mute 2` (owner: "maybe show it here?",
   "ok").
 - The mode on the pad as a glyph: `⇥` one-shot, `⇢` gate (the owner's pick over `⎍`).
 - `↕` is checked by eye first; it changes only if it covers the frame (Q2.1). The
@@ -16,6 +16,8 @@
 ## Defaults taken by the agent
 
 - The panel keeps the mode as a word; only the pad cell takes the glyph.
+- No `·` before `mute`: in a 100-column window a pad has 13 cells inside, and
+  ` ⇥ +1 · mute 2` took 14; ` ⇥ -24 mute 8` takes 13.
 
 ## Open questions
 

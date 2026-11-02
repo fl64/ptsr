@@ -7688,9 +7688,11 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
             ("◌", "sends to a slot that holds a reverb"),
             ("⋯", "sends to a slot that holds a delay"),
             (
-                "1…8",
-                "mute group, on a light plate: a hit stops the other pads of its group",
+                "mute N",
+                "its group: a hit stops the other pads of the group",
             ),
+            ("⇥", "one-shot: plays to the end"),
+            ("⇢", "gate: plays while held"),
             (
                 "●",
                 "in the panel: a block with a change; changed values are bright",
@@ -14462,8 +14464,8 @@ mod tests {
     }
 
     /// 70/77 pad-playback "The group on the pad": Q in group 1 carries its group to the
-    /// frame (drawn as a digit on a plate), W none, the glyph string has no digit; F1
-    /// explains `1…8`.
+    /// mode line (drawn in tui), W none, the frame glyphs have no digit; F1 explains
+    /// `mute N`. 77 "F1 names the mode glyphs".
     #[test]
     fn the_group_on_the_pad() {
         let mut app = undo_app();
@@ -14482,8 +14484,11 @@ mod tests {
         let f1 = super::full_help(&keymap, Screen::Pads, true);
         assert!(
             f1.iter()
-                .any(|(k, t)| k == "1…8" && t.contains("mute group"))
+                .any(|(k, t)| k == "mute N" && t.contains("its group"))
         );
+        for (k, word) in [("⇥", "one-shot"), ("⇢", "gate")] {
+            assert!(f1.iter().any(|(g, t)| g == k && t.contains(word)), "{k}");
+        }
     }
 
     /// 70: the closed panel names the key the keymap gives the pad edit.

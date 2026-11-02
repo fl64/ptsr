@@ -1631,29 +1631,12 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         .title(key)
         .border_style(Style::new().fg(border))
         .style(Style::new().bg(bg).fg(fg));
-    // the glyphs, then the mute group as a digit on a plate (77): a plain digit is one
-    // cell in every font, a circled one is not
-    let ink = if pad.flash { BG } else { BRIGHT };
-    let mut top = Vec::new();
     if !pad.glyphs.is_empty() {
-        top.push(Span::styled(
-            format!(" {} ", pad.glyphs),
-            Style::new().fg(ink),
-        ));
-    }
-    if pad.group > 0 {
-        if top.is_empty() {
-            top.push(" ".into());
-        }
-        let plate = if pad.flash {
-            Style::new().fg(BRIGHT).bg(BG)
-        } else {
-            Style::new().fg(BG).bg(BRIGHT)
-        };
-        top.push(Span::styled(pad.group.to_string(), plate));
-    }
-    if !top.is_empty() {
-        block = block.title_top(Line::from(top).right_aligned());
+        block = block.title_top(
+            Line::from(format!(" {} ", pad.glyphs))
+                .right_aligned()
+                .fg(if pad.flash { BG } else { BRIGHT }),
+        );
     }
     if pad.dashed {
         block = block.border_set(ratatui::symbols::border::Set {
@@ -1664,9 +1647,14 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
             ..ratatui::symbols::border::PLAIN
         });
     }
-    let mut second = mode(pad.gate).to_string();
+    // the mode as a glyph, the volume, the mute group (77): `⇥ +1 mute 2`; no separator,
+    // so `⇥ -24 mute 8` fits the 13 cells of the narrowest pad
+    let mut second = if pad.gate { "⇢" } else { "⇥" }.to_string();
     if pad.volume_db != 0.0 {
         second = format!("{second} {:+.0}", pad.volume_db);
+    }
+    if pad.group > 0 {
+        second = format!("{second} mute {}", pad.group);
     }
     let second = match (pad.missing, pad.loading, &pad.note) {
         (_, Some(p), _) => Line::from(format!(" load {p}%")).fg(CYAN),
@@ -3243,25 +3231,28 @@ mod tests {
         );
     }
 
-    /// 77 "The group digit keeps the frame": a slice, an envelope and group 1 give
-    /// ` ◻⩘ ` and the digit `1` dark on a light plate right before the corner, which keeps
-    /// its own cell.
+    /// 77 "The mode as a glyph" and "The group on the pad": `⇥ +1 mute 2` under the
+    /// name of a one-shot pad at +1 dB in group 2, `⇢` for a gate pad at 0 dB; no digit on
+    /// the frame.
     #[test]
-    fn the_group_digit_keeps_the_frame() {
+    fn the_mode_as_a_glyph() {
         let mut p = idle_pads();
-        p.pads[4].glyphs = "◻⩘".into();
-        p.pads[4].group = 1;
+        p.pads[4].gate = false;
+        p.pads[4].volume_db = 1.0;
+        p.pads[4].group = 2;
+        p.pads[5].gate = true;
+        p.pads[5].volume_db = 0.0;
+        p.pads[5].group = 0;
         let rows = draw_rows(&Screen::Pads(p), 100, 30);
-        let y = (0..rows.len())
-            .find(|&y| row_text(&rows, y).contains(" ◻⩘ 1┐"))
-            .unwrap_or_else(|| panic!("the frame of pad Q: {rows:?}"));
-        let at = rows[y].iter().position(|(s, _, _)| s == "1").unwrap();
-        assert_eq!(
-            (rows[y][at].1, rows[y][at].2),
-            (BG, BRIGHT),
-            "dark on a light plate"
+        let all: Vec<String> = (0..rows.len()).map(|y| row_text(&rows, y)).collect();
+        let text = all.join("\n");
+        assert!(text.contains("│ ⇥ +1 mute 2"), "{text}");
+        assert!(text.contains("│ ⇢ "), "{text}");
+        assert!(!text.contains("one-shot +"), "{text}");
+        assert!(
+            !all.iter().any(|l| l.contains("2┐")),
+            "no group digit on a frame: {text}"
         );
-        assert_eq!(rows[y][at + 1].0, "┐", "the corner in its own cell");
     }
 
     /// 76 "The mark plate": the plate stands on the title line, black on yellow.
