@@ -111,7 +111,12 @@ pub fn parse_learned(cfg: &crate::config::Learned) -> LearnedMaps {
             for (key, action) in controls {
                 match key.parse::<Key>() {
                     Ok(k) => {
-                        map.insert(k, action.clone());
+                        // the name before 76, so the learned row shows under its new name
+                        let action = match action.as_str() {
+                            "pad.scope_next" => "pad.mark_bank".to_string(),
+                            a => a.to_string(),
+                        };
+                        map.insert(k, action);
                     }
                     Err(e) => log::warn!("config [midi.{profile}]: {e}"),
                 }

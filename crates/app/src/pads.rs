@@ -333,15 +333,6 @@ pub fn cutoff_text(hz: f32) -> String {
 }
 pub const ENV_MS_LIMIT: i32 = 5000;
 
-/// What the `-` `=` and the mode act on; stepped with `Ctrl+A`. UI state, not saved.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Scope {
-    #[default]
-    Pad,
-    Bank,
-    All,
-}
-
 /// What a pad with a sample plays (27), as an MPC pad layer's Slice: the whole file, a
 /// slice that follows the file's cuts, or its own start and end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -407,9 +398,7 @@ pub struct Pads {
     pub fx: [FxSlot; FX_SLOTS],
     /// The parameter `-` `=` change right now.
     pub param: Param,
-    /// What the parameter and the mode changes act on.
-    pub scope: Scope,
-    /// Marked pads, absolute; the scope `Pad` acts on them instead of the selected pad.
+    /// Marked pads, absolute; the changes act on them instead of the selected pad (76).
     pub marked: BTreeSet<usize>,
     /// Marking is on: a pad hit marks or unmarks the pad.
     pub marking: bool,
@@ -463,7 +452,6 @@ impl Default for Pads {
             sends: [[0; FX_SLOTS]; PADS],
             fx: FxSlot::DEFAULTS,
             param: Param::default(),
-            scope: Scope::default(),
             marked: BTreeSet::new(),
             marking: false,
             limit_hits: None,
@@ -550,32 +538,43 @@ impl Pads {
 
     /// The pads a parameter or the mode change acts on right now.
     pub fn scope_pads(&self) -> Vec<usize> {
-        match self.scope {
-            Scope::Pad if !self.marked.is_empty() => self.marked.iter().copied().collect(),
-            Scope::Pad => vec![self.selected_abs()],
-            Scope::Bank => (self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK).collect(),
-            Scope::All => (0..PADS).collect(),
-        }
-    }
-
-    /// What the panel says about the scope: `pad Q`, `3 marked`, `bank 2`, `all pads`.
-    pub fn scope_name(&self) -> String {
-        match self.scope {
-            Scope::Pad if !self.marked.is_empty() => format!("{} marked", self.marked.len()),
-            Scope::Pad => format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase()),
-            Scope::Bank => format!("bank {}", self.bank + 1),
-            Scope::All => "all pads".into(),
-        }
-    }
-
-    /// Esc: drops the marks first. `true` when there were marks and Esc is consumed.
-    pub fn drop_marks(&mut self) -> bool {
         if self.marked.is_empty() {
+            vec![self.selected_abs()]
+        } else {
+            self.marked.iter().copied().collect()
+        }
+    }
+
+    /// What the panel says about the scope: `pad Q` or `3 marked`.
+    pub fn scope_name(&self) -> String {
+        if self.marked.is_empty() {
+            format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase())
+        } else {
+            format!("{} marked", self.marked.len())
+        }
+    }
+
+    /// Esc: drops the marks and turns marking off. `true` when there was something to drop
+    /// and Esc is consumed.
+    pub fn drop_marks(&mut self) -> bool {
+        if self.marked.is_empty() && !self.marking {
             return false;
         }
         self.marked.clear();
-        self.scope = Scope::Pad;
+        self.marking = false;
         true
+    }
+
+    /// Marks `pads` and turns marking on; when all of them are marked already, unmarks them (76).
+    fn mark_all_of(&mut self, pads: std::ops::Range<usize>) {
+        if pads.clone().all(|abs| self.marked.contains(&abs)) {
+            for abs in pads {
+                self.marked.remove(&abs);
+            }
+        } else {
+            self.marked.extend(pads);
+        }
+        self.marking = true;
     }
 
     /// Takes the sound off the selected pad: file, slice, link; the mode, volume and pitch stay.
@@ -1359,12 +1358,12 @@ impl Pads {
                 self.param = PAGES[(at + step) % PAGES.len()].1[0];
                 Vec::new()
             }
-            Action::PadScopeNext => {
-                self.scope = match self.scope {
-                    Scope::Pad => Scope::Bank,
-                    Scope::Bank => Scope::All,
-                    Scope::All => Scope::Pad,
-                };
+            Action::PadMarkBank => {
+                self.mark_all_of(self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK);
+                Vec::new()
+            }
+            Action::PadMarkAll => {
+                self.mark_all_of(0..PADS);
                 Vec::new()
             }
             Action::PadMarkToggle => {
@@ -1757,8 +1756,8 @@ mod tests {
             ..Default::default()
         };
         p.pitch[19] = 5; // a melody laid out over bank 2
-        p.apply(Action::PadScopeNext);
-        assert_eq!(p.scope_name(), "bank 2");
+        p.apply(Action::PadMarkBank);
+        assert_eq!(p.scope_name(), "16 marked");
         assert!(
             (p.pitch_pos() - 24.0 / 48.0).abs() < 1e-6,
             "pitch 0 sits at the middle of the knob"
@@ -1794,7 +1793,7 @@ mod tests {
         };
         p.volume_db[17] = -6;
         p.volume_db[18] = MAX_DB;
-        p.apply(Action::PadScopeNext);
+        p.apply(Action::PadMarkBank);
         // the selected pad is at 0 dB, the knob goes to +2 dB
         let pos = (2.0 - MIN_DB as f32) / (MAX_DB - MIN_DB) as f32;
         let cmds = p.set_volume_pos(pos);
@@ -1826,10 +1825,10 @@ mod tests {
         };
         p.release_ms[19] = 100; // a longer release laid out on one pad of bank 2
         p.param = Param::Release;
-        p.apply(Action::PadScopeNext); // the scope: bank 2
-        assert_eq!(p.scope_name(), "bank 2");
+        p.apply(Action::PadMarkBank); // bank 2 marked
+        assert_eq!(p.scope_name(), "16 marked");
         assert_eq!(p.param, Param::Release);
-        // the scope is bank 2: raise the release by one step of 5 ms
+        // bank 2 is marked: raise the release by one step of 5 ms
         let cmds = p.apply(Action::PadParam(1));
         assert_eq!(cmds.len(), 16, "every pad of the bank got a command");
         assert!(cmds.iter().all(|c| matches!(
@@ -2145,19 +2144,64 @@ mod tests {
     }
     /// Spec: "The scope is always named".
     #[test]
-    fn ctrl_a_steps_the_scope_and_the_panel_names_it() {
+    fn ctrl_a_marks_the_bank_and_the_panel_names_it() {
+        let mut p = Pads {
+            bank: 1,
+            ..Default::default()
+        };
+        assert_eq!(p.scope_name(), "pad 1");
+        assert!(p.apply(Action::PadMarkBank).is_empty());
+        assert_eq!(p.scope_name(), "16 marked");
+        assert!(p.marking, "Ctrl+A turns marking on");
+        assert_eq!(p.scope_pads(), (16..32).collect::<Vec<_>>());
+    }
+
+    /// Spec: "The bank, then a few more".
+    #[test]
+    fn the_bank_then_a_few_more() {
+        let mut p = Pads {
+            bank: 1,
+            ..Default::default()
+        };
+        p.apply(Action::PadMarkBank);
+        p.apply(press(4)); // Q
+        p.apply(press(5)); // W
+        p.bank = 4;
+        for pad in [0, 1, 2] {
+            p.apply(press(pad));
+        }
+        let mut want: BTreeSet<usize> = (16..32).filter(|&a| a != 20 && a != 21).collect();
+        want.extend([64, 65, 66]);
+        assert_eq!(p.marked, want);
+        assert_eq!(p.scope_name(), "17 marked");
+    }
+
+    /// Spec: "Ctrl+A again unmarks the bank".
+    #[test]
+    fn ctrl_a_again_unmarks_the_bank() {
+        let mut p = Pads {
+            bank: 4,
+            ..Default::default()
+        };
+        p.apply(Action::PadMarkToggle);
+        p.apply(press(0));
+        p.bank = 1;
+        p.apply(Action::PadMarkBank);
+        assert_eq!(p.marked.len(), 17);
+        p.apply(Action::PadMarkBank);
+        assert_eq!(p.marked, BTreeSet::from([64]));
+        assert!(p.marking, "marking stays on");
+    }
+
+    /// Spec: "Mark all".
+    #[test]
+    fn mark_all() {
         let mut p = Pads::default();
-        assert_eq!(p.scope_name(), "pad 1");
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "bank 1");
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "all pads");
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "pad 1");
-        // marks replace the pad step of the scope
-        p.marked.insert(3);
-        p.marked.insert(9);
-        assert_eq!(p.scope_name(), "2 marked");
+        assert!(p.apply(Action::PadMarkAll).is_empty());
+        assert_eq!(p.scope_name(), "128 marked");
+        assert!(p.marking);
+        p.apply(Action::PadMarkAll);
+        assert!(p.marked.is_empty(), "a second press unmarks them all");
     }
 
     /// Spec: "A bank lower" — a relative change keeps the differences.
@@ -2170,8 +2214,8 @@ mod tests {
         p.apply(Action::PadParamNext);
         p.pitch[16] = 0;
         p.pitch[17] = 3;
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "bank 2");
+        assert!(p.apply(Action::PadMarkBank).is_empty());
+        assert_eq!(p.scope_name(), "16 marked");
         p.apply(Action::PadParam(-1));
         p.apply(Action::PadParam(-1));
         assert_eq!(p.pitch[16], -2);
@@ -2186,8 +2230,7 @@ mod tests {
     fn all_pads_quieter() {
         let mut p = Pads::default();
         p.volume_db[63] = 5;
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        assert!(p.apply(Action::PadMarkAll).is_empty());
         let cmds = p.apply(Action::PadParam(-3));
         assert_eq!(cmds.len(), PADS, "every pad gets its own gain");
         for abs in 0..PADS {
@@ -2207,8 +2250,7 @@ mod tests {
         p.apply(Action::PadParamNext);
         p.pitch[0] = PITCH_LIMIT;
         p.pitch[1] = 0;
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        assert!(p.apply(Action::PadMarkAll).is_empty());
         let cmds = p.apply(Action::PadParam(1));
         assert_eq!(p.pitch[0], PITCH_LIMIT, "the pad at the limit stays");
         assert_eq!(p.pitch[1], 1);
@@ -2226,7 +2268,7 @@ mod tests {
     #[test]
     fn mode_for_a_bank() {
         let mut p = Pads::default();
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        assert!(p.apply(Action::PadMarkBank).is_empty());
         let cmds = p.apply(Action::PadModeNext);
         assert_eq!(cmds.len(), PADS_PER_BANK);
         for i in 0..PADS_PER_BANK {
@@ -2249,7 +2291,7 @@ mod tests {
         p.file[0] = Some("/m/kick.wav".into());
         p.file[1] = Some("/m/amen.wav".into());
         p.slice[1] = Some(2);
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        assert!(p.apply(Action::PadMarkBank).is_empty());
         let cmd = p.clear_selected();
         assert!(matches!(
             cmd,
@@ -2300,7 +2342,8 @@ mod tests {
         assert_eq!(p.scope_name(), "pad 2");
     }
 
-    /// Spec: "Drop the marks" — Esc clears the marks and the scope is the selected pad.
+    /// Spec: "Drop the marks" — Esc clears the marks, turns marking off, and the scope is
+    /// the selected pad.
     #[test]
     fn esc_drops_the_marks() {
         let mut p = Pads::default();
@@ -2310,7 +2353,7 @@ mod tests {
         assert!(!p.marked.is_empty());
         assert!(p.drop_marks());
         assert!(p.marked.is_empty());
-        assert_eq!(p.scope, Scope::Pad);
+        assert!(!p.marking, "Esc turns marking off");
         assert_eq!(p.scope_name(), "pad 3", "the last hit stays selected");
         // Esc with no marks goes back as usual
         assert!(!p.drop_marks());

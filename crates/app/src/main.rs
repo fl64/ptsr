@@ -6925,7 +6925,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                             st.scope
                         ),
                     ),
-                    item(&[Action::PadScopeNext], "scope".into()),
+                    item(&[Action::PadMarkBank], "mark bank".into()),
                 ],
             },
             bank(),
@@ -7302,7 +7302,8 @@ fn describe(a: Action) -> String {
         Action::PadParamNext => "pads: the next parameter".into(),
         Action::PadParam(s) if s < 0 => "pad: the picked parameter down a step".into(),
         Action::PadParam(_) => "pad: the picked parameter up a step".into(),
-        Action::PadScopeNext => "pads: the change scope: pad / marked / bank / all".into(),
+        Action::PadMarkBank => "pads: mark bank; again unmarks it".into(),
+        Action::PadMarkAll => "pads: mark all; again unmarks them".into(),
         Action::PadMarkToggle => "pads: marking on / off; a pad hit marks or unmarks it".into(),
         Action::PadClear => "pads: take the sound off the selected pad".into(),
         Action::ScreenPads => "pads screen".into(),
@@ -7394,7 +7395,8 @@ fn help_section(a: Action) -> usize {
         | Action::PadEdit
         | Action::PadParamNext
         | Action::PadParam(_)
-        | Action::PadScopeNext
+        | Action::PadMarkBank
+        | Action::PadMarkAll
         | Action::PadMarkToggle
         | Action::PadClear
         | Action::PadTake
@@ -8519,19 +8521,56 @@ mod tests {
             assert!(notice.contains(part), "{part}: {notice}");
         }
         assert_eq!(pads_ctrl(&k, 'g'), None);
-        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadMarkBank));
     }
 
-    /// 64 keyboard "A key of my own": `Ctrl+G` steps the scope, `Ctrl+A` still does.
+    /// 64 keyboard "A key of my own": `Ctrl+G` marks the bank, `Ctrl+A` still does.
     #[test]
     fn a_key_of_my_own() {
+        let (k, notice) = user_keymap("km-own", "[screens.pads]\n\"Ctrl+G\" = \"pad.mark_bank\"\n");
+        assert_eq!(notice, None);
+        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
+        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadMarkBank));
+    }
+
+    /// 76 keyboard "An old action name": `pad.scope_next` is read as `pad.mark_bank`.
+    #[test]
+    fn an_old_action_name() {
         let (k, notice) = user_keymap(
-            "km-own",
+            "km-old",
             "[screens.pads]\n\"Ctrl+G\" = \"pad.scope_next\"\n",
         );
         assert_eq!(notice, None);
-        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadScopeNext));
-        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
+    }
+
+    /// 76 keyboard "Ctrl and Shift on a pad key": `Ctrl+Shift+Z` has its own binding,
+    /// `Ctrl+Z` still undoes, `Z` and `Shift+Z` still play the pad.
+    #[test]
+    fn ctrl_and_shift_on_a_pad_key() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let (k, notice) = user_keymap(
+            "km-shift",
+            "[screens.pads]\n\"Ctrl+Shift+Z\" = \"pad.mark_all\"\n",
+        );
+        assert_eq!(notice, None);
+        let key = |c, m| k.resolve(Screen::Pads, &KeyEvent::new(KeyCode::Char(c), m));
+        let cs = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+        assert_eq!(key('Z', cs), Some(Action::PadMarkAll));
+        assert_eq!(
+            key('z', cs),
+            Some(Action::PadMarkAll),
+            "Shift as a modifier"
+        );
+        assert_eq!(key('z', KeyModifiers::CONTROL), Some(Action::Undo));
+        assert!(matches!(
+            key('z', KeyModifiers::NONE),
+            Some(Action::PadPress { pad: 12, .. })
+        ));
+        assert!(matches!(
+            key('Z', KeyModifiers::SHIFT),
+            Some(Action::PadPress { pad: 12, .. })
+        ));
     }
 
     /// 64 keyboard "A key taken away": `"none"` unbinds `Ctrl+A` on the pads screen.
@@ -8549,7 +8588,7 @@ mod tests {
         let (k, notice) = user_keymap("km-broken", "[screens.pads]\n\"Ctrl+G\" = \n");
         let notice = notice.unwrap();
         assert!(notice.contains("keymap.toml line 2"), "{notice}");
-        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadMarkBank));
         assert_eq!(pads_ctrl(&k, 'g'), None);
     }
 
@@ -8560,10 +8599,10 @@ mod tests {
     fn from_any_folder() {
         let (k, notice) = user_keymap(
             "km-away",
-            "[screens.pads]\n\"Ctrl+G\" = \"pad.scope_next\"\n",
+            "[screens.pads]\n\"Ctrl+G\" = \"pad.mark_bank\"\n",
         );
         assert_eq!(notice, None);
-        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
         let (shipped, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         assert_eq!(
             k.bindings(Screen::Chop),
@@ -14340,7 +14379,7 @@ mod tests {
     fn undo_over_the_scope() {
         use super::pads::Param;
         let mut app = undo_app();
-        app.apply(Action::PadScopeNext); // the bank
+        app.apply(Action::PadMarkBank); // the 16 pads of the bank marked
         app.apply(Action::PadEdit);
         while app.pads.param != Param::Cutoff {
             app.apply(Action::ParamNext);
@@ -14415,8 +14454,8 @@ mod tests {
         app.apply(Action::PadParam(1)); // the volume up
         let abs = app.pads.selected_abs();
         assert_eq!(app.pads.volume_db[abs], 1);
-        for _ in 0..3 {
-            app.apply(Action::PadScopeNext);
+        for _ in 0..2 {
+            app.apply(Action::PadMarkBank);
         }
         app.apply(Action::BankNext);
         app.apply(Action::PadSelect(input::Dir::Right));
@@ -14544,9 +14583,9 @@ mod tests {
         assert_eq!(app.chop.as_ref().unwrap().markers, cuts, "the old cuts");
     }
 
-    /// 68 screen-help "Scope in the help line": `Ctrl+A` to the bank shows
-    /// `scope: bank 2` at the mark key, also with the Ctrl combos hidden (kitty); back on
-    /// the pad, three marked pads show `scope: 3 marked`.
+    /// 68/76 screen-help "Scope in the help line": `Ctrl+A` on bank 2 shows
+    /// `mark: on, hit pads · scope: 16 marked` at the mark key, also with the Ctrl combos
+    /// hidden (kitty); after `Esc`, `mark: off · scope: pad 1`.
     #[test]
     fn scope_in_the_help_line() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -14558,28 +14597,71 @@ mod tests {
             let groups = super::help_groups(&keymap, Screen::Pads, &app.help_state());
             line(&super::without_modifiers(groups))
         };
-        while app.pads.scope_name() != "bank 2" {
-            pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
-        }
+        pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
         assert!(
-            said(&app).contains(&("M".into(), "mark: off · scope: bank 2".into())),
+            said(&app).contains(&("M".into(), "mark: on, hit pads · scope: 16 marked".into())),
             "{:?}",
             said(&app)
         );
-        // marks become the scope once it is back on the pad
-        while !app.pads.scope_name().starts_with("pad") {
-            pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
-        }
-        pads_key(&mut app, KeyCode::Char('m'), M::NONE);
+        app.apply(Action::Back);
+        assert!(
+            said(&app).contains(&("M".into(), "mark: off · scope: pad 1".into())),
+            "{:?}",
+            said(&app)
+        );
+    }
+
+    /// 76 screen-help "The mark keys in the full help".
+    #[test]
+    fn the_mark_keys_in_the_full_help() {
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let rows = super::full_help(&keymap, input::Screen::Pads, true);
+        assert!(
+            rows.iter()
+                .any(|(k, t)| k == "Ctrl+A" && t.contains("mark bank")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|(k, t)| k == "Ctrl+Shift+A" && t.contains("mark all")),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|(_, t)| t.contains("scope")), "{rows:?}");
+    }
+
+    /// 76 pad-playback "Esc in the edit keeps the marks".
+    #[test]
+    fn esc_in_the_edit_keeps_the_marks() {
+        let mut app = test_app();
+        app.screen = Screen::Pads;
+        app.apply(Action::PadMarkToggle);
         for pad in [0, 1, 2] {
             app.apply(Action::PadPress { pad, velocity: 0.8 });
             app.apply(Action::PadRelease { pad });
         }
-        assert!(
-            said(&app).contains(&("M".into(), "mark: on, hit pads · scope: 3 marked".into())),
-            "{:?}",
-            said(&app)
-        );
+        app.apply(Action::PadEdit);
+        assert!(app.edit);
+        app.apply(Action::Back);
+        assert!(!app.edit, "the first Esc closes the edit");
+        assert_eq!(app.pads.marked.len(), 3, "the marks stay");
+        app.apply(Action::Back);
+        assert!(app.pads.marked.is_empty(), "a second Esc drops them");
+    }
+
+    /// 76 pad-playback "Ctrl+Shift+A without the kitty protocol": the terminal sends
+    /// `Ctrl+A`, and the bank is marked.
+    #[test]
+    fn ctrl_shift_a_without_the_kitty_protocol() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Pads;
+        app.pads.bank = 1;
+        pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
+        assert_eq!(app.pads.scope_pads(), (16..32).collect::<Vec<_>>());
+        // with the kitty protocol the same keys mark all
+        pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
+        pads_key(&mut app, KeyCode::Char('A'), M::CONTROL | M::SHIFT);
+        assert_eq!(app.pads.marked.len(), super::PADS);
     }
 
     /// The pads screen key `code` with `m`, through the keymap and its edit layer.

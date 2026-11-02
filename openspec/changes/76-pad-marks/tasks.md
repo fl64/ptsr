@@ -1,4 +1,4 @@
-- [ ] 1. Marks are the scope: `Ctrl+A` marks the bank (`pad.mark_bank`), `Ctrl+Shift+A`
+- [x] 1. Marks are the scope: `Ctrl+A` marks the bank (`pad.mark_bank`), `Ctrl+Shift+A`
   marks all (`pad.mark_all`, `Ctrl+Shift+letter` in the keymap), the old name
   `pad.scope_next` read as `pad.mark_bank`, the scope steps bank / all gone, `Esc` in the
   edit keeps the marks; the panel, the help line and F1; a test for each scenario; commit.
