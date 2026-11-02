@@ -43,8 +43,6 @@ pub enum Action {
     PadParam(i8),
     /// Mark the 16 pads of the open bank and turn marking on; unmark them when all are marked.
     PadMarkBank,
-    /// Mark all pads and turn marking on; unmark them when all are marked.
-    PadMarkAll,
     /// Turn marking on or off; while it is on, a pad hit marks or unmarks the pad.
     PadMarkToggle,
     /// Take the sound off the selected pad.
@@ -203,7 +201,6 @@ impl Action {
             "pad.param_inc" => Self::PadParam(1),
             // `pad.scope_next` is the name before 76: an old keymap or binding keeps working
             "pad.mark_bank" | "pad.scope_next" => Self::PadMarkBank,
-            "pad.mark_all" => Self::PadMarkAll,
             "pad.mark_toggle" => Self::PadMarkToggle,
             "pad.clear" => Self::PadClear,
             "learn.toggle" => Self::LearnToggle,
@@ -778,12 +775,6 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "pad.mark_bank",
         label: "mark the bank",
-        group: Group::Pads,
-        knob: false,
-    },
-    ActionInfo {
-        name: "pad.mark_all",
-        label: "mark all pads",
         group: Group::Pads,
         knob: false,
     },
@@ -1407,14 +1398,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     },
 ];
 
-/// A key with or without Ctrl and Alt; characters are lowercase Latin. `shift` is only set
-/// with Ctrl on a letter (`Ctrl+Shift+A`): Shift alone on a pad key is velocity.
+/// A key with or without Ctrl and Alt; characters are lowercase Latin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Chord {
     code: KeyCode,
     ctrl: bool,
     alt: bool,
-    shift: bool,
 }
 
 /// The pad block in Latin, in pad order.
@@ -1712,22 +1701,8 @@ impl Keymap {
                 let bound = self
                     .screens
                     .get(&screen)
-                    .and_then(|m| {
-                        m.get(&Chord {
-                            code,
-                            ctrl,
-                            alt,
-                            shift: false,
-                        })
-                    })
-                    .or_else(|| {
-                        self.global.get(&Chord {
-                            code,
-                            ctrl,
-                            alt,
-                            shift: false,
-                        })
-                    })
+                    .and_then(|m| m.get(&Chord { code, ctrl, alt }))
+                    .or_else(|| self.global.get(&Chord { code, ctrl, alt }))
                     .copied();
                 if matches!(bound, Some(Action::RecordMic(_))) {
                     return Some(Action::RecordMic(false));
@@ -1741,17 +1716,8 @@ impl Keymap {
             KeyCode::Tab if e.modifiers.contains(KeyModifiers::SHIFT) => KeyCode::BackTab,
             c => c,
         };
-        // Ctrl+Shift+letter: its own binding first, else it acts as Ctrl+letter, as before
-        let shift = ctrl
-            && matches!(e.code, KeyCode::Char(c)
-                if c.is_uppercase() || e.modifiers.contains(KeyModifiers::SHIFT));
-        let find = |code, shift| {
-            let chord = Chord {
-                code,
-                ctrl,
-                alt,
-                shift,
-            };
+        let find = |code| {
+            let chord = Chord { code, ctrl, alt };
             editing
                 .then(|| self.edit.get(&chord))
                 .flatten()
@@ -1759,13 +1725,10 @@ impl Keymap {
                 .or_else(|| self.global.get(&chord))
         };
         // Shift+Tab where nothing binds it acts as Tab, as before the page keys (54)
-        shift
-            .then(|| find(code, true))
-            .flatten()
-            .or_else(|| find(code, false))
+        find(code)
             .or_else(|| {
                 (code == KeyCode::BackTab)
-                    .then(|| find(KeyCode::Tab, false))
+                    .then(|| find(KeyCode::Tab))
                     .flatten()
             })
             .map(|&a| with_step(a, true))
@@ -1839,21 +1802,13 @@ fn parse_chord(key: &str) -> Result<Chord, String> {
     // both orders of the modifiers are fine: Ctrl+Alt+Left and Alt+Ctrl+Left
     let mut ctrl = false;
     let mut alt = false;
-    let mut shift = false;
     let mut name = key;
-    for _ in 0..3 {
+    for _ in 0..2 {
         if let Some(rest) = name.strip_prefix("Ctrl+") {
             ctrl = true;
             name = rest;
         } else if let Some(rest) = name.strip_prefix("Alt+") {
             alt = true;
-            name = rest;
-        } else if let Some(rest) = name.strip_prefix("Shift+").filter(|_| ctrl) {
-            // Shift counts only after Ctrl, on a letter: `Ctrl+Shift+A`
-            if rest.chars().count() != 1 {
-                return Err("unknown key".into());
-            }
-            shift = true;
             name = rest;
         }
     }
@@ -1896,12 +1851,7 @@ fn parse_chord(key: &str) -> Result<Chord, String> {
     {
         return Err("pad keys cannot be commands".into());
     }
-    Ok(Chord {
-        code,
-        ctrl,
-        alt,
-        shift,
-    })
+    Ok(Chord { code, ctrl, alt })
 }
 
 fn chord_name(c: &Chord) -> String {
@@ -1926,9 +1876,6 @@ fn chord_name(c: &Chord) -> String {
         let mut name = String::new();
         if c.ctrl {
             name.push_str("Ctrl+");
-        }
-        if c.shift {
-            name.push_str("Shift+");
         }
         if c.alt {
             name.push_str("Alt+");

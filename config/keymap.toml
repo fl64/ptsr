@@ -120,8 +120,7 @@ I = "edit.param_prev"         # one parameter, with the edit closed too (70)
 K = "edit.param_next"
 Up = "edit.param_prev"
 Down = "edit.param_next"
-"Ctrl+A" = "pad.mark_bank"         # marks the 16 pads of the open bank; again unmarks them
-"Ctrl+Shift+A" = "pad.mark_all"    # Ghostty needs `keybind = ctrl+shift+a=unbind`
+"Ctrl+A" = "pad.mark_bank"  # marks the 16 pads of the open bank; again unmarks them
 M = "pad.mark_toggle"    # the marker key: marks pads here, a cut on the chop screen
 
 [screens.settings]

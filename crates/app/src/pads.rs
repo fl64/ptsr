@@ -565,8 +565,10 @@ impl Pads {
         true
     }
 
-    /// Marks `pads` and turns marking on; when all of them are marked already, unmarks them (76).
-    fn mark_all_of(&mut self, pads: std::ops::Range<usize>) {
+    /// Marks the 16 pads of the open bank and turns marking on; when all of them are marked
+    /// already, unmarks them (76).
+    fn mark_bank(&mut self) {
+        let pads = self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK;
         if pads.clone().all(|abs| self.marked.contains(&abs)) {
             for abs in pads {
                 self.marked.remove(&abs);
@@ -1385,11 +1387,7 @@ impl Pads {
                 Vec::new()
             }
             Action::PadMarkBank => {
-                self.mark_all_of(self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK);
-                Vec::new()
-            }
-            Action::PadMarkAll => {
-                self.mark_all_of(0..PADS);
+                self.mark_bank();
                 Vec::new()
             }
             Action::PadMarkToggle => {
@@ -2219,17 +2217,6 @@ mod tests {
         assert!(p.marking, "marking stays on");
     }
 
-    /// Spec: "Mark all".
-    #[test]
-    fn mark_all() {
-        let mut p = Pads::default();
-        assert!(p.apply(Action::PadMarkAll).is_empty());
-        assert_eq!(p.scope_name(), "128 marked");
-        assert!(p.marking);
-        p.apply(Action::PadMarkAll);
-        assert!(p.marked.is_empty(), "a second press unmarks them all");
-    }
-
     /// Spec: "A bank lower" — a relative change keeps the differences.
     #[test]
     fn a_bank_lower_keeps_the_melody_shape() {
@@ -2256,7 +2243,10 @@ mod tests {
     fn all_pads_quieter() {
         let mut p = Pads::default();
         p.volume_db[63] = 5;
-        assert!(p.apply(Action::PadMarkAll).is_empty());
+        for bank in 0..PADS / PADS_PER_BANK {
+            p.bank = bank;
+            assert!(p.apply(Action::PadMarkBank).is_empty());
+        }
         let cmds = p.apply(Action::PadParam(-3));
         assert_eq!(cmds.len(), PADS, "every pad gets its own gain");
         for abs in 0..PADS {
@@ -2276,7 +2266,10 @@ mod tests {
         p.apply(Action::PadParamNext);
         p.pitch[0] = PITCH_LIMIT;
         p.pitch[1] = 0;
-        assert!(p.apply(Action::PadMarkAll).is_empty());
+        for bank in 0..PADS / PADS_PER_BANK {
+            p.bank = bank;
+            assert!(p.apply(Action::PadMarkBank).is_empty());
+        }
         let cmds = p.apply(Action::PadParam(1));
         assert_eq!(p.pitch[0], PITCH_LIMIT, "the pad at the limit stays");
         assert_eq!(p.pitch[1], 1);

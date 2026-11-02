@@ -7377,7 +7377,6 @@ fn describe(a: Action) -> String {
         Action::PadParam(s) if s < 0 => "pad: the picked parameter down a step".into(),
         Action::PadParam(_) => "pad: the picked parameter up a step".into(),
         Action::PadMarkBank => "pads: mark bank; again unmarks it".into(),
-        Action::PadMarkAll => "pads: mark all; again unmarks them".into(),
         Action::PadMarkToggle => "pads: marking on / off; a pad hit marks or unmarks it".into(),
         Action::PadClear => {
             "pads: take the sound off the selected pad; in the edit, reset its settings".into()
@@ -7472,7 +7471,6 @@ fn help_section(a: Action) -> usize {
         | Action::PadParamNext
         | Action::PadParam(_)
         | Action::PadMarkBank
-        | Action::PadMarkAll
         | Action::PadMarkToggle
         | Action::PadClear
         | Action::PadTake
@@ -8618,35 +8616,6 @@ mod tests {
         );
         assert_eq!(notice, None);
         assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
-    }
-
-    /// 76 keyboard "Ctrl and Shift on a pad key": `Ctrl+Shift+Z` has its own binding,
-    /// `Ctrl+Z` still undoes, `Z` and `Shift+Z` still play the pad.
-    #[test]
-    fn ctrl_and_shift_on_a_pad_key() {
-        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        let (k, notice) = user_keymap(
-            "km-shift",
-            "[screens.pads]\n\"Ctrl+Shift+Z\" = \"pad.mark_all\"\n",
-        );
-        assert_eq!(notice, None);
-        let key = |c, m| k.resolve(Screen::Pads, &KeyEvent::new(KeyCode::Char(c), m));
-        let cs = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
-        assert_eq!(key('Z', cs), Some(Action::PadMarkAll));
-        assert_eq!(
-            key('z', cs),
-            Some(Action::PadMarkAll),
-            "Shift as a modifier"
-        );
-        assert_eq!(key('z', KeyModifiers::CONTROL), Some(Action::Undo));
-        assert!(matches!(
-            key('z', KeyModifiers::NONE),
-            Some(Action::PadPress { pad: 12, .. })
-        ));
-        assert!(matches!(
-            key('Z', KeyModifiers::SHIFT),
-            Some(Action::PadPress { pad: 12, .. })
-        ));
     }
 
     /// 64 keyboard "A key taken away": `"none"` unbinds `Ctrl+A` on the pads screen.
@@ -14911,11 +14880,6 @@ mod tests {
                 .any(|(k, t)| k == "Ctrl+A" && t.contains("mark bank")),
             "{rows:?}"
         );
-        assert!(
-            rows.iter()
-                .any(|(k, t)| k == "Ctrl+Shift+A" && t.contains("mark all")),
-            "{rows:?}"
-        );
         assert!(!rows.iter().any(|(_, t)| t.contains("scope")), "{rows:?}");
     }
 
@@ -14936,22 +14900,6 @@ mod tests {
         assert_eq!(app.pads.marked.len(), 3, "the marks stay");
         app.apply(Action::Back);
         assert!(app.pads.marked.is_empty(), "a second Esc drops them");
-    }
-
-    /// 76 pad-playback "Ctrl+Shift+A without the kitty protocol": the terminal sends
-    /// `Ctrl+A`, and the bank is marked.
-    #[test]
-    fn ctrl_shift_a_without_the_kitty_protocol() {
-        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
-        let mut app = test_app();
-        app.screen = Screen::Pads;
-        app.pads.bank = 1;
-        pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
-        assert_eq!(app.pads.scope_pads(), (16..32).collect::<Vec<_>>());
-        // with the kitty protocol the same keys mark all
-        pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
-        pads_key(&mut app, KeyCode::Char('A'), M::CONTROL | M::SHIFT);
-        assert_eq!(app.pads.marked.len(), super::PADS);
     }
 
     /// The pads screen key `code` with `m`, through the keymap and its edit layer.
