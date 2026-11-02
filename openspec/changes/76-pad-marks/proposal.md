@@ -14,8 +14,8 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
   no pad is marked. The scope steps "bank" and "all pads" are gone.
 - `Ctrl+A` marks the 16 pads of the open bank and turns marking on. In a bank where all 16
   pads are marked, it unmarks them.
-- `Ctrl+Shift+A` marks all 128 pads. Ghostty takes this combo for "select all" by default;
-  the README tells how to free it.
+- While marking is on or pads are marked, a yellow plate at the top of the pads screen
+  says so: `MARK · hit pads · 17 marked`, or `17 MARKED · Esc drops`.
 - A marked pad is easy to see: a dark yellow fill and a bright yellow frame.
 - The bank row shows the marks: a bank with marks shows its marked pads as yellow dots, in
   every bank, open or not.
@@ -30,6 +30,7 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
 - Copying the settings of one pad to other pads, moving or copying a group of pads with
   their sounds (BACKLOG row 20 keeps them).
 - A reset of one block only (only the filter, only the envelope).
+- One key that marks all 128 pads: `Ctrl+A` on each bank does it.
 - `Backspace` outside the edit stays as it is: it clears the selected pad.
 
 ## How to verify
@@ -43,5 +44,5 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
    `Enter`. Listen: the pads sound as freshly loaded, with the same cuts.
 5. Press `Ctrl+Z`. Listen: the pads sound as before the reset.
 6. Press `Esc`: the edit closes, the marks stay. `Esc` again: the marks are gone.
-7. With `keybind = ctrl+shift+a=unbind` in the Ghostty config, press `Ctrl+Shift+A`: every
-   bank in the bank row shows all dots yellow.
+7. Press `M`: the top line shows a yellow `MARK · hit pads · 0 marked`. Hit a pad:
+   `1 marked`. `M` again: `1 MARKED · Esc drops`. `Esc`: the plate is gone.

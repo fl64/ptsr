@@ -6,7 +6,7 @@ The system SHALL build the shipped keymap into the program and read the owner's 
 folder the program starts in. A key bound in a section of the user file replaces the
 shipped binding of that key in that section; the action `none` takes a key away. A pad key
 bound to a command, alone or with Shift, is refused as in the shipped keymap and named on
-the status line; with `Ctrl` (`Ctrl+A`, `Ctrl+Shift+A`) it is a command key. The old
+the status line; with `Ctrl` (`Ctrl+A`) it is a command key. The old
 action name `pad.scope_next` is read as `pad.mark_bank`, in the keymap and in the learned
 MIDI bindings. A file that cannot be read is named on the status line with its line, and
 the program runs with the shipped keys.
@@ -18,11 +18,6 @@ the program runs with the shipped keys.
 #### Scenario: An old action name
 - **WHEN** the user keymap has `"Ctrl+G" = "pad.scope_next"` under `[screens.pads]`
 - **THEN** `Ctrl+G` marks the open bank, and the status line names no error
-
-#### Scenario: Ctrl and Shift on a pad key
-- **WHEN** the user keymap has `"Ctrl+Shift+Z" = "pad.mark_all"` under `[screens.pads]`
-- **THEN** `Ctrl+Shift+Z` marks all pads, `Ctrl+Z` still undoes, and `Z` and `Shift+Z`
-  still play pad Z
 
 #### Scenario: A key taken away
 - **WHEN** the user keymap has `"Ctrl+A" = "none"` under `[screens.pads]`

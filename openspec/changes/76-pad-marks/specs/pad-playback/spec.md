@@ -105,7 +105,7 @@ The system SHALL apply the pad changes to the change scope: the marked pads, or 
 - **THEN** every pad of bank 2 is two semitones lower and a melody laid out from slices keeps its shape
 
 #### Scenario: All pads quieter
-- **WHEN** all 128 pads are marked and the owner lowers the volume by 3 dB
+- **WHEN** the owner presses `Ctrl+A` on each of the eight banks and lowers the volume by 3 dB
 - **THEN** all 128 pads are 3 dB quieter, pads on other banks too
 
 #### Scenario: A limit
@@ -126,7 +126,7 @@ The system SHALL apply the pad changes to the change scope: the marked pads, or 
 - **THEN** only the selected pad is cleared
 
 ### Requirement: Marking pads
-The system SHALL turn marking on and off with `M`, the marker key; while it is on, a pad hit marks or unmarks the pad and the pad still sounds. `Ctrl+A` marks the 16 pads of the open bank and turns marking on; when all 16 are marked already, it unmarks them. `Ctrl+Shift+A` marks all 128 pads and turns marking on; when all are marked already, it unmarks them. Marks stay when the bank turns. Marked pads become the scope instead of the selected pad. `Esc` drops all marks and turns marking off; in the pad edit the first `Esc` closes the edit and keeps the marks.
+The system SHALL turn marking on and off with `M`, the marker key; while it is on, a pad hit marks or unmarks the pad and the pad still sounds. `Ctrl+A` marks the 16 pads of the open bank and turns marking on; when all 16 are marked already, it unmarks them. Marks stay when the bank turns. While marking is on or pads are marked, the title line of the pads screen shows a yellow plate next to `F2 PADS`: `MARK · hit pads · 17 marked` while marking is on, `17 MARKED · Esc drops` while it is off. Marked pads become the scope instead of the selected pad. `Esc` drops all marks and turns marking off; in the pad edit the first `Esc` closes the edit and keeps the marks.
 
 #### Scenario: Three kicks quieter
 - **WHEN** the owner presses `M`, hits three pads, presses `M` and lowers the volume by 4 dB
@@ -150,19 +150,14 @@ The system SHALL turn marking on and off with `M`, the marker key; while it is o
   `Ctrl+A` on bank 2
 - **THEN** only pad 1 of bank 5 stays marked and marking stays on
 
-#### Scenario: Mark all
-- **WHEN** no pad is marked and the owner presses `Ctrl+Shift+A`
-- **THEN** all 128 pads are marked, the panel says "scope   128 marked", and a second
-  `Ctrl+Shift+A` unmarks them all
-
 #### Scenario: Esc in the edit keeps the marks
 - **WHEN** three pads are marked, the edit is open and the owner presses `Esc`
 - **THEN** the edit closes and the three pads stay marked; a second `Esc` drops the marks
 
-#### Scenario: Ctrl+Shift+A without the kitty protocol
-- **WHEN** the terminal does not speak the kitty keyboard protocol and the owner presses
-  `Ctrl+Shift+A` on bank 2
-- **THEN** the terminal sends `Ctrl+A`, and the 16 pads of bank 2 are marked
+#### Scenario: The mark plate
+- **WHEN** the owner presses `M` on the pads screen and hits three pads, then presses `M`
+- **THEN** the title line shows `MARK · hit pads · 3 marked` on yellow while marking is
+  on, then `3 MARKED · Esc drops`; after `Esc` the plate is gone
 
 ### Requirement: Pad knobs for the scope
 The system SHALL let the learned `pad.volume` and `pad.pitch` knobs set the selected pad with soft takeover and move the other pads of the scope by the same amount.

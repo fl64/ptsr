@@ -17,10 +17,11 @@
   the mute group at their defaults. The file and the source (whole file, slice, own piece
   with its bounds) stay. It asks first: `Enter` resets, `Esc` keeps. The reset is one undo
   step: one `Ctrl+Z` brings back to every pad its own settings.
-- D7. `Ctrl+Shift+A` marks all 128 pads. Ghostty binds `ctrl+shift+a=select_all` by
-  default (checked with `ghostty +list-keybinds`), so the README tells the owner to add
-  `keybind = ctrl+shift+a=unbind`. A terminal without the kitty keyboard protocol sends
-  `Ctrl+Shift+A` as `Ctrl+A`: there it marks the bank.
+- D7. No key marks all 128 pads (owner, 2026-11-02, after the live try: "Ctrl+Shift+A
+  does not work, it selects the text on the screen, let us remove it"). `Ctrl+A` on each
+  bank does it.
+- D8. A plate at the top says that marking is on (owner, 2026-11-02: "a plate on top is
+  missing that says mark mode").
 
 ## Defaults taken by the agent (the owner did not object, 2026-11-02)
 
@@ -33,10 +34,8 @@
 
 ## Defaults taken by the agent (new)
 
-- The actions get names that say what they do: `pad.mark_bank` (`Ctrl+A`) and
-  `pad.mark_all` (`Ctrl+Shift+A`). The old name `pad.scope_next` in a user keymap or a
+- The action gets a name that says what it does: `pad.mark_bank` (`Ctrl+A`). The old name `pad.scope_next` in a user keymap or a
   learned MIDI binding is read as `pad.mark_bank`, so no file of the owner breaks.
-- `Ctrl+Shift+A` when all 128 pads are marked unmarks them all, the same way as M1.
 - The reset question uses the question box of the other questions (the overwrite of a
   pad, the reset of a device): `Reset 17 pads to clean?`, what stays, and
   `Enter: reset · Esc: keep`. As in those questions, other keys (pad hits too) do nothing
@@ -50,4 +49,7 @@
 
 ## Open questions
 
-- None yet.
+- The plate (D8): where and what it says. Default: on the title line of the pads screen,
+  next to `F2 PADS`, black on yellow: `MARK · hit pads · 17 marked` while marking is on,
+  `17 MARKED · Esc drops` while marking is off and pads stay marked; no plate when
+  marking is off and nothing is marked.
