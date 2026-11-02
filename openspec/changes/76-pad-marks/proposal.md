@@ -24,6 +24,8 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
   group off). The sound and its bounds (whole file, slice or own piece) stay. It acts on
   the scope and asks first: `Enter` resets, `Esc` keeps. `Ctrl+Z` brings all back.
 - `Esc` in the pad edit closes the edit and keeps the marks; a second `Esc` drops them.
+- `Backspace` outside the edit takes the sound off the marked pads, after a question
+  (`Clear 3 pads?`); without marks it clears the selected pad as before.
 
 ## Out of scope
 
@@ -31,7 +33,6 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
   their sounds (BACKLOG row 20 keeps them).
 - A reset of one block only (only the filter, only the envelope).
 - One key that marks all 128 pads: `Ctrl+A` on each bank does it.
-- `Backspace` outside the edit stays as it is: it clears the selected pad.
 
 ## How to verify
 

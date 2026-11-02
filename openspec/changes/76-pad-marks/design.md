@@ -23,6 +23,10 @@
 - D8. A plate at the top says that marking is on (owner, 2026-11-02: "a plate on top is
   missing that says mark mode").
 
+- D9. `Backspace` outside the edit clears the marked pads after a question (owner,
+  2026-11-02: "yes, it is more logical"); without marks it clears the selected pad with no
+  question, as before. Empty marked pads are skipped.
+
 ## Defaults taken by the agent (the owner did not object, 2026-11-02)
 
 - M1. `Ctrl+A` in a bank whose 16 pads are all marked unmarks them; marking stays on.

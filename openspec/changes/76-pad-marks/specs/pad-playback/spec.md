@@ -64,7 +64,8 @@ help line of the pad edit names the key: `Bksp reset`.
 - **THEN** the sound goes on and comes to 0 dB and an open filter without a click
 
 #### Scenario: Backspace outside the edit
-- **WHEN** the edit is closed and the owner presses `Backspace` on the pads screen
+- **WHEN** no pad is marked, the edit is closed and the owner presses `Backspace` on the
+  pads screen
 - **THEN** only the selected pad is cleared, as before, and nothing asks
 
 ## MODIFIED Requirements
@@ -98,7 +99,7 @@ The system SHALL give each of the eight banks its own soft color, show every ban
 
 ### Requirement: Change scope
 The system SHALL apply the pad changes to the change scope: the marked pads, or the selected pad when no pad is marked. The panel always names the scope on its second row, under the pad and its bank:
-`scope   pad Q` or `scope   17 marked`, the same word as the help line (68). Volume and pitch change relatively: every pad in the scope moves by the same step and the differences between them stay; a pad at a limit stays there and the pop-up says how many pads hit it. The mode is set to the next mode of the selected pad on every pad of the scope, with `H`. Clearing a pad with `Backspace` outside the edit acts on the selected pad only.
+`scope   pad Q` or `scope   17 marked`, the same word as the help line (68). Volume and pitch change relatively: every pad in the scope moves by the same step and the differences between them stay; a pad at a limit stays there and the pop-up says how many pads hit it. The mode is set to the next mode of the selected pad on every pad of the scope, with `H`. `Backspace` outside the edit takes the sound off the selected pad when no pad is marked; with marks it takes the sound off every marked pad with a sound, after a question in the question box: `Clear 3 pads?`, that their files on disk stay, and `Enter: clear · Esc: keep`. The clear of many pads is one undo step.
 
 #### Scenario: A bank lower
 - **WHEN** all 16 pads of bank 2 are marked and the owner lowers the pitch twice
@@ -122,8 +123,19 @@ The system SHALL apply the pad changes to the change scope: the marked pads, or 
 - **THEN** every pad of bank 1 gets the next mode of the selected pad
 
 #### Scenario: Clear stays on one pad
-- **WHEN** all pads of a bank are marked, the edit is closed and the owner presses `Backspace`
-- **THEN** only the selected pad is cleared
+- **WHEN** no pad is marked, all pads of the bank hold sounds, the edit is closed and the
+  owner presses `Backspace`
+- **THEN** only the selected pad is cleared, and nothing asks
+
+#### Scenario: Clear the marked pads
+- **WHEN** pads Q, W and E hold sounds and are marked, the edit is closed, the owner
+  presses `Backspace` and then `Enter`
+- **THEN** the question says `Clear 3 pads?` before anything changes, and after `Enter`
+  pads Q, W and E are empty; one `Ctrl+Z` brings back the three sounds
+
+#### Scenario: Esc keeps the marked pads
+- **WHEN** pads are marked, the owner presses `Backspace` and then `Esc`
+- **THEN** every pad keeps its sound and the marks stay
 
 ### Requirement: Marking pads
 The system SHALL turn marking on and off with `M`, the marker key; while it is on, a pad hit marks or unmarks the pad and the pad still sounds. `Ctrl+A` marks the 16 pads of the open bank and turns marking on; when all 16 are marked already, it unmarks them. Marks stay when the bank turns. While marking is on or pads are marked, the title line of the pads screen shows a yellow plate next to `F2 PADS`: `MARK · hit pads · 17 marked` while marking is on, `17 MARKED · Esc drops` while it is off. Marked pads become the scope instead of the selected pad. `Esc` drops all marks and turns marking off; in the pad edit the first `Esc` closes the edit and keeps the marks.
