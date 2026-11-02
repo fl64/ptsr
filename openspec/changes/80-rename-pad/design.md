@@ -16,12 +16,13 @@ and clears only after a successful replacement or clear. Resetting parameters ke
 
 Use the existing text input pattern, but keep releases of keys held before the input
 opened so gate notes do not get stuck. Keep input and state changes outside the audio
-callback. A name change is an undo step.
+callback. A name change is an undo step. The grid draws the pending input on the edited pad without
+changing the saved pad state; cancel restores the previous display.
 
 ## Risks / Trade-offs
 
-A long or non-ASCII name can exceed a pad. Clip it to the available screen width without
-changing the saved name. Test old session files, missing files, failed loads, swaps, undo,
+A long or non-ASCII name can exceed a pad. While typing, show the end that fits in the
+available screen cells. Keep the full name. The frame stays intact. Test old session files, missing files, failed loads, swaps, undo,
 keyboard layouts and session reload.
 
 ## Open Questions

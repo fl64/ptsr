@@ -149,6 +149,7 @@ pub struct ProjectPickerView {
 }
 
 pub struct PadView {
+    pub naming: bool,
     /// `✱` when the pad has more settings than its mode line shows (77), or empty.
     pub glyphs: String,
     /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
@@ -1660,11 +1661,22 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         (_, _, Some(n)) => Line::from(format!(" {n}")).fg(if pad.flash { BG } else { DIM }),
         _ => Line::from(format!(" {second}")).fg(if pad.flash { BG } else { DIM }),
     };
-    let name: String = pad
-        .name
-        .chars()
-        .take(area.width.saturating_sub(3) as usize)
-        .collect();
+    let width = area.width.saturating_sub(3) as usize;
+    let name = if pad.naming {
+        let mut chars = Vec::new();
+        let mut used = 0;
+        for c in pad.name.chars().rev() {
+            let n = Span::raw(c.to_string()).width();
+            if used + n > width {
+                break;
+            }
+            chars.push(c);
+            used += n;
+        }
+        chars.into_iter().rev().collect::<String>()
+    } else {
+        pad.name.clone()
+    };
     let text = vec![Line::from(format!(" {name}")), second];
     frame.render_widget(Paragraph::new(text).block(block), area);
     // the wave sits between the mode line and the bottom frame (29); the selected pad's
@@ -2494,6 +2506,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &key)| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -2689,6 +2702,26 @@ mod tests {
             .flat_map(|row| row.iter().map(|(s, _, _)| s.as_str()))
             .collect();
         assert!(text.contains("ptsr - PT's SampleR"));
+    }
+
+    #[test]
+    fn a_long_pad_name_while_typing() {
+        for width in [64, 100] {
+            let mut p = idle_pads();
+            p.pads[0].name = "very long 名字名字名字 tail".into();
+            p.pads[0].naming = true;
+            let f = frame_at(width, 44);
+            let rows = render_pads_at(p, width, 44);
+            let row = &rows[(f.grid.y + 1) as usize];
+            let cell_width = f.grid.width as usize / 4;
+            let text: String = row[..cell_width]
+                .iter()
+                .map(|(s, _, _)| s.as_str())
+                .collect();
+            assert!(text.contains("tail"), "{text}");
+            assert_eq!(row[0].0, "│");
+            assert_eq!(row[cell_width - 1].0, "│");
+        }
     }
 
     /// Scenario "Project picker" (11): the status line names the open project on every
@@ -2978,6 +3011,7 @@ mod tests {
             pads: keys
                 .iter()
                 .map(|&key| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -4332,6 +4366,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &key)| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -4914,6 +4949,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &key)| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,

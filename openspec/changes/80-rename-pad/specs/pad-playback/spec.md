@@ -3,8 +3,12 @@
 ### Requirement: Name a pad
 
 The system SHALL open a name input for the selected pad on the pads screen with `Ctrl+N`.
-The input starts with the displayed name. `Enter` saves the name, `Esc` cancels, and an
-empty name restores the name from the sample file. The input SHALL accept text in both
+The input starts with the displayed name. The pad grid SHALL show the text as it is typed,
+including an empty line when the text is empty. This is a preview only: `Enter` saves the
+name, `Esc` cancels and restores the previous name, and an empty name on `Enter` restores
+the name from the sample file. The input SHALL fit within the pad frame at every pad
+width. When the text is too wide, the visible part SHALL follow the end of the input;
+the full name SHALL be kept. The input SHALL accept text in both
 keyboard layouts and SHALL NOT play pads while it is open. The system SHALL show the
 custom name in the pad grid and save it in the project or scratch session. Old sessions
 without a name SHALL open with the sample file name. Renaming SHALL NOT change the sound.
@@ -15,6 +19,14 @@ A pad settings reset SHALL keep its name. Undo SHALL restore the name with the p
 #### Scenario: Rename a pad
 - **WHEN** the owner selects a pad, presses `Ctrl+N`, types a name and presses `Enter`
 - **THEN** the grid shows the name and the sound stays unchanged
+
+#### Scenario: See the pad name while typing
+- **WHEN** the owner types or deletes characters in the pad name line
+- **THEN** the pad shows the text immediately, before it is saved
+
+#### Scenario: A long pad name while typing
+- **WHEN** the owner types a name wider than the pad, including wide characters
+- **THEN** the end of the text is visible inside the frame and the full name is kept
 
 #### Scenario: Cancel the pad name
 - **WHEN** the owner edits a pad name and presses `Esc`

@@ -5751,6 +5751,7 @@ fn main() -> std::io::Result<()> {
                         splash,
                         app.rate,
                     );
+                    preview_pad_name(&mut view, app.pads.bank, app.pad_naming.as_ref());
                     if app.screen == Screen::Pads {
                         view.edit_key = keys(&keymap, Screen::Pads, &[Action::PadEdit]);
                     }
@@ -6128,6 +6129,16 @@ fn pad_glyphs(changed: &[tui::PadParam]) -> String {
     }
 }
 
+fn preview_pad_name(view: &mut tui::Pads, bank: usize, naming: Option<&(usize, String)>) {
+    if let Some((abs, name)) = naming
+        && *abs / PADS_PER_BANK == bank
+        && let Some(pad) = view.pads.get_mut(*abs % PADS_PER_BANK)
+    {
+        pad.name.clone_from(name);
+        pad.naming = true;
+    }
+}
+
 fn pads_view(
     p: &mut pads::Pads,
     pickup: Option<String>,
@@ -6141,6 +6152,7 @@ fn pads_view(
             let abs = p.bank * PADS_PER_BANK + i;
             let changed = pad_changes(p, abs);
             tui::PadView {
+                naming: false,
                 glyphs: pad_glyphs(&changed),
                 changed,
                 dim: false,
@@ -6608,6 +6620,7 @@ fn chop_view<'a>(
                     let n = page * PADS_PER_BANK + i;
                     let slice = slices.get(n);
                     tui::PadView {
+                        naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: slice.is_none(),
@@ -6700,6 +6713,7 @@ fn chop_view<'a>(
                 .map(|i| {
                     let abs = p.bank * PADS_PER_BANK + i;
                     tui::PadView {
+                        naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: !ours(abs) && !whole(abs),
@@ -6807,6 +6821,7 @@ fn chop_view<'a>(
                     let abs = p.bank * PADS_PER_BANK + i;
                     let planned = targets.iter().find(|t| t.1 == abs).map(|t| t.0);
                     tui::PadView {
+                        naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: false,
@@ -9590,6 +9605,22 @@ mod tests {
             app.pad_name_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
         }
         app.pad_name_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "kick");
+    }
+
+    #[test]
+    fn see_the_pad_name_while_typing() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.apply(Action::PadRename);
+        app.pad_name_key(&KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+        let mut view = super::pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+        super::preview_pad_name(&mut view, app.pads.bank, app.pad_naming.as_ref());
+        assert_eq!(view.pads[0].name, "kick!");
+        assert!(view.pads[0].naming);
+        assert_eq!(app.pads.custom_name[0], None);
+        app.pad_name_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(super::pad_name(&app.pads, 0), "kick");
     }
 
