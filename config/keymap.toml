@@ -107,6 +107,7 @@ Enter = "browser.hold"        # "file in hand": a pad hit puts it there, Enter a
 "Ctrl+B" = "browser.favorite_toggle"
 
 [screens.pads]
+"Ctrl+N" = "pad.rename"
 J = "bank.prev"        # a pad hit picks the pad; the direction keys turn the banks
 L = "bank.next"
 Left = "bank.prev"

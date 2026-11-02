@@ -33,6 +33,7 @@ pub enum Action {
     MasterVolume(i8),
     /// Take the selected pad in hand; the next pad hit swaps the two.
     PadTake,
+    PadRename,
     PadSelect(Dir),
     PadModeNext,
     /// Pads screen: the edit mode of the selected pad opens; `Esc` closes it.
@@ -185,6 +186,7 @@ impl Action {
             "bank.prev" => Self::BankPrev,
             "master.volume_down" => Self::MasterVolume(-1),
             "pad.take" => Self::PadTake,
+            "pad.rename" => Self::PadRename,
             "master.volume_up" => Self::MasterVolume(1),
             b if b.starts_with("bank.") => match b[5..].parse::<usize>() {
                 Ok(n @ 1..=8) => Self::BankSelect(n - 1),
@@ -781,6 +783,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "pad.mark_toggle",
         label: "marking on / off",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pad.rename",
+        label: "name the selected pad",
         group: Group::Pads,
         knob: false,
     },

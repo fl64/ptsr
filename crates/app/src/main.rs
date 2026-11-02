@@ -377,6 +377,7 @@ struct App {
     /// The project picker of Ctrl+P (11); while it is open the keys go to it before the
     /// screen, like the filter line of the files screen.
     project_picker: Option<ProjectPicker>,
+    pad_naming: Option<(usize, String)>,
     takeover: Takeover,
     /// Soft takeover hint for the selected pad and when it was last updated.
     pickup: Option<(String, Instant)>,
@@ -579,6 +580,7 @@ impl App {
         self.edit = false;
         self.set_master(sess.master_db);
         self.pads = pads::Pads::default();
+        self.pad_naming = None;
         self.chop = None;
         self.plan = None;
         self.plan_undo.clear();
@@ -925,6 +927,39 @@ impl App {
         self.master_db = db.clamp(pads::MIN_DB, pads::MAX_DB);
         let gain = 10f32.powf(self.master_db as f32 / 20.0);
         self.send(Command::SetMasterGain { gain });
+    }
+
+    fn pad_name_key(&mut self, k: &event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+        if k.kind == KeyEventKind::Release {
+            return false;
+        }
+        let Some((abs, mut name)) = self.pad_naming.take() else {
+            return false;
+        };
+        match k.code {
+            KeyCode::Esc => return true,
+            KeyCode::Enter => {
+                let before = self.before();
+                self.pads.custom_name[abs] = (!name.is_empty()).then_some(name);
+                self.note_step(before, "name".into());
+                self.dirty();
+                return true;
+            }
+            KeyCode::Backspace => {
+                name.pop();
+            }
+            KeyCode::Char(c)
+                if !k
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                name.push(c)
+            }
+            _ => {}
+        }
+        self.pad_naming = Some((abs, name));
+        true
     }
 
     /// A key while the filter line is open; `false` lets it through (releases, Ctrl+key).
@@ -1392,6 +1427,18 @@ impl App {
                 };
             }
             Action::LearnToggle => {}
+            Action::PadRename if self.screen == Screen::Pads => {
+                let abs = self.pads.selected_abs();
+                if self.pads.file[abs].is_some() {
+                    self.pad_naming = Some((abs, pad_name(&self.pads, abs)));
+                } else {
+                    self.flash = Some((
+                        "pad is empty: put a sample on it first".into(),
+                        Instant::now(),
+                    ));
+                }
+            }
+            Action::PadRename => {}
             Action::ProjectPick => {
                 self.project_picker = Some(ProjectPicker::new(&self.paths.projects));
             }
@@ -2707,6 +2754,7 @@ impl App {
             self.load_gen[abs] += 1;
             self.pads.loading[abs] = None;
             self.pads.missing[abs] = false;
+            self.pads.custom_name[abs] = None;
             self.pads.file[abs] = Some(file.clone());
             self.pads.set_sound(abs, sound.clone());
             self.pads.region[abs] = region;
@@ -3070,6 +3118,11 @@ impl App {
             } if generation == self.load_gen[pad] => {
                 self.pads.loading[pad] = None;
                 self.pads.missing[pad] = false;
+                if self.pads.file[pad].as_ref() != Some(&path)
+                    || self.pads.region[pad] != self.load_region[pad]
+                {
+                    self.pads.custom_name[pad] = None;
+                }
                 self.pads.file[pad] = Some(path);
                 self.pads.set_sound(pad, sound.clone());
                 let region = self.load_region[pad];
@@ -5357,6 +5410,7 @@ fn main() -> std::io::Result<()> {
         user_path: loaded.user_path,
         path_picker: None,
         project_picker: None,
+        pad_naming: None,
         paths,
         routed: Routed::default(),
         screen: Screen::Pads,
@@ -5600,7 +5654,11 @@ fn main() -> std::io::Result<()> {
             let _ = execute!(std::io::stdout(), SetTitle(title.as_str()));
         }
 
-        let notice = app.notice();
+        let notice = app
+            .pad_naming
+            .as_ref()
+            .map(|(_, name)| format!("Name: {name}▏  Enter saves · Esc cancels"))
+            .or_else(|| app.notice());
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let status = tui::Status {
             backend: app.audio_alive().map(|a| a.backend),
@@ -5801,6 +5859,9 @@ fn main() -> std::io::Result<()> {
         };
         // any key event at all means the startup notices were read
         app.dismiss_startup();
+        if app.pad_naming.is_some() && app.pad_name_key(&k) {
+            continue;
+        }
         // the project picker is open: its keys go first, raw, like the filter line (11)
         if app.project_picker.is_some() && app.project_picker_key(&k) {
             continue;
@@ -6474,6 +6535,9 @@ fn source_word(s: pads::Source) -> String {
 
 /// "break 5" for a slice, the file name for a whole file, the test tone note for an empty pad.
 fn pad_name(p: &pads::Pads, abs: usize) -> String {
+    if let Some(name) = &p.custom_name[abs] {
+        return name.clone();
+    }
     let Some(stem) = p.file[abs].as_deref().and_then(|f| f.file_stem()) else {
         return test_tone_name(abs);
     };
@@ -7170,6 +7234,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                 // the pad panel shows the mode and the picked parameter: the help line names only the keys
                 items: vec![
                     item(&[Action::PadEdit], "edit".into()),
+                    item(&[Action::PadRename], "name".into()),
                     item(&[Action::PadModeNext], "mode".into()),
                     item(&[Action::PadClear], "clear".into()),
                 ],
@@ -7561,6 +7626,7 @@ fn describe(a: Action) -> String {
         Action::MasterVolume(s) if s < 0 => "master volume down 1 dB".into(),
         Action::MasterVolume(_) => "master volume up 1 dB".into(),
         Action::PadTake => "take the selected pad; the next pad hit swaps them".into(),
+        Action::PadRename => "pads: name the selected pad".into(),
         Action::PadSelect(d) => format!("select pad {}", format!("{d:?}").to_lowercase()),
         Action::PadModeNext => "pad mode: one-shot / gate".into(),
         Action::PadEdit => "pads: edit the selected pad; Esc closes".into(),
@@ -7665,6 +7731,7 @@ fn help_section(a: Action) -> usize {
         | Action::PadMarkToggle
         | Action::PadClear
         | Action::PadTake
+        | Action::PadRename
         | Action::LearnToggle => 0,
         Action::BankNext | Action::BankPrev | Action::BankSelect(_) => 1,
         Action::BrowserUp
@@ -8336,6 +8403,7 @@ mod tests {
             user_path: None,
             path_picker: None,
             project_picker: None,
+            pad_naming: None,
             paths: config::PathsConfig::default(),
             routed: Routed::default(),
             screen: Screen::Pads,
@@ -9496,6 +9564,88 @@ mod tests {
             app.window_title()
         );
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn rename_a_pad_cancel_the_pad_name_and_restore_the_file_name() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.apply(Action::PadRename);
+        assert_eq!(app.pad_naming.as_ref().unwrap().1, "kick");
+        for _ in 0..4 {
+            app.pad_name_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        }
+        for c in "Бочка".chars() {
+            assert!(app.pad_name_key(&KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+        }
+        app.pad_name_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "Бочка");
+        app.apply(Action::PadRename);
+        app.pad_name_key(&KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        app.pad_name_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "Бочка");
+        app.apply(Action::PadRename);
+        for _ in 0..5 {
+            app.pad_name_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        }
+        app.pad_name_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "kick");
+    }
+
+    #[test]
+    fn pad_name_after_restart() {
+        let root = tmp_dir("pad-name-restart");
+        let path = root.join("session.toml");
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.pads.custom_name[0] = Some("Бочка".into());
+        super::session::save(&path, &app.pads.to_session(None, app.rate)).unwrap();
+        let session = super::session::load(&path).unwrap();
+        let mut pads = super::pads::Pads::default();
+        pads.restore(&session, app.rate);
+        assert_eq!(super::pad_name(&pads, 0), "Бочка");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn swap_named_pads_and_clear_and_undo_a_named_pad() {
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.pads.custom_name[0] = Some("Бочка".into());
+        app.pads.swap(0, 1);
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка"));
+        let before = app.before();
+        app.pads.clear(1);
+        app.note_step(before, "clear".into());
+        assert_eq!(app.pads.custom_name[1], None);
+        app.undo_pads();
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка"));
+    }
+
+    #[test]
+    fn replace_a_named_pad_sound_and_a_failed_replacement_keeps_the_name() {
+        let mut app = test_app();
+        app.pads.file[0] = Some("old.wav".into());
+        app.pads.custom_name[0] = Some("kick".into());
+        let sound = std::sync::Arc::new(Sample::mono(vec![0.1; 64]));
+        app.pads.sound[0] = Some(sound.clone());
+        app.load_gen[0] = 1;
+        app.loader_reply(super::loader::Reply::Failed {
+            pad: 0,
+            generation: 1,
+            path: "new.wav".into(),
+            error: "failed".into(),
+        });
+        assert_eq!(app.pads.custom_name[0].as_deref(), Some("kick"));
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: 0,
+            generation: 1,
+            path: "new.wav".into(),
+            sound,
+        });
+        assert_eq!(app.pads.custom_name[0], None);
+        assert_eq!(super::pad_name(&app.pads, 0), "new");
     }
 
     /// 79: A late sample from the old project must not fill or sound an empty pad.
