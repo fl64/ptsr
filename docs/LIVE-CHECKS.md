@@ -603,11 +603,11 @@ Folder: `changes/archive/2026-11-02-79-project-sound-isolation`
 
 ## 80 — Name a pad
 
-Folder: `changes/80-rename-pad`
+Folder: `changes/archive/2026-11-02-80-rename-pad`
 
-The owner checked the rename (2026-11-02); the cursor was added after that check.
+The owner checked the rename and cursor (2026-11-02).
 
-- [ ] Put a sample on a pad. Press `Ctrl+N`. Make sure that a cursor shows after the
+- [x] Put a sample on a pad. Press `Ctrl+N`. Make sure that a cursor shows after the
   name. Clear the line and make sure that the cursor stays visible in the empty pad.
   Type a long name with wide characters. Make sure that its end and the cursor stay
   inside the frame. Press `Enter` and make sure that the cursor goes away.
