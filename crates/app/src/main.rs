@@ -796,9 +796,6 @@ impl App {
             Command::Preview { sound: Some(_), .. } => true,
             _ => false,
         };
-        if sounds {
-            self.splash = false;
-        }
         #[cfg(test)]
         self.sent.push(cmd.clone());
         if let Some(a) = &self.audio {
@@ -838,6 +835,8 @@ impl App {
             if let Some(pad) = press {
                 if self.audio.as_mut().unwrap().commands.push(message).is_err() {
                     self.audio_held[pad] = None;
+                } else if sounds {
+                    self.splash = false;
                 }
             } else {
                 self.pending_audio.push_back(message);
@@ -849,9 +848,27 @@ impl App {
     fn flush_audio(&mut self) {
         let Some(audio) = &mut self.audio else { return };
         while let Some(cmd) = self.pending_audio.pop_front() {
+            let preview = cmd.ready_at_send
+                && cmd.epoch
+                    == audio
+                        .project
+                        .epoch
+                        .load(std::sync::atomic::Ordering::Acquire)
+                && cmd.epoch
+                    == audio
+                        .project
+                        .ready
+                        .load(std::sync::atomic::Ordering::Acquire)
+                && matches!(
+                    &cmd.command,
+                    ProjectMessage::Command(Command::Preview { sound: Some(_), .. })
+                );
             if let Err(rtrb::PushError::Full(cmd)) = audio.commands.push(cmd) {
                 self.pending_audio.push_front(cmd);
                 break;
+            }
+            if preview {
+                self.splash = false;
             }
         }
     }
@@ -4240,15 +4257,16 @@ impl App {
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
             midi::Event::PadHit { .. } if self.ask.is_some() => {}
-            midi::Event::PadHit { abs } if self.screen == Screen::Chop => {
+            midi::Event::PadHit { abs, .. } if self.screen == Screen::Chop => {
                 self.play_slice(abs % PADS_PER_BANK)
             }
-            midi::Event::PadHit { abs } if self.browser.in_hand.is_some() => self.put_in_hand(abs),
-            midi::Event::PadHit { abs } if self.pad_in_hand.is_some() => self.swap_with(abs),
-            midi::Event::PadHit { abs } => {
-                // the note already went to the engine from the midi reader: a pad with
-                // a sound ends the splash (73)
-                if self.pad_sounds(abs) {
+            midi::Event::PadHit { abs, .. } if self.browser.in_hand.is_some() => {
+                self.put_in_hand(abs)
+            }
+            midi::Event::PadHit { abs, .. } if self.pad_in_hand.is_some() => self.swap_with(abs),
+            midi::Event::PadHit { abs, accepted } => {
+                // The MIDI reader reports whether the audio queue accepted the note.
+                if accepted && self.pad_sounds(abs) {
                     self.splash = false;
                 }
                 self.meters.hit(Instant::now());
@@ -5178,7 +5196,10 @@ impl App {
 
     /// A pad that can sound now: a loaded sample, not still loading, not failed (73).
     fn pad_sounds(&self, pad: usize) -> bool {
-        self.pads.file[pad].is_some() && !self.pads.missing[pad] && self.pads.loading[pad].is_none()
+        pad < PADS
+            && self.pads.file[pad].is_some()
+            && !self.pads.missing[pad]
+            && self.pads.loading[pad].is_none()
     }
 
     /// The loading line of the splash (73): what loads now, `ready` when all is loaded,
@@ -8438,6 +8459,7 @@ mod tests {
     fn a_pad_hit_during_the_splash() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let mut app = laid_out_break();
+        app.audio = Some(super::audio::offline(48_000).0);
         app.screen = Screen::Pads;
         app.splash = true;
         pads_key(&mut app, KeyCode::Char('q'), M::NONE);
@@ -8448,6 +8470,52 @@ mod tests {
             "pad Q (4) plays"
         );
         assert!(!app.splash, "the note ended the splash");
+    }
+
+    #[test]
+    fn splash_waits_for_accepted_pad_and_preview() {
+        use std::sync::atomic::Ordering::Release;
+        let mut app = chop_from_pad(4);
+        app.screen = Screen::Pads;
+        app.splash = true;
+        let press = || Command::PadPress {
+            pad: 4,
+            velocity: 1.0,
+        };
+        app.send(press());
+        assert!(app.splash, "no audio");
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.audio.as_ref().unwrap().project.epoch.store(1, Release);
+        app.send(press());
+        assert!(app.splash, "project not ready");
+        app.audio.as_ref().unwrap().project.ready.store(1, Release);
+        let queue = &mut app.audio.as_mut().unwrap().commands;
+        while queue
+            .push(super::ProjectCommand {
+                epoch: 1,
+                ready_at_send: true,
+                command: super::ProjectMessage::Command(Command::PadRelease { pad: 0 }),
+            })
+            .is_ok()
+        {}
+        app.send(press());
+        assert!(app.splash, "full queue");
+        let sound = app.chop.as_ref().unwrap().sound.clone();
+        app.send(Command::Preview {
+            sound: Some(sound),
+            region: Region::WHOLE,
+        });
+        assert!(app.splash, "preview still waiting for the queue");
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        for _ in 0..8 {
+            rt.process(&mut left, &mut right);
+        }
+        // The RT changes readiness on project transition; make it ready for this queue test.
+        app.audio.as_ref().unwrap().project.ready.store(1, Release);
+        app.flush_audio();
+        assert!(!app.splash, "preview entered the queue");
     }
 
     /// 73 "A command key during the splash": F3 opens the chop screen and the splash
@@ -8501,7 +8569,10 @@ mod tests {
             .expect("an empty pad exists in the fixture");
         pads_key(&mut app, KeyCode::Char(PAD_KEYS[empty]), M::NONE);
         assert!(app.splash, "an empty pad makes no sound");
-        app.midi_event(super::midi::Event::PadHit { abs: empty });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: empty,
+        });
         assert!(
             app.splash,
             "a controller note on an empty pad makes no sound"
@@ -8512,9 +8583,18 @@ mod tests {
     #[test]
     fn a_controller_note_ends_the_splash() {
         let mut app = laid_out_break();
+        app.screen = Screen::Pads;
         app.splash = true;
         assert!(app.pads.file[4].is_some(), "pad Q has a sample");
-        app.midi_event(super::midi::Event::PadHit { abs: 4 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 4,
+        });
+        assert!(app.splash, "a rejected controller note keeps the splash");
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: true,
+            abs: 4,
+        });
         assert!(!app.splash, "the controller note ended the splash");
     }
 
@@ -9528,7 +9608,10 @@ mod tests {
             pad: 0,
             velocity: 1.0,
         });
-        app.midi_event(super::midi::Event::PadHit { abs: 0 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 0,
+        });
         let delayed = super::midi::UiEvent::stamped(
             super::midi::Event::Action(Action::ChopPlay),
             &app.audio.as_ref().unwrap().project,
@@ -11847,7 +11930,10 @@ mod tests {
         app.sent.clear();
         learn_press(&mut app, KeyCode::Char('q'));
         learn_press(&mut app, KeyCode::Char('h')); // the pad mode key
-        app.midi_event(super::midi::Event::PadHit { abs: 3 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 3,
+        });
         assert!(
             !app.sent
                 .iter()
@@ -17700,7 +17786,10 @@ mod tests {
         assert!(lit(&mut app), "held from the keyboard");
         app.apply(Action::PadRelease { pad: 4 });
         assert!(!lit(&mut app), "dark after the release");
-        app.midi_event(super::midi::Event::PadHit { abs: 4 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 4,
+        });
         app.pads.hit_at[4] = Some(two_seconds_ago);
         assert!(lit(&mut app), "held from a controller");
         app.midi_event(super::midi::Event::PadRelease { abs: 4 });

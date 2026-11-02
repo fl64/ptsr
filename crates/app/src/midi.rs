@@ -31,9 +31,10 @@ pub enum Event {
         msg: Msg,
         meaning: String,
     },
-    /// A pad was hit from a controller; the audio thread already has it.
+    /// A controller hit; `accepted` says the audio queue accepted the note.
     PadHit {
         abs: usize,
+        accepted: bool,
     },
     /// A controller pad was released (or its device disappeared).
     PadRelease {
@@ -420,10 +421,17 @@ fn dispatch(
         match resolved {
             Some(Resolved::Action(Action::PadPress { pad, .. })) if shared.hand.load(Relaxed) => {
                 let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
-                send(Event::PadHit { abs }, Some(stamp));
+                send(
+                    Event::PadHit {
+                        abs,
+                        accepted: false,
+                    },
+                    Some(stamp),
+                );
             }
             Some(Resolved::Action(Action::PadPress { pad, velocity })) => {
                 let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
+                let mut accepted = false;
                 if stamp.ready && pending.is_empty() {
                     let command = ProjectCommand {
                         epoch: stamp.epoch,
@@ -431,13 +439,14 @@ fn dispatch(
                         command: ProjectMessage::Command(Command::PadPress { pad: abs, velocity }),
                     };
                     if commands.as_mut().is_some_and(|c| c.push(command).is_ok()) {
+                        accepted = true;
                         let held = pressed.entry((port, msg.key())).or_default();
                         if !held.contains(&(abs, stamp.epoch)) {
                             held.push((abs, stamp.epoch));
                         }
                     }
                 }
-                send(Event::PadHit { abs }, Some(stamp));
+                send(Event::PadHit { abs, accepted }, Some(stamp));
             }
             Some(Resolved::Action(Action::PadRelease { pad })) => {
                 let held = pressed.remove(&(port, msg.key())).unwrap_or_default();
@@ -595,6 +604,42 @@ mod tests {
     }
 
     #[test]
+    fn pad_hit_reports_audio_queue_acceptance() {
+        for (queue, ready, full, expected) in [
+            (false, true, false, false),
+            (true, false, false, false),
+            (true, true, true, false),
+            (true, true, false, true),
+        ] {
+            let (raw_tx, raw_rx) = mpsc::channel();
+            let (tx, rx) = mpsc::channel();
+            let (mut producer, _consumer) = rtrb::RingBuffer::new(1);
+            if full {
+                producer.push(release_command(0, 0)).unwrap();
+            }
+            raw_tx
+                .send(Raw::Msg(
+                    "controller".into(),
+                    note_on(36),
+                    Stamp { epoch: 0, ready },
+                ))
+                .unwrap();
+            drop(raw_tx);
+            dispatch(
+                raw_rx,
+                tx,
+                vec![],
+                LearnedMaps::new(),
+                vec![],
+                queue.then_some(producer),
+                None,
+                Arc::new(Shared::default()),
+            );
+            assert!(rx.try_iter().any(|event| matches!(event.event, Event::PadHit { abs: 0, accepted } if accepted == expected)));
+        }
+    }
+
+    #[test]
     fn ui_events_keep_the_callback_epoch_and_drop_unready_hits() {
         use std::sync::atomic::Ordering::Release;
         let state = Arc::new(ProjectState::default());
@@ -647,7 +692,11 @@ mod tests {
                 .count(),
             1
         );
-        assert!(events.iter().any(|e| matches!(e, Event::PadHit { abs: 2 })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::PadHit { abs: 2, .. }))
+        );
         assert!(!events.iter().any(|e| matches!(
             e,
             Event::Message {

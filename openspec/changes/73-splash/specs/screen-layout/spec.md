@@ -13,17 +13,21 @@ a loading line. The logo is this text, character by character:
 /         
 ```
 
-The loading line names what loads now (the session, the number of samples) and says `ready`
-when all is loaded, or names a file that did not load. Loading goes on under the splash,
-and the rest of the screen shows as always.
+The session file is read before the first screen. The loading line names the number of
+pads whose samples are loading and says `ready` when loading is complete, or names a file
+that did not load. Sample loading continues under the splash, and the rest of the screen
+shows as always. When the strip has fewer than four rows, the splash shows `ptsr` and the
+loading line instead of the full logo, name and version.
 
 The splash is visible only on the pads screen. Other screens show their own content. If the
 owner returns to the pads screen before the first sound, the splash is visible again.
 The pad edit shows its envelope or filter curve in place of the splash. When the edit
 closes before the first sound, the splash shows again.
 The first sound ends the splash, and it never returns: a note that plays (a pad hit from
-the keys or from the controller) or a recording that starts. A hit on a pad with no sound
-does not end it. No key and no time closes the splash by itself; from the first sound on,
+the keys or from the controller), a sample preview, or a recording that starts. A sound
+request ends the splash only when the audio queue accepts it while the project is ready.
+No audio, a full queue, an unready project, or a hit on a pad with no sound does not end
+it. No key and no time closes the splash by itself; from the first sound on,
 the strip shows the wave.
 
 #### Scenario: The splash at start
