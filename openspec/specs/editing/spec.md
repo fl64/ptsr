@@ -186,50 +186,48 @@ parameter are picked, and, in the edit mode, which parameter every knob turns no
   stands on that line, the cursor takes the bound colour too, so the lit bound never
   hides under it
 
-### Requirement: The pad shows what is set on it
-The system SHALL show, without the edit, which blocks of a pad differ from a fresh pad:
-the pad cell carries on its top frame a glyph for every changed block, in this order:
-`↕` the pitch, `◣` the envelope (attack, decay, release), `∿` the filter on (its
-type is not off; the cutoff and the reso of a filter that is off count for nothing), `◻` a part of the file (a slice or the pad's own piece; a pad that plays the whole file has none), `↯` the drive, then for send 1
-and send 2 above 0 the glyph of the effect in that slot: `◌` reverb, `⋯` delay. An
-unchanged block gives no glyph. The pad panel draws a changed value bright and a default
-value dim, and the block line with a change carries `●`. The volume stays on the mode line
-and takes no glyph. F1 names the glyphs.
+### Requirement: The pad marks its settings
+The system SHALL end the mode line of a pad (under its name) with `✱` when the pitch, the
+envelope (attack, decay, release), the filter (its type is not off; the cutoff and the
+reso of a filter that is off count for nothing), the drive or a send differ from a fresh
+pad. The volume, the mode and the mute group are on the mode line already and do not
+count; the source (a slice or the pad's own piece) does not count either. The top frame
+of a pad carries no glyph. The pad panel draws a changed value bright and a default value
+dim, and the block line with a change carries `●`. F1 names `✱`.
 
-#### Scenario: A filter on the pad
+#### Scenario: A filter marks the pad
 - **WHEN** pad R plays a whole file, the owner turns its filter to low-pass and closes the edit
-- **THEN** the top frame of pad R carries `∿` and no other glyph
+- **THEN** the mode line of pad R ends with `✱`, and its top frame carries no glyph
 
-#### Scenario: A filter that is off
+#### Scenario: A filter that is off marks nothing
 - **WHEN** pad R plays a whole file with the filter off and the cutoff at 1.1 kHz
-- **THEN** its frame carries no `∿`, the FILTER line carries no `●`, and the cutoff is dim
+- **THEN** its mode line has no `✱`, the FILTER line carries no `●`, and the cutoff is dim
 
-#### Scenario: A clean pad
+#### Scenario: A fresh pad has no mark
 - **WHEN** a sample is loaded on a fresh pad
-- **THEN** its top frame carries no glyph
+- **THEN** its mode line is `⇢` alone
 
-#### Scenario: Back to the default
+#### Scenario: The mark goes with the setting
 - **WHEN** the pitch of a pad is +2 and the owner turns it back to 0
-- **THEN** the `↕` glyph is gone from the pad frame
+- **THEN** the `✱` is gone from its mode line
 
-#### Scenario: The panel shows the change
+#### Scenario: The panel names the settings
 - **WHEN** a pad that plays a whole file, with the pitch -5 and the filter low-pass, is selected
 - **THEN** the panel draws the pitch and the filter bright, the envelope dim, and the
   TONE and FILTER block lines carry `●`, the ENV and SOURCE lines do not
 
-#### Scenario: Chopped pads carry the square
-- **WHEN** slices 1–8 of a break lie on pads 1–8 and pad 9 plays the whole break
-- **THEN** pads 1–8 carry `◻` and pad 9 does not
+#### Scenario: A slice is not a setting
+- **WHEN** slices 1–8 of a break lie on pads 1–8 with nothing else changed
+- **THEN** no pad of the eight shows `✱`
 
-#### Scenario: The send lights its glyph
-- **WHEN** FX 1 holds a reverb, FX 2 a delay, and the owner turns send 2 of pad Q to 20 %
-- **THEN** the top frame of pad Q carries `⋯`; with both sends above 0 it carries `◌⋯`
+#### Scenario: Volume and group are not counted twice
+- **WHEN** pad Q is at -6 dB in mute group 2 with nothing else changed
+- **THEN** its mode line is `⇢ -6 mute 2`, with no `✱`
 
-#### Scenario: Two reverbs on the frame
-- **WHEN** both slots hold a reverb and pad Q sends to both
-- **THEN** the top frame of pad Q carries `◌◌`
+#### Scenario: A send marks the pad
+- **WHEN** the owner turns send 2 of pad Q to 20 %
+- **THEN** the mode line of pad Q ends with `✱`
 
-#### Scenario: F1 names the glyphs
+#### Scenario: F1 names the mark
 - **WHEN** the owner opens the full help with F1 on the pads screen
-- **THEN** the help names every glyph: `↕` pitch, `◣` envelope, `∿` filter, `◻` a part of the
-  file, `↯` drive, `◌` reverb, `⋯` delay
+- **THEN** it names `✱` as "more settings, see the panel", and no frame glyph

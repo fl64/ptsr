@@ -1,7 +1,7 @@
 # Live checks
 
 This file lists the checks that the owner does by hand and by ear. Each section is one
-archived OpenSpec change. The current behavior is in `openspec/specs/`. The steps
+OpenSpec change. The current behavior is in `openspec/specs/` and active changes. The steps
 describe the current behavior, also when a later change replaced a part of the change.
 The folder paths are relative to `openspec/`.
 
@@ -325,13 +325,15 @@ superseded by 57.
 
 Folder: `changes/archive/2026-11-01-55-pad-badges`
 
+Superseded by 77: the pad frame has no glyphs; one `✱` on the mode line marks the settings. Do the check of 77.
+
 - [ ] Put a sample on a fresh pad. Make sure that its top frame has no glyph.
 - [ ] Open the edit of pad `R` with the whole file. Set the filter to low-pass and close
   the edit. Make sure that the frame of pad `R` shows `∿` and no other glyph.
 - [ ] Set the filter to off and leave the cutoff away from its default. Make sure that
   the frame has no `∿`. Make sure that the FILTER line has no `●` and the cutoff is dim.
-- [ ] Set the pitch to +2. Make sure that `↕` shows. Set the pitch to 0. Make sure that
-  `↕` goes away.
+- [ ] Set the pitch to +2. Make sure that `⇕` shows. Set the pitch to 0. Make sure that
+  `⇕` goes away.
 - [ ] Make sure that the panel shows changed values bright and default values dim. Make
   sure that each block line with a change has `●`.
 - [ ] Make sure that pads with slices show `◻` and a whole-file pad does not. Press `F1`.
@@ -347,7 +349,7 @@ Folder: `changes/archive/2026-11-01-56-pad-fx`
   1 turns the drive, knob 2 send 1, knob 3 send 2. Turn the drive up. Make sure that the
   sound gets more grit at approximately the same loudness.
 - [ ] (by ear) Set send 2 of pad `Q` to 20 % with a delay in FX 2. Hit pad `Q`. Make sure
-  that you hear an echo after the pad stops. Make sure that the frame shows `⋯`.
+  that you hear an echo after the pad stops. Make sure that the mode line of the pad ends with `✱`.
 - [ ] (by ear) Press `Tab` until FX1*. Make sure that the block line shows
   `FX 1 * shared` and the change line shows `all pads`. Turn the size up. Make sure that
   each pad that sends to FX 1 has a longer tail.
@@ -492,7 +494,7 @@ Folder: `changes/archive/2026-11-01-70-mute-groups`
 
 - [ ] Put an open hat on pad `Q` and a closed hat on pad `W`. Press `M`, hit `Q` and
   `W`, press `M`. Press `Enter` and select `mute` on TONE. Press `L` one time. Make sure
-  that the panel shows `mute    1` and both frames show `①`.
+  that the panel shows `mute    1` and the line under both names says `mute 1`.
 - [ ] (by ear) Hit `Q`, then `W`. Make sure that the open hat stops at once with no click.
   Make sure that the closed hat plays fully.
 - [ ] (by ear) Put pad `E` in group 2 and keep pad `R` off. Hit `Q`, `E`, `R`, then `W`.
@@ -501,7 +503,7 @@ Folder: `changes/archive/2026-11-01-70-mute-groups`
   sure that 1-1 stops. Listen to `renders/70-mute-groups.wav`.
 - [ ] Press `Ctrl+Z` and make sure that the last group change goes back. Restart the
   program. Make sure that the groups stay. Press `F1`. Make sure that it has a row for
-  `①…⑧`.
+  `mute N`.
 - [ ] Close the edit. Make sure that the first panel row ends with `Enter: edit`. Press
   `Tab`, `Shift+Tab`, `I` and `K`. Make sure that they walk the pages and parameters. Make
   the window 100×30. Make sure that closed blocks fold with `▸` and `▲ N more` / `▼ N more`
@@ -544,3 +546,78 @@ Folder: `changes/archive/2026-11-01-12-rename-ptsr`
   moved.
 - [ ] If you linked the sound to `arasaka-404` by hand (for example in a patchbay), link it
   again to the `ptsr` client.
+
+## 76 — Marks are the scope, and a pad can be reset
+
+Folder: `changes/archive/2026-11-02-76-pad-marks`
+
+- [x] On `F2`, open bank 2 (`Ctrl+2`) and press `Ctrl+A`. Make sure that all 16 pads of
+  the bank have a dark yellow fill and a yellow frame, and that the top line shows the
+  yellow plate `MARK · hit pads · 16 marked`.
+- [x] Hit two pads. Make sure that they lose the yellow. Open bank 5 (`Ctrl+5`) and hit
+  three pads. Make sure that they become yellow, and that the bank row shows yellow dots
+  at bank 2 and bank 5 where the marks are.
+- [x] Press `Enter` and turn the volume down. Make sure that every marked pad in both
+  banks is quieter (by ear).
+- [x] Still in the edit, press `Backspace`. Make sure that a question asks
+  `Reset 17 pads to clean?`. Press `Enter`. Make sure that the pads sound as freshly
+  loaded, with the same cuts (by ear). Press `Ctrl+Z`. Make sure that the settings come
+  back (by ear).
+- [x] Press `Esc`. Make sure that the edit closes and the marks stay, and that the plate
+  says `17 MARKED · Esc drops`. Press `Backspace`. Make sure that a question asks
+  `Clear 17 pads?`. Press `Esc`. Make sure that the sounds stay.
+- [x] Press `Esc`. Make sure that the marks and the plate are gone. Press `Backspace`.
+  Make sure that only the selected pad loses its sound, and that nothing asks.
+- [ ] Listen to `renders/76-reset-sounding.wav`. Make sure that the quiet, dull tone becomes
+  loud and open in the middle, without a click (by ear).
+
+## 77 — A quiet pad grid
+
+Folder: `changes/archive/2026-11-02-77-pad-glyphs`
+
+- [x] Look at the pad grid. Make sure that no pad frame carries glyphs.
+- [x] Load a sample on a fresh pad. Make sure that the line under its name is `⇢`.
+- [x] Put the pad into mute group 2 and lower it by 6 dB. Make sure that the line is
+  `⇢ -6 mute 2`, with no `✱`.
+- [x] Raise its pitch. Make sure that the line is `⇢ -6 mute 2 ✱`. Turn the pitch back to
+  0. Make sure that the `✱` goes.
+- [x] Press `H`. Make sure that the line is `⇥ -6 mute 2`, and that `⇢` and `⇥` are easy
+  to tell apart.
+- [x] Press `F1`. Make sure that it names `⇢` one-shot, `⇥` gate, `mute N` and `✱`.
+
+## 79 — Project sounds stay separate
+
+Folder: `changes/archive/2026-11-02-79-project-sound-isolation`
+
+- [x] Create project A. Load a long sample on a pad and slices on other pads. Change a
+  pad's volume or pitch. Note the sounds and settings.
+- [x] (by ear) Start the long sample. While it sounds, use `Ctrl+P` to create an empty
+  project B. Make sure that the old sound fades out without a click and stays silent.
+- [x] (by ear) Hit the same pads in B on the keyboard and on the MIDI controller. Make
+  sure that they are silent. Hit pads while B opens. Make sure that the hits are silent
+  and do not sound later.
+- [x] (by ear) Use `Ctrl+P` to return to A. Hit its pads on the keyboard and on the MIDI
+  controller. Make sure that the samples and slices play with their saved settings.
+- [x] (by ear) Listen to `renders/79-project-switch.wav`. Check that the old sound fades
+  without a click and that no old sound returns after the switch.
+
+## 80 — Name a pad
+
+Folder: `changes/archive/2026-11-02-80-rename-pad`
+
+The owner checked the rename and cursor (2026-11-02).
+
+- [x] Put a sample on a pad. Press `Ctrl+N`. Make sure that a cursor shows after the
+  name. Clear the line and make sure that the cursor stays visible in the empty pad.
+  Type a long name with wide characters. Make sure that its end and the cursor stay
+  inside the frame. Press `Enter` and make sure that the cursor goes away.
+
+## 81 — Drive sound after optimization
+
+Folder: `changes/archive/2026-11-02-81-drive-performance`
+
+The owner accepts the result for now; the sound can be reviewed again during use.
+
+- [ ] (by ear) Listen to `renders/81-drive-comparison.wav`. The first part is the old
+  drive, the second is the optimized drive. Make sure they sound the same, including the
+  change in drive. There is a short silence between them.

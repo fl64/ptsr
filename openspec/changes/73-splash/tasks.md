@@ -1,3 +1,0 @@
-- [x] 1. The splash: drawing, 6.4 s, the key closes and acts, the loading line; a test for each scenario; commit.
-- [x] 2. User stories; commit.
-- [ ] 3. Live check with the owner.

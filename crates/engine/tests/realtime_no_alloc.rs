@@ -85,6 +85,108 @@ fn sample_swaps_do_not_allocate_or_free() {
     while garbage_rx.pop().is_ok() {}
 }
 
+#[test]
+fn project_switch_saturated_garbage_releases_every_sample_outside_callback() {
+    use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
+    use std::sync::atomic::Ordering::{Acquire, Release};
+    let state = Arc::new(ProjectState::default());
+    let (mut tx, rx) = rtrb::RingBuffer::new(512);
+    let (garbage, mut trash) = rtrb::RingBuffer::new(1);
+    let mut e = Engine::with_sounds(48_000, vec![], vec![vec![0.0; 16]]);
+    e.set_garbage(garbage);
+    let mut weak = Vec::new();
+    for pad in 0..128 {
+        let s = Arc::new(engine::Sample::mono(vec![0.1; 4096]));
+        weak.push(Arc::downgrade(&s));
+        tx.push(ProjectCommand {
+            epoch: 0,
+            ready_at_send: true,
+            command: ProjectMessage::Command(Command::SetPadSound {
+                pad,
+                sound: Some(s),
+            }),
+        })
+        .unwrap();
+    }
+    let mut rt = Realtime::with_project(
+        e,
+        vec![rx],
+        Arc::new(Stats::default()),
+        48_000,
+        state.clone(),
+    );
+    let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+    for _ in 0..300 {
+        rt.process(&mut l, &mut r);
+        while trash.pop().is_ok() {}
+    }
+    state.epoch.store(1, Release);
+    tx.push(ProjectCommand {
+        epoch: 1,
+        ready_at_send: false,
+        command: ProjectMessage::Ready,
+    })
+    .unwrap();
+    for _ in 0..300 {
+        let before = allocs();
+        rt.process(&mut l, &mut r);
+        assert_eq!(allocs(), before);
+    }
+    for _ in 0..2000 {
+        while trash.pop().is_ok() {}
+        let before = allocs();
+        rt.process(&mut l, &mut r);
+        assert_eq!(allocs(), before);
+        if state.ready.load(Acquire) == 1 {
+            break;
+        }
+    }
+    while trash.pop().is_ok() {}
+    assert_eq!(state.ready.load(Acquire), 1);
+    assert!(weak.iter().all(|w| w.upgrade().is_none()));
+}
+
+#[test]
+fn full_garbage_holds_commands_and_completed_voices_until_drained() {
+    let (mut tx, rx) = rtrb::RingBuffer::new(8);
+    let (garbage, mut trash) = rtrb::RingBuffer::new(1);
+    let mut engine = Engine::with_sounds(48_000, vec![], vec![vec![0.0; 8]]);
+    engine.set_garbage(garbage);
+    let sound = Arc::new(engine::Sample::mono(vec![0.5; 8]));
+    let weak = Arc::downgrade(&sound);
+    tx.push(Command::SetPadSound {
+        pad: 0,
+        sound: Some(sound),
+    })
+    .unwrap();
+    tx.push(Command::PadPress {
+        pad: 0,
+        velocity: 1.0,
+    })
+    .unwrap();
+    tx.push(Command::SetPadSound {
+        pad: 0,
+        sound: None,
+    })
+    .unwrap();
+    let mut rt = Realtime::new(engine, vec![rx], Arc::new(Stats::default()), 48_000);
+    let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+    for _ in 0..5 {
+        let before = allocs();
+        rt.process(&mut l, &mut r);
+        assert_eq!(allocs(), before);
+    }
+    assert!(weak.upgrade().is_some());
+    for _ in 0..10 {
+        while trash.pop().is_ok() {}
+        let before = allocs();
+        rt.process(&mut l, &mut r);
+        assert_eq!(allocs(), before);
+    }
+    while trash.pop().is_ok() {}
+    assert!(weak.upgrade().is_none());
+}
+
 /// The drive, the sends and both slots, a change of kind among them (56): the callback
 /// neither allocates nor frees.
 #[test]

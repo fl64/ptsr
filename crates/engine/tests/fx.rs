@@ -64,6 +64,40 @@ fn save(name: &str, (l, r): &(Vec<f32>, Vec<f32>)) {
     write_wav(&path, SR, l, r).unwrap();
 }
 
+#[test]
+fn repeated_project_switch_keeps_effect_fade_continuous() {
+    fn setup() -> Engine {
+        let mut e = Engine::with_sounds(SR, vec![], vec![vec![0.2; 270 * MS]]);
+        e.handle(0, delay(0, 250.0, 0.5));
+        e.handle(0, sends(0, 1.0, 0.0));
+        e.handle(0, hit(0));
+        let mut l = vec![0.0; 300 * MS];
+        let mut r = l.clone();
+        e.process(&mut l, &mut r);
+        assert!(l[l.len() - 1].abs() > 0.01, "effect tail must be audible");
+        e.switch_project();
+        e
+    }
+
+    let mut reference = setup();
+    let mut repeated = setup();
+    let mut expected = (vec![0.0; 512], vec![0.0; 512]);
+    let mut actual = (vec![0.0; 512], vec![0.0; 512]);
+    reference.process(&mut expected.0[..100], &mut expected.1[..100]);
+    repeated.process(&mut actual.0[..100], &mut actual.1[..100]);
+    repeated.switch_project();
+    reference.process(&mut expected.0[100..], &mut expected.1[100..]);
+    repeated.process(&mut actual.0[100..], &mut actual.1[100..]);
+    sane("repeated project switch", &actual);
+    for (actual, expected) in [(&actual.0, &expected.0), (&actual.1, &expected.1)] {
+        for (frame, (a, b)) in actual.iter().zip(expected).enumerate() {
+            assert_eq!(a, b, "effect fade changed at frame {frame}");
+        }
+    }
+    assert!(actual.0[240..].iter().all(|s| *s == 0.0));
+    assert!(actual.1[240..].iter().all(|s| *s == 0.0));
+}
+
 /// The last sample louder than `eps`.
 fn last_loud(buf: &[f32], eps: f32) -> usize {
     buf.iter().rposition(|s| s.abs() > eps).unwrap_or(0)

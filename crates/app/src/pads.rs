@@ -16,6 +16,7 @@ use crate::session::{FxState, PadState, Session};
 #[derive(Clone, Debug)]
 pub struct PadSnap {
     file: Option<PathBuf>,
+    name: Option<String>,
     missing: bool,
     gate: bool,
     volume_db: i8,
@@ -40,6 +41,7 @@ impl PartialEq for PadSnap {
         };
         // a tuple compares at most 12 fields
         same_sound
+            && self.name == o.name
             && self.group == o.group
             && (
                 &self.file,
@@ -333,15 +335,6 @@ pub fn cutoff_text(hz: f32) -> String {
 }
 pub const ENV_MS_LIMIT: i32 = 5000;
 
-/// What the `-` `=` and the mode act on; stepped with `Ctrl+A`. UI state, not saved.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Scope {
-    #[default]
-    Pad,
-    Bank,
-    All,
-}
-
 /// What a pad with a sample plays (27), as an MPC pad layer's Slice: the whole file, a
 /// slice that follows the file's cuts, or its own start and end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -407,9 +400,7 @@ pub struct Pads {
     pub fx: [FxSlot; FX_SLOTS],
     /// The parameter `-` `=` change right now.
     pub param: Param,
-    /// What the parameter and the mode changes act on.
-    pub scope: Scope,
-    /// Marked pads, absolute; the scope `Pad` acts on them instead of the selected pad.
+    /// Marked pads, absolute; the changes act on them instead of the selected pad (76).
     pub marked: BTreeSet<usize>,
     /// Marking is on: a pad hit marks or unmarks the pad.
     pub marking: bool,
@@ -424,6 +415,7 @@ pub struct Pads {
     pub track_keys: bool,
     /// The file each pad plays; `None` plays the test tone.
     pub file: [Option<PathBuf>; PADS],
+    pub custom_name: [Option<String>; PADS],
     /// The pad's file is gone or broken; the pad is silent.
     pub missing: [bool; PADS],
     /// Loading progress, 0..100, while a file is being loaded for the pad.
@@ -463,7 +455,6 @@ impl Default for Pads {
             sends: [[0; FX_SLOTS]; PADS],
             fx: FxSlot::DEFAULTS,
             param: Param::default(),
-            scope: Scope::default(),
             marked: BTreeSet::new(),
             marking: false,
             limit_hits: None,
@@ -471,6 +462,7 @@ impl Default for Pads {
             held: [false; PADS],
             track_keys: true,
             file: std::array::from_fn(|_| None),
+            custom_name: std::array::from_fn(|_| None),
             missing: [false; PADS],
             loading: [None; PADS],
             sound: std::array::from_fn(|_| None),
@@ -550,38 +542,51 @@ impl Pads {
 
     /// The pads a parameter or the mode change acts on right now.
     pub fn scope_pads(&self) -> Vec<usize> {
-        match self.scope {
-            Scope::Pad if !self.marked.is_empty() => self.marked.iter().copied().collect(),
-            Scope::Pad => vec![self.selected_abs()],
-            Scope::Bank => (self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK).collect(),
-            Scope::All => (0..PADS).collect(),
-        }
-    }
-
-    /// What the panel says about the scope: `pad Q`, `3 marked`, `bank 2`, `all pads`.
-    pub fn scope_name(&self) -> String {
-        match self.scope {
-            Scope::Pad if !self.marked.is_empty() => format!("{} marked", self.marked.len()),
-            Scope::Pad => format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase()),
-            Scope::Bank => format!("bank {}", self.bank + 1),
-            Scope::All => "all pads".into(),
-        }
-    }
-
-    /// Esc: drops the marks first. `true` when there were marks and Esc is consumed.
-    pub fn drop_marks(&mut self) -> bool {
         if self.marked.is_empty() {
+            vec![self.selected_abs()]
+        } else {
+            self.marked.iter().copied().collect()
+        }
+    }
+
+    /// What the panel says about the scope: `pad Q` or `3 marked`.
+    pub fn scope_name(&self) -> String {
+        if self.marked.is_empty() {
+            format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase())
+        } else {
+            format!("{} marked", self.marked.len())
+        }
+    }
+
+    /// Esc: drops the marks and turns marking off. `true` when there was something to drop
+    /// and Esc is consumed.
+    pub fn drop_marks(&mut self) -> bool {
+        if self.marked.is_empty() && !self.marking {
             return false;
         }
         self.marked.clear();
-        self.scope = Scope::Pad;
+        self.marking = false;
         true
     }
 
-    /// Takes the sound off the selected pad: file, slice, link; the mode, volume and pitch stay.
-    pub fn clear_selected(&mut self) -> Command {
-        let abs = self.selected_abs();
+    /// Marks the 16 pads of the open bank and turns marking on; when all of them are marked
+    /// already, unmarks them (76).
+    fn mark_bank(&mut self) {
+        let pads = self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK;
+        if pads.clone().all(|abs| self.marked.contains(&abs)) {
+            for abs in pads {
+                self.marked.remove(&abs);
+            }
+        } else {
+            self.marked.extend(pads);
+        }
+        self.marking = true;
+    }
+
+    /// Takes the sound off a pad: file, slice, link; the mode, volume and pitch stay.
+    pub fn clear(&mut self, abs: usize) -> Command {
         self.file[abs] = None;
+        self.custom_name[abs] = None;
         self.missing[abs] = false;
         self.loading[abs] = None;
         self.slice[abs] = None;
@@ -597,6 +602,7 @@ impl Pads {
     /// Two pads trade sample, mode, volume and state; returns the engine command.
     pub fn swap(&mut self, a: usize, b: usize) -> Command {
         self.file.swap(a, b);
+        self.custom_name.swap(a, b);
         self.missing.swap(a, b);
         self.gate.swap(a, b);
         self.volume_db.swap(a, b);
@@ -623,6 +629,7 @@ impl Pads {
     pub fn snapshot(&self, abs: usize) -> PadSnap {
         PadSnap {
             file: self.file[abs].clone(),
+            name: self.custom_name[abs].clone(),
             missing: self.missing[abs],
             gate: self.gate[abs],
             volume_db: self.volume_db[abs],
@@ -643,10 +650,38 @@ impl Pads {
         }
     }
 
+    /// Resets a pad to a freshly loaded one (76): volume, mode, pitch, envelope, filter,
+    /// drive, sends and mute group at their defaults; the sound and its source stay. The
+    /// sound is not sent again, so a sounding voice only glides to the new values.
+    pub fn reset_clean(&mut self, abs: usize) -> Vec<Command> {
+        let now = self.snapshot(abs);
+        let clean = PadSnap {
+            file: now.file,
+            name: now.name,
+            missing: now.missing,
+            sound: now.sound,
+            region: now.region,
+            slice: now.slice,
+            link: now.link,
+            ..Pads::default().snapshot(abs)
+        };
+        let loading = self.loading[abs];
+        let mut cmds = self.put_back(abs, &clean);
+        self.loading[abs] = loading;
+        cmds.retain(|c| {
+            !matches!(
+                c,
+                Command::SetPadSound { .. } | Command::SetPadRegion { .. }
+            )
+        });
+        cmds
+    }
+
     /// Puts a pad back as a snapshot has it; returns the engine commands that make it
     /// sound so again.
     pub fn put_back(&mut self, abs: usize, s: &PadSnap) -> Vec<Command> {
         self.file[abs] = s.file.clone();
+        self.custom_name[abs] = s.name.clone();
         self.missing[abs] = s.missing;
         self.gate[abs] = s.gate;
         self.volume_db[abs] = s.volume_db;
@@ -724,6 +759,7 @@ impl Pads {
             let secs = |frames: usize| frames as f64 / rate.max(1) as f64;
             let state = PadState {
                 file: self.file[abs].clone(),
+                name: self.custom_name[abs].clone(),
                 gate: self.gate[abs],
                 volume_db: self.volume_db[abs],
                 pitch: self.pitch[abs],
@@ -778,6 +814,7 @@ impl Pads {
             self.sends[abs] = state.sends.map(|s| s.min(100));
             self.group[abs] = state.group.min(GROUPS);
             self.file[abs] = state.file.clone();
+            self.custom_name[abs] = state.name.clone();
             self.slice[abs] = state.slice;
             self.link[abs] = state.link.zip(state.epoch);
             let frames = |secs: f64| (secs.max(0.0) * rate as f64).round() as usize;
@@ -1359,12 +1396,8 @@ impl Pads {
                 self.param = PAGES[(at + step) % PAGES.len()].1[0];
                 Vec::new()
             }
-            Action::PadScopeNext => {
-                self.scope = match self.scope {
-                    Scope::Pad => Scope::Bank,
-                    Scope::Bank => Scope::All,
-                    Scope::All => Scope::Pad,
-                };
+            Action::PadMarkBank => {
+                self.mark_bank();
                 Vec::new()
             }
             Action::PadMarkToggle => {
@@ -1543,6 +1576,29 @@ impl Pads {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn custom_name_survives_session_swap_reset_and_undo() {
+        let mut pads = super::Pads::default();
+        pads.file[0] = Some("kick.wav".into());
+        pads.custom_name[0] = Some("Бочка".into());
+        let saved = pads.to_session(None, 48_000);
+        let text = toml::to_string(&saved).unwrap();
+        let loaded: crate::session::Session = toml::from_str(&text).unwrap();
+        let mut restored = super::Pads::default();
+        restored.restore(&loaded, 48_000);
+        assert_eq!(restored.custom_name[0].as_deref(), Some("Бочка"));
+        let snapshot = restored.snapshot(0);
+        restored.swap(0, 1);
+        assert_eq!(restored.custom_name[1].as_deref(), Some("Бочка"));
+        restored.reset_clean(1);
+        assert_eq!(restored.custom_name[1].as_deref(), Some("Бочка"));
+        restored.clear(1);
+        assert_eq!(restored.custom_name[1], None);
+        restored.put_back(0, &snapshot);
+        assert_eq!(restored.custom_name[0].as_deref(), Some("Бочка"));
+        let old: crate::session::PadState = toml::from_str("file = 'old.wav'").unwrap();
+        assert_eq!(old.name, None);
+    }
     use super::*;
 
     fn press(pad: usize) -> Action {
@@ -1757,8 +1813,8 @@ mod tests {
             ..Default::default()
         };
         p.pitch[19] = 5; // a melody laid out over bank 2
-        p.apply(Action::PadScopeNext);
-        assert_eq!(p.scope_name(), "bank 2");
+        p.apply(Action::PadMarkBank);
+        assert_eq!(p.scope_name(), "16 marked");
         assert!(
             (p.pitch_pos() - 24.0 / 48.0).abs() < 1e-6,
             "pitch 0 sits at the middle of the knob"
@@ -1794,7 +1850,7 @@ mod tests {
         };
         p.volume_db[17] = -6;
         p.volume_db[18] = MAX_DB;
-        p.apply(Action::PadScopeNext);
+        p.apply(Action::PadMarkBank);
         // the selected pad is at 0 dB, the knob goes to +2 dB
         let pos = (2.0 - MIN_DB as f32) / (MAX_DB - MIN_DB) as f32;
         let cmds = p.set_volume_pos(pos);
@@ -1826,10 +1882,10 @@ mod tests {
         };
         p.release_ms[19] = 100; // a longer release laid out on one pad of bank 2
         p.param = Param::Release;
-        p.apply(Action::PadScopeNext); // the scope: bank 2
-        assert_eq!(p.scope_name(), "bank 2");
+        p.apply(Action::PadMarkBank); // bank 2 marked
+        assert_eq!(p.scope_name(), "16 marked");
         assert_eq!(p.param, Param::Release);
-        // the scope is bank 2: raise the release by one step of 5 ms
+        // bank 2 is marked: raise the release by one step of 5 ms
         let cmds = p.apply(Action::PadParam(1));
         assert_eq!(cmds.len(), 16, "every pad of the bank got a command");
         assert!(cmds.iter().all(|c| matches!(
@@ -2145,19 +2201,53 @@ mod tests {
     }
     /// Spec: "The scope is always named".
     #[test]
-    fn ctrl_a_steps_the_scope_and_the_panel_names_it() {
-        let mut p = Pads::default();
+    fn ctrl_a_marks_the_bank_and_the_panel_names_it() {
+        let mut p = Pads {
+            bank: 1,
+            ..Default::default()
+        };
         assert_eq!(p.scope_name(), "pad 1");
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "bank 1");
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "all pads");
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "pad 1");
-        // marks replace the pad step of the scope
-        p.marked.insert(3);
-        p.marked.insert(9);
-        assert_eq!(p.scope_name(), "2 marked");
+        assert!(p.apply(Action::PadMarkBank).is_empty());
+        assert_eq!(p.scope_name(), "16 marked");
+        assert!(p.marking, "Ctrl+A turns marking on");
+        assert_eq!(p.scope_pads(), (16..32).collect::<Vec<_>>());
+    }
+
+    /// Spec: "The bank, then a few more".
+    #[test]
+    fn the_bank_then_a_few_more() {
+        let mut p = Pads {
+            bank: 1,
+            ..Default::default()
+        };
+        p.apply(Action::PadMarkBank);
+        p.apply(press(4)); // Q
+        p.apply(press(5)); // W
+        p.bank = 4;
+        for pad in [0, 1, 2] {
+            p.apply(press(pad));
+        }
+        let mut want: BTreeSet<usize> = (16..32).filter(|&a| a != 20 && a != 21).collect();
+        want.extend([64, 65, 66]);
+        assert_eq!(p.marked, want);
+        assert_eq!(p.scope_name(), "17 marked");
+    }
+
+    /// Spec: "Ctrl+A again unmarks the bank".
+    #[test]
+    fn ctrl_a_again_unmarks_the_bank() {
+        let mut p = Pads {
+            bank: 4,
+            ..Default::default()
+        };
+        p.apply(Action::PadMarkToggle);
+        p.apply(press(0));
+        p.bank = 1;
+        p.apply(Action::PadMarkBank);
+        assert_eq!(p.marked.len(), 17);
+        p.apply(Action::PadMarkBank);
+        assert_eq!(p.marked, BTreeSet::from([64]));
+        assert!(p.marking, "marking stays on");
     }
 
     /// Spec: "A bank lower" — a relative change keeps the differences.
@@ -2170,8 +2260,8 @@ mod tests {
         p.apply(Action::PadParamNext);
         p.pitch[16] = 0;
         p.pitch[17] = 3;
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert_eq!(p.scope_name(), "bank 2");
+        assert!(p.apply(Action::PadMarkBank).is_empty());
+        assert_eq!(p.scope_name(), "16 marked");
         p.apply(Action::PadParam(-1));
         p.apply(Action::PadParam(-1));
         assert_eq!(p.pitch[16], -2);
@@ -2186,8 +2276,10 @@ mod tests {
     fn all_pads_quieter() {
         let mut p = Pads::default();
         p.volume_db[63] = 5;
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        for bank in 0..PADS / PADS_PER_BANK {
+            p.bank = bank;
+            assert!(p.apply(Action::PadMarkBank).is_empty());
+        }
         let cmds = p.apply(Action::PadParam(-3));
         assert_eq!(cmds.len(), PADS, "every pad gets its own gain");
         for abs in 0..PADS {
@@ -2207,8 +2299,10 @@ mod tests {
         p.apply(Action::PadParamNext);
         p.pitch[0] = PITCH_LIMIT;
         p.pitch[1] = 0;
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        for bank in 0..PADS / PADS_PER_BANK {
+            p.bank = bank;
+            assert!(p.apply(Action::PadMarkBank).is_empty());
+        }
         let cmds = p.apply(Action::PadParam(1));
         assert_eq!(p.pitch[0], PITCH_LIMIT, "the pad at the limit stays");
         assert_eq!(p.pitch[1], 1);
@@ -2226,7 +2320,7 @@ mod tests {
     #[test]
     fn mode_for_a_bank() {
         let mut p = Pads::default();
-        assert!(p.apply(Action::PadScopeNext).is_empty());
+        assert!(p.apply(Action::PadMarkBank).is_empty());
         let cmds = p.apply(Action::PadModeNext);
         assert_eq!(cmds.len(), PADS_PER_BANK);
         for i in 0..PADS_PER_BANK {
@@ -2249,8 +2343,7 @@ mod tests {
         p.file[0] = Some("/m/kick.wav".into());
         p.file[1] = Some("/m/amen.wav".into());
         p.slice[1] = Some(2);
-        assert!(p.apply(Action::PadScopeNext).is_empty());
-        let cmd = p.clear_selected();
+        let cmd = p.clear(p.selected_abs());
         assert!(matches!(
             cmd,
             Command::SetPadSound {
@@ -2300,7 +2393,8 @@ mod tests {
         assert_eq!(p.scope_name(), "pad 2");
     }
 
-    /// Spec: "Drop the marks" — Esc clears the marks and the scope is the selected pad.
+    /// Spec: "Drop the marks" — Esc clears the marks, turns marking off, and the scope is
+    /// the selected pad.
     #[test]
     fn esc_drops_the_marks() {
         let mut p = Pads::default();
@@ -2310,7 +2404,7 @@ mod tests {
         assert!(!p.marked.is_empty());
         assert!(p.drop_marks());
         assert!(p.marked.is_empty());
-        assert_eq!(p.scope, Scope::Pad);
+        assert!(!p.marking, "Esc turns marking off");
         assert_eq!(p.scope_name(), "pad 3", "the last hit stays selected");
         // Esc with no marks goes back as usual
         assert!(!p.drop_marks());
@@ -2420,7 +2514,7 @@ mod tests {
         p.sound[0] = Some(sound.clone());
         p.wave(0, 48_000, 64);
         assert!(p.wave_cache[0].is_some());
-        p.clear_selected();
+        p.clear(p.selected_abs());
         p.wave(0, 48_000, 64);
         assert!(p.wave_cache[0].is_none(), "the cleared pad's entry is gone");
         assert_eq!(

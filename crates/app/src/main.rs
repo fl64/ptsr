@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
+use engine::rt::{ProjectCommand, ProjectMessage};
 use engine::{Command, PADS, PADS_PER_BANK, Region, Sample, test_tone_name};
 use input::midi::{Move, Param, Profile, Takeover};
 use input::{Action, HeldPads, Keymap, Screen};
@@ -115,6 +116,16 @@ enum Ask {
     ResetProfile {
         name: String,
         port: String,
+        lines: Vec<String>,
+    },
+    /// `Backspace` in the pad edit: these pads back to clean (76).
+    ResetPads {
+        pads: Vec<usize>,
+        lines: Vec<String>,
+    },
+    /// `Backspace` with marks outside the edit: the sounds off these pads (76).
+    ClearPads {
+        pads: Vec<usize>,
         lines: Vec<String>,
     },
 }
@@ -334,15 +345,21 @@ fn folders_of(dir: &Path) -> Vec<PathBuf> {
 impl Ask {
     fn lines(&self) -> &[String] {
         match self {
-            Ask::Plan { lines } | Ask::PutFile { lines, .. } | Ask::ResetProfile { lines, .. } => {
-                lines
-            }
+            Ask::Plan { lines }
+            | Ask::PutFile { lines, .. }
+            | Ask::ResetProfile { lines, .. }
+            | Ask::ResetPads { lines, .. }
+            | Ask::ClearPads { lines, .. } => lines,
         }
     }
 }
 
 struct App {
     audio: Option<Audio>,
+    pending_audio: std::collections::VecDeque<ProjectCommand>,
+    audio_held: [Option<u64>; PADS],
+    restoring_project: bool,
+    midi_preview_blocked: bool,
     cfg: AudioConfig,
     /// Where to save choices; `None` means the user file is broken and left alone.
     user_path: Option<PathBuf>,
@@ -360,6 +377,7 @@ struct App {
     /// The project picker of Ctrl+P (11); while it is open the keys go to it before the
     /// screen, like the filter line of the files screen.
     project_picker: Option<ProjectPicker>,
+    pad_naming: Option<(usize, String)>,
     takeover: Takeover,
     /// Soft takeover hint for the selected pad and when it was last updated.
     pickup: Option<(String, Instant)>,
@@ -532,6 +550,15 @@ impl App {
     /// pads, the chops. The start and the project open/switch both come here; everything
     /// of the previous state is dropped — nothing leaks between projects.
     fn apply_session(&mut self, sess: session::Session) {
+        self.pending_audio.clear();
+        self.audio_held.fill(None);
+        self.restoring_project = false;
+        if let Some(audio) = &self.audio {
+            audio
+                .project
+                .epoch
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
         let favorites = std::mem::take(&mut self.browser.favorites);
         let was = self.browser.dir.clone();
         let mut browser = browser::Browser::new(
@@ -553,10 +580,15 @@ impl App {
         self.edit = false;
         self.set_master(sess.master_db);
         self.pads = pads::Pads::default();
+        self.pad_naming = None;
         self.chop = None;
         self.plan = None;
         self.plan_undo.clear();
         self.history.clear();
+        // Replies from the previous session must not apply to this one.
+        for generation in &mut self.load_gen {
+            *generation += 1;
+        }
         self.followers.clear();
         let cmds = self.pads.restore(&sess, self.rate);
         for cmd in cmds {
@@ -594,8 +626,10 @@ impl App {
             if let Some(&leader) = first_pad.get(&path) {
                 self.follow(leader, abs, region);
             } else if path.exists() {
-                first_pad.insert(path.clone(), abs);
-                self.load_pad(abs, path, region);
+                self.load_pad(abs, path.clone(), region);
+                if self.pads.loading[abs].is_some() {
+                    first_pad.insert(path, abs);
+                }
             } else {
                 log::warn!("session: {} is gone", path.display());
                 self.pads.missing[abs] = true;
@@ -605,7 +639,27 @@ impl App {
                 });
             }
         }
+        self.restoring_project = true;
+        self.finish_project_restore();
         self.session_dirty = None;
+    }
+
+    fn finish_project_restore(&mut self) {
+        if !self.restoring_project || self.pads.loading.iter().any(Option::is_some) {
+            return;
+        }
+        self.restoring_project = false;
+        if let Some(audio) = &self.audio {
+            self.pending_audio.push_back(ProjectCommand {
+                epoch: audio
+                    .project
+                    .epoch
+                    .load(std::sync::atomic::Ordering::Acquire),
+                ready_at_send: false,
+                command: ProjectMessage::Ready,
+            });
+            self.flush_audio();
+        }
     }
 
     fn paths_set(&mut self, which: usize, at: PathBuf) {
@@ -744,14 +798,80 @@ impl App {
             Command::Preview { sound: Some(_), .. } => true,
             _ => false,
         };
-        if sounds {
-            self.splash = false;
-        }
         #[cfg(test)]
         self.sent.push(cmd.clone());
-        if let Some(a) = &mut self.audio {
-            // queue full: the command is dropped, audio never waits
-            let _ = a.commands.push(cmd);
+        if let Some(a) = &self.audio {
+            use std::sync::atomic::Ordering::Acquire;
+            let epoch = a.project.epoch.load(Acquire);
+            let ready = a.project.ready.load(Acquire) == epoch;
+            if self.screen == Screen::Chop
+                && matches!(&cmd, Command::Preview { sound: Some(_), .. })
+                && (!ready || !self.pending_audio.is_empty() || self.midi_preview_blocked)
+            {
+                return;
+            }
+            match &cmd {
+                Command::PadPress { pad, .. } => {
+                    if !ready || !self.pending_audio.is_empty() || *pad >= PADS {
+                        return;
+                    }
+                    self.audio_held[*pad] = Some(epoch);
+                }
+                Command::PadRelease { pad } => {
+                    if *pad >= PADS || self.audio_held[*pad].take() != Some(epoch) || !ready {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            let press = if let Command::PadPress { pad, .. } = &cmd {
+                Some(*pad)
+            } else {
+                None
+            };
+            let message = ProjectCommand {
+                epoch,
+                ready_at_send: ready,
+                command: ProjectMessage::Command(cmd),
+            };
+            if let Some(pad) = press {
+                if self.audio.as_mut().unwrap().commands.push(message).is_err() {
+                    self.audio_held[pad] = None;
+                } else if sounds {
+                    self.splash = false;
+                }
+            } else {
+                self.pending_audio.push_back(message);
+                self.flush_audio();
+            }
+        }
+    }
+
+    fn flush_audio(&mut self) {
+        let Some(audio) = &mut self.audio else { return };
+        while let Some(cmd) = self.pending_audio.pop_front() {
+            let preview = cmd.ready_at_send
+                && cmd.epoch
+                    == audio
+                        .project
+                        .epoch
+                        .load(std::sync::atomic::Ordering::Acquire)
+                && cmd.epoch
+                    == audio
+                        .project
+                        .ready
+                        .load(std::sync::atomic::Ordering::Acquire)
+                && matches!(
+                    &cmd.command,
+                    ProjectMessage::Command(Command::Preview { sound: Some(_), .. })
+                );
+            if let Err(rtrb::PushError::Full(cmd)) = audio.commands.push(cmd) {
+                self.pending_audio.push_front(cmd);
+                break;
+            }
+            if preview {
+                self.splash = false;
+            }
         }
     }
 
@@ -807,6 +927,39 @@ impl App {
         self.master_db = db.clamp(pads::MIN_DB, pads::MAX_DB);
         let gain = 10f32.powf(self.master_db as f32 / 20.0);
         self.send(Command::SetMasterGain { gain });
+    }
+
+    fn pad_name_key(&mut self, k: &event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+        if k.kind == KeyEventKind::Release {
+            return false;
+        }
+        let Some((abs, mut name)) = self.pad_naming.take() else {
+            return false;
+        };
+        match k.code {
+            KeyCode::Esc => return true,
+            KeyCode::Enter => {
+                let before = self.before();
+                self.pads.custom_name[abs] = (!name.is_empty()).then_some(name);
+                self.note_step(before, "name".into());
+                self.dirty();
+                return true;
+            }
+            KeyCode::Backspace => {
+                name.pop();
+            }
+            KeyCode::Char(c)
+                if !k
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                name.push(c)
+            }
+            _ => {}
+        }
+        self.pad_naming = Some((abs, name));
+        true
     }
 
     /// A key while the filter line is open; `false` lets it through (releases, Ctrl+key).
@@ -1192,6 +1345,16 @@ impl App {
                     match self.ask.as_ref() {
                         Some(Ask::Plan { .. }) => self.apply_plan(),
                         Some(Ask::ResetProfile { .. }) => {}
+                        Some(Ask::ResetPads { pads, .. }) => {
+                            let pads = pads.clone();
+                            self.ask = None;
+                            self.reset_pads(&pads);
+                        }
+                        Some(Ask::ClearPads { pads, .. }) => {
+                            let pads = pads.clone();
+                            self.ask = None;
+                            self.clear_pads(&pads);
+                        }
                         Some(Ask::PutFile { abs, path, .. }) => {
                             let (abs, path) = (*abs, path.clone());
                             self.put_file(abs, path);
@@ -1264,6 +1427,18 @@ impl App {
                 };
             }
             Action::LearnToggle => {}
+            Action::PadRename if self.screen == Screen::Pads => {
+                let abs = self.pads.selected_abs();
+                if self.pads.file[abs].is_some() {
+                    self.pad_naming = Some((abs, pad_name(&self.pads, abs)));
+                } else {
+                    self.flash = Some((
+                        "pad is empty: put a sample on it first".into(),
+                        Instant::now(),
+                    ));
+                }
+            }
+            Action::PadRename => {}
             Action::ProjectPick => {
                 self.project_picker = Some(ProjectPicker::new(&self.paths.projects));
             }
@@ -1808,14 +1983,11 @@ impl App {
                 self.source_value(step > 0, false)
             }
             Action::Undo if matches!(self.screen, Screen::Pads | Screen::Files) => self.undo_pads(),
-            Action::PadClear => {
-                // one key must not wipe a whole bank: clear acts on the selected pad only
-                let abs = self.pads.selected_abs();
-                self.load_gen[abs] += 1;
-                let cmd = self.pads.clear_selected();
-                self.send(cmd);
-                self.dirty();
-            }
+            // in the pad edit the same key resets the settings of the scope, after a question (76)
+            Action::PadClear if self.edit && self.screen == Screen::Pads => self.ask_reset(),
+            // with marks the clear asks first: one key must not wipe a bank unasked (76)
+            Action::PadClear if !self.pads.marked.is_empty() => self.ask_clear(),
+            Action::PadClear => self.clear_pads(&[self.pads.selected_abs()]),
             pad_action => {
                 if matches!(pad_action, Action::PadPress { .. }) {
                     self.meters.hit(Instant::now());
@@ -2582,6 +2754,7 @@ impl App {
             self.load_gen[abs] += 1;
             self.pads.loading[abs] = None;
             self.pads.missing[abs] = false;
+            self.pads.custom_name[abs] = None;
             self.pads.file[abs] = Some(file.clone());
             self.pads.set_sound(abs, sound.clone());
             self.pads.region[abs] = region;
@@ -2729,12 +2902,21 @@ impl App {
         self.request(abs, path, self.load_gen[abs]);
     }
 
-    fn request(&self, pad: usize, path: PathBuf, generation: u64) {
-        if let Some((tx, _)) = &self.loader {
-            let _ = tx.send(loader::Request {
+    fn request(&mut self, pad: usize, path: PathBuf, generation: u64) {
+        let sent = self.loader.as_ref().is_some_and(|(tx, _)| {
+            tx.send(loader::Request {
                 pad,
-                path,
+                path: path.clone(),
                 generation,
+            })
+            .is_ok()
+        });
+        if !sent {
+            self.loader_reply(loader::Reply::Failed {
+                pad,
+                generation,
+                path,
+                error: "Loader unavailable".into(),
             });
         }
     }
@@ -2827,8 +3009,15 @@ impl App {
     }
 
     fn loader_reply(&mut self, reply: loader::Reply) {
-        // pads waiting for this load get the same result, even when it is stale for its own pad
-        if let loader::Reply::Loaded { pad, .. } | loader::Reply::Failed { pad, .. } = &reply {
+        // A stale leader reply must not consume followers of a newer load.
+        if let loader::Reply::Loaded {
+            pad, generation, ..
+        }
+        | loader::Reply::Failed {
+            pad, generation, ..
+        } = &reply
+            && *generation == self.load_gen[*pad]
+        {
             let pad = *pad;
             let waiting: Vec<_> = self
                 .followers
@@ -2929,6 +3118,11 @@ impl App {
             } if generation == self.load_gen[pad] => {
                 self.pads.loading[pad] = None;
                 self.pads.missing[pad] = false;
+                if self.pads.file[pad].as_ref() != Some(&path)
+                    || self.pads.region[pad] != self.load_region[pad]
+                {
+                    self.pads.custom_name[pad] = None;
+                }
                 self.pads.file[pad] = Some(path);
                 self.pads.set_sound(pad, sound.clone());
                 let region = self.load_region[pad];
@@ -2968,6 +3162,7 @@ impl App {
             // a newer load for the same pad was started
             _ => {}
         }
+        self.finish_project_restore();
     }
 
     /// The group a binding of the learn mode goes to (53): the group of the layer in sight,
@@ -3969,6 +4164,15 @@ impl App {
             .unwrap_or(self.midi_row);
     }
 
+    fn midi_ui_event(&mut self, ev: midi::UiEvent) {
+        let preview_ready = ev.preview_ready();
+        if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
+            self.midi_preview_blocked = !preview_ready;
+            self.midi_event(ev);
+            self.midi_preview_blocked = false;
+        }
+    }
+
     fn midi_event(&mut self, ev: midi::Event) {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
@@ -4050,10 +4254,7 @@ impl App {
         if self.screen_learn.is_some()
             && matches!(
                 ev,
-                midi::Event::PadHit { .. }
-                    | midi::Event::PadRelease { .. }
-                    | midi::Event::Action(_)
-                    | midi::Event::Param { .. }
+                midi::Event::PadHit { .. } | midi::Event::Action(_) | midi::Event::Param { .. }
             )
         {
             return;
@@ -4109,15 +4310,16 @@ impl App {
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
             midi::Event::PadHit { .. } if self.ask.is_some() => {}
-            midi::Event::PadHit { abs } if self.screen == Screen::Chop => {
+            midi::Event::PadHit { abs, .. } if self.screen == Screen::Chop => {
                 self.play_slice(abs % PADS_PER_BANK)
             }
-            midi::Event::PadHit { abs } if self.browser.in_hand.is_some() => self.put_in_hand(abs),
-            midi::Event::PadHit { abs } if self.pad_in_hand.is_some() => self.swap_with(abs),
-            midi::Event::PadHit { abs } => {
-                // the note already went to the engine from the midi reader: a pad with
-                // a sound ends the splash (73)
-                if self.pad_sounds(abs) {
+            midi::Event::PadHit { abs, .. } if self.browser.in_hand.is_some() => {
+                self.put_in_hand(abs)
+            }
+            midi::Event::PadHit { abs, .. } if self.pad_in_hand.is_some() => self.swap_with(abs),
+            midi::Event::PadHit { abs, accepted } => {
+                // The MIDI reader reports whether the audio queue accepted the note.
+                if accepted && self.pad_sounds(abs) {
                     self.splash = false;
                 }
                 self.meters.hit(Instant::now());
@@ -4610,6 +4812,82 @@ impl App {
         Some((r.start.min(len), r.end.min(len), len))
     }
 
+    /// The edit layer takes the keys: the edit is open and no question waits; a question
+    /// takes Enter and Esc of the screen, where the edit's Enter closes the edit (76).
+    fn edit_keys(&self) -> bool {
+        self.edit && self.ask.is_none()
+    }
+
+    /// `Backspace` in the pad edit (76): asks before the pads of the scope with a sound go
+    /// back to clean.
+    fn ask_reset(&mut self) {
+        let pads: Vec<usize> = self
+            .pads
+            .scope_pads()
+            .into_iter()
+            .filter(|&a| self.pads.file[a].is_some())
+            .collect();
+        let what = match pads.as_slice() {
+            [] => return,
+            [abs] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
+            many => format!("{} pads", many.len()),
+        };
+        self.ask = Some(Ask::ResetPads {
+            pads,
+            lines: vec![
+                format!("Reset {what} to clean?"),
+                "  Volume 0 dB, one-shot, all the rest at the defaults.".into(),
+                "  The sound and its bounds stay. Ctrl+Z brings the settings back.".into(),
+                "Enter: reset · Esc: keep".into(),
+            ],
+        });
+    }
+
+    /// `Backspace` with marks outside the edit (76): asks before the marked pads with a
+    /// sound lose it.
+    fn ask_clear(&mut self) {
+        let pads: Vec<usize> = self
+            .pads
+            .marked
+            .iter()
+            .copied()
+            .filter(|&a| self.pads.file[a].is_some())
+            .collect();
+        let what = match pads.len() {
+            0 => return,
+            1 => "1 pad".to_string(),
+            n => format!("{n} pads"),
+        };
+        self.ask = Some(Ask::ClearPads {
+            pads,
+            lines: vec![
+                format!("Clear {what}?"),
+                "  The sounds leave the pads; their files on disk stay.".into(),
+                "  Ctrl+Z brings them back.".into(),
+                "Enter: clear · Esc: keep".into(),
+            ],
+        });
+    }
+
+    fn clear_pads(&mut self, pads: &[usize]) {
+        for &abs in pads {
+            // a file still loading for the pad would land after the clear
+            self.load_gen[abs] += 1;
+            let cmd = self.pads.clear(abs);
+            self.send(cmd);
+        }
+        self.dirty();
+    }
+
+    fn reset_pads(&mut self, pads: &[usize]) {
+        for &abs in pads {
+            for cmd in self.pads.reset_clean(abs) {
+                self.send(cmd);
+            }
+        }
+        self.dirty();
+    }
+
     /// Every pad and the slots as they are now, for the undo (61).
     fn before(&self) -> Before {
         Before {
@@ -4624,6 +4902,8 @@ impl App {
             Action::EditValue { .. } | Action::PadParam(_) => self.pads.param_name().into(),
             Action::PadModeNext => "mode".into(),
             Action::PadClear => "clear".into(),
+            Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
+            Action::PadEdit if matches!(self.ask, Some(Ask::ClearPads { .. })) => "clear".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),
             _ => "change".into(),
@@ -4969,7 +5249,10 @@ impl App {
 
     /// A pad that can sound now: a loaded sample, not still loading, not failed (73).
     fn pad_sounds(&self, pad: usize) -> bool {
-        self.pads.file[pad].is_some() && !self.pads.missing[pad] && self.pads.loading[pad].is_none()
+        pad < PADS
+            && self.pads.file[pad].is_some()
+            && !self.pads.missing[pad]
+            && self.pads.loading[pad].is_none()
     }
 
     /// The loading line of the splash (73): what loads now, `ready` when all is loaded,
@@ -5119,10 +5402,15 @@ fn main() -> std::io::Result<()> {
     let sess = with_resolved_paths(sess, start_project.as_ref().map(|p| p.folder.as_path()));
     let mut app = App {
         audio,
+        pending_audio: Default::default(),
+        audio_held: [None; PADS],
+        restoring_project: false,
+        midi_preview_blocked: false,
         cfg,
         user_path: loaded.user_path,
         path_picker: None,
         project_picker: None,
+        pad_naming: None,
         paths,
         routed: Routed::default(),
         screen: Screen::Pads,
@@ -5234,6 +5522,7 @@ fn main() -> std::io::Result<()> {
         maps,
         app.seeded.clone(),
         app.audio.as_mut().and_then(|a| a.midi_commands.take()),
+        app.audio.as_ref().map(|a| a.project.clone()),
         shared.clone(),
     ));
     if let Some(d) = app.audio.as_ref().and_then(|a| a.devices()) {
@@ -5275,13 +5564,15 @@ fn main() -> std::io::Result<()> {
     let mut load_peak = 0.0;
     let mut load_taken = Instant::now();
     let result = loop {
+        app.finish_project_restore();
+        app.flush_audio();
         let events: Vec<_> = app
             .midi
             .as_ref()
             .map(|m| m.events.try_iter().collect())
             .unwrap_or_default();
         for ev in events {
-            app.midi_event(ev);
+            app.midi_ui_event(ev);
         }
         if let Some((profile, key)) = app.learning.as_mut().and_then(|l| l.poll(Instant::now())) {
             app.learned(profile, key);
@@ -5363,7 +5654,11 @@ fn main() -> std::io::Result<()> {
             let _ = execute!(std::io::stdout(), SetTitle(title.as_str()));
         }
 
-        let notice = app.notice();
+        let notice = app
+            .pad_naming
+            .as_ref()
+            .map(|(_, name)| format!("Name: {name}▏  Enter saves · Esc cancels"))
+            .or_else(|| app.notice());
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let status = tui::Status {
             backend: app.audio_alive().map(|a| a.backend),
@@ -5456,6 +5751,7 @@ fn main() -> std::io::Result<()> {
                         splash,
                         app.rate,
                     );
+                    preview_pad_name(&mut view, app.pads.bank, app.pad_naming.as_ref());
                     if app.screen == Screen::Pads {
                         view.edit_key = keys(&keymap, Screen::Pads, &[Action::PadEdit]);
                     }
@@ -5564,6 +5860,9 @@ fn main() -> std::io::Result<()> {
         };
         // any key event at all means the startup notices were read
         app.dismiss_startup();
+        if app.pad_naming.is_some() && app.pad_name_key(&k) {
+            continue;
+        }
         // the project picker is open: its keys go first, raw, like the filter line (11)
         if app.project_picker.is_some() && app.project_picker_key(&k) {
             continue;
@@ -5579,7 +5878,7 @@ fn main() -> std::io::Result<()> {
         }
         // a press of a key still down is its repeat; without releases every press is new
         let k = if kitty { keys_down.repeat(&k) } else { k };
-        let Some(action) = keymap.resolve_in(app.screen, app.edit, &k) else {
+        let Some(action) = keymap.resolve_in(app.screen, app.edit_keys(), &k) else {
             continue;
         };
         // without the kitty protocol there are no releases, so a held pad would never reset
@@ -5806,34 +6105,38 @@ fn pad_changes(p: &pads::Pads, abs: usize) -> Vec<tui::PadParam> {
     out
 }
 
-/// The frame glyphs of a pad (55), in this order: `↕` pitch, `◣` the envelope, `∿` the
-/// filter, `◻` a part of the file. The volume takes none: the mode line shows it.
-/// The mute group wears its number circled, `①`…`⑧` (70).
-fn pad_glyphs(changed: &[tui::PadParam], kinds: [engine::fx::FxKind; 2], group: u8) -> String {
+/// The mark at the end of a pad's mode line (77): `✱` when the pad has settings the line
+/// does not show already: pitch, envelope, filter on, drive, sends. Not the volume, the
+/// mode, the group (on the line) or the source (a slice shows in the name).
+fn pad_glyphs(changed: &[tui::PadParam]) -> String {
     use tui::PadParam as W;
-    let any = |ws: &[W]| ws.iter().any(|w| changed.contains(w));
-    // a send shows the glyph of what its slot holds (56)
-    let send = |k: usize| match kinds[k] {
-        engine::fx::FxKind::Reverb => '◌',
-        engine::fx::FxKind::Delay => '⋯',
-    };
-    [
-        (any(&[W::Pitch]), '↕'),
-        (any(&[W::Attack, W::Decay, W::Release]), '◣'),
-        (any(&[W::Filter, W::Cutoff, W::Reso]), '∿'),
-        (any(&[W::Source]), '◻'),
-        (any(&[W::Drive]), '↯'),
-        (any(&[W::Send1]), send(0)),
-        (any(&[W::Send2]), send(1)),
-    ]
-    .into_iter()
-    .filter_map(|(on, g)| on.then_some(g))
-    .chain(
-        (1..=pads::GROUPS)
-            .contains(&group)
-            .then(|| char::from_u32('①' as u32 + u32::from(group) - 1).unwrap_or('●')),
-    )
-    .collect()
+    let more = [
+        W::Pitch,
+        W::Attack,
+        W::Decay,
+        W::Release,
+        W::Filter,
+        W::Cutoff,
+        W::Reso,
+        W::Drive,
+        W::Send1,
+        W::Send2,
+    ];
+    if more.iter().any(|w| changed.contains(w)) {
+        "✱".into()
+    } else {
+        String::new()
+    }
+}
+
+fn preview_pad_name(view: &mut tui::Pads, bank: usize, naming: Option<&(usize, String)>) {
+    if let Some((abs, name)) = naming
+        && *abs / PADS_PER_BANK == bank
+        && let Some(pad) = view.pads.get_mut(*abs % PADS_PER_BANK)
+    {
+        pad.name.clone_from(name);
+        pad.naming = true;
+    }
 }
 
 fn pads_view(
@@ -5849,7 +6152,8 @@ fn pads_view(
             let abs = p.bank * PADS_PER_BANK + i;
             let changed = pad_changes(p, abs);
             tui::PadView {
-                glyphs: pad_glyphs(&changed, p.fx.map(|f| f.kind), p.group[abs]),
+                naming: false,
+                glyphs: pad_glyphs(&changed),
                 changed,
                 dim: false,
                 dashed: false,
@@ -5915,6 +6219,8 @@ fn pads_view(
         param: tui_param(p.param),
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
+        bank_marks: bank_marks(p),
+        mark_plate: mark_plate(p),
         out_wave,
         splash,
         big: big_view(p, rate),
@@ -6002,6 +6308,25 @@ fn bank_fill(p: &pads::Pads) -> [u16; tui::BANKS] {
         }
     }
     fill
+}
+
+/// The plate on the title line of the pads screen (76): marking is on, or pads stay marked.
+fn mark_plate(p: &pads::Pads) -> Option<String> {
+    let n = p.marked.len();
+    if p.marking {
+        Some(format!("MARK · hit pads · {n} marked"))
+    } else {
+        (n > 0).then(|| format!("{n} MARKED · Esc drops"))
+    }
+}
+
+/// Per bank, a bitmask of its marked pads (76).
+fn bank_marks(p: &pads::Pads) -> [u16; tui::BANKS] {
+    let mut marks = [0u16; tui::BANKS];
+    for &abs in &p.marked {
+        marks[abs / PADS_PER_BANK] |= 1 << (abs % PADS_PER_BANK);
+    }
+    marks
 }
 
 /// The pad already plays this whole file: putting it again changes nothing.
@@ -6222,6 +6547,9 @@ fn source_word(s: pads::Source) -> String {
 
 /// "break 5" for a slice, the file name for a whole file, the test tone note for an empty pad.
 fn pad_name(p: &pads::Pads, abs: usize) -> String {
+    if let Some(name) = &p.custom_name[abs] {
+        return name.clone();
+    }
     let Some(stem) = p.file[abs].as_deref().and_then(|f| f.file_stem()) else {
         return test_tone_name(abs);
     };
@@ -6292,6 +6620,7 @@ fn chop_view<'a>(
                     let n = page * PADS_PER_BANK + i;
                     let slice = slices.get(n);
                     tui::PadView {
+                        naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: slice.is_none(),
@@ -6346,6 +6675,8 @@ fn chop_view<'a>(
                     param: tui::PadParam::Volume,
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
+                    bank_marks: [0; tui::BANKS],
+                    mark_plate: None,
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -6382,6 +6713,7 @@ fn chop_view<'a>(
                 .map(|i| {
                     let abs = p.bank * PADS_PER_BANK + i;
                     tui::PadView {
+                        naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: !ours(abs) && !whole(abs),
@@ -6456,6 +6788,8 @@ fn chop_view<'a>(
                     param: tui::PadParam::Volume,
                     scope: String::new(),
                     bank_fill: bank_fill(p),
+                    bank_marks: bank_marks(p),
+                    mark_plate: mark_plate(p),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -6487,6 +6821,7 @@ fn chop_view<'a>(
                     let abs = p.bank * PADS_PER_BANK + i;
                     let planned = targets.iter().find(|t| t.1 == abs).map(|t| t.0);
                     tui::PadView {
+                        naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: false,
@@ -6574,6 +6909,8 @@ fn chop_view<'a>(
                     curve: None,
                     learn: Vec::new(),
                     bank_fill: bank_fill(p),
+                    bank_marks: bank_marks(p),
+                    mark_plate: mark_plate(p),
                     edit: None,
                     pages: Vec::new(),
                     knobs: Vec::new(),
@@ -6868,15 +7205,22 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                         st.param_name.into(),
                     ),
                     ("pad".into(), "listen".into()),
-                    (
-                        format!(
-                            "{} {}",
-                            edit_keys(&[Action::Back]),
-                            keys(keymap, screen, &[Action::Back])
-                        ),
-                        "close".into(),
-                    ),
                 ])
+                // the pad edit only: the clear key resets the settings there (76)
+                .chain((screen == Screen::Pads).then(|| {
+                    (
+                        keys(keymap, screen, &[Action::PadClear]),
+                        "reset".to_string(),
+                    )
+                }))
+                .chain([(
+                    format!(
+                        "{} {}",
+                        edit_keys(&[Action::Back]),
+                        keys(keymap, screen, &[Action::Back])
+                    ),
+                    "close".into(),
+                )])
                 .collect(),
         }];
     }
@@ -6905,6 +7249,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                 // the pad panel shows the mode and the picked parameter: the help line names only the keys
                 items: vec![
                     item(&[Action::PadEdit], "edit".into()),
+                    item(&[Action::PadRename], "name".into()),
                     item(&[Action::PadModeNext], "mode".into()),
                     item(&[Action::PadClear], "clear".into()),
                 ],
@@ -6925,7 +7270,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                             st.scope
                         ),
                     ),
-                    item(&[Action::PadScopeNext], "scope".into()),
+                    item(&[Action::PadMarkBank], "mark bank".into()),
                 ],
             },
             bank(),
@@ -7296,15 +7641,18 @@ fn describe(a: Action) -> String {
         Action::MasterVolume(s) if s < 0 => "master volume down 1 dB".into(),
         Action::MasterVolume(_) => "master volume up 1 dB".into(),
         Action::PadTake => "take the selected pad; the next pad hit swaps them".into(),
+        Action::PadRename => "pads: name the selected pad".into(),
         Action::PadSelect(d) => format!("select pad {}", format!("{d:?}").to_lowercase()),
         Action::PadModeNext => "pad mode: one-shot / gate".into(),
         Action::PadEdit => "pads: edit the selected pad; Esc closes".into(),
         Action::PadParamNext => "pads: the next parameter".into(),
         Action::PadParam(s) if s < 0 => "pad: the picked parameter down a step".into(),
         Action::PadParam(_) => "pad: the picked parameter up a step".into(),
-        Action::PadScopeNext => "pads: the change scope: pad / marked / bank / all".into(),
+        Action::PadMarkBank => "pads: mark bank; again unmarks it".into(),
         Action::PadMarkToggle => "pads: marking on / off; a pad hit marks or unmarks it".into(),
-        Action::PadClear => "pads: take the sound off the selected pad".into(),
+        Action::PadClear => {
+            "pads: take the sound off the selected pad; in the edit, reset its settings".into()
+        }
         Action::ScreenPads => "pads screen".into(),
         Action::ScreenSettings => "audio settings".into(),
         Action::ScreenFiles => "files screen".into(),
@@ -7394,10 +7742,11 @@ fn help_section(a: Action) -> usize {
         | Action::PadEdit
         | Action::PadParamNext
         | Action::PadParam(_)
-        | Action::PadScopeNext
+        | Action::PadMarkBank
         | Action::PadMarkToggle
         | Action::PadClear
         | Action::PadTake
+        | Action::PadRename
         | Action::LearnToggle => 0,
         Action::BankNext | Action::BankPrev | Action::BankSelect(_) => 1,
         Action::BrowserUp
@@ -7547,18 +7896,20 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
             rows.extend(section);
         }
     }
-    // the glyphs on the pad frames and the dots in the panel (55)
+    // the mode line of a pad and the dots in the panel (55, 77)
     if matches!(screen, Screen::Pads | Screen::Files) {
         rows.push((String::new(), "GLYPHS ON A PAD".to_string()));
         for (glyph, text) in [
-            ("↕", "pitch changed"),
-            ("◣", "envelope set: attack, decay or release"),
-            ("◻", "plays a part of the file: a slice or its own piece"),
-            ("∿", "filter on: low-pass, high-pass or band"),
-            ("↯", "drive set"),
-            ("◌", "sends to a slot that holds a reverb"),
-            ("⋯", "sends to a slot that holds a delay"),
-            ("①…⑧", "mute group: a hit stops the other pads of its group"),
+            (
+                "✱",
+                "more settings, see the panel: pitch, envelope, filter, drive or sends",
+            ),
+            (
+                "mute N",
+                "its group: a hit stops the other pads of the group",
+            ),
+            ("⇢", "one-shot: pressed, it goes on to the end"),
+            ("⇥", "gate: plays until the release stops it"),
             (
                 "●",
                 "in the panel: a block with a change; changed values are bright",
@@ -8059,10 +8410,15 @@ mod tests {
         use super::*;
         App {
             audio: None,
+            pending_audio: Default::default(),
+            audio_held: [None; PADS],
+            restoring_project: false,
+            midi_preview_blocked: false,
             cfg: AudioConfig::default(),
             user_path: None,
             path_picker: None,
             project_picker: None,
+            pad_naming: None,
             paths: config::PathsConfig::default(),
             routed: Routed::default(),
             screen: Screen::Pads,
@@ -8186,6 +8542,7 @@ mod tests {
     fn a_pad_hit_during_the_splash() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let mut app = laid_out_break();
+        app.audio = Some(super::audio::offline(48_000).0);
         app.screen = Screen::Pads;
         app.splash = true;
         pads_key(&mut app, KeyCode::Char('q'), M::NONE);
@@ -8196,6 +8553,52 @@ mod tests {
             "pad Q (4) plays"
         );
         assert!(!app.splash, "the note ended the splash");
+    }
+
+    #[test]
+    fn splash_waits_for_accepted_pad_and_preview() {
+        use std::sync::atomic::Ordering::Release;
+        let mut app = chop_from_pad(4);
+        app.screen = Screen::Pads;
+        app.splash = true;
+        let press = || Command::PadPress {
+            pad: 4,
+            velocity: 1.0,
+        };
+        app.send(press());
+        assert!(app.splash, "no audio");
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.audio.as_ref().unwrap().project.epoch.store(1, Release);
+        app.send(press());
+        assert!(app.splash, "project not ready");
+        app.audio.as_ref().unwrap().project.ready.store(1, Release);
+        let queue = &mut app.audio.as_mut().unwrap().commands;
+        while queue
+            .push(super::ProjectCommand {
+                epoch: 1,
+                ready_at_send: true,
+                command: super::ProjectMessage::Command(Command::PadRelease { pad: 0 }),
+            })
+            .is_ok()
+        {}
+        app.send(press());
+        assert!(app.splash, "full queue");
+        let sound = app.chop.as_ref().unwrap().sound.clone();
+        app.send(Command::Preview {
+            sound: Some(sound),
+            region: Region::WHOLE,
+        });
+        assert!(app.splash, "preview still waiting for the queue");
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        for _ in 0..8 {
+            rt.process(&mut left, &mut right);
+        }
+        // The RT changes readiness on project transition; make it ready for this queue test.
+        app.audio.as_ref().unwrap().project.ready.store(1, Release);
+        app.flush_audio();
+        assert!(!app.splash, "preview entered the queue");
     }
 
     /// 73 "A command key during the splash": F3 opens the chop screen and the splash
@@ -8249,7 +8652,10 @@ mod tests {
             .expect("an empty pad exists in the fixture");
         pads_key(&mut app, KeyCode::Char(PAD_KEYS[empty]), M::NONE);
         assert!(app.splash, "an empty pad makes no sound");
-        app.midi_event(super::midi::Event::PadHit { abs: empty });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: empty,
+        });
         assert!(
             app.splash,
             "a controller note on an empty pad makes no sound"
@@ -8260,9 +8666,18 @@ mod tests {
     #[test]
     fn a_controller_note_ends_the_splash() {
         let mut app = laid_out_break();
+        app.screen = Screen::Pads;
         app.splash = true;
         assert!(app.pads.file[4].is_some(), "pad Q has a sample");
-        app.midi_event(super::midi::Event::PadHit { abs: 4 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 4,
+        });
+        assert!(app.splash, "a rejected controller note keeps the splash");
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: true,
+            abs: 4,
+        });
         assert!(!app.splash, "the controller note ended the splash");
     }
 
@@ -8519,19 +8934,27 @@ mod tests {
             assert!(notice.contains(part), "{part}: {notice}");
         }
         assert_eq!(pads_ctrl(&k, 'g'), None);
-        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadMarkBank));
     }
 
-    /// 64 keyboard "A key of my own": `Ctrl+G` steps the scope, `Ctrl+A` still does.
+    /// 64 keyboard "A key of my own": `Ctrl+G` marks the bank, `Ctrl+A` still does.
     #[test]
     fn a_key_of_my_own() {
+        let (k, notice) = user_keymap("km-own", "[screens.pads]\n\"Ctrl+G\" = \"pad.mark_bank\"\n");
+        assert_eq!(notice, None);
+        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
+        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadMarkBank));
+    }
+
+    /// 76 keyboard "An old action name": `pad.scope_next` is read as `pad.mark_bank`.
+    #[test]
+    fn an_old_action_name() {
         let (k, notice) = user_keymap(
-            "km-own",
+            "km-old",
             "[screens.pads]\n\"Ctrl+G\" = \"pad.scope_next\"\n",
         );
         assert_eq!(notice, None);
-        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadScopeNext));
-        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
     }
 
     /// 64 keyboard "A key taken away": `"none"` unbinds `Ctrl+A` on the pads screen.
@@ -8549,7 +8972,7 @@ mod tests {
         let (k, notice) = user_keymap("km-broken", "[screens.pads]\n\"Ctrl+G\" = \n");
         let notice = notice.unwrap();
         assert!(notice.contains("keymap.toml line 2"), "{notice}");
-        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'a'), Some(Action::PadMarkBank));
         assert_eq!(pads_ctrl(&k, 'g'), None);
     }
 
@@ -8560,10 +8983,10 @@ mod tests {
     fn from_any_folder() {
         let (k, notice) = user_keymap(
             "km-away",
-            "[screens.pads]\n\"Ctrl+G\" = \"pad.scope_next\"\n",
+            "[screens.pads]\n\"Ctrl+G\" = \"pad.mark_bank\"\n",
         );
         assert_eq!(notice, None);
-        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadScopeNext));
+        assert_eq!(pads_ctrl(&k, 'g'), Some(Action::PadMarkBank));
         let (shipped, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         assert_eq!(
             k.bindings(Screen::Chop),
@@ -9156,6 +9579,614 @@ mod tests {
             app.window_title()
         );
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn rename_a_pad_cancel_the_pad_name_and_restore_the_file_name() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.apply(Action::PadRename);
+        assert_eq!(app.pad_naming.as_ref().unwrap().1, "kick");
+        for _ in 0..4 {
+            app.pad_name_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        }
+        for c in "Бочка".chars() {
+            assert!(app.pad_name_key(&KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+        }
+        app.pad_name_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "Бочка");
+        app.apply(Action::PadRename);
+        app.pad_name_key(&KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        app.pad_name_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "Бочка");
+        app.apply(Action::PadRename);
+        for _ in 0..5 {
+            app.pad_name_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        }
+        app.pad_name_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "kick");
+    }
+
+    #[test]
+    fn see_the_pad_name_while_typing() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.apply(Action::PadRename);
+        app.pad_name_key(&KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+        let mut view = super::pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+        super::preview_pad_name(&mut view, app.pads.bank, app.pad_naming.as_ref());
+        assert_eq!(view.pads[0].name, "kick!");
+        assert!(view.pads[0].naming);
+        assert_eq!(app.pads.custom_name[0], None);
+        app.pad_name_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(super::pad_name(&app.pads, 0), "kick");
+    }
+
+    #[test]
+    fn pad_name_after_restart() {
+        let root = tmp_dir("pad-name-restart");
+        let path = root.join("session.toml");
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.pads.custom_name[0] = Some("Бочка".into());
+        super::session::save(&path, &app.pads.to_session(None, app.rate)).unwrap();
+        let session = super::session::load(&path).unwrap();
+        let mut pads = super::pads::Pads::default();
+        pads.restore(&session, app.rate);
+        assert_eq!(super::pad_name(&pads, 0), "Бочка");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn swap_named_pads_and_clear_and_undo_a_named_pad() {
+        let mut app = test_app();
+        app.pads.file[0] = Some("kick.wav".into());
+        app.pads.custom_name[0] = Some("Бочка".into());
+        app.pads.swap(0, 1);
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка"));
+        let before = app.before();
+        app.pads.clear(1);
+        app.note_step(before, "clear".into());
+        assert_eq!(app.pads.custom_name[1], None);
+        app.undo_pads();
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка"));
+    }
+
+    #[test]
+    fn replace_a_named_pad_sound_and_a_failed_replacement_keeps_the_name() {
+        let mut app = test_app();
+        app.pads.file[0] = Some("old.wav".into());
+        app.pads.custom_name[0] = Some("kick".into());
+        let sound = std::sync::Arc::new(Sample::mono(vec![0.1; 64]));
+        app.pads.sound[0] = Some(sound.clone());
+        app.load_gen[0] = 1;
+        app.loader_reply(super::loader::Reply::Failed {
+            pad: 0,
+            generation: 1,
+            path: "new.wav".into(),
+            error: "failed".into(),
+        });
+        assert_eq!(app.pads.custom_name[0].as_deref(), Some("kick"));
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: 0,
+            generation: 1,
+            path: "new.wav".into(),
+            sound,
+        });
+        assert_eq!(app.pads.custom_name[0], None);
+        assert_eq!(super::pad_name(&app.pads, 0), "new");
+    }
+
+    /// 79: A late sample from the old project must not fill or sound an empty pad.
+    #[test]
+    fn a_late_sample_from_the_old_project() {
+        let root = tmp_dir("late-project-sample");
+        let mut app = test_app();
+        app.paths.projects = root.clone();
+        app.project = Some(super::Project {
+            name: "old".into(),
+            folder: root.join("old"),
+        });
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+
+        let path = root.join("old/sample.wav");
+        app.load_pad(0, path.clone(), Region::WHOLE);
+        let request = incoming.try_recv().unwrap();
+        app.create_project("empty".into());
+        assert_eq!(app.project.as_ref().unwrap().name, "empty");
+        assert!(app.pads.sound[0].is_none());
+        let mut left = vec![0.0; 4096];
+        let mut right = vec![0.0; 4096];
+        for _ in 0..16 {
+            rt.process(&mut left, &mut right);
+        }
+
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: request.pad,
+            generation: request.generation,
+            path,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 2048])),
+        });
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        rt.process(&mut left, &mut right);
+        let peak = left
+            .iter()
+            .chain(&right)
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        let empty = app.pads.file[0].is_none() && app.pads.sound[0].is_none();
+        std::fs::remove_dir_all(&root).ok();
+        assert!(
+            empty && peak < 1e-6,
+            "late sample filled the pad: {}; peak: {peak}",
+            !empty
+        );
+    }
+
+    #[test]
+    fn a_late_sample_from_the_old_project_does_not_consume_new_followers() {
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let old = std::path::PathBuf::from("old.wav");
+        let new = std::path::PathBuf::from("new.wav");
+        app.load_pad(0, old.clone(), Region::WHOLE);
+        let old_request = incoming.try_recv().unwrap();
+        app.apply_session(super::session::Session::default());
+        app.load_pad(0, new.clone(), Region::WHOLE);
+        let new_request = incoming.try_recv().unwrap();
+        app.follow(0, 1, Region::WHOLE);
+
+        app.loader_reply(super::loader::Reply::Failed {
+            pad: 0,
+            generation: old_request.generation,
+            path: old.clone(),
+            error: "old error".into(),
+        });
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: 0,
+            generation: old_request.generation,
+            path: old,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 16])),
+        });
+        assert!(app.pads.sound[1].is_none());
+        assert_eq!(app.followers.len(), 1);
+
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: 0,
+            generation: new_request.generation,
+            path: new.clone(),
+            sound: std::sync::Arc::new(Sample::mono(vec![0.25; 16])),
+        });
+        assert_eq!(app.pads.file[1].as_ref(), Some(&new));
+        assert!(app.pads.sound[1].is_some());
+        assert!(app.followers.is_empty());
+    }
+
+    #[test]
+    fn chop_preview_while_the_project_opens_does_not_play_later() {
+        use std::sync::atomic::Ordering::Acquire;
+        let mut app = test_app();
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.apply_session(super::session::Session::default());
+        app.screen = Screen::Chop;
+        let mut chop = chop_with_parts(0);
+        chop.sound = std::sync::Arc::new(Sample::mono(vec![0.5; 96_000]));
+        app.chop = Some(chop);
+        app.apply(Action::ChopPlay);
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 0,
+        });
+        let delayed = super::midi::UiEvent::stamped(
+            super::midi::Event::Action(Action::ChopPlay),
+            &app.audio.as_ref().unwrap().project,
+        );
+        let mut left = vec![0.0; 4096];
+        let mut right = left.clone();
+        for _ in 0..300 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+            assert!(left.iter().chain(&right).all(|s| s.abs() < 1e-6));
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 1
+                && app.pending_audio.is_empty()
+            {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        app.midi_ui_event(delayed);
+        rt.process(&mut left, &mut right);
+        assert!(left.iter().chain(&right).all(|s| s.abs() < 1e-6));
+        app.apply(Action::ChopPlay);
+        rt.process(&mut left, &mut right);
+        assert!(left.iter().chain(&right).any(|s| s.abs() > 1e-6));
+    }
+
+    #[test]
+    fn project_ready_waits_for_loaded_slices_and_failed_followers() {
+        use std::sync::atomic::Ordering::Acquire;
+        let root = tmp_dir("project-ready-loads");
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.wav");
+        let second = root.join("second.wav");
+        std::fs::write(&first, b"placeholder").unwrap();
+        std::fs::write(&second, b"placeholder").unwrap();
+        let mut session = super::session::Session::default();
+        for (pad, path) in [(0, &first), (1, &first), (2, &second)] {
+            session.pads.insert(
+                pad.to_string(),
+                super::session::PadState {
+                    file: Some(path.clone()),
+                    start: Some(0.01),
+                    end: Some(0.02),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.apply_session(session);
+        let one = incoming.try_recv().unwrap();
+        let two = incoming.try_recv().unwrap();
+        let mut left = vec![0.0; 4096];
+        let mut right = left.clone();
+        for _ in 0..40 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+        }
+        assert_ne!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: one.pad,
+            generation: one.generation,
+            path: one.path,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 2048])),
+        });
+        for _ in 0..40 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+        }
+        assert_ne!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        app.loader_reply(super::loader::Reply::Failed {
+            pad: two.pad,
+            generation: two.generation,
+            path: two.path,
+            error: "bad file".into(),
+        });
+        for _ in 0..40 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        assert!(app.pads.missing[2]);
+        for pad in [0, 1] {
+            assert!(app.pads.sound[pad].is_some());
+            assert_ne!(app.pads.region[pad], Region::WHOLE);
+        }
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn project_ready_ignores_late_load_after_second_switch() {
+        use std::sync::atomic::Ordering::Acquire;
+        let root = tmp_dir("project-ready-switch");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("sound.wav");
+        std::fs::write(&path, b"placeholder").unwrap();
+        let mut session = super::session::Session::default();
+        session.pads.insert(
+            "0".into(),
+            super::session::PadState {
+                file: Some(path.clone()),
+                ..Default::default()
+            },
+        );
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        app.apply_session(session);
+        let old = incoming.try_recv().unwrap();
+        app.apply_session(super::session::Session::default());
+        app.loader_reply(super::loader::Reply::Loaded {
+            pad: old.pad,
+            generation: old.generation,
+            path,
+            sound: std::sync::Arc::new(Sample::mono(vec![0.5; 2048])),
+        });
+        let mut left = vec![0.0; 4096];
+        let mut right = left.clone();
+        for _ in 0..300 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 2 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 2);
+        assert!(app.pads.sound[0].is_none());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn project_ready_when_loader_is_unavailable() {
+        let root = tmp_dir("project-ready-no-loader");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("sound.wav");
+        std::fs::write(&path, b"placeholder").unwrap();
+        let mut session = super::session::Session::default();
+        for pad in 0..2 {
+            session.pads.insert(
+                pad.to_string(),
+                super::session::PadState {
+                    file: Some(path.clone()),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut app = test_app();
+        app.loader = None;
+        app.apply_session(session);
+        assert!(!app.restoring_project);
+        assert!(app.pads.missing[0] && app.pads.missing[1]);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    /// 79: A sounding slice fades on a switch and plays again on return.
+    #[test]
+    fn playing_sounds_stop_at_a_project_switch_and_return_to_a_project_with_sounds() {
+        use engine::checks::{first_loud, first_non_finite, max_step, peak};
+        use std::sync::{Arc, atomic::Ordering::Acquire};
+
+        const BLOCK: usize = 128;
+        const RATE: u32 = 48_000;
+        fn block(
+            app: &mut super::App,
+            rt: &mut engine::rt::Realtime,
+            l: &mut Vec<f32>,
+            r: &mut Vec<f32>,
+        ) {
+            app.flush_audio();
+            let mut left = [0.0; BLOCK];
+            let mut right = [0.0; BLOCK];
+            rt.process(&mut left, &mut right);
+            l.extend_from_slice(&left);
+            r.extend_from_slice(&right);
+            app.audio.as_mut().unwrap().free_garbage();
+        }
+
+        let root = tmp_dir("render-project-switch");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("slice.wav");
+        std::fs::write(&path, b"placeholder").unwrap();
+        let tone = Arc::new(Sample::mono(
+            (0..RATE as usize * 2)
+                .map(|i| 0.3 * (i as f32 * 110.0 * std::f32::consts::TAU / RATE as f32).sin())
+                .collect(),
+        ));
+        let mut session = super::session::Session::default();
+        session.pads.insert(
+            "0".into(),
+            super::session::PadState {
+                file: Some(path.clone()),
+                start: Some(0.1),
+                end: Some(1.5),
+                volume_db: -6,
+                ..Default::default()
+            },
+        );
+        let mut app = test_app();
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_replies, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        let (audio, mut rt) = super::audio::offline(RATE);
+        app.audio = Some(audio);
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        let load = |app: &mut super::App| {
+            let request = incoming.try_recv().unwrap();
+            app.loader_reply(super::loader::Reply::Loaded {
+                pad: request.pad,
+                generation: request.generation,
+                path: request.path,
+                sound: tone.clone(),
+            });
+        };
+        let session_path = root.join("project.toml");
+        super::session::save(&session_path, &session).unwrap();
+        app.apply_session(super::session::load(&session_path).unwrap());
+        load(&mut app);
+        for _ in 0..1000 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 1 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 1);
+        left.clear();
+        right.clear();
+        let press = |app: &mut super::App| {
+            app.apply(Action::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            });
+        };
+        press(&mut app);
+        for _ in 0..113 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        let switch = left.len();
+        assert!(
+            peak(&left[switch - 1024..switch]) > 0.05,
+            "slice is still playing"
+        );
+        app.apply_session(super::session::Session::default());
+        press(&mut app); // A hit before readiness must not play later.
+        for _ in 0..1000 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 2 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 2);
+        for _ in 0..75 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        press(&mut app);
+        for _ in 0..75 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        let return_switch = left.len();
+        app.apply_session(session);
+        load(&mut app);
+        for _ in 0..1000 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+            if app.audio.as_ref().unwrap().project.ready.load(Acquire) == 3 {
+                break;
+            }
+        }
+        assert_eq!(app.audio.as_ref().unwrap().project.ready.load(Acquire), 3);
+        let return_hit = left.len();
+        press(&mut app);
+        for _ in 0..113 {
+            block(&mut app, &mut rt, &mut left, &mut right);
+        }
+        for channel in [&left, &right] {
+            assert!(first_non_finite(channel).is_none());
+            assert!(peak(channel) <= 1.0, "no clipping");
+            assert!(max_step(channel) < 0.01, "click: {}", max_step(channel));
+            assert!(
+                peak(&channel[switch + 960..return_hit]) < 1e-6,
+                "silence after fade and empty-pad hit"
+            );
+            assert!(
+                peak(&channel[return_hit + 1024..]) > 0.05,
+                "slice plays after return"
+            );
+            let first = first_loud(channel, 0..1024, 1e-6).unwrap();
+            let again =
+                first_loud(channel, return_hit..return_hit + 1024, 1e-6).unwrap() - return_hit;
+            assert!(
+                first <= 2 && first.abs_diff(again) <= 1,
+                "hit timing: {first} vs {again}"
+            );
+            assert!(
+                channel[..1024]
+                    .iter()
+                    .zip(&channel[return_hit..return_hit + 1024])
+                    .all(|(a, b)| (a - b).abs() < 1e-6),
+                "saved slice and settings sound the same"
+            );
+            assert!(peak(&channel[return_switch..return_hit]) < 1e-6);
+        }
+        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../renders/79-project-switch.wav");
+        engine::offline::write_wav(&out, RATE, &left, &right).unwrap();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    /// 79: Empty pads after a project switch, with the real UI queue full.
+    #[test]
+    fn empty_pads_after_a_project_switch() {
+        use std::sync::Arc;
+
+        let mut app = test_app();
+        let (audio, mut rt) = super::audio::offline(48_000);
+        app.audio = Some(audio);
+        let sound = Arc::new(Sample::mono(vec![0.5; 2048]));
+        app.send(Command::SetPadSound {
+            pad: 0,
+            sound: Some(sound),
+        });
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        let mut left = vec![0.0; 4096];
+        let mut right = vec![0.0; 4096];
+        rt.process(&mut left, &mut right);
+        assert!(
+            left.iter().any(|s| s.abs() > 0.01),
+            "old project must sound"
+        );
+
+        let queue = &mut app.audio.as_mut().unwrap().commands;
+        let mut filled = 0;
+        while queue
+            .push(super::ProjectCommand {
+                epoch: 0,
+                ready_at_send: true,
+                command: super::ProjectMessage::Command(Command::PadRelease { pad: 0 }),
+            })
+            .is_ok()
+        {
+            filled += 1;
+        }
+        assert_eq!(filled, 1024, "fill the real UI command queue");
+        app.apply_session(super::session::Session::default());
+        assert!(app.pads.sound[0].is_none(), "new project pad is empty");
+        for _ in 0..300 {
+            app.flush_audio();
+            rt.process(&mut left, &mut right);
+            if app.pending_audio.is_empty()
+                && app
+                    .audio
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .ready
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    == 1
+            {
+                break;
+            }
+        }
+        assert!(app.pending_audio.is_empty());
+        assert_eq!(
+            app.audio
+                .as_ref()
+                .unwrap()
+                .project
+                .ready
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
+
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        rt.process(&mut left, &mut right);
+        let peak = left
+            .iter()
+            .chain(&right)
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            peak < 1e-6,
+            "empty project pad played the old sound: peak {peak}"
+        );
     }
 
     /// Scenario "Create a project from the picker" (11): typing a name in the picker opens
@@ -11080,7 +12111,10 @@ mod tests {
         app.sent.clear();
         learn_press(&mut app, KeyCode::Char('q'));
         learn_press(&mut app, KeyCode::Char('h')); // the pad mode key
-        app.midi_event(super::midi::Event::PadHit { abs: 3 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 3,
+        });
         assert!(
             !app.sent
                 .iter()
@@ -12110,7 +13144,12 @@ mod tests {
             items.contains(&("I K".into(), "parameter".into())),
             "{items:?}"
         );
-        assert_eq!(items.len(), 5, "only the edit keys: {items:?}");
+        // 76: the clear key resets the pad there
+        assert!(
+            items.contains(&("Bksp".into(), "reset".into())),
+            "{items:?}"
+        );
+        assert_eq!(items.len(), 6, "only the edit keys: {items:?}");
         assert!(
             !items.iter().any(|(_, t)| t == "select"),
             "the arrows do not select in the edit mode: {items:?}"
@@ -13053,29 +14092,24 @@ mod tests {
         assert!(super::NO_AUDIO_SERVER.starts_with("No sound:"));
     }
 
-    /// Scenario "Terminal without the kitty protocol" (22): the warning is shown until
-    /// the first keypress of any kind, then the hint line is back, and the status keeps
-    /// 55 "F1 names the glyphs".
+    /// 77 "F1 names the mark": `✱` and the mode glyphs, no frame glyph.
     #[test]
-    fn f1_names_the_glyphs() {
+    fn f1_names_the_mark() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let rows = super::full_help(&keymap, input::Screen::Pads, true);
-        for (glyph, word) in [
-            ("↕", "pitch"),
-            ("◣", "envelope"),
-            ("∿", "filter"),
-            ("◻", "part of the file"),
-            ("↯", "drive"),
-            ("◌", "reverb"),
-            ("⋯", "delay"),
-        ] {
+        for (glyph, word) in [("✱", "more settings"), ("⇢", "one-shot"), ("⇥", "gate")] {
             assert!(
                 rows.iter().any(|(k, t)| k == glyph && t.contains(word)),
                 "{glyph}: {rows:?}"
             );
         }
+        for old in ["⇕", "⩘", "∿", "◻", "↯", "◌", "⋯"] {
+            assert!(!rows.iter().any(|(k, _)| k == old), "{old}: {rows:?}");
+        }
     }
 
+    /// Scenario "Terminal without the kitty protocol" (22): the warning is shown until
+    /// the first keypress of any kind, then the hint line is back, and the status keeps
     /// the "no releases" marker for the session.
     #[test]
     fn terminal_without_the_kitty_protocol() {
@@ -14050,19 +15084,15 @@ mod tests {
         );
     }
 
-    /// 56 "The send lights its glyph" and "Two reverbs on the frame".
+    /// 77 "A send marks the pad": a send above 0 or the drive gives the one mark `✱`.
     #[test]
-    fn the_send_lights_its_glyph() {
-        use engine::fx::FxKind;
+    fn a_send_marks_the_pad() {
         let mut app = laid_out_break();
         app.pads.sends[0] = [0, 20];
-        assert_eq!(glyphs(&mut app, 0), "⋯");
-        app.pads.sends[0] = [20, 20];
-        assert_eq!(glyphs(&mut app, 0), "◌⋯");
-        app.pads.fx[1].kind = FxKind::Reverb;
-        assert_eq!(glyphs(&mut app, 0), "◌◌", "two reverbs");
+        assert_eq!(glyphs(&mut app, 0), "✱");
+        app.pads.sends[0] = [0, 0];
         app.pads.drive[0] = 10;
-        assert_eq!(glyphs(&mut app, 0), "↯◌◌");
+        assert_eq!(glyphs(&mut app, 0), "✱", "the drive too");
     }
 
     /// A pads-screen app with the X-Session knob 1 bound to the pad volume, for the undo.
@@ -14072,27 +15102,276 @@ mod tests {
         app
     }
 
-    /// 70 pad-playback "The group on the pad": Q in group 1 wears ①, W wears no circled
-    /// digit, F1 explains ①…⑧.
+    /// Pad 7 (slice 3 of the break) with settings on it, its edit open.
+    fn dressed_pad() -> (super::App, usize) {
+        use engine::filter::FilterKind;
+        let mut app = laid_out_break();
+        app.screen = Screen::Pads;
+        app.chop = None;
+        let abs = 6;
+        app.pads.selected = abs;
+        app.pads.pitch[abs] = -5;
+        app.pads.filter[abs] = FilterKind::LowPass;
+        app.pads.volume_db[abs] = -6;
+        app.pads.gate[abs] = true;
+        app.pads.group[abs] = 2;
+        app.apply(Action::PadEdit);
+        (app, abs)
+    }
+
+    /// 76 pad-playback "A pad back to clean".
+    #[test]
+    fn a_pad_back_to_clean() {
+        use engine::filter::FilterKind;
+        let (mut app, abs) = dressed_pad();
+        let source = app.pads.source(abs);
+        let region = app.pads.region[abs];
+        app.apply(Action::PadClear);
+        app.apply(Action::PadEdit); // Enter answers the question
+        assert!(app.ask.is_none());
+        assert_eq!(app.pads.pitch[abs], 0);
+        assert_eq!(app.pads.filter[abs], FilterKind::Off);
+        assert_eq!(app.pads.volume_db[abs], 0);
+        assert!(!app.pads.gate[abs], "one-shot");
+        assert_eq!(app.pads.group[abs], 0);
+        assert_eq!(app.pads.source(abs), source, "the slice stays");
+        assert_eq!(app.pads.region[abs], region);
+        assert!(app.pads.file[abs].is_some());
+        assert!(app.edit, "the edit stays open");
+        assert_eq!(glyphs(&mut app, abs), "", "no mark: a slice is no setting");
+    }
+
+    /// 76 pad-playback "The question names the pads" and "Esc keeps".
+    #[test]
+    fn the_question_names_the_pads() {
+        let mut app = undo_app();
+        app.apply(Action::PadMarkToggle);
+        for abs in 0..17 {
+            app.pads.file[abs] = Some(format!("/m/{abs}.wav").into());
+            app.pads.pitch[abs] = 3;
+            app.pads.marked.insert(abs);
+        }
+        app.pads.marked.insert(40); // an empty pad is skipped
+        app.apply(Action::PadEdit);
+        app.apply(Action::PadClear);
+        let lines = app.ask.as_ref().expect("a question").lines().to_vec();
+        assert_eq!(lines[0], "Reset 17 pads to clean?");
+        assert_eq!(lines.last().unwrap(), "Enter: reset · Esc: keep");
+        assert!(
+            (0..17).all(|a| app.pads.pitch[a] == 3),
+            "no pad has changed yet"
+        );
+        // Esc keeps
+        app.apply(Action::Back);
+        assert!(app.ask.is_none());
+        assert!(app.edit, "the edit stays open");
+        assert!((0..17).all(|a| app.pads.pitch[a] == 3));
+        assert_eq!(app.pads.marked.len(), 18, "the marks stay");
+    }
+
+    /// 76 pad-playback "Undo a reset".
+    #[test]
+    fn undo_a_reset() {
+        let mut app = undo_app();
+        for abs in 0..16 {
+            app.pads.file[abs] = Some(format!("/m/{abs}.wav").into());
+            app.pads.pitch[abs] = abs as i8 - 8;
+            app.pads.volume_db[abs] = -(abs as i8);
+        }
+        let before: Vec<_> = (0..16).map(|a| app.pads.snapshot(a)).collect();
+        app.apply(Action::PadMarkBank);
+        app.apply(Action::PadEdit);
+        app.apply(Action::PadClear);
+        app.apply(Action::PadEdit);
+        assert!((0..16).all(|a| app.pads.pitch[a] == 0 && app.pads.volume_db[a] == 0));
+        let said = undo(&mut app);
+        assert_eq!(said, "undo: reset on 16 pads");
+        let after: Vec<_> = (0..16).map(|a| app.pads.snapshot(a)).collect();
+        assert_eq!(after, before, "every pad has its own settings back");
+    }
+
+    /// 76 pad-playback "Backspace outside the edit": only the selected pad is cleared,
+    /// nothing asks.
+    #[test]
+    fn backspace_outside_the_edit() {
+        let mut app = undo_app();
+        app.pads.file[0] = Some("/m/kick.wav".into());
+        app.pads.file[1] = Some("/m/snare.wav".into());
+        app.apply(Action::PadClear);
+        assert!(app.ask.is_none());
+        assert!(app.pads.file[0].is_none());
+        assert!(app.pads.file[1].is_some());
+    }
+
+    /// 76 pad-playback "Clear the marked pads": a question first, then Q W E are empty;
+    /// one Ctrl+Z brings the three sounds back.
+    #[test]
+    fn clear_the_marked_pads() {
+        let mut app = undo_app();
+        for abs in [4, 5, 6, 7] {
+            app.pads.file[abs] = Some(format!("/m/{abs}.wav").into());
+        }
+        app.pads.marked.extend([4, 5, 6, 12]); // pad Z is empty: skipped
+        app.apply(Action::PadClear);
+        let lines = app.ask.as_ref().expect("a question").lines().to_vec();
+        assert_eq!(lines[0], "Clear 3 pads?");
+        assert_eq!(lines.last().unwrap(), "Enter: clear · Esc: keep");
+        assert!((4..7).all(|a| app.pads.file[a].is_some()), "nothing yet");
+        app.apply(Action::PadEdit); // Enter
+        assert!(app.ask.is_none());
+        assert!((4..7).all(|a| app.pads.file[a].is_none()));
+        assert!(app.pads.file[7].is_some(), "pad R is not marked");
+        assert_eq!(undo(&mut app), "undo: clear on 3 pads");
+        assert!((4..7).all(|a| app.pads.file[a].is_some()));
+    }
+
+    /// 76 pad-playback "Esc keeps the marked pads".
+    #[test]
+    fn esc_keeps_the_marked_pads() {
+        let mut app = undo_app();
+        app.pads.file[4] = Some("/m/kick.wav".into());
+        app.pads.marked.insert(4);
+        app.apply(Action::PadClear);
+        assert!(app.ask.is_some());
+        app.apply(Action::Back);
+        assert!(app.ask.is_none());
+        assert!(app.pads.file[4].is_some());
+        assert_eq!(app.pads.marked.len(), 1, "the marks stay");
+    }
+
+    /// 76 pad-playback "The edit names the reset key", and Enter answers the question
+    /// through the keys, not the edit layer (where Enter closes the edit).
+    #[test]
+    fn the_edit_names_the_reset_key() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (mut app, abs) = dressed_pad();
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let groups = super::help_groups(&keymap, Screen::Pads, &app.help_state());
+        assert!(
+            line(&groups).contains(&("Bksp".into(), "reset".into())),
+            "{:?}",
+            line(&groups)
+        );
+        pads_key(&mut app, KeyCode::Backspace, M::NONE);
+        assert!(app.ask.is_some());
+        pads_key(&mut app, KeyCode::Enter, M::NONE);
+        assert!(app.ask.is_none() && app.edit);
+        assert_eq!(app.pads.pitch[abs], 0);
+    }
+
+    /// 76 pad-playback "A sounding pad resets without a click": the commands of the reset
+    /// reach a sounding voice; the sound goes on, no step larger than the tone's own →
+    /// `renders/76-reset-sounding.wav`.
+    #[test]
+    fn a_sounding_pad_resets_without_a_click() {
+        use engine::Engine;
+        use engine::checks::{first_non_finite, max_step, peak};
+        use engine::filter::FilterKind;
+        use engine::offline::{Event, Scenario, render, write_wav};
+        use std::path::Path;
+
+        let sr = 48_000;
+        let ms = |n: usize| sr as usize / 1000 * n;
+        let mut app = undo_app();
+        app.pads.file[0] = Some("/m/tone.wav".into());
+        app.pads.volume_db[0] = -12;
+        app.pads.filter[0] = FilterKind::LowPass;
+        app.pads.cutoff_hz[0] = 300.0;
+        let snap = app.pads.snapshot(0);
+        let dressed: Vec<Command> = app
+            .pads
+            .put_back(0, &snap)
+            .into_iter()
+            .filter(|c| {
+                !matches!(
+                    c,
+                    Command::SetPadSound { .. } | Command::SetPadRegion { .. }
+                )
+            })
+            .collect();
+        app.apply(Action::PadEdit);
+        app.apply(Action::PadClear);
+        app.sent.clear();
+        app.apply(Action::PadEdit);
+        let reset = std::mem::take(&mut app.sent);
+        assert!(!reset.is_empty());
+        assert!(
+            !reset
+                .iter()
+                .any(|c| matches!(c, Command::SetPadSound { .. })),
+            "the sound is not sent again"
+        );
+        let tone: Vec<f32> = (0..sr as usize * 2)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / sr as f32).sin() * 0.5)
+            .collect();
+        let at = |frame, cmd| Event { frame, cmd };
+        let mut events = vec![at(
+            0,
+            Command::SetPadSound {
+                pad: 0,
+                sound: Some(std::sync::Arc::new(Sample::mono(tone.clone()))),
+            },
+        )];
+        events.extend(dressed.into_iter().map(|c| at(0, c)));
+        events.push(at(
+            ms(10),
+            Command::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            },
+        ));
+        events.extend(reset.into_iter().map(|c| at(ms(500), c)));
+        let sc = Scenario {
+            sample_rate: sr,
+            frames: ms(1000),
+            events,
+        };
+        let (l, r) = render(&mut Engine::new(sr), &sc, 128);
+        assert_eq!(first_non_finite(&l), None, "no NaN or infinities");
+        assert!(peak(&l) < 1.0, "no clipping");
+        let quiet = peak(&l[ms(300)..ms(500)]);
+        let open = peak(&l[ms(800)..]);
+        assert!(
+            open > quiet * 2.0,
+            "the sound goes on, louder: {quiet} → {open}"
+        );
+        // a 440 Hz tone at 0.5 moves at most ≈0.029 a sample; a click jumps far more
+        let own = 0.5 * (440.0 * std::f32::consts::TAU / sr as f32);
+        let step = max_step(&l[ms(20)..]);
+        assert!(
+            step <= own * 1.1,
+            "step {step} against the tone's own {own}"
+        );
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/76-reset-sounding.wav");
+        write_wav(&out, sr, &l, &r).unwrap();
+    }
+
+    /// 70/77 pad-playback "The group on the pad": Q in group 1 carries its group to the
+    /// mode line (drawn in tui), W none, the frame glyphs have no digit; F1 explains
+    /// `mute N`. 77 "F1 names the mode glyphs".
     #[test]
     fn the_group_on_the_pad() {
         let mut app = undo_app();
         app.pads.group[4] = 1;
         app.pads.group[6] = 8;
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
-        assert_eq!(v.pads[4].glyphs, "①");
-        assert_eq!(v.pads[6].glyphs, "⑧");
-        assert!(
-            !v.pads[5]
-                .glyphs
-                .contains(|c: char| ('①'..='⑧').contains(&c))
+        assert_eq!(
+            (v.pads[4].group, v.pads[6].group, v.pads[5].group),
+            (1, 8, 0)
+        );
+        assert_eq!(
+            v.pads[4].glyphs, "",
+            "the digit is not a glyph of the string"
         );
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let f1 = super::full_help(&keymap, Screen::Pads, true);
         assert!(
             f1.iter()
-                .any(|(k, t)| k == "①…⑧" && t.contains("mute group"))
+                .any(|(k, t)| k == "mute N" && t.contains("its group"))
         );
+        for (k, word) in [("⇢", "one-shot"), ("⇥", "gate")] {
+            assert!(f1.iter().any(|(g, t)| g == k && t.contains(word)), "{k}");
+        }
     }
 
     /// 70: the closed panel names the key the keymap gives the pad edit.
@@ -14340,7 +15619,7 @@ mod tests {
     fn undo_over_the_scope() {
         use super::pads::Param;
         let mut app = undo_app();
-        app.apply(Action::PadScopeNext); // the bank
+        app.apply(Action::PadMarkBank); // the 16 pads of the bank marked
         app.apply(Action::PadEdit);
         while app.pads.param != Param::Cutoff {
             app.apply(Action::ParamNext);
@@ -14415,8 +15694,8 @@ mod tests {
         app.apply(Action::PadParam(1)); // the volume up
         let abs = app.pads.selected_abs();
         assert_eq!(app.pads.volume_db[abs], 1);
-        for _ in 0..3 {
-            app.apply(Action::PadScopeNext);
+        for _ in 0..2 {
+            app.apply(Action::PadMarkBank);
         }
         app.apply(Action::BankNext);
         app.apply(Action::PadSelect(input::Dir::Right));
@@ -14431,33 +15710,33 @@ mod tests {
         v.pads[abs].glyphs.clone()
     }
 
-    /// 55 "A filter on the pad", "A clean pad", "Back to the default".
+    /// 77 "A filter marks the pad", "A fresh pad has no mark", "The mark goes with the
+    /// setting".
     #[test]
-    fn a_filter_on_the_pad() {
+    fn a_filter_marks_the_pad() {
         use engine::filter::FilterKind;
         let mut app = laid_out_break();
         assert_eq!(
             glyphs(&mut app, 0),
             "",
-            "a clean pad: the whole file, nothing set"
+            "a fresh pad: the whole file, nothing set"
         );
         app.pads.filter[0] = FilterKind::LowPass;
-        assert_eq!(glyphs(&mut app, 0), "∿", "the filter and no other glyph");
+        assert_eq!(glyphs(&mut app, 0), "✱");
         app.pads.filter[0] = FilterKind::Off;
         app.pads.pitch[0] = 2;
-        assert_eq!(glyphs(&mut app, 0), "↕");
+        assert_eq!(glyphs(&mut app, 0), "✱");
         app.pads.pitch[0] = 0;
-        assert_eq!(glyphs(&mut app, 0), "", "back to the default");
+        assert_eq!(glyphs(&mut app, 0), "", "the mark goes with the setting");
         app.pads.decay_ms[0] = 40;
-        app.pads.pitch[0] = -5;
-        assert_eq!(glyphs(&mut app, 0), "↕◣", "in the order pitch, envelope");
+        assert_eq!(glyphs(&mut app, 0), "✱", "the envelope");
         assert_eq!(glyphs(&mut app, 3), "", "an empty pad has none");
     }
 
-    /// 55 "A filter that is off": the cutoff moved with the filter off gives no glyph and
-    /// no change.
+    /// 77 "A filter that is off marks nothing": the cutoff moved with the filter off gives
+    /// no mark and no change.
     #[test]
-    fn a_filter_that_is_off() {
+    fn a_filter_that_is_off_marks_nothing() {
         let mut app = laid_out_break();
         app.pads.cutoff_hz[0] = 1_100.0;
         app.pads.reso[0] = 20;
@@ -14465,18 +15744,25 @@ mod tests {
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         assert!(v.pads[0].changed.is_empty(), "{:?}", v.pads[0].changed);
         app.pads.filter[0] = engine::filter::FilterKind::LowPass;
-        assert_eq!(glyphs(&mut app, 0), "∿", "on: it counts");
+        assert_eq!(glyphs(&mut app, 0), "✱", "on: it counts");
     }
 
-    /// 55 "Chopped pads carry the square" and "The panel shows the change" (the values).
+    /// 77 "A slice is not a setting", "Volume and group are not counted twice" and "The
+    /// panel names the settings" (the values).
     #[test]
-    fn chopped_pads_carry_the_square() {
+    fn a_slice_is_not_a_setting() {
         use tui::PadParam as W;
         let mut app = laid_out_break();
         for abs in 4..12 {
-            assert_eq!(glyphs(&mut app, abs), "◻", "pad {abs} plays a slice");
+            assert_eq!(glyphs(&mut app, abs), "", "pad {abs} plays a slice");
         }
-        assert_eq!(glyphs(&mut app, 0), "", "the whole break: no square");
+        app.pads.volume_db[4] = -6;
+        app.pads.group[4] = 2;
+        assert_eq!(
+            glyphs(&mut app, 4),
+            "",
+            "volume and group are on the line already"
+        );
         app.pads.pitch[0] = -5;
         app.pads.filter[0] = engine::filter::FilterKind::LowPass;
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
@@ -14544,9 +15830,9 @@ mod tests {
         assert_eq!(app.chop.as_ref().unwrap().markers, cuts, "the old cuts");
     }
 
-    /// 68 screen-help "Scope in the help line": `Ctrl+A` to the bank shows
-    /// `scope: bank 2` at the mark key, also with the Ctrl combos hidden (kitty); back on
-    /// the pad, three marked pads show `scope: 3 marked`.
+    /// 68/76 screen-help "Scope in the help line": `Ctrl+A` on bank 2 shows
+    /// `mark: on, hit pads · scope: 16 marked` at the mark key, also with the Ctrl combos
+    /// hidden (kitty); after `Esc`, `mark: off · scope: pad 1`.
     #[test]
     fn scope_in_the_help_line() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -14558,28 +15844,72 @@ mod tests {
             let groups = super::help_groups(&keymap, Screen::Pads, &app.help_state());
             line(&super::without_modifiers(groups))
         };
-        while app.pads.scope_name() != "bank 2" {
-            pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
-        }
+        pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
         assert!(
-            said(&app).contains(&("M".into(), "mark: off · scope: bank 2".into())),
+            said(&app).contains(&("M".into(), "mark: on, hit pads · scope: 16 marked".into())),
             "{:?}",
             said(&app)
         );
-        // marks become the scope once it is back on the pad
-        while !app.pads.scope_name().starts_with("pad") {
-            pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
-        }
-        pads_key(&mut app, KeyCode::Char('m'), M::NONE);
+        app.apply(Action::Back);
+        assert!(
+            said(&app).contains(&("M".into(), "mark: off · scope: pad 1".into())),
+            "{:?}",
+            said(&app)
+        );
+    }
+
+    /// 76 screen-help "The mark keys in the full help".
+    #[test]
+    fn the_mark_keys_in_the_full_help() {
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let rows = super::full_help(&keymap, input::Screen::Pads, true);
+        assert!(
+            rows.iter()
+                .any(|(k, t)| k == "Ctrl+A" && t.contains("mark bank")),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|(_, t)| t.contains("scope")), "{rows:?}");
+    }
+
+    /// 76 pad-playback "The mark plate": the title line says marking is on and how many
+    /// pads are marked; with marking off and marks left it says so; after Esc it is gone.
+    #[test]
+    fn the_mark_plate() {
+        let mut app = undo_app();
+        let plate = |app: &mut super::App| panel_now(app).mark_plate;
+        assert_eq!(plate(&mut app), None);
+        app.apply(Action::PadMarkToggle);
         for pad in [0, 1, 2] {
             app.apply(Action::PadPress { pad, velocity: 0.8 });
             app.apply(Action::PadRelease { pad });
         }
-        assert!(
-            said(&app).contains(&("M".into(), "mark: on, hit pads · scope: 3 marked".into())),
-            "{:?}",
-            said(&app)
+        assert_eq!(
+            plate(&mut app).as_deref(),
+            Some("MARK · hit pads · 3 marked")
         );
+        app.apply(Action::PadMarkToggle);
+        assert_eq!(plate(&mut app).as_deref(), Some("3 MARKED · Esc drops"));
+        app.apply(Action::Back);
+        assert_eq!(plate(&mut app), None);
+    }
+
+    /// 76 pad-playback "Esc in the edit keeps the marks".
+    #[test]
+    fn esc_in_the_edit_keeps_the_marks() {
+        let mut app = test_app();
+        app.screen = Screen::Pads;
+        app.apply(Action::PadMarkToggle);
+        for pad in [0, 1, 2] {
+            app.apply(Action::PadPress { pad, velocity: 0.8 });
+            app.apply(Action::PadRelease { pad });
+        }
+        app.apply(Action::PadEdit);
+        assert!(app.edit);
+        app.apply(Action::Back);
+        assert!(!app.edit, "the first Esc closes the edit");
+        assert_eq!(app.pads.marked.len(), 3, "the marks stay");
+        app.apply(Action::Back);
+        assert!(app.pads.marked.is_empty(), "a second Esc drops them");
     }
 
     /// The pads screen key `code` with `m`, through the keymap and its edit layer.
@@ -14590,7 +15920,9 @@ mod tests {
     ) {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let k = ratatui::crossterm::event::KeyEvent::new(code, m);
-        let action = keymap.resolve_in(Screen::Pads, app.edit, &k).unwrap();
+        let action = keymap
+            .resolve_in(Screen::Pads, app.edit_keys(), &k)
+            .unwrap();
         app.apply(action);
     }
 
@@ -16635,7 +17967,10 @@ mod tests {
         assert!(lit(&mut app), "held from the keyboard");
         app.apply(Action::PadRelease { pad: 4 });
         assert!(!lit(&mut app), "dark after the release");
-        app.midi_event(super::midi::Event::PadHit { abs: 4 });
+        app.midi_event(super::midi::Event::PadHit {
+            accepted: false,
+            abs: 4,
+        });
         app.pads.hit_at[4] = Some(two_seconds_ago);
         assert!(lit(&mut app), "held from a controller");
         app.midi_event(super::midi::Event::PadRelease { abs: 4 });

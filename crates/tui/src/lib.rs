@@ -22,6 +22,11 @@ const BRIGHT: Color = Color::Rgb(0xE6, 0xEA, 0xF0);
 /// The meters' green: the palette's bank-4 tone, a mark of level, not of state.
 /// The bound in play: the one the keys move now.
 const AMBER: Color = Color::Rgb(0xFF, 0xC8, 0x3D);
+/// A marked pad (76): the frame and the dots of the marks in the bank row, and the fill
+/// under the pad's name; brighter than the amber and olive banks, so a mark never reads
+/// as a bank frame.
+const MARK: Color = Color::Rgb(0xFF, 0xE0, 0x3A);
+const MARK_BG: Color = Color::Rgb(0x3D, 0x33, 0x05);
 const METER: Color = Color::Rgb(0x86, 0xC4, 0x7E);
 /// The meters' display floor, dB.
 const METER_FLOOR: f32 = -60.0;
@@ -144,7 +149,8 @@ pub struct ProjectPickerView {
 }
 
 pub struct PadView {
-    /// The glyphs of what is set on the pad (55), on its top frame: `↕ ◣ ∿ ◻`.
+    pub naming: bool,
+    /// `✱` when the pad has more settings than its mode line shows (77), or empty.
     pub glyphs: String,
     /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
     pub changed: Vec<PadParam>,
@@ -317,6 +323,10 @@ pub struct Pads {
     /// What the parameter and the mode changes act on now, e.g. `pad Q`, `3 marked`.
     pub scope: String,
     pub bank_fill: [u16; BANKS],
+    /// Per bank, its marked pads (76); a bank with marks shows them in the bank row.
+    pub bank_marks: [u16; BANKS],
+    /// The mark plate on the title line (76): marking is on or pads stay marked.
+    pub mark_plate: Option<String>,
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
     /// The splash at start (73): while it is `Some`, the strip shows it instead of the
@@ -762,30 +772,39 @@ fn banks(p: &Pads) -> Vec<Span<'static>> {
         .fold(0u16, |m, (i, _)| m | 1 << i);
     for (i, &color) in BANK_COLORS.iter().enumerate() {
         let b = i + 1;
-        let glyphs = bank_glyphs(p.bank_fill[i]);
+        // one glyph cell has one colour, so a bank shows one thing at a time: the pads
+        // held or flashing (white, 62), else its marks (yellow, 76), else its fill
+        let (mask, dots) = if i == p.bank && hits != 0 {
+            (hits, Some(WHITE))
+        } else if p.bank_marks[i] != 0 {
+            (p.bank_marks[i], Some(MARK))
+        } else {
+            (p.bank_fill[i], None)
+        };
+        let glyphs = bank_glyphs(mask);
+        let dots = dots.map(|c| Style::new().fg(c).bold());
         // the closed banks keep their number and glyphs together: the row fits a narrow
         // window
-        if i == p.bank && hits != 0 {
-            // while pads are held or flash, the bank shows only them, white: no mix with
-            // the fill, one cell has one colour (62)
+        if i == p.bank {
             let style = Style::new().fg(color).bold();
-            // the space before the bracket, as before a closed bank: no `1⣿⣿[2`
-            spans.push(Span::styled(format!(" [{b} "), style));
-            spans.push(Span::styled(
-                bank_glyphs(hits),
-                Style::new().fg(WHITE).bold(),
-            ));
-            spans.push(Span::styled("]", style));
-        } else if i == p.bank {
-            spans.push(Span::styled(
-                format!(" [{b} {glyphs}]"),
-                Style::new().fg(color).bold(),
-            ));
+            match dots {
+                // the space before the bracket, as before a closed bank: no `1⣿⣿[2`
+                Some(dots) => {
+                    spans.push(Span::styled(format!(" [{b} "), style));
+                    spans.push(Span::styled(glyphs, dots));
+                    spans.push(Span::styled("]", style));
+                }
+                None => spans.push(Span::styled(format!(" [{b} {glyphs}]"), style)),
+            }
         } else {
-            spans.push(Span::styled(
-                format!(" {b}{glyphs}"),
-                Style::new().fg(color),
-            ));
+            let style = Style::new().fg(color);
+            match dots {
+                Some(dots) => {
+                    spans.push(Span::styled(format!(" {b}"), style));
+                    spans.push(Span::styled(glyphs, dots));
+                }
+                None => spans.push(Span::styled(format!(" {b}{glyphs}"), style)),
+            }
         }
     }
     spans
@@ -925,10 +944,15 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
 
 fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
-    frame.render_widget(
-        Line::from(Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT))),
-        f.title,
-    );
+    let mut title = vec![Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT))];
+    if let Some(plate) = &p.mark_plate {
+        title.push(" ".into());
+        title.push(Span::styled(
+            format!(" {plate} "),
+            Style::new().fg(BG).bg(MARK).bold(),
+        ));
+    }
+    frame.render_widget(Line::from(title), f.title);
     if p.hidden {
         frame.render_widget(pad_line(p, Vec::new(), true), f.bank);
     } else {
@@ -938,7 +962,6 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     // into the file; the pad edit draws the pad's envelope over its piece; else the output
     match (p.edit, &p.big) {
         _ if s.recording => envelope_strip(frame, f.strip, &p.out_wave, MAGENTA),
-        _ if p.splash.is_some() => splash_strip(frame, f.strip, p.splash.as_ref().unwrap()),
         (Some(_), _) if p.curve.is_some() => filter_strip(
             frame,
             f.strip,
@@ -948,6 +971,7 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
             let gate = p.pads.get(p.selected).is_some_and(|v| v.gate);
             pad_envelope_strip(frame, f.strip, big, p.param, gate)
         }
+        _ if p.splash.is_some() => splash_strip(frame, f.strip, p.splash.as_ref().unwrap()),
         _ => envelope_strip(frame, f.strip, &p.out_wave, DIM),
     }
     let [meters_area, _, info] = Layout::vertical([
@@ -1594,7 +1618,7 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
     let (border, bg, fg) = match (pad.flash, pad.marked, selected) {
         _ if pad.in_hand => (MAGENTA, PANEL, TEXT),
         (true, _, _) => (WHITE, WHITE, BG),
-        (false, true, _) => (MAGENTA, PANEL, TEXT),
+        (false, true, _) => (MARK, MARK_BG, BRIGHT),
         (false, false, true) => (CYAN, PANEL, TEXT),
         // the chop screen: a pad with no slice of the open chop steps back (36)
         (false, false, false) if pad.dim => (BORDER, PANEL, DIM),
@@ -1608,13 +1632,6 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         .title(key)
         .border_style(Style::new().fg(border))
         .style(Style::new().bg(bg).fg(fg));
-    if !pad.glyphs.is_empty() {
-        block = block.title_top(
-            Line::from(format!(" {} ", pad.glyphs))
-                .right_aligned()
-                .fg(if pad.flash { BG } else { BRIGHT }),
-        );
-    }
     if pad.dashed {
         block = block.border_set(ratatui::symbols::border::Set {
             vertical_left: "┆",
@@ -1624,9 +1641,18 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
             ..ratatui::symbols::border::PLAIN
         });
     }
-    let mut second = mode(pad.gate).to_string();
+    // the mode as a glyph, the volume, the mute group (77): `⇢ +1 mute 2`; no separator,
+    // so `⇢ -24 mute 8` fits the 13 cells of the narrowest pad
+    let mut second = if pad.gate { "⇥" } else { "⇢" }.to_string();
     if pad.volume_db != 0.0 {
         second = format!("{second} {:+.0}", pad.volume_db);
+    }
+    if pad.group > 0 {
+        second = format!("{second} mute {}", pad.group);
+    }
+    // `✱`: the pad has more settings, the panel names them (77); the frame stays clean
+    if !pad.glyphs.is_empty() {
+        second = format!("{second} {}", pad.glyphs);
     }
     let second = match (pad.missing, pad.loading, &pad.note) {
         (_, Some(p), _) => Line::from(format!(" load {p}%")).fg(CYAN),
@@ -1635,11 +1661,26 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         (_, _, Some(n)) => Line::from(format!(" {n}")).fg(if pad.flash { BG } else { DIM }),
         _ => Line::from(format!(" {second}")).fg(if pad.flash { BG } else { DIM }),
     };
-    let name: String = pad
-        .name
-        .chars()
-        .take(area.width.saturating_sub(3) as usize)
-        .collect();
+    let width = area.width.saturating_sub(3) as usize;
+    let name = if pad.naming {
+        let mut chars = Vec::new();
+        let mut used = usize::from(width > 0);
+        for c in pad.name.chars().rev() {
+            let n = Span::raw(c.to_string()).width();
+            if used + n > width {
+                break;
+            }
+            chars.push(c);
+            used += n;
+        }
+        let mut text = chars.into_iter().rev().collect::<String>();
+        if width > 0 {
+            text.push('▏');
+        }
+        text
+    } else {
+        pad.name.clone()
+    };
     let text = vec![Line::from(format!(" {name}")), second];
     frame.render_widget(Paragraph::new(text).block(block), area);
     // the wave sits between the mode line and the bottom frame (29); the selected pad's
@@ -2469,6 +2510,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &key)| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -2501,6 +2543,8 @@ mod tests {
             param: PadParam::Volume,
             // pads 1 and W of the current bank (2) hold a sound
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -2626,6 +2670,86 @@ mod tests {
                 .iter()
                 .any(|r| r.iter().any(|(s, _, _)| s.as_str() > "\u{2800}")),
             "the strip draws the wave once the splash is gone"
+        );
+    }
+
+    #[test]
+    fn the_pad_edit_takes_the_strip_from_the_splash() {
+        let mut p = idle_pads();
+        p.splash = Some(Splash {
+            version: "0.1.0",
+            loading: "ready".into(),
+        });
+        p.big = Some(BigView {
+            wave: vec![0.5; 64],
+            env: vec![1.0; 64],
+            attack: 0.1,
+            decay: 0.0,
+            release: 0.5,
+        });
+        p.edit = Some("ENV");
+        let rows = render_pads_at(p, 100, 44);
+        let text: String = rows
+            .iter()
+            .flat_map(|row| row.iter().map(|(s, _, _)| s.as_str()))
+            .collect();
+        assert!(!text.contains("ptsr - PT's SampleR"));
+
+        let mut p = idle_pads();
+        p.splash = Some(Splash {
+            version: "0.1.0",
+            loading: "ready".into(),
+        });
+        let rows = render_pads_at(p, 100, 44);
+        let text: String = rows
+            .iter()
+            .flat_map(|row| row.iter().map(|(s, _, _)| s.as_str()))
+            .collect();
+        assert!(text.contains("ptsr - PT's SampleR"));
+    }
+
+    #[test]
+    fn a_long_pad_name_while_typing() {
+        for width in [64, 100] {
+            let mut p = idle_pads();
+            p.pads[0].name = "very long 名字名字名字 tail".into();
+            p.pads[0].naming = true;
+            let f = frame_at(width, 44);
+            let rows = render_pads_at(p, width, 44);
+            let row = &rows[(f.grid.y + 1) as usize];
+            let cell_width = f.grid.width as usize / 4;
+            let text: String = row[..cell_width]
+                .iter()
+                .map(|(s, _, _)| s.as_str())
+                .collect();
+            assert!(text.contains("tail"), "{text}");
+            assert_eq!(row[0].0, "│");
+            assert_eq!(row[cell_width - 1].0, "│");
+        }
+    }
+
+    #[test]
+    fn the_pad_name_cursor() {
+        for name in ["", "long 名字名字名字 tail"] {
+            let mut p = idle_pads();
+            p.pads[0].name = name.into();
+            p.pads[0].naming = true;
+            let f = frame_at(64, 44);
+            let rows = render_pads_at(p, 64, 44);
+            let row = &rows[(f.grid.y + 1) as usize];
+            let width = f.grid.width as usize / 4;
+            let text: String = row[..width].iter().map(|(s, _, _)| s.as_str()).collect();
+            assert!(text.contains('▏'), "{text}");
+            assert_eq!(row[width - 1].0, "│");
+        }
+        let mut p = idle_pads();
+        p.pads[0].name = "kick".into();
+        let rows = render_pads_at(p, 64, 44);
+        let f = frame_at(64, 44);
+        assert!(
+            !rows[(f.grid.y + 1) as usize]
+                .iter()
+                .any(|(s, _, _)| s == "▏")
         );
     }
 
@@ -2916,6 +3040,7 @@ mod tests {
             pads: keys
                 .iter()
                 .map(|&key| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -2951,6 +3076,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -3168,6 +3295,133 @@ mod tests {
             // only the pad held now, both glyphs of the bank, no fill mixed in
             assert_eq!(white, vec![bank_glyphs(1 << 5).as_str()], "{white:?}");
         }
+    }
+
+    /// 76 "A marked pad is yellow": pad E of bank 3 has the dark yellow fill and the
+    /// yellow frame, its name readable on it; the other pads keep the bank colour.
+    #[test]
+    fn a_marked_pad_is_yellow() {
+        let mut p = idle_pads();
+        p.bank = 2;
+        p.pads[6].marked = true; // pad E
+        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let cells: Vec<&(String, Color, Color)> = rows.iter().flatten().collect();
+        assert!(
+            cells
+                .iter()
+                .any(|(s, fg, bg)| s == "─" && *fg == MARK && *bg == MARK_BG),
+            "the yellow frame"
+        );
+        assert!(
+            cells
+                .iter()
+                .any(|(s, fg, bg)| s.trim() != "" && *fg == BRIGHT && *bg == MARK_BG),
+            "the name on the fill"
+        );
+        assert!(
+            cells
+                .iter()
+                .any(|(s, fg, _)| s == "─" && *fg == BANK_COLORS[2]),
+            "the other pads keep the bank colour"
+        );
+    }
+
+    /// 77 "The mode as a glyph" and "The group on the pad": `⇢ +1 mute 2` under the
+    /// name of a one-shot pad at +1 dB in group 2, `⇥` for a gate pad at 0 dB; no digit on
+    /// the frame.
+    #[test]
+    fn the_mode_as_a_glyph() {
+        let mut p = idle_pads();
+        p.pads[4].gate = false;
+        p.pads[4].volume_db = 1.0;
+        p.pads[4].group = 2;
+        p.pads[5].gate = true;
+        p.pads[5].volume_db = 0.0;
+        p.pads[5].group = 0;
+        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let all: Vec<String> = (0..rows.len()).map(|y| row_text(&rows, y)).collect();
+        let text = all.join("\n");
+        assert!(text.contains("│ ⇢ +1 mute 2"), "{text}");
+        assert!(text.contains("│ ⇥ "), "{text}");
+        assert!(!text.contains("one-shot +"), "{text}");
+        assert!(
+            !all.iter().any(|l| l.contains("2┐")),
+            "no group digit on a frame: {text}"
+        );
+    }
+
+    /// 76 "The mark plate": the plate stands on the title line, black on yellow.
+    #[test]
+    fn the_mark_plate_is_yellow_on_the_title_line() {
+        let mut p = idle_pads();
+        p.mark_plate = Some("MARK · hit pads · 3 marked".into());
+        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let y = (0..rows.len())
+            .find(|&y| row_text(&rows, y).contains("F2 PADS"))
+            .expect("the title line");
+        let title = row_text(&rows, y);
+        assert!(
+            title.contains("F2 PADS   MARK · hit pads · 3 marked "),
+            "{title}"
+        );
+        assert!(
+            rows[y]
+                .iter()
+                .any(|(s, fg, bg)| s == "M" && *fg == BG && *bg == MARK),
+            "black on yellow"
+        );
+    }
+
+    /// 76 "Marks in another bank are seen" and "No marks, the fill": bank 2 shows all its
+    /// dots yellow, bank 5 the three marked pads; the other banks their fill.
+    #[test]
+    fn marks_in_another_bank_are_seen() {
+        let mut p = idle_pads();
+        p.bank = 1;
+        p.bank_fill = [0x000F; BANKS];
+        let spans = banks(&p);
+        assert!(
+            spans.iter().all(|s| s.style.fg != Some(MARK)),
+            "no marks, the fill"
+        );
+        p.bank_marks[1] = 0xFFFF;
+        p.bank_marks[4] = 0b0111;
+        let spans = banks(&p);
+        let yellow: Vec<&str> = spans
+            .iter()
+            .filter(|s| s.style.fg == Some(MARK))
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(
+            yellow,
+            vec![bank_glyphs(0xFFFF).as_str(), bank_glyphs(0b0111).as_str()]
+        );
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text.contains(&format!(" 3{}", bank_glyphs(0x000F))),
+            "{text}"
+        );
+    }
+
+    /// 76 "A hit over the marks": while pad Q of the open bank flashes, its glyphs show
+    /// only pad Q in white; after, the yellow marks.
+    #[test]
+    fn a_hit_over_the_marks() {
+        let mut p = idle_pads();
+        p.bank = 1;
+        p.bank_marks[1] = 0x00F0;
+        p.pads[4].flash = true; // pad Q
+        let colored = |p: &Pads, c| -> Vec<String> {
+            banks(p)
+                .iter()
+                .filter(|s| s.style.fg == Some(c))
+                .map(|s| s.content.to_string())
+                .collect()
+        };
+        assert_eq!(colored(&p, WHITE), vec![bank_glyphs(1 << 4)]);
+        assert!(colored(&p, MARK).is_empty(), "no mix in one cell");
+        p.pads[4].flash = false;
+        assert_eq!(colored(&p, MARK), vec![bank_glyphs(0x00F0)]);
     }
 
     /// Scenario "The right column keeps its rows" (32): with the pads hidden the right
@@ -3860,14 +4114,14 @@ mod tests {
         assert_eq!(color(tone, "TONE"), DIM);
     }
 
-    /// 55 "The panel shows the change" (drawing): a changed value bright, a default one dim,
-    /// the blocks with a change carry a dot; the frame of the pad carries its glyphs.
+    /// 77 "The panel names the settings" (drawing): a changed value bright, a default one
+    /// dim, the blocks with a change carry a dot; the mode line of the pad ends with `✱`.
     #[test]
     fn the_panel_shows_the_change() {
         let mut p = idle_pads();
         let sel = p.selected;
         p.pads[sel].changed = vec![PadParam::Pitch, PadParam::Filter];
-        p.pads[sel].glyphs = "↕∿".into();
+        p.pads[sel].glyphs = "✱".into();
         let rows = render_pads_at(p, 100, TALL);
         let text: Vec<String> = rows
             .iter()
@@ -3878,7 +4132,7 @@ mod tests {
         assert!(has("─ FILTER ● ─"));
         assert!(has("─ ENV ─") && !has("ENV ●"));
         assert!(has("─ SOURCE ─") && !has("SOURCE ●"));
-        assert!(has("↕∿"), "the glyphs on the pad frame");
+        assert!(has("│ ⇢ ✱"), "the mark on the mode line");
         let color = |name: &str, value: &str| {
             let line = text.iter().position(|r| r.contains(name)).unwrap();
             let x = text[line].find(value).unwrap();
@@ -4141,6 +4395,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &key)| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -4176,6 +4431,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4573,6 +4830,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4719,6 +4978,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &key)| PadView {
+                    naming: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -4750,6 +5010,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4958,6 +5220,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5053,6 +5317,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5593,6 +5859,8 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0xFFFF; BANKS],
+            bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,

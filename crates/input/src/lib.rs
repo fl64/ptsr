@@ -33,6 +33,7 @@ pub enum Action {
     MasterVolume(i8),
     /// Take the selected pad in hand; the next pad hit swaps the two.
     PadTake,
+    PadRename,
     PadSelect(Dir),
     PadModeNext,
     /// Pads screen: the edit mode of the selected pad opens; `Esc` closes it.
@@ -41,8 +42,8 @@ pub enum Action {
     PadParamNext,
     /// Step the picked pad parameter: 1 dB of volume or 1 semitone of pitch.
     PadParam(i8),
-    /// Step the change scope: the selected pad (or the marked pads) → the bank → all pads.
-    PadScopeNext,
+    /// Mark the 16 pads of the open bank and turn marking on; unmark them when all are marked.
+    PadMarkBank,
     /// Turn marking on or off; while it is on, a pad hit marks or unmarks the pad.
     PadMarkToggle,
     /// Take the sound off the selected pad.
@@ -185,6 +186,7 @@ impl Action {
             "bank.prev" => Self::BankPrev,
             "master.volume_down" => Self::MasterVolume(-1),
             "pad.take" => Self::PadTake,
+            "pad.rename" => Self::PadRename,
             "master.volume_up" => Self::MasterVolume(1),
             b if b.starts_with("bank.") => match b[5..].parse::<usize>() {
                 Ok(n @ 1..=8) => Self::BankSelect(n - 1),
@@ -199,7 +201,8 @@ impl Action {
             "pad.param_next" => Self::PadParamNext,
             "pad.param_dec" => Self::PadParam(-1),
             "pad.param_inc" => Self::PadParam(1),
-            "pad.scope_next" => Self::PadScopeNext,
+            // `pad.scope_next` is the name before 76: an old keymap or binding keeps working
+            "pad.mark_bank" | "pad.scope_next" => Self::PadMarkBank,
             "pad.mark_toggle" => Self::PadMarkToggle,
             "pad.clear" => Self::PadClear,
             "learn.toggle" => Self::LearnToggle,
@@ -772,14 +775,20 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
-        name: "pad.scope_next",
-        label: "change scope: pad / bank / all",
+        name: "pad.mark_bank",
+        label: "mark the bank",
         group: Group::Pads,
         knob: false,
     },
     ActionInfo {
         name: "pad.mark_toggle",
         label: "marking on / off",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pad.rename",
+        label: "name the selected pad",
         group: Group::Pads,
         knob: false,
     },
