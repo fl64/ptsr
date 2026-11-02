@@ -25,3 +25,21 @@ their behavior. `Ctrl+Z` SHALL undo a shared effect change.
 #### Scenario: Undo a shared effect on the FX screen
 - **WHEN** the owner changes a shared effect and presses Ctrl+Z
 - **THEN** the previous effect setting returns
+
+## MODIFIED Requirements
+
+### Requirement: The pad panel in blocks
+The system SHALL group the parameter rows of the pad panel by page, in the page order
+TONE, ENV, FILTER, SOURCE, FX: every block stands under a thin line with the page name,
+the line of the page the edit is on is lit. `Tab` turns the pages in this order, `I` `K` walk
+the parameters in this order, and the frame title names the pages in this order.
+
+#### Scenario: Blocks
+- **WHEN** the pad edit is open
+- **THEN** the panel shows the lines TONE, ENV, FILTER, SOURCE, FX in this order, each over its rows
+
+#### Scenario: SOURCE last
+- **WHEN** the edit is on the reso of the FILTER page and the owner presses `K`
+- **THEN** the source is picked, on the SOURCE page; `K` after the end of SOURCE picks the
+  drive on FX, and `K` after the last parameter of FX goes back to the volume
+
