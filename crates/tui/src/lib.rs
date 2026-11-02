@@ -1664,7 +1664,7 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
     let width = area.width.saturating_sub(3) as usize;
     let name = if pad.naming {
         let mut chars = Vec::new();
-        let mut used = 0;
+        let mut used = usize::from(width > 0);
         for c in pad.name.chars().rev() {
             let n = Span::raw(c.to_string()).width();
             if used + n > width {
@@ -1673,7 +1673,11 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
             chars.push(c);
             used += n;
         }
-        chars.into_iter().rev().collect::<String>()
+        let mut text = chars.into_iter().rev().collect::<String>();
+        if width > 0 {
+            text.push('▏');
+        }
+        text
     } else {
         pad.name.clone()
     };
@@ -2722,6 +2726,31 @@ mod tests {
             assert_eq!(row[0].0, "│");
             assert_eq!(row[cell_width - 1].0, "│");
         }
+    }
+
+    #[test]
+    fn the_pad_name_cursor() {
+        for name in ["", "long 名字名字名字 tail"] {
+            let mut p = idle_pads();
+            p.pads[0].name = name.into();
+            p.pads[0].naming = true;
+            let f = frame_at(64, 44);
+            let rows = render_pads_at(p, 64, 44);
+            let row = &rows[(f.grid.y + 1) as usize];
+            let width = f.grid.width as usize / 4;
+            let text: String = row[..width].iter().map(|(s, _, _)| s.as_str()).collect();
+            assert!(text.contains('▏'), "{text}");
+            assert_eq!(row[width - 1].0, "│");
+        }
+        let mut p = idle_pads();
+        p.pads[0].name = "kick".into();
+        let rows = render_pads_at(p, 64, 44);
+        let f = frame_at(64, 44);
+        assert!(
+            !rows[(f.grid.y + 1) as usize]
+                .iter()
+                .any(|(s, _, _)| s == "▏")
+        );
     }
 
     /// Scenario "Project picker" (11): the status line names the open project on every

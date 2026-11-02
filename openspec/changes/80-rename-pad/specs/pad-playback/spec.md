@@ -4,7 +4,8 @@
 
 The system SHALL open a name input for the selected pad on the pads screen with `Ctrl+N`.
 The input starts with the displayed name. The pad grid SHALL show the text as it is typed,
-including an empty line when the text is empty. This is a preview only: `Enter` saves the
+including an empty line when the text is empty. A visible cursor SHALL mark the end of
+the input, including when the name is empty. This is a preview only: `Enter` saves the
 name, `Esc` cancels and restores the previous name, and an empty name on `Enter` restores
 the name from the sample file. The input SHALL fit within the pad frame at every pad
 width. When the text is too wide, the visible part SHALL follow the end of the input;
@@ -23,6 +24,11 @@ A pad settings reset SHALL keep its name. Undo SHALL restore the name with the p
 #### Scenario: See the pad name while typing
 - **WHEN** the owner types or deletes characters in the pad name line
 - **THEN** the pad shows the text immediately, before it is saved
+
+#### Scenario: The pad name cursor
+- **WHEN** the name input is open, including when it is empty or wider than the pad
+- **THEN** a cursor shows at the end of the visible input inside the frame
+- **AND** closing the input removes the cursor
 
 #### Scenario: A long pad name while typing
 - **WHEN** the owner types a name wider than the pad, including wide characters
