@@ -184,7 +184,7 @@ Notes:
 3. `[70]` Hit the open hat, then the closed hat. The open hat stops without a click.
 4. `[70]` Pads of other groups and pads without a group continue to sound. All banks use
    the same groups.
-5. `[70]` The pad frame shows the group number: `①`…`⑧`. Knob 3 of the TONE page changes
+5. `[70]` The pad frame shows the group number: `1`…`8` on a light plate. Knob 3 of the TONE page changes
    the group. `J` from `1` goes back to `off`. `Ctrl+Z` cancels a group change.
 6. `[70]` The project keeps the group. An old project opens without groups.
 
@@ -253,10 +253,10 @@ Notes:
 ## What is set on a pad
 
 1. `[55]` Press `F2`. On the top frame of a pad, on the right, there are glyphs. They
-   show the settings of the pad: `↕` pitch, `◣` envelope (attack, decay or release),
+   show the settings of the pad: `⇕` pitch, `⩘` envelope (attack, decay or release),
    `∿` filter (type, cutoff or resonance). `◻` means that the pad plays a part of the
    file: a slice or its own part.
-2. A new pad with a full file has no glyphs. Set the pitch to 0 again: `↕` disappears.
+2. A new pad with a full file has no glyphs. Set the pitch to 0 again: `⇕` disappears.
 3. After you chop, all pads with slices show `◻`. The pad with the full break does not.
 4. Volume has no glyph. The mode line already shows it (`one-shot +3`).
 5. Select a pad. In the panel on the right, the changed values are bright. The other
