@@ -492,7 +492,7 @@ Folder: `changes/archive/2026-11-01-70-mute-groups`
 
 - [ ] Put an open hat on pad `Q` and a closed hat on pad `W`. Press `M`, hit `Q` and
   `W`, press `M`. Press `Enter` and select `mute` on TONE. Press `L` one time. Make sure
-  that the panel shows `mute    1` and both frames show `1` on a light plate.
+  that the panel shows `mute    1` and the line under both names says `mute 1`.
 - [ ] (by ear) Hit `Q`, then `W`. Make sure that the open hat stops at once with no click.
   Make sure that the closed hat plays fully.
 - [ ] (by ear) Put pad `E` in group 2 and keep pad `R` off. Hit `Q`, `E`, `R`, then `W`.
@@ -501,7 +501,7 @@ Folder: `changes/archive/2026-11-01-70-mute-groups`
   sure that 1-1 stops. Listen to `renders/70-mute-groups.wav`.
 - [ ] Press `Ctrl+Z` and make sure that the last group change goes back. Restart the
   program. Make sure that the groups stay. Press `F1`. Make sure that it has a row for
-  `1…8`.
+  `mute N`.
 - [ ] Close the edit. Make sure that the first panel row ends with `Enter: edit`. Press
   `Tab`, `Shift+Tab`, `I` and `K`. Make sure that they walk the pages and parameters. Make
   the window 100×30. Make sure that closed blocks fold with `▸` and `▲ N more` / `▼ N more`
