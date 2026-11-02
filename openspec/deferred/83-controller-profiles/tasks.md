@@ -7,8 +7,8 @@
 
 ## 2. X-Session physical controls
 
-- [ ] 2.1 Document physical labels, add the stated fader and FX defaults, and preserve
-  existing bindings and chop actions. Add first-connect and reset tests. Run task check and commit.
+- X-Session physical defaults and single-controller tests belong to active change 82,
+  not this deferred change. Use that map without restoring old button roles.
 - [ ] 2.2 Test both controllers together, including separate takeover, gate release,
   save and restart. Run task check and commit.
 

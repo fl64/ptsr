@@ -10,7 +10,7 @@ that send the same bytes as the controllers.
 - State the required SMC-PAD preset map. Do not claim it matches every factory preset.
 - Keep the sixteen physical pad positions consistent with the screen grid.
 - Give the first three knobs the same page roles in pad edit and on F4.
-- Add explicit FX block controls and logical uses for the X-Session faders.
+- Use the X-Session physical defaults from change 82 in simultaneous-controller tests.
 - Preserve existing user bindings. New defaults apply on first connection or after a
   confirmed reset to the profile.
 - Test raw MIDI sequences through the real profile resolver, dispatch and application.

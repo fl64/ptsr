@@ -52,9 +52,9 @@ in this profile. Do not claim the second pad set changes the ptsr bank.
 
 ### X-Session Pro
 
-Keep current button actions and the controller-only chop workflow. Their physical
-positions must be documented, so numeric names are no longer the only guide. Keep
-existing k1–k12 and b1–b10 identifiers to avoid renaming learned controls.
+The X-Session replacement is now part of active change 82. Use its physical control table
+and safe defaults. Do not restore the former arbitrary delete or commit buttons. Keep
+existing numeric identifiers and preserve initialized user maps until confirmed reset.
 
 Knobs 1/2/3 on the left are CC24/25/26. High/Mid/Low on the left are CC27/28/29.
 The corresponding right knobs are CC31–36. Left Pitch is CC12, left Volume CC11,
@@ -64,9 +64,9 @@ Keep CC20 unassigned to avoid duplicate movement.
 Add default fader roles: left Volume controls selected pad volume, left Pitch controls
 selected pad pitch, right Volume controls master volume. Right Pitch and the crossfader
 remain unassigned because the sampler has no corresponding two-deck mix action.
-The existing page trio controls FX; b3/b4 select the FX block explicitly. Document all
-existing chop buttons by their physical labels, including cut, delete and commit.
-Do not move established chop commands without a separate owner decision.
+The page trio controls FX; left backward / forward select the FX block. Change 82 owns
+the replacement profile and its single-controller tests. This deferred change adds the
+SMC-PAD profile and tests both controllers together.
 
 ### Emulation
 

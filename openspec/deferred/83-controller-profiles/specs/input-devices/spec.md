@@ -39,8 +39,9 @@ Shift buttons SHALL NOT acquire invented host actions.
 ### Requirement: Documented X-Session physical controls
 
 The system SHALL document X-Session Pro controls by their physical labels and retain
-existing numeric control identifiers and chop actions. The left three numbered knobs
-SHALL control page parameters in edit mode and on FX. On FX, b3 and b4 SHALL select the
+existing numeric control identifiers. The physical defaults SHALL follow change 82,
+without default delete or commit buttons. The left three numbered knobs SHALL control
+page parameters in edit mode and on FX. On FX, left backward and forward SHALL select the
 previous and next block. Left Volume SHALL control selected pad volume, left Pitch pad
 pitch, and right Volume master volume. Mirrored crossfader CC20 SHALL stay unassigned.
 The new defaults SHALL NOT replace existing seeded or learned bindings without a
