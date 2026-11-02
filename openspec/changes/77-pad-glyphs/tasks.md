@@ -2,4 +2,6 @@
   user stories; commit.
 - [x] 2. The mode as a glyph (`⇥` `⇢`) and the mute group on the mode line; F1; a test for
   each scenario; user stories; commit.
-- [ ] 3. Live check with the owner.
+- [ ] 3. No glyphs on the frame; `✱` on the mode line; F1; a test for each scenario; user
+  stories and live checks; commit.
+- [ ] 4. Live check with the owner.
