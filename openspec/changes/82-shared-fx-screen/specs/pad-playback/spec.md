@@ -26,6 +26,20 @@ their behavior. `Ctrl+Z` SHALL undo a shared effect change.
 - **WHEN** the owner changes a shared effect and presses Ctrl+Z
 - **THEN** the previous effect setting returns
 
+#### Scenario: Compact shared effect cards
+- **WHEN** the owner opens F4 in a large or small terminal
+- **THEN** each effect card contains only its title and three parameter rows
+- **AND** the cards are beside each other when they fit, or stacked in a narrow terminal
+- **AND** neither card expands to fill unused rows
+
+#### Scenario: Clear a shared effect knob assignment
+- **WHEN** the owner clears a page knob assignment on F4 and restarts the program
+- **THEN** the cleared knob does not control the effect and no old assignment returns
+
+#### Scenario: Replaced page knobs stay replaced
+- **WHEN** an old pad edit page knob has a replacement and the owner opens F4
+- **THEN** the replacement controls the effect and the previous knob stays inactive
+
 ## MODIFIED Requirements
 
 ### Requirement: The pad panel in blocks
