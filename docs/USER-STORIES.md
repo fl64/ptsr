@@ -42,8 +42,7 @@ Notes:
    project: `[global]`, `[edit]`, `[screens.pads]` and others.
 2. `[64]` The line `"Ctrl+G" = "pad.mark_bank"` in `[screens.pads]` adds a key. Then
    `Ctrl+G` and `Ctrl+A` both mark the bank. `[76]` The old name `pad.scope_next` still
-   works and does the same. `Ctrl+Shift+` and a letter is also a key: for example,
-   `"Ctrl+Shift+Z" = "pad.mark_all"`. The letter alone still plays its pad.
+   works and does the same.
 3. `[64]` The line `"Ctrl+A" = "none"` removes a key. Then `Ctrl+A` on the pads does
    nothing.
 4. `[64]` Restart the program. The start folder is not important. Your keys are on top of
@@ -137,9 +136,9 @@ Notes:
 7. `[76]` The scope is the pads that the next change hits: the marked pads, or the
    selected pad if no pad has a mark. Press `Ctrl+A`. All 16 pads of the open bank get a
    mark, and marking starts. Press `Ctrl+A` again. The marks of this bank go away.
-   `Ctrl+Shift+A` puts a mark on all 128 pads. In Ghostty, first add the line
-   `keybind = ctrl+shift+a=unbind` to the Ghostty config: Ghostty uses this key to select
-   all text. Without the kitty keyboard protocol, `Ctrl+Shift+A` marks only the bank.
+   To mark all 128 pads, press `Ctrl+A` on each bank. While marking is on, the top line
+   shows the yellow plate `MARK · hit pads · 17 marked`. When marking is off and pads stay
+   marked, it shows `17 MARKED · Esc drops`.
    `[68]` You can see the scope outside edit mode too. The hint at `M` shows
    `mark: on, hit pads · scope: 16 marked`.
 8. Press `M`. Marking starts. A hit on a pad puts a mark on it or removes it. `[76]` A
