@@ -122,6 +122,11 @@ enum Ask {
         pads: Vec<usize>,
         lines: Vec<String>,
     },
+    /// `Backspace` with marks outside the edit: the sounds off these pads (76).
+    ClearPads {
+        pads: Vec<usize>,
+        lines: Vec<String>,
+    },
 }
 
 /// The folder picker of the settings Paths tab (11): which row opened it, the folder it
@@ -342,7 +347,8 @@ impl Ask {
             Ask::Plan { lines }
             | Ask::PutFile { lines, .. }
             | Ask::ResetProfile { lines, .. }
-            | Ask::ResetPads { lines, .. } => lines,
+            | Ask::ResetPads { lines, .. }
+            | Ask::ClearPads { lines, .. } => lines,
         }
     }
 }
@@ -1203,6 +1209,11 @@ impl App {
                             self.ask = None;
                             self.reset_pads(&pads);
                         }
+                        Some(Ask::ClearPads { pads, .. }) => {
+                            let pads = pads.clone();
+                            self.ask = None;
+                            self.clear_pads(&pads);
+                        }
                         Some(Ask::PutFile { abs, path, .. }) => {
                             let (abs, path) = (*abs, path.clone());
                             self.put_file(abs, path);
@@ -1821,14 +1832,9 @@ impl App {
             Action::Undo if matches!(self.screen, Screen::Pads | Screen::Files) => self.undo_pads(),
             // in the pad edit the same key resets the settings of the scope, after a question (76)
             Action::PadClear if self.edit && self.screen == Screen::Pads => self.ask_reset(),
-            Action::PadClear => {
-                // one key must not wipe a whole bank: clear acts on the selected pad only
-                let abs = self.pads.selected_abs();
-                self.load_gen[abs] += 1;
-                let cmd = self.pads.clear_selected();
-                self.send(cmd);
-                self.dirty();
-            }
+            // with marks the clear asks first: one key must not wipe a bank unasked (76)
+            Action::PadClear if !self.pads.marked.is_empty() => self.ask_clear(),
+            Action::PadClear => self.clear_pads(&[self.pads.selected_abs()]),
             pad_action => {
                 if matches!(pad_action, Action::PadPress { .. }) {
                     self.meters.hit(Instant::now());
@@ -4654,6 +4660,42 @@ impl App {
         });
     }
 
+    /// `Backspace` with marks outside the edit (76): asks before the marked pads with a
+    /// sound lose it.
+    fn ask_clear(&mut self) {
+        let pads: Vec<usize> = self
+            .pads
+            .marked
+            .iter()
+            .copied()
+            .filter(|&a| self.pads.file[a].is_some())
+            .collect();
+        let what = match pads.len() {
+            0 => return,
+            1 => "1 pad".to_string(),
+            n => format!("{n} pads"),
+        };
+        self.ask = Some(Ask::ClearPads {
+            pads,
+            lines: vec![
+                format!("Clear {what}?"),
+                "  The sounds leave the pads; their files on disk stay.".into(),
+                "  Ctrl+Z brings them back.".into(),
+                "Enter: clear · Esc: keep".into(),
+            ],
+        });
+    }
+
+    fn clear_pads(&mut self, pads: &[usize]) {
+        for &abs in pads {
+            // a file still loading for the pad would land after the clear
+            self.load_gen[abs] += 1;
+            let cmd = self.pads.clear(abs);
+            self.send(cmd);
+        }
+        self.dirty();
+    }
+
     fn reset_pads(&mut self, pads: &[usize]) {
         for &abs in pads {
             for cmd in self.pads.reset_clean(abs) {
@@ -4678,6 +4720,7 @@ impl App {
             Action::PadModeNext => "mode".into(),
             Action::PadClear => "clear".into(),
             Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
+            Action::PadEdit if matches!(self.ask, Some(Ask::ClearPads { .. })) => "clear".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),
             _ => "change".into(),
@@ -14270,11 +14313,46 @@ mod tests {
         let mut app = undo_app();
         app.pads.file[0] = Some("/m/kick.wav".into());
         app.pads.file[1] = Some("/m/snare.wav".into());
-        app.apply(Action::PadMarkBank);
         app.apply(Action::PadClear);
         assert!(app.ask.is_none());
         assert!(app.pads.file[0].is_none());
         assert!(app.pads.file[1].is_some());
+    }
+
+    /// 76 pad-playback "Clear the marked pads": a question first, then Q W E are empty;
+    /// one Ctrl+Z brings the three sounds back.
+    #[test]
+    fn clear_the_marked_pads() {
+        let mut app = undo_app();
+        for abs in [4, 5, 6, 7] {
+            app.pads.file[abs] = Some(format!("/m/{abs}.wav").into());
+        }
+        app.pads.marked.extend([4, 5, 6, 12]); // pad Z is empty: skipped
+        app.apply(Action::PadClear);
+        let lines = app.ask.as_ref().expect("a question").lines().to_vec();
+        assert_eq!(lines[0], "Clear 3 pads?");
+        assert_eq!(lines.last().unwrap(), "Enter: clear · Esc: keep");
+        assert!((4..7).all(|a| app.pads.file[a].is_some()), "nothing yet");
+        app.apply(Action::PadEdit); // Enter
+        assert!(app.ask.is_none());
+        assert!((4..7).all(|a| app.pads.file[a].is_none()));
+        assert!(app.pads.file[7].is_some(), "pad R is not marked");
+        assert_eq!(undo(&mut app), "undo: clear on 3 pads");
+        assert!((4..7).all(|a| app.pads.file[a].is_some()));
+    }
+
+    /// 76 pad-playback "Esc keeps the marked pads".
+    #[test]
+    fn esc_keeps_the_marked_pads() {
+        let mut app = undo_app();
+        app.pads.file[4] = Some("/m/kick.wav".into());
+        app.pads.marked.insert(4);
+        app.apply(Action::PadClear);
+        assert!(app.ask.is_some());
+        app.apply(Action::Back);
+        assert!(app.ask.is_none());
+        assert!(app.pads.file[4].is_some());
+        assert_eq!(app.pads.marked.len(), 1, "the marks stay");
     }
 
     /// 76 pad-playback "The edit names the reset key", and Enter answers the question

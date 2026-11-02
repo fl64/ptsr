@@ -579,9 +579,8 @@ impl Pads {
         self.marking = true;
     }
 
-    /// Takes the sound off the selected pad: file, slice, link; the mode, volume and pitch stay.
-    pub fn clear_selected(&mut self) -> Command {
-        let abs = self.selected_abs();
+    /// Takes the sound off a pad: file, slice, link; the mode, volume and pitch stay.
+    pub fn clear(&mut self, abs: usize) -> Command {
         self.file[abs] = None;
         self.missing[abs] = false;
         self.loading[abs] = None;
@@ -2310,8 +2309,7 @@ mod tests {
         p.file[0] = Some("/m/kick.wav".into());
         p.file[1] = Some("/m/amen.wav".into());
         p.slice[1] = Some(2);
-        assert!(p.apply(Action::PadMarkBank).is_empty());
-        let cmd = p.clear_selected();
+        let cmd = p.clear(p.selected_abs());
         assert!(matches!(
             cmd,
             Command::SetPadSound {
@@ -2482,7 +2480,7 @@ mod tests {
         p.sound[0] = Some(sound.clone());
         p.wave(0, 48_000, 64);
         assert!(p.wave_cache[0].is_some());
-        p.clear_selected();
+        p.clear(p.selected_abs());
         p.wave(0, 48_000, 64);
         assert!(p.wave_cache[0].is_none(), "the cleared pad's entry is gone");
         assert_eq!(
