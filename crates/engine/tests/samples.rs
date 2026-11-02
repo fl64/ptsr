@@ -162,25 +162,75 @@ fn released_samples_go_to_the_garbage_queue() {
     assert!(back.iter().any(|s| s.left[0] == 0.2));
     drop(back);
     assert!(weak.upgrade().is_none());
-    assert_eq!(e.leaked(), 0);
 }
 
 #[test]
-fn full_garbage_queue_leaks_instead_of_freeing() {
-    let (tx, _rx) = rtrb::RingBuffer::new(1);
+fn full_garbage_queue_blocks_sample_replacement() {
+    let (tx, mut rx) = rtrb::RingBuffer::new(1);
     let mut e = Engine::new(SR);
     e.set_garbage(tx);
-    for i in 0..3 {
-        e.handle(
-            0,
-            Command::SetPadSound {
-                pad: 5,
-                sound: Some(stereo(i as f32, 0.0, 10)),
-            },
-        );
-    }
-    // three replacements: the test tone and two samples went out, the queue holds one
-    assert_eq!(e.leaked(), 2);
+    let first = stereo(0.2, 0.0, 10);
+    let weak = Arc::downgrade(&first);
+    e.handle(
+        0,
+        Command::SetPadSound {
+            pad: 5,
+            sound: Some(first),
+        },
+    );
+    let next = Command::SetPadSound {
+        pad: 5,
+        sound: Some(stereo(0.3, 0.0, 10)),
+    };
+    assert!(!e.can_handle(&next));
+    drop(rx.pop().unwrap());
+    assert!(e.can_handle(&next));
+    e.handle(0, next);
+    assert!(weak.upgrade().is_some());
+    drop(rx.pop().unwrap());
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn playing_sounds_stop_at_a_project_switch_during_long_release() {
+    let mut e = Engine::new(SR);
+    e.handle(
+        0,
+        Command::SetPadSound {
+            pad: 0,
+            sound: Some(stereo(0.5, 0.5, SR as usize * 3)),
+        },
+    );
+    e.handle(
+        0,
+        Command::SetPadMode {
+            pad: 0,
+            mode: engine::PadMode::Gate,
+        },
+    );
+    e.handle(
+        0,
+        Command::SetPadEnvelope {
+            pad: 0,
+            attack_ms: 0,
+            decay_ms: 0,
+            release_ms: 2000,
+        },
+    );
+    e.handle(
+        0,
+        Command::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        },
+    );
+    block(&mut e, 512);
+    e.handle(0, Command::PadRelease { pad: 0 });
+    let (before, _) = block(&mut e, 4800);
+    e.switch_project();
+    let (after, _) = block(&mut e, 512);
+    assert!((before[before.len() - 1] - after[0]).abs() < 0.001);
+    assert!(after[240..].iter().all(|s| *s == 0.0));
 }
 
 #[test]

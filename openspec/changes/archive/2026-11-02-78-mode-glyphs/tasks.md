@@ -1,0 +1,2 @@
+- [x] 1. Swap the glyphs in the mode line and F1; tests; user stories and live checks; commit.
+- [x] 2. Live check with the owner: in `docs/LIVE-CHECKS.md`, section 77 (updated).
