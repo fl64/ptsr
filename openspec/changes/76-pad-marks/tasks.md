@@ -13,5 +13,5 @@
 - [x] 6. After the live try: `Ctrl+Shift+A` and the `Ctrl+Shift` keys in the keymap
   removed (README, user stories); the mark plate on the title line; a test for each
   scenario; commit.
-- [ ] 7. `Backspace` outside the edit clears the marked pads after a question; a test for
+- [x] 7. `Backspace` outside the edit clears the marked pads after a question; a test for
   each scenario; user stories; commit.

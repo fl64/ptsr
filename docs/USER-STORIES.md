@@ -151,7 +151,9 @@ Notes:
    `Reset pad Q to clean?`). Press `Enter`. The pads of the scope become as freshly
    loaded: volume 0 dB, one-shot, the other settings at the defaults. The sound and its
    bounds stay. `Esc` keeps the pads as they are. `Ctrl+Z` brings back the settings of
-   each pad. Outside edit mode, `Backspace` still takes the sound off the selected pad.
+   each pad. Outside edit mode, `Backspace` takes the sound off the selected pad. If pads have
+   marks, it first asks `Clear 3 pads?`. `Enter` takes the sounds off the marked pads, the
+   files on disk stay. `Esc` keeps them. `Ctrl+Z` brings the sounds back.
 10. Outside edit mode, `J` and `L` page the banks. `[43]` `PgUp` `PgDn` also page the
     banks in edit mode.
 11. `[21]` Turn knobs 1–3 of the controller in edit mode. They change the parameters of
