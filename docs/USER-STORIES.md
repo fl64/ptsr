@@ -184,7 +184,7 @@ Notes:
 3. `[70]` Hit the open hat, then the closed hat. The open hat stops without a click.
 4. `[70]` Pads of other groups and pads without a group continue to sound. All banks use
    the same groups.
-5. `[70]` `[77]` The line under the pad name shows the group: `⇥ +1 mute 2`. Knob 3 of the TONE page changes
+5. `[70]` `[77]` The line under the pad name shows the group: `⇢ +1 mute 2`. Knob 3 of the TONE page changes
    the group. `J` from `1` goes back to `off`. `Ctrl+Z` cancels a group change.
 6. `[70]` The project keeps the group. An old project opens without groups.
 
@@ -253,15 +253,15 @@ Notes:
 ## What is set on a pad
 
 1. `[77]` Press `F2`. The line under the name of a pad is its mode line: the mode, the
-   volume, the mute group and one mark: `⇥ +3 mute 2 ✱`. `⇥` is one-shot (plays to the
-   end), `⇢` is gate (plays while held). The pad panel shows the mode as a word.
+   volume, the mute group and one mark: `⇢ +3 mute 2 ✱`. `⇢` is one-shot (press, and it
+   goes on to the end), `⇥` is gate (it plays until you let go). The pad panel shows the mode as a word.
 2. `✱` means that the pad has more settings: pitch, envelope, filter, drive or sends.
    Set the pitch to 0 again: `✱` disappears. The pad frame has no glyphs.
 3. A slice is not a setting: after you chop, the pads with slices show no `✱`.
 4. The volume, the mode and the group show on the line already, so they give no `✱`.
 5. Select a pad. In the panel on the right, the changed values are bright. The other
    values are dim. A block with a change has a dot: `─ FILTER ● ──`.
-6. `F1` explains `⇥`, `⇢`, `mute N` and `✱` in the section GLYPHS ON A PAD.
+6. `F1` explains `⇢`, `⇥`, `mute N` and `✱` in the section GLYPHS ON A PAD.
 
 ## Waves on the pads
 

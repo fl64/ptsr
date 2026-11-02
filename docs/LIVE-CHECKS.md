@@ -576,11 +576,11 @@ Folder: `changes/archive/2026-11-02-76-pad-marks`
 Folder: `changes/archive/2026-11-02-77-pad-glyphs`
 
 - [ ] Look at the pad grid. Make sure that no pad frame carries glyphs.
-- [ ] Load a sample on a fresh pad. Make sure that the line under its name is `⇥`.
+- [ ] Load a sample on a fresh pad. Make sure that the line under its name is `⇢`.
 - [ ] Put the pad into mute group 2 and lower it by 6 dB. Make sure that the line is
-  `⇥ -6 mute 2`, with no `✱`.
-- [ ] Raise its pitch. Make sure that the line is `⇥ -6 mute 2 ✱`. Turn the pitch back to
+  `⇢ -6 mute 2`, with no `✱`.
+- [ ] Raise its pitch. Make sure that the line is `⇢ -6 mute 2 ✱`. Turn the pitch back to
   0. Make sure that the `✱` goes.
-- [ ] Press `H`. Make sure that the line is `⇢ -6 mute 2`, and that `⇥` and `⇢` are easy
+- [ ] Press `H`. Make sure that the line is `⇥ -6 mute 2`, and that `⇢` and `⇥` are easy
   to tell apart.
-- [ ] Press `F1`. Make sure that it names `⇥` one-shot, `⇢` gate, `mute N` and `✱`.
+- [ ] Press `F1`. Make sure that it names `⇢` one-shot, `⇥` gate, `mute N` and `✱`.
