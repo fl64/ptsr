@@ -22,6 +22,11 @@ const BRIGHT: Color = Color::Rgb(0xE6, 0xEA, 0xF0);
 /// The meters' green: the palette's bank-4 tone, a mark of level, not of state.
 /// The bound in play: the one the keys move now.
 const AMBER: Color = Color::Rgb(0xFF, 0xC8, 0x3D);
+/// A marked pad (76): the frame and the dots of the marks in the bank row, and the fill
+/// under the pad's name; brighter than the amber and olive banks, so a mark never reads
+/// as a bank frame.
+const MARK: Color = Color::Rgb(0xFF, 0xE0, 0x3A);
+const MARK_BG: Color = Color::Rgb(0x3D, 0x33, 0x05);
 const METER: Color = Color::Rgb(0x86, 0xC4, 0x7E);
 /// The meters' display floor, dB.
 const METER_FLOOR: f32 = -60.0;
@@ -317,6 +322,8 @@ pub struct Pads {
     /// What the parameter and the mode changes act on now, e.g. `pad Q`, `3 marked`.
     pub scope: String,
     pub bank_fill: [u16; BANKS],
+    /// Per bank, its marked pads (76); a bank with marks shows them in the bank row.
+    pub bank_marks: [u16; BANKS],
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
     /// The splash at start (73): while it is `Some`, the strip shows it instead of the
@@ -762,30 +769,39 @@ fn banks(p: &Pads) -> Vec<Span<'static>> {
         .fold(0u16, |m, (i, _)| m | 1 << i);
     for (i, &color) in BANK_COLORS.iter().enumerate() {
         let b = i + 1;
-        let glyphs = bank_glyphs(p.bank_fill[i]);
+        // one glyph cell has one colour, so a bank shows one thing at a time: the pads
+        // held or flashing (white, 62), else its marks (yellow, 76), else its fill
+        let (mask, dots) = if i == p.bank && hits != 0 {
+            (hits, Some(WHITE))
+        } else if p.bank_marks[i] != 0 {
+            (p.bank_marks[i], Some(MARK))
+        } else {
+            (p.bank_fill[i], None)
+        };
+        let glyphs = bank_glyphs(mask);
+        let dots = dots.map(|c| Style::new().fg(c).bold());
         // the closed banks keep their number and glyphs together: the row fits a narrow
         // window
-        if i == p.bank && hits != 0 {
-            // while pads are held or flash, the bank shows only them, white: no mix with
-            // the fill, one cell has one colour (62)
+        if i == p.bank {
             let style = Style::new().fg(color).bold();
-            // the space before the bracket, as before a closed bank: no `1⣿⣿[2`
-            spans.push(Span::styled(format!(" [{b} "), style));
-            spans.push(Span::styled(
-                bank_glyphs(hits),
-                Style::new().fg(WHITE).bold(),
-            ));
-            spans.push(Span::styled("]", style));
-        } else if i == p.bank {
-            spans.push(Span::styled(
-                format!(" [{b} {glyphs}]"),
-                Style::new().fg(color).bold(),
-            ));
+            match dots {
+                // the space before the bracket, as before a closed bank: no `1⣿⣿[2`
+                Some(dots) => {
+                    spans.push(Span::styled(format!(" [{b} "), style));
+                    spans.push(Span::styled(glyphs, dots));
+                    spans.push(Span::styled("]", style));
+                }
+                None => spans.push(Span::styled(format!(" [{b} {glyphs}]"), style)),
+            }
         } else {
-            spans.push(Span::styled(
-                format!(" {b}{glyphs}"),
-                Style::new().fg(color),
-            ));
+            let style = Style::new().fg(color);
+            match dots {
+                Some(dots) => {
+                    spans.push(Span::styled(format!(" {b}"), style));
+                    spans.push(Span::styled(glyphs, dots));
+                }
+                None => spans.push(Span::styled(format!(" {b}{glyphs}"), style)),
+            }
         }
     }
     spans
@@ -1594,7 +1610,7 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
     let (border, bg, fg) = match (pad.flash, pad.marked, selected) {
         _ if pad.in_hand => (MAGENTA, PANEL, TEXT),
         (true, _, _) => (WHITE, WHITE, BG),
-        (false, true, _) => (MAGENTA, PANEL, TEXT),
+        (false, true, _) => (MARK, MARK_BG, BRIGHT),
         (false, false, true) => (CYAN, PANEL, TEXT),
         // the chop screen: a pad with no slice of the open chop steps back (36)
         (false, false, false) if pad.dim => (BORDER, PANEL, DIM),
@@ -2501,6 +2517,7 @@ mod tests {
             param: PadParam::Volume,
             // pads 1 and W of the current bank (2) hold a sound
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -2951,6 +2968,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -3168,6 +3186,87 @@ mod tests {
             // only the pad held now, both glyphs of the bank, no fill mixed in
             assert_eq!(white, vec![bank_glyphs(1 << 5).as_str()], "{white:?}");
         }
+    }
+
+    /// 76 "A marked pad is yellow": pad E of bank 3 has the dark yellow fill and the
+    /// yellow frame, its name readable on it; the other pads keep the bank colour.
+    #[test]
+    fn a_marked_pad_is_yellow() {
+        let mut p = idle_pads();
+        p.bank = 2;
+        p.pads[6].marked = true; // pad E
+        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let cells: Vec<&(String, Color, Color)> = rows.iter().flatten().collect();
+        assert!(
+            cells
+                .iter()
+                .any(|(s, fg, bg)| s == "─" && *fg == MARK && *bg == MARK_BG),
+            "the yellow frame"
+        );
+        assert!(
+            cells
+                .iter()
+                .any(|(s, fg, bg)| s.trim() != "" && *fg == BRIGHT && *bg == MARK_BG),
+            "the name on the fill"
+        );
+        assert!(
+            cells
+                .iter()
+                .any(|(s, fg, _)| s == "─" && *fg == BANK_COLORS[2]),
+            "the other pads keep the bank colour"
+        );
+    }
+
+    /// 76 "Marks in another bank are seen" and "No marks, the fill": bank 2 shows all its
+    /// dots yellow, bank 5 the three marked pads; the other banks their fill.
+    #[test]
+    fn marks_in_another_bank_are_seen() {
+        let mut p = idle_pads();
+        p.bank = 1;
+        p.bank_fill = [0x000F; BANKS];
+        let spans = banks(&p);
+        assert!(
+            spans.iter().all(|s| s.style.fg != Some(MARK)),
+            "no marks, the fill"
+        );
+        p.bank_marks[1] = 0xFFFF;
+        p.bank_marks[4] = 0b0111;
+        let spans = banks(&p);
+        let yellow: Vec<&str> = spans
+            .iter()
+            .filter(|s| s.style.fg == Some(MARK))
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(
+            yellow,
+            vec![bank_glyphs(0xFFFF).as_str(), bank_glyphs(0b0111).as_str()]
+        );
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text.contains(&format!(" 3{}", bank_glyphs(0x000F))),
+            "{text}"
+        );
+    }
+
+    /// 76 "A hit over the marks": while pad Q of the open bank flashes, its glyphs show
+    /// only pad Q in white; after, the yellow marks.
+    #[test]
+    fn a_hit_over_the_marks() {
+        let mut p = idle_pads();
+        p.bank = 1;
+        p.bank_marks[1] = 0x00F0;
+        p.pads[4].flash = true; // pad Q
+        let colored = |p: &Pads, c| -> Vec<String> {
+            banks(p)
+                .iter()
+                .filter(|s| s.style.fg == Some(c))
+                .map(|s| s.content.to_string())
+                .collect()
+        };
+        assert_eq!(colored(&p, WHITE), vec![bank_glyphs(1 << 4)]);
+        assert!(colored(&p, MARK).is_empty(), "no mix in one cell");
+        p.pads[4].flash = false;
+        assert_eq!(colored(&p, MARK), vec![bank_glyphs(0x00F0)]);
     }
 
     /// Scenario "The right column keeps its rows" (32): with the pads hidden the right
@@ -4176,6 +4275,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4573,6 +4673,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4750,6 +4851,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4958,6 +5060,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5053,6 +5156,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5593,6 +5697,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             bank_fill: [0xFFFF; BANKS],
+            bank_marks: [0; BANKS],
             out_wave: Vec::new(),
             splash: None,
             big: None,

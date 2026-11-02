@@ -5915,6 +5915,7 @@ fn pads_view(
         param: tui_param(p.param),
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
+        bank_marks: bank_marks(p),
         out_wave,
         splash,
         big: big_view(p, rate),
@@ -6002,6 +6003,15 @@ fn bank_fill(p: &pads::Pads) -> [u16; tui::BANKS] {
         }
     }
     fill
+}
+
+/// Per bank, a bitmask of its marked pads (76).
+fn bank_marks(p: &pads::Pads) -> [u16; tui::BANKS] {
+    let mut marks = [0u16; tui::BANKS];
+    for &abs in &p.marked {
+        marks[abs / PADS_PER_BANK] |= 1 << (abs % PADS_PER_BANK);
+    }
+    marks
 }
 
 /// The pad already plays this whole file: putting it again changes nothing.
@@ -6346,6 +6356,7 @@ fn chop_view<'a>(
                     param: tui::PadParam::Volume,
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
+                    bank_marks: [0; tui::BANKS],
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -6456,6 +6467,7 @@ fn chop_view<'a>(
                     param: tui::PadParam::Volume,
                     scope: String::new(),
                     bank_fill: bank_fill(p),
+                    bank_marks: bank_marks(p),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -6574,6 +6586,7 @@ fn chop_view<'a>(
                     curve: None,
                     learn: Vec::new(),
                     bank_fill: bank_fill(p),
+                    bank_marks: bank_marks(p),
                     edit: None,
                     pages: Vec::new(),
                     knobs: Vec::new(),
