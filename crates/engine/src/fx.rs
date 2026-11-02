@@ -42,13 +42,40 @@ const DRIVE_GAIN: f32 = 24.0;
 /// The drive of one sample, `drive` 0..1: at 0 the sample is untouched; up from there the
 /// soft clip mixes in fully by a quarter and pushes harder to the top, the loudness kept.
 pub fn drive(x: f32, drive: f32) -> f32 {
-    if drive <= 0.0 {
-        return x;
+    Drive::new(drive).apply(x)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Drive {
+    k: f32,
+    scale: f32,
+    mix: f32,
+}
+
+impl Drive {
+    pub(crate) fn new(drive: f32) -> Self {
+        if drive <= 0.0 {
+            return Self {
+                k: 1.0,
+                scale: 1.0,
+                mix: 0.0,
+            };
+        }
+        let k = 1.0 + DRIVE_GAIN * drive * drive;
+        Self {
+            k,
+            scale: DRIVE_REF / (k * DRIVE_REF).tanh(),
+            mix: (drive * 4.0).min(1.0),
+        }
     }
-    let k = 1.0 + DRIVE_GAIN * drive * drive;
-    let shaped = (k * x).tanh() * (DRIVE_REF / (k * DRIVE_REF).tanh());
-    let mix = (drive * 4.0).min(1.0);
-    x + (shaped - x) * mix
+
+    pub(crate) fn apply(self, x: f32) -> f32 {
+        if self.mix == 0.0 {
+            return x;
+        }
+        let shaped = (self.k * x).tanh() * self.scale;
+        x + (shaped - x) * self.mix
+    }
 }
 
 /// A stereo delay line: the wet echo only, the dry sound is the pad's own.
@@ -366,6 +393,43 @@ impl Slot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_optimized_drive_matches_the_previous_sound() {
+        fn previous(x: f32, drive: f32) -> f32 {
+            if drive <= 0.0 {
+                return x;
+            }
+            let k = 1.0 + 24.0 * drive * drive;
+            let shaped = (k * x).tanh() * (0.3 / (k * 0.3).tanh());
+            let mix = (drive * 4.0).min(1.0);
+            x + (shaped - x) * mix
+        }
+        let rate = 48_000;
+        let frames = rate * 2;
+        let mut old = Vec::with_capacity(frames);
+        let mut new = Vec::with_capacity(frames);
+        for i in 0..frames {
+            let x = (i as f32 * 0.031).sin() * 0.15;
+            let d = if i < rate {
+                0.6
+            } else {
+                (i - rate) as f32 / rate as f32
+            };
+            let a = previous(x, d);
+            let b = super::Drive::new(d).apply(x);
+            assert!((a - b).abs() <= 0.000001);
+            assert!(a.is_finite() && b.is_finite() && a.abs() < 1.0 && b.abs() < 1.0);
+            old.push(a);
+            new.push(b);
+        }
+        let mut both = old;
+        both.extend(std::iter::repeat_n(0.0, rate / 2));
+        both.extend(new);
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../renders/81-drive-comparison.wav");
+        crate::offline::write_wav(&path, rate as u32, &both, &both).unwrap();
+    }
 
     #[test]
     fn drive_off_is_the_sample_itself() {

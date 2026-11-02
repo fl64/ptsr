@@ -823,6 +823,7 @@ impl Engine {
             let (d0, d1) = src.map_or((0.0, 0.0), |p| {
                 (self.pads[p].drive_from, self.pads[p].drive)
             });
+            let fixed_drive = (d0 == d1 && d0 > 0.0).then(|| fx::Drive::new(d0));
             let (s0_, s1_) = src.map_or(([0.0; FX_SLOTS], [0.0; FX_SLOTS]), |p| {
                 (self.pads[p].sends_from, self.pads[p].sends)
             });
@@ -894,7 +895,8 @@ impl Engine {
                 let t = i as f32 / n as f32;
                 if d0 > 0.0 || d1 > 0.0 {
                     let d = d0 + (d1 - d0) * t;
-                    (sl, sr_) = (fx::drive(sl, d), fx::drive(sr_, d));
+                    let drive = fixed_drive.unwrap_or_else(|| fx::Drive::new(d));
+                    (sl, sr_) = (drive.apply(sl), drive.apply(sr_));
                 }
                 left[i] += sl * g;
                 right[i] += sr_ * g;
