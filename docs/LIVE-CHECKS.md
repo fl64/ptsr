@@ -611,3 +611,11 @@ The owner checked the rename and cursor (2026-11-02).
   name. Clear the line and make sure that the cursor stays visible in the empty pad.
   Type a long name with wide characters. Make sure that its end and the cursor stay
   inside the frame. Press `Enter` and make sure that the cursor goes away.
+
+## 81 — Drive sound after optimization
+
+Folder: `changes/81-drive-performance`
+
+- [ ] (by ear) Listen to `renders/81-drive-comparison.wav`. The first part is the old
+  drive, the second is the optimized drive. Make sure they sound the same, including the
+  change in drive. There is a short silence between them.
