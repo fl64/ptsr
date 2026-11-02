@@ -149,7 +149,7 @@ pub struct ProjectPickerView {
 }
 
 pub struct PadView {
-    /// The glyphs of what is set on the pad (55), on its top frame: `↕ ◣ ∿ ◻`.
+    /// The glyphs of what is set on the pad (55), on its top frame: `⇕ ⩘ ∿ ◻`.
     pub glyphs: String,
     /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
     pub changed: Vec<PadParam>,
@@ -1631,12 +1631,29 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         .title(key)
         .border_style(Style::new().fg(border))
         .style(Style::new().bg(bg).fg(fg));
+    // the glyphs, then the mute group as a digit on a plate (77): a plain digit is one
+    // cell in every font, a circled one is not
+    let ink = if pad.flash { BG } else { BRIGHT };
+    let mut top = Vec::new();
     if !pad.glyphs.is_empty() {
-        block = block.title_top(
-            Line::from(format!(" {} ", pad.glyphs))
-                .right_aligned()
-                .fg(if pad.flash { BG } else { BRIGHT }),
-        );
+        top.push(Span::styled(
+            format!(" {} ", pad.glyphs),
+            Style::new().fg(ink),
+        ));
+    }
+    if pad.group > 0 {
+        if top.is_empty() {
+            top.push(" ".into());
+        }
+        let plate = if pad.flash {
+            Style::new().fg(BRIGHT).bg(BG)
+        } else {
+            Style::new().fg(BG).bg(BRIGHT)
+        };
+        top.push(Span::styled(pad.group.to_string(), plate));
+    }
+    if !top.is_empty() {
+        block = block.title_top(Line::from(top).right_aligned());
     }
     if pad.dashed {
         block = block.border_set(ratatui::symbols::border::Set {
@@ -3226,6 +3243,27 @@ mod tests {
         );
     }
 
+    /// 77 "The group digit keeps the frame": a slice, an envelope and group 1 give
+    /// ` ◻⩘ ` and the digit `1` dark on a light plate right before the corner, which keeps
+    /// its own cell.
+    #[test]
+    fn the_group_digit_keeps_the_frame() {
+        let mut p = idle_pads();
+        p.pads[4].glyphs = "◻⩘".into();
+        p.pads[4].group = 1;
+        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let y = (0..rows.len())
+            .find(|&y| row_text(&rows, y).contains(" ◻⩘ 1┐"))
+            .unwrap_or_else(|| panic!("the frame of pad Q: {rows:?}"));
+        let at = rows[y].iter().position(|(s, _, _)| s == "1").unwrap();
+        assert_eq!(
+            (rows[y][at].1, rows[y][at].2),
+            (BG, BRIGHT),
+            "dark on a light plate"
+        );
+        assert_eq!(rows[y][at + 1].0, "┐", "the corner in its own cell");
+    }
+
     /// 76 "The mark plate": the plate stands on the title line, black on yellow.
     #[test]
     fn the_mark_plate_is_yellow_on_the_title_line() {
@@ -3997,7 +4035,7 @@ mod tests {
         let mut p = idle_pads();
         let sel = p.selected;
         p.pads[sel].changed = vec![PadParam::Pitch, PadParam::Filter];
-        p.pads[sel].glyphs = "↕∿".into();
+        p.pads[sel].glyphs = "⇕∿".into();
         let rows = render_pads_at(p, 100, TALL);
         let text: Vec<String> = rows
             .iter()
@@ -4008,7 +4046,7 @@ mod tests {
         assert!(has("─ FILTER ● ─"));
         assert!(has("─ ENV ─") && !has("ENV ●"));
         assert!(has("─ SOURCE ─") && !has("SOURCE ●"));
-        assert!(has("↕∿"), "the glyphs on the pad frame");
+        assert!(has("⇕∿"), "the glyphs on the pad frame");
         let color = |name: &str, value: &str| {
             let line = text.iter().position(|r| r.contains(name)).unwrap();
             let x = text[line].find(value).unwrap();

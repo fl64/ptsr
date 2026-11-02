@@ -4,7 +4,9 @@
 
 - `⩘` (U+2A58) for the envelope.
 - The mute group as a digit on a light plate (Q1.1).
-- `↕` is checked by eye first; it changes only if it covers the frame (Q2.1).
+- `↕` is checked by eye first; it changes only if it covers the frame (Q2.1). The
+  owner's second screenshot (2026-11-02) showed `↕◣` as one blot, so `↕` changes too.
+  The agent took `⇕` (U+21D5, width "N"), the same up-down arrow.
 - The change goes into PR 2 together with 76 (owner: "do all this in pr 2"); it is still a
   change of its own in OpenSpec.
 

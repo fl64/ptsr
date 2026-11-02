@@ -5903,10 +5903,10 @@ fn pad_changes(p: &pads::Pads, abs: usize) -> Vec<tui::PadParam> {
     out
 }
 
-/// The frame glyphs of a pad (55), in this order: `↕` pitch, `◣` the envelope, `∿` the
-/// filter, `◻` a part of the file. The volume takes none: the mode line shows it.
-/// The mute group wears its number circled, `①`…`⑧` (70).
-fn pad_glyphs(changed: &[tui::PadParam], kinds: [engine::fx::FxKind; 2], group: u8) -> String {
+/// The frame glyphs of a pad (55), in this order: `⇕` pitch, `⩘` the envelope, `∿` the
+/// filter, `◻` a part of the file. The volume takes none: the mode line shows it. The mute
+/// group is drawn after them from the pad's `group`, as a digit on a plate (77).
+fn pad_glyphs(changed: &[tui::PadParam], kinds: [engine::fx::FxKind; 2]) -> String {
     use tui::PadParam as W;
     let any = |ws: &[W]| ws.iter().any(|w| changed.contains(w));
     // a send shows the glyph of what its slot holds (56)
@@ -5915,8 +5915,9 @@ fn pad_glyphs(changed: &[tui::PadParam], kinds: [engine::fx::FxKind; 2], group: 
         engine::fx::FxKind::Delay => '⋯',
     };
     [
-        (any(&[W::Pitch]), '↕'),
-        (any(&[W::Attack, W::Decay, W::Release]), '◣'),
+        (any(&[W::Pitch]), '⇕'),
+        // not `◣`: an ambiguous-width glyph, a font draws it over the frame (77)
+        (any(&[W::Attack, W::Decay, W::Release]), '⩘'),
         (any(&[W::Filter, W::Cutoff, W::Reso]), '∿'),
         (any(&[W::Source]), '◻'),
         (any(&[W::Drive]), '↯'),
@@ -5925,11 +5926,6 @@ fn pad_glyphs(changed: &[tui::PadParam], kinds: [engine::fx::FxKind; 2], group: 
     ]
     .into_iter()
     .filter_map(|(on, g)| on.then_some(g))
-    .chain(
-        (1..=pads::GROUPS)
-            .contains(&group)
-            .then(|| char::from_u32('①' as u32 + u32::from(group) - 1).unwrap_or('●')),
-    )
     .collect()
 }
 
@@ -5946,7 +5942,7 @@ fn pads_view(
             let abs = p.bank * PADS_PER_BANK + i;
             let changed = pad_changes(p, abs);
             tui::PadView {
-                glyphs: pad_glyphs(&changed, p.fx.map(|f| f.kind), p.group[abs]),
+                glyphs: pad_glyphs(&changed, p.fx.map(|f| f.kind)),
                 changed,
                 dim: false,
                 dashed: false,
@@ -7684,14 +7680,17 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
     if matches!(screen, Screen::Pads | Screen::Files) {
         rows.push((String::new(), "GLYPHS ON A PAD".to_string()));
         for (glyph, text) in [
-            ("↕", "pitch changed"),
-            ("◣", "envelope set: attack, decay or release"),
+            ("⇕", "pitch changed"),
+            ("⩘", "envelope set: attack, decay or release"),
             ("◻", "plays a part of the file: a slice or its own piece"),
             ("∿", "filter on: low-pass, high-pass or band"),
             ("↯", "drive set"),
             ("◌", "sends to a slot that holds a reverb"),
             ("⋯", "sends to a slot that holds a delay"),
-            ("①…⑧", "mute group: a hit stops the other pads of its group"),
+            (
+                "1…8",
+                "mute group, on a light plate: a hit stops the other pads of its group",
+            ),
             (
                 "●",
                 "in the panel: a block with a change; changed values are bright",
@@ -13207,8 +13206,8 @@ mod tests {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let rows = super::full_help(&keymap, input::Screen::Pads, true);
         for (glyph, word) in [
-            ("↕", "pitch"),
-            ("◣", "envelope"),
+            ("⇕", "pitch"),
+            ("⩘", "envelope"),
             ("∿", "filter"),
             ("◻", "part of the file"),
             ("↯", "drive"),
@@ -14462,26 +14461,28 @@ mod tests {
         write_wav(&out, sr, &l, &r).unwrap();
     }
 
-    /// 70 pad-playback "The group on the pad": Q in group 1 wears ①, W wears no circled
-    /// digit, F1 explains ①…⑧.
+    /// 70/77 pad-playback "The group on the pad": Q in group 1 carries its group to the
+    /// frame (drawn as a digit on a plate), W none, the glyph string has no digit; F1
+    /// explains `1…8`.
     #[test]
     fn the_group_on_the_pad() {
         let mut app = undo_app();
         app.pads.group[4] = 1;
         app.pads.group[6] = 8;
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
-        assert_eq!(v.pads[4].glyphs, "①");
-        assert_eq!(v.pads[6].glyphs, "⑧");
-        assert!(
-            !v.pads[5]
-                .glyphs
-                .contains(|c: char| ('①'..='⑧').contains(&c))
+        assert_eq!(
+            (v.pads[4].group, v.pads[6].group, v.pads[5].group),
+            (1, 8, 0)
+        );
+        assert_eq!(
+            v.pads[4].glyphs, "",
+            "the digit is not a glyph of the string"
         );
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let f1 = super::full_help(&keymap, Screen::Pads, true);
         assert!(
             f1.iter()
-                .any(|(k, t)| k == "①…⑧" && t.contains("mute group"))
+                .any(|(k, t)| k == "1…8" && t.contains("mute group"))
         );
     }
 
@@ -14835,12 +14836,12 @@ mod tests {
         assert_eq!(glyphs(&mut app, 0), "∿", "the filter and no other glyph");
         app.pads.filter[0] = FilterKind::Off;
         app.pads.pitch[0] = 2;
-        assert_eq!(glyphs(&mut app, 0), "↕");
+        assert_eq!(glyphs(&mut app, 0), "⇕");
         app.pads.pitch[0] = 0;
         assert_eq!(glyphs(&mut app, 0), "", "back to the default");
         app.pads.decay_ms[0] = 40;
         app.pads.pitch[0] = -5;
-        assert_eq!(glyphs(&mut app, 0), "↕◣", "in the order pitch, envelope");
+        assert_eq!(glyphs(&mut app, 0), "⇕⩘", "in the order pitch, envelope");
         assert_eq!(glyphs(&mut app, 3), "", "an empty pad has none");
     }
 

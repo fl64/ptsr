@@ -3,7 +3,7 @@
 ### Requirement: The pad shows what is set on it
 The system SHALL show, without the edit, which blocks of a pad differ from a fresh pad:
 the pad cell carries on its top frame a glyph for every changed block, in this order:
-`↕` the pitch, `⩘` the envelope (attack, decay, release), `∿` the filter on (its
+`⇕` the pitch, `⩘` the envelope (attack, decay, release), `∿` the filter on (its
 type is not off; the cutoff and the reso of a filter that is off count for nothing), `◻` a part of the file (a slice or the pad's own piece; a pad that plays the whole file has none), `↯` the drive, then for send 1
 and send 2 above 0 the glyph of the effect in that slot: `◌` reverb, `⋯` delay. An
 unchanged block gives no glyph. The pad panel draws a changed value bright and a default
@@ -25,7 +25,7 @@ a character of ambiguous width (as `◣` or `①`) is not used. F1 names the gly
 
 #### Scenario: Back to the default
 - **WHEN** the pitch of a pad is +2 and the owner turns it back to 0
-- **THEN** the `↕` glyph is gone from the pad frame
+- **THEN** the `⇕` glyph is gone from the pad frame
 
 #### Scenario: The panel shows the change
 - **WHEN** a pad that plays a whole file, with the pitch -5 and the filter low-pass, is selected
@@ -46,5 +46,5 @@ a character of ambiguous width (as `◣` or `①`) is not used. F1 names the gly
 
 #### Scenario: F1 names the glyphs
 - **WHEN** the owner opens the full help with F1 on the pads screen
-- **THEN** the help names every glyph: `↕` pitch, `⩘` envelope, `∿` filter, `◻` a part of the
+- **THEN** the help names every glyph: `⇕` pitch, `⩘` envelope, `∿` filter, `◻` a part of the
   file, `↯` drive, `◌` reverb, `⋯` delay
