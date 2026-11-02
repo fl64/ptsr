@@ -6,6 +6,8 @@
 - The splash lives in the wave strip above the pad grid and stays until the first sound
   (owner, 2026-11-01): a note that plays or a recording that starts, whichever comes first.
   The 6.4 s timer and the `any key: start` line are gone: nothing blocks the keys.
+- The splash shows only on the pads screen. Other screens show their own content. A return
+  to the pads screen before the first sound shows the splash again (owner, 2026-11-02).
 - The version comes from the build (`CARGO_PKG_VERSION`).
 - The first big box and the full-width box came before this decision; the strip replaced
   them (owner: "draw it where the wave shows, until the wave actually goes").

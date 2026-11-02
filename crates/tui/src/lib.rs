@@ -961,7 +961,6 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     // into the file; the pad edit draws the pad's envelope over its piece; else the output
     match (p.edit, &p.big) {
         _ if s.recording => envelope_strip(frame, f.strip, &p.out_wave, MAGENTA),
-        _ if p.splash.is_some() => splash_strip(frame, f.strip, p.splash.as_ref().unwrap()),
         (Some(_), _) if p.curve.is_some() => filter_strip(
             frame,
             f.strip,
@@ -971,6 +970,7 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
             let gate = p.pads.get(p.selected).is_some_and(|v| v.gate);
             pad_envelope_strip(frame, f.strip, big, p.param, gate)
         }
+        _ if p.splash.is_some() => splash_strip(frame, f.strip, p.splash.as_ref().unwrap()),
         _ => envelope_strip(frame, f.strip, &p.out_wave, DIM),
     }
     let [meters_area, _, info] = Layout::vertical([
@@ -2654,6 +2654,41 @@ mod tests {
                 .any(|r| r.iter().any(|(s, _, _)| s.as_str() > "\u{2800}")),
             "the strip draws the wave once the splash is gone"
         );
+    }
+
+    #[test]
+    fn the_pad_edit_takes_the_strip_from_the_splash() {
+        let mut p = idle_pads();
+        p.splash = Some(Splash {
+            version: "0.1.0",
+            loading: "ready".into(),
+        });
+        p.big = Some(BigView {
+            wave: vec![0.5; 64],
+            env: vec![1.0; 64],
+            attack: 0.1,
+            decay: 0.0,
+            release: 0.5,
+        });
+        p.edit = Some("ENV");
+        let rows = render_pads_at(p, 100, 44);
+        let text: String = rows
+            .iter()
+            .flat_map(|row| row.iter().map(|(s, _, _)| s.as_str()))
+            .collect();
+        assert!(!text.contains("ptsr - PT's SampleR"));
+
+        let mut p = idle_pads();
+        p.splash = Some(Splash {
+            version: "0.1.0",
+            loading: "ready".into(),
+        });
+        let rows = render_pads_at(p, 100, 44);
+        let text: String = rows
+            .iter()
+            .flat_map(|row| row.iter().map(|(s, _, _)| s.as_str()))
+            .collect();
+        assert!(text.contains("ptsr - PT's SampleR"));
     }
 
     /// Scenario "Project picker" (11): the status line names the open project on every
