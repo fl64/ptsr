@@ -15,6 +15,7 @@ Version 0.1.0. The behavior is specified in `openspec/specs/`. Each change start
 
 - Linux with PipeWire and its JACK library (`pipewire-jack`), or a JACK2 server. If JACK is not available, ptsr uses ALSA.
 - A terminal with the kitty keyboard protocol: Ghostty, kitty, WezTerm or foot. ptsr needs it for key releases. In other terminals, gate pads play as one-shot, and ptsr shows a warning.
+- Ghostty only: add `keybind = ctrl+shift+a=unbind` to the Ghostty config. By default Ghostty uses `Ctrl+Shift+A` to select all text, and ptsr does not get the key. In ptsr, `Ctrl+Shift+A` marks all pads.
 - Optional: a terminal with the kitty graphics protocol shows the waves as pictures. Turn it on in F12 (`Wave`). Without it, the waves are Braille characters.
 - Rust stable 1.85 or newer (the code uses edition 2024).
 - Optional: [Task](https://taskfile.dev/installation/) for the short commands below.

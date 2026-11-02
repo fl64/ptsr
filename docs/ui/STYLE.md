@@ -15,10 +15,11 @@ Cyberpunk: an almost black background, two neon accents with a meaning, everythi
 | Cyan | `#33E1FF` | playing, selected, on |
 | Magenta | `#FF5FAE` | cut markers, waiting, recording, warnings |
 | White | `#F2F4F7` | hit flash, playhead |
+| Yellow | `#FFE03A` on `#3D3305` | marked pads, the marks in the bank row |
 
 No other accents. If you want to highlight something with a third color, the screen has too much on it.
 
-The exception is the bank colors. Each of the 8 banks has its own muted tint. This tint colors the bank number and fill in the bank row, the pad frames and the key letters of the open bank (the open bank is bold in brackets). It shows membership, not state: the selected pad stays cyan, the pad in hand stays magenta, a hit is a white flash. Assign mode on the chop screen colors the bank row in its own way: the planned bank is magenta, an occupied bank is bright text, an empty bank is muted.
+The exception is the bank colors. Each of the 8 banks has its own muted tint. This tint colors the bank number and fill in the bank row, the pad frames and the key letters of the open bank (the open bank is bold in brackets). It shows membership, not state: the selected pad stays cyan, the pad in hand stays magenta, a marked pad is yellow, a hit is a white flash. Assign mode on the chop screen colors the bank row in its own way: the planned bank is magenta, an occupied bank is bright text, an empty bank is muted.
 
 | Bank | Color |
 | --- | --- |

@@ -40,8 +40,10 @@ Notes:
 1. `[64]` Create the file `~/.config/ptsr/keymap.toml`. Write in it only the keys
    that you want to change. The sections are the same as in `config/keymap.toml` of the
    project: `[global]`, `[edit]`, `[screens.pads]` and others.
-2. `[64]` The line `"Ctrl+G" = "pad.scope_next"` in `[screens.pads]` adds a key. Then
-   `Ctrl+G` and `Ctrl+A` both change the scope.
+2. `[64]` The line `"Ctrl+G" = "pad.mark_bank"` in `[screens.pads]` adds a key. Then
+   `Ctrl+G` and `Ctrl+A` both mark the bank. `[76]` The old name `pad.scope_next` still
+   works and does the same. `Ctrl+Shift+` and a letter is also a key: for example,
+   `"Ctrl+Shift+Z" = "pad.mark_all"`. The letter alone still plays its pad.
 3. `[64]` The line `"Ctrl+A" = "none"` removes a key. Then `Ctrl+A` on the pads does
    nothing.
 4. `[64]` Restart the program. The start folder is not important. Your keys are on top of
@@ -132,11 +134,25 @@ Notes:
    one second.
 5. Hit the pad with the left hand. You hear the result. Edit mode stays open.
 6. Press `Enter` or `Esc`. The mode closes.
-7. Press `Ctrl+A`. The scope changes: pad, marked pads, bank, all pads.
+7. `[76]` The scope is the pads that the next change hits: the marked pads, or the
+   selected pad if no pad has a mark. Press `Ctrl+A`. All 16 pads of the open bank get a
+   mark, and marking starts. Press `Ctrl+A` again. The marks of this bank go away.
+   `Ctrl+Shift+A` puts a mark on all 128 pads. In Ghostty, first add the line
+   `keybind = ctrl+shift+a=unbind` to the Ghostty config: Ghostty uses this key to select
+   all text. Without the kitty keyboard protocol, `Ctrl+Shift+A` marks only the bank.
    `[68]` You can see the scope outside edit mode too. The hint at `M` shows
-   `mark: off · scope: bank 2`.
-8. Press `M`. Marking starts. A hit on a pad puts a mark on it.
+   `mark: on, hit pads · scope: 16 marked`.
+8. Press `M`. Marking starts. A hit on a pad puts a mark on it or removes it. `[76]` A
+   marked pad has a dark yellow fill and a yellow frame. In the bank row, a bank with marks
+   shows its marked pads as yellow dots, also when the bank is not open. `Esc` removes all
+   marks and stops marking. In edit mode, the first `Esc` closes the edit, and the marks
+   stay.
 9. Press `H`. The pad mode changes: one-shot or gate.
+   `[76]` In edit mode, press `Backspace`. A question asks `Reset 17 pads to clean?` (or
+   `Reset pad Q to clean?`). Press `Enter`. The pads of the scope become as freshly
+   loaded: volume 0 dB, one-shot, the other settings at the defaults. The sound and its
+   bounds stay. `Esc` keeps the pads as they are. `Ctrl+Z` brings back the settings of
+   each pad. Outside edit mode, `Backspace` still takes the sound off the selected pad.
 10. Outside edit mode, `J` and `L` page the banks. `[43]` `PgUp` `PgDn` also page the
     banks in edit mode.
 11. `[21]` Turn knobs 1–3 of the controller in edit mode. They change the parameters of
@@ -221,13 +237,13 @@ Notes:
 1. `[61]` Turn the pad volume with a knob, or press `L` a few times. Press `Ctrl+Z`. One
    press returns the volume. A knob turn or a series of presses on one parameter is one
    step.
-2. If the `Ctrl+A` scope is a bank or all pads, the change goes to many pads. `Ctrl+Z`
-   returns all of them. The line shows `undo: cutoff on 16 pads`.
+2. If many pads have marks, the change goes to all of them. `Ctrl+Z` returns all of
+   them. The line shows `undo: cutoff on 16 pads`.
 3. You can undo these changes: volume, pitch, envelope, filter, drive and sends, pad
    mode. Also: a swap with `Ctrl+X`, a clear with `Backspace`, a file on a pad, the
-   source, the shared effect slots.
+   source, the shared effect slots. `[76]` Also a reset with `Backspace` in edit mode.
 4. You cannot undo the actions that change nothing: the pad selection, the bank, the
-   `Ctrl+A` scope, the pages, the marks. If you change the bank after a change, `Ctrl+Z`
+   pages, the marks. If you change the bank after a change, `Ctrl+Z`
    cancels the change. The bank stays.
 5. If there is nothing to undo, the line shows `nothing to undo`. Undo keeps 100 steps.
    It keeps them until the program closes.
