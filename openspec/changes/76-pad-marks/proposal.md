@@ -34,7 +34,8 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
 
 ## How to verify
 
-1. On F2, press `Ctrl+A`. All 16 pads of the bank turn dark yellow with a yellow frame.
+1. On F2, open bank 2 (`Ctrl+2`) and press `Ctrl+A`. All 16 pads of the bank turn dark
+   yellow with a yellow frame.
 2. Hit two pads: they lose the yellow. Go to bank 5 (`Ctrl+5`) and hit three pads: they
    turn yellow. In the bank row, bank 2 and bank 5 show yellow dots where the marks are.
 3. Press `Enter`, turn the volume down. Every marked pad in both banks is quieter.
