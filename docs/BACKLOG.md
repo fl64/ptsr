@@ -21,7 +21,7 @@ Archived changes cover the pad envelope, the large slice view and the kitty wave
 | 13 | `tabs on top` | Screens as real tabs drawn at the top of the window, not only F-keys | touches every screen |
 | 14 | `values on knobs` | Anything adjusted by ±/arrows can be MIDI-learned to a knob (with soft takeover) | `09` starts this for chop; generalize after |
 | 15 | `pad geometry` | Squarer pads (width ≈ 2× height, terminal cells are 1:2), adaptive to the window; compact pads on F6 | |
-| 16 | `rename pad` | A custom pad name instead of the file name; kept in the session; an input line like the filter (`/`) | |
+| 16 | `rename pad` | A custom pad name instead of the file name; kept in the session; `Ctrl+N` opens the name line | Implemented in `80-rename-pad`; waits for the owner's live check. |
 | 17 | `pad icons` | One-shot/gate and volume as glyphs (braille) instead of text | Partial: `78-mode-glyphs` is archived. The pad shows a glyph for the mode and a number for a nonzero volume. A volume glyph remains open. |
 | 18 | `pitch on pad` | Pitch/speed of the sample on pad level (slices are `04b`) | Done; `19-pad-pitch-scope` is archived. |
 | 19 | `save the edit` | Save the edited result (region/cuts) as a file onto the same or another pad; plain-words question before overwriting; the file on disk is never touched without asking | |

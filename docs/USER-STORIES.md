@@ -74,6 +74,14 @@ Notes:
 3. Press `Shift` and a pad together. The hit has full velocity.
 4. Press `Space` on the pads screen. The program plays a test click.
 
+## Name a pad
+
+1. `[80]` Hit a pad with a sample. Press `Ctrl+N` and edit its name. Press `Enter` to
+   save it or `Esc` to keep the old name. Pads do not play while the line is open.
+2. `[80]` Clear the line and press `Enter` to show the file name again. The name stays
+   in the project after restart. A new sound gets its file name; a failed load keeps the
+   previous name. Swapping pads moves the name with the sound.
+
 ## A project for a track
 
 1. `[11]` Press `Ctrl+P`. The project list opens.

@@ -600,3 +600,16 @@ Folder: `changes/archive/2026-11-02-79-project-sound-isolation`
   controller. Make sure that the samples and slices play with their saved settings.
 - [x] (by ear) Listen to `renders/79-project-switch.wav`. Check that the old sound fades
   without a click and that no old sound returns after the switch.
+
+## 80 — Name a pad
+
+Folder: `changes/80-rename-pad`
+
+- [ ] Put a sample on a pad. Hit it and press `Ctrl+N`. Edit the name in English and
+  Russian. Press `Enter`. Make sure that the pad shows the name.
+- [ ] (by ear) Hit the pad. Make sure that its sound did not change. Restart the program
+  and make sure that the name stays.
+- [ ] Press `Ctrl+N`, change the name and press `Esc`. Make sure the old name stays.
+  Open the line again, clear it and press `Enter`. Make sure the file name comes back.
+- [ ] Give the pad a name again. Replace its sample. Make sure the new file name shows.
+  Name it again, swap it with another pad and make sure the name moves with its sound.
