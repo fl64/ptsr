@@ -587,16 +587,16 @@ Folder: `changes/archive/2026-11-02-77-pad-glyphs`
 
 ## 79 — Project sounds stay separate
 
-Folder: `changes/79-project-sound-isolation`
+Folder: `changes/archive/2026-11-02-79-project-sound-isolation`
 
-- [ ] Create project A. Load a long sample on a pad and slices on other pads. Change a
+- [x] Create project A. Load a long sample on a pad and slices on other pads. Change a
   pad's volume or pitch. Note the sounds and settings.
-- [ ] (by ear) Start the long sample. While it sounds, use `Ctrl+P` to create an empty
+- [x] (by ear) Start the long sample. While it sounds, use `Ctrl+P` to create an empty
   project B. Make sure that the old sound fades out without a click and stays silent.
-- [ ] (by ear) Hit the same pads in B on the keyboard and on the MIDI controller. Make
+- [x] (by ear) Hit the same pads in B on the keyboard and on the MIDI controller. Make
   sure that they are silent. Hit pads while B opens. Make sure that the hits are silent
   and do not sound later.
-- [ ] (by ear) Use `Ctrl+P` to return to A. Hit its pads on the keyboard and on the MIDI
+- [x] (by ear) Use `Ctrl+P` to return to A. Hit its pads on the keyboard and on the MIDI
   controller. Make sure that the samples and slices play with their saved settings.
-- [ ] (by ear) Listen to `renders/79-project-switch.wav`. Check that the old sound fades
+- [x] (by ear) Listen to `renders/79-project-switch.wav`. Check that the old sound fades
   without a click and that no old sound returns after the switch.
