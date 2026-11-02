@@ -325,6 +325,8 @@ superseded by 57.
 
 Folder: `changes/archive/2026-11-01-55-pad-badges`
 
+Superseded by 77: the pad frame has no glyphs; one `✱` on the mode line marks the settings. Do the check of 77.
+
 - [ ] Put a sample on a fresh pad. Make sure that its top frame has no glyph.
 - [ ] Open the edit of pad `R` with the whole file. Set the filter to low-pass and close
   the edit. Make sure that the frame of pad `R` shows `∿` and no other glyph.
@@ -347,7 +349,7 @@ Folder: `changes/archive/2026-11-01-56-pad-fx`
   1 turns the drive, knob 2 send 1, knob 3 send 2. Turn the drive up. Make sure that the
   sound gets more grit at approximately the same loudness.
 - [ ] (by ear) Set send 2 of pad `Q` to 20 % with a delay in FX 2. Hit pad `Q`. Make sure
-  that you hear an echo after the pad stops. Make sure that the frame shows `⋯`.
+  that you hear an echo after the pad stops. Make sure that the mode line of the pad ends with `✱`.
 - [ ] (by ear) Press `Tab` until FX1*. Make sure that the block line shows
   `FX 1 * shared` and the change line shows `all pads`. Turn the size up. Make sure that
   each pad that sends to FX 1 has a longer tail.
@@ -568,3 +570,17 @@ Folder: `changes/archive/2026-11-02-76-pad-marks`
   Make sure that only the selected pad loses its sound, and that nothing asks.
 - [ ] Listen to `renders/76-reset-sounding.wav`. Make sure that the quiet, dull tone becomes
   loud and open in the middle, without a click (by ear).
+
+## 77 — A quiet pad grid
+
+Folder: `changes/archive/2026-11-02-77-pad-glyphs`
+
+- [ ] Look at the pad grid. Make sure that no pad frame carries glyphs.
+- [ ] Load a sample on a fresh pad. Make sure that the line under its name is `⇥`.
+- [ ] Put the pad into mute group 2 and lower it by 6 dB. Make sure that the line is
+  `⇥ -6 mute 2`, with no `✱`.
+- [ ] Raise its pitch. Make sure that the line is `⇥ -6 mute 2 ✱`. Turn the pitch back to
+  0. Make sure that the `✱` goes.
+- [ ] Press `H`. Make sure that the line is `⇢ -6 mute 2`, and that `⇥` and `⇢` are easy
+  to tell apart.
+- [ ] Press `F1`. Make sure that it names `⇥` one-shot, `⇢` gate, `mute N` and `✱`.

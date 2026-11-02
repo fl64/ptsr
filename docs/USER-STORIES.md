@@ -228,7 +228,7 @@ Notes:
 7. The reverb tail and the echo continue after the pad stops.
 8. In the panel on the right, the FX block is always visible. The block of a shared slot
    shows only while you are on its page.
-9. On the pad frame: `↯` drive, `◌` send to reverb, `⋯` send to delay.
+9. `[77]` A pad with the drive or a send shows `✱` at the end of its mode line.
 10. The project keeps all of these settings. An old project opens without effects.
 11. Listen to `renders/56-drive.wav`, `56-reverb.wav`, `56-delay.wav`,
     `56-two-slots.wav`.
@@ -252,18 +252,16 @@ Notes:
 
 ## What is set on a pad
 
-1. `[55]` Press `F2`. On the top frame of a pad, on the right, there are glyphs. They
-   show the settings of the pad: `⇕` pitch, `⩘` envelope (attack, decay or release),
-   `∿` filter (type, cutoff or resonance). `◻` means that the pad plays a part of the
-   file: a slice or its own part.
-2. A new pad with a full file has no glyphs. Set the pitch to 0 again: `⇕` disappears.
-3. After you chop, all pads with slices show `◻`. The pad with the full break does not.
-4. Volume has no glyph. The mode line already shows it (`⇥ +3`). `[77]` The mode line
-   shows the mode as a glyph: `⇥` one-shot (plays to the end), `⇢` gate (plays while
-   held). The pad panel shows the mode as a word.
+1. `[77]` Press `F2`. The line under the name of a pad is its mode line: the mode, the
+   volume, the mute group and one mark: `⇥ +3 mute 2 ✱`. `⇥` is one-shot (plays to the
+   end), `⇢` is gate (plays while held). The pad panel shows the mode as a word.
+2. `✱` means that the pad has more settings: pitch, envelope, filter, drive or sends.
+   Set the pitch to 0 again: `✱` disappears. The pad frame has no glyphs.
+3. A slice is not a setting: after you chop, the pads with slices show no `✱`.
+4. The volume, the mode and the group show on the line already, so they give no `✱`.
 5. Select a pad. In the panel on the right, the changed values are bright. The other
    values are dim. A block with a change has a dot: `─ FILTER ● ──`.
-6. `F1` explains the glyphs in the section GLYPHS ON A PAD.
+6. `F1` explains `⇥`, `⇢`, `mute N` and `✱` in the section GLYPHS ON A PAD.
 
 ## Waves on the pads
 
