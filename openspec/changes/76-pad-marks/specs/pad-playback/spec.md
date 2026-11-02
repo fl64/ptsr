@@ -27,10 +27,11 @@ The system SHALL reset with `Backspace` in the pad edit every pad of the change 
 freshly loaded pad: volume 0 dB, one-shot, pitch 0, the envelope, the filter, the drive,
 the sends and the mute group at their defaults. The file and the source of the pad (the
 whole file, a slice or its own piece with its bounds) stay. An empty pad in the scope is
-skipped. It asks first on the status line, naming the pads: `reset pad Q to clean? Enter
-reset · Esc keep` or `reset 17 pads to clean? Enter reset · Esc keep`; `Enter` resets,
-`Esc` or any other command key keeps; a pad hit sounds and does not answer. A reset
-sounding pad changes without a click. The reset is one undo step.
+skipped. It asks first in the question box, as the other questions do, naming the pads:
+`Reset pad Q to clean?` or `Reset 17 pads to clean?`, then what stays and
+`Enter: reset · Esc: keep`; `Enter` resets, `Esc` keeps, and other keys do nothing while
+it asks. A reset sounding pad changes without a click. The reset is one undo step. The
+help line of the pad edit names the key: `Bksp reset`.
 
 #### Scenario: A pad back to clean
 - **WHEN** pad Q plays slice 3 with the pitch -5, the filter low-pass and the volume -6 dB,
@@ -40,8 +41,8 @@ sounding pad changes without a click. The reset is one undo step.
 
 #### Scenario: The question names the pads
 - **WHEN** 17 pads are marked, the owner opens the edit and presses `Backspace`
-- **THEN** the status line says `reset 17 pads to clean? Enter reset · Esc keep` and no pad
-  has changed yet
+- **THEN** the question box says `Reset 17 pads to clean?` and `Enter: reset · Esc: keep`,
+  and no pad has changed yet
 
 #### Scenario: Esc keeps
 - **WHEN** the reset question is open and the owner presses `Esc`
@@ -52,6 +53,15 @@ sounding pad changes without a click. The reset is one undo step.
   `Ctrl+Z`
 - **THEN** every one of the 16 pads has its own settings back and the status says
   `undo: reset on 16 pads`
+
+#### Scenario: The edit names the reset key
+- **WHEN** the pad edit is open
+- **THEN** the help line names `Bksp reset`
+
+#### Scenario: A sounding pad resets without a click
+- **WHEN** pad Q sounds with the volume −12 dB and the filter low-pass, and the owner
+  resets it
+- **THEN** the sound goes on and comes to 0 dB and an open filter without a click
 
 #### Scenario: Backspace outside the edit
 - **WHEN** the edit is closed and the owner presses `Backspace` on the pads screen

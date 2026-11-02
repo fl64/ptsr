@@ -38,7 +38,7 @@ Also, a pad edit cannot be put back to clean: every parameter must be turned bac
 2. Hit two pads: they lose the yellow. Go to bank 5 (`Ctrl+5`) and hit three pads: they
    turn yellow. In the bank row, bank 2 and bank 5 show yellow dots where the marks are.
 3. Press `Enter`, turn the volume down. Every marked pad in both banks is quieter.
-4. Still in the edit, press `Backspace`. The line asks `reset 17 pads to clean?`. Press
+4. Still in the edit, press `Backspace`. A question asks `Reset 17 pads to clean?`. Press
    `Enter`. Listen: the pads sound as freshly loaded, with the same cuts.
 5. Press `Ctrl+Z`. Listen: the pads sound as before the reset.
 6. Press `Esc`: the edit closes, the marks stay. `Esc` again: the marks are gone.

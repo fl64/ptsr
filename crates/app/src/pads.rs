@@ -642,6 +642,32 @@ impl Pads {
         }
     }
 
+    /// Resets a pad to a freshly loaded one (76): volume, mode, pitch, envelope, filter,
+    /// drive, sends and mute group at their defaults; the sound and its source stay. The
+    /// sound is not sent again, so a sounding voice only glides to the new values.
+    pub fn reset_clean(&mut self, abs: usize) -> Vec<Command> {
+        let now = self.snapshot(abs);
+        let clean = PadSnap {
+            file: now.file,
+            missing: now.missing,
+            sound: now.sound,
+            region: now.region,
+            slice: now.slice,
+            link: now.link,
+            ..Pads::default().snapshot(abs)
+        };
+        let loading = self.loading[abs];
+        let mut cmds = self.put_back(abs, &clean);
+        self.loading[abs] = loading;
+        cmds.retain(|c| {
+            !matches!(
+                c,
+                Command::SetPadSound { .. } | Command::SetPadRegion { .. }
+            )
+        });
+        cmds
+    }
+
     /// Puts a pad back as a snapshot has it; returns the engine commands that make it
     /// sound so again.
     pub fn put_back(&mut self, abs: usize, s: &PadSnap) -> Vec<Command> {

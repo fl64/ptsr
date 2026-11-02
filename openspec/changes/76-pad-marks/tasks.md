@@ -4,7 +4,7 @@
   edit keeps the marks; the panel, the help line and F1; a test for each scenario; commit.
 - [x] 2. The look: a marked pad yellow (fill and frame), the marks in the bank row and in
   the pad line of the hidden grid; a test for each scenario; commit.
-- [ ] 3. Reset to clean: `Backspace` in the pad edit, the question, one undo step,
+- [x] 3. Reset to clean: `Backspace` in the pad edit, the question, one undo step,
   click-free on a sounding pad (an offline render with the automated checks, a WAV in
   `renders/`); a test for each scenario; commit.
 - [ ] 4. README: the Ghostty line `keybind = ctrl+shift+a=unbind`; `docs/USER-STORIES.md`;

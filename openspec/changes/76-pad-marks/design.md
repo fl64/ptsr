@@ -37,10 +37,15 @@
   `pad.mark_all` (`Ctrl+Shift+A`). The old name `pad.scope_next` in a user keymap or a
   learned MIDI binding is read as `pad.mark_bank`, so no file of the owner breaks.
 - `Ctrl+Shift+A` when all 128 pads are marked unmarks them all, the same way as M1.
-- The reset question names the count: `reset pad Q to clean? Enter reset · Esc keep` or
-  `reset 17 pads to clean? ...`. While it asks, pad hits still sound and do not
-  answer it; any other command key keeps the pads as they are, as `Esc` does.
-- The reset of a pad already clean is still a step; the status says `reset: 1 pad`.
+- The reset question uses the question box of the other questions (the overwrite of a
+  pad, the reset of a device): `Reset 17 pads to clean?`, what stays, and
+  `Enter: reset · Esc: keep`. As in those questions, other keys (pad hits too) do nothing
+  while it asks. While it asks, `Enter` and `Esc` are the keys of the pads screen, not of
+  the edit layer, where `Enter` closes the edit.
+- `Backspace` keeps one action, `pad.clear`: outside the edit it clears the selected pad,
+  in the pad edit it asks for the reset. A separate binding in `[edit]` would take
+  `Backspace` from the slice edit of the chop screen too.
+- A reset that changes nothing (the pads are clean already) leaves no undo step.
 - An empty pad in the scope is skipped: it has nothing to reset.
 
 ## Open questions

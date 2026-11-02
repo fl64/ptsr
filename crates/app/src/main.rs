@@ -117,6 +117,11 @@ enum Ask {
         port: String,
         lines: Vec<String>,
     },
+    /// `Backspace` in the pad edit: these pads back to clean (76).
+    ResetPads {
+        pads: Vec<usize>,
+        lines: Vec<String>,
+    },
 }
 
 /// The folder picker of the settings Paths tab (11): which row opened it, the folder it
@@ -334,9 +339,10 @@ fn folders_of(dir: &Path) -> Vec<PathBuf> {
 impl Ask {
     fn lines(&self) -> &[String] {
         match self {
-            Ask::Plan { lines } | Ask::PutFile { lines, .. } | Ask::ResetProfile { lines, .. } => {
-                lines
-            }
+            Ask::Plan { lines }
+            | Ask::PutFile { lines, .. }
+            | Ask::ResetProfile { lines, .. }
+            | Ask::ResetPads { lines, .. } => lines,
         }
     }
 }
@@ -1192,6 +1198,11 @@ impl App {
                     match self.ask.as_ref() {
                         Some(Ask::Plan { .. }) => self.apply_plan(),
                         Some(Ask::ResetProfile { .. }) => {}
+                        Some(Ask::ResetPads { pads, .. }) => {
+                            let pads = pads.clone();
+                            self.ask = None;
+                            self.reset_pads(&pads);
+                        }
                         Some(Ask::PutFile { abs, path, .. }) => {
                             let (abs, path) = (*abs, path.clone());
                             self.put_file(abs, path);
@@ -1808,6 +1819,8 @@ impl App {
                 self.source_value(step > 0, false)
             }
             Action::Undo if matches!(self.screen, Screen::Pads | Screen::Files) => self.undo_pads(),
+            // in the pad edit the same key resets the settings of the scope, after a question (76)
+            Action::PadClear if self.edit && self.screen == Screen::Pads => self.ask_reset(),
             Action::PadClear => {
                 // one key must not wipe a whole bank: clear acts on the selected pad only
                 let abs = self.pads.selected_abs();
@@ -4610,6 +4623,46 @@ impl App {
         Some((r.start.min(len), r.end.min(len), len))
     }
 
+    /// The edit layer takes the keys: the edit is open and no question waits; a question
+    /// takes Enter and Esc of the screen, where the edit's Enter closes the edit (76).
+    fn edit_keys(&self) -> bool {
+        self.edit && self.ask.is_none()
+    }
+
+    /// `Backspace` in the pad edit (76): asks before the pads of the scope with a sound go
+    /// back to clean.
+    fn ask_reset(&mut self) {
+        let pads: Vec<usize> = self
+            .pads
+            .scope_pads()
+            .into_iter()
+            .filter(|&a| self.pads.file[a].is_some())
+            .collect();
+        let what = match pads.as_slice() {
+            [] => return,
+            [abs] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
+            many => format!("{} pads", many.len()),
+        };
+        self.ask = Some(Ask::ResetPads {
+            pads,
+            lines: vec![
+                format!("Reset {what} to clean?"),
+                "  Volume 0 dB, one-shot, all the rest at the defaults.".into(),
+                "  The sound and its bounds stay. Ctrl+Z brings the settings back.".into(),
+                "Enter: reset · Esc: keep".into(),
+            ],
+        });
+    }
+
+    fn reset_pads(&mut self, pads: &[usize]) {
+        for &abs in pads {
+            for cmd in self.pads.reset_clean(abs) {
+                self.send(cmd);
+            }
+        }
+        self.dirty();
+    }
+
     /// Every pad and the slots as they are now, for the undo (61).
     fn before(&self) -> Before {
         Before {
@@ -4624,6 +4677,7 @@ impl App {
             Action::EditValue { .. } | Action::PadParam(_) => self.pads.param_name().into(),
             Action::PadModeNext => "mode".into(),
             Action::PadClear => "clear".into(),
+            Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),
             _ => "change".into(),
@@ -5579,7 +5633,7 @@ fn main() -> std::io::Result<()> {
         }
         // a press of a key still down is its repeat; without releases every press is new
         let k = if kitty { keys_down.repeat(&k) } else { k };
-        let Some(action) = keymap.resolve_in(app.screen, app.edit, &k) else {
+        let Some(action) = keymap.resolve_in(app.screen, app.edit_keys(), &k) else {
             continue;
         };
         // without the kitty protocol there are no releases, so a held pad would never reset
@@ -6881,15 +6935,22 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                         st.param_name.into(),
                     ),
                     ("pad".into(), "listen".into()),
-                    (
-                        format!(
-                            "{} {}",
-                            edit_keys(&[Action::Back]),
-                            keys(keymap, screen, &[Action::Back])
-                        ),
-                        "close".into(),
-                    ),
                 ])
+                // the pad edit only: the clear key resets the settings there (76)
+                .chain((screen == Screen::Pads).then(|| {
+                    (
+                        keys(keymap, screen, &[Action::PadClear]),
+                        "reset".to_string(),
+                    )
+                }))
+                .chain([(
+                    format!(
+                        "{} {}",
+                        edit_keys(&[Action::Back]),
+                        keys(keymap, screen, &[Action::Back])
+                    ),
+                    "close".into(),
+                )])
                 .collect(),
         }];
     }
@@ -7318,7 +7379,9 @@ fn describe(a: Action) -> String {
         Action::PadMarkBank => "pads: mark bank; again unmarks it".into(),
         Action::PadMarkAll => "pads: mark all; again unmarks them".into(),
         Action::PadMarkToggle => "pads: marking on / off; a pad hit marks or unmarks it".into(),
-        Action::PadClear => "pads: take the sound off the selected pad".into(),
+        Action::PadClear => {
+            "pads: take the sound off the selected pad; in the edit, reset its settings".into()
+        }
         Action::ScreenPads => "pads screen".into(),
         Action::ScreenSettings => "audio settings".into(),
         Action::ScreenFiles => "files screen".into(),
@@ -12162,7 +12225,12 @@ mod tests {
             items.contains(&("I K".into(), "parameter".into())),
             "{items:?}"
         );
-        assert_eq!(items.len(), 5, "only the edit keys: {items:?}");
+        // 76: the clear key resets the pad there
+        assert!(
+            items.contains(&("Bksp".into(), "reset".into())),
+            "{items:?}"
+        );
+        assert_eq!(items.len(), 6, "only the edit keys: {items:?}");
         assert!(
             !items.iter().any(|(_, t)| t == "select"),
             "the arrows do not select in the edit mode: {items:?}"
@@ -14124,6 +14192,215 @@ mod tests {
         app
     }
 
+    /// Pad 7 (slice 3 of the break) with settings on it, its edit open.
+    fn dressed_pad() -> (super::App, usize) {
+        use engine::filter::FilterKind;
+        let mut app = laid_out_break();
+        app.screen = Screen::Pads;
+        app.chop = None;
+        let abs = 6;
+        app.pads.selected = abs;
+        app.pads.pitch[abs] = -5;
+        app.pads.filter[abs] = FilterKind::LowPass;
+        app.pads.volume_db[abs] = -6;
+        app.pads.gate[abs] = true;
+        app.pads.group[abs] = 2;
+        app.apply(Action::PadEdit);
+        (app, abs)
+    }
+
+    /// 76 pad-playback "A pad back to clean".
+    #[test]
+    fn a_pad_back_to_clean() {
+        use engine::filter::FilterKind;
+        let (mut app, abs) = dressed_pad();
+        let source = app.pads.source(abs);
+        let region = app.pads.region[abs];
+        app.apply(Action::PadClear);
+        app.apply(Action::PadEdit); // Enter answers the question
+        assert!(app.ask.is_none());
+        assert_eq!(app.pads.pitch[abs], 0);
+        assert_eq!(app.pads.filter[abs], FilterKind::Off);
+        assert_eq!(app.pads.volume_db[abs], 0);
+        assert!(!app.pads.gate[abs], "one-shot");
+        assert_eq!(app.pads.group[abs], 0);
+        assert_eq!(app.pads.source(abs), source, "the slice stays");
+        assert_eq!(app.pads.region[abs], region);
+        assert!(app.pads.file[abs].is_some());
+        assert!(app.edit, "the edit stays open");
+        assert_eq!(glyphs(&mut app, abs), "◻");
+    }
+
+    /// 76 pad-playback "The question names the pads" and "Esc keeps".
+    #[test]
+    fn the_question_names_the_pads() {
+        let mut app = undo_app();
+        app.apply(Action::PadMarkToggle);
+        for abs in 0..17 {
+            app.pads.file[abs] = Some(format!("/m/{abs}.wav").into());
+            app.pads.pitch[abs] = 3;
+            app.pads.marked.insert(abs);
+        }
+        app.pads.marked.insert(40); // an empty pad is skipped
+        app.apply(Action::PadEdit);
+        app.apply(Action::PadClear);
+        let lines = app.ask.as_ref().expect("a question").lines().to_vec();
+        assert_eq!(lines[0], "Reset 17 pads to clean?");
+        assert_eq!(lines.last().unwrap(), "Enter: reset · Esc: keep");
+        assert!(
+            (0..17).all(|a| app.pads.pitch[a] == 3),
+            "no pad has changed yet"
+        );
+        // Esc keeps
+        app.apply(Action::Back);
+        assert!(app.ask.is_none());
+        assert!(app.edit, "the edit stays open");
+        assert!((0..17).all(|a| app.pads.pitch[a] == 3));
+        assert_eq!(app.pads.marked.len(), 18, "the marks stay");
+    }
+
+    /// 76 pad-playback "Undo a reset".
+    #[test]
+    fn undo_a_reset() {
+        let mut app = undo_app();
+        for abs in 0..16 {
+            app.pads.file[abs] = Some(format!("/m/{abs}.wav").into());
+            app.pads.pitch[abs] = abs as i8 - 8;
+            app.pads.volume_db[abs] = -(abs as i8);
+        }
+        let before: Vec<_> = (0..16).map(|a| app.pads.snapshot(a)).collect();
+        app.apply(Action::PadMarkBank);
+        app.apply(Action::PadEdit);
+        app.apply(Action::PadClear);
+        app.apply(Action::PadEdit);
+        assert!((0..16).all(|a| app.pads.pitch[a] == 0 && app.pads.volume_db[a] == 0));
+        let said = undo(&mut app);
+        assert_eq!(said, "undo: reset on 16 pads");
+        let after: Vec<_> = (0..16).map(|a| app.pads.snapshot(a)).collect();
+        assert_eq!(after, before, "every pad has its own settings back");
+    }
+
+    /// 76 pad-playback "Backspace outside the edit": only the selected pad is cleared,
+    /// nothing asks.
+    #[test]
+    fn backspace_outside_the_edit() {
+        let mut app = undo_app();
+        app.pads.file[0] = Some("/m/kick.wav".into());
+        app.pads.file[1] = Some("/m/snare.wav".into());
+        app.apply(Action::PadMarkBank);
+        app.apply(Action::PadClear);
+        assert!(app.ask.is_none());
+        assert!(app.pads.file[0].is_none());
+        assert!(app.pads.file[1].is_some());
+    }
+
+    /// 76 pad-playback "The edit names the reset key", and Enter answers the question
+    /// through the keys, not the edit layer (where Enter closes the edit).
+    #[test]
+    fn the_edit_names_the_reset_key() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (mut app, abs) = dressed_pad();
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let groups = super::help_groups(&keymap, Screen::Pads, &app.help_state());
+        assert!(
+            line(&groups).contains(&("Bksp".into(), "reset".into())),
+            "{:?}",
+            line(&groups)
+        );
+        pads_key(&mut app, KeyCode::Backspace, M::NONE);
+        assert!(app.ask.is_some());
+        pads_key(&mut app, KeyCode::Enter, M::NONE);
+        assert!(app.ask.is_none() && app.edit);
+        assert_eq!(app.pads.pitch[abs], 0);
+    }
+
+    /// 76 pad-playback "A sounding pad resets without a click": the commands of the reset
+    /// reach a sounding voice; the sound goes on, no step larger than the tone's own →
+    /// `renders/76-reset-sounding.wav`.
+    #[test]
+    fn a_sounding_pad_resets_without_a_click() {
+        use engine::Engine;
+        use engine::checks::{first_non_finite, max_step, peak};
+        use engine::filter::FilterKind;
+        use engine::offline::{Event, Scenario, render, write_wav};
+        use std::path::Path;
+
+        let sr = 48_000;
+        let ms = |n: usize| sr as usize / 1000 * n;
+        let mut app = undo_app();
+        app.pads.file[0] = Some("/m/tone.wav".into());
+        app.pads.volume_db[0] = -12;
+        app.pads.filter[0] = FilterKind::LowPass;
+        app.pads.cutoff_hz[0] = 300.0;
+        let snap = app.pads.snapshot(0);
+        let dressed: Vec<Command> = app
+            .pads
+            .put_back(0, &snap)
+            .into_iter()
+            .filter(|c| {
+                !matches!(
+                    c,
+                    Command::SetPadSound { .. } | Command::SetPadRegion { .. }
+                )
+            })
+            .collect();
+        app.apply(Action::PadEdit);
+        app.apply(Action::PadClear);
+        app.sent.clear();
+        app.apply(Action::PadEdit);
+        let reset = std::mem::take(&mut app.sent);
+        assert!(!reset.is_empty());
+        assert!(
+            !reset
+                .iter()
+                .any(|c| matches!(c, Command::SetPadSound { .. })),
+            "the sound is not sent again"
+        );
+        let tone: Vec<f32> = (0..sr as usize * 2)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / sr as f32).sin() * 0.5)
+            .collect();
+        let at = |frame, cmd| Event { frame, cmd };
+        let mut events = vec![at(
+            0,
+            Command::SetPadSound {
+                pad: 0,
+                sound: Some(std::sync::Arc::new(Sample::mono(tone.clone()))),
+            },
+        )];
+        events.extend(dressed.into_iter().map(|c| at(0, c)));
+        events.push(at(
+            ms(10),
+            Command::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            },
+        ));
+        events.extend(reset.into_iter().map(|c| at(ms(500), c)));
+        let sc = Scenario {
+            sample_rate: sr,
+            frames: ms(1000),
+            events,
+        };
+        let (l, r) = render(&mut Engine::new(sr), &sc, 128);
+        assert_eq!(first_non_finite(&l), None, "no NaN or infinities");
+        assert!(peak(&l) < 1.0, "no clipping");
+        let quiet = peak(&l[ms(300)..ms(500)]);
+        let open = peak(&l[ms(800)..]);
+        assert!(
+            open > quiet * 2.0,
+            "the sound goes on, louder: {quiet} → {open}"
+        );
+        // a 440 Hz tone at 0.5 moves at most ≈0.029 a sample; a click jumps far more
+        let own = 0.5 * (440.0 * std::f32::consts::TAU / sr as f32);
+        let step = max_step(&l[ms(20)..]);
+        assert!(
+            step <= own * 1.1,
+            "step {step} against the tone's own {own}"
+        );
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/76-reset-sounding.wav");
+        write_wav(&out, sr, &l, &r).unwrap();
+    }
+
     /// 70 pad-playback "The group on the pad": Q in group 1 wears ①, W wears no circled
     /// digit, F1 explains ①…⑧.
     #[test]
@@ -14685,7 +14962,9 @@ mod tests {
     ) {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let k = ratatui::crossterm::event::KeyEvent::new(code, m);
-        let action = keymap.resolve_in(Screen::Pads, app.edit, &k).unwrap();
+        let action = keymap
+            .resolve_in(Screen::Pads, app.edit_keys(), &k)
+            .unwrap();
         app.apply(action);
     }
 
