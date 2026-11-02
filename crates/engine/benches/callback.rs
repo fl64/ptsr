@@ -61,7 +61,7 @@ fn setup(mut send: impl FnMut(Command)) {
 
 fn main() {
     // The sound is longer than the run, so every voice plays to the end.
-    let sound = (0..BLOCK * BLOCKS + 1)
+    let sound = (0..BLOCK * BLOCKS * 2 + 1)
         .map(|i| (i as f32 * 0.01).sin() * 0.01)
         .collect();
     let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
