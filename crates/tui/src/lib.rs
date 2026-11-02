@@ -1640,9 +1640,9 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
             ..ratatui::symbols::border::PLAIN
         });
     }
-    // the mode as a glyph, the volume, the mute group (77): `⇥ +1 mute 2`; no separator,
-    // so `⇥ -24 mute 8` fits the 13 cells of the narrowest pad
-    let mut second = if pad.gate { "⇢" } else { "⇥" }.to_string();
+    // the mode as a glyph, the volume, the mute group (77): `⇢ +1 mute 2`; no separator,
+    // so `⇢ -24 mute 8` fits the 13 cells of the narrowest pad
+    let mut second = if pad.gate { "⇥" } else { "⇢" }.to_string();
     if pad.volume_db != 0.0 {
         second = format!("{second} {:+.0}", pad.volume_db);
     }
@@ -3228,8 +3228,8 @@ mod tests {
         );
     }
 
-    /// 77 "The mode as a glyph" and "The group on the pad": `⇥ +1 mute 2` under the
-    /// name of a one-shot pad at +1 dB in group 2, `⇢` for a gate pad at 0 dB; no digit on
+    /// 77 "The mode as a glyph" and "The group on the pad": `⇢ +1 mute 2` under the
+    /// name of a one-shot pad at +1 dB in group 2, `⇥` for a gate pad at 0 dB; no digit on
     /// the frame.
     #[test]
     fn the_mode_as_a_glyph() {
@@ -3243,8 +3243,8 @@ mod tests {
         let rows = draw_rows(&Screen::Pads(p), 100, 30);
         let all: Vec<String> = (0..rows.len()).map(|y| row_text(&rows, y)).collect();
         let text = all.join("\n");
-        assert!(text.contains("│ ⇥ +1 mute 2"), "{text}");
-        assert!(text.contains("│ ⇢ "), "{text}");
+        assert!(text.contains("│ ⇢ +1 mute 2"), "{text}");
+        assert!(text.contains("│ ⇥ "), "{text}");
         assert!(!text.contains("one-shot +"), "{text}");
         assert!(
             !all.iter().any(|l| l.contains("2┐")),
@@ -4034,7 +4034,7 @@ mod tests {
         assert!(has("─ FILTER ● ─"));
         assert!(has("─ ENV ─") && !has("ENV ●"));
         assert!(has("─ SOURCE ─") && !has("SOURCE ●"));
-        assert!(has("│ ⇥ ✱"), "the mark on the mode line");
+        assert!(has("│ ⇢ ✱"), "the mark on the mode line");
         let color = |name: &str, value: &str| {
             let line = text.iter().position(|r| r.contains(name)).unwrap();
             let x = text[line].find(value).unwrap();

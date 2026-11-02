@@ -7686,8 +7686,8 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
                 "mute N",
                 "its group: a hit stops the other pads of the group",
             ),
-            ("⇥", "one-shot: plays to the end"),
-            ("⇢", "gate: plays while held"),
+            ("⇢", "one-shot: pressed, it goes on to the end"),
+            ("⇥", "gate: plays until the release stops it"),
             (
                 "●",
                 "in the panel: a block with a change; changed values are bright",
@@ -13200,7 +13200,7 @@ mod tests {
     fn f1_names_the_mark() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let rows = super::full_help(&keymap, input::Screen::Pads, true);
-        for (glyph, word) in [("✱", "more settings"), ("⇥", "one-shot"), ("⇢", "gate")] {
+        for (glyph, word) in [("✱", "more settings"), ("⇢", "one-shot"), ("⇥", "gate")] {
             assert!(
                 rows.iter().any(|(k, t)| k == glyph && t.contains(word)),
                 "{glyph}: {rows:?}"
@@ -14472,7 +14472,7 @@ mod tests {
             f1.iter()
                 .any(|(k, t)| k == "mute N" && t.contains("its group"))
         );
-        for (k, word) in [("⇥", "one-shot"), ("⇢", "gate")] {
+        for (k, word) in [("⇢", "one-shot"), ("⇥", "gate")] {
             assert!(f1.iter().any(|(g, t)| g == k && t.contains(word)), "{k}");
         }
     }
