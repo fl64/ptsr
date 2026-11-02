@@ -16,6 +16,7 @@ use crate::session::{FxState, PadState, Session};
 #[derive(Clone, Debug)]
 pub struct PadSnap {
     file: Option<PathBuf>,
+    name: Option<String>,
     missing: bool,
     gate: bool,
     volume_db: i8,
@@ -40,6 +41,7 @@ impl PartialEq for PadSnap {
         };
         // a tuple compares at most 12 fields
         same_sound
+            && self.name == o.name
             && self.group == o.group
             && (
                 &self.file,
@@ -413,6 +415,7 @@ pub struct Pads {
     pub track_keys: bool,
     /// The file each pad plays; `None` plays the test tone.
     pub file: [Option<PathBuf>; PADS],
+    pub custom_name: [Option<String>; PADS],
     /// The pad's file is gone or broken; the pad is silent.
     pub missing: [bool; PADS],
     /// Loading progress, 0..100, while a file is being loaded for the pad.
@@ -459,6 +462,7 @@ impl Default for Pads {
             held: [false; PADS],
             track_keys: true,
             file: std::array::from_fn(|_| None),
+            custom_name: std::array::from_fn(|_| None),
             missing: [false; PADS],
             loading: [None; PADS],
             sound: std::array::from_fn(|_| None),
@@ -582,6 +586,7 @@ impl Pads {
     /// Takes the sound off a pad: file, slice, link; the mode, volume and pitch stay.
     pub fn clear(&mut self, abs: usize) -> Command {
         self.file[abs] = None;
+        self.custom_name[abs] = None;
         self.missing[abs] = false;
         self.loading[abs] = None;
         self.slice[abs] = None;
@@ -597,6 +602,7 @@ impl Pads {
     /// Two pads trade sample, mode, volume and state; returns the engine command.
     pub fn swap(&mut self, a: usize, b: usize) -> Command {
         self.file.swap(a, b);
+        self.custom_name.swap(a, b);
         self.missing.swap(a, b);
         self.gate.swap(a, b);
         self.volume_db.swap(a, b);
@@ -623,6 +629,7 @@ impl Pads {
     pub fn snapshot(&self, abs: usize) -> PadSnap {
         PadSnap {
             file: self.file[abs].clone(),
+            name: self.custom_name[abs].clone(),
             missing: self.missing[abs],
             gate: self.gate[abs],
             volume_db: self.volume_db[abs],
@@ -650,6 +657,7 @@ impl Pads {
         let now = self.snapshot(abs);
         let clean = PadSnap {
             file: now.file,
+            name: now.name,
             missing: now.missing,
             sound: now.sound,
             region: now.region,
@@ -673,6 +681,7 @@ impl Pads {
     /// sound so again.
     pub fn put_back(&mut self, abs: usize, s: &PadSnap) -> Vec<Command> {
         self.file[abs] = s.file.clone();
+        self.custom_name[abs] = s.name.clone();
         self.missing[abs] = s.missing;
         self.gate[abs] = s.gate;
         self.volume_db[abs] = s.volume_db;
@@ -750,6 +759,7 @@ impl Pads {
             let secs = |frames: usize| frames as f64 / rate.max(1) as f64;
             let state = PadState {
                 file: self.file[abs].clone(),
+                name: self.custom_name[abs].clone(),
                 gate: self.gate[abs],
                 volume_db: self.volume_db[abs],
                 pitch: self.pitch[abs],
@@ -804,6 +814,7 @@ impl Pads {
             self.sends[abs] = state.sends.map(|s| s.min(100));
             self.group[abs] = state.group.min(GROUPS);
             self.file[abs] = state.file.clone();
+            self.custom_name[abs] = state.name.clone();
             self.slice[abs] = state.slice;
             self.link[abs] = state.link.zip(state.epoch);
             let frames = |secs: f64| (secs.max(0.0) * rate as f64).round() as usize;
@@ -1565,6 +1576,29 @@ impl Pads {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn custom_name_survives_session_swap_reset_and_undo() {
+        let mut pads = super::Pads::default();
+        pads.file[0] = Some("kick.wav".into());
+        pads.custom_name[0] = Some("Бочка".into());
+        let saved = pads.to_session(None, 48_000);
+        let text = toml::to_string(&saved).unwrap();
+        let loaded: crate::session::Session = toml::from_str(&text).unwrap();
+        let mut restored = super::Pads::default();
+        restored.restore(&loaded, 48_000);
+        assert_eq!(restored.custom_name[0].as_deref(), Some("Бочка"));
+        let snapshot = restored.snapshot(0);
+        restored.swap(0, 1);
+        assert_eq!(restored.custom_name[1].as_deref(), Some("Бочка"));
+        restored.reset_clean(1);
+        assert_eq!(restored.custom_name[1].as_deref(), Some("Бочка"));
+        restored.clear(1);
+        assert_eq!(restored.custom_name[1], None);
+        restored.put_back(0, &snapshot);
+        assert_eq!(restored.custom_name[0].as_deref(), Some("Бочка"));
+        let old: crate::session::PadState = toml::from_str("file = 'old.wav'").unwrap();
+        assert_eq!(old.name, None);
+    }
     use super::*;
 
     fn press(pad: usize) -> Action {

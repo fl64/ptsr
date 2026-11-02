@@ -83,6 +83,8 @@ impl Default for Session {
 pub struct PadState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub gate: bool,
     pub volume_db: i8,
     /// Pad pitch in semitones; absent in older sessions, which reads as 0.
@@ -258,6 +260,7 @@ mod tests {
             "21".into(),
             PadState {
                 file: Some("/music/amen.wav".into()),
+                name: None,
                 gate: true,
                 volume_db: -6,
                 pitch: 0,
