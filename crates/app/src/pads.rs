@@ -220,16 +220,13 @@ pub const ENV_STEP_MS: i32 = 5;
 const ENV_FINE_MS: i32 = 1;
 
 /// The pages of the pad edit mode: knob k turns the k-th parameter of the page.
-const PAGES: [(&str, &[Param]); 7] = [
+const PAGES: [(&str, &[Param]); 5] = [
     ("TONE", &[Param::Volume, Param::Pitch, Param::Group]),
     ("ENV", &[Param::Attack, Param::Decay, Param::Release]),
     ("FILTER", &[Param::Filter, Param::Cutoff, Param::Reso]),
     // the pad's own bounds after the sound: where it plays from (48)
     ("SOURCE", &[Param::Source, Param::Start, Param::End]),
-    // the effects last, the shared slots with a star (56)
     ("FX", &[Param::Drive, Param::Send1, Param::Send2]),
-    ("FX1*", &[Param::Fx1Kind, Param::Fx1A, Param::Fx1B]),
-    ("FX2*", &[Param::Fx2Kind, Param::Fx2A, Param::Fx2B]),
 ];
 
 /// The name of a pad parameter in the panel and the help line.
@@ -263,10 +260,10 @@ pub fn page_names() -> Vec<&'static str> {
 }
 
 /// All parameters in `Tab` order, for the learn mode's panel (47).
-pub const ORDER_ALL: [Param; 21] = ORDER;
+pub const ORDER_ALL: [Param; 15] = ORDER;
 
 /// All parameters in `I` `K` order.
-const ORDER: [Param; 21] = [
+const ORDER: [Param; 15] = [
     Param::Volume,
     Param::Pitch,
     Param::Group,
@@ -282,12 +279,6 @@ const ORDER: [Param; 21] = [
     Param::Drive,
     Param::Send1,
     Param::Send2,
-    Param::Fx1Kind,
-    Param::Fx1A,
-    Param::Fx1B,
-    Param::Fx2Kind,
-    Param::Fx2A,
-    Param::Fx2B,
 ];
 
 /// Mute groups 1…`GROUPS` (70); 0 is off.
@@ -2004,12 +1995,6 @@ mod tests {
             Param::Drive,
             Param::Send1,
             Param::Send2,
-            Param::Fx1Kind,
-            Param::Fx1A,
-            Param::Fx1B,
-            Param::Fx2Kind,
-            Param::Fx2A,
-            Param::Fx2B,
             Param::Volume,
         ] {
             assert!(p.apply(Action::PadParamNext).is_empty());
@@ -2542,12 +2527,11 @@ mod tests {
         assert_eq!(p.param, Param::Filter, "the first parameter of the page");
     }
 
-    /// 54 editing: "Shift+Tab turns back"; with 56 the last page is FX2*.
     #[test]
     fn shift_tab_turns_back() {
         let mut p = Pads::default();
         p.apply(Action::PagePrev);
-        assert_eq!(p.page().0, "FX2*");
-        assert_eq!(p.param, Param::Fx2Kind);
+        assert_eq!(p.page().0, "FX");
+        assert_eq!(p.param, Param::Drive);
     }
 }
