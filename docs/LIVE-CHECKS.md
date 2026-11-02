@@ -351,7 +351,55 @@ screen. Tests also checked MIDI release across screens, banks and channels. The 
 A separate owner process already had a PipeWire node named ptsr, so the agent stopped
 its test session. No live sound or physical controller behavior was accepted from this run.
 Small and large layouts were checked with TestBackend, not an interactive terminal.
-The owner checks below remain open.
+The owner checks below remain open. That run does not verify the replacement X-Session
+map on hardware. All checks for the new map below remain unchecked.
+
+The X-Session replacement belongs to change 82. The physical control table is in
+`docs/USER-STORIES.md`, section "Set up a pad with the X-Session Pro".
+The profile applies automatically when the port name contains `X-Session`.
+There is no manual profile selector. An existing user map keeps its old assignments until
+reset, including old Play roles and destructive delete, commit or replacement assignments.
+
+- [ ] Stop the running program. Start the newly built program. Connect the X-Session Pro.
+  Before reset, check that the existing map still has its previous assignments.
+- [ ] Press `F12`. Open MIDI. Select `reset to profile` for `X-Session Pro`.
+  This selects a device to reset, not a profile. Press `Enter` to open the question.
+  Press `Esc`. Check that the existing bindings remain unchanged, including after a restart.
+- [ ] Select that reset row again. Press `Enter` to open the question.
+  Press `Enter` again to confirm. Check that the new physical defaults replace this device's map.
+  This deletes custom bindings only for this device. Check that other devices keep their bindings.
+  Restart the program. Check that the replacement map remains.
+- [ ] Press left Headphone (b2, note 44). Check that Files opens.
+  Press right Headphone (b3, note 45). Check that FX opens.
+- [ ] Check left backward (b4, note 46) and left forward (b1, note 43).
+  They select previous / next pads on Pads, files on Files, slices on Chop and blocks on FX.
+  In edit, they select previous / next pages. A release must not repeat the command.
+- [ ] Press right backward (b5, note 56) and right forward (b6, note 57).
+  Check previous / next bank. Check that button releases do not change banks again.
+- [ ] On Pads, press left Cue (b7, note 58). Check that pad edit opens.
+  Turn left numbered knobs 1–3 (k1–k3, CC24–26). Check the current page parameters.
+  Close edit with left Cue. Open it again and close it with right Cue (b8, note 59).
+- [ ] On Files, press left Cue to hold a file. Press it again. No file is placed.
+  Press right Cue to open Chop.
+- [ ] Start a layout plan with the keyboard. Press right Cue. The plan must not apply.
+  Open a replacement question with the keyboard. Neither Cue must confirm it.
+  On Chop, press left Cue to cut. Press right Cue to open slice edit.
+  Check that either Cue closes edit without another cut.
+  Outside Files, Chop and edit, check that right Cue goes back.
+- [ ] On Files, test left Play (b10, note 70) and right Play (b9, note 69) separately.
+  Each must toggle file preview. On Chop, each must start and stop preview.
+  Repeat with edit open. Neither Play must open or close edit, delete cuts or apply a layout.
+  Check that both Plays do nothing on Pads and FX. Releases must not repeat commands.
+- [ ] On Chop with edit closed, turn k1–k5 (CC24–28).
+  Check slice start, slice end, cursor, region start and region end respectively.
+  Check right Mid (k11, CC35) for threshold and right Low (k12, CC36) for zoom.
+- [ ] On each screen and in edit, move left Volume (fader_b, CC11), left Pitch (fader_a, CC12)
+  and right Volume (pitch_a, CC14). Check selected pad volume, selected pad pitch and master volume respectively.
+  Check that right Pitch (pitch_b, CC15) and crossfader messages CC17 / CC20 change nothing.
+- [ ] On a disposable project, check every default button on each screen and in edit.
+  No default may delete a cut, apply a layout or confirm replacement.
+  Use keyboard commands for layout, or explicitly learn a commit control.
+  An old destructive assignment remains active until reset. Do not use the old map for this safety check.
 
 - [ ] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
   terminal they are beside each other. In a narrow terminal they are stacked. Cards do
@@ -370,6 +418,9 @@ The owner checks below remain open.
   Save with `Ctrl+S` and restart. Check both slots, drive and sends.
 - [ ] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
   parameter stays selected. Shared slot settings must not appear in the pad panel.
+The profile update changes no sound algorithms. It needs no new sound render.
+Use the existing change 82 WAV for the listening check.
+
 - [ ] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
   parameter changes and undo for clicks. Compare with `56-reverb.wav`, `56-delay.wav`
   and `56-two-slots.wav`.
@@ -546,6 +597,9 @@ Folder: `changes/archive/2026-11-01-70-mute-groups`
 ## 74 — Learn on F12 shows what it changes before it saves
 
 Folder: `changes/archive/2026-11-01-74-learn-preview`
+
+These steps create custom bindings. They do not describe the replacement defaults.
+Reset the X-Session map as described in section 82 when you finish these steps.
 
 - [ ] Connect the X-Session Pro. Press `F12` and open the MIDI tab. Select "bank next" in
   GLOBAL, press `Enter` and press b9. Make sure that the row shows b9 in amber next to the

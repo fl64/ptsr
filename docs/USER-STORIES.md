@@ -221,7 +221,8 @@ Notes:
 1. `[56]` Each pad has its own drive. There are also two shared slots, FX 1 and FX 2.
    Each slot contains reverb or delay. A pad sends its own part of the sound to each slot.
    In a new project, FX 1 is reverb and FX 2 is delay.
-2. Select a pad. Open edit mode (`Enter` or b10). Press `Tab` (or b4) until the FX page.
+2. Select a pad. Open edit mode with `Enter` or left Cue (b7, note 58).
+   Press `Tab` or left forward (b1, note 43) until the FX page.
    Knob 1 changes drive. Knob 2 sets the send to FX 1. Knob 3 sets the send to FX 2. The
    send line shows the effect in the slot: `send 1  20 %  reverb`. `J` `L` change by
    1 %. Hold them for 10 %.
@@ -324,23 +325,95 @@ Notes:
 
 ## Set up a pad with the X-Session Pro
 
-1. `[21]` Select a pad. Press button b10. Edit mode opens.
-2. `[54]` Button b4 opens the next page, as `Tab` does. Button b3 opens the previous page.
-   You do not have to select a parameter. Each parameter on the page has its own knob.
-   `[54]` You can assign a knob for the pages in `F12`, group PADS · EDIT, row
-   "page (knob)". The program divides its travel into sections, one for each page. The
-   page changes immediately.
-3. Knobs k1–k3 change the parameters of the page. `[58]` The parameter goes to the knob
-   position immediately (`jump` mode, refer to "MIDI knobs"). Attack, decay and release
-   follow a curve. Near zero, the knob is more accurate.
-4. Press b10 again. The mode closes. The buttons and knobs go back to their usual
-   functions.
-5. On the chop screen, b10 also opens the edit of a slice. k1 and k2 move its bounds.
-6. `[21]` On the chop screen, k3 moves the cursor. k4 and k5 set the start and the end of
-   the region.
-7. `[21]` Select a start pad. Press b9. The slices go into the plan in sequence from this
-   pad. Press b9 again. The program assigns the slices. If the pads are not empty, b9
-   confirms the replacement.
+`[82]` These instructions use the replacement profile. The program selects this profile
+when the MIDI port name contains `X-Session`. There is no manual profile selector.
+The table describes the defaults, not a hardware verification result.
+
+### Install the replacement bindings
+
+An existing user map stays unchanged until you confirm a reset. A program update or
+restart does not replace it. This includes old destructive assignments for cut deletion,
+layout application and replacement confirmation. Old Play assignments also remain until reset.
+
+1. Stop the running program.
+2. From the repository root, run `./target/release/ptsr`. Connect the X-Session Pro.
+   The program reads device profiles from `config/devices` in the current directory.
+3. Press `F12`. Open the MIDI tab.
+4. Select the `reset to profile` row for `X-Session Pro`.
+   This selects the device to reset, not a profile.
+5. Press `Enter` to open the reset question.
+6. Read the question. Press `Enter` again to install the replacement bindings.
+   This deletes your custom bindings only for this device. Other devices keep their bindings.
+   Press `Esc` instead to keep the existing map and custom bindings.
+
+On first setup, the program copies the profile defaults into the user map automatically.
+You do not need a reset for a device without an existing map.
+
+### Physical controls
+
+All messages use MIDI channel 1. CC means MIDI Control Change. The IDs are the names
+shown in the MIDI settings. Button releases do not repeat commands.
+The edit roles replace the screen roles while edit mode is open, except for Play preview.
+
+| Physical control | ID | MIDI | Default role |
+|---|---|---|---|
+| Left Headphone | b2 | Note 44 | Open Files |
+| Right Headphone | b3 | Note 45 | Open FX |
+| Left backward | b4 | Note 46 | Pads: previous pad. Files: previous file. Chop: previous slice. Edit: previous page. FX: previous block. |
+| Left forward | b1 | Note 43 | Pads: next pad. Files: next file. Chop: next slice. Edit: next page. FX: next block. |
+| Right backward | b5 | Note 56 | Previous bank |
+| Right forward | b6 | Note 57 | Next bank |
+| Left Cue | b7 | Note 58 | Pads: open edit. Files: hold file. Chop: cut. Edit: close. |
+| Right Cue | b8 | Note 59 | Back. Files: open Chop. Chop: open slice edit. Edit: close. |
+| Left Play | b10 | Note 70 | Files: preview on/off. Chop: play/stop. These roles also work in edit. Unassigned elsewhere. |
+| Right Play | b9 | Note 69 | Files: preview on/off. Chop: play/stop. These roles also work in edit. Unassigned elsewhere. |
+| Left numbered knob 1 | k1 | CC24 | Pads: volume. Chop: slice start. Edit / FX: parameter 1. Unassigned elsewhere. |
+| Left numbered knob 2 | k2 | CC25 | Chop: slice end. Edit / FX: parameter 2. Unassigned elsewhere. |
+| Left numbered knob 3 | k3 | CC26 | Chop: cursor. Edit / FX: parameter 3. Unassigned elsewhere. |
+| Left Hi | k4 | CC27 | Chop: region start. Unassigned elsewhere. |
+| Left Mid | k5 | CC28 | Chop: region end. Unassigned elsewhere. |
+| Left Low | k6 | CC29 | Unassigned |
+| Right numbered knob 1 | k7 | CC31 | Unassigned |
+| Right numbered knob 2 | k8 | CC32 | Unassigned |
+| Right numbered knob 3 | k9 | CC33 | Unassigned |
+| Right Hi | k10 | CC34 | Unassigned |
+| Right Mid | k11 | CC35 | Chop: threshold. Unassigned elsewhere. |
+| Right Low | k12 | CC36 | Chop: zoom. Unassigned elsewhere. |
+| Left Volume fader | fader_b | CC11 | Selected pad volume on all screens |
+| Left Pitch fader | fader_a | CC12 | Selected pad pitch on all screens |
+| Right Volume fader | pitch_a | CC14 | Master volume on all screens |
+| Right Pitch fader | pitch_b | CC15 | Unassigned |
+| Crossfader | crossfade | CC17 | Unassigned |
+| Crossfader inverse message | No ID | CC20 | Unassigned. Ignore this mirrored message. |
+
+Cue only opens edit or takes a file. It does not apply a pending plan or place a held file.
+No default button deletes a cut, applies a layout or confirms replacement.
+Use the keyboard or explicit MIDI learn for these actions.
+
+### Edit and chop
+
+1. Select a pad. Press left Cue (b7, note 58). Pad edit opens.
+2. Press left forward (b1, note 43) for the next page.
+   Press left backward (b4, note 46) for the previous page.
+   You do not need to select a parameter before you turn its knob.
+   You can assign a page knob in `F12`, group PADS · EDIT, row "page (knob)".
+   Each section of its travel selects one page immediately.
+3. Turn left numbered knobs 1–3 (k1–k3). They change the parameters of the current page.
+   In `jump` mode, the parameter follows the knob immediately. Refer to "MIDI knobs" for other modes.
+   Attack, decay and release follow a curve. Near zero, the knob gives finer control.
+4. Press either Cue to close edit. The controls return to their screen roles.
+5. On Chop, press left Cue to cut. Press right Cue to open slice edit.
+   Press either Cue again to close edit. Either Play controls preview, including inside slice edit.
+6. Outside edit, k1 and k2 move slice bounds. k3 moves the cursor.
+   Left Hi and Mid set the region start and end. Right Mid and Low change threshold and zoom.
+7. Press `P` to start assignment. Press `Tab` to select sequential placement.
+   Select the start pad.
+   Press `Enter` to apply the plan. Confirm replacement if the program asks.
+   For a controller-only layout, first learn a control as commit in `F12`.
+   That learned control starts the plan, applies it and confirms replacement on successive presses.
+   Neither Play button commits a layout in the replacement defaults.
+8. Press right Headphone to open FX. Left backward / forward select the effect block.
+   Left numbered knobs 1–3 change the selected block. Left Headphone opens Files.
 
 ## Chop a break
 
@@ -501,7 +574,8 @@ Notes:
    `[74]` The knob is not bound yet. The row shows it in amber next to the old control:
    `none → k5`. If you touch a different control, it replaces the first. `Enter` binds
    the knob and saves it. `Esc` keeps all as it is. The config file does not change.
-4. `[74]` Before `Enter`, the row shows what the control changes. If the control has a
+4. `[74]` This example uses custom b9 bindings, not the replacement profile defaults.
+   Before `Enter`, the row shows what the control changes. If the control has a
    binding in the same group, that row becomes magenta with `✗ loses b9`. `Enter` moves
    the control. If the control has a binding in a different group, a grey line shows it
    under the row: `b9 on GLOBAL: bank next · stays`. That binding stays. For example, b9
@@ -526,15 +600,17 @@ Notes:
    - `scale`: the parameter changes from the first movement, in smaller steps than the
      knob. It gets to the knob value at the end stop.
    `PgDn` from this row goes to the first group.
-8. `[59]` Connect the X-Session Pro for the first time. The program copies the functions
-   from its profile into your bindings. For example, b10 opens edit mode, and k1–k3
-   change the page. After that, all bindings are yours. There is no `(learned)` note. The
-   row shows the control name: `b10 (note 70)`.
+8. `[59, 82]` On first setup, the program copies the X-Session Pro profile into your bindings.
+   The MIDI port name must contain `X-Session`. The program selects the profile automatically.
+   Left Cue (b7, note 58) opens pad edit. k1–k3 change the current page parameters.
+   After that, all bindings are yours. The row shows the control name, such as `b7 (note 58)`.
+   An existing map keeps its old assignments until a confirmed reset.
 9. `[59]` Select a row. Press `Backspace`. The binding disappears fully. The profile does
    not return it, also after a restart.
-10. `[59]` Below the row "knob response" is "reset to profile" with the device name.
-    Press the learn key. The program asks. `Enter` returns the profile functions and
-    removes your changes for this device. `Esc` keeps all as it is.
+10. `[59, 82]` Below "knob response", select `reset to profile` for `X-Session Pro`.
+    Press `Enter` to open the question. Press `Enter` again to reset only this device.
+    Reset deletes your custom bindings for this device. `Esc` keeps the existing map unchanged.
+    Restart the newly built program before this reset. Refer to "Install the replacement bindings".
 11. `[71]` Each bound knob and key does an action. At start, the program shows at the
     bottom each binding to an action that it does not have: file, key, name. The program
     removes such bindings from your config one time. Then it tells how many it removed.
