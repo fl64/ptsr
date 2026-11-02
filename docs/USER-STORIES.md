@@ -214,7 +214,7 @@ Notes:
    changes values. In edit mode the panel has a frame. The closed panel shows
    `Enter: edit` in its first line.
 5. `[70]` In a narrow window, the labels are shorter (`vol`, `pit`, `atk`). The values are
-   full. The title shows only the open page: `TONE 1/7`.
+   full. The title shows only the open page: `TONE 1/5`.
 
 ## Effects: drive, reverb, delay
 
@@ -227,22 +227,31 @@ Notes:
    1 %. Hold them for 10 %.
 3. At 0 % the pad sounds as before. Drive adds dirt, and the volume almost does not
    change.
-4. Press `Tab` again: the page FX1*. The star means a shared slot. The knob changes the
-   sound of all pads that send to the slot. The `change` line shows `all pads`. Knob 1
-   selects the type (reverb or delay). For reverb, knobs 2 and 3 are the room size and
-   the tone. For delay, they are the time (10–2000 ms) and the repeats (up to 90 %). The
-   echo always decreases to silence.
-5. Press `Tab` again: FX2*. It is the same for the second slot. For two reverbs, put
-   reverb in the two slots.
+4. `[82]` Press `F4`. Both shared effect blocks are visible as compact cards with three
+   parameter rows. They are beside each other when they fit, or stacked in a narrow
+   window. Cards do not expand to fill empty space. The selected block has a different frame. These settings change every pad that sends to that block. Knob 1
+   selects reverb or delay. For reverb, knobs 2 and 3 change size and tone. For delay,
+   they change time (10–2000 ms) and feedback (up to 90 %). The echo decreases to silence.
+5. Press `Tab` or `Shift+Tab` to select the other block. The same three page knobs now
+   control that block. Selection alone does not change the sound. `I` and `K` select a
+   parameter. `J` and `L` change it. Pads remain playable in either keyboard layout.
+   To use two reverbs, select reverb in both blocks.
 6. When you change the slot type, the old tail stops smoothly, without a click. If you
    set the old type again, its settings are the same as before.
 7. The reverb tail and the echo continue after the pad stops.
-8. In the panel on the right, the FX block is always visible. The block of a shared slot
-   shows only while you are on its page.
+8. `[82]` The pad panel keeps drive and both sends. Shared effect settings are only on
+   `F4`. `F2` returns to the pad panel with its previous parameter selected.
+   `Ctrl+Z` undoes an effect change. Block selection does not add an undo step.
 9. `[77]` A pad with the drive or a send shows `✱` at the end of its mode line.
 10. The project keeps all of these settings. An old project opens without effects.
-11. Listen to `renders/56-drive.wav`, `56-reverb.wav`, `56-delay.wav`,
-    `56-two-slots.wav`.
+11. Listen to `renders/82-shared-fx-screen.wav`: reverb at 0.1 s, delay at 1.1 s,
+    a time change at 2.2 s, undo at 3.4 s, and a larger room at 4.6 s.
+    The earlier comparisons are `56-drive.wav`, `56-reverb.wav`, `56-delay.wav`
+    and `56-two-slots.wav`.
+12. `[82]` Existing learned page knobs also work on `F4`. Each block and each device
+    uses its own jump, pickup or scale state. In pickup mode, the other block waits for
+    its own value. `F10` assigns the three knobs and the block selector on this screen.
+    `F1` and the bottom help show the controls and selected block.
 
 ## Undo a change to the pads
 

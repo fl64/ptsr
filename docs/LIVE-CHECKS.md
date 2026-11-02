@@ -52,7 +52,7 @@ Folder: `changes/archive/2026-11-01-21-edit-mode`
 
 - [ ] On the pads screen (`F2`), hit a pad. Press `Enter`. Make sure that the panel frame
   changes colour. Make sure that the frame title shows
-  `EDIT · TONE ENV FILTER SOURCE FX FX1* FX2*` with TONE lit. Make sure that the rows
+  `EDIT · TONE ENV FILTER SOURCE FX` with TONE lit. Make sure that the rows
   above the help band do not move.
 - [ ] Press `I` and `K` to select a parameter. Press `J` and `L` to change it. Make sure
   that a tap is a fine step and a held key is faster. Make sure that the knob numbers 1–3
@@ -238,7 +238,7 @@ Folder: `changes/archive/2026-11-01-48-panel-blocks`
   `source` on SOURCE is selected. Press `K` past the end of SOURCE. Make sure that `drive`
   on FX is selected.
 - [ ] Press `Tab` again and again. Make sure that the lit page in the frame title moves
-  through TONE, ENV, FILTER, SOURCE, FX, FX1* and FX2*.
+  through TONE, ENV, FILTER, SOURCE and FX.
 
 ## 49 — Loop the play on the chop screen
 
@@ -339,6 +339,41 @@ Superseded by 77: the pad frame has no glyphs; one `✱` on the mode line marks 
 - [ ] Make sure that pads with slices show `◻` and a whole-file pad does not. Press `F1`.
   Make sure that it names each glyph.
 
+## 82 — Compact shared FX screen
+
+Folder: `changes/82-shared-fx-screen`
+
+Agent verification on 2026-11-02: the full automated suite passed. Recorded input
+walkthroughs checked file loading and filtering, rename, marks, reset/clear confirmation,
+swap, undo, chopping and assignment, project save/reopen, and F4 transitions from each
+screen. Tests also checked MIDI release across screens, banks and channels. The live
+100x32 screen showed compact cards. The isolated process reported `JACK unavailable`.
+A separate owner process already had a PipeWire node named ptsr, so the agent stopped
+its test session. No live sound or physical controller behavior was accepted from this run.
+Small and large layouts were checked with TestBackend, not an interactive terminal.
+The owner checks below remain open.
+
+- [ ] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
+  terminal they are beside each other. In a narrow terminal they are stacked. Cards do
+  not grow to fill empty space. The selected block and parameter are clear.
+- [ ] Press `Tab` and `Shift+Tab`. Only the selected block changes. `I` and `K` select a
+  parameter. `J` and `L` change it. Check `F1` and the bottom help.
+- [ ] Play keyboard and MIDI pads while changing effects. Hold a gate pad, change the
+  screen and bank, then release it. The original pad must stop.
+- [ ] Set the sends on two pads to FX 1. On `F4`, change size and tone. Both pads must
+  use the changed effect. Select FX 2 and use the same three knobs. FX 1 must stay unchanged.
+- [ ] In pickup mode, change FX 1, select FX 2 and move the same knob. FX 2 must wait
+  for its own value. Check a second device and the scale and jump modes too.
+- [ ] Check the old page knobs. Assign a replacement with `F10`. The old knob must stop
+  controlling that action. Clear the new assignment, restart, and check that neither returns.
+- [ ] Press `Ctrl+Z` after a keyboard or MIDI effect change. Check the previous setting.
+  Save with `Ctrl+S` and restart. Check both slots, drive and sends.
+- [ ] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
+  parameter stays selected. Shared slot settings must not appear in the pad panel.
+- [ ] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
+  parameter changes and undo for clicks. Compare with `56-reverb.wav`, `56-delay.wav`
+  and `56-two-slots.wav`.
+
 ## 56 — Drive on every pad, two shared effect slots fed by sends
 
 Folder: `changes/archive/2026-11-01-56-pad-fx`
@@ -350,10 +385,9 @@ Folder: `changes/archive/2026-11-01-56-pad-fx`
   sound gets more grit at approximately the same loudness.
 - [ ] (by ear) Set send 2 of pad `Q` to 20 % with a delay in FX 2. Hit pad `Q`. Make sure
   that you hear an echo after the pad stops. Make sure that the mode line of the pad ends with `✱`.
-- [ ] (by ear) Press `Tab` until FX1*. Make sure that the block line shows
-  `FX 1 * shared` and the change line shows `all pads`. Turn the size up. Make sure that
-  each pad that sends to FX 1 has a longer tail.
-- [ ] (by ear) On FX2*, turn knob 1 from delay to reverb. Make sure that the delay tail
+- [ ] (by ear) Press `F4`. Make sure that both shared blocks are visible and FX 1 is
+  selected. Turn the size up. Make sure that each pad that sends to FX 1 has a longer tail.
+- [ ] (by ear) Press `Tab` to select FX 2. Turn knob 1 from delay to reverb. Make sure that the delay tail
   fades out with no click. Turn it back. Make sure that the delay has its old time and
   feedback.
 - [ ] Press `Ctrl+S` and restart the program. Make sure that the drive, the sends and the
