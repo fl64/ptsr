@@ -614,7 +614,9 @@ The owner checked the rename and cursor (2026-11-02).
 
 ## 81 — Drive sound after optimization
 
-Folder: `changes/81-drive-performance`
+Folder: `changes/archive/2026-11-02-81-drive-performance`
+
+The owner accepts the result for now; the sound can be reviewed again during use.
 
 - [ ] (by ear) Listen to `renders/81-drive-comparison.wav`. The first part is the old
   drive, the second is the optimized drive. Make sure they sound the same, including the
