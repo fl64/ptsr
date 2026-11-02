@@ -9,7 +9,7 @@
   `renders/`); a test for each scenario; commit.
 - [x] 4. README: the Ghostty line `keybind = ctrl+shift+a=unbind`; `docs/USER-STORIES.md`;
   BACKLOG row 20 keeps only copy and move; commit.
-- [ ] 5. Live check with the owner.
+- [x] 5. Live check with the owner.
 - [x] 6. After the live try: `Ctrl+Shift+A` and the `Ctrl+Shift` keys in the keymap
   removed (README, user stories); the mark plate on the title line; a test for each
   scenario; commit.

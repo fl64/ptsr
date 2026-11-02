@@ -53,7 +53,7 @@
 
 ## Open questions
 
-- The plate (D8): where and what it says. Default: on the title line of the pads screen,
-  next to `F2 PADS`, black on yellow: `MARK · hit pads · 17 marked` while marking is on,
-  `17 MARKED · Esc drops` while marking is off and pads stay marked; no plate when
-  marking is off and nothing is marked.
+- None. The plate (D8) as the agent drew it: the owner took it in the live check
+  (2026-11-02, "all is ok now"): on the title line of the pads screen, next to `F2 PADS`,
+  black on yellow, `MARK · hit pads · 17 marked` while marking is on,
+  `17 MARKED · Esc drops` while marking is off and pads stay marked.
