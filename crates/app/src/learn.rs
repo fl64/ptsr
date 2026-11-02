@@ -123,6 +123,7 @@ pub fn group_of(scope: input::midi::Scope) -> Option<Group> {
 pub fn seed(learned: &mut Learned, profile: &str, roles: &[(input::midi::Scope, Key, String)]) {
     let groups = learned.entry(profile.into()).or_default();
     let had_fx = groups.contains_key(Group::Fx.key());
+    let existing = groups.clone();
     for (scope, key, action) in roles {
         let Some(group) = group_of(*scope) else {
             continue;
@@ -131,7 +132,11 @@ pub fn seed(learned: &mut Learned, profile: &str, roles: &[(input::midi::Scope, 
             continue;
         }
         let map = groups.entry(group.key().into()).or_default();
-        if map.contains_key(&key.to_string()) || map.values().any(|a| a == action) {
+        if map.contains_key(&key.to_string())
+            || existing
+                .get(group.key())
+                .is_some_and(|m| m.values().any(|a| a == action))
+        {
             continue;
         }
         map.insert(key.to_string(), action.clone());
@@ -404,6 +409,66 @@ mod tests {
             &[(Group::Fx.scope(), Key::Cc(90), "edit.param_2".into())],
         );
         assert!(learned["X"]["fx"].is_empty());
+    }
+
+    #[test]
+    fn profile_seed_keeps_duplicate_defaults_but_not_competing_user_roles() {
+        let roles = [
+            (
+                Group::Chop.scope(),
+                Key::Note(69),
+                "transport.play_stop".into(),
+            ),
+            (
+                Group::Chop.scope(),
+                Key::Note(70),
+                "transport.play_stop".into(),
+            ),
+            (Group::ChopEdit.scope(), Key::Note(58), "ui.back".into()),
+            (Group::ChopEdit.scope(), Key::Note(59), "ui.back".into()),
+        ];
+        for reverse in [false, true] {
+            let mut roles = roles.to_vec();
+            if reverse {
+                roles.reverse();
+            }
+            let mut fresh = Learned::new();
+            seed(&mut fresh, "X", &roles);
+            assert_eq!(group_map(&fresh, "X", Group::Chop).len(), 2);
+            assert_eq!(group_map(&fresh, "X", Group::ChopEdit).len(), 2);
+            let mut existing = Learned::new();
+            assign(
+                &mut existing,
+                "X",
+                Group::Chop,
+                Key::Note(99),
+                "transport.play_stop",
+            );
+            assign(
+                &mut existing,
+                "X",
+                Group::ChopEdit,
+                Key::Note(58),
+                "edit.page_next",
+            );
+            seed(&mut existing, "X", &roles);
+            assert_eq!(
+                group_map(&existing, "X", Group::Chop),
+                [(Key::Note(99), "transport.play_stop".into())].into()
+            );
+            assert_eq!(
+                group_map(&existing, "X", Group::ChopEdit)
+                    .get(&Key::Note(58))
+                    .map(String::as_str),
+                Some("edit.page_next")
+            );
+            assert_eq!(
+                group_map(&existing, "X", Group::ChopEdit)
+                    .get(&Key::Note(59))
+                    .map(String::as_str),
+                Some("ui.back")
+            );
+        }
     }
 
     #[test]

@@ -39,6 +39,7 @@ pub enum Action {
     PadModeNext,
     /// Pads screen: the edit mode of the selected pad opens; `Esc` closes it.
     PadEdit,
+    PadEditOnly,
     /// Pick the next parameter the pads screen changes, in the order of the edit.
     PadParamNext,
     /// Step the picked pad parameter: 1 dB of volume or 1 semitone of pitch.
@@ -95,6 +96,7 @@ pub enum Action {
     /// Chop screen: in the listen mode the edit mode of the selected slice opens; in
     /// the assign mode the plan applies (the commit).
     ChopEdit,
+    ChopEditOnly,
     /// Chop screen: the assign mode starts (slices onto pads), by hand from slice 1.
     ChopAssign,
     /// Chop screen: zoom the wave view in or out around the cursor.
@@ -141,6 +143,7 @@ pub enum Action {
     BrowserParent,
     /// Ctrl+Enter on the selection: open a folder or take a file in hand.
     BrowserHold,
+    BrowserTakeOnly,
     /// Files screen: the selected file loads onto the selected pad; a folder opens.
     BrowserLoad,
     /// Files screen: play the selected file automatically, on/off.
@@ -200,6 +203,7 @@ impl Action {
             "pad.select_right" => Self::PadSelect(Dir::Right),
             "pad.mode_next" => Self::PadModeNext,
             "pad.edit" => Self::PadEdit,
+            "pad.edit_only" => Self::PadEditOnly,
             "pad.param_next" => Self::PadParamNext,
             "pad.param_dec" => Self::PadParam(-1),
             "pad.param_inc" => Self::PadParam(1),
@@ -253,6 +257,7 @@ impl Action {
             },
             "chop.commit" => Self::ChopCommit,
             "chop.edit" => Self::ChopEdit,
+            "chop.edit_only" => Self::ChopEditOnly,
             "chop.assign" => Self::ChopAssign,
             "chop.zoom_in" => Self::ChopZoom { zoom_in: true },
             "chop.zoom_out" => Self::ChopZoom { zoom_in: false },
@@ -323,6 +328,7 @@ impl Action {
             "browser.enter" => Self::BrowserEnter,
             "browser.parent" => Self::BrowserParent,
             "browser.hold" => Self::BrowserHold,
+            "browser.take_only" => Self::BrowserTakeOnly,
             "browser.load" => Self::BrowserLoad,
             "browser.preview_toggle" => Self::BrowserPreviewToggle,
             "browser.filter" => Self::BrowserFilter,
@@ -771,6 +777,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "pad.edit_only",
+        label: "open pad edit only",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
         name: "pad.param_next",
         label: "next parameter",
         group: Group::Pads,
@@ -1062,6 +1074,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "browser.take_only",
+        label: "take file / open folder only",
+        group: Group::Files,
+        knob: false,
+    },
+    ActionInfo {
         name: "browser.load",
         label: "load the file onto the selected pad",
         group: Group::Files,
@@ -1322,6 +1340,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "chop.edit",
         label: "edit slice / apply",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.edit_only",
+        label: "open slice edit only",
         group: Group::Chop,
         knob: false,
     },
@@ -2583,6 +2607,29 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn safe_cue_actions_are_parsed_and_listed_in_their_screen_groups() {
+        for (name, action, group) in [
+            ("pad.edit_only", Action::PadEditOnly, Group::Pads),
+            ("chop.edit_only", Action::ChopEditOnly, Group::Chop),
+            ("browser.take_only", Action::BrowserTakeOnly, Group::Files),
+        ] {
+            assert_eq!(Action::parse(name), Some(action));
+            assert!(
+                ACTIONS
+                    .iter()
+                    .any(|row| { row.name == name && row.group == group && !row.knob })
+            );
+        }
+        for (name, action) in [
+            ("pad.edit", Action::PadEdit),
+            ("chop.edit", Action::ChopEdit),
+            ("browser.hold", Action::BrowserHold),
+        ] {
+            assert_eq!(Action::parse(name), Some(action));
+        }
     }
 
     #[test]

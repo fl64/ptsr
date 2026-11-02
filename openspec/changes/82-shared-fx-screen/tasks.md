@@ -14,7 +14,7 @@
 ## 2. X-Session Pro replacement profile
 
 - [x] 2.1 Record physical roles, safe default buttons and reset compatibility in the specs.
-- [ ] 2.2 Replace the shipped profile and test raw MIDI navigation, preview, pages, FX,
+- [x] 2.2 Replace the shipped profile and test raw MIDI navigation, preview, pages, FX,
   faders, harmless releases, existing assignments and confirmed reset.
 - [ ] 2.3 Update the control table and live checks. Run task check and build the release.
 - [ ] 2.4 Ask the owner to reset the profile and check the physical controller.

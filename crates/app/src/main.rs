@@ -1437,6 +1437,21 @@ impl App {
                 }
                 _ => {}
             },
+            Action::PadEditOnly if self.screen == Screen::Pads => self.edit = true,
+            Action::ChopEditOnly if self.screen == Screen::Chop && self.plan.is_none() => {
+                self.edit = true;
+            }
+            Action::BrowserTakeOnly
+                if self.screen == Screen::Files && self.browser.in_hand.is_none() =>
+            {
+                let dir = self.browser.dir.clone();
+                self.browser.take();
+                if self.browser.dir != dir {
+                    self.dirty();
+                    self.preview_selection();
+                }
+            }
+            Action::PadEditOnly | Action::ChopEditOnly | Action::BrowserTakeOnly => {}
             // the assign mode is deaf: only the pads, Tab, Enter, Esc and the assign
             // keys act; the wave keys would cut, zoom or move while the owner lays
             // slices onto pads (21)
@@ -7811,6 +7826,7 @@ fn describe(a: Action) -> String {
         Action::PadSelect(d) => format!("select pad {}", format!("{d:?}").to_lowercase()),
         Action::PadModeNext => "pad mode: one-shot / gate".into(),
         Action::PadEdit => "pads: edit the selected pad; Esc closes".into(),
+        Action::PadEditOnly => "pads: open edit only; do not place or confirm".into(),
         Action::PadParamNext => "pads: the next parameter".into(),
         Action::PadParam(s) if s < 0 => "pad: the picked parameter down a step".into(),
         Action::PadParam(_) => "pad: the picked parameter up a step".into(),
@@ -7863,6 +7879,7 @@ fn describe(a: Action) -> String {
         ),
         Action::ChopCommit => "chop: assign mode; in it, apply the plan".into(),
         Action::ChopEdit => "chop: edit the selected slice; assigning: apply the plan".into(),
+        Action::ChopEditOnly => "chop: open slice edit only when no plan is pending".into(),
         Action::ChopAssign => "chop: the assign mode by hand from slice 1".into(),
         Action::MarkerSelect(s) if s < 0 => "chop: previous slice".into(),
         Action::MarkerSelect(_) => "chop: next slice".into(),
@@ -7879,6 +7896,9 @@ fn describe(a: Action) -> String {
         Action::BrowserEnter => "open folder".into(),
         Action::BrowserParent => "parent folder".into(),
         Action::BrowserHold => "take file in hand / open folder".into(),
+        Action::BrowserTakeOnly => {
+            "files: take file or open folder; do not place or confirm".into()
+        }
         Action::BrowserLoad => "the file loads onto the selected pad; a folder opens".into(),
         Action::BrowserPreviewToggle => "play the selected file: on / off".into(),
         Action::BrowserFilter => "filter the list by name".into(),
@@ -7907,6 +7927,7 @@ fn help_section(a: Action) -> usize {
         | Action::PadSelect(_)
         | Action::PadModeNext
         | Action::PadEdit
+        | Action::PadEditOnly
         | Action::PadParamNext
         | Action::PadParam(_)
         | Action::PadMarkBank
@@ -7921,6 +7942,7 @@ fn help_section(a: Action) -> usize {
         | Action::BrowserEnter
         | Action::BrowserParent
         | Action::BrowserHold
+        | Action::BrowserTakeOnly
         | Action::BrowserLoad
         | Action::BrowserPreviewToggle
         | Action::BrowserFilter
@@ -7942,6 +7964,7 @@ fn help_section(a: Action) -> usize {
         | Action::EditValue { .. }
         | Action::ChopCommit
         | Action::ChopEdit
+        | Action::ChopEditOnly
         | Action::ChopAssign
         | Action::ChopZoom { .. }
         | Action::ChopRegionStart
@@ -14408,6 +14431,14 @@ mod tests {
     /// A recorded X-Session Pro message as the MIDI thread feeds it: the shipped profile,
     /// the app's screen and edit mode.
     fn xsession(app: &mut super::App, msg: input::midi::Msg) {
+        if let Some(p) = app
+            .live_profiles()
+            .into_iter()
+            .find(|p| p.name == "X-Session Pro")
+        {
+            feed_resolved(app, p.resolve_in(app.screen, app.edit, msg));
+            return;
+        }
         let p = input::midi::Profile::from_toml(
             "xsession-pro.toml",
             include_str!("../../../config/devices/xsession-pro.toml"),
@@ -14460,21 +14491,32 @@ mod tests {
         let app = xsession_connected(&[]);
         assert!(app.seeded.iter().any(|s| s == "X-Session Pro"));
         let pads = &app.learned["X-Session Pro"]["pads"];
-        assert_eq!(pads.get("note 70").map(String::as_str), Some("pad.edit"));
-        assert_eq!(xs_live(&app, press(B10)), Some(Action::PadEdit));
+        assert_eq!(
+            pads.get("note 58").map(String::as_str),
+            Some("pad.edit_only")
+        );
+        assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
         // the MIDI tab names it as the profile does, no "(learned)"
         let p = app.live_profiles().remove(0);
         assert_eq!(
-            p.assignment(input::midi::Scope::Screen(Screen::Pads), "pad.edit")
+            p.assignment(input::midi::Scope::Screen(Screen::Pads), "pad.edit_only")
                 .as_deref(),
-            Some("b10 (note 70)")
+            Some("b7 (note 58)")
         );
         // the edit layer went into both edit groups
         assert_eq!(
             app.learned["X-Session Pro"]["chop_edit"]
                 .get("note 46")
                 .map(String::as_str),
-            Some("edit.page_next")
+            Some("edit.page_prev")
+        );
+        assert_eq!(xs_live(&app, press(B10)), None);
+        assert_eq!(xs_live(&app, press(B9)), None);
+        assert_eq!(xs_live(&app, press(B3)), Some(Action::ScreenFx));
+        assert!(
+            !app.learned["X-Session Pro"]
+                .values()
+                .any(|group| { group.values().any(|action| action == "pad.mode_next") })
         );
     }
 
@@ -14483,27 +14525,524 @@ mod tests {
     fn learned_wins() {
         let app = xsession_connected(&[(input::Group::Pads, B3, "bank.next")]);
         assert_eq!(xs_live(&app, press(B3)), Some(Action::BankNext));
+        assert_ne!(
+            app.learned["X-Session Pro"]["pads"]
+                .get("note 45")
+                .map(String::as_str),
+            Some("screen.fx")
+        );
+        assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
+    }
+
+    fn xs_raw(app: &mut super::App, bytes: &[u8]) -> Option<input::midi::Resolved> {
+        let msg = input::midi::Msg::parse(bytes).expect("a factory MIDI message");
+        let result = resolved(app, app.screen, app.edit, msg);
+        feed_resolved(app, result.clone());
+        result
+    }
+
+    fn xs_button(app: &mut super::App, note: u8) {
+        xs_raw(app, &[0x90, note, 127]);
+        for status in [0x80, 0x90] {
+            assert_eq!(xs_raw(app, &[status, note, 0]), None, "release {note}");
+        }
+    }
+
+    #[test]
+    fn x_session_physical_navigation_and_preview() {
+        fn walkthrough(mut app: super::App) {
+            use super::pads::Param as P;
+            let dir = tmp_dir("xs-physical-navigation");
+            std::fs::create_dir_all(&dir).unwrap();
+            let sound = Sample::mono(vec![0.1; 48_000]);
+            for name in ["a.wav", "b.wav"] {
+                super::wav::write(&dir.join(name), &sound, 48_000).unwrap();
+            }
+            app.browser = browser::Browser::new(Some(dir.clone()));
+            for note in [B9, B10] {
+                assert_eq!(xs_raw(&mut app, &[0x90, note, 127]), None);
+                assert!(!app.edit);
+            }
+            xs_button(&mut app, B1);
+            assert_eq!(app.pads.selected, 1);
+            xs_button(&mut app, B4);
+            assert_eq!(app.pads.selected, 0);
+            xs_button(&mut app, 57);
+            assert_eq!(app.pads.bank, 1);
+            xs_button(&mut app, 56);
+            assert_eq!(app.pads.bank, 0);
+            xs_button(&mut app, B7);
+            assert!(app.edit);
+            xs_button(&mut app, B1);
+            assert_eq!(app.pads.page().0, "ENV");
+            xs_raw(&mut app, &[0xB0, K1, 64]);
+            assert!(app.pads.attack_ms[0] > 0);
+            assert_eq!(app.lit_now(), Some(super::Lit::Pad(P::Attack)));
+            xs_button(&mut app, B1);
+            assert_eq!(app.pads.page().0, "FILTER");
+            xs_button(&mut app, B4);
+            assert_eq!(app.pads.page().0, "ENV");
+            for note in [B9, B10] {
+                assert_eq!(xs_raw(&mut app, &[0x90, note, 127]), None);
+                assert!(app.edit);
+            }
+            xs_button(&mut app, B8);
+            assert!(!app.edit);
+            xs_button(&mut app, B7);
+            assert!(app.edit);
+            xs_button(&mut app, B7);
+            assert!(!app.edit);
+
+            xs_button(&mut app, 44);
+            assert_eq!(app.screen, Screen::Files);
+            assert_eq!(app.browser.selected, 0);
+            xs_button(&mut app, B1);
+            assert_eq!(app.browser.selected, 1);
+            wait_for(&mut app, |a| a.preview.is_some());
+            xs_button(&mut app, B4);
+            assert_eq!(app.browser.selected, 0);
+            wait_for(&mut app, |a| a.preview.is_some());
+            for note in [B10, B9] {
+                xs_button(&mut app, note);
+                assert!(!app.preview_on);
+                assert!(app.preview.is_none());
+                xs_button(&mut app, note);
+                assert!(app.preview_on);
+                wait_for(&mut app, |a| a.preview.is_some());
+            }
+            xs_button(&mut app, B7);
+            assert_eq!(app.browser.in_hand, Some(dir.join("a.wav")));
+            xs_button(&mut app, B3);
+            assert_eq!(app.screen, Screen::Fx);
+            xs_button(&mut app, B8);
+            assert!(app.browser.in_hand.is_none());
+            xs_button(&mut app, 44);
+            assert_eq!(app.screen, Screen::Files);
+            xs_button(&mut app, B8);
+            wait_for(&mut app, |a| a.screen == Screen::Chop);
+            assert!(!app.edit);
+            assert!(app.plan.is_none());
+            let cuts = app.chop.as_ref().unwrap().markers.clone();
+            xs_raw(&mut app, &[0xB0, K3, 64]);
+            let cursor = app.chop.as_ref().unwrap().cursor;
+            assert!(cursor > 0 && cursor < 48_000);
+            xs_button(&mut app, B7);
+            assert_eq!(app.chop.as_ref().unwrap().markers.len(), cuts.len() + 1);
+            assert!(app.chop.as_ref().unwrap().markers.contains(&cursor));
+            let selected = app.chop.as_ref().unwrap().selected;
+            xs_button(&mut app, B4);
+            assert_eq!(app.chop.as_ref().unwrap().selected, selected - 1);
+            xs_button(&mut app, B1);
+            assert_eq!(app.chop.as_ref().unwrap().selected, selected);
+            xs_button(&mut app, B8);
+            assert!(app.edit);
+            assert!(app.plan.is_none());
+            let start = app.chop.as_ref().unwrap().slices()[selected].start;
+            xs_raw(&mut app, &[0xB0, K1, 80]);
+            assert_ne!(app.chop.as_ref().unwrap().slices()[selected].start, start);
+            for edit in [true, false] {
+                assert_eq!(app.edit, edit);
+                for note in [B10, B9] {
+                    app.fake_playhead = None;
+                    app.sent.clear();
+                    xs_button(&mut app, note);
+                    assert!(last_played(&app).is_some());
+                    app.fake_playhead = Some(1);
+                    app.sent.clear();
+                    xs_button(&mut app, note);
+                    assert!(
+                        app.sent
+                            .iter()
+                            .any(|c| matches!(c, Command::Preview { sound: None, .. }))
+                    );
+                    assert!(app.plan.is_none());
+                }
+                app.fake_playhead = None;
+                if edit {
+                    xs_button(&mut app, B7);
+                    assert!(!app.edit);
+                }
+            }
+            xs_button(&mut app, B8);
+            assert!(app.edit);
+            xs_button(&mut app, B8);
+            assert!(!app.edit);
+            xs_button(&mut app, B3);
+            assert_eq!(app.screen, Screen::Fx);
+            let one = app.pads.fx[0];
+            xs_button(&mut app, B1);
+            assert_eq!(app.fx_slot, 1);
+            assert_eq!(app.pads.fx[0], one);
+            xs_raw(&mut app, &[0xB0, K1, 10]);
+            xs_raw(&mut app, &[0xB0, K2, 89]);
+            xs_raw(&mut app, &[0xB0, K3, 25]);
+            assert_eq!(app.pads.fx[1].kind, engine::fx::FxKind::Reverb);
+            assert_eq!((app.pads.fx[1].size, app.pads.fx[1].tone), (70, 20));
+            assert_eq!(app.pads.fx[0], one);
+            xs_button(&mut app, B4);
+            assert_eq!(app.fx_slot, 0);
+            for note in [B9, B10] {
+                assert_eq!(xs_raw(&mut app, &[0x90, note, 127]), None);
+            }
+            xs_button(&mut app, B8);
+            assert_eq!(app.screen, Screen::Pads);
+            assert!(!app.edit);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+        let mut unseeded = test_app();
+        unseeded.profiles.push(
+            input::midi::Profile::from_toml(
+                "xsession-pro.toml",
+                include_str!("../../../config/devices/xsession-pro.toml"),
+            )
+            .unwrap(),
+        );
+        unseeded
+            .midi_devices
+            .push(("USB X-Session MIDI 1".into(), "X-Session Pro".into()));
+        walkthrough(unseeded);
+        walkthrough(xsession_connected(&[]));
+    }
+
+    #[test]
+    fn x_session_faders_use_physical_roles() {
+        use input::midi::{Param as P, Resolved};
+        let mut app = xsession_connected(&[]);
+        for (screen, edit) in [
+            (Screen::Pads, false),
+            (Screen::Pads, true),
+            (Screen::Files, false),
+            (Screen::Chop, false),
+            (Screen::Chop, true),
+            (Screen::Fx, false),
+            (Screen::Settings, false),
+        ] {
+            app.goto(screen);
+            app.edit = edit;
+            app.pads.selected = 3;
+            let abs = app.pads.selected_abs();
+            for value in [0, 127] {
+                for (cc, param) in [(11, P::PadVolume), (12, P::PadPitch), (14, P::MasterVolume)] {
+                    assert!(
+                        matches!(
+                            xs_raw(&mut app, &[0xB0, cc, value]),
+                            Some(Resolved::Param { param: actual, .. }) if actual == param
+                        ),
+                        "{screen:?} edit {edit}: CC{cc}"
+                    );
+                }
+                assert_eq!(
+                    app.pads.volume_db[abs],
+                    if value == 0 {
+                        super::pads::MIN_DB
+                    } else {
+                        super::pads::MAX_DB
+                    }
+                );
+                assert_eq!(app.pads.pitch[abs], if value == 0 { -24 } else { 24 });
+                assert_eq!(app.master_db, if value == 0 { -40 } else { 6 });
+            }
+            let before = (
+                app.before().pads,
+                app.pads.fx,
+                app.master_db,
+                app.sent.len(),
+            );
+            for cc in [15, 17, 20] {
+                for value in [0, 127] {
+                    assert_eq!(xs_raw(&mut app, &[0xB0, cc, value]), None);
+                }
+            }
+            assert_eq!(
+                (
+                    app.before().pads,
+                    app.pads.fx,
+                    app.master_db,
+                    app.sent.len()
+                ),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn x_session_safe_default_buttons() {
+        use input::midi::Resolved;
+        let mut app = xsession_connected(&[]);
+        for screen in [
+            Screen::Pads,
+            Screen::Files,
+            Screen::Chop,
+            Screen::Fx,
+            Screen::Settings,
+        ] {
+            for edit in [false, true] {
+                for note in [43, 44, 45, 46, 56, 57, 58, 59, 69, 70] {
+                    let msg = input::midi::Msg::parse(&[0x90, note, 127]).unwrap();
+                    assert!(
+                        !matches!(
+                            resolved(&app, screen, edit, msg),
+                            Some(Resolved::Action(
+                                Action::MarkerDelete
+                                    | Action::ChopCommit
+                                    | Action::BrowserLoad
+                                    | Action::SettingsLearn
+                            ))
+                        ),
+                        "{screen:?} edit {edit}: note {note}"
+                    );
+                    for status in [0x80, 0x90] {
+                        let release = input::midi::Msg::parse(&[status, note, 0]).unwrap();
+                        assert_eq!(resolved(&app, screen, edit, release), None);
+                    }
+                }
+            }
+        }
+
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(4));
+        app.pads.file[0] = Some("old.wav".into());
+        app.browser.in_hand = Some("held.wav".into());
+        app.plan = Some(super::chop::Plan::InOrder(Some(0)));
+        let pads = app.before().pads;
+        xs_button(&mut app, B8);
+        assert!(app.plan.is_some(), "Cue must not apply a pending plan");
+        assert!(!app.edit, "edit and a pending plan must not coexist");
+        assert!(app.ask.is_none());
+        assert_eq!(app.before().pads, pads);
+
+        app.apply(Action::ChopCommit);
+        assert!(matches!(app.ask, Some(super::Ask::Plan { .. })));
+        let question = app.ask.as_ref().unwrap().lines().to_vec();
+        for note in [B7, B8] {
+            xs_button(&mut app, note);
+            assert!(app.plan.is_some());
+            assert_eq!(app.ask.as_ref().unwrap().lines(), question);
+            assert_eq!(app.before().pads, pads);
+        }
+        app.ask = None;
+        app.plan = None;
+        xs_button(&mut app, B8);
+        assert!(app.edit, "Cue opens slice edit when no plan is pending");
+        xs_button(&mut app, B8);
         assert!(
-            !app.learned["X-Session Pro"]["pads"]
-                .values()
-                .any(|a| a == "pad.mode_next"),
-            "the profile's pad mode on b3 is not added"
+            app.browser.in_hand.is_none(),
+            "Back releases the held file first"
+        );
+        assert!(app.edit);
+        xs_button(&mut app, B8);
+        assert!(!app.edit);
+        app.browser.in_hand = Some("held.wav".into());
+
+        for screen in [Screen::Pads, Screen::Files] {
+            app.screen = screen;
+            app.edit = false;
+            let held = app.browser.in_hand.clone();
+            xs_button(&mut app, B7);
+            assert_eq!(app.browser.in_hand, held, "{screen:?}: no placement");
+            assert_eq!(app.before().pads, pads);
+            assert!(app.ask.is_none());
+            assert_eq!(app.edit, screen == Screen::Pads);
+            app.edit = false;
+            app.put_in_hand(0);
+            assert!(matches!(app.ask, Some(super::Ask::PutFile { .. })));
+            let question = app.ask.as_ref().unwrap().lines().to_vec();
+            xs_button(&mut app, B7);
+            assert_eq!(app.ask.as_ref().unwrap().lines(), question);
+            assert_eq!(app.browser.in_hand, held);
+            assert_eq!(app.before().pads, pads);
+            assert!(!app.edit);
+            app.ask = None;
+        }
+        app.pads.selected = 1;
+        xs_button(&mut app, B7);
+        assert!(app.pads.file[1].is_none());
+        assert_eq!(app.browser.in_hand, Some("held.wav".into()));
+        assert!(app.ask.is_none());
+        app.screen = Screen::Pads;
+        app.pad_in_hand = Some(0);
+        xs_button(&mut app, B7);
+        assert!(app.edit);
+        assert_eq!(app.pad_in_hand, Some(0), "Cue must not swap a held pad");
+        assert_eq!(app.before().pads, pads);
+        app.pad_in_hand = None;
+        app.edit = false;
+        for (screen, action) in [
+            (Screen::Files, Action::PadEditOnly),
+            (Screen::Pads, Action::ChopEditOnly),
+            (Screen::Pads, Action::BrowserTakeOnly),
+            (Screen::Fx, Action::PadEditOnly),
+            (Screen::Fx, Action::ChopEditOnly),
+            (Screen::Fx, Action::BrowserTakeOnly),
+        ] {
+            app.screen = screen;
+            app.apply(action);
+            assert!(!app.edit);
+            assert!(app.ask.is_none());
+            assert_eq!(app.browser.in_hand, Some("held.wav".into()));
+            assert_eq!(app.before().pads, pads);
+        }
+        for ask in [
+            super::Ask::ResetPads {
+                pads: vec![0],
+                lines: vec!["reset?".into()],
+            },
+            super::Ask::ClearPads {
+                pads: vec![0],
+                lines: vec!["clear?".into()],
+            },
+            super::Ask::ResetProfile {
+                name: "X-Session Pro".into(),
+                port: "X".into(),
+                lines: vec!["profile?".into()],
+            },
+        ] {
+            app.ask = Some(ask);
+            let question = app.ask.as_ref().unwrap().lines().to_vec();
+            let learned = app.learned.clone();
+            for (screen, note) in [(Screen::Pads, B7), (Screen::Chop, B8), (Screen::Files, B7)] {
+                app.screen = screen;
+                xs_button(&mut app, note);
+                assert_eq!(app.ask.as_ref().unwrap().lines(), question);
+                assert_eq!(app.before().pads, pads);
+                assert_eq!(app.learned, learned);
+            }
+        }
+    }
+
+    #[test]
+    fn x_session_replacement_preserves_existing_assignments() {
+        use input::midi::Key;
+        let dir = tmp_dir("xs-legacy-map");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.toml");
+        let mut app = xsession_connected(&[]);
+        app.user_path = Some(cfg.clone());
+        app.learned.clear();
+        for group in input::Group::ALL {
+            app.learned
+                .entry("X-Session Pro".into())
+                .or_default()
+                .insert(group.key().into(), Default::default());
+        }
+        for (group, note, action) in [
+            (input::Group::Pads, B10, "pad.edit"),
+            (input::Group::Chop, B9, "chop.commit"),
+            (input::Group::Chop, 56, "marker.delete"),
+        ] {
+            super::learn::assign(
+                &mut app.learned,
+                "X-Session Pro",
+                group,
+                Key::Note(note),
+                action,
+            );
+        }
+        app.save_midi();
+        super::config::save_section(
+            &cfg,
+            "devices",
+            &super::config::DevicesConfig {
+                seeded: app.seeded.clone(),
+            },
+        )
+        .unwrap();
+        let legacy = app.learned.clone();
+        let profiles = app.profiles.clone();
+        let load = || {
+            let loaded = super::config::load_from(&cfg);
+            assert!(loaded.error.is_none());
+            let mut next = test_app();
+            next.profiles = profiles.clone();
+            next.user_path = Some(cfg.clone());
+            next.learned = loaded.config.midi;
+            next.seeded = loaded.config.devices.seeded;
+            next.midi_event(super::midi::Event::Connected {
+                port: "USB X-Session MIDI 1".into(),
+                profile: "X-Session Pro".into(),
+            });
+            next
+        };
+        let mut app = load();
+        for reconnect in [false, true] {
+            if reconnect {
+                app.midi_event(super::midi::Event::Disconnected {
+                    port: "USB X-Session MIDI 1".into(),
+                });
+                app.midi_event(super::midi::Event::Connected {
+                    port: "USB X-Session MIDI 1".into(),
+                    profile: "X-Session Pro".into(),
+                });
+            }
+            assert_eq!(app.learned, legacy);
+            assert_eq!(xs_on(&mut app, Screen::Pads, B10), Some(Action::PadEdit));
+            assert_eq!(xs_on(&mut app, Screen::Pads, B7), None);
+            assert_eq!(xs_on(&mut app, Screen::Chop, B9), Some(Action::ChopCommit));
+            assert_eq!(
+                xs_on(&mut app, Screen::Chop, 56),
+                Some(Action::MarkerDelete)
+            );
+        }
+        app.apply(Action::ScreenSettings);
+        app.settings_tab = 2;
+        app.midi_row = app
+            .midi_list()
+            .iter()
+            .position(|r| matches!(r, super::MidiListRow::Reset { .. }))
+            .unwrap();
+        let before = std::fs::read_to_string(&cfg).unwrap();
+        app.apply(Action::SettingsLearn);
+        assert!(matches!(app.ask, Some(super::Ask::ResetProfile { .. })));
+        app.apply(Action::Back);
+        assert!(app.ask.is_none());
+        assert_eq!(app.learned, legacy);
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), before);
+        let mut reloaded = load();
+        assert_eq!(reloaded.learned, legacy);
+        assert_eq!(
+            xs_on(&mut reloaded, Screen::Pads, B10),
+            Some(Action::PadEdit)
         );
         assert_eq!(
-            xs_live(&app, press(B10)),
-            Some(Action::PadEdit),
-            "the rest is"
+            xs_on(&mut reloaded, Screen::Chop, B9),
+            Some(Action::ChopCommit)
         );
+        assert_eq!(
+            xs_on(&mut reloaded, Screen::Chop, 56),
+            Some(Action::MarkerDelete)
+        );
+        app.apply(Action::SettingsLearn);
+        assert!(app.ask.is_some());
+        assert_eq!(app.learned, legacy);
+        app.apply(Action::SettingsLearn);
+        assert!(app.ask.is_none());
+        let defaults = xsession_connected(&[]).learned;
+        assert_eq!(app.learned, defaults);
+        for app in [&mut app, &mut load()] {
+            assert_eq!(app.learned, defaults);
+            assert_eq!(xs_on(app, Screen::Pads, B10), None);
+            assert_eq!(xs_on(app, Screen::Pads, B7), Some(Action::PadEditOnly));
+            assert_eq!(xs_on(app, Screen::Pads, B3), Some(Action::ScreenFx));
+            assert_eq!(xs_on(app, Screen::Chop, B9), Some(Action::ChopPlay));
+            assert_eq!(xs_on(app, Screen::Chop, 56), Some(Action::BankPrev));
+            assert_eq!(xs_on(app, Screen::Chop, B8), Some(Action::ChopEditOnly));
+            app.edit = true;
+            assert_eq!(xs_live(app, press(B7)), Some(Action::Back));
+            assert_eq!(xs_live(app, press(B8)), Some(Action::Back));
+            assert_eq!(xs_live(app, press(B4)), Some(Action::PagePrev));
+            assert_eq!(xs_live(app, press(B1)), Some(Action::PageNext));
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// 59 midi-learn: "Clear a profile role" and "Cleared stays cleared".
     #[test]
     fn clear_a_profile_role() {
         let mut app = xsession_connected(&[]);
-        assert_eq!(xs_live(&app, press(B3)), Some(Action::PadModeNext));
-        super::learn::clear(&mut app.learned, input::Group::Pads, "pad.mode_next");
+        assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
+        super::learn::clear(&mut app.learned, input::Group::Pads, "pad.edit_only");
         app.sync_learned("X-Session Pro", input::Group::Pads);
-        assert_eq!(xs_live(&app, press(B3)), None, "no profile role under it");
+        assert_eq!(xs_live(&app, press(B7)), None, "no profile role under it");
         // every row cleared, the device connects again: nothing is copied back
         app.learned
             .insert("X-Session Pro".into(), Default::default());
@@ -14515,14 +15054,14 @@ mod tests {
             profile: "X-Session Pro".into(),
         });
         assert!(app.learned["X-Session Pro"].values().all(|m| m.is_empty()));
-        assert_eq!(xs_live(&app, press(B10)), None);
+        assert_eq!(xs_live(&app, press(B7)), None);
     }
 
     /// 59 midi-learn: "Reset to profile".
     #[test]
     fn reset_to_profile() {
         let mut app = xsession_connected(&[]);
-        super::learn::clear(&mut app.learned, input::Group::Pads, "pad.edit");
+        super::learn::clear(&mut app.learned, input::Group::Pads, "pad.edit_only");
         super::learn::assign(
             &mut app.learned,
             "X-Session Pro",
@@ -14531,7 +15070,7 @@ mod tests {
             "bank.next",
         );
         app.sync_learned("X-Session Pro", input::Group::Pads);
-        assert_eq!(xs_live(&app, press(B10)), None);
+        assert_eq!(xs_live(&app, press(B7)), None);
         app.apply(Action::ScreenSettings);
         app.settings_tab = 2;
         app.midi_row = app
@@ -14554,8 +15093,8 @@ mod tests {
         app.apply(Action::SettingsLearn);
         assert!(app.ask.is_none());
         app.screen = Screen::Pads;
-        assert_eq!(xs_live(&app, press(B10)), Some(Action::PadEdit));
-        assert_eq!(xs_live(&app, press(B3)), Some(Action::PadModeNext));
+        assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
+        assert_eq!(xs_live(&app, press(B3)), Some(Action::ScreenFx));
     }
 
     fn press(note: u8) -> input::midi::Msg {
@@ -14570,8 +15109,11 @@ mod tests {
         input::midi::Msg::Cc { ch: 1, cc, value }
     }
 
+    const B1: u8 = 43;
     const B3: u8 = 45;
     const B4: u8 = 46;
+    const B7: u8 = 58;
+    const B8: u8 = 59;
     const B9: u8 = 69;
     const B10: u8 = 70;
     const K1: u8 = 24;
@@ -14629,10 +15171,10 @@ mod tests {
         use super::pads::Param as P;
         let mut app = test_app();
         let abs = app.pads.selected_abs();
-        xsession(&mut app, press(B10));
-        assert!(app.edit, "b10 opens the edit");
-        xsession(&mut app, press(B4));
-        assert_eq!(app.pads.page().0, "ENV", "b4 turns the page (54)");
+        xsession(&mut app, press(B7));
+        assert!(app.edit, "left Cue opens the edit");
+        xsession(&mut app, press(B1));
+        assert_eq!(app.pads.page().0, "ENV", "left forward turns the page");
         // k1 is the first slot of ENV: the attack, picked up at 0 ms
         xsession(&mut app, knob(K1, 0));
         xsession(&mut app, knob(K1, 64));
@@ -14642,8 +15184,8 @@ mod tests {
             Some(super::Lit::Pad(P::Attack)),
             "the screen says which"
         );
-        xsession(&mut app, press(B10));
-        assert!(!app.edit, "b10 closes the edit");
+        xsession(&mut app, press(B7));
+        assert!(!app.edit, "left Cue closes the edit");
     }
 
     /// 54 input-devices: "Pages from the controller".
@@ -14652,9 +15194,9 @@ mod tests {
         use super::pads::Param as P;
         let mut app = test_app();
         let abs = app.pads.selected_abs();
-        xsession(&mut app, press(B10));
+        xsession(&mut app, press(B7));
         let mut pages = Vec::new();
-        for b in [B4, B4, B3] {
+        for b in [B1, B1, B4] {
             xsession(&mut app, press(b));
             pages.push(app.pads.page().0);
         }
@@ -14719,8 +15261,8 @@ mod tests {
         use super::pads::Param as P;
         let mut app = test_app();
         let abs = app.pads.selected_abs();
-        xsession(&mut app, press(B10));
-        xsession(&mut app, press(B4));
+        xsession(&mut app, press(B7));
+        xsession(&mut app, press(B1));
         assert_eq!(app.pads.page().0, "ENV");
         // the response jump (58): the decay goes to the knob at once, no arrow
         xsession(&mut app, knob(K2, 64));
@@ -14765,8 +15307,8 @@ mod tests {
         learned_pads(&mut app, &pads, &edit, knob(K1, 127));
         assert_eq!(app.pads.volume_db[abs], super::pads::MAX_DB);
         // the edit opens on the ENV page: the same knob is now the first slot, the attack
-        xsession(&mut app, press(B10));
-        xsession(&mut app, press(B4));
+        xsession(&mut app, press(B7));
+        xsession(&mut app, press(B1));
         assert_eq!(app.pads.page().0, "ENV");
         learned_pads(&mut app, &pads, &edit, knob(K1, 64));
         // the square curve: the middle of the knob is a quarter of 5 s
@@ -14792,7 +15334,7 @@ mod tests {
         assert_eq!(app.pads.param, P::Volume, "no edit open: nothing happens");
         assert!(!app.edit);
         // with the edit open the same button picks the next parameter
-        xsession(&mut app, press(B10));
+        xsession(&mut app, press(B7));
         learned_pads(&mut app, &[], &edit, press(B4));
         assert_eq!(app.pads.param, P::Pitch);
     }
@@ -15725,45 +16267,176 @@ mod tests {
     }
 
     #[test]
+    fn global_learned_controls_change_and_clear_on_fx() {
+        use input::midi::{Key, Param as P, Resolved};
+        let mut app = xsession_connected(&[]);
+        let states = [
+            (Screen::Pads, false),
+            (Screen::Pads, true),
+            (Screen::Files, false),
+            (Screen::Chop, false),
+            (Screen::Chop, true),
+            (Screen::Fx, false),
+            (Screen::Settings, false),
+        ];
+        for (name, old_cc, new_cc, param) in [
+            ("pad.volume", 11, 81, P::PadVolume),
+            ("pad.pitch", 12, 82, P::PadPitch),
+            ("master.volume", 14, 83, P::MasterVolume),
+        ] {
+            super::learn::assign(
+                &mut app.learned,
+                "X-Session Pro",
+                input::Group::Global,
+                Key::Cc(new_cc),
+                name,
+            );
+            app.sync_learned("X-Session Pro", input::Group::Global);
+            for (screen, edit) in states {
+                app.screen = screen;
+                app.edit = edit;
+                assert_eq!(
+                    xs_raw(&mut app, &[0xB0, old_cc, 0]),
+                    None,
+                    "{name}: {screen:?}"
+                );
+                assert!(matches!(xs_raw(&mut app, &[0xB0, new_cc, 0]),
+                    Some(Resolved::Param { param: actual, .. }) if actual == param));
+                match param {
+                    P::PadVolume => assert_eq!(
+                        app.pads.volume_db[app.pads.selected_abs()],
+                        super::pads::MIN_DB
+                    ),
+                    P::PadPitch => assert_eq!(app.pads.pitch[app.pads.selected_abs()], -24),
+                    P::MasterVolume => assert_eq!(app.master_db, -40),
+                    _ => unreachable!(),
+                }
+            }
+            super::learn::clear(&mut app.learned, input::Group::Global, name);
+            app.sync_learned("X-Session Pro", input::Group::Global);
+            for (screen, edit) in states {
+                app.screen = screen;
+                app.edit = edit;
+                for cc in [old_cc, new_cc] {
+                    assert_eq!(
+                        xs_raw(&mut app, &[0xB0, cc, 127]),
+                        None,
+                        "{name}: {screen:?}"
+                    );
+                }
+            }
+        }
+        learn_button(&mut app, input::Group::Global, "bank.next", 90);
+        for (screen, edit) in states {
+            app.screen = screen;
+            app.edit = edit;
+            app.pads.bank = 0;
+            assert_eq!(
+                xs_raw(&mut app, &[0x90, 57, 127]),
+                None,
+                "old bank control: {screen:?}"
+            );
+            assert_eq!(app.pads.bank, 0);
+            assert_eq!(
+                xs_raw(&mut app, &[0x90, 90, 127]),
+                Some(Resolved::Action(Action::BankNext)),
+                "new bank control: {screen:?}",
+            );
+            assert_eq!(app.pads.bank, usize::from(screen != Screen::Settings));
+        }
+        learn_row(&mut app, input::Group::Global, "bank.next");
+        app.apply(Action::Back);
+        app.apply(Action::SettingsClear);
+        for (screen, edit) in states {
+            app.screen = screen;
+            app.edit = edit;
+            for note in [57, 90] {
+                assert_eq!(
+                    xs_raw(&mut app, &[0x90, note, 127]),
+                    None,
+                    "cleared bank control: {screen:?}"
+                );
+            }
+        }
+        learn_button(&mut app, input::Group::Global, "screen.files", 91);
+        for (screen, edit) in states {
+            app.screen = screen;
+            app.edit = edit;
+            assert_eq!(
+                xs_raw(&mut app, &[0x90, 44, 127]),
+                None,
+                "old Files control: {screen:?}"
+            );
+            xs_button(&mut app, 91);
+            assert_eq!(app.screen, Screen::Files, "new Files control: {screen:?}");
+        }
+        learn_row(&mut app, input::Group::Global, "screen.files");
+        app.apply(Action::Back);
+        app.apply(Action::SettingsClear);
+        for (screen, edit) in states {
+            app.screen = screen;
+            app.edit = edit;
+            for note in [44, 91] {
+                assert_eq!(
+                    xs_raw(&mut app, &[0x90, note, 127]),
+                    None,
+                    "cleared Files control: {screen:?}"
+                );
+            }
+        }
+        let fx = &app.learned["X-Session Pro"]["fx"];
+        assert!(!fx.values().any(|action| matches!(
+            action.as_str(),
+            "pad.volume" | "pad.pitch" | "master.volume" | "bank.next" | "screen.files"
+        )));
+    }
+
+    #[test]
     fn replaced_page_knobs_stay_replaced() {
         use input::midi::{Key, Param as P, Resolved};
-        let mut app = test_app();
-        app.profiles.push(
-            input::midi::Profile::from_toml(
-                "xsession-pro.toml",
-                include_str!("../../../config/devices/xsession-pro.toml"),
-            )
-            .unwrap(),
-        );
-        super::learn::assign(
-            &mut app.learned,
-            "X-Session Pro",
-            input::Group::PadsEdit,
-            Key::Cc(80),
-            "edit.param_1",
-        );
-        app.midi_event(super::midi::Event::Connected {
-            port: "X".into(),
-            profile: "X-Session Pro".into(),
-        });
-        assert_eq!(
-            app.learned["X-Session Pro"]["fx"]
-                .get("cc 80")
-                .map(String::as_str),
-            Some("edit.param_1")
-        );
-        assert!(matches!(
-            resolved(&app, Screen::Fx, false, knob(80, 127)),
-            Some(Resolved::Param {
-                param: P::Slot(0),
-                ..
-            })
-        ));
-        assert_eq!(resolved(&app, Screen::Fx, false, knob(24, 127)), None);
-        assert_eq!(
-            app.live_profiles()[0].assignment(input::Group::Fx.scope(), "edit.param_1"),
-            Some("cc 80".into())
-        );
+        for seeded in [false, true] {
+            let mut app = test_app();
+            app.profiles.push(
+                input::midi::Profile::from_toml(
+                    "xsession-pro.toml",
+                    include_str!("../../../config/devices/xsession-pro.toml"),
+                )
+                .unwrap(),
+            );
+            super::learn::assign(
+                &mut app.learned,
+                "X-Session Pro",
+                input::Group::PadsEdit,
+                Key::Cc(80),
+                "edit.param_1",
+            );
+            if seeded {
+                app.seeded.push("X-Session Pro".into());
+            }
+            app.midi_event(super::midi::Event::Connected {
+                port: "X".into(),
+                profile: "X-Session Pro".into(),
+            });
+            assert_eq!(
+                app.learned["X-Session Pro"]["fx"]
+                    .get("cc 80")
+                    .map(String::as_str),
+                Some("edit.param_1")
+            );
+            assert!(matches!(
+                resolved(&app, Screen::Fx, false, knob(80, 127)),
+                Some(Resolved::Param {
+                    param: P::Slot(0),
+                    ..
+                })
+            ));
+            assert_eq!(resolved(&app, Screen::Fx, false, knob(24, 127)), None);
+            assert_eq!(
+                app.live_profiles()[0].assignment(input::Group::Fx.scope(), "edit.param_1"),
+                Some("cc 80".into())
+            );
+            assert!(app.seeded.iter().any(|name| name == "X-Session Pro"));
+        }
     }
 
     #[test]
@@ -17603,12 +18276,13 @@ mod tests {
     fn lay_out_from_the_controller() {
         let mut app = chop_open();
         app.pads.selected = 4; // Q
-        app.apply(Action::ChopCommit);
+        let map = [(input::midi::Key::Note(B9), "chop.commit")];
+        learned(&mut app, &map, press(B9));
         assert!(
             matches!(app.plan, Some(super::chop::Plan::InOrder(Some(4)))),
             "in order from Q"
         );
-        app.apply(Action::ChopCommit);
+        learned(&mut app, &map, press(B9));
         assert!(app.plan.is_none(), "applied");
         for slice in 0..8 {
             assert_eq!(
@@ -18851,7 +19525,7 @@ mod tests {
             flash(&app),
             "MIDI connected: USB X-Session MIDI 1 (X-Session Pro profile)"
         );
-        assert_eq!(xs_live(&app, press(B10)), Some(Action::PadEdit));
+        assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
     }
 
     /// Picks the row of `name` in `group` on the MIDI tab and presses Enter on it.
@@ -19057,7 +19731,7 @@ mod tests {
 
     /// Scenario "Reassign a button" (midi-learn): b9 for "bank next" in GLOBAL is learned
     /// for "pad mode" in PADS: the row says `bank next · stays` before Enter; after it b9
-    /// switches the pad mode on the pads screen and turns the bank on the other screens.
+    /// switches the pad mode on Pads and turns the bank in Settings; Files keeps preview.
     #[test]
     fn reassign_a_button() {
         let mut app = xsession_connected(&[(input::Group::Global, B9, "bank.next")]);
@@ -19070,13 +19744,14 @@ mod tests {
         );
         app.apply(Action::SettingsLearn);
         assert_eq!(xs_on(&mut app, Screen::Pads, B9), Some(Action::PadModeNext));
-        for screen in [Screen::Files, Screen::Settings] {
-            assert_eq!(
-                xs_on(&mut app, screen, B9),
-                Some(Action::BankNext),
-                "{screen:?}"
-            );
-        }
+        assert_eq!(
+            xs_on(&mut app, Screen::Settings, B9),
+            Some(Action::BankNext)
+        );
+        assert_eq!(
+            xs_on(&mut app, Screen::Files, B9),
+            Some(Action::BrowserPreviewToggle)
+        );
     }
 
     /// Scenario "Cancel and clear" (midi-learn): Esc while waiting changes nothing;
@@ -19090,12 +19765,12 @@ mod tests {
         assert!(app.learning.is_none(), "waiting stops");
         xs_message(&mut app, press(90));
         assert_eq!(app.learned, before, "no changes");
-        // b3 is the pad mode from the profile
-        assert_eq!(xs_on(&mut app, Screen::Pads, B3), Some(Action::PadModeNext));
-        learn_row(&mut app, input::Group::Pads, "pad.mode_next");
+        // b7 opens pad edit from the profile
+        assert_eq!(xs_on(&mut app, Screen::Pads, B7), Some(Action::PadEditOnly));
+        learn_row(&mut app, input::Group::Pads, "pad.edit_only");
         app.apply(Action::Back);
         app.apply(Action::SettingsClear);
-        assert_eq!(xs_on(&mut app, Screen::Pads, B3), None, "no control left");
+        assert_eq!(xs_on(&mut app, Screen::Pads, B7), None, "no control left");
     }
 
     /// Scenario "Global action" (midi-learn): a button learned for help in GLOBAL opens

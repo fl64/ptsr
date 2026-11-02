@@ -880,16 +880,7 @@ mod tests {
     const XSESSION: &str = include_str!("../../../config/devices/xsession-pro.toml");
 
     fn xsession() -> Profile {
-        let mut p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
-        p.screens.insert(
-            Some(Screen::Pads),
-            [
-                ("k1".to_string(), "pad.volume".to_string()),
-                ("b1".into(), "bank.next".into()),
-            ]
-            .into(),
-        );
-        p
+        Profile::from_toml("xsession-pro.toml", XSESSION).unwrap()
     }
 
     #[test]
@@ -922,8 +913,6 @@ mod tests {
         assert_eq!(Msg::parse(&[]), None);
     }
 
-    /// The shipped profile on the chop screen: k1 and k2 move the edges of the selected slice,
-    /// b2 cuts, b7 chops by hits (04d).
     #[test]
     fn xsession_chop_screen_knobs_and_buttons() {
         let p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
@@ -963,16 +952,6 @@ mod tests {
                 takeover: true
             })
         );
-        let b2 = Msg::NoteOn {
-            ch: 1,
-            note: 44,
-            velocity: 127,
-        };
-        assert_eq!(
-            p.resolve(Screen::Chop, b2),
-            Some(Resolved::Action(Action::ChopCut))
-        );
-        // 04d: b7 chops by hits
         let b7 = Msg::NoteOn {
             ch: 1,
             note: 58,
@@ -980,7 +959,7 @@ mod tests {
         };
         assert_eq!(
             p.resolve(Screen::Chop, b7),
-            Some(Resolved::Action(Action::ChopHits))
+            Some(Resolved::Action(Action::ChopCut))
         );
         // 04d: k11 is the chop threshold
         assert!(matches!(
@@ -992,8 +971,6 @@ mod tests {
         ));
     }
 
-    /// 21 input-devices "X-Session Pro only": the shipped profile starts the sample, cuts,
-    /// moves the cursor and the region, and commits the layout, with no keyboard.
     #[test]
     fn x_session_pro_only() {
         let p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
@@ -1007,21 +984,13 @@ mod tests {
                 },
             )
         };
-        assert_eq!(
-            button(43),
-            Some(Resolved::Action(Action::ChopPlay)),
-            "b1 starts"
-        );
-        assert_eq!(
-            button(44),
-            Some(Resolved::Action(Action::ChopCut)),
-            "b2 cuts"
-        );
-        assert_eq!(
-            button(69),
-            Some(Resolved::Action(Action::ChopCommit)),
-            "b9 lays out"
-        );
+        for note in [70, 69] {
+            assert_eq!(button(note), Some(Resolved::Action(Action::ChopPlay)));
+        }
+        assert_eq!(button(58), Some(Resolved::Action(Action::ChopCut)));
+        assert_eq!(button(46), Some(Resolved::Action(Action::MarkerSelect(-1))));
+        assert_eq!(button(43), Some(Resolved::Action(Action::MarkerSelect(1))));
+        assert_eq!(button(59), Some(Resolved::Action(Action::ChopEditOnly)));
         let knob = |cc| match p.resolve(
             Screen::Chop,
             Msg::Cc {
@@ -1052,16 +1021,19 @@ mod tests {
             Some(Resolved::Action(a)) => Some(a),
             _ => None,
         };
-        let (b3, b10) = (note(45), note(70));
-        assert_eq!(act(&p, Screen::Chop, true, b3), Some(Action::PagePrev)); // 54: b3 turns the page in the edit
+        let (b4, b7, b8) = (note(46), note(58), note(59));
+        assert_eq!(act(&p, Screen::Chop, true, b4), Some(Action::PagePrev));
         assert_eq!(
-            act(&p, Screen::Chop, false, b3),
+            act(&p, Screen::Chop, false, b4),
             Some(Action::MarkerSelect(-1))
         );
-        assert_eq!(act(&p, Screen::Chop, false, b10), Some(Action::ChopEdit));
-        assert_eq!(act(&p, Screen::Pads, false, b10), Some(Action::PadEdit));
-        assert_eq!(act(&p, Screen::Pads, true, b10), Some(Action::Back));
-        assert_eq!(act(&p, Screen::Pads, false, b3), Some(Action::PadModeNext));
+        assert_eq!(act(&p, Screen::Chop, false, b8), Some(Action::ChopEditOnly));
+        assert_eq!(act(&p, Screen::Pads, false, b7), Some(Action::PadEditOnly));
+        assert_eq!(act(&p, Screen::Pads, true, b7), Some(Action::Back));
+        assert_eq!(
+            act(&p, Screen::Pads, false, b4),
+            Some(Action::PadSelect(crate::Dir::Left))
+        );
 
         p.set_learned(
             Scope::Screen(Screen::Pads),
@@ -1115,7 +1087,7 @@ mod tests {
                     velocity: 127
                 }
             ),
-            Some(Resolved::Action(Action::BankNext))
+            Some(Resolved::Action(Action::PadSelect(crate::Dir::Right)))
         );
         // release of a button and unassigned controls do nothing
         assert_eq!(
@@ -1145,6 +1117,293 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn x_session_physical_navigation_and_preview() {
+        let p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
+        let notes = [46, 43, 44, 45, 56, 57, 58, 59, 70, 69];
+        for (screen, expected) in [
+            (
+                Screen::Pads,
+                [
+                    Some(Action::PadSelect(crate::Dir::Left)),
+                    Some(Action::PadSelect(crate::Dir::Right)),
+                    Some(Action::ScreenFiles),
+                    Some(Action::ScreenFx),
+                    Some(Action::BankPrev),
+                    Some(Action::BankNext),
+                    Some(Action::PadEditOnly),
+                    Some(Action::Back),
+                    None,
+                    None,
+                ],
+            ),
+            (
+                Screen::Files,
+                [
+                    Some(Action::BrowserUp),
+                    Some(Action::BrowserDown),
+                    Some(Action::ScreenFiles),
+                    Some(Action::ScreenFx),
+                    Some(Action::BankPrev),
+                    Some(Action::BankNext),
+                    Some(Action::BrowserTakeOnly),
+                    Some(Action::ScreenChop),
+                    Some(Action::BrowserPreviewToggle),
+                    Some(Action::BrowserPreviewToggle),
+                ],
+            ),
+            (
+                Screen::Chop,
+                [
+                    Some(Action::MarkerSelect(-1)),
+                    Some(Action::MarkerSelect(1)),
+                    Some(Action::ScreenFiles),
+                    Some(Action::ScreenFx),
+                    Some(Action::BankPrev),
+                    Some(Action::BankNext),
+                    Some(Action::ChopCut),
+                    Some(Action::ChopEditOnly),
+                    Some(Action::ChopPlay),
+                    Some(Action::ChopPlay),
+                ],
+            ),
+            (
+                Screen::Fx,
+                [
+                    Some(Action::PagePrev),
+                    Some(Action::PageNext),
+                    Some(Action::ScreenFiles),
+                    Some(Action::ScreenFx),
+                    Some(Action::BankPrev),
+                    Some(Action::BankNext),
+                    None,
+                    Some(Action::Back),
+                    None,
+                    None,
+                ],
+            ),
+            (
+                Screen::Settings,
+                [
+                    None,
+                    None,
+                    Some(Action::ScreenFiles),
+                    Some(Action::ScreenFx),
+                    Some(Action::BankPrev),
+                    Some(Action::BankNext),
+                    None,
+                    Some(Action::Back),
+                    None,
+                    None,
+                ],
+            ),
+        ] {
+            for editing in [false, true] {
+                for (i, note) in notes.into_iter().enumerate() {
+                    let action = if editing && screen != Screen::Fx {
+                        match note {
+                            46 => Some(Action::PagePrev),
+                            43 => Some(Action::PageNext),
+                            58 | 59 => Some(Action::Back),
+                            _ => expected[i],
+                        }
+                    } else {
+                        expected[i]
+                    };
+                    for (bytes, expected) in [
+                        ([0x90, note, 127], action.map(Resolved::Action)),
+                        ([0x80, note, 64], None),
+                        ([0x90, note, 0], None),
+                        ([0x91, note, 127], None),
+                        ([0x81, note, 64], None),
+                        ([0x91, note, 0], None),
+                    ] {
+                        assert_eq!(
+                            p.resolve_in(screen, editing, Msg::parse(&bytes).unwrap()),
+                            expected,
+                            "{screen:?} edit={editing} bytes={bytes:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn x_session_faders_use_physical_roles() {
+        for seeded in [false, true] {
+            let mut p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
+            if seeded {
+                for (scope, key, action) in p.roles() {
+                    p.learned.entry(scope).or_default().insert(key, action);
+                }
+                p.set_seeded(true);
+            }
+            for screen in [
+                Screen::Pads,
+                Screen::Files,
+                Screen::Chop,
+                Screen::Fx,
+                Screen::Settings,
+            ] {
+                for editing in [false, true] {
+                    for (cc, name, param) in [
+                        (11, "fader_b", Some(Param::PadVolume)),
+                        (12, "fader_a", Some(Param::PadPitch)),
+                        (14, "pitch_a", Some(Param::MasterVolume)),
+                        (15, "pitch_b", None),
+                        (17, "crossfade", None),
+                        (20, "", None),
+                    ] {
+                        for value in [0, 64, 127] {
+                            let msg = Msg::parse(&[0xB0, cc, value]).unwrap();
+                            assert_eq!(
+                                p.resolve_in(screen, editing, msg),
+                                param.map(|param| Resolved::Param {
+                                    control: if seeded {
+                                        format!("cc {cc}")
+                                    } else {
+                                        name.into()
+                                    },
+                                    param,
+                                    value: value as f32 / 127.0,
+                                    takeover: true,
+                                }),
+                                "{screen:?} edit={editing} seeded={seeded} cc={cc}"
+                            );
+                            assert_eq!(
+                                p.resolve_in(
+                                    screen,
+                                    editing,
+                                    Msg::parse(&[0xB1, cc, value]).unwrap()
+                                ),
+                                None
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn x_session_safe_default_buttons() {
+        let p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
+        let unsafe_actions = [
+            "marker.delete",
+            "chop.commit",
+            "chop.hits",
+            "chop.parts",
+            "pad.edit",
+            "chop.edit",
+            "browser.hold",
+        ]
+        .map(|name| Action::parse(name).unwrap());
+        for screen in [
+            Screen::Pads,
+            Screen::Files,
+            Screen::Chop,
+            Screen::Fx,
+            Screen::Settings,
+        ] {
+            for editing in [false, true] {
+                for note in [43, 44, 45, 46, 56, 57, 58, 59, 69, 70] {
+                    if let Some(Resolved::Action(action)) =
+                        p.resolve_in(screen, editing, Msg::parse(&[0x90, note, 127]).unwrap())
+                    {
+                        assert!(
+                            !unsafe_actions.contains(&action),
+                            "{screen:?} edit={editing} note={note}: {action:?}"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(p.roles().iter().all(|(_, _, action)| known(action)));
+    }
+
+    #[test]
+    fn x_session_fx_shipped_profile_inherits_page_and_global_roles() {
+        let mut p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
+        let expected: HashMap<_, _> = [
+            (Key::Cc(24), "edit.param_1"),
+            (Key::Cc(25), "edit.param_2"),
+            (Key::Cc(26), "edit.param_3"),
+            (Key::Note(46), "edit.page_prev"),
+            (Key::Note(43), "edit.page_next"),
+        ]
+        .map(|(key, action)| (key, action.to_string()))
+        .into();
+        let globals: HashMap<_, _> = [
+            (Key::Note(44), "screen.files"),
+            (Key::Note(45), "screen.fx"),
+            (Key::Note(56), "bank.prev"),
+            (Key::Note(57), "bank.next"),
+            (Key::Note(59), "ui.back"),
+            (Key::Cc(11), "pad.volume"),
+            (Key::Cc(12), "pad.pitch"),
+            (Key::Cc(14), "master.volume"),
+        ]
+        .map(|(key, action)| (key, action.to_string()))
+        .into();
+        assert_eq!(p.fx_defaults(), expected);
+        let roles = p.roles();
+        assert!(
+            roles
+                .iter()
+                .all(|(scope, _, _)| *scope != Scope::Screen(Screen::Fx))
+        );
+        assert_eq!(
+            roles
+                .iter()
+                .filter(|(scope, _, _)| *scope == Scope::Global)
+                .map(|(_, key, action)| (*key, action.clone()))
+                .collect::<HashMap<_, _>>(),
+            globals
+        );
+        for (scope, key, action) in roles {
+            p.learned.entry(scope).or_default().insert(key, action);
+        }
+        p.set_seeded(true);
+        assert_eq!(p.fx_defaults(), expected);
+        for editing in [false, true] {
+            for (key, action) in expected.iter().chain(&globals) {
+                let bytes = match *key {
+                    Key::Cc(cc) => [0xB0, cc, 64],
+                    Key::Note(note) => [0x90, note, 127],
+                };
+                let resolved = p.resolve_in(Screen::Fx, editing, Msg::parse(&bytes).unwrap());
+                if let Some(param) = param_of(action) {
+                    assert_eq!(
+                        resolved,
+                        Some(Resolved::Param {
+                            control: key.to_string(),
+                            param,
+                            value: 64.0 / 127.0,
+                            takeover: true,
+                        })
+                    );
+                } else {
+                    assert_eq!(resolved, Action::parse(action).map(Resolved::Action));
+                }
+                if let Key::Note(note) = *key {
+                    for bytes in [[0x80, note, 64], [0x90, note, 0], [0x91, note, 127]] {
+                        assert_eq!(
+                            p.resolve_in(Screen::Fx, editing, Msg::parse(&bytes).unwrap()),
+                            None
+                        );
+                    }
+                }
+            }
+            for note in [58, 69, 70] {
+                assert_eq!(
+                    p.resolve_in(Screen::Fx, editing, Msg::parse(&[0x90, note, 127]).unwrap()),
+                    None
+                );
+            }
+        }
     }
 
     #[test]
@@ -1223,7 +1482,7 @@ mod tests {
             .insert(None, [("b1".to_string(), "pad.2".to_string())].into());
         assert_eq!(
             p.resolve(
-                Screen::Files,
+                Screen::Settings,
                 Msg::NoteOn {
                     ch: 1,
                     note: 43,
@@ -1236,7 +1495,7 @@ mod tests {
             }))
         );
         assert_eq!(
-            p.resolve(Screen::Files, Msg::NoteOff { ch: 1, note: 43 }),
+            p.resolve(Screen::Settings, Msg::NoteOff { ch: 1, note: 43 }),
             Some(Resolved::Action(Action::PadRelease { pad: 1 }))
         );
         // a CC button learned for a pad: press is the value, 0 is the release
@@ -1245,7 +1504,7 @@ mod tests {
         p.ccs.insert(9, Control::Button("b9".into()));
         assert_eq!(
             p.resolve(
-                Screen::Files,
+                Screen::Settings,
                 Msg::Cc {
                     ch: 1,
                     cc: 9,
@@ -1259,7 +1518,7 @@ mod tests {
         );
         assert_eq!(
             p.resolve(
-                Screen::Files,
+                Screen::Settings,
                 Msg::Cc {
                     ch: 1,
                     cc: 9,
@@ -1268,7 +1527,6 @@ mod tests {
             ),
             Some(Resolved::Action(Action::PadRelease { pad: 1 }))
         );
-        // non-pad button actions keep ignoring releases (on the pads screen b1 stays bank.next)
         assert_eq!(
             p.resolve(Screen::Pads, Msg::NoteOff { ch: 1, note: 43 }),
             None
@@ -1286,13 +1544,13 @@ mod tests {
         assert_eq!(
             p.assignment(Scope::Screen(Screen::Pads), "bank.next")
                 .as_deref(),
-            Some("b1 (note 43)")
+            Some("b6 (note 57)")
         );
         p.set_learned(
             Scope::Screen(Screen::Pads),
             [
                 (Key::Cc(31), "pad.volume".to_string()),
-                (Key::Note(57), "bank.next".into()),
+                (Key::Note(60), "bank.next".into()),
             ]
             .into(),
         );
@@ -1313,7 +1571,7 @@ mod tests {
                 Screen::Pads,
                 Msg::NoteOn {
                     ch: 1,
-                    note: 43,
+                    note: 57,
                     velocity: 127
                 }
             ),
@@ -1340,14 +1598,14 @@ mod tests {
                 Screen::Pads,
                 Msg::NoteOn {
                     ch: 1,
-                    note: 57,
+                    note: 60,
                     velocity: 127
                 }
             ),
             Some(Resolved::Action(Action::BankNext))
         );
         assert_eq!(
-            p.resolve(Screen::Pads, Msg::NoteOff { ch: 1, note: 57 }),
+            p.resolve(Screen::Pads, Msg::NoteOff { ch: 1, note: 60 }),
             None
         );
         // a note cannot be a knob
@@ -1546,7 +1804,7 @@ mod tests {
                 Some(format!("{name} (cc {cc})"))
             );
         }
-        for (name, expected) in [("b3", Action::PagePrev), ("b4", Action::PageNext)] {
+        for (name, expected) in [("b4", Action::PagePrev), ("b1", Action::PageNext)] {
             let key = p.key_of(name).unwrap();
             let msg = match key {
                 Key::Cc(cc) => Msg::Cc {
@@ -1573,6 +1831,7 @@ mod tests {
         ] {
             for seeded in [false, true] {
                 let mut p = xsession();
+                p.screens.remove(&Some(Screen::Fx));
                 p.set_seeded(seeded);
                 p.set_learned(
                     scope,
@@ -1600,6 +1859,7 @@ mod tests {
             }
         }
         let mut p = xsession();
+        p.screens.remove(&Some(Screen::Fx));
         p.screens.insert(
             Some(Screen::Pads),
             [
@@ -1661,6 +1921,7 @@ mod tests {
                 Scope::Global,
             ] {
                 let mut p = xsession();
+                p.screens.remove(&Some(Screen::Fx));
                 for seeded in [false, true] {
                     p.set_seeded(seeded);
                     p.set_learned(scope, [(Key::Cc(24), action.into())].into());
@@ -1672,11 +1933,15 @@ mod tests {
 
     #[test]
     fn new_fx_bindings_take_precedence() {
-        let mut p = Profile::from_toml(
-            "fx.toml",
-            &format!("{XSESSION}\n[screens.fx]\nk1 = \"edit.param_3\"\nk4 = \"edit.page\"\n"),
-        )
-        .unwrap();
+        let mut p = xsession();
+        p.screens.insert(
+            Some(Screen::Fx),
+            [
+                ("k1".into(), "edit.param_3".into()),
+                ("k4".into(), "edit.page".into()),
+            ]
+            .into(),
+        );
         p.set_learned(
             Scope::Edit(Screen::Pads),
             [(Key::Cc(24), "pad.fx1_type".into())].into(),
@@ -1717,8 +1982,35 @@ mod tests {
     }
 
     #[test]
+    fn unseeded_x_session_fx_inherits_replaced_user_page_knob() {
+        let mut p = xsession();
+        p.set_learned(
+            Scope::Edit(Screen::Pads),
+            [(Key::Cc(80), "edit.param_1".into())].into(),
+        );
+        assert_fx_param(&p, 80, Param::Slot(0), "cc 80");
+        for editing in [false, true] {
+            assert_eq!(
+                p.resolve_in(Screen::Fx, editing, Msg::parse(&[0xB0, 24, 127]).unwrap()),
+                None
+            );
+        }
+        assert_eq!(
+            p.assignment(Scope::Screen(Screen::Fx), "edit.param_1"),
+            Some("cc 80".into())
+        );
+        let defaults = p.fx_defaults();
+        assert_eq!(
+            defaults.get(&Key::Cc(80)).map(String::as_str),
+            Some("edit.param_1")
+        );
+        assert!(!defaults.contains_key(&Key::Cc(24)));
+    }
+
+    #[test]
     fn replaced_page_knobs_stay_replaced() {
         let mut p = xsession();
+        p.screens.remove(&Some(Screen::Fx));
         for (scope, cc) in [
             (Scope::Global, 77),
             (Scope::Screen(Screen::Pads), 78),

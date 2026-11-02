@@ -1131,7 +1131,7 @@ mod tests {
             );
             assert!(matches!(
                 profile.resolve_in(Screen::Fx, false, press),
-                Some(Resolved::Action(Action::PageNext))
+                Some(Resolved::Action(Action::PagePrev))
                     | Some(Resolved::Param {
                         param: Param::Slot(0),
                         ..
