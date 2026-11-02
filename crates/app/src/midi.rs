@@ -297,8 +297,7 @@ fn dispatch(
         let _ = tx.send(UiEvent { event, stamp });
     };
     let mut defaults: HashMap<String, Profile> = HashMap::new();
-    // (port, control) -> absolute pad, so a release reaches the pad that was pressed
-    let mut pressed: HashMap<(String, Key), Vec<(usize, u64)>> = HashMap::new();
+    let mut pressed: HashMap<(String, u8, Key), Vec<(usize, u64)>> = HashMap::new();
     let mut pending = VecDeque::new();
     let mut closed = false;
     loop {
@@ -340,7 +339,7 @@ fn dispatch(
             }
             Raw::Disconnected(port) => {
                 // a held gate pad would hang without its note off
-                pressed.retain(|(p, _), held| {
+                pressed.retain(|(p, _, _), held| {
                     if *p == port {
                         for &(abs, epoch) in held.iter() {
                             pending.push_back(release_command(abs, epoch));
@@ -388,6 +387,7 @@ fn dispatch(
             1 => Screen::Settings,
             2 => Screen::Files,
             3 => Screen::Chop,
+            4 => Screen::Fx,
             _ => Screen::Pads,
         };
         let resolved = profile.resolve_in(screen, shared.edit.load(Relaxed), msg);
@@ -405,16 +405,22 @@ fn dispatch(
             },
             Some(stamp),
         );
-        if shared.learn.load(Relaxed) {
-            if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
-                for (abs, epoch) in pressed.remove(&(port, msg.key())).unwrap_or_default() {
-                    pending.push_back(release_command(abs, epoch));
-                    send(
-                        Event::PadRelease { abs },
-                        Some(Stamp { epoch, ready: true }),
-                    );
-                }
+        let channel = match msg {
+            Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
+        };
+        if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. })
+            && let Some(held) = pressed.remove(&(port.clone(), channel, msg.key()))
+        {
+            for (abs, epoch) in held {
+                pending.push_back(release_command(abs, epoch));
+                send(
+                    Event::PadRelease { abs },
+                    Some(Stamp { epoch, ready: true }),
+                );
             }
+            continue;
+        }
+        if shared.learn.load(Relaxed) {
             continue;
         }
 
@@ -440,7 +446,7 @@ fn dispatch(
                     };
                     if commands.as_mut().is_some_and(|c| c.push(command).is_ok()) {
                         accepted = true;
-                        let held = pressed.entry((port, msg.key())).or_default();
+                        let held = pressed.entry((port, channel, msg.key())).or_default();
                         if !held.contains(&(abs, stamp.epoch)) {
                             held.push((abs, stamp.epoch));
                         }
@@ -449,18 +455,8 @@ fn dispatch(
                 send(Event::PadHit { abs, accepted }, Some(stamp));
             }
             Some(Resolved::Action(Action::PadRelease { pad })) => {
-                let held = pressed.remove(&(port, msg.key())).unwrap_or_default();
-                if held.is_empty() {
-                    let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
-                    send(Event::PadRelease { abs }, Some(stamp));
-                }
-                for (abs, epoch) in held {
-                    pending.push_back(release_command(abs, epoch));
-                    send(
-                        Event::PadRelease { abs },
-                        Some(Stamp { epoch, ready: true }),
-                    );
-                }
+                let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
+                send(Event::PadRelease { abs }, Some(stamp));
             }
             Some(Resolved::Action(a)) => {
                 send(Event::Action(a), Some(stamp));
@@ -942,16 +938,20 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let (producer, mut consumer) = rtrb::RingBuffer::new(256);
         let shared = Arc::new(shared);
-        dispatch(
-            raw_rx,
-            tx,
-            profiles,
-            LearnedMaps::new(),
-            Vec::new(),
-            Some(producer),
-            Some(Arc::new(ProjectState::default())),
-            shared,
-        );
+        std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                profiles,
+                LearnedMaps::new(),
+                Vec::new(),
+                Some(producer),
+                Some(Arc::new(ProjectState::default())),
+                shared,
+            );
+        })
+        .join()
+        .unwrap();
         let mut commands = Vec::new();
         while let Ok(c) = consumer.pop() {
             if let ProjectMessage::Command(command) = c.command {
@@ -1026,6 +1026,373 @@ mod tests {
     fn banks_change_under_the_button() {
         let sent = learned_global(Key::Note(99), "pad.2", &[note_on(99)], on_screen(0, 2));
         assert!(matches!(sent[..], [Command::PadPress { pad: 33, .. }]));
+    }
+
+    #[test]
+    fn fx_screen_code_routes_old_page_knobs_to_slots() {
+        for scope in [
+            None,
+            Some(Scope::Edit(Screen::Pads)),
+            Some(Scope::Edit(Screen::Chop)),
+            Some(Scope::Screen(Screen::Pads)),
+        ] {
+            for seeded in [false, true] {
+                if seeded && scope.is_none() {
+                    continue;
+                }
+                for editing in [false, true] {
+                    let mut raw = Vec::new();
+                    if let Some(scope) = scope {
+                        raw.push(Raw::Learned(
+                            "X-Session Pro".into(),
+                            scope,
+                            [
+                                (Key::Cc(24), "edit.param_1".into()),
+                                (Key::Cc(25), "edit.param_2".into()),
+                                (Key::Cc(26), "edit.param_3".into()),
+                            ]
+                            .into(),
+                        ));
+                    }
+                    if seeded {
+                        raw.push(Raw::Seeded("X-Session Pro".into()));
+                    }
+                    raw.extend(
+                        [(24, 0), (25, 64), (26, 127)]
+                            .map(|(cc, value)| Raw::Msg(XS.into(), knob(cc, value), test_stamp())),
+                    );
+                    let shared = on_screen(4, 2);
+                    shared.edit.store(editing, Relaxed);
+                    let (events, sent) = dispatched(raw, vec![xsession()], shared);
+                    assert_eq!(
+                        params(&events),
+                        [
+                            (Param::Slot(0), 0.0),
+                            (Param::Slot(1), 64.0 / 127.0),
+                            (Param::Slot(2), 1.0),
+                        ],
+                        "scope {scope:?}, seeded {seeded}, editing {editing}"
+                    );
+                    assert_eq!(events.len(), 6);
+                    for event in events {
+                        if let Event::Param {
+                            port,
+                            control,
+                            param: Param::Slot(slot),
+                            takeover,
+                            ..
+                        } = event
+                        {
+                            assert_eq!(port, XS);
+                            assert_eq!(
+                                control,
+                                if scope.is_some() {
+                                    format!("cc {}", 24 + slot)
+                                } else {
+                                    format!("k{}", 1 + slot)
+                                }
+                            );
+                            assert!(takeover);
+                        }
+                    }
+                    assert!(sent.is_empty(), "knobs must not send pad commands");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn release_a_pad_after_the_screen_changes() {
+        for (press, release) in [
+            (note_on(46), Msg::NoteOff { ch: 1, note: 46 }),
+            (note_on(46), Msg::parse(&[0x90, 46, 0]).unwrap()),
+            (knob(24, 127), knob(24, 0)),
+        ] {
+            let foreign_release = match release {
+                Msg::NoteOff { note, .. } => Msg::NoteOff { ch: 2, note },
+                Msg::Cc { cc, .. } => Msg::Cc {
+                    ch: 2,
+                    cc,
+                    value: 0,
+                },
+                _ => unreachable!(),
+            };
+            let mut profile = xsession();
+            profile.set_learned(Scope::Global, [(press.key(), "pad.1".into())].into());
+            assert!(
+                profile
+                    .resolve_in(Screen::Pads, false, foreign_release)
+                    .is_none()
+            );
+            assert!(
+                profile
+                    .resolve_in(Screen::Fx, false, foreign_release)
+                    .is_none()
+            );
+            assert!(matches!(
+                profile.resolve_in(Screen::Fx, false, press),
+                Some(Resolved::Action(Action::PageNext))
+                    | Some(Resolved::Param {
+                        param: Param::Slot(0),
+                        ..
+                    })
+            ));
+            let (raw_tx, raw_rx) = mpsc::channel();
+            let (tx, rx) = mpsc::channel();
+            let (producer, mut consumer) = rtrb::RingBuffer::new(1);
+            let shared = Arc::new(on_screen(0, 1));
+            let worker_shared = shared.clone();
+            let worker = std::thread::spawn(move || {
+                dispatch(
+                    raw_rx,
+                    tx,
+                    vec![profile],
+                    LearnedMaps::new(),
+                    vec![],
+                    Some(producer),
+                    None,
+                    worker_shared,
+                );
+            });
+            let send = |port: &str, msg, stamp| {
+                raw_tx.send(Raw::Msg(port.into(), msg, stamp)).unwrap();
+                assert!(matches!(
+                    rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+                    Event::Message { msg: seen, .. } if seen == msg
+                ));
+                rx.recv_timeout(Duration::from_secs(1)).unwrap()
+            };
+            assert!(matches!(
+                send(XS, press, test_stamp()).event,
+                Event::PadHit {
+                    abs: 16,
+                    accepted: true
+                }
+            ));
+            shared.screen.store(4, Relaxed);
+            shared.bank.store(2, Relaxed);
+            let stale = Stamp {
+                epoch: 7,
+                ready: false,
+            };
+            raw_tx
+                .send(Raw::Msg(XS.into(), foreign_release, stale))
+                .unwrap();
+            raw_tx.send(Raw::Connected(XS.into())).unwrap();
+            assert!(matches!(
+                rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+                Event::Message { msg, .. } if msg == foreign_release
+            ));
+            assert!(matches!(
+                rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+                Event::Connected { .. }
+            ));
+            assert!(rx.try_recv().is_err());
+            let released = send(XS, release, stale);
+            assert!(matches!(released.event, Event::PadRelease { abs: 16 }));
+            let stamp = released.stamp.unwrap();
+            assert_eq!(stamp.epoch, 0);
+            assert!(stamp.ready);
+            assert!(matches!(
+                send(PADS, note_on(36), test_stamp()).event,
+                Event::PadHit {
+                    abs: 32,
+                    accepted: false
+                }
+            ));
+            raw_tx.send(Raw::Msg(XS.into(), release, stale)).unwrap();
+            raw_tx
+                .send(Raw::Msg(XS.into(), knob(25, 0), test_stamp()))
+                .unwrap();
+            raw_tx.send(Raw::Disconnected(XS.into())).unwrap();
+            drop(raw_tx);
+            let hit = consumer.pop().unwrap();
+            assert_eq!(hit.epoch, 0);
+            assert!(hit.ready_at_send);
+            assert!(matches!(
+                hit.command,
+                ProjectMessage::Command(Command::PadPress { pad: 16, .. })
+            ));
+            let deadline = std::time::Instant::now() + Duration::from_secs(1);
+            let command = loop {
+                if let Ok(command) = consumer.pop() {
+                    break command;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "release was not delivered"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            assert_eq!(command.epoch, 0);
+            assert!(command.ready_at_send);
+            assert!(matches!(
+                command.command,
+                ProjectMessage::Command(Command::PadRelease { pad: 16 })
+            ));
+            worker.join().unwrap();
+            assert!(consumer.pop().is_err());
+            let events: Vec<_> = rx.try_iter().map(|event| event.event).collect();
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, Event::PadRelease { .. }))
+            );
+            let expected = if matches!(release, Msg::Cc { .. }) {
+                vec![(Param::Slot(0), 0.0), (Param::Slot(1), 0.0)]
+            } else {
+                vec![(Param::Slot(1), 0.0)]
+            };
+            assert_eq!(params(&events), expected);
+        }
+    }
+
+    #[test]
+    fn held_controls_keep_each_source_channel_until_release_or_disconnect() {
+        for note in [false, true] {
+            for disconnect in [false, true] {
+                let press = |ch| {
+                    if note {
+                        Msg::NoteOn {
+                            ch,
+                            note: 36,
+                            velocity: 127,
+                        }
+                    } else {
+                        Msg::Cc {
+                            ch,
+                            cc: 80,
+                            value: 127,
+                        }
+                    }
+                };
+                let release = |ch| {
+                    if note {
+                        Msg::NoteOff { ch, note: 36 }
+                    } else {
+                        Msg::Cc {
+                            ch,
+                            cc: 80,
+                            value: 0,
+                        }
+                    }
+                };
+                let mut profile = Profile::default_for(XS);
+                profile.set_learned(Scope::Global, [(press(1).key(), "pad.1".into())].into());
+                let mut raw: Vec<_> = [1, 2]
+                    .map(|ch| Raw::Msg(XS.into(), press(ch), test_stamp()))
+                    .into();
+                if disconnect {
+                    raw.push(Raw::Disconnected(XS.into()));
+                } else {
+                    raw.extend([2, 1].map(|ch| Raw::Msg(XS.into(), release(ch), test_stamp())));
+                }
+                let (events, sent) = dispatched(raw, vec![profile], on_screen(0, 0));
+                assert!(matches!(
+                    sent[..],
+                    [
+                        Command::PadPress { pad: 0, .. },
+                        Command::PadPress { pad: 0, .. },
+                        Command::PadRelease { pad: 0 },
+                        Command::PadRelease { pad: 0 },
+                    ]
+                ));
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| matches!(event, Event::PadRelease { abs: 0 }))
+                        .count(),
+                    2
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn play_pads_on_the_fx_screen_across_screen_and_bank_switches() {
+        for (before, after) in [(0, 4), (4, 0), (3, 4), (4, 2)] {
+            let (raw_tx, raw_rx) = mpsc::channel();
+            let (tx, rx) = mpsc::channel();
+            let (producer, mut consumer) = rtrb::RingBuffer::new(16);
+            let shared = Arc::new(on_screen(before, 0));
+            let worker_shared = shared.clone();
+            let worker = std::thread::spawn(move || {
+                dispatch(
+                    raw_rx,
+                    tx,
+                    vec![xsession()],
+                    LearnedMaps::new(),
+                    vec![],
+                    Some(producer),
+                    Some(Arc::new(ProjectState::default())),
+                    worker_shared,
+                );
+            });
+            let send = |msg| {
+                raw_tx
+                    .send(Raw::Msg(PADS.into(), msg, test_stamp()))
+                    .unwrap();
+                assert!(matches!(
+                    rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+                    Event::Message { msg: seen, .. } if seen == msg
+                ));
+                rx.recv_timeout(Duration::from_secs(1)).unwrap().event
+            };
+            let hit = |velocity| Msg::NoteOn {
+                ch: 1,
+                note: 36,
+                velocity,
+            };
+            let off = Msg::NoteOff { ch: 1, note: 36 };
+            assert!(matches!(
+                send(hit(80)),
+                Event::PadHit {
+                    abs: 0,
+                    accepted: true
+                }
+            ));
+            shared.screen.store(after, Relaxed);
+            shared.bank.store(2, Relaxed);
+            assert!(matches!(send(off), Event::PadRelease { abs: 0 }));
+            assert!(matches!(
+                send(hit(47)),
+                Event::PadHit {
+                    abs: 32,
+                    accepted: true
+                }
+            ));
+            shared.screen.store(before, Relaxed);
+            shared.bank.store(1, Relaxed);
+            assert!(matches!(send(off), Event::PadRelease { abs: 32 }));
+            assert!(matches!(send(off), Event::PadRelease { abs: 16 }));
+            raw_tx.send(Raw::Disconnected(PADS.into())).unwrap();
+            assert!(matches!(
+                rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+                Event::Disconnected { .. }
+            ));
+            drop(raw_tx);
+            worker.join().unwrap();
+            let sent: Vec<_> = std::iter::from_fn(|| consumer.pop().ok())
+                .map(|command| {
+                    assert_eq!(command.epoch, 0);
+                    assert!(command.ready_at_send);
+                    command.command
+                })
+                .collect();
+            assert!(
+                matches!(
+                    sent[..],
+                    [
+                        ProjectMessage::Command(Command::PadPress { pad: 0, velocity: first }),
+                        ProjectMessage::Command(Command::PadRelease { pad: 0 }),
+                        ProjectMessage::Command(Command::PadPress { pad: 32, velocity: second }),
+                        ProjectMessage::Command(Command::PadRelease { pad: 32 }),
+                    ] if first == 80.0 / 127.0 && second == 47.0 / 127.0
+                ),
+                "screen {before} -> {after}: {sent:?}"
+            );
+            assert!(rx.try_recv().is_err(), "no stale pad events after release");
+        }
     }
 
     fn connected(events: &[Event]) -> Vec<&str> {

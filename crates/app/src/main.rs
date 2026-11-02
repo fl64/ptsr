@@ -365,6 +365,9 @@ struct App {
     user_path: Option<PathBuf>,
     routed: Routed,
     screen: Screen,
+    /// Shared FX selection is independent of the selected pad and its parameter.
+    fx_slot: usize,
+    fx_param: usize,
     settings_row: usize,
     help_open: bool,
     pads: pads::Pads,
@@ -881,8 +884,8 @@ impl App {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         self.note_done(action);
         // a change of the pads made on the pads or files screen is a step of the undo (61)
-        let undoable =
-            matches!(self.screen, Screen::Pads | Screen::Files) && action != Action::Undo;
+        let undoable = matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx)
+            && action != Action::Undo;
         let what = self.step_name(action);
         let before = undoable.then(|| self.before());
         let quit = self.run(action);
@@ -1225,24 +1228,6 @@ impl App {
                 ));
             }
             v.knobs = params.iter().map(|&p| tui_param(p)).collect();
-            // a shared slot's block stands under the FX block on its page only (56)
-            if let Some(k) = params.first().and_then(|p| p.slot()) {
-                v.slot = Some((
-                    page,
-                    format!("FX {} * shared", k + 1),
-                    params
-                        .iter()
-                        .map(|&p| {
-                            (
-                                tui_param(p),
-                                label8(self.pads.name(p)),
-                                self.pads.fx_text(self.pads.selected_abs(), p),
-                            )
-                        })
-                        .collect(),
-                ));
-                v.scope = "all pads".into();
-            }
         }
         if let Some(Lit::Pad(p)) = self.lit_now() {
             v.lit = Some(tui_param(p));
@@ -1271,6 +1256,67 @@ impl App {
         v
     }
 
+    fn fx_selected_param(&self) -> pads::Param {
+        EFFECT_PARAMS[3 + self.fx_slot * 3 + self.fx_param]
+    }
+
+    fn select_fx(&mut self, slot: usize) {
+        if self.fx_slot != slot {
+            self.fx_slot = slot;
+            self.fx_param = 0;
+            self.pickup = None;
+        }
+    }
+
+    fn param_step_name(&self, p: pads::Param) -> String {
+        match p.slot() {
+            Some(k) => format!("FX {} {}", k + 1, self.pads.name(p)),
+            None => self.pads.name(p).into(),
+        }
+    }
+
+    fn fx_view(&self) -> tui::Fx {
+        let profiles = self.live_profiles();
+        tui::Fx {
+            blocks: std::array::from_fn(|k| tui::FxBlock {
+                rows: std::array::from_fn(|i| {
+                    let p = EFFECT_PARAMS[3 + k * 3 + i];
+                    (
+                        self.pads.name(p),
+                        self.pads.fx_text(self.pads.selected_abs(), p),
+                    )
+                }),
+            }),
+            selected: self.fx_slot,
+            param: self.fx_param,
+            pickup: self.pickup.as_ref().map(|p| p.0.clone()),
+            learn: if self.screen_learn.is_some() {
+                (0..3)
+                    .map(|i| {
+                        let name = self.learn_params()[i].0;
+                        (
+                            i,
+                            self.learn_shown(&profiles, name)
+                                .unwrap_or_else(|| "none".into()),
+                        )
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            lit: match self.lit_now() {
+                _ if self.screen_learn.is_some() => self.learn_params()[..3]
+                    .iter()
+                    .position(|(name, _)| self.learn_picked().is_some_and(|p| p.0 == *name)),
+                Some(Lit::Pad(p)) if p.slot() == Some(self.fx_slot) => EFFECT_PARAMS
+                    [3 + self.fx_slot * 3..6 + self.fx_slot * 3]
+                    .iter()
+                    .position(|&v| v == p),
+                _ => None,
+            },
+        }
+    }
+
     /// What the help line says about the states of this moment.
     fn help_state(&self) -> HelpState {
         HelpState {
@@ -1286,10 +1332,18 @@ impl App {
             param_name: match (self.screen, self.slice_end) {
                 (Screen::Chop, true) => "end",
                 (Screen::Chop, false) => "start",
+                (Screen::Fx, _) => self.pads.name(self.fx_selected_param()),
                 _ => self.pads.param_name(),
             },
             page: match self.screen {
                 Screen::Chop => "BOUNDS",
+                Screen::Fx => {
+                    if self.fx_slot == 0 {
+                        "FX 1"
+                    } else {
+                        "FX 2"
+                    }
+                }
                 _ => self.pads.page().0,
             },
             play: self.chop.as_ref().map_or("to end", |c| c.play.name()),
@@ -1317,6 +1371,7 @@ impl App {
                 Screen::Pads => input::Group::Pads,
                 Screen::Files => input::Group::Files,
                 Screen::Chop => input::Group::Chop,
+                Screen::Fx => input::Group::Fx,
                 Screen::Settings => input::Group::Global,
             }];
             self.midi_row = self.midi_row.min(self.midi_list().len().saturating_sub(1));
@@ -1419,7 +1474,10 @@ impl App {
             }
             Action::HelpToggle => self.help_open = !self.help_open,
             Action::LearnToggle
-                if matches!(self.screen, Screen::Pads | Screen::Chop | Screen::Files) =>
+                if matches!(
+                    self.screen,
+                    Screen::Pads | Screen::Chop | Screen::Files | Screen::Fx
+                ) =>
             {
                 self.screen_learn = match self.screen_learn {
                     Some(_) => None,
@@ -1455,6 +1513,7 @@ impl App {
             }
             Action::ScreenPads => self.goto(Screen::Pads),
             Action::ScreenFiles => self.goto(Screen::Files),
+            Action::ScreenFx => self.goto(Screen::Fx),
             Action::ScreenChop if self.screen == Screen::Files => self.open_file_chop(),
             Action::ScreenChop => self.open_chop(),
             Action::PadPress { pad, velocity } if self.screen == Screen::Chop => {
@@ -1639,7 +1698,32 @@ impl App {
             }
             // BOUNDS is the only page of a slice: the page keys keep it (54)
             Action::PageNext | Action::PagePrev if self.screen == Screen::Chop => {}
-            // the value keys act on a pad or a slice; the other screens have none
+            Action::PageNext | Action::PagePrev if self.screen == Screen::Fx => {
+                self.select_fx(1 - self.fx_slot);
+            }
+            Action::ParamNext | Action::ParamPrev | Action::PadParamNext
+                if self.screen == Screen::Fx =>
+            {
+                let step = if action == Action::ParamPrev { 2 } else { 1 };
+                self.fx_param = (self.fx_param + step) % 3;
+            }
+            Action::EditValue { .. } | Action::PadParam(_) if self.screen == Screen::Fx => {
+                let p = self.fx_selected_param();
+                let saved = self.pads.param;
+                self.pads.param = p;
+                let cmds = self.pads.apply(action);
+                self.pads.param = saved;
+                self.pads.limit_hits = None;
+                self.pickup = None;
+                self.lit = Some((Lit::Pad(p), Instant::now()));
+                if !cmds.is_empty() {
+                    for cmd in cmds {
+                        self.send(cmd);
+                    }
+                    self.dirty();
+                }
+            }
+            // the value keys act on a pad, a slice or a shared effect
             Action::ParamNext
             | Action::ParamPrev
             | Action::PageNext
@@ -1982,7 +2066,9 @@ impl App {
             {
                 self.source_value(step > 0, false)
             }
-            Action::Undo if matches!(self.screen, Screen::Pads | Screen::Files) => self.undo_pads(),
+            Action::Undo if matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx) => {
+                self.undo_pads()
+            }
             // in the pad edit the same key resets the settings of the scope, after a question (76)
             Action::PadClear if self.edit && self.screen == Screen::Pads => self.ask_reset(),
             // with marks the clear asks first: one key must not wipe a bank unasked (76)
@@ -3182,6 +3268,7 @@ impl App {
             (Screen::Pads, false) => Group::Pads,
             (Screen::Chop, true) => Group::ChopEdit,
             (Screen::Chop, false) => Group::Chop,
+            (Screen::Fx, _) => Group::Fx,
             _ => Group::Files,
         }
     }
@@ -3192,6 +3279,7 @@ impl App {
         match self.screen {
             Screen::Pads => Group::Pads,
             Screen::Chop => Group::Chop,
+            Screen::Fx => Group::Fx,
             _ => Group::Files,
         }
     }
@@ -3246,6 +3334,10 @@ impl App {
                     .find(|(_, l)| *l == label)
                     .map(|&(n, l)| (n, l.to_string()))
             }
+            Action::EditValue { .. } | Action::PadParam(_) if self.screen == Screen::Fx => {
+                let (name, _) = self.learn_params()[self.fx_param];
+                Some((name, self.pads.name(self.fx_selected_param()).into()))
+            }
             Action::EditValue { .. } if self.screen == Screen::Chop => Some(if self.slice_end {
                 ("slice.end", "slice end".into())
             } else {
@@ -3275,6 +3367,12 @@ impl App {
     /// The parameters the learn mode walks with `I` `K` (52): they have no key of their own.
     fn learn_params(&self) -> &'static [(&'static str, &'static str)] {
         match self.screen {
+            Screen::Fx => &[
+                ("edit.param_1", "effect type"),
+                ("edit.param_2", "first parameter"),
+                ("edit.param_3", "second parameter"),
+                ("edit.page", "effect block"),
+            ],
             Screen::Pads => &[
                 ("pad.volume", "volume"),
                 ("pad.pitch", "pitch"),
@@ -3793,6 +3891,7 @@ impl App {
     /// the bindings act for it.
     fn seed_device(&mut self, port: &str, name: &str, reset: bool) {
         if !reset && self.seeded.iter().any(|s| s == name) {
+            self.migrate_fx_bindings();
             return;
         }
         let profile = self
@@ -3837,6 +3936,16 @@ impl App {
         }
         for p in self.profiles.iter_mut().filter(|p| p.name == profile) {
             p.set_learned(group.scope(), map.clone());
+        }
+    }
+
+    fn migrate_fx_bindings(&mut self) {
+        if learn::migrate_fx(&mut self.learned, &self.profiles, &self.seeded) {
+            let names: Vec<_> = self.learned.keys().cloned().collect();
+            for name in names {
+                self.sync_learned(&name, input::Group::Fx);
+            }
+            self.save_midi();
         }
     }
 
@@ -4177,12 +4286,13 @@ impl App {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
         // a button runs its action through `apply`, which keeps the step itself
-        let before = (self.screen == Screen::Pads && matches!(ev, midi::Event::Param { .. }))
-            .then(|| self.before());
+        let before = (matches!(self.screen, Screen::Pads | Screen::Fx)
+            && matches!(ev, midi::Event::Param { .. }))
+        .then(|| self.before());
         self.midi_event_inner(ev);
         if let Some(b) = before {
             let what = match self.lit_now() {
-                Some(Lit::Pad(p)) => self.pads.name(p).to_string(),
+                Some(Lit::Pad(p)) => self.param_step_name(p),
                 _ => "change".into(),
             };
             self.note_step(b, what);
@@ -4359,7 +4469,8 @@ impl App {
                 let Some(&p) = EFFECT_PARAMS.get(i as usize) else {
                     return;
                 };
-                if self.screen != Screen::Pads {
+                if self.screen != Screen::Pads && !(self.screen == Screen::Fx && p.slot().is_some())
+                {
                     return;
                 }
                 let who = if p.slot().is_some() {
@@ -4367,7 +4478,9 @@ impl App {
                 } else {
                     self.pads.selected_abs() as u64
                 };
-                let target = (5u64 << 40) | ((i as u64) << 16) | who;
+                // Type changes give size/time and tone/feedback distinct takeover targets.
+                let kind = p.slot().map_or(0, |k| self.pads.fx[k].kind as u64);
+                let target = (5u64 << 40) | (kind << 32) | ((i as u64) << 16) | who;
                 let current = self.pads.fx_pos(p);
                 let value = if takeover {
                     self.takeover.apply(&port, &control, target, value, current)
@@ -4399,7 +4512,9 @@ impl App {
                 value,
                 ..
             } => {
-                if self.edit && self.screen == Screen::Pads {
+                if self.screen == Screen::Fx {
+                    self.select_fx(usize::from(value.clamp(0.0, 1.0) >= 0.5));
+                } else if self.edit && self.screen == Screen::Pads {
                     self.pads.set_page_pos(value);
                     self.lit = Some((Lit::Pad(self.pads.param), now));
                 }
@@ -4899,7 +5014,14 @@ impl App {
     /// What an action changes, as the undo says it (61).
     fn step_name(&self, action: Action) -> String {
         match action {
-            Action::EditValue { .. } | Action::PadParam(_) => self.pads.param_name().into(),
+            Action::EditValue { .. } | Action::PadParam(_) => {
+                let p = if self.screen == Screen::Fx {
+                    self.fx_selected_param()
+                } else {
+                    self.pads.param
+                };
+                self.param_step_name(p)
+            }
             Action::PadModeNext => "mode".into(),
             Action::PadClear => "clear".into(),
             Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
@@ -5106,6 +5228,9 @@ impl App {
     /// The parameter in knob slot `k` of the open edit page; `None` outside an edit mode
     /// or past the page.
     fn slot_param(&self, k: u8) -> Option<Param> {
+        if self.screen == Screen::Fx {
+            return (k < 3).then(|| Param::PadEffect(3 + self.fx_slot as u8 * 3 + k));
+        }
         if !self.edit {
             return None;
         }
@@ -5414,6 +5539,8 @@ fn main() -> std::io::Result<()> {
         paths,
         routed: Routed::default(),
         screen: Screen::Pads,
+        fx_slot: 0,
+        fx_param: 0,
         settings_row: 0,
         help_open: false,
         pads: pads::Pads::default(),
@@ -5512,6 +5639,7 @@ fn main() -> std::io::Result<()> {
     if let Some(notice) = app.drop_dead_bindings() {
         app.startup.push(notice);
     }
+    app.migrate_fx_bindings();
     let maps = midi::parse_learned(&app.learned);
     for p in app.profiles.iter_mut() {
         midi::apply_learned(p, &maps);
@@ -5614,6 +5742,7 @@ fn main() -> std::io::Result<()> {
             Screen::Settings => 1,
             Screen::Files => 2,
             Screen::Chop => 3,
+            Screen::Fx => 4,
         };
         shared.screen.store(screen_code, Relaxed);
         shared.edit.store(app.edit, Relaxed);
@@ -5713,6 +5842,7 @@ fn main() -> std::io::Result<()> {
                     app.learn_grid(&mut view.pads.pads);
                     tui::Screen::Chop(Box::new(app.mark_chop(view, mods.get())))
                 }
+                (Screen::Fx, _) => tui::Screen::Fx(app.fx_view()),
                 (Screen::Files, _) => tui::Screen::Files(tui::Files {
                     dir: &dir,
                     entries: app
@@ -5811,7 +5941,13 @@ fn main() -> std::io::Result<()> {
             (None, None) if kitty => without_modifiers(groups),
             (None, None) => as_combos(groups),
         };
-        let full = app.help_open.then(|| full_help(&keymap, app.screen, kitty));
+        let full = app.help_open.then(|| {
+            let mut rows = full_help(&keymap, app.screen, kitty);
+            if app.screen == Screen::Fx {
+                rows.push((String::new(), format!("{} selected", app.help_state().page)));
+            }
+            rows
+        });
         let learn_lines = app.learn_lines();
         let help = tui::Help {
             groups: &groups,
@@ -5959,6 +6095,7 @@ fn hint_for(app: &App) -> Option<&'static str> {
             Some("Pads are empty: F6 opens files, Enter takes one, a pad hit puts it there.")
         }
         Screen::Pads => Some("Hit 1-4 Q-R A-F Z-V to play pads; Shift for full velocity."),
+        Screen::Fx => Some("Shared by all pads: Tab selects FX 1 / FX 2; I K select, J L change."),
         Screen::Files if app.browser.editing => {
             Some("Type to filter; pads are silent. Enter keeps the filter, Esc clears it.")
         }
@@ -7243,6 +7380,34 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
             },
             bank(),
         ],
+        Screen::Fx => vec![
+            tui::HelpGroup {
+                name: "SHARED FX",
+                items: vec![
+                    item(
+                        &[Action::PagePrev, Action::PageNext],
+                        format!("{} selected", st.page),
+                    ),
+                    item(&[Action::ParamPrev, Action::ParamNext], "parameter".into()),
+                    item(
+                        &[
+                            Action::EditValue {
+                                up: false,
+                                fine: false,
+                            },
+                            Action::EditValue {
+                                up: true,
+                                fine: false,
+                            },
+                        ],
+                        st.param_name.into(),
+                    ),
+                    item(&[Action::Undo], "undo".into()),
+                    ("pad".into(), "play".into()),
+                ],
+            },
+            bank(),
+        ],
         Screen::Pads => vec![
             tui::HelpGroup {
                 name: "PAD",
@@ -7480,6 +7645,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
         items: vec![
             item(&[Action::HelpToggle], "help".into()),
             item(&[Action::ScreenChop], "chop".into()),
+            item(&[Action::ScreenFx], "FX".into()),
             item(&[Action::ScreenFiles], "files".into()),
             item(&[Action::ScreenSettings], "settings".into()),
         ],
@@ -7654,6 +7820,7 @@ fn describe(a: Action) -> String {
             "pads: take the sound off the selected pad; in the edit, reset its settings".into()
         }
         Action::ScreenPads => "pads screen".into(),
+        Action::ScreenFx => "shared FX screen".into(),
         Action::ScreenSettings => "audio settings".into(),
         Action::ScreenFiles => "files screen".into(),
         Action::ScreenChop => "chop the selected pad (or file on F6)".into(),
@@ -7706,7 +7873,7 @@ fn describe(a: Action) -> String {
         ),
         Action::MarkerDelete => "chop: join the slice with the previous one".into(),
         Action::SliceEndDelete => "chop: join the slice with the next one".into(),
-        Action::Undo => "chop: undo".into(),
+        Action::Undo => "undo the last change".into(),
         Action::BrowserUp => "file up".into(),
         Action::BrowserDown => "file down".into(),
         Action::BrowserEnter => "open folder".into(),
@@ -7799,6 +7966,7 @@ fn help_section(a: Action) -> usize {
         | Action::ScreenSettings
         | Action::ScreenFiles
         | Action::ScreenChop
+        | Action::ScreenFx
         | Action::HelpToggle
         | Action::ProjectPick
         | Action::PadsToggle
@@ -7867,6 +8035,12 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
     for (k, a) in keymap.bindings(screen) {
         let section = &mut sections[help_section(a)];
         let (key, text) = match a {
+            Action::PageNext | Action::PagePrev if screen == Screen::Fx => {
+                ((0, k), "select the next / previous shared FX block".into())
+            }
+            Action::ParamNext | Action::ParamPrev if screen == Screen::Fx => {
+                ((0, k), "select the next / previous effect parameter".into())
+            }
             // eight banks are one row
             Action::BankSelect(0) => ((0, format!("{k}…8")), "bank 1–8".to_string()),
             Action::BankSelect(_) => continue,
@@ -8087,7 +8261,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(groups.len(), 7, "one row per group");
+        assert_eq!(groups.len(), input::Group::ALL.len(), "one row per group");
         // the actions under the rows belong to the pads group: it is the open one
         let mut under: Vec<input::Group> = Vec::new();
         for r in &list {
@@ -8422,6 +8596,8 @@ mod tests {
             paths: config::PathsConfig::default(),
             routed: Routed::default(),
             screen: Screen::Pads,
+            fx_slot: 0,
+            fx_param: 0,
             settings_row: 0,
             help_open: false,
             pads: pads::Pads::default(),
@@ -10817,7 +10993,7 @@ mod tests {
                 .iter()
                 .map(|i| i.0.clone())
                 .collect();
-            assert_eq!(keys, ["F1", "F3", "F6", "F12"], "{screen:?}");
+            assert_eq!(keys, ["F1", "F3", "F4", "F6", "F12"], "{screen:?}");
         }
     }
 
@@ -13546,7 +13722,7 @@ mod tests {
         let mut app = test_app();
         app.apply(input::Action::PadEdit);
         let mut pages = Vec::new();
-        for _ in 0..21 {
+        for _ in 0..15 {
             app.apply(input::Action::ParamNext);
             pages.push((app.pads.param, app.pads.page().0));
         }
@@ -13567,12 +13743,6 @@ mod tests {
                 (Param::Drive, "FX"),
                 (Param::Send1, "FX"),
                 (Param::Send2, "FX"),
-                (Param::Fx1Kind, "FX1*"),
-                (Param::Fx1A, "FX1*"),
-                (Param::Fx1B, "FX1*"),
-                (Param::Fx2Kind, "FX2*"),
-                (Param::Fx2A, "FX2*"),
-                (Param::Fx2B, "FX2*"),
                 (Param::Volume, "TONE"),
             ]
         );
@@ -13762,7 +13932,7 @@ mod tests {
     }
 
     /// 56 "SOURCE last" (as 56 has it): K from the reso of FILTER picks the source; K past
-    /// SOURCE picks the drive on FX; K past FX2* comes back to the volume.
+    /// SOURCE picks the drive on FX; K past send 2 comes back to the volume.
     #[test]
     fn source_last() {
         use super::pads::Param;
@@ -13781,14 +13951,14 @@ mod tests {
         }
         app.apply(input::Action::ParamNext);
         assert_eq!((app.pads.param, app.pads.page().0), (Param::Drive, "FX"));
-        while app.pads.param != Param::Fx2B {
+        while app.pads.param != Param::Send2 {
             app.apply(input::Action::ParamNext);
         }
         app.apply(input::Action::ParamNext);
         assert_eq!(app.pads.param, Param::Volume);
         assert_eq!(
             super::pads::page_names(),
-            ["TONE", "ENV", "FILTER", "SOURCE", "FX", "FX1*", "FX2*"]
+            ["TONE", "ENV", "FILTER", "SOURCE", "FX"]
         );
     }
 
@@ -14511,16 +14681,16 @@ mod tests {
                 takeover: true,
             })
         };
-        // seven pages (56), a seventh each: the middle is SOURCE, at once, no pickup
+        // Five equal parts: the middle selects FILTER, without pickup.
         page(&mut app, 0.5);
-        assert_eq!(app.pads.page().0, "SOURCE");
-        assert_eq!(app.pads.param, P::Source);
+        assert_eq!(app.pads.page().0, "FILTER");
+        assert_eq!(app.pads.param, P::Filter);
         // a turn inside the same part keeps the pick
         app.apply(input::Action::ParamNext);
         page(&mut app, 0.52);
-        assert_eq!(app.pads.param, P::Start);
+        assert_eq!(app.pads.param, P::Cutoff);
         page(&mut app, 1.0);
-        assert_eq!(app.pads.page().0, "FX2*");
+        assert_eq!(app.pads.page().0, "FX");
         // a slice has one page: the knob keeps it
         app.apply(input::Action::Back);
         app.screen = input::Screen::Chop;
@@ -14983,6 +15153,675 @@ mod tests {
         app.mark_pads(v)
     }
 
+    fn fx_key(
+        app: &mut super::App,
+        code: ratatui::crossterm::event::KeyCode,
+        modifiers: ratatui::crossterm::event::KeyModifiers,
+    ) {
+        screen_key(app, app.screen, code, modifiers);
+    }
+
+    /// Scenario "Open the shared FX screen" (keyboard).
+    #[test]
+    fn open_the_shared_fx_screen() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let mut app = test_app();
+        app.pads.param = super::pads::Param::Send1;
+        fx_key(&mut app, K::Enter, M::NONE);
+        fx_key(&mut app, K::F(4), M::NONE);
+        assert_eq!(app.screen, Screen::Fx);
+        assert!(!app.edit);
+        let v = app.fx_view();
+        assert_eq!((v.selected, v.param), (0, 0));
+        assert_eq!(v.blocks[0].rows[1].0, "size");
+        assert_eq!(v.blocks[1].rows[1].0, "time");
+        let (map, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let help = line(&super::help_groups(&map, app.screen, &app.help_state()));
+        assert!(help.iter().any(|(_, t)| t.contains("FX 1 selected")));
+        let full = super::full_help(&map, Screen::Fx, true);
+        for text in [
+            "shared FX screen",
+            "shared FX block",
+            "effect parameter",
+            "picked value",
+        ] {
+            assert!(full.iter().any(|(_, t)| t.contains(text)), "{text}");
+        }
+        fx_key(&mut app, K::F(1), M::NONE);
+        assert!(app.help_open);
+        fx_key(&mut app, K::F(2), M::NONE);
+        assert_eq!(app.screen, Screen::Pads);
+        assert_eq!(app.pads.param, super::pads::Param::Send1);
+    }
+
+    #[test]
+    fn shared_fx_screen_renders_the_emitted_controls() {
+        use engine::Engine;
+        use engine::checks::{first_loud, first_non_finite, peak};
+        use engine::fx::FxSettings;
+        use engine::offline::{Event, Scenario, render, write_wav};
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        use std::path::Path;
+
+        let sr = 48_000;
+        let ms = |n: usize| sr as usize / 1000 * n;
+        let mut phase = 0.0f32;
+        let kick = (0..ms(300))
+            .map(|i| {
+                let t = i as f32 / sr as f32;
+                phase += std::f32::consts::TAU * (50.0 + 100.0 * (-t * 30.0).exp()) / sr as f32;
+                0.35 * phase.sin() * (-t * 9.0).exp()
+            })
+            .collect::<Vec<_>>();
+        let tone = engine::test_tone(sr, 4);
+        let sounds = vec![kick, tone];
+        let reverb = |size, tone| Command::SetFx {
+            slot: 0,
+            settings: FxSettings::Reverb { size, tone },
+        };
+        let delay = |time_ms, feedback| Command::SetFx {
+            slot: 1,
+            settings: FxSettings::Delay { time_ms, feedback },
+        };
+        let hit = |pad| Command::PadPress { pad, velocity: 1.0 };
+        let mut app = test_app();
+        let mut events = Vec::new();
+        let mut expected = Vec::new();
+        let capture = |app: &mut super::App, events: &mut Vec<Event>, frame| {
+            events.extend(
+                std::mem::take(&mut app.sent)
+                    .into_iter()
+                    .map(|cmd| Event { frame, cmd }),
+            );
+        };
+        for (pad, sends) in [(0, [0.65, 0.0]), (1, [0.0, 0.65])] {
+            let cmd = Command::SetPadSends { pad, sends };
+            app.send(cmd.clone());
+            expected.push(Event { frame: 0, cmd });
+        }
+        fx_key(&mut app, K::F(4), M::NONE);
+        assert_eq!(app.screen, Screen::Fx);
+        page_knob(&mut app, 0, 0.0);
+        page_knob(&mut app, 1, 0.7);
+        page_knob(&mut app, 2, 0.3);
+        capture(&mut app, &mut events, 0);
+        expected.extend([reverb(0.7, 0.5), reverb(0.7, 0.3)].map(|cmd| Event { frame: 0, cmd }));
+
+        fx_key(&mut app, K::Char('1'), M::SHIFT);
+        capture(&mut app, &mut events, ms(100));
+        expected.push(Event {
+            frame: ms(100),
+            cmd: hit(0),
+        });
+        app.apply(Action::PadRelease { pad: 0 });
+        capture(&mut app, &mut events, ms(120));
+        expected.push(Event {
+            frame: ms(120),
+            cmd: Command::PadRelease { pad: 0 },
+        });
+
+        fx_key(&mut app, K::Tab, M::NONE);
+        assert_eq!(app.fx_slot, 1);
+        assert!(app.sent.is_empty(), "slot selection sends no audio command");
+        page_knob(&mut app, 0, 1.0);
+        page_knob(&mut app, 1, 0.4);
+        page_knob(&mut app, 2, 0.4);
+        capture(&mut app, &mut events, ms(1000));
+        expected.extend([delay(328.0, 0.4), delay(328.0, 0.36)].map(|cmd| Event {
+            frame: ms(1000),
+            cmd,
+        }));
+
+        for (at, key, commands) in [
+            (1100, None, Vec::new()),
+            (2300, Some(K::Char('l')), vec![delay(338.0, 0.36)]),
+            (
+                3500,
+                Some(K::Char('z')),
+                vec![reverb(0.7, 0.3), delay(328.0, 0.36)],
+            ),
+        ] {
+            if let Some(key) = key {
+                if key == K::Char('l') {
+                    fx_key(&mut app, K::Char('k'), M::NONE);
+                    fx_key(&mut app, key, M::SHIFT);
+                } else {
+                    fx_key(&mut app, key, M::CONTROL);
+                }
+                capture(&mut app, &mut events, ms(at - 100));
+                expected.extend(commands.into_iter().map(|cmd| Event {
+                    frame: ms(at - 100),
+                    cmd,
+                }));
+            }
+            fx_key(&mut app, K::Char('2'), M::SHIFT);
+            capture(&mut app, &mut events, ms(at));
+            expected.push(Event {
+                frame: ms(at),
+                cmd: hit(1),
+            });
+            app.apply(Action::PadRelease { pad: 1 });
+            capture(&mut app, &mut events, ms(at + 20));
+            expected.push(Event {
+                frame: ms(at + 20),
+                cmd: Command::PadRelease { pad: 1 },
+            });
+        }
+        assert_eq!(app.pads.fx[1].time_ms, 328, "undo restores the delay time");
+        fx_key(&mut app, K::BackTab, M::SHIFT);
+        assert_eq!(app.fx_slot, 0);
+        assert!(
+            app.sent.is_empty(),
+            "returning to FX 1 sends no audio command"
+        );
+        page_knob(&mut app, 1, 0.9);
+        capture(&mut app, &mut events, ms(4600));
+        expected.push(Event {
+            frame: ms(4600),
+            cmd: reverb(0.9, 0.3),
+        });
+        fx_key(&mut app, K::Char('1'), M::SHIFT);
+        capture(&mut app, &mut events, ms(4700));
+        expected.push(Event {
+            frame: ms(4700),
+            cmd: hit(0),
+        });
+        app.apply(Action::PadRelease { pad: 0 });
+        capture(&mut app, &mut events, ms(4720));
+        expected.push(Event {
+            frame: ms(4720),
+            cmd: Command::PadRelease { pad: 0 },
+        });
+
+        let frames = ms(7500);
+        let run = |events| {
+            render(
+                &mut Engine::with_sounds(sr, Vec::new(), sounds.clone()),
+                &Scenario {
+                    sample_rate: sr,
+                    frames,
+                    events,
+                },
+                128,
+            )
+        };
+        let (left, right) = run(events
+            .iter()
+            .map(|e| Event {
+                frame: e.frame,
+                cmd: e.cmd.clone(),
+            })
+            .collect());
+        let (want_left, want_right) = run(expected);
+        for (channel, want) in [(&left, &want_left), (&right, &want_right)] {
+            assert_eq!(first_non_finite(channel), None, "no NaN or infinity");
+            assert!(peak(channel) < 1.0, "no clipping");
+            assert_eq!(first_loud(channel, 0..ms(100), 0.0), None);
+            for (frame, (got, want)) in channel.iter().zip(want).enumerate() {
+                assert_eq!(got, want, "UI and direct controls differ at frame {frame}");
+            }
+        }
+        assert!(
+            peak(&left[ms(450)..ms(900)]) > 1e-4,
+            "the reverb has a tail"
+        );
+        assert!(
+            peak(&left[ms(2100)..ms(2200)]) > 1e-4,
+            "the delay has a tail"
+        );
+        for at in [100, 1100, 2300, 3500, 4700] {
+            let frame = ms(at);
+            let without_hit = events
+                .iter()
+                .filter(|e| !(e.frame == frame && matches!(e.cmd, Command::PadPress { .. })))
+                .map(|e| Event {
+                    frame: e.frame,
+                    cmd: e.cmd.clone(),
+                })
+                .collect();
+            let (without_left, without_right) = run(without_hit);
+            for (channel, without) in [(&left, &without_left), (&right, &without_right)] {
+                assert!(
+                    channel[..frame]
+                        .iter()
+                        .zip(&without[..frame])
+                        .all(|(a, b)| a == b),
+                    "no early hit at {at} ms"
+                );
+                let difference = channel[frame..frame + 3]
+                    .iter()
+                    .zip(&without[frame..frame + 3])
+                    .map(|(got, without)| got - without)
+                    .collect::<Vec<_>>();
+                let onset = first_loud(&difference, 0..difference.len(), 1e-7)
+                    .expect("the pad hit must reach the output");
+                assert!(onset <= 1, "hit at {at} ms is {onset} samples late");
+            }
+        }
+        let out =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/82-shared-fx-screen.wav");
+        write_wav(&out, sr, &left, &right).unwrap();
+    }
+
+    /// Scenario "Select the next shared effect" (pad-playback).
+    #[test]
+    fn select_the_next_shared_effect() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let mut app = test_app();
+        fx_key(&mut app, K::F(4), M::NONE);
+        let before = app.pads.fx;
+        app.sent.clear();
+        fx_key(&mut app, K::Tab, M::NONE);
+        assert_eq!(app.fx_view().selected, 1);
+        assert_eq!(app.help_state().page, "FX 2");
+        fx_key(&mut app, K::BackTab, M::SHIFT);
+        assert_eq!(app.fx_view().selected, 0);
+        assert_eq!(app.pads.fx, before);
+        assert!(app.sent.is_empty());
+        assert!(app.history.is_empty());
+        assert!(app.session_dirty.is_none());
+    }
+
+    /// Scenario "The same knobs control the selected effect" (pad-playback).
+    #[test]
+    fn the_same_knobs_control_the_selected_effect() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let mut app = test_app();
+        let pads = app.before().pads;
+        fx_key(&mut app, K::F(4), M::NONE);
+        page_knob(&mut app, 0, 0.8);
+        page_knob(&mut app, 1, 0.8);
+        page_knob(&mut app, 2, 0.3);
+        let one = app.pads.fx[0];
+        assert_eq!(one.kind, engine::fx::FxKind::Delay);
+        assert!(one.time_ms > 250);
+        assert_eq!(one.feedback, 27);
+        fx_key(&mut app, K::Tab, M::NONE);
+        page_knob(&mut app, 0, 0.1);
+        page_knob(&mut app, 1, 0.7);
+        page_knob(&mut app, 2, 0.2);
+        assert_eq!(app.pads.fx[0], one);
+        assert_eq!(app.pads.fx[1].kind, engine::fx::FxKind::Reverb);
+        assert_eq!((app.pads.fx[1].size, app.pads.fx[1].tone), (70, 20));
+        assert_eq!(app.before().pads, pads);
+        assert!(app.session_dirty.is_some());
+        assert_eq!(app.pads.param, super::pads::Param::Volume);
+        // The page selector acts without an edit mode or pickup and keeps the pick
+        // when its position stays in the same half.
+        fx_key(&mut app, K::Char('k'), M::NONE);
+        for value in [0.9, 0.0] {
+            app.midi_event(super::midi::Event::Param {
+                port: "X".into(),
+                control: "page".into(),
+                param: input::midi::Param::Page,
+                value,
+                takeover: true,
+            });
+            assert_eq!(app.fx_slot, usize::from(value >= 0.5));
+            assert_eq!(app.fx_param, usize::from(value >= 0.5));
+        }
+        let before = app.pads.fx;
+        page_knob(&mut app, 3, 1.0);
+        assert_eq!(app.pads.fx, before, "there is no fourth parameter");
+    }
+
+    /// Scenario "Takeover is separate for shared effects" (pad-playback).
+    #[test]
+    fn takeover_is_separate_for_shared_effects() {
+        use input::midi::{Param as P, Response};
+        let turn = |app: &mut super::App, port: &str, param, value| {
+            app.midi_event(super::midi::Event::Param {
+                port: port.into(),
+                control: "knob".into(),
+                param,
+                value,
+                takeover: true,
+            });
+        };
+        let mut app = test_app();
+        app.apply(Action::ScreenFx);
+        app.takeover.response = Response::Pickup;
+        let current = app.pads.fx_pos(super::pads::Param::Fx1A);
+        turn(&mut app, "A", P::Slot(1), current);
+        turn(&mut app, "A", P::Slot(1), 0.1);
+        assert_eq!(app.pads.fx[0].size, 10);
+        app.apply(Action::PageNext);
+        let before = app.pads.fx;
+        turn(&mut app, "A", P::Slot(1), 0.95);
+        assert_eq!(app.pads.fx, before);
+        assert!(app.fx_view().pickup.is_some());
+        let current = app.pads.fx_pos(super::pads::Param::Fx2A);
+        turn(&mut app, "A", P::Slot(1), current);
+        turn(&mut app, "A", P::Slot(1), 0.6);
+        assert_ne!(app.pads.fx[1], before[1]);
+        let caught = app.pads.fx;
+        turn(&mut app, "B", P::Slot(1), 0.95);
+        assert_eq!(app.pads.fx, caught, "another device must catch its value");
+        turn(&mut app, "A", P::Slot(2), 0.95);
+        assert_eq!(
+            app.pads.fx, caught,
+            "another parameter must catch its value"
+        );
+        // The same control must catch again when time becomes size.
+        turn(&mut app, "A", P::Slot(1), 0.6);
+        page_knob(&mut app, 0, 0.0);
+        let changed = app.pads.fx;
+        turn(&mut app, "A", P::Slot(1), 0.95);
+        assert_eq!(
+            app.pads.fx, changed,
+            "a different effect type is a new target"
+        );
+    }
+
+    #[test]
+    fn fx_scale_and_jump_follow_the_selected_slot() {
+        use input::midi::{Param, Response};
+        let turn = |app: &mut super::App, value| {
+            app.midi_event(super::midi::Event::Param {
+                port: "A".into(),
+                control: "k2".into(),
+                param: Param::Slot(1),
+                value,
+                takeover: true,
+            });
+        };
+        for response in [Response::Scale, Response::Jump] {
+            let mut app = test_app();
+            app.apply(Action::ScreenFx);
+            app.takeover.response = response;
+            turn(&mut app, 0.1);
+            turn(&mut app, 0.2);
+            let one = app.pads.fx[0];
+            app.apply(Action::PageNext);
+            let two = app.pads.fx[1];
+            turn(&mut app, 0.9);
+            if response == Response::Scale {
+                assert_eq!(app.pads.fx[1], two, "new target starts from its own value");
+            } else {
+                assert_ne!(app.pads.fx[1], two, "jump applies the first position");
+            }
+            turn(&mut app, 1.0);
+            assert_eq!(app.pads.fx[1].time_ms, 2_000);
+            assert_eq!(app.pads.fx[0], one);
+        }
+    }
+
+    #[test]
+    fn fx_keyboard_values_and_learn_use_the_fx_selection() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let mut app = test_app();
+        app.pads.param = super::pads::Param::Send2;
+        fx_key(&mut app, K::F(4), M::NONE);
+        fx_key(&mut app, K::Tab, M::NONE);
+        fx_key(&mut app, K::Char('k'), M::NONE);
+        let time = app.pads.fx[1].time_ms;
+        fx_key(&mut app, K::Char('l'), M::SHIFT);
+        assert_eq!(app.pads.fx[1].time_ms, time + 10);
+        fx_key(&mut app, K::Char('j'), M::SHIFT);
+        assert_eq!(app.pads.fx[1].time_ms, time);
+        fx_key(&mut app, K::F(10), M::NONE);
+        assert_eq!(app.learn_group(), input::Group::Fx);
+        assert_eq!(picked(&app), ("edit.param_2", "time".into()));
+        assert_eq!(app.fx_view().lit, Some(1));
+        assert_eq!(app.pads.param, super::pads::Param::Send2);
+    }
+
+    /// Scenario "Undo a shared effect on the FX screen" (pad-playback): keyboard,
+    /// MIDI, distinct slot undo steps, and project save/reload use the same settings.
+    #[test]
+    fn undo_a_shared_effect_on_the_fx_screen() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let mut app = test_app();
+        fx_key(&mut app, K::F(4), M::NONE);
+        let original = app.pads.fx;
+        // Russian physical K, L and I select and change the same parameters.
+        fx_key(&mut app, K::Char('л'), M::NONE);
+        fx_key(&mut app, K::Char('д'), M::NONE);
+        assert_eq!(app.fx_param, 1);
+        assert_ne!(app.pads.fx, original);
+        fx_key(&mut app, K::Char('ш'), M::NONE);
+        assert_eq!(app.fx_param, 0);
+        fx_key(&mut app, K::Char('я'), M::CONTROL);
+        assert_eq!(app.pads.fx, original);
+        page_knob(&mut app, 2, 0.2);
+        let first = app.pads.fx;
+        fx_key(&mut app, K::Tab, M::NONE);
+        page_knob(&mut app, 2, 0.8);
+        assert_eq!(
+            app.history.len(),
+            2,
+            "different slots do not merge undo steps"
+        );
+        fx_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(app.pads.fx, first);
+        let dir = tmp_dir("fx-reload");
+        std::fs::create_dir_all(&dir).unwrap();
+        app.session_path = dir.join("project.toml");
+        app.session_ok = true;
+        assert!(app.save_session());
+        let mut restored = test_app();
+        restored.apply_session(super::session::load(&app.session_path).unwrap());
+        assert_eq!(restored.pads.fx, first);
+        fx_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(app.pads.fx, original);
+        assert!(app.save_session());
+        restored.apply_session(super::session::load(&app.session_path).unwrap());
+        assert_eq!(restored.pads.fx, original);
+        assert!(
+            app.sent
+                .iter()
+                .any(|c| matches!(c, Command::SetFx { slot: 1, .. }))
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Scenario "Play pads on the FX screen" (keyboard): hits and releases retain
+    /// their bank, velocity and shared effect selection in either keyboard layout.
+    #[test]
+    fn play_pads_on_the_fx_screen() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyEvent, KeyEventKind, KeyModifiers as M};
+        let mut app = test_app();
+        let (map, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        fx_key(&mut app, K::F(4), M::NONE);
+        fx_key(&mut app, K::Tab, M::NONE);
+        fx_key(&mut app, K::Char('k'), M::NONE);
+        app.apply(Action::BankSelect(2));
+        app.sent.clear();
+        for c in ['q', 'й'] {
+            fx_key(&mut app, K::Char(c), M::SHIFT);
+            let release = KeyEvent::new_with_kind(K::Char(c), M::NONE, KeyEventKind::Release);
+            app.apply(map.resolve(app.screen, &release).unwrap());
+        }
+        assert_eq!((app.fx_slot, app.fx_param), (1, 1));
+        assert_eq!(app.pads.param, super::pads::Param::Volume);
+        assert_eq!(
+            app.sent
+                .iter()
+                .filter(|c| matches!(c,
+            Command::PadPress { pad: 36, velocity } if *velocity == 1.0))
+                .count(),
+            2
+        );
+        assert_eq!(
+            app.sent
+                .iter()
+                .filter(|c| matches!(c, Command::PadRelease { pad: 36 }))
+                .count(),
+            2
+        );
+        app.midi_event(super::midi::Event::PadHit {
+            abs: 37,
+            accepted: true,
+        });
+        assert_eq!(app.pads.selected_abs(), 37);
+        assert_eq!((app.fx_slot, app.fx_param), (1, 1));
+    }
+
+    #[test]
+    fn clear_a_shared_effect_knob_assignment() {
+        use input::midi::{Param as P, Resolved};
+        use ratatui::crossterm::event::KeyCode as K;
+        for reassign in [false, true] {
+            let dir = tmp_dir(if reassign {
+                "fx-reassign-clear"
+            } else {
+                "fx-clear"
+            });
+            std::fs::create_dir_all(&dir).unwrap();
+            let cfg = dir.join("config.toml");
+            std::fs::write(&cfg, "[devices]\nseeded = [\"default\"]\n[midi.default.chop_edit]\n\"cc 24\" = \"edit.param_1\"\n[midi.default.pads_edit]\n\"cc 80\" = \"edit.param_1\"\n").unwrap();
+            let mut app = test_app();
+            app.user_path = Some(cfg.clone());
+            let loaded = super::config::load_from(&cfg).config;
+            app.learned = loaded.midi;
+            app.seeded = loaded.devices.seeded;
+            app.migrate_fx_bindings();
+            app.midi_devices.push(("X".into(), "default".into()));
+            app.apply(Action::ScreenFx);
+            assert!(matches!(
+                resolved(&app, Screen::Fx, false, knob(80, 127)),
+                Some(Resolved::Param {
+                    param: P::Slot(0),
+                    ..
+                })
+            ));
+            assert_eq!(resolved(&app, Screen::Fx, false, knob(24, 127)), None);
+            app.apply(Action::LearnToggle);
+            app.learn_pick("edit.param_1", "effect type".into());
+            if reassign {
+                turn_knob(&mut app, 81);
+                learn_press(&mut app, K::Enter);
+                app.learn_pick("edit.param_1", "effect type".into());
+                assert_eq!(resolved(&app, Screen::Fx, false, knob(80, 127)), None);
+            }
+            learn_press(&mut app, K::Backspace);
+            learn_press(&mut app, K::Enter);
+            learn_press(&mut app, K::Esc);
+            assert!(app.learned["default"]["fx"].is_empty());
+            for cc in [24, 80, 81] {
+                assert_eq!(resolved(&app, Screen::Fx, false, knob(cc, 127)), None);
+            }
+            let mut again = test_app();
+            again.user_path = Some(cfg.clone());
+            let loaded = super::config::load_from(&cfg).config;
+            again.learned = loaded.midi;
+            again.seeded = loaded.devices.seeded;
+            assert_eq!(again.drop_dead_bindings(), None);
+            again.migrate_fx_bindings();
+            again.midi_event(super::midi::Event::Connected {
+                port: "X".into(),
+                profile: "default".into(),
+            });
+            assert!(again.learned["default"]["fx"].is_empty());
+            for cc in [24, 80, 81] {
+                assert_eq!(resolved(&again, Screen::Fx, false, knob(cc, 127)), None);
+            }
+            assert_eq!(
+                again.live_profiles()[0].assignment(input::Group::Fx.scope(), "edit.param_1"),
+                None
+            );
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn replaced_page_knobs_stay_replaced() {
+        use input::midi::{Key, Param as P, Resolved};
+        let mut app = test_app();
+        app.profiles.push(
+            input::midi::Profile::from_toml(
+                "xsession-pro.toml",
+                include_str!("../../../config/devices/xsession-pro.toml"),
+            )
+            .unwrap(),
+        );
+        super::learn::assign(
+            &mut app.learned,
+            "X-Session Pro",
+            input::Group::PadsEdit,
+            Key::Cc(80),
+            "edit.param_1",
+        );
+        app.midi_event(super::midi::Event::Connected {
+            port: "X".into(),
+            profile: "X-Session Pro".into(),
+        });
+        assert_eq!(
+            app.learned["X-Session Pro"]["fx"]
+                .get("cc 80")
+                .map(String::as_str),
+            Some("edit.param_1")
+        );
+        assert!(matches!(
+            resolved(&app, Screen::Fx, false, knob(80, 127)),
+            Some(Resolved::Param {
+                param: P::Slot(0),
+                ..
+            })
+        ));
+        assert_eq!(resolved(&app, Screen::Fx, false, knob(24, 127)), None);
+        assert_eq!(
+            app.live_profiles()[0].assignment(input::Group::Fx.scope(), "edit.param_1"),
+            Some("cc 80".into())
+        );
+    }
+
+    #[test]
+    fn fx_learned_page_controls_and_old_bindings_keep_their_meaning() {
+        use input::midi::{Key, Param as P, Resolved};
+        use ratatui::crossterm::event::KeyCode as K;
+        let mut app = learning_on(Screen::Fx, false);
+        assert_eq!(app.learn_group(), input::Group::Fx);
+        super::learn::assign(
+            &mut app.learned,
+            "default",
+            input::Group::PadsEdit,
+            Key::Cc(90),
+            "pad.fx1_size",
+        );
+        for (i, cc) in [80, 81, 82, 83].into_iter().enumerate() {
+            if i == 0 {
+                learn_press(&mut app, K::Char('k'));
+            }
+            assert_eq!(picked(&app).0, app.learn_params()[i].0);
+            turn_knob(&mut app, cc);
+            learn_press(&mut app, K::Enter);
+        }
+        assert!(app.learned["default"]["fx"].contains_key("cc 80"));
+        learn_press(&mut app, K::Esc);
+        for (cc, expected) in [
+            (80, P::Slot(0)),
+            (81, P::Slot(1)),
+            (82, P::Slot(2)),
+            (83, P::Page),
+        ] {
+            let r = resolved(&app, Screen::Fx, false, knob(cc, 127));
+            assert!(matches!(r, Some(Resolved::Param { param, .. }) if param == expected));
+            feed_resolved(&mut app, r);
+        }
+        assert_eq!(app.fx_slot, 1);
+        // An older direct binding continues to address FX 1 on Pads and on FX.
+        // The legacy action names are resolved by the profile, not by the FX pick.
+        let old = app.live_profiles()[0].resolve_in(Screen::Fx, false, knob(90, 20));
+        assert!(matches!(
+            old,
+            Some(Resolved::Param {
+                param: P::PadEffect(4),
+                ..
+            })
+        ));
+        feed_resolved(&mut app, old);
+        assert!((app.pads.fx_pos(super::pads::Param::Fx1A) - 20.0 / 127.0).abs() < 0.01);
+        app.apply(Action::ScreenPads);
+        let old = app.live_profiles()[0].resolve_in(Screen::Pads, true, knob(90, 90));
+        feed_resolved(&mut app, old);
+        assert!((app.pads.fx_pos(super::pads::Param::Fx1A) - 90.0 / 127.0).abs() < 0.01);
+        assert_eq!(app.pads.param, super::pads::Param::Volume);
+        app.apply(Action::ScreenFx);
+        app.apply(Action::ScreenSettings);
+        assert_eq!(app.midi_open, vec![input::Group::Fx]);
+    }
+
     /// Turns knob k of the edit page to `value`.
     fn page_knob(app: &mut super::App, k: u8, value: f32) {
         app.midi_event(super::midi::Event::Param {
@@ -15023,17 +15862,13 @@ mod tests {
         assert!(v.slot.is_none(), "no slot block on the FX page");
     }
 
-    /// 56 "A slot page": on FX2* knob 1 turns the delay into a reverb; knobs 2 and 3 turn
-    /// its size and tone; the block says `FX 2 * shared`, the change line `all pads`; on
-    /// TONE no FX 2 block.
+    /// 82 "A slot page": the shared FX screen edits a slot, not a pad.
     #[test]
     fn a_slot_page() {
         use engine::fx::FxKind;
         let mut app = test_app();
-        app.apply(Action::PadEdit);
-        while app.pads.page().0 != "FX2*" {
-            app.apply(Action::PageNext);
-        }
+        app.apply(Action::ScreenFx);
+        app.apply(Action::PageNext);
         assert_eq!(app.pads.fx[1].kind, FxKind::Delay);
         app.sent.clear();
         page_knob(&mut app, 0, 0.1);
@@ -15046,16 +15881,13 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, Command::SetFx { slot: 1, .. }))
         );
-        let v = panel_now(&mut app);
-        let (page, title, rows) = v.slot.clone().expect("the slot block on its page");
-        assert_eq!((page, title.as_str()), ("FX2*", "FX 2 * shared"));
-        assert_eq!(rows[1].1.trim(), "size");
-        assert_eq!(v.scope, "all pads");
+        let v = app.fx_view();
+        assert_eq!(v.selected, 1);
+        assert_eq!(v.blocks[1].rows[1].0, "size");
         // the slot keeps the delay's own values for when it comes back
         assert_eq!(app.pads.fx[1].time_ms, 250);
-        while app.pads.page().0 != "TONE" {
-            app.apply(Action::PageNext);
-        }
+        app.apply(Action::ScreenPads);
+        assert_eq!(app.pads.page().0, "TONE");
         assert!(panel_now(&mut app).slot.is_none());
     }
 
@@ -15075,7 +15907,7 @@ mod tests {
         page_knob(&mut app, 1, 0.3);
         assert_eq!((app.pads.sends[q][0], app.pads.sends[w][0]), (30, 30));
         let before = (app.pads.drive, app.pads.sends);
-        app.apply(Action::PageNext);
+        app.apply(Action::ScreenFx);
         page_knob(&mut app, 1, 0.9);
         assert_eq!(
             (app.pads.drive, app.pads.sends),
@@ -15671,10 +16503,8 @@ mod tests {
     fn undo_a_shared_slot() {
         use engine::fx::FxKind;
         let mut app = undo_app();
-        app.apply(Action::PadEdit);
-        while app.pads.page().0 != "FX2*" {
-            app.apply(Action::PageNext);
-        }
+        app.apply(Action::ScreenFx);
+        app.apply(Action::PageNext);
         app.apply(Action::EditValue {
             up: true,
             fine: true,
@@ -18508,6 +19338,605 @@ mod tests {
         assert!((gain - 10f32.powf(-3.0 / 20.0)).abs() < 1e-6, "{gain}");
         let rows = pads_screen(&mut app);
         assert!(rows[0].contains("master -3 dB"), "{}", rows[0]);
+    }
+
+    fn recorded_workflow_event(app: &mut super::App, event: ratatui::crossterm::event::KeyEvent) {
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        app.dismiss_startup();
+        if app.pad_naming.is_some() && app.pad_name_key(&event) {
+            return;
+        }
+        if app.project_picker.is_some() && app.project_picker_key(&event) {
+            return;
+        }
+        if app.screen_learn.is_some() && app.learn_key(&keymap, &event) {
+            return;
+        }
+        if app.screen == Screen::Files && app.browser.editing && app.filter_key(&event) {
+            return;
+        }
+        let action = keymap.resolve_in(app.screen, app.edit_keys(), &event);
+        assert!(
+            action.is_some() || event.kind == ratatui::crossterm::event::KeyEventKind::Release,
+            "unbound recorded event: {event:?} on {:?}",
+            app.screen
+        );
+        if let Some(action) = action {
+            assert!(!app.apply(action));
+        }
+    }
+
+    fn recorded_workflow_key(
+        app: &mut super::App,
+        code: ratatui::crossterm::event::KeyCode,
+        modifiers: ratatui::crossterm::event::KeyModifiers,
+    ) {
+        recorded_workflow_event(
+            app,
+            ratatui::crossterm::event::KeyEvent::new(code, modifiers),
+        );
+    }
+
+    fn recorded_workflow_text(app: &mut super::App, text: &str) {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        for c in text.chars() {
+            recorded_workflow_key(app, K::Char(c), M::NONE);
+        }
+    }
+
+    fn recorded_workflow_hit(app: &mut super::App, key: char) {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+        recorded_workflow_event(app, KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+        recorded_workflow_event(
+            app,
+            KeyEvent::new_with_kind(
+                KeyCode::Char(key),
+                KeyModifiers::NONE,
+                KeyEventKind::Release,
+            ),
+        );
+    }
+
+    fn recorded_workflow_app(
+        name: &str,
+    ) -> (
+        super::App,
+        std::path::PathBuf,
+        std::sync::mpsc::Receiver<super::loader::Request>,
+    ) {
+        let root = tmp_dir(name);
+        let samples = root.join("samples");
+        std::fs::create_dir_all(&samples).unwrap();
+        let wave: Vec<_> = ring().into_iter().step_by(2).collect();
+        for name in ["break.wav", "snare.wav"] {
+            engine::offline::write_wav(&samples.join(name), 48_000, &wave, &wave).unwrap();
+        }
+        let mut app = test_app();
+        app.paths.projects = root.join("projects");
+        app.paths.samples = samples.clone();
+        app.browser = super::browser::Browser::new(Some(samples));
+        app.session_path = root.join("scratch.toml");
+        app.user_path = Some(root.join("config.toml"));
+        let (requests, incoming) = std::sync::mpsc::channel();
+        let (_, replies) = std::sync::mpsc::channel();
+        app.loader = Some((requests, replies));
+        (app, root, incoming)
+    }
+
+    fn recorded_workflow_loads(
+        app: &mut super::App,
+        incoming: &std::sync::mpsc::Receiver<super::loader::Request>,
+    ) {
+        while let Ok(request) = incoming.try_recv() {
+            let sound = super::loader::decode(&request.path, app.rate, |_| {}).unwrap();
+            app.loader_reply(super::loader::Reply::Loaded {
+                pad: request.pad,
+                generation: request.generation,
+                path: request.path,
+                sound: std::sync::Arc::new(sound),
+            });
+        }
+    }
+
+    fn recorded_workflow_project(app: &mut super::App, name: &str) {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        recorded_workflow_key(app, K::Char('p'), M::CONTROL);
+        recorded_workflow_text(app, name);
+        recorded_workflow_key(app, K::Enter, M::NONE);
+        assert!(app.project_picker.is_none());
+        assert_eq!(app.project.as_ref().unwrap().name, name);
+    }
+
+    fn recorded_workflow_file(
+        app: &mut super::App,
+        incoming: &std::sync::mpsc::Receiver<super::loader::Request>,
+        pad: char,
+        filter: &str,
+    ) {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        recorded_workflow_key(app, K::F(2), M::NONE);
+        recorded_workflow_hit(app, pad);
+        let selected = app.pads.selected_abs();
+        recorded_workflow_key(app, K::F(6), M::NONE);
+        if !app.browser.filter.is_empty() {
+            recorded_workflow_key(app, K::Esc, M::NONE);
+        }
+        recorded_workflow_key(app, K::Char('/'), M::NONE);
+        recorded_workflow_text(app, filter);
+        recorded_workflow_key(app, K::Enter, M::NONE);
+        assert_eq!(app.browser.entries.len(), 1);
+        recorded_workflow_key(app, K::Enter, M::CONTROL);
+        recorded_workflow_loads(app, incoming);
+        assert_eq!(app.screen, Screen::Pads);
+        assert_eq!(app.pads.selected_abs(), selected);
+        assert!(app.pads.sound[selected].is_some());
+        assert!(app.pads.loading[selected].is_none());
+    }
+
+    #[test]
+    fn recorded_old_workflow_and_shared_fx_save_and_reopen() {
+        use super::pads::Param;
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let (mut app, root, incoming) = recorded_workflow_app("recorded-fx-projects");
+        recorded_workflow_project(&mut app, "A");
+        recorded_workflow_file(&mut app, &incoming, 'q', "break");
+        let sound = app.pads.sound[4].clone().unwrap();
+        recorded_workflow_key(&mut app, K::Char('n'), M::CONTROL);
+        for _ in 0.."break".len() {
+            recorded_workflow_key(&mut app, K::Backspace, M::NONE);
+        }
+        let sent = app.sent.len();
+        recorded_workflow_text(&mut app, "Бочка");
+        let mut view = panel_now(&mut app);
+        super::preview_pad_name(&mut view, app.pads.bank, app.pad_naming.as_ref());
+        assert_eq!(view.pads[4].name, "Бочка");
+        assert!(view.pads[4].naming);
+        assert_eq!(app.sent.len(), sent, "name input does not play pads");
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_key(&mut app, K::Char('n'), M::CONTROL);
+        recorded_workflow_text(&mut app, "wrong");
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert_eq!(super::pad_name(&app.pads, 4), "Бочка");
+        assert!(std::sync::Arc::ptr_eq(
+            app.pads.sound[4].as_ref().unwrap(),
+            &sound
+        ));
+
+        recorded_workflow_key(&mut app, K::F(6), M::NONE);
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        recorded_workflow_key(&mut app, K::Char('/'), M::NONE);
+        let sent = app.sent.len();
+        recorded_workflow_text(&mut app, "snare");
+        assert_eq!(app.browser.entries[0].name, "snare.wav");
+        assert!(
+            !app.sent[sent..]
+                .iter()
+                .any(|c| matches!(c, Command::PadPress { .. }))
+        );
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        assert!(!app.browser.editing);
+        assert_eq!(app.browser.filter, "snare");
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert_eq!(app.screen, Screen::Files);
+        assert_eq!(app.browser.entries.len(), 2);
+        recorded_workflow_key(&mut app, K::Char('/'), M::NONE);
+        recorded_workflow_text(&mut app, "break");
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(!app.browser.editing);
+        assert!(app.browser.filter.is_empty());
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert_eq!(app.screen, Screen::Pads);
+        recorded_workflow_loads(&mut app, &incoming);
+
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        for (page, param) in [
+            ("TONE", Param::Volume),
+            ("ENV", Param::Attack),
+            ("FILTER", Param::Filter),
+            ("SOURCE", Param::Source),
+            ("FX", Param::Drive),
+        ] {
+            assert_eq!(app.pads.page().0, page);
+            assert_eq!(app.pads.param, param);
+            assert_eq!(panel_now(&mut app).edit, Some(page));
+            assert_eq!(app.help_state().scope, "pad Q");
+            if page != "FX" {
+                recorded_workflow_key(&mut app, K::Tab, M::NONE);
+            }
+        }
+        page_knob(&mut app, 0, 0.4);
+        page_knob(&mut app, 1, 0.2);
+        page_knob(&mut app, 2, 0.5);
+        assert_eq!((app.pads.drive[4], app.pads.sends[4]), (40, [20, 50]));
+        assert_eq!(app.pads.sends[5], [0, 0]);
+        recorded_workflow_key(&mut app, K::Char('k'), M::NONE);
+        assert_eq!(app.pads.param, Param::Send1);
+        let pad = app.pads.snapshot(4);
+        let original_fx = app.pads.fx;
+        recorded_workflow_key(&mut app, K::F(4), M::NONE);
+        assert!(!app.edit);
+        page_knob(&mut app, 1, 0.8);
+        page_knob(&mut app, 2, 0.3);
+        let first = app.pads.fx;
+        assert_eq!((first[0].size, first[0].tone), (80, 30));
+        recorded_workflow_key(&mut app, K::Tab, M::NONE);
+        assert_eq!(app.pads.fx, first);
+        page_knob(&mut app, 0, 0.1);
+        page_knob(&mut app, 1, 0.6);
+        page_knob(&mut app, 2, 0.2);
+        assert_eq!(app.pads.fx[0], first[0]);
+        assert_eq!((app.pads.fx[1].size, app.pads.fx[1].tone), (60, 20));
+        recorded_workflow_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(app.pads.fx[1].tone, first[1].tone);
+        assert_eq!(app.pads.fx[1].size, 60);
+        page_knob(&mut app, 2, 0.2);
+        let saved_fx = app.pads.fx;
+        assert_ne!(saved_fx, original_fx);
+        assert_eq!(app.pads.snapshot(4), pad);
+        recorded_workflow_key(&mut app, K::F(2), M::NONE);
+        assert_eq!(app.pads.param, Param::Send1);
+        assert_eq!(app.pads.page().0, "FX");
+        assert!(panel_now(&mut app).slot.is_none());
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_key(&mut app, K::Tab, M::NONE);
+        assert_eq!(app.pads.page().0, "TONE");
+        recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
+        assert_eq!(app.pads.page().0, "FX");
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+
+        recorded_workflow_key(&mut app, K::F(3), M::NONE);
+        assert_eq!(app.screen, Screen::Chop);
+        assert_eq!(app.chop_from, Some(4));
+        for _ in 0..8 {
+            recorded_workflow_key(&mut app, K::Char('l'), M::NONE);
+        }
+        let cut = app.chop.as_ref().unwrap().cursor;
+        assert!(cut > 0);
+        recorded_workflow_key(&mut app, K::Char('m'), M::NONE);
+        let slices = app.chop.as_ref().unwrap().slices();
+        assert_eq!(slices.len(), 2);
+        assert_eq!(slices[1].start, cut);
+        recorded_workflow_hit(&mut app, '1');
+        assert_eq!(app.chop.as_ref().unwrap().selected, 0);
+        recorded_workflow_key(&mut app, K::Char('p'), M::NONE);
+        recorded_workflow_hit(&mut app, 'e');
+        recorded_workflow_hit(&mut app, 'r');
+        assert!(app.pads.file[6].is_none());
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        assert!(app.plan.is_none());
+        for (abs, region) in [(6, slices[0]), (7, slices[1])] {
+            assert_eq!(app.pads.file[abs], app.pads.file[4]);
+            assert_eq!(app.pads.region[abs], region);
+            assert!(app.pads.link[abs].is_some());
+        }
+        recorded_workflow_key(&mut app, K::F(2), M::NONE);
+        recorded_workflow_key(&mut app, K::Char('s'), M::CONTROL);
+        assert_eq!(flash(&app), "Session saved");
+        let project_a = root.join("projects/A/project.toml");
+        assert!(project_a.is_file());
+        assert!(!root.join("scratch.toml").exists());
+        let stored = super::session::load(&project_a).unwrap();
+        assert_eq!(stored.pads["4"].name.as_deref(), Some("Бочка"));
+        let saved_pads = app.pads.to_session(None, app.rate).pads;
+
+        recorded_workflow_key(&mut app, K::Char('a'), M::CONTROL);
+        recorded_workflow_key(&mut app, K::Char('x'), M::CONTROL);
+        assert!(!app.pads.marked.is_empty() && app.pad_in_hand.is_some());
+        recorded_workflow_project(&mut app, "B");
+        recorded_workflow_loads(&mut app, &incoming);
+        assert!(app.pads.marked.is_empty() && !app.pads.marking);
+        assert!(app.pad_in_hand.is_none());
+        assert_eq!(app.pads.fx, original_fx);
+        assert!(app.pads.file.iter().all(Option::is_none));
+        assert!(app.pads.sound.iter().all(Option::is_none));
+        assert!(app.pads.custom_name.iter().all(Option::is_none));
+        assert!(app.pads.sends.iter().all(|s| *s == [0, 0]));
+        assert!(app.history.is_empty());
+        assert!(app.chop.is_none() && app.chops.is_empty() && app.older.is_empty());
+        assert!(app.plan.is_none() && app.ask.is_none());
+        assert!(app.browser.filter.is_empty() && app.browser.in_hand.is_none());
+        recorded_workflow_key(&mut app, K::Char('p'), M::CONTROL);
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_loads(&mut app, &incoming);
+        assert_eq!(app.project.as_ref().unwrap().name, "A");
+        assert_eq!(app.pads.fx, saved_fx);
+        assert_eq!(super::pad_name(&app.pads, 4), "Бочка");
+        assert_eq!(app.pads.to_session(None, app.rate).pads, saved_pads);
+        let mut restarted = test_app();
+        restarted.paths = app.paths.clone();
+        restarted.user_path = Some(root.join("config.toml"));
+        restarted.session_path = root.join("restarted-scratch.toml");
+        recorded_workflow_key(&mut restarted, K::Char('p'), M::CONTROL);
+        recorded_workflow_key(&mut restarted, K::Enter, M::NONE);
+        wait_for(&mut restarted, |a| {
+            a.pads.loading.iter().all(Option::is_none)
+        });
+        assert_eq!(restarted.pads.fx, saved_fx);
+        assert_eq!(
+            restarted.pads.to_session(None, restarted.rate).pads,
+            saved_pads
+        );
+        assert_eq!(super::pad_name(&restarted.pads, 4), "Бочка");
+        assert_eq!(restarted.pads.sends[4], [20, 50]);
+        assert_eq!(restarted.pads.region[6], slices[0]);
+        assert_eq!(restarted.pads.region[7], slices[1]);
+        assert!(restarted.pads.sound[6].is_some() && restarted.pads.sound[7].is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recorded_marked_pads_group_reset_clear_swap_and_undo_after_fx() {
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let (mut app, root, incoming) = recorded_workflow_app("recorded-fx-pad-edits");
+        recorded_workflow_project(&mut app, "A");
+        for (pad, file) in [('q', "break"), ('w', "snare")] {
+            recorded_workflow_file(&mut app, &incoming, pad, file);
+        }
+        recorded_workflow_key(&mut app, K::Char('n'), M::CONTROL);
+        recorded_workflow_text(&mut app, "!");
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        assert_eq!(super::pad_name(&app.pads, 5), "snare!");
+        recorded_workflow_key(&mut app, K::F(6), M::NONE);
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        recorded_workflow_key(&mut app, K::Char('/'), M::NONE);
+        recorded_workflow_text(&mut app, "break");
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        assert_eq!(app.browser.in_hand, Some(root.join("samples/break.wav")));
+        recorded_workflow_hit(&mut app, 'e');
+        recorded_workflow_loads(&mut app, &incoming);
+        assert!(app.pads.sound[6].is_some() && app.browser.in_hand.is_none());
+        recorded_workflow_key(&mut app, K::F(2), M::NONE);
+        recorded_workflow_key(&mut app, K::Char('m'), M::NONE);
+        for pad in ['q', 'w'] {
+            recorded_workflow_hit(&mut app, pad);
+        }
+        recorded_workflow_key(&mut app, K::Char('m'), M::NONE);
+        assert_eq!(app.pads.scope_pads(), [4, 5]);
+        assert_eq!(panel_now(&mut app).scope, "2 marked");
+        assert_eq!(app.pads.selected_abs(), 5);
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_key(&mut app, K::Char('k'), M::NONE);
+        recorded_workflow_key(&mut app, K::Char('k'), M::NONE);
+        recorded_workflow_key(&mut app, K::Char('l'), M::NONE);
+        assert_eq!(app.pads.group[4..7], [1, 1, 0]);
+        recorded_workflow_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(app.pads.group[4..7], [0, 0, 0]);
+        assert_eq!(flash(&app), "undo: mute group on 2 pads");
+        page_knob(&mut app, 2, 0.25);
+        assert_eq!(app.pads.group[4..7], [2, 2, 0]);
+        recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
+        assert_eq!(app.pads.page().0, "FX");
+        page_knob(&mut app, 0, 0.4);
+        page_knob(&mut app, 1, 0.3);
+        page_knob(&mut app, 2, 0.2);
+        assert_eq!(app.pads.sends[4..7], [[30, 20], [30, 20], [0, 0]]);
+        let before_fx: Vec<_> = (0..super::PADS).map(|p| app.pads.snapshot(p)).collect();
+        recorded_workflow_key(&mut app, K::F(4), M::NONE);
+        page_knob(&mut app, 1, 0.7);
+        let fx = app.pads.fx;
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before_fx
+        );
+        assert_eq!(app.pads.scope_pads(), [4, 5]);
+        recorded_workflow_key(&mut app, K::F(2), M::NONE);
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        let before: Vec<_> = (0..super::PADS).map(|p| app.pads.snapshot(p)).collect();
+        recorded_workflow_key(&mut app, K::Backspace, M::NONE);
+        assert_eq!(
+            app.ask.as_ref().unwrap().lines()[0],
+            "Reset 2 pads to clean?"
+        );
+        recorded_workflow_key(&mut app, K::Char('l'), M::NONE);
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before
+        );
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(app.ask.is_none() && app.edit);
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before
+        );
+        recorded_workflow_key(&mut app, K::Backspace, M::NONE);
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        for abs in [4, 5] {
+            assert_eq!(app.pads.group[abs], 0);
+            assert_eq!(app.pads.drive[abs], 0);
+            assert_eq!(app.pads.sends[abs], [0, 0]);
+            assert!(app.pads.file[abs].is_some() && app.pads.sound[abs].is_some());
+        }
+        assert!(app.edit);
+        assert_eq!(app.pads.fx, fx);
+        recorded_workflow_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(flash(&app), "undo: reset on 2 pads");
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before
+        );
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(!app.edit);
+        assert_eq!(app.pads.scope_pads(), [4, 5]);
+        recorded_workflow_key(&mut app, K::Backspace, M::NONE);
+        assert_eq!(app.ask.as_ref().unwrap().lines()[0], "Clear 2 pads?");
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(app.ask.is_none());
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before
+        );
+        recorded_workflow_key(&mut app, K::Backspace, M::NONE);
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        assert!(app.pads.file[4].is_none() && app.pads.file[5].is_none());
+        assert_eq!(app.pads.snapshot(6), before[6]);
+        recorded_workflow_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(flash(&app), "undo: clear on 2 pads");
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before
+        );
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(app.pads.marked.is_empty());
+        assert_eq!(panel_now(&mut app).scope, "pad W");
+        recorded_workflow_hit(&mut app, 'q');
+        recorded_workflow_key(&mut app, K::Char('x'), M::CONTROL);
+        assert_eq!(app.pad_in_hand, Some(4));
+        recorded_workflow_hit(&mut app, 'w');
+        assert!(app.pad_in_hand.is_none());
+        assert_eq!(app.pads.snapshot(4), before[5]);
+        assert_eq!(app.pads.snapshot(5), before[4]);
+        recorded_workflow_key(&mut app, K::Char('z'), M::CONTROL);
+        assert_eq!(flash(&app), "undo: swap on 2 pads");
+        assert_eq!(
+            (0..super::PADS)
+                .map(|p| app.pads.snapshot(p))
+                .collect::<Vec<_>>(),
+            before
+        );
+        assert_eq!(app.pads.selected_abs(), 5);
+        assert_eq!(app.pads.fx, fx);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recorded_f4_from_each_screen_preserves_selection_scope_and_overlays() {
+        use input::Group;
+        use ratatui::crossterm::event::{KeyCode as K, KeyModifiers as M};
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let (mut app, root, incoming) = recorded_workflow_app("recorded-fx-navigation");
+        recorded_workflow_project(&mut app, "A");
+        recorded_workflow_file(&mut app, &incoming, 'q', "break");
+        recorded_workflow_key(&mut app, K::Char('a'), M::CONTROL);
+        let marked = app.pads.marked.clone();
+        let scope = app.pads.scope_pads();
+        let selected = app.pads.selected_abs();
+        recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
+        recorded_workflow_key(&mut app, K::Char('k'), M::NONE);
+        let pad_param = app.pads.param;
+        recorded_workflow_key(&mut app, K::F(1), M::NONE);
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(!app.help_open && app.edit);
+        recorded_workflow_key(&mut app, K::F(10), M::NONE);
+        assert_eq!(app.learn_group(), Group::PadsEdit);
+        assert_eq!(app.screen_learn.as_ref().unwrap().page, Some("FX"));
+        recorded_workflow_key(&mut app, K::Esc, M::NONE);
+        assert!(app.screen_learn.is_none() && app.edit);
+        let snapshots: Vec<_> = (0..super::PADS).map(|p| app.pads.snapshot(p)).collect();
+        let effects = app.pads.fx;
+        recorded_workflow_key(&mut app, K::F(4), M::NONE);
+        assert!(!app.edit);
+        assert_eq!(app.pads.param, pad_param);
+        for (key, screen, group) in [
+            (2, Screen::Pads, Group::Pads),
+            (3, Screen::Chop, Group::Chop),
+            (6, Screen::Files, Group::Files),
+            (12, Screen::Settings, Group::Files),
+            (4, Screen::Fx, Group::Fx),
+        ] {
+            recorded_workflow_key(&mut app, K::F(key), M::NONE);
+            assert_eq!(app.screen, screen);
+            assert!(!app.edit);
+            if screen == Screen::Files && !app.browser.filter.is_empty() {
+                recorded_workflow_key(&mut app, K::Esc, M::NONE);
+            }
+            recorded_workflow_loads(&mut app, &incoming);
+            let browser_selection = app.browser.current().map(|e| e.name.clone());
+            recorded_workflow_key(&mut app, K::F(1), M::NONE);
+            assert!(app.help_open);
+            recorded_workflow_key(&mut app, K::F(4), M::NONE);
+            assert_eq!(app.screen, Screen::Fx);
+            assert!(app.help_open);
+            assert_eq!(app.learn_group(), Group::Fx);
+            assert_eq!(
+                app.help_state().page,
+                if app.fx_slot == 0 { "FX 1" } else { "FX 2" }
+            );
+            let help = line(&super::help_groups(&keymap, app.screen, &app.help_state()));
+            assert!(
+                help.iter()
+                    .any(|(_, text)| text.contains(&format!("FX {} selected", app.fx_slot + 1)))
+            );
+            assert!(
+                super::full_help(&keymap, app.screen, true)
+                    .iter()
+                    .any(|(_, text)| text.contains("shared FX block"))
+            );
+            recorded_workflow_key(&mut app, K::Esc, M::NONE);
+            assert!(!app.help_open);
+            assert_eq!(app.screen, Screen::Fx);
+            recorded_workflow_key(&mut app, K::Tab, M::NONE);
+            let slot = app.fx_slot;
+            assert_eq!(app.fx_view().selected, slot);
+            recorded_workflow_key(&mut app, K::Char('k'), M::NONE);
+            assert_eq!(app.fx_view().param, 1);
+            recorded_workflow_key(&mut app, K::F(10), M::NONE);
+            assert_eq!(app.learn_group(), Group::Fx);
+            let sent = app.sent.len();
+            recorded_workflow_hit(&mut app, 'w');
+            assert_eq!(app.learn_picked().unwrap().0, "pad.6");
+            recorded_workflow_key(&mut app, K::F(4), M::NONE);
+            assert_eq!(app.learn_picked().unwrap().0, "screen.fx");
+            assert_eq!(app.screen, Screen::Fx);
+            assert_eq!(app.fx_slot, slot);
+            assert_eq!(app.sent.len(), sent, "learn keys do not act");
+            recorded_workflow_key(&mut app, K::F(10), M::NONE);
+            assert!(app.screen_learn.is_none());
+            recorded_workflow_key(&mut app, K::F(2), M::NONE);
+            assert_eq!(app.screen, Screen::Pads);
+            assert_eq!(app.pads.param, pad_param);
+            assert_eq!(app.pads.selected_abs(), selected);
+            assert_eq!(app.pads.marked, marked);
+            assert_eq!(app.pads.scope_pads(), scope);
+            assert_eq!(panel_now(&mut app).scope, "16 marked");
+            assert_eq!(app.pads.fx, effects);
+            assert_eq!(
+                (0..super::PADS)
+                    .map(|p| app.pads.snapshot(p))
+                    .collect::<Vec<_>>(),
+                snapshots
+            );
+            assert_eq!(
+                app.browser.current().map(|e| e.name.clone()),
+                browser_selection
+            );
+            recorded_workflow_key(&mut app, K::F(key), M::NONE);
+            assert_eq!(app.screen, screen);
+            if screen != Screen::Settings {
+                assert_eq!(app.layer_group(), group);
+                recorded_workflow_key(&mut app, K::F(10), M::NONE);
+                assert_eq!(app.learn_group(), group);
+                let sent = app.sent.len();
+                recorded_workflow_key(&mut app, K::F(4), M::NONE);
+                assert_eq!(app.screen, screen, "learn selects F4 instead of opening it");
+                assert_eq!(app.learn_picked().unwrap().0, "screen.fx");
+                assert_eq!(app.sent.len(), sent);
+                recorded_workflow_key(&mut app, K::Esc, M::NONE);
+                assert!(app.screen_learn.is_none());
+            }
+            recorded_workflow_key(&mut app, K::F(4), M::NONE);
+            assert_eq!(app.screen, Screen::Fx);
+            recorded_workflow_key(&mut app, K::F(key), M::NONE);
+            assert_eq!(app.screen, screen, "F4 can return to each screen");
+            assert_eq!(app.pads.scope_pads(), scope);
+            assert_eq!(app.pads.selected_abs(), selected);
+            recorded_workflow_key(&mut app, K::F(2), M::NONE);
+        }
+        assert_eq!(app.pads.marked, marked);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// Scenario "Knob with soft takeover" (master-volume): at −10 dB a learned knob standing

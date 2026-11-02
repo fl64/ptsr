@@ -89,13 +89,21 @@ pub fn drop_dead(learned: &mut Learned) -> Vec<String> {
                 known
             });
         }
-        groups.retain(|_, keys| !keys.is_empty());
+        groups.retain(|group, keys| group == Group::Fx.key() || !keys.is_empty());
     }
     learned.retain(|_, groups| !groups.is_empty());
     gone
 }
 
 pub fn assign(learned: &mut Learned, profile: &str, group: Group, key: Key, action: &str) {
+    if group == Group::Fx {
+        materialize_fx(
+            learned,
+            profile,
+            &input::midi::Profile::default_for(profile),
+            true,
+        );
+    }
     let map = learned
         .entry(profile.into())
         .or_default()
@@ -114,20 +122,96 @@ pub fn group_of(scope: input::midi::Scope) -> Option<Group> {
 /// on the same control or the same action of its group.
 pub fn seed(learned: &mut Learned, profile: &str, roles: &[(input::midi::Scope, Key, String)]) {
     let groups = learned.entry(profile.into()).or_default();
+    let had_fx = groups.contains_key(Group::Fx.key());
     for (scope, key, action) in roles {
         let Some(group) = group_of(*scope) else {
             continue;
         };
+        if group == Group::Fx {
+            continue;
+        }
         let map = groups.entry(group.key().into()).or_default();
         if map.contains_key(&key.to_string()) || map.values().any(|a| a == action) {
             continue;
         }
         map.insert(key.to_string(), action.clone());
     }
+    materialize_fx(
+        learned,
+        profile,
+        &input::midi::Profile::default_for(profile),
+        true,
+    );
+    if !had_fx {
+        for (scope, key, action) in roles {
+            if *scope == Group::Fx.scope() {
+                assign(learned, profile, Group::Fx, *key, action);
+            }
+        }
+    }
+}
+
+fn materialize_fx(
+    learned: &mut Learned,
+    name: &str,
+    profile: &input::midi::Profile,
+    seeded: bool,
+) -> bool {
+    if learned
+        .get(name)
+        .is_some_and(|groups| groups.contains_key(Group::Fx.key()))
+    {
+        return false;
+    }
+    let mut profile = profile.clone();
+    profile.set_seeded(seeded);
+    for group in Group::ALL {
+        if learned
+            .get(name)
+            .is_some_and(|groups| groups.contains_key(group.key()))
+        {
+            profile.set_learned(group.scope(), group_map(learned, name, group));
+        }
+    }
+    let map = profile
+        .fx_defaults()
+        .into_iter()
+        .map(|(key, action)| (key.to_string(), action))
+        .collect();
+    learned
+        .entry(name.into())
+        .or_default()
+        .insert(Group::Fx.key().into(), map);
+    true
+}
+
+pub fn migrate_fx(
+    learned: &mut Learned,
+    profiles: &[input::midi::Profile],
+    seeded: &[String],
+) -> bool {
+    let names: Vec<_> = learned
+        .keys()
+        .cloned()
+        .chain(seeded.iter().cloned())
+        .collect();
+    let mut changed = false;
+    for name in names {
+        let fallback = input::midi::Profile::default_for(&name);
+        let profile = profiles
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap_or(&fallback);
+        changed |= materialize_fx(learned, &name, profile, seeded.contains(&name));
+    }
+    changed
 }
 
 /// Removes the learned controls of `action` in `group`; returns the profiles that changed.
 pub fn clear(learned: &mut Learned, group: Group, action: &str) -> Vec<String> {
+    if group == Group::Fx {
+        migrate_fx(learned, &[], &[]);
+    }
     let mut changed = Vec::new();
     for (profile, groups) in learned.iter_mut() {
         if let Some(map) = groups.get_mut(group.key()) {
@@ -233,6 +317,93 @@ mod tests {
             ),
             Some(("X".into(), Key::Note(90)))
         );
+    }
+
+    #[test]
+    fn fx_migration_preserves_precedence_direct_controls_and_empty_groups() {
+        use input::Screen;
+        use input::midi::{Profile, Scope};
+        let mut learned = Learned::new();
+        for (group, cc) in [
+            (Group::Global, 70),
+            (Group::Pads, 71),
+            (Group::ChopEdit, 24),
+            (Group::PadsEdit, 80),
+        ] {
+            assign(&mut learned, "X", group, Key::Cc(cc), "edit.param_1");
+        }
+        assign(&mut learned, "X", Group::Pads, Key::Cc(90), "pad.fx2_tone");
+        assert!(migrate_fx(&mut learned, &[], &[]));
+        assert_eq!(
+            group_map(&learned, "X", Group::Fx),
+            [
+                (Key::Cc(80), "edit.param_1".into()),
+                (Key::Cc(90), "pad.fx2_tone".into()),
+            ]
+            .into()
+        );
+        assert!(!migrate_fx(&mut learned, &[], &[]));
+        clear(&mut learned, Group::Fx, "edit.param_1");
+        clear(&mut learned, Group::Fx, "pad.fx2_tone");
+        assert!(drop_dead(&mut learned).is_empty());
+        assert!(learned["X"]["fx"].is_empty());
+        let text = toml::to_string(&learned).unwrap();
+        let mut loaded: Learned = toml::from_str(&text).unwrap();
+        assert!(!migrate_fx(&mut loaded, &[], &[]));
+        assert!(loaded["X"]["fx"].is_empty());
+        let mut p = Profile::default_for("X");
+        p.name = "X".into();
+        p.set_learned(
+            Scope::Edit(Screen::Pads),
+            [(Key::Cc(80), "edit.param_1".into())].into(),
+        );
+        let mut old = Learned::new();
+        assign(&mut old, "X", Group::PadsEdit, Key::Cc(80), "edit.param_1");
+        assert!(migrate_fx(&mut old, &[p], &["X".into()]));
+        assert_eq!(
+            group_map(&old, "X", Group::Fx)
+                .get(&Key::Cc(80))
+                .map(String::as_str),
+            Some("edit.param_1")
+        );
+    }
+
+    #[test]
+    fn fx_seed_uses_pad_replacements_and_explicit_fx_roles() {
+        let mut learned = Learned::new();
+        assign(
+            &mut learned,
+            "X",
+            Group::PadsEdit,
+            Key::Cc(80),
+            "edit.param_1",
+        );
+        seed(
+            &mut learned,
+            "X",
+            &[
+                (Group::PadsEdit.scope(), Key::Cc(24), "edit.param_1".into()),
+                (Group::ChopEdit.scope(), Key::Cc(24), "edit.param_1".into()),
+                (Group::PadsEdit.scope(), Key::Cc(25), "edit.param_2".into()),
+                (Group::Fx.scope(), Key::Cc(90), "edit.param_2".into()),
+            ],
+        );
+        assert_eq!(
+            group_map(&learned, "X", Group::Fx),
+            [
+                (Key::Cc(80), "edit.param_1".into()),
+                (Key::Cc(90), "edit.param_2".into()),
+            ]
+            .into()
+        );
+        clear(&mut learned, Group::Fx, "edit.param_1");
+        clear(&mut learned, Group::Fx, "edit.param_2");
+        seed(
+            &mut learned,
+            "X",
+            &[(Group::Fx.scope(), Key::Cc(90), "edit.param_2".into())],
+        );
+        assert!(learned["X"]["fx"].is_empty());
     }
 
     #[test]

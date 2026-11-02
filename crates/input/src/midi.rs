@@ -135,6 +135,13 @@ pub fn param_of(action: &str) -> Option<Param> {
         "edit.param_2" => Some(Param::Slot(1)),
         "edit.param_3" => Some(Param::Slot(2)),
         "edit.page" => Some(Param::Page),
+        // Keep the direct shared FX names from the former pad edit (82).
+        "pad.fx1_type" => Some(Param::PadEffect(3)),
+        "pad.fx1_size" => Some(Param::PadEffect(4)),
+        "pad.fx1_tone" => Some(Param::PadEffect(5)),
+        "pad.fx2_type" => Some(Param::PadEffect(6)),
+        "pad.fx2_size" => Some(Param::PadEffect(7)),
+        "pad.fx2_tone" => Some(Param::PadEffect(8)),
         _ => None,
     }
 }
@@ -332,6 +339,7 @@ impl Profile {
                 "settings" => Some(Screen::Settings),
                 "files" => Some(Screen::Files),
                 "chop" => Some(Screen::Chop),
+                "fx" => Some(Screen::Fx),
                 _ => continue,
             };
             let map = section
@@ -454,10 +462,107 @@ impl Profile {
         Some(action)
     }
 
+    /// The FX screen accepts its own bindings first, then the former page controls.
+    /// The optional name identifies a profile control, not a learned assignment.
+    fn fx_binding(&self, key: Key) -> Option<(&str, Option<&str>)> {
+        if let Some(map) = self.learned.get(&Scope::Screen(Screen::Fx)) {
+            return map.get(&key).map(|action| (action.as_str(), None));
+        }
+        let learned = |scope| self.learned.get(&scope).and_then(|m| m.get(&key));
+        let name = self.name_of(key);
+        let profile = |screen| {
+            (!self.seeded)
+                .then(|| self.screens.get(&Some(screen))?.get(name?))
+                .flatten()
+        };
+        if let Some(action) = profile(Screen::Fx) {
+            return Some((action, name));
+        }
+        let profile_action = |action: &str| {
+            !self.seeded
+                && self
+                    .screens
+                    .get(&Some(Screen::Fx))
+                    .is_some_and(|map| map.values().any(|a| a == action))
+        };
+        let scopes = [
+            Scope::Edit(Screen::Pads),
+            Scope::Edit(Screen::Chop),
+            Scope::Screen(Screen::Pads),
+            Scope::Global,
+        ];
+        let overridden = |action: &str, before: usize| {
+            scopes[..before]
+                .iter()
+                .any(|scope| self.learned_in(*scope, action).is_some())
+                || profile_action(action)
+        };
+        scopes
+            .into_iter()
+            .enumerate()
+            .find_map(|(i, scope)| {
+                learned(scope)
+                    .filter(|a| fx_compatible(a) && !overridden(a, i))
+                    .map(|a| (a.as_str(), None))
+            })
+            .or_else(|| {
+                (!self.seeded)
+                    .then(|| self.edit.get(name?))
+                    .flatten()
+                    .filter(|a| fx_compatible(a) && !overridden(a, scopes.len()))
+                    .map(|a| (a.as_str(), name))
+            })
+            .or_else(|| {
+                profile(Screen::Pads)
+                    .filter(|a| fx_compatible(a) && !overridden(a, scopes.len()))
+                    .map(|a| (a.as_str(), name))
+            })
+            .or_else(|| {
+                (!self.seeded)
+                    .then(|| self.screens.get(&None)?.get(name?))
+                    .flatten()
+                    .filter(|a| fx_compatible(a) && !overridden(a, scopes.len()))
+                    .map(|a| (a.as_str(), name))
+            })
+    }
+
+    pub fn fx_defaults(&self) -> HashMap<Key, String> {
+        let mut keys: Vec<_> = self
+            .learned
+            .values()
+            .flat_map(|m| m.keys().copied())
+            .collect();
+        keys.extend(self.ccs.keys().map(|cc| Key::Cc(*cc)));
+        keys.extend(self.notes.keys().map(|note| Key::Note(*note)));
+        keys.into_iter()
+            .filter_map(|key| {
+                self.fx_binding(key)
+                    .map(|(action, _)| (key, action.to_string()))
+            })
+            .collect()
+    }
+
     /// Who drives `action` of a group now, for the MIDI tab: "k1 (cc 24)", or "cc 24" for a
     /// control the profile does not name.
     /// Profile assignments are looked up in the group first, then in any screen section.
     pub fn assignment(&self, scope: Scope, action: &str) -> Option<String> {
+        if scope == Scope::Screen(Screen::Fx) {
+            // Include inherited page controls, also after the profile was seeded.
+            let mut keys: Vec<_> = self
+                .learned
+                .values()
+                .flat_map(|m| m.keys().copied())
+                .collect();
+            keys.extend(self.ccs.keys().map(|cc| Key::Cc(*cc)));
+            keys.extend(self.notes.keys().map(|note| Key::Note(*note)));
+            return keys.into_iter().find_map(|key| {
+                let (bound, _) = self.fx_binding(key)?;
+                (bound == action).then(|| match self.name_of(key) {
+                    Some(name) => format!("{name} ({key})"),
+                    None => key.to_string(),
+                })
+            });
+        }
         if let Some(key) = self.learned_in(scope, action) {
             // every binding is the owner's after the seed (59): named as the profile names it
             return Some(match self.name_of(key) {
@@ -528,6 +633,17 @@ impl Profile {
             Msg::NoteOn { note, .. } | Msg::NoteOff { note, .. } => self.notes.get(&note),
             Msg::Cc { cc, .. } => self.ccs.get(&cc),
         };
+        if screen == Screen::Fx
+            && let Some((action, name)) = self.fx_binding(msg.key())
+        {
+            let mut resolved = learned_resolved(action, msg, value, on)?;
+            if let (Some(name), Resolved::Param { control, .. }) = (name, &mut resolved) {
+                *control = name.to_string();
+            }
+            return Some(resolved);
+        }
+        // FX has no separate edit mode; its inherited controls were resolved above.
+        let edit = edit && screen != Screen::Fx;
         // the learned edit group of the screen goes first inside the edit (28), over the
         // profile's `[edit]` layer; outside the edit it does nothing
         if edit
@@ -549,6 +665,9 @@ impl Profile {
                 .into_iter()
                 .find_map(|s| self.learned.get(&s).and_then(|m| m.get(&msg.key())));
             if let Some(action) = learned {
+                if screen == Screen::Fx && fx_compatible(action) {
+                    return None;
+                }
                 return learned_resolved(action, msg, value, on);
             }
         }
@@ -557,9 +676,12 @@ impl Profile {
             return None;
         }
         let control = control?;
-        let action_name = |name: &str| match layered {
-            true => self.edit.get(name).map(String::as_str),
-            false => self.action_name(screen, name),
+        let action_name = |name: &str| {
+            let action = match layered {
+                true => self.edit.get(name).map(String::as_str),
+                false => self.action_name(screen, name),
+            }?;
+            (screen != Screen::Fx || !fx_compatible(action)).then_some(action)
         };
         match control {
             Control::Pad(pad) if on => Some(Resolved::Action(Action::PadPress {
@@ -594,6 +716,23 @@ impl Profile {
             }
         }
     }
+}
+
+/// Only page controls and direct shared FX controls carry over from the pad edit.
+fn fx_compatible(action: &str) -> bool {
+    matches!(
+        param_of(action),
+        Some(Param::Slot(_) | Param::Page | Param::PadEffect(3..=8))
+    ) || matches!(
+        Action::parse(action),
+        Some(
+            Action::ParamNext
+                | Action::ParamPrev
+                | Action::PageNext
+                | Action::PagePrev
+                | Action::EditValue { .. }
+        )
+    )
 }
 
 /// A release of a control learned for a pad ends a gate pad; other actions ignore releases.
@@ -1366,6 +1505,377 @@ mod tests {
                 takeover: true
             })
         );
+    }
+
+    fn assert_fx_param(p: &Profile, cc: u8, param: Param, control: &str) {
+        for editing in [false, true] {
+            assert_eq!(
+                p.resolve_in(
+                    Screen::Fx,
+                    editing,
+                    Msg::Cc {
+                        ch: 1,
+                        cc,
+                        value: 0
+                    }
+                ),
+                Some(Resolved::Param {
+                    control: control.into(),
+                    param,
+                    value: 0.0,
+                    takeover: true
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_knobs_control_the_selected_effect() {
+        let p = xsession();
+        for (cc, name, param) in [
+            (24, "k1", Param::Slot(0)),
+            (25, "k2", Param::Slot(1)),
+            (26, "k3", Param::Slot(2)),
+        ] {
+            assert_fx_param(&p, cc, param, name);
+            assert_eq!(
+                p.assignment(
+                    Scope::Screen(Screen::Fx),
+                    &format!("edit.param_{}", cc - 23)
+                ),
+                Some(format!("{name} (cc {cc})"))
+            );
+        }
+        for (name, expected) in [("b3", Action::PagePrev), ("b4", Action::PageNext)] {
+            let key = p.key_of(name).unwrap();
+            let msg = match key {
+                Key::Cc(cc) => Msg::Cc {
+                    ch: 1,
+                    cc,
+                    value: 127,
+                },
+                Key::Note(note) => Msg::NoteOn {
+                    ch: 1,
+                    note,
+                    velocity: 127,
+                },
+            };
+            assert_eq!(p.resolve(Screen::Fx, msg), Some(Resolved::Action(expected)));
+        }
+    }
+
+    #[test]
+    fn old_learned_edit_and_seeded_page_mappings_work_on_fx() {
+        for scope in [
+            Scope::Edit(Screen::Pads),
+            Scope::Edit(Screen::Chop),
+            Scope::Screen(Screen::Pads),
+        ] {
+            for seeded in [false, true] {
+                let mut p = xsession();
+                p.set_seeded(seeded);
+                p.set_learned(
+                    scope,
+                    [
+                        (Key::Cc(24), "edit.param_1".into()),
+                        (Key::Cc(25), "edit.param_2".into()),
+                        (Key::Cc(26), "edit.param_3".into()),
+                        (Key::Cc(27), "edit.page".into()),
+                    ]
+                    .into(),
+                );
+                for (cc, param) in [
+                    (24, Param::Slot(0)),
+                    (25, Param::Slot(1)),
+                    (26, Param::Slot(2)),
+                    (27, Param::Page),
+                ] {
+                    assert_fx_param(&p, cc, param, &format!("cc {cc}"));
+                }
+                assert_eq!(
+                    p.assignment(Scope::Screen(Screen::Fx), "edit.page")
+                        .as_deref(),
+                    Some("k4 (cc 27)")
+                );
+            }
+        }
+        let mut p = xsession();
+        p.screens.insert(
+            Some(Screen::Pads),
+            [
+                ("k1".into(), "edit.param_1".into()),
+                ("k2".into(), "edit.param_2".into()),
+                ("k3".into(), "edit.param_3".into()),
+                ("k4".into(), "edit.page".into()),
+            ]
+            .into(),
+        );
+        p.edit.clear();
+        for (cc, param) in [
+            (24, Param::Slot(0)),
+            (25, Param::Slot(1)),
+            (26, Param::Slot(2)),
+            (27, Param::Page),
+        ] {
+            assert_fx_param(&p, cc, param, &format!("k{}", cc - 23));
+        }
+        let roles = p.roles();
+        p.set_seeded(true);
+        for scope in [Scope::Screen(Screen::Pads), Scope::Global] {
+            p.set_learned(
+                scope,
+                roles
+                    .iter()
+                    .filter(|(s, _, _)| *s == scope)
+                    .map(|(_, k, a)| (*k, a.clone()))
+                    .collect(),
+            );
+        }
+        for (cc, param) in [
+            (24, Param::Slot(0)),
+            (25, Param::Slot(1)),
+            (26, Param::Slot(2)),
+            (27, Param::Page),
+        ] {
+            assert_fx_param(&p, cc, param, &format!("cc {cc}"));
+        }
+    }
+
+    #[test]
+    fn old_direct_shared_fx_bindings_keep_their_slot() {
+        for (i, action) in [
+            "pad.fx1_type",
+            "pad.fx1_size",
+            "pad.fx1_tone",
+            "pad.fx2_type",
+            "pad.fx2_size",
+            "pad.fx2_tone",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(known(action));
+            for scope in [
+                Scope::Edit(Screen::Pads),
+                Scope::Screen(Screen::Pads),
+                Scope::Global,
+            ] {
+                let mut p = xsession();
+                for seeded in [false, true] {
+                    p.set_seeded(seeded);
+                    p.set_learned(scope, [(Key::Cc(24), action.into())].into());
+                    assert_fx_param(&p, 24, Param::PadEffect(i as u8 + 3), "cc 24");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn new_fx_bindings_take_precedence() {
+        let mut p = Profile::from_toml(
+            "fx.toml",
+            &format!("{XSESSION}\n[screens.fx]\nk1 = \"edit.param_3\"\nk4 = \"edit.page\"\n"),
+        )
+        .unwrap();
+        p.set_learned(
+            Scope::Edit(Screen::Pads),
+            [(Key::Cc(24), "pad.fx1_type".into())].into(),
+        );
+        assert_fx_param(&p, 24, Param::Slot(2), "k1");
+        assert_fx_param(&p, 27, Param::Page, "k4");
+        p.set_learned(
+            Scope::Screen(Screen::Fx),
+            [(Key::Cc(24), "edit.param_2".into())].into(),
+        );
+        assert_fx_param(&p, 24, Param::Slot(1), "cc 24");
+        // The former knob for this action no longer changes it.
+        for editing in [false, true] {
+            assert_eq!(
+                p.resolve_in(
+                    Screen::Fx,
+                    editing,
+                    Msg::Cc {
+                        ch: 1,
+                        cc: 25,
+                        value: 127
+                    }
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            p.assignment(Scope::Screen(Screen::Fx), "edit.param_2")
+                .as_deref(),
+            Some("k1 (cc 24)")
+        );
+        assert!(
+            p.roles()
+                .contains(&(Scope::Screen(Screen::Fx), Key::Cc(27), "edit.page".into()))
+        );
+        p.set_seeded(true);
+        assert_fx_param(&p, 24, Param::Slot(1), "cc 24");
+    }
+
+    #[test]
+    fn replaced_page_knobs_stay_replaced() {
+        let mut p = xsession();
+        for (scope, cc) in [
+            (Scope::Global, 77),
+            (Scope::Screen(Screen::Pads), 78),
+            (Scope::Edit(Screen::Chop), 24),
+            (Scope::Edit(Screen::Pads), 80),
+        ] {
+            p.set_learned(scope, [(Key::Cc(cc), "edit.param_1".into())].into());
+        }
+        for seeded in [false, true] {
+            p.set_seeded(seeded);
+            assert_fx_param(&p, 80, Param::Slot(0), "cc 80");
+            for cc in [24, 77, 78] {
+                assert_eq!(
+                    p.resolve(
+                        Screen::Fx,
+                        Msg::Cc {
+                            ch: 1,
+                            cc,
+                            value: 127
+                        }
+                    ),
+                    None
+                );
+            }
+            assert_eq!(
+                p.assignment(Scope::Screen(Screen::Fx), "edit.param_1"),
+                Some("cc 80".into())
+            );
+            assert_eq!(
+                p.fx_defaults().get(&Key::Cc(80)).map(String::as_str),
+                Some("edit.param_1")
+            );
+        }
+    }
+
+    #[test]
+    fn empty_fx_group_blocks_shared_bindings_but_not_global_pads() {
+        let mut p = xsession();
+        p.set_learned(
+            Scope::Global,
+            [
+                (Key::Cc(80), "edit.param_1".into()),
+                (Key::Cc(81), "pad.fx1_size".into()),
+                (Key::Note(90), "pad.1".into()),
+            ]
+            .into(),
+        );
+        p.set_learned(Scope::Screen(Screen::Fx), HashMap::new());
+        for seeded in [false, true] {
+            p.set_seeded(seeded);
+            for cc in [24, 25, 26, 80, 81] {
+                assert_eq!(
+                    p.resolve(
+                        Screen::Fx,
+                        Msg::Cc {
+                            ch: 1,
+                            cc,
+                            value: 127
+                        }
+                    ),
+                    None
+                );
+            }
+            assert_eq!(
+                p.assignment(Scope::Screen(Screen::Fx), "edit.param_1"),
+                None
+            );
+            assert!(matches!(
+                p.resolve(
+                    Screen::Fx,
+                    Msg::NoteOn {
+                        ch: 1,
+                        note: 90,
+                        velocity: 127
+                    }
+                ),
+                Some(Resolved::Action(Action::PadPress { pad: 0, .. }))
+            ));
+        }
+    }
+
+    #[test]
+    fn unrelated_pad_edit_bindings_do_not_control_fx() {
+        let mut p = xsession();
+        p.set_seeded(true);
+        p.set_learned(
+            Scope::Edit(Screen::Pads),
+            [
+                (Key::Cc(24), "pad.volume".into()),
+                (Key::Note(60), "ui.back".into()),
+            ]
+            .into(),
+        );
+        assert_eq!(
+            p.resolve(
+                Screen::Fx,
+                Msg::Cc {
+                    ch: 1,
+                    cc: 24,
+                    value: 127
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            p.resolve(
+                Screen::Fx,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 60,
+                    velocity: 127
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn midi_pads_on_the_fx_screen_keep_velocity_and_gate_releases() {
+        for seeded in [false, true] {
+            let mut p = Profile::default_for("pads");
+            let roles = p.roles();
+            p.set_seeded(seeded);
+            if seeded {
+                p.set_learned(
+                    Scope::Global,
+                    roles
+                        .into_iter()
+                        .map(|(_, key, action)| (key, action))
+                        .collect(),
+                );
+            }
+            for pad in 0..16 {
+                let note = DEFAULT_FIRST_NOTE + pad as u8;
+                for editing in [false, true] {
+                    assert_eq!(
+                        p.resolve_in(
+                            Screen::Fx,
+                            editing,
+                            Msg::NoteOn {
+                                ch: 1,
+                                note,
+                                velocity: 80
+                            }
+                        ),
+                        Some(Resolved::Action(Action::PadPress {
+                            pad,
+                            velocity: 80.0 / 127.0
+                        }))
+                    );
+                    assert_eq!(
+                        p.resolve_in(Screen::Fx, editing, Msg::NoteOff { ch: 1, note }),
+                        Some(Resolved::Action(Action::PadRelease { pad }))
+                    );
+                }
+            }
+        }
     }
 
     /// 58 input-devices: "Pad change" — the default response jumps, no arrow.

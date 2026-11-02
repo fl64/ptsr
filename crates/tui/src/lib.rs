@@ -351,6 +351,7 @@ pub struct Pads {
     /// The key that opens the pad edit, named on the closed panel (70); empty: no hint.
     pub edit_key: String,
     pub fx: Vec<PanelRow>,
+    /// Kept for callers that still build the old shared-slot view; not drawn on pads.
     pub slot: Option<(&'static str, String, Vec<PanelRow>)>,
 }
 
@@ -366,8 +367,28 @@ pub struct BigView {
     pub release: f32,
 }
 
+/// One project-wide effect. Rows are type, first parameter and second parameter.
+/// Labels and values come from the app; this view does not interpret effect settings.
+pub struct FxBlock {
+    pub rows: [(&'static str, String); 3],
+}
+
+/// Shared effects screen (F4). Block and parameter indices start at zero.
+pub struct Fx {
+    pub blocks: [FxBlock; 2],
+    pub selected: usize,
+    pub param: usize,
+    /// A takeover hint for the selected block, shown above the bottom help.
+    pub pickup: Option<String>,
+    /// Learned controls of the selected block: (parameter index, control label).
+    pub learn: Vec<(usize, String)>,
+    /// The parameter that changed a moment ago, in the selected block.
+    pub lit: Option<usize>,
+}
+
 pub enum Screen<'a> {
     Pads(Pads),
+    Fx(Fx),
     Settings(Settings<'a>),
     Files(Files<'a>),
     // boxed: the chop view is the largest by far, and a screen is built once a frame
@@ -504,9 +525,15 @@ fn draw_inner(
         ),
         None => frame.render_widget(status_line(s), top),
     }
-    match (s.notice, help.hint) {
-        (Some(n), _) => frame.render_widget(Line::from(format!(" {n}")).fg(MAGENTA), notice),
-        (None, Some(h)) => frame.render_widget(Line::from(format!(" {h}")).fg(DIM), notice),
+    let pickup = match screen {
+        Screen::Fx(f) => f.pickup.as_deref(),
+        _ => None,
+    };
+    match (s.notice, pickup, help.hint) {
+        (Some(n), _, _) | (None, Some(n), _) => {
+            frame.render_widget(Line::from(format!(" {n}")).fg(MAGENTA), notice)
+        }
+        (None, None, Some(h)) => frame.render_widget(Line::from(format!(" {h}")).fg(DIM), notice),
         _ => {}
     }
     match screen {
@@ -514,6 +541,7 @@ fn draw_inner(
         // the help line below stays as on any screen
         Screen::ProjectPicker(p) => frame.render_widget(project_picker(p), body),
         Screen::Pads(p) => pads(frame, body, p, s),
+        Screen::Fx(f) => fx(frame, body, f),
         Screen::Settings(st) => frame.render_widget(settings(st, body.height), body),
         Screen::Files(f) => files(frame, body, f),
         Screen::Chop(c) => chop(frame, body, c, images),
@@ -1110,9 +1138,8 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
                 ],
             ),
         ];
-        // the effects (56): the pad's FX block, or on a slot's page that slot's block in its
-        // place, so the panel is no taller
-        if !p.fx.is_empty() && p.slot.is_none() {
+        // Only drive and sends belong to the pad. Shared slots have their own screen (82).
+        if !p.fx.is_empty() {
             blocks.push((
                 "FX",
                 p.fx.iter().map(|r| r.0).collect(),
@@ -1135,12 +1162,10 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
         if let Some(hint) = &p.pickup {
             tail.push(Line::from(hint.clone()).fg(MAGENTA));
         }
-        let slot_rows = p.slot.as_ref().map_or(0, |(_, _, r)| r.len() + 1);
         let full = lines.len()
             + 1
             + tone.len()
             + blocks.iter().map(|b| 1 + b.2.len()).sum::<usize>()
-            + slot_rows
             + tail.len();
         // a short window folds the blocks to their titles, the lowest first (70); the open
         // page and the pad rows stay
@@ -1166,21 +1191,6 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
             body.push((None, block(name, folded)));
             if !folded {
                 body.extend(params.into_iter().map(Some).zip(rows));
-            }
-        }
-        if let Some((page, title, rows)) = &p.slot {
-            let rule = "─".repeat(width.saturating_sub(title.chars().count() + 3));
-            let style = if p.edit == Some(*page) {
-                Style::new().fg(MAGENTA).bold()
-            } else {
-                Style::new().fg(DIM)
-            };
-            body.push((
-                None,
-                Line::from(Span::styled(format!("─ {title} {rule}"), style)),
-            ));
-            for (w, label, value) in rows {
-                body.push((Some(*w), param_line(p, *w, label, value.clone())));
             }
         }
         // still too tall: the blocks scroll with the picked parameter in sight, and say how
@@ -1705,6 +1715,122 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
 
 /// The project picker of Ctrl+P (11), drawn over the whole body in place of the screen
 /// (as [`PathPickerView`] takes the rows of the Paths tab in place of theirs).
+fn fx(frame: &mut Frame, area: Rect, f: &Fx) {
+    let [title, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+    frame.render_widget(
+        Line::from(" F4 FX · shared project effects")
+            .fg(CYAN)
+            .bold(),
+        title,
+    );
+    let label_width = f
+        .blocks
+        .iter()
+        .flat_map(|block| &block.rows)
+        .map(|(label, _)| Line::from(label.trim()).width())
+        .max()
+        .unwrap_or(0);
+    let widths: [u16; 2] = std::array::from_fn(|i| {
+        f.blocks[i]
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(param, (label, value))| {
+                let mut line = Line::from(format!(
+                    " {} {:label_width$} {value}",
+                    param + 1,
+                    label.trim(),
+                ));
+                if i == f.selected.min(1)
+                    && let Some((_, control)) = f.learn.iter().find(|(p, _)| *p == param)
+                {
+                    line.spans.push(Span::raw(format!(" ◀ {control}")));
+                }
+                (line.width() + 2).min(u16::MAX as usize) as u16
+            })
+            .max()
+            .unwrap_or(0)
+            .max(34)
+    });
+    let beside = widths[0].saturating_add(widths[1]).saturating_add(2) <= body.width;
+    let framed = body.height >= if beside { 5 } else { 10 };
+    let height = if framed {
+        5
+    } else if beside {
+        body.height.min(3)
+    } else {
+        (body.height / 2).min(3)
+    };
+    let gap = u16::from(!beside && framed && body.height >= 11);
+    for (i, view) in f.blocks.iter().enumerate() {
+        let area = Rect::new(
+            body.x + if beside && i == 1 { widths[0] + 2 } else { 0 },
+            body.y + if beside { 0 } else { i as u16 * (height + gap) },
+            if framed || beside {
+                widths[i].min(body.width)
+            } else {
+                body.width.min(widths[i].saturating_add(6))
+            },
+            height,
+        );
+        let selected = i == f.selected.min(1);
+        let color = if selected { MAGENTA } else { BORDER };
+        let heading = format!(
+            "{} FX {}{} ",
+            if selected { "▶" } else { " " },
+            i + 1,
+            if selected { " · selected" } else { "" },
+        );
+        let text_area = if framed {
+            let block = Block::bordered()
+                .border_style(Style::new().fg(color))
+                .title(Span::styled(heading, Style::new().fg(color).bold()));
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            inner
+        } else {
+            area
+        };
+        let mut lines = Vec::new();
+        for (param, (label, value)) in view.rows.iter().enumerate() {
+            let style = if selected && f.lit == Some(param) {
+                Style::new().fg(BG).bg(CYAN).bold()
+            } else if selected && f.param.min(2) == param {
+                Style::new().fg(CYAN).bold()
+            } else {
+                Style::new().fg(TEXT)
+            };
+            let mut spans = Vec::new();
+            if framed {
+                spans.push(Span::raw(" "));
+            } else {
+                spans.push(if param == 0 {
+                    Span::styled(
+                        format!("{} FX {} ", if selected { "▶" } else { " " }, i + 1),
+                        Style::new().fg(color).bold(),
+                    )
+                } else {
+                    "       ".into()
+                });
+            }
+            spans.push(Span::styled(
+                format!("{} ", param + 1),
+                Style::new().fg(if selected { MAGENTA } else { DIM }),
+            ));
+            spans.push(Span::styled(
+                format!("{:label_width$} ", label.trim()),
+                style,
+            ));
+            spans.push(Span::styled(value.clone(), style));
+            if selected && let Some((_, control)) = f.learn.iter().find(|(p, _)| *p == param) {
+                spans.extend(learn_spans(&format!(" ◀ {control}")));
+            }
+            lines.push(Line::from(spans));
+        }
+        frame.render_widget(Paragraph::new(lines), text_area);
+    }
+}
+
 fn project_picker(p: &ProjectPickerView) -> Paragraph<'static> {
     let mut lines = vec![Line::from(Span::styled(
         " PROJECTS ",
@@ -3240,6 +3366,240 @@ mod tests {
             .collect()
     }
 
+    fn shared_fx() -> Fx {
+        Fx {
+            blocks: [
+                FxBlock {
+                    rows: [
+                        ("type", "reverb".into()),
+                        ("size", "65 %".into()),
+                        ("tone", "80 %".into()),
+                    ],
+                },
+                FxBlock {
+                    rows: [
+                        ("type", "delay".into()),
+                        ("time", "250 ms".into()),
+                        ("feedback", "40 %".into()),
+                    ],
+                },
+            ],
+            selected: 0,
+            param: 0,
+            pickup: None,
+            learn: Vec::new(),
+            lit: None,
+        }
+    }
+
+    /// 82 "Open the shared FX screen": both blocks and all knob rows stay visible.
+    #[test]
+    fn open_the_shared_fx_screen() {
+        for (w, h) in [(80, 24), (40, 12)] {
+            let rows = draw_rows(&Screen::Fx(shared_fx()), w, h);
+            let text = (0..rows.len())
+                .map(|y| row_text(&rows, y))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            for want in [
+                "F4 FX",
+                "shared project",
+                "▶ FX 1",
+                "FX 2",
+                "1 type reverb",
+                "2 size 65 %",
+                "3 tone 80 %",
+                "1 type delay",
+                "2 time 250 ms",
+                "3 feedback 40 %",
+            ] {
+                assert!(compact.contains(want), "{w}x{h}: {want}:\n{text}");
+            }
+            let first = text.find("FX 1").unwrap();
+            let second = text.find("FX 2").unwrap();
+            assert!(first < second, "the blocks keep their order");
+        }
+    }
+
+    /// 82 "Select the next shared effect": moving the pick does not change row values.
+    #[test]
+    fn select_the_next_shared_effect() {
+        for (w, h) in [(80, 24), (40, 12)] {
+            for selected in 0..2 {
+                for param in 0..3 {
+                    let mut f = shared_fx();
+                    f.selected = selected;
+                    f.param = param;
+                    let rows = draw_rows(&Screen::Fx(f), w, h);
+                    let text = (0..rows.len())
+                        .map(|y| row_text(&rows, y))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    assert!(text.contains(&format!("▶ FX {}", selected + 1)));
+                    assert_eq!(text.matches('▶').count(), 1, "one selected block");
+                    for value in ["reverb", "65 %", "80 %", "delay", "250 ms", "40 %"] {
+                        assert!(text.contains(value), "{value}:\n{text}");
+                    }
+                    let picked: String = rows
+                        .iter()
+                        .flatten()
+                        .filter(|(_, fg, _)| *fg == CYAN)
+                        .map(|(s, _, _)| s.as_str())
+                        .collect();
+                    let f = shared_fx();
+                    let (label, value) = &f.blocks[selected].rows[param];
+                    let compact = picked.split_whitespace().collect::<Vec<_>>().join(" ");
+                    assert!(compact.contains(&format!("{label} {value}")), "{picked}");
+                    let other = f.blocks[1 - selected].rows[param].0;
+                    if other != *label {
+                        assert!(!picked.contains(other), "only the selected row is lit");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_shared_effect_cards() {
+        for (w, h, beside) in [
+            (160, 50, true),
+            (80, 24, true),
+            (70, 16, true),
+            (69, 50, false),
+            (40, 50, false),
+            (40, 16, false),
+        ] {
+            let rows = draw_rows(&Screen::Fx(shared_fx()), w, h);
+            let positions = |symbol: &str| {
+                rows.iter()
+                    .enumerate()
+                    .flat_map(|(y, row)| {
+                        row.iter()
+                            .enumerate()
+                            .filter(move |(_, (s, _, _))| s == symbol)
+                            .map(move |(x, _)| (x, y))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let tops = positions("┌");
+            let bottoms = positions("└");
+            let rights = positions("┘");
+            assert_eq!(tops.len(), 2, "{w}x{h}: two framed cards");
+            assert_eq!(bottoms.len(), 2);
+            assert_eq!(rights.len(), 2);
+            for i in 0..2 {
+                assert_eq!(bottoms[i], (tops[i].0, tops[i].1 + 4));
+                assert_eq!(rights[i], (tops[i].0 + 33, tops[i].1 + 4));
+                assert!(bottoms[i].1 <= 12, "{w}x{h}: compact card height");
+            }
+            assert_eq!(tops[0].1 == tops[1].1, beside, "{w}x{h}");
+            assert_eq!(tops[0].0 == tops[1].0, !beside, "{w}x{h}");
+            assert_eq!(rows[tops[0].1][tops[0].0].1, MAGENTA);
+            assert_eq!(rows[tops[1].1][tops[1].0].1, BORDER);
+            let values = [["reverb", "65 %", "80 %"], ["delay", "250 ms", "40 %"]];
+            for (i, values) in values.iter().enumerate() {
+                for (param, value) in values.iter().enumerate() {
+                    let line = row_text(&rows, tops[i].1 + param + 1);
+                    assert!(line.contains(value), "{w}x{h}: {value}: {line}");
+                    let x = tops[i].0 + 13;
+                    assert_eq!(rows[tops[i].1 + param + 1][x].0, &value[..1]);
+                }
+            }
+            for row in &rows[bottoms[1].1 + 1..h as usize - 3] {
+                assert!(row.iter().all(|(s, _, _)| s == " "));
+            }
+        }
+        let rows = draw_rows(&Screen::Fx(shared_fx()), 40, 12);
+        assert!(rows.iter().flatten().all(|(s, _, _)| s != "┌"));
+    }
+
+    #[test]
+    fn compact_shared_effect_cards_keep_long_learn_labels_and_values() {
+        for (w, h) in [(160, 50), (80, 24), (40, 16), (40, 12)] {
+            let mut f = shared_fx();
+            f.selected = 1;
+            f.learn = vec![(1, "CC 12 → CC 13".into())];
+            let rows = draw_rows(&Screen::Fx(f), w, h);
+            let text = (0..rows.len())
+                .map(|y| row_text(&rows, y))
+                .collect::<Vec<_>>()
+                .join("\n");
+            for value in ["reverb", "65 %", "80 %", "delay", "250 ms", "40 %"] {
+                assert!(text.contains(value), "{w}x{h}: {value}:\n{text}");
+            }
+            assert!(text.contains("CC 12 → CC 13"), "{w}x{h}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn shared_fx_shows_takeover_learn_labels_and_recent_changes() {
+        let mut f = shared_fx();
+        f.selected = 1;
+        f.param = 1;
+        f.lit = Some(2);
+        f.pickup = Some("pickup: turn to 250 ms".into());
+        f.learn = vec![(1, "CC 12 → CC 13".into())];
+        let rows = draw_rows(&Screen::Fx(f), 80, 24);
+        let text = (0..rows.len())
+            .map(|y| row_text(&rows, y))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("pickup: turn to 250 ms"));
+        assert_eq!(text.matches("CC 12 → CC 13").count(), 1);
+        let changed: String = rows
+            .iter()
+            .flatten()
+            .filter(|(_, _, bg)| *bg == CYAN)
+            .map(|(s, _, _)| s.as_str())
+            .collect();
+        assert_eq!(changed.trim(), "feedback 40 %");
+        let pending: String = rows
+            .iter()
+            .flatten()
+            .filter(|(_, fg, _)| *fg == AMBER)
+            .map(|(s, _, _)| s.as_str())
+            .collect();
+        assert!(pending.contains("CC 13"));
+    }
+
+    #[test]
+    fn shared_fx_pickup_does_not_hide_a_notice() {
+        let (mut status, help) = chop_status();
+        status.notice = Some("project saved");
+        let mut f = shared_fx();
+        f.pickup = Some("pickup: turn to 250 ms".into());
+        let mut term = Terminal::new(TestBackend::new(40, 12)).unwrap();
+        term.draw(|fr| draw(fr, &status, &Screen::Fx(f), &help))
+            .unwrap();
+        let text: String = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(text.contains("project saved"));
+        assert!(!text.contains("pickup:"));
+    }
+
+    #[test]
+    fn shared_fx_selection_and_tiny_sizes_do_not_panic() {
+        let (status, help) = chop_status();
+        for (w, h) in [(0, 0), (1, 1), (4, 3), (20, 8), (40, 12), (80, 24)] {
+            for selected in [0, 1, usize::MAX] {
+                let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                let mut f = shared_fx();
+                f.selected = selected;
+                f.param = usize::MAX;
+                f.lit = Some(usize::MAX);
+                f.learn = vec![(usize::MAX, "unmapped".into())];
+                term.draw(|fr| draw(fr, &status, &Screen::Fx(f), &help))
+                    .unwrap();
+            }
+        }
+    }
+
     fn hidden_pads() -> Pads {
         Pads {
             hidden: true,
@@ -4310,15 +4670,13 @@ mod tests {
 
     const W_PITCH: PadParam = PadParam::Pitch;
 
-    /// 56 "A slot page" (drawing), from the live check: in a window of 52 rows the slot
-    /// block stands in place of the FX block, its rows and the change line are seen, and
-    /// the frame title keeps every page.
+    /// 82: a caller can keep the old slot field, but pads show only drive and sends.
     #[test]
-    fn the_slot_page_fits() {
+    fn shared_slots_are_not_drawn_in_the_pad_panel() {
         let mut p = idle_pads();
-        p.edit = Some("FX2*");
-        p.pages = vec!["TONE", "ENV", "FILTER", "SOURCE", "FX", "FX1*", "FX2*"];
-        p.scope = "all pads".into();
+        p.edit = Some("FX");
+        p.pages = vec!["TONE", "ENV", "FILTER", "SOURCE", "FX"];
+        p.scope = "pad W".into();
         p.fx = vec![
             (PadParam::Drive, "drive   ", "0 %".into()),
             (PadParam::Send1, "send 1  ", "0 %  reverb".into()),
@@ -4339,11 +4697,11 @@ mod tests {
             .map(|r| r.iter().map(|c| c.0.as_str()).collect())
             .collect();
         let has = |want: &str| text.iter().any(|r| r.contains(want));
-        assert!(has("FX 2 * shared"), "{}", text.join("\n"));
-        assert!(has("feedback") && has("250 ms"), "the slot rows are seen");
-        assert!(has("all pads"), "the change line is seen");
-        assert!(!has("send 1"), "the FX block gives way to the slot");
-        assert!(has("FX2*"), "the title keeps every page");
+        assert!(!has("FX 2 * shared"), "{}", text.join("\n"));
+        assert!(!has("feedback") && !has("250 ms"), "no shared slot rows");
+        assert!(has("pad W"), "the pad scope stays visible");
+        assert!(has("drive") && has("send 1") && has("send 2"));
+        assert!(!has("FX2*"), "no shared slot page in the title");
     }
 
     /// 51: the hits of the hits mode stand as ▾ on the row over the wave, at their place.
