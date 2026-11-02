@@ -1,7 +1,6 @@
 # M-Audio X-Session Pro profile for ptsr
 #
 # Numbers were read with aseqdump on 2026-10-28 (port "USB X-Session MIDI 1", channel 1).
-# Physical positions are not known yet: k1-k12 and b1-b10 follow the MIDI numbers in order.
 # The input debug tab (F12) shows what every control sends.
 #
 # X-Session Pro knobs and faders are absolute (with end stops); how they catch a value is the
@@ -27,7 +26,7 @@ k11 = { cc = 35, type = "absolute" }
 k12 = { cc = 36, type = "absolute" }
 
 [controls.faders]
-fader_a   = { cc = 12, type = "absolute" }   # left/right by capture order
+fader_a   = { cc = 12, type = "absolute" }
 fader_b   = { cc = 11, type = "absolute" }
 pitch_a   = { cc = 14, type = "absolute" }
 pitch_b   = { cc = 15, type = "absolute" }
@@ -45,14 +44,29 @@ b8  = { note = 59 }
 b9  = { note = 69 }
 b10 = { note = 70 }
 
-# What the controls do on the pads screen. Which physical knob is k1 is still unknown:
-# turn knobs on F12 -> Input and put the one you like here.
+[screens.global]
+b2 = "screen.files"
+b3 = "screen.fx"
+b5 = "bank.prev"
+b6 = "bank.next"
+b8 = "ui.back"
+fader_b = "pad.volume"
+fader_a = "pad.pitch"
+pitch_a = "master.volume"
+
 [screens.pads]
 k1 = "pad.volume"
-b1 = "bank.prev"
-b2 = "bank.next"
-b3 = "pad.mode_next"
-b10 = "pad.edit"               # the edit of the selected pad, as Enter
+b4 = "pad.select_left"
+b1 = "pad.select_right"
+b7 = "pad.edit_only"
+
+[screens.files]
+b4 = "browser.up"
+b1 = "browser.down"
+b7 = "browser.take_only"
+b8 = "screen.chop"
+b9 = "browser.preview_toggle"
+b10 = "browser.preview_toggle"
 
 # What the controls do on the chop screen (logical actions of the program)
 [screens.chop]
@@ -63,16 +77,12 @@ k4  = "chop.region_start_pos"
 k5  = "chop.region_end_pos"
 k11 = "chop.threshold"
 k12 = "chop.zoom"
-b1  = "transport.play_stop"
-b2  = "chop.cut"
-b3  = "marker.prev"
-b4  = "marker.next"
-b5  = "marker.delete"
-b6  = "chop.snap_toggle"
-b7  = "chop.hits"
-b8  = "edit.undo"
-b9  = "chop.commit"            # no plan: the slices in order from the selected pad; again: apply
-b10 = "chop.edit"              # the slice edit, as Enter
+b4  = "marker.prev"
+b1  = "marker.next"
+b7  = "chop.cut"
+b8  = "chop.edit_only"
+b9  = "transport.play_stop"
+b10 = "transport.play_stop"
 
 # While an edit mode is open, on any screen, these stand over the screen roles above.
 # The knobs are page slots: k1 turns the 1st parameter of the page shown, k2 the 2nd.
@@ -80,6 +90,7 @@ b10 = "chop.edit"              # the slice edit, as Enter
 k1  = "edit.param_1"
 k2  = "edit.param_2"
 k3  = "edit.param_3"
-b3  = "edit.page_prev"          # as Shift+Tab: a knob turns its parameter, no pick needed
-b4  = "edit.page_next"          # as Tab
-b10 = "ui.back"                 # closes the edit, so b10 toggles it
+b4  = "edit.page_prev"
+b1  = "edit.page_next"
+b7  = "ui.back"
+b8  = "ui.back"

@@ -9,6 +9,7 @@ shift_velocity = 127
 [global]
 F2 = "screen.pads"
 F3 = "screen.chop"
+F4 = "screen.fx"
 F6 = "screen.files"
 F12 = "screen.settings"           # audio; input debug is a tab inside (02b)
 PageUp = "bank.prev"
@@ -123,6 +124,19 @@ Up = "edit.param_prev"
 Down = "edit.param_next"
 "Ctrl+A" = "pad.mark_bank"  # marks the 16 pads of the open bank; again unmarks them
 M = "pad.mark_toggle"    # the marker key: marks pads here, a cut on the chop screen
+
+# Shared effects: the page keys select FX 1 or FX 2.
+[screens.fx]
+Tab = "edit.page_next"
+"Shift+Tab" = "edit.page_prev"
+I = "edit.param_prev"
+K = "edit.param_next"
+Up = "edit.param_prev"
+Down = "edit.param_next"
+J = "edit.value_dec"
+L = "edit.value_inc"
+Left = "edit.value_dec"
+Right = "edit.value_inc"
 
 [screens.settings]
 I = "settings.row_prev"

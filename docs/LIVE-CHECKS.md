@@ -52,7 +52,7 @@ Folder: `changes/archive/2026-11-01-21-edit-mode`
 
 - [ ] On the pads screen (`F2`), hit a pad. Press `Enter`. Make sure that the panel frame
   changes colour. Make sure that the frame title shows
-  `EDIT · TONE ENV FILTER SOURCE FX FX1* FX2*` with TONE lit. Make sure that the rows
+  `EDIT · TONE ENV FILTER SOURCE FX` with TONE lit. Make sure that the rows
   above the help band do not move.
 - [ ] Press `I` and `K` to select a parameter. Press `J` and `L` to change it. Make sure
   that a tap is a fine step and a held key is faster. Make sure that the knob numbers 1–3
@@ -238,7 +238,7 @@ Folder: `changes/archive/2026-11-01-48-panel-blocks`
   `source` on SOURCE is selected. Press `K` past the end of SOURCE. Make sure that `drive`
   on FX is selected.
 - [ ] Press `Tab` again and again. Make sure that the lit page in the frame title moves
-  through TONE, ENV, FILTER, SOURCE, FX, FX1* and FX2*.
+  through TONE, ENV, FILTER, SOURCE and FX.
 
 ## 49 — Loop the play on the chop screen
 
@@ -339,6 +339,92 @@ Superseded by 77: the pad frame has no glyphs; one `✱` on the mode line marks 
 - [ ] Make sure that pads with slices show `◻` and a whole-file pad does not. Press `F1`.
   Make sure that it names each glyph.
 
+## 82 — Compact shared FX screen
+
+Folder: `changes/82-shared-fx-screen`
+
+Agent verification on 2026-11-02: the full automated suite passed. Recorded input
+walkthroughs checked file loading and filtering, rename, marks, reset/clear confirmation,
+swap, undo, chopping and assignment, project save/reopen, and F4 transitions from each
+screen. Tests also checked MIDI release across screens, banks and channels. The live
+100x32 screen showed compact cards. The isolated process reported `JACK unavailable`.
+A separate owner process already had a PipeWire node named ptsr, so the agent stopped
+its test session. No live sound or physical controller behavior was accepted from this run.
+Small and large layouts were checked with TestBackend, not an interactive terminal.
+The owner checks below remain open. That run does not verify the replacement X-Session
+map on hardware. All checks for the new map below remain unchecked.
+
+The X-Session replacement belongs to change 82. The physical control table is in
+`docs/USER-STORIES.md`, section "Set up a pad with the X-Session Pro".
+The profile applies automatically when the port name contains `X-Session`.
+There is no manual profile selector. An existing user map keeps its old assignments until
+reset, including old Play roles and destructive delete, commit or replacement assignments.
+
+- [ ] Stop the running program. Start the newly built program. Connect the X-Session Pro.
+  Before reset, check that the existing map still has its previous assignments.
+- [ ] Press `F12`. Open MIDI. Select `reset to profile` for `X-Session Pro`.
+  This selects a device to reset, not a profile. Press `Enter` to open the question.
+  Press `Esc`. Check that the existing bindings remain unchanged, including after a restart.
+- [ ] Select that reset row again. Press `Enter` to open the question.
+  Press `Enter` again to confirm. Check that the new physical defaults replace this device's map.
+  This deletes custom bindings only for this device. Check that other devices keep their bindings.
+  Restart the program. Check that the replacement map remains.
+- [ ] Press left Headphone (b2, note 44). Check that Files opens.
+  Press right Headphone (b3, note 45). Check that FX opens.
+- [ ] Check left backward (b4, note 46) and left forward (b1, note 43).
+  They select previous / next pads on Pads, files on Files, slices on Chop and blocks on FX.
+  In edit, they select previous / next pages. A release must not repeat the command.
+- [ ] Press right backward (b5, note 56) and right forward (b6, note 57).
+  Check previous / next bank. Check that button releases do not change banks again.
+- [ ] On Pads, press left Cue (b7, note 58). Check that pad edit opens.
+  Turn left numbered knobs 1–3 (k1–k3, CC24–26). Check the current page parameters.
+  Close edit with left Cue. Open it again and close it with right Cue (b8, note 59).
+- [ ] On Files, press left Cue to hold a file. Press it again. No file is placed.
+  Press right Cue to open Chop.
+- [ ] Start a layout plan with the keyboard. Press right Cue. The plan must not apply.
+  Open a replacement question with the keyboard. Neither Cue must confirm it.
+  On Chop, press left Cue to cut. Press right Cue to open slice edit.
+  Check that either Cue closes edit without another cut.
+  Outside Files, Chop and edit, check that right Cue goes back.
+- [ ] On Files, test left Play (b10, note 70) and right Play (b9, note 69) separately.
+  Each must toggle file preview. On Chop, each must start and stop preview.
+  Repeat with edit open. Neither Play must open or close edit, delete cuts or apply a layout.
+  Check that both Plays do nothing on Pads and FX. Releases must not repeat commands.
+- [ ] On Chop with edit closed, turn k1–k5 (CC24–28).
+  Check slice start, slice end, cursor, region start and region end respectively.
+  Check right Mid (k11, CC35) for threshold and right Low (k12, CC36) for zoom.
+- [ ] On each screen and in edit, move left Volume (fader_b, CC11), left Pitch (fader_a, CC12)
+  and right Volume (pitch_a, CC14). Check selected pad volume, selected pad pitch and master volume respectively.
+  Check that right Pitch (pitch_b, CC15) and crossfader messages CC17 / CC20 change nothing.
+- [ ] On a disposable project, check every default button on each screen and in edit.
+  No default may delete a cut, apply a layout or confirm replacement.
+  Use keyboard commands for layout, or explicitly learn a commit control.
+  An old destructive assignment remains active until reset. Do not use the old map for this safety check.
+
+- [ ] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
+  terminal they are beside each other. In a narrow terminal they are stacked. Cards do
+  not grow to fill empty space. The selected block and parameter are clear.
+- [ ] Press `Tab` and `Shift+Tab`. Only the selected block changes. `I` and `K` select a
+  parameter. `J` and `L` change it. Check `F1` and the bottom help.
+- [ ] Play keyboard and MIDI pads while changing effects. Hold a gate pad, change the
+  screen and bank, then release it. The original pad must stop.
+- [ ] Set the sends on two pads to FX 1. On `F4`, change size and tone. Both pads must
+  use the changed effect. Select FX 2 and use the same three knobs. FX 1 must stay unchanged.
+- [ ] In pickup mode, change FX 1, select FX 2 and move the same knob. FX 2 must wait
+  for its own value. Check a second device and the scale and jump modes too.
+- [ ] Check the old page knobs. Assign a replacement with `F10`. The old knob must stop
+  controlling that action. Clear the new assignment, restart, and check that neither returns.
+- [ ] Press `Ctrl+Z` after a keyboard or MIDI effect change. Check the previous setting.
+  Save with `Ctrl+S` and restart. Check both slots, drive and sends.
+- [ ] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
+  parameter stays selected. Shared slot settings must not appear in the pad panel.
+The profile update changes no sound algorithms. It needs no new sound render.
+Use the existing change 82 WAV for the listening check.
+
+- [ ] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
+  parameter changes and undo for clicks. Compare with `56-reverb.wav`, `56-delay.wav`
+  and `56-two-slots.wav`.
+
 ## 56 — Drive on every pad, two shared effect slots fed by sends
 
 Folder: `changes/archive/2026-11-01-56-pad-fx`
@@ -350,10 +436,9 @@ Folder: `changes/archive/2026-11-01-56-pad-fx`
   sound gets more grit at approximately the same loudness.
 - [ ] (by ear) Set send 2 of pad `Q` to 20 % with a delay in FX 2. Hit pad `Q`. Make sure
   that you hear an echo after the pad stops. Make sure that the mode line of the pad ends with `✱`.
-- [ ] (by ear) Press `Tab` until FX1*. Make sure that the block line shows
-  `FX 1 * shared` and the change line shows `all pads`. Turn the size up. Make sure that
-  each pad that sends to FX 1 has a longer tail.
-- [ ] (by ear) On FX2*, turn knob 1 from delay to reverb. Make sure that the delay tail
+- [ ] (by ear) Press `F4`. Make sure that both shared blocks are visible and FX 1 is
+  selected. Turn the size up. Make sure that each pad that sends to FX 1 has a longer tail.
+- [ ] (by ear) Press `Tab` to select FX 2. Turn knob 1 from delay to reverb. Make sure that the delay tail
   fades out with no click. Turn it back. Make sure that the delay has its old time and
   feedback.
 - [ ] Press `Ctrl+S` and restart the program. Make sure that the drive, the sends and the
@@ -512,6 +597,9 @@ Folder: `changes/archive/2026-11-01-70-mute-groups`
 ## 74 — Learn on F12 shows what it changes before it saves
 
 Folder: `changes/archive/2026-11-01-74-learn-preview`
+
+These steps create custom bindings. They do not describe the replacement defaults.
+Reset the X-Session map as described in section 82 when you finish these steps.
 
 - [ ] Connect the X-Session Pro. Press `F12` and open the MIDI tab. Select "bank next" in
   GLOBAL, press `Enter` and press b9. Make sure that the row shows b9 in amber next to the

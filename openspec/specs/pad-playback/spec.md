@@ -5,6 +5,46 @@ Pads: 16 pads in 8 banks played from the keyboard, one-shot and gate modes, velo
 
 ## Requirements
 
+### Requirement: Shared FX screen
+
+The system SHALL show both shared FX blocks on a separate screen and visibly identify
+the selected block. Each block SHALL show its effect type and the parameters of that
+type. The same three learned knobs SHALL control the type and two parameters of the
+selected block. Switching blocks SHALL NOT change either effect. Each device SHALL use
+its configured takeover mode for each block and control independently. Changes SHALL be
+smooth and saved in the project; existing projects and learned bindings SHALL retain
+their behavior. `Ctrl+Z` SHALL undo a shared effect change.
+
+#### Scenario: Select the next shared effect
+- **WHEN** FX 1 is selected and the owner presses Tab
+- **THEN** FX 2 is selected and neither effect changes
+
+#### Scenario: The same knobs control the selected effect
+- **WHEN** the owner changes FX 1 with the three page knobs, selects FX 2 and turns them
+- **THEN** only FX 2 changes after the selection
+
+#### Scenario: Takeover is separate for shared effects
+- **WHEN** a controller uses pickup, the owner changes FX 1, selects FX 2 and moves a knob
+- **THEN** FX 2 waits for its own value before the knob changes it
+
+#### Scenario: Undo a shared effect on the FX screen
+- **WHEN** the owner changes a shared effect and presses Ctrl+Z
+- **THEN** the previous effect setting returns
+
+#### Scenario: Compact shared effect cards
+- **WHEN** the owner opens F4 in a large or small terminal
+- **THEN** each effect card contains only its title and three parameter rows
+- **AND** the cards are beside each other when they fit, or stacked in a narrow terminal
+- **AND** neither card expands to fill unused rows
+
+#### Scenario: Clear a shared effect knob assignment
+- **WHEN** the owner clears a page knob assignment on F4 and restarts the program
+- **THEN** the cleared knob does not control the effect and no old assignment returns
+
+#### Scenario: Replaced page knobs stay replaced
+- **WHEN** an old pad edit page knob has a replacement and the owner opens F4
+- **THEN** the replacement controls the effect and the previous knob stays inactive
+
 ### Requirement: Pad grid and banks
 The system SHALL provide 16 pads in a 4×4 grid and 8 banks numbered 1–8; the bank is switched with a command from the keyboard or a controller: next/previous, or directly with Ctrl+1…8. On screen a bank is always shown with the word "bank" so it is not confused with the pad keys 1–4.
 
@@ -459,8 +499,7 @@ before.
 ### Requirement: The pad panel in blocks
 The system SHALL group the parameter rows of the pad panel by page, in the page order
 TONE, ENV, FILTER, SOURCE, FX: every block stands under a thin line with the page name,
-the line of the page the edit is on is lit. While the edit is on a shared slot's page,
-that slot's block (`FX 1 * shared`, `FX 2 * shared`) stands in place of the FX block. `Tab` turns the pages in this order, `I` `K` walk
+the line of the page the edit is on is lit. `Tab` turns the pages in this order, `I` `K` walk
 the parameters in this order, and the frame title names the pages in this order.
 
 #### Scenario: Blocks
@@ -470,7 +509,7 @@ the parameters in this order, and the frame title names the pages in this order.
 #### Scenario: SOURCE last
 - **WHEN** the edit is on the reso of the FILTER page and the owner presses `K`
 - **THEN** the source is picked, on the SOURCE page; `K` after the end of SOURCE picks the
-  drive on FX, and `K` after the last parameter of FX2* goes back to the volume
+  drive on FX, and `K` after the last parameter of FX goes back to the volume
 
 ### Requirement: Pad drive
 The system SHALL give every pad a drive from 0 to 100 %: turning it up adds grit and keeps
@@ -515,8 +554,7 @@ stays within 50 % of the buffer budget (128 samples at 48 kHz).
 - **THEN** no step between two neighbouring samples is larger than the sound's own
 
 #### Scenario: Two pads, one room
-- **WHEN** pads Q and W send to FX 1 with a reverb and the size is turned up on the FX1*
-  page of pad Q
+- **WHEN** pads Q and W send to FX 1 with a reverb and the owner increases its size on the FX screen
 - **THEN** the tail of a hit on W is longer too
 
 #### Scenario: A new type in the slot
@@ -540,7 +578,7 @@ stays within 50 % of the buffer budget (128 samples at 48 kHz).
 
 #### Scenario: Marked pads together
 - **WHEN** pads Q and W are marked and the owner turns send 1 on Q to 30 %
-- **THEN** send 1 of W is 30 % too, and the slot pages change no pad
+- **THEN** send 1 of W is 30 % too, and changes on the shared FX screen change no pad
 
 ### Requirement: Undo on the pads
 The system SHALL undo the last change of the pads with `Ctrl+Z` on the pads and files
