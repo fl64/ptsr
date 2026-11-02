@@ -54,7 +54,7 @@ each send naming the kind of its slot.
 
 #### Scenario: A slot page
 - **WHEN** the owner opens the shared FX screen and selects FX 2 with a delay
-- **THEN** the controls change the shared slot type, size and tone rather than the pad
+- **THEN** the controls change the shared slot type, time and feedback rather than the pad
 
 #### Scenario: Up down with the edit closed
 - **WHEN** the pads screen is open, the pad edit is closed, the pick is on the volume and

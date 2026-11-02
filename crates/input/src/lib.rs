@@ -13,6 +13,7 @@ pub enum Screen {
     Settings,
     Files,
     Chop,
+    Fx,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,6 +39,7 @@ pub enum Action {
     PadModeNext,
     /// Pads screen: the edit mode of the selected pad opens; `Esc` closes it.
     PadEdit,
+    PadEditOnly,
     /// Pick the next parameter the pads screen changes, in the order of the edit.
     PadParamNext,
     /// Step the picked pad parameter: 1 dB of volume or 1 semitone of pitch.
@@ -54,6 +56,7 @@ pub enum Action {
     ScreenSettings,
     ScreenFiles,
     ScreenChop,
+    ScreenFx,
     /// Chop screen: play the sample from the start / stop.
     ChopPlay,
     /// Chop screen: the next play mode — to the end, to the cut, the slice.
@@ -93,6 +96,7 @@ pub enum Action {
     /// Chop screen: in the listen mode the edit mode of the selected slice opens; in
     /// the assign mode the plan applies (the commit).
     ChopEdit,
+    ChopEditOnly,
     /// Chop screen: the assign mode starts (slices onto pads), by hand from slice 1.
     ChopAssign,
     /// Chop screen: zoom the wave view in or out around the cursor.
@@ -139,6 +143,7 @@ pub enum Action {
     BrowserParent,
     /// Ctrl+Enter on the selection: open a folder or take a file in hand.
     BrowserHold,
+    BrowserTakeOnly,
     /// Files screen: the selected file loads onto the selected pad; a folder opens.
     BrowserLoad,
     /// Files screen: play the selected file automatically, on/off.
@@ -198,6 +203,7 @@ impl Action {
             "pad.select_right" => Self::PadSelect(Dir::Right),
             "pad.mode_next" => Self::PadModeNext,
             "pad.edit" => Self::PadEdit,
+            "pad.edit_only" => Self::PadEditOnly,
             "pad.param_next" => Self::PadParamNext,
             "pad.param_dec" => Self::PadParam(-1),
             "pad.param_inc" => Self::PadParam(1),
@@ -218,6 +224,7 @@ impl Action {
             "screen.settings" => Self::ScreenSettings,
             "screen.files" => Self::ScreenFiles,
             "screen.chop" => Self::ScreenChop,
+            "screen.fx" => Self::ScreenFx,
             "transport.play_stop" => Self::ChopPlay,
             "chop.cut" => Self::ChopCut,
             "chop.play_mode" => Self::ChopPlayMode,
@@ -250,6 +257,7 @@ impl Action {
             },
             "chop.commit" => Self::ChopCommit,
             "chop.edit" => Self::ChopEdit,
+            "chop.edit_only" => Self::ChopEditOnly,
             "chop.assign" => Self::ChopAssign,
             "chop.zoom_in" => Self::ChopZoom { zoom_in: true },
             "chop.zoom_out" => Self::ChopZoom { zoom_in: false },
@@ -320,6 +328,7 @@ impl Action {
             "browser.enter" => Self::BrowserEnter,
             "browser.parent" => Self::BrowserParent,
             "browser.hold" => Self::BrowserHold,
+            "browser.take_only" => Self::BrowserTakeOnly,
             "browser.load" => Self::BrowserLoad,
             "browser.preview_toggle" => Self::BrowserPreviewToggle,
             "browser.filter" => Self::BrowserFilter,
@@ -356,6 +365,7 @@ pub enum Group {
     Files,
     Chop,
     ChopEdit,
+    Fx,
 }
 
 impl Group {
@@ -369,6 +379,7 @@ impl Group {
             Group::Files => "files",
             Group::Chop => "chop",
             Group::ChopEdit => "chop_edit",
+            Group::Fx => "fx",
         }
     }
 
@@ -382,6 +393,7 @@ impl Group {
             Group::Files => "FILES",
             Group::Chop => "CHOP",
             Group::ChopEdit => "CHOP · EDIT",
+            Group::Fx => "FX",
         }
     }
 
@@ -395,10 +407,11 @@ impl Group {
             Group::Files => midi::Scope::Screen(Screen::Files),
             Group::Chop => midi::Scope::Screen(Screen::Chop),
             Group::ChopEdit => midi::Scope::Edit(Screen::Chop),
+            Group::Fx => midi::Scope::Screen(Screen::Fx),
         }
     }
 
-    pub const ALL: [Group; 7] = [
+    pub const ALL: [Group; 8] = [
         Group::Global,
         Group::Pads,
         Group::PadsEdit,
@@ -406,6 +419,7 @@ impl Group {
         Group::Files,
         Group::Chop,
         Group::ChopEdit,
+        Group::Fx,
     ];
 
     pub fn from_key(key: &str) -> Option<Self> {
@@ -446,6 +460,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "screen.chop",
         label: "chop screen",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "screen.fx",
+        label: "shared FX screen",
         group: Group::Global,
         knob: false,
     },
@@ -757,6 +777,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "pad.edit_only",
+        label: "open pad edit only",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
         name: "pad.param_next",
         label: "next parameter",
         group: Group::Pads,
@@ -1048,6 +1074,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "browser.take_only",
+        label: "take file / open folder only",
+        group: Group::Files,
+        knob: false,
+    },
+    ActionInfo {
         name: "browser.load",
         label: "load the file onto the selected pad",
         group: Group::Files,
@@ -1312,6 +1344,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "chop.edit_only",
+        label: "open slice edit only",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
         name: "chop.assign",
         label: "slices onto pads",
         group: Group::Chop,
@@ -1402,6 +1440,66 @@ pub const ACTIONS: &[ActionInfo] = &[
         name: "ui.back",
         label: "leave the edit",
         group: Group::ChopEdit,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.param_1",
+        label: "knob 1: effect type",
+        group: Group::Fx,
+        knob: true,
+    },
+    ActionInfo {
+        name: "edit.param_2",
+        label: "knob 2: first parameter",
+        group: Group::Fx,
+        knob: true,
+    },
+    ActionInfo {
+        name: "edit.param_3",
+        label: "knob 3: second parameter",
+        group: Group::Fx,
+        knob: true,
+    },
+    ActionInfo {
+        name: "edit.page",
+        label: "effect block (knob)",
+        group: Group::Fx,
+        knob: true,
+    },
+    ActionInfo {
+        name: "edit.page_prev",
+        label: "previous effect block",
+        group: Group::Fx,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.page_next",
+        label: "next effect block",
+        group: Group::Fx,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.param_prev",
+        label: "previous parameter",
+        group: Group::Fx,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.param_next",
+        label: "next parameter",
+        group: Group::Fx,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.value_dec",
+        label: "decrease value",
+        group: Group::Fx,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.value_inc",
+        label: "increase value",
+        group: Group::Fx,
         knob: false,
     },
 ];
@@ -1637,6 +1735,7 @@ impl Keymap {
             (Screen::Settings, "settings"),
             (Screen::Files, "files"),
             (Screen::Chop, "chop"),
+            (Screen::Fx, "fx"),
         ] {
             let map = self.screens.entry(screen).or_default();
             section(name, screens_t.and_then(|s| s.get(name)), map);
@@ -1905,6 +2004,172 @@ mod tests {
     ];
 
     const KEYMAP: &str = include_str!("../../../config/keymap.toml");
+
+    #[test]
+    fn open_the_shared_fx_screen() {
+        let k = keymap();
+        for screen in [
+            Screen::Pads,
+            Screen::Chop,
+            Screen::Files,
+            Screen::Settings,
+            Screen::Fx,
+        ] {
+            assert_eq!(
+                k.resolve(
+                    screen,
+                    &ev(KeyCode::F(4), KeyModifiers::NONE, KeyEventKind::Press)
+                ),
+                Some(Action::ScreenFx)
+            );
+        }
+        assert_eq!(Action::parse("screen.fx"), Some(Action::ScreenFx));
+        assert_eq!(k.keys_for(Screen::Fx, Action::ScreenFx), ["F4"]);
+    }
+
+    #[test]
+    fn select_the_next_shared_effect_in_both_layouts() {
+        let k = keymap();
+        for layout in [['i', 'k', 'j', 'l'], ['ш', 'л', 'о', 'д']] {
+            for (c, action) in layout.into_iter().zip([
+                Action::ParamPrev,
+                Action::ParamNext,
+                Action::EditValue {
+                    up: false,
+                    fine: true,
+                },
+                Action::EditValue {
+                    up: true,
+                    fine: true,
+                },
+            ]) {
+                assert_eq!(k.resolve(Screen::Fx, &press(c)), Some(action));
+            }
+        }
+        for (code, mods, action) in [
+            (KeyCode::Tab, KeyModifiers::NONE, Action::PageNext),
+            (KeyCode::Tab, KeyModifiers::SHIFT, Action::PagePrev),
+            (KeyCode::BackTab, KeyModifiers::SHIFT, Action::PagePrev),
+            (KeyCode::Up, KeyModifiers::NONE, Action::ParamPrev),
+            (KeyCode::Down, KeyModifiers::NONE, Action::ParamNext),
+            (
+                KeyCode::Left,
+                KeyModifiers::NONE,
+                Action::EditValue {
+                    up: false,
+                    fine: true,
+                },
+            ),
+            (
+                KeyCode::Right,
+                KeyModifiers::NONE,
+                Action::EditValue {
+                    up: true,
+                    fine: true,
+                },
+            ),
+        ] {
+            assert_eq!(
+                k.resolve(Screen::Fx, &ev(code, mods, KeyEventKind::Press)),
+                Some(action)
+            );
+        }
+        for c in ['z', 'я'] {
+            assert_eq!(
+                k.resolve(
+                    Screen::Fx,
+                    &ev(KeyCode::Char(c), KeyModifiers::CONTROL, KeyEventKind::Press)
+                ),
+                Some(Action::Undo)
+            );
+        }
+        assert!(
+            k.bindings(Screen::Fx)
+                .iter()
+                .any(|(_, a)| *a == Action::PageNext)
+        );
+    }
+
+    #[test]
+    fn play_pads_on_the_fx_screen() {
+        let k = keymap();
+        for layout in [PADS_US, PADS_RU] {
+            for (pad, c) in layout.into_iter().enumerate() {
+                for editing in [false, true] {
+                    assert_eq!(
+                        k.resolve_in(Screen::Fx, editing, &press(c)),
+                        Some(Action::PadPress {
+                            pad,
+                            velocity: 80.0 / 127.0
+                        })
+                    );
+                    assert_eq!(
+                        k.resolve_in(
+                            Screen::Fx,
+                            editing,
+                            &ev(KeyCode::Char(c), KeyModifiers::SHIFT, KeyEventKind::Press)
+                        ),
+                        Some(Action::PadPress { pad, velocity: 1.0 })
+                    );
+                    assert_eq!(
+                        k.resolve_in(
+                            Screen::Fx,
+                            editing,
+                            &ev(KeyCode::Char(c), KeyModifiers::NONE, KeyEventKind::Repeat)
+                        ),
+                        None
+                    );
+                    assert_eq!(
+                        k.resolve_in(
+                            Screen::Fx,
+                            editing,
+                            &ev(KeyCode::Char(c), KeyModifiers::NONE, KeyEventKind::Release)
+                        ),
+                        Some(Action::PadRelease { pad })
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_fx_group_keeps_the_old_group_order() {
+        assert_eq!(
+            &Group::ALL[..7],
+            &[
+                Group::Global,
+                Group::Pads,
+                Group::PadsEdit,
+                Group::Settings,
+                Group::Files,
+                Group::Chop,
+                Group::ChopEdit
+            ]
+        );
+        assert_eq!(Group::ALL[7], Group::Fx);
+        assert_eq!(Group::from_key("fx"), Some(Group::Fx));
+        assert_eq!(Group::Fx.title(), "FX");
+        assert_eq!(Group::Fx.scope(), midi::Scope::Screen(Screen::Fx));
+        for name in [
+            "edit.param_1",
+            "edit.param_2",
+            "edit.param_3",
+            "edit.page",
+            "edit.page_next",
+            "edit.page_prev",
+            "edit.param_next",
+            "edit.param_prev",
+            "edit.value_inc",
+            "edit.value_dec",
+        ] {
+            assert!(
+                ACTIONS
+                    .iter()
+                    .any(|a| a.group == Group::Fx && a.name == name),
+                "{name}"
+            );
+        }
+    }
 
     fn keymap() -> Keymap {
         let (k, warnings) = Keymap::from_toml(KEYMAP).unwrap();
@@ -2345,6 +2610,29 @@ mod tests {
     }
 
     #[test]
+    fn safe_cue_actions_are_parsed_and_listed_in_their_screen_groups() {
+        for (name, action, group) in [
+            ("pad.edit_only", Action::PadEditOnly, Group::Pads),
+            ("chop.edit_only", Action::ChopEditOnly, Group::Chop),
+            ("browser.take_only", Action::BrowserTakeOnly, Group::Files),
+        ] {
+            assert_eq!(Action::parse(name), Some(action));
+            assert!(
+                ACTIONS
+                    .iter()
+                    .any(|row| { row.name == name && row.group == group && !row.knob })
+            );
+        }
+        for (name, action) in [
+            ("pad.edit", Action::PadEdit),
+            ("chop.edit", Action::ChopEdit),
+            ("browser.hold", Action::BrowserHold),
+        ] {
+            assert_eq!(Action::parse(name), Some(action));
+        }
+    }
+
+    #[test]
     fn every_listed_action_is_known() {
         for a in ACTIONS {
             assert_eq!(Action::parse(a.name).is_some(), !a.knob, "{}", a.name);
@@ -2431,7 +2719,7 @@ mod tests {
         assert_eq!(k.resolve(Screen::Pads, &held), None);
     }
 
-    /// 57: the learn mode is on F10, next to the settings on F12; F4 is free.
+    /// 57: the learn mode is on F10, next to the settings on F12.
     #[test]
     fn the_learn_mode_on_f10() {
         let k = keymap();
@@ -2441,7 +2729,10 @@ mod tests {
                 k.resolve(screen, &key(KeyCode::F(10))),
                 Some(Action::LearnToggle)
             );
-            assert_eq!(k.resolve(screen, &key(KeyCode::F(4))), None);
+            assert_eq!(
+                k.resolve(screen, &key(KeyCode::F(4))),
+                Some(Action::ScreenFx)
+            );
         }
     }
 

@@ -9,6 +9,8 @@ pad edit. A separate screen makes their scope clear.
 - Use the same three controller knobs for the selected slot: type and two parameters.
 - Keep drive and sends in the pad edit. Pads stay playable on the FX screen.
 - Keep project settings and existing learned controls compatible.
+- Replace the X-Session Pro defaults with physical navigation, preview, page and fader roles.
+  Keep existing user assignments until a confirmed Reset to profile.
 
 ## Capabilities
 
@@ -17,6 +19,8 @@ pad edit. A separate screen makes their scope clear.
 - `editing`: shared effect pages leave the pad edit.
 - `pad-playback`: shared effects are controlled on the FX screen.
 - `keyboard`: F4 opens the FX screen and Tab selects its slot.
+- `input-devices`: documented X-Session physical controls and safe default buttons.
+- `midi-learn`: reset and clear scenarios use the replacement defaults.
 
 ## Impact
 

@@ -35,12 +35,9 @@ pickup; the pick lands on the first parameter of that page, and a turn that stay
 the part of the current page keeps the pick. An object with one page keeps it on `Tab`
 and on the page knob. The pads screen
 has TONE (volume, pitch, mute group), ENV (attack, decay, release), FILTER (filter, cutoff, reso),
-SOURCE (source, start, end), FX (drive, send 1, send 2), FX1* and FX2* (the slot's type and
-the two parameters of that type), in this order; the chop screen has BOUNDS (slice start,
-slice end). A page with a star sets the shared slot, not the pad: its block line says
-`shared`, the change line says `all pads`. The panel shows the FX block, each send naming
-the kind of its slot; while the edit is on a slot's page, the block of that slot stands in
-its place, so the panel is no taller than with the FX block.
+SOURCE (source, start, end), FX (drive, send 1, send 2), in this order; the chop screen has BOUNDS (slice start,
+slice end). Shared effects are controlled on the FX screen. The panel shows the FX block,
+each send naming the kind of its slot.
 
 #### Scenario: The envelope page fills three knobs
 - **WHEN** the picked parameter of a pad is attack, decay or release
@@ -52,12 +49,12 @@ its place, so the panel is no taller than with the FX block.
 
 #### Scenario: Shift+Tab turns back
 - **WHEN** the pad edit is open on TONE and the owner presses `Shift+Tab`
-- **THEN** the page is FX2* and the type of FX 2 is picked
+- **THEN** the page is FX and the drive is picked
 
 #### Scenario: A knob picks the page
 - **WHEN** the pad edit is open on TONE and the page knob is turned to the middle of its
   travel, then a little further inside the same part
-- **THEN** the page is SOURCE (the fourth of seven) at once, the source is picked, and the
+- **THEN** the page is FILTER (the third of five) at once, the filter type is picked, and the
   second turn keeps it
 
 #### Scenario: One page
@@ -80,10 +77,8 @@ its place, so the panel is no taller than with the FX block.
   the effect of its slot
 
 #### Scenario: A slot page
-- **WHEN** the pad edit is on FX2* with a delay in FX 2 and the owner turns knob 1 one step
-- **THEN** FX 2 holds a reverb, knobs 2 and 3 turn its size and tone, the block line says
-  `FX 2 * shared` where the FX block stood, and the change line says `all pads` in a
-  window of 52 rows; on the TONE page the panel shows the FX block again
+- **WHEN** the owner opens the shared FX screen and selects FX 2 with a delay
+- **THEN** the controls change the shared slot type, time and feedback rather than the pad
 
 #### Scenario: Up down with the edit closed
 - **WHEN** the pads screen is open, the pad edit is closed, the pick is on the volume and
@@ -142,7 +137,7 @@ parameter are picked, and, in the edit mode, which parameter every knob turns no
 
 - the edit mode changes the frame colour of the panel it edits and names the mode and
   every page of the object in the frame title, the current page lit
-  (`EDIT · TONE ENV FILTER SOURCE FX FX1* FX2*`), so the owner sees where `I` `K` and
+  (`EDIT · TONE ENV FILTER SOURCE FX`), so the owner sees where `I` `K` and
   `Tab` lead; a title wider than the panel drops `EDIT ·` first and keeps every page, the
   frame colour still telling the mode;
 - the picked parameter is highlighted in the panel; on the chop screen the bound that the
@@ -157,11 +152,11 @@ parameter are picked, and, in the edit mode, which parameter every knob turns no
 #### Scenario: The frame tells the mode
 - **WHEN** the owner presses `Enter` on a pad and then `Esc`
 - **THEN** the pad panel frame changes colour and its title says
-  `EDIT · TONE ENV FILTER SOURCE FX FX1* FX2*` with TONE lit, and after `Esc` the frame is
+  `EDIT · TONE ENV FILTER SOURCE FX` with TONE lit, and after `Esc` the frame is
   as before
 
 #### Scenario: The title shows where Tab leads
-- **WHEN** the pad edit is open on TONE and the owner presses `Tab` until FX2*
+- **WHEN** the pad edit is open on TONE and the owner presses `Tab` until FX
 - **THEN** the lit page in the title moves through every page in order, the other pages
   stay named in it
 

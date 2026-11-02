@@ -22,9 +22,9 @@ The system SHALL let the owner pick an action on the MIDI tab of the settings sc
   control, also when it came from the profile
 
 #### Scenario: Clear a profile role
-- **WHEN** b3 of the X-Session Pro changes the pad mode, as seeded from the profile, and the
-  owner presses Backspace on the "pad mode" row and restarts the program
-- **THEN** b3 does nothing on the pads screen, and the row still has no control
+- **WHEN** left Cue (b7) opens pad edit from the X-Session Pro profile, and the owner
+  clears the "open pad edit only" row and restarts the program
+- **THEN** b7 does nothing on the pads screen, and the row still has no control
 
 #### Scenario: See what the button leaves before it is saved
 - **WHEN** b9 switches the pad mode in the PADS group and turns to the next bank in the GLOBAL group, and on the MIDI tab of F12 the owner selects "pad mark" in PADS, presses Enter and presses b9
@@ -254,6 +254,6 @@ device's bindings with the roles of its profile; it asks first, `Enter` resets, 
 keeps.
 
 #### Scenario: Reset to profile
-- **WHEN** the owner cleared b10 and learned b3 for "next bank", then picks "reset to
-  profile" for the X-Session Pro and presses Enter
-- **THEN** b10 opens the pad edit again and b3 changes the pad mode, as the profile has it
+- **WHEN** the owner clears b7 and learns b3 for "next bank", then selects "reset to
+  profile" for the X-Session Pro and confirms the question with Enter
+- **THEN** left Cue (b7) opens pad edit again and right Headphone (b3) opens FX
