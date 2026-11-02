@@ -5970,6 +5970,7 @@ fn pads_view(
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
         bank_marks: bank_marks(p),
+        mark_plate: mark_plate(p),
         out_wave,
         splash,
         big: big_view(p, rate),
@@ -6057,6 +6058,16 @@ fn bank_fill(p: &pads::Pads) -> [u16; tui::BANKS] {
         }
     }
     fill
+}
+
+/// The plate on the title line of the pads screen (76): marking is on, or pads stay marked.
+fn mark_plate(p: &pads::Pads) -> Option<String> {
+    let n = p.marked.len();
+    if p.marking {
+        Some(format!("MARK · hit pads · {n} marked"))
+    } else {
+        (n > 0).then(|| format!("{n} MARKED · Esc drops"))
+    }
 }
 
 /// Per bank, a bitmask of its marked pads (76).
@@ -6411,6 +6422,7 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
                     bank_marks: [0; tui::BANKS],
+                    mark_plate: None,
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -6522,6 +6534,7 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
+                    mark_plate: mark_plate(p),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -6641,6 +6654,7 @@ fn chop_view<'a>(
                     learn: Vec::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
+                    mark_plate: mark_plate(p),
                     edit: None,
                     pages: Vec::new(),
                     knobs: Vec::new(),
@@ -14881,6 +14895,28 @@ mod tests {
             "{rows:?}"
         );
         assert!(!rows.iter().any(|(_, t)| t.contains("scope")), "{rows:?}");
+    }
+
+    /// 76 pad-playback "The mark plate": the title line says marking is on and how many
+    /// pads are marked; with marking off and marks left it says so; after Esc it is gone.
+    #[test]
+    fn the_mark_plate() {
+        let mut app = undo_app();
+        let plate = |app: &mut super::App| panel_now(app).mark_plate;
+        assert_eq!(plate(&mut app), None);
+        app.apply(Action::PadMarkToggle);
+        for pad in [0, 1, 2] {
+            app.apply(Action::PadPress { pad, velocity: 0.8 });
+            app.apply(Action::PadRelease { pad });
+        }
+        assert_eq!(
+            plate(&mut app).as_deref(),
+            Some("MARK · hit pads · 3 marked")
+        );
+        app.apply(Action::PadMarkToggle);
+        assert_eq!(plate(&mut app).as_deref(), Some("3 MARKED · Esc drops"));
+        app.apply(Action::Back);
+        assert_eq!(plate(&mut app), None);
     }
 
     /// 76 pad-playback "Esc in the edit keeps the marks".

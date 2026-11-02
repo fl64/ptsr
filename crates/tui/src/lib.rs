@@ -324,6 +324,8 @@ pub struct Pads {
     pub bank_fill: [u16; BANKS],
     /// Per bank, its marked pads (76); a bank with marks shows them in the bank row.
     pub bank_marks: [u16; BANKS],
+    /// The mark plate on the title line (76): marking is on or pads stay marked.
+    pub mark_plate: Option<String>,
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
     /// The splash at start (73): while it is `Some`, the strip shows it instead of the
@@ -941,10 +943,15 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
 
 fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
-    frame.render_widget(
-        Line::from(Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT))),
-        f.title,
-    );
+    let mut title = vec![Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT))];
+    if let Some(plate) = &p.mark_plate {
+        title.push(" ".into());
+        title.push(Span::styled(
+            format!(" {plate} "),
+            Style::new().fg(BG).bg(MARK).bold(),
+        ));
+    }
+    frame.render_widget(Line::from(title), f.title);
     if p.hidden {
         frame.render_widget(pad_line(p, Vec::new(), true), f.bank);
     } else {
@@ -2518,6 +2525,7 @@ mod tests {
             // pads 1 and W of the current bank (2) hold a sound
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -2969,6 +2977,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -3214,6 +3223,28 @@ mod tests {
                 .iter()
                 .any(|(s, fg, _)| s == "─" && *fg == BANK_COLORS[2]),
             "the other pads keep the bank colour"
+        );
+    }
+
+    /// 76 "The mark plate": the plate stands on the title line, black on yellow.
+    #[test]
+    fn the_mark_plate_is_yellow_on_the_title_line() {
+        let mut p = idle_pads();
+        p.mark_plate = Some("MARK · hit pads · 3 marked".into());
+        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let y = (0..rows.len())
+            .find(|&y| row_text(&rows, y).contains("F2 PADS"))
+            .expect("the title line");
+        let title = row_text(&rows, y);
+        assert!(
+            title.contains("F2 PADS   MARK · hit pads · 3 marked "),
+            "{title}"
+        );
+        assert!(
+            rows[y]
+                .iter()
+                .any(|(s, fg, bg)| s == "M" && *fg == BG && *bg == MARK),
+            "black on yellow"
         );
     }
 
@@ -4276,6 +4307,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4674,6 +4706,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4852,6 +4885,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5061,6 +5095,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5157,6 +5192,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5698,6 +5734,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
+            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
