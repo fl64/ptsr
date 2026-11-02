@@ -48,6 +48,23 @@ fn crossings_per_second(buf: &[f32], from: usize, to: usize) -> f64 {
     n as f64 * SR as f64 / (to - from) as f64
 }
 
+#[test]
+fn all_benchmark_voices_stay_sounding() {
+    let frames = 20_000 * 128;
+    let sound = vec![0.001; frames * 2 + 1];
+    let mut engine = Engine::with_sounds(SR, vec![], vec![sound]);
+    for pad in 0..engine::MAX_VOICES {
+        engine.handle(0, pitch(pad, 7));
+        engine.handle(0, press(pad, 1.0));
+    }
+    let (mut left, mut right) = ([0.0; 128], [0.0; 128]);
+    for _ in 0..20_000 {
+        engine.process(&mut left, &mut right);
+    }
+    assert!(left.iter().all(|&s| s > 0.02 && s.is_finite()));
+    assert!(right.iter().all(|&s| s > 0.02 && s.is_finite()));
+}
+
 /// An octave up: the same pad plays an octave higher and half as long.
 #[test]
 fn an_octave_up_plays_higher_and_half_as_long() {

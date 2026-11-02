@@ -1,0 +1,7 @@
+- [x] 1. `⩘` for the envelope, the group digit on a plate; F1; a test for each scenario;
+  user stories; commit.
+- [x] 2. The mode as a glyph (`⇥` `⇢`) and the mute group on the mode line; F1; a test for
+  each scenario; user stories; commit.
+- [x] 3. No glyphs on the frame; `✱` on the mode line; F1; a test for each scenario; user
+  stories and live checks; commit.
+- [x] 4. Live check with the owner: moved to `docs/LIVE-CHECKS.md`, section 77.

@@ -7,7 +7,7 @@ use std::sync::atomic::{
     Ordering::{Acquire, Relaxed, Release},
 };
 
-use engine::rt::{Command, Realtime, Stats};
+use engine::rt::{ProjectCommand, ProjectState, Realtime, Stats};
 use engine::{Engine, Sample};
 use jack::PortFlags;
 use serde::{Deserialize, Serialize};
@@ -25,9 +25,10 @@ pub enum Backend {
 pub struct Audio {
     pub backend: &'static str,
     /// Commands from the UI thread.
-    pub commands: rtrb::Producer<Command>,
+    pub commands: rtrb::Producer<ProjectCommand>,
+    pub project: Arc<ProjectState>,
     /// Commands from the MIDI thread; taken by it once.
-    pub midi_commands: Option<rtrb::Producer<Command>>,
+    pub midi_commands: Option<rtrb::Producer<ProjectCommand>>,
     /// Samples the audio thread let go of; dropped here, outside the audio thread.
     garbage: rtrb::Consumer<Arc<Sample>>,
     pub stats: Arc<Stats>,
@@ -51,6 +52,8 @@ enum Stream {
         recs: [String; 2],
     },
     Cpal(#[allow(dead_code)] cpal::Stream),
+    #[cfg(test)]
+    Offline,
 }
 
 /// Devices the audio is actually connected to.
@@ -195,6 +198,8 @@ impl Audio {
                 .set_buffer_size(size)
                 .map_err(|e| format!("buffer size {size} rejected: {e}")),
             Stream::Cpal(_) => Err("buffer size change needs a restart in cpal mode".into()),
+            #[cfg(test)]
+            Stream::Offline => Err("offline audio has no buffer size".into()),
         }
     }
 }
@@ -215,11 +220,40 @@ fn engine(sample_rate: u32) -> (Engine, rtrb::Consumer<Arc<Sample>>, Arc<AtomicU
     (engine, rx, preview_pos)
 }
 
+#[cfg(test)]
+pub fn offline(sample_rate: u32) -> (Audio, Realtime) {
+    let (engine, garbage, preview_pos) = engine(sample_rate);
+    let (commands, midi_commands, consumers) = queues();
+    let stats = Arc::new(Stats::default());
+    let project = Arc::new(ProjectState::default());
+    let rt = Realtime::with_project(
+        engine,
+        consumers,
+        stats.clone(),
+        sample_rate,
+        project.clone(),
+    );
+    let audio = Audio {
+        backend: "offline",
+        project,
+        commands,
+        midi_commands: Some(midi_commands),
+        garbage,
+        stats,
+        stopped: Arc::new(AtomicBool::new(false)),
+        ports_changed: Arc::new(AtomicBool::new(false)),
+        preview_pos,
+        recorder: Arc::new(Recorder::new(sample_rate as usize)),
+        stream: Stream::Offline,
+    };
+    (audio, rt)
+}
+
 /// Queues into the audio thread: (UI, MIDI) producers and the consumers for `Realtime`.
 fn queues() -> (
-    rtrb::Producer<Command>,
-    rtrb::Producer<Command>,
-    Vec<rtrb::Consumer<Command>>,
+    rtrb::Producer<ProjectCommand>,
+    rtrb::Producer<ProjectCommand>,
+    Vec<rtrb::Consumer<ProjectCommand>>,
 ) {
     let (ui, ui_rx) = rtrb::RingBuffer::new(QUEUE);
     let (midi, midi_rx) = rtrb::RingBuffer::new(QUEUE);
@@ -423,6 +457,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
     let (commands, midi_commands, rx) = queues();
     let (engine, garbage, preview_pos) = engine(sample_rate);
     let recorder = Arc::new(Recorder::new(sample_rate as usize));
+    let project = Arc::new(ProjectState::default());
     let process = JackProcess {
         out_l,
         out_r,
@@ -430,7 +465,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
         in_r,
         rec_l,
         rec_r,
-        rt: Realtime::new(engine, rx, stats.clone(), sample_rate),
+        rt: Realtime::with_project(engine, rx, stats.clone(), sample_rate, project.clone()),
         stats: stats.clone(),
         recorder: recorder.clone(),
     };
@@ -445,6 +480,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
 
     Ok(Audio {
         backend: "jack",
+        project,
         commands,
         midi_commands: Some(midi_commands),
         garbage,
@@ -489,7 +525,9 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
     let build = |buffer: cpal::BufferSize| {
         let (commands, midi_commands, rx) = queues();
         let (engine, garbage, preview_pos) = engine(sample_rate);
-        let mut rt = Realtime::new(engine, rx, stats.clone(), sample_rate);
+        let project = Arc::new(ProjectState::default());
+        let mut rt =
+            Realtime::with_project(engine, rx, stats.clone(), sample_rate, project.clone());
         let recorder = Arc::new(Recorder::new(sample_rate as usize));
         let rec_cb = recorder.clone();
         let (mut l, mut r) = (vec![0.0; CPAL_CHUNK], vec![0.0; CPAL_CHUNK]);
@@ -533,7 +571,17 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
                 },
                 None,
             )
-            .map(|s| (s, commands, midi_commands, garbage, preview_pos, recorder))
+            .map(|s| {
+                (
+                    s,
+                    commands,
+                    midi_commands,
+                    garbage,
+                    preview_pos,
+                    recorder,
+                    project,
+                )
+            })
     };
     // 0 = auto: the system picks; an explicit size may be rejected, then the system picks too
     let first = if buffer_size > 0 {
@@ -541,7 +589,7 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
     } else {
         cpal::BufferSize::Default
     };
-    let (stream, commands, midi_commands, garbage, preview_pos, recorder) = build(first)
+    let (stream, commands, midi_commands, garbage, preview_pos, recorder, project) = build(first)
         .or_else(|e| {
             log::warn!("cpal: buffer size {buffer_size} rejected ({e}), using system default");
             build(cpal::BufferSize::Default)
@@ -551,6 +599,7 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
     log::info!("cpal: {sample_rate} Hz, {channels} ch, buffer {buffer_size}");
     Ok(Audio {
         backend: "cpal",
+        project,
         commands,
         midi_commands: Some(midi_commands),
         garbage,
