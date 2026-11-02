@@ -605,13 +605,9 @@ Folder: `changes/archive/2026-11-02-79-project-sound-isolation`
 
 Folder: `changes/80-rename-pad`
 
-- [ ] Put a sample on a pad. Hit it and press `Ctrl+N`. Edit the name in English and
-  Russian. Make sure that the pad shows each change while you type. Enter a long name
-  with wide characters: the end stays visible and the frame stays intact. Press `Enter`.
-  Make sure that the pad shows the name.
-- [ ] (by ear) Hit the pad. Make sure that its sound did not change. Restart the program
-  and make sure that the name stays.
-- [ ] Press `Ctrl+N`, change the name and press `Esc`. Make sure the old name stays.
-  Open the line again, clear it and press `Enter`. Make sure the file name comes back.
-- [ ] Give the pad a name again. Replace its sample. Make sure the new file name shows.
-  Name it again, swap it with another pad and make sure the name moves with its sound.
+The owner checked the rename (2026-11-02); the cursor was added after that check.
+
+- [ ] Put a sample on a pad. Press `Ctrl+N`. Make sure that a cursor shows after the
+  name. Clear the line and make sure that the cursor stays visible in the empty pad.
+  Type a long name with wide characters. Make sure that its end and the cursor stay
+  inside the frame. Press `Enter` and make sure that the cursor goes away.
