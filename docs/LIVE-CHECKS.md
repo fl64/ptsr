@@ -544,3 +544,27 @@ Folder: `changes/archive/2026-11-01-12-rename-ptsr`
   moved.
 - [ ] If you linked the sound to `arasaka-404` by hand (for example in a patchbay), link it
   again to the `ptsr` client.
+
+## 76 — Marks are the scope, and a pad can be reset
+
+Folder: `changes/archive/2026-11-02-76-pad-marks`
+
+- [x] On `F2`, open bank 2 (`Ctrl+2`) and press `Ctrl+A`. Make sure that all 16 pads of
+  the bank have a dark yellow fill and a yellow frame, and that the top line shows the
+  yellow plate `MARK · hit pads · 16 marked`.
+- [x] Hit two pads. Make sure that they lose the yellow. Open bank 5 (`Ctrl+5`) and hit
+  three pads. Make sure that they become yellow, and that the bank row shows yellow dots
+  at bank 2 and bank 5 where the marks are.
+- [x] Press `Enter` and turn the volume down. Make sure that every marked pad in both
+  banks is quieter (by ear).
+- [x] Still in the edit, press `Backspace`. Make sure that a question asks
+  `Reset 17 pads to clean?`. Press `Enter`. Make sure that the pads sound as freshly
+  loaded, with the same cuts (by ear). Press `Ctrl+Z`. Make sure that the settings come
+  back (by ear).
+- [x] Press `Esc`. Make sure that the edit closes and the marks stay, and that the plate
+  says `17 MARKED · Esc drops`. Press `Backspace`. Make sure that a question asks
+  `Clear 17 pads?`. Press `Esc`. Make sure that the sounds stay.
+- [x] Press `Esc`. Make sure that the marks and the plate are gone. Press `Backspace`.
+  Make sure that only the selected pad loses its sound, and that nothing asks.
+- [ ] Listen to `renders/76-reset-sounding.wav`. Make sure that the quiet, dull tone becomes
+  loud and open in the middle, without a click (by ear).

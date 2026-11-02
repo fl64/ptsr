@@ -54,7 +54,7 @@ The system SHALL start the pad sound in the nearest audio block after the event 
 - **THEN** every hit sounds, the previous voice of the same pad is cut without a click
 
 ### Requirement: Pads screen
-The system SHALL show the pads screen on F2: a 4×4 grid with keys and sound names, the current bank, the selected pad with its mode, volume and pitch with the picked parameter highlighted, the change scope, marked pads framed, and the pad lit while it is held (at least a short flash for a quick hit). Hitting a pad selects it.
+The system SHALL show the pads screen on F2: a 4×4 grid with keys and sound names, the current bank, the selected pad with its mode, volume and pitch with the picked parameter highlighted, the change scope, marked pads with a dark yellow fill and a bright yellow frame, and the pad lit while it is held (at least a short flash for a quick hit). Hitting a pad selects it.
 
 #### Scenario: Hit selects the pad
 - **WHEN** the owner hits pad W
@@ -64,6 +64,11 @@ The system SHALL show the pads screen on F2: a 4×4 grid with keys and sound nam
 - **WHEN** the owner holds pad Q for 2 seconds, from the keyboard or a controller
 - **THEN** pad Q stays lit for the 2 seconds and goes dark right after the release
 
+#### Scenario: A marked pad is yellow
+- **WHEN** pad E of bank 3 is marked
+- **THEN** pad E has a dark yellow fill and a bright yellow frame, its name stays readable,
+  and the other pads of bank 3 keep the bank color
+
 ### Requirement: Empty pads look empty
 The system SHALL call a pad without a sample "empty" in the grid and show its test tone only in the pad info.
 
@@ -72,7 +77,7 @@ The system SHALL call a pad without a sample "empty" in the grid and show its te
 - **THEN** its cell says "empty" and, when it is selected, the info says "empty · test tone A2"
 
 ### Requirement: Bank colors
-The system SHALL give each of the eight banks its own soft color, show every bank in the bank row in its color and draw the frames of the open bank's pads in that color; the colors of state (selected cyan, in hand magenta, hit white) stay above the bank color.
+The system SHALL give each of the eight banks its own soft color, show every bank in the bank row in its color and draw the frames of the open bank's pads in that color; the colors of state (selected cyan, in hand magenta, marked yellow, hit white) stay above the bank color.
 
 #### Scenario: Bank colors
 - **WHEN** the owner switches from bank 1 to bank 2
@@ -136,16 +141,15 @@ The system SHALL play each pad at its own pitch from −24 to +24 semitones in s
 - **THEN** the highlighted parameter in the pad panel moves from volume to pitch, and `J` `L` in the edit mode now change the pitch
 
 ### Requirement: Change scope
-The system SHALL apply volume, pitch and mode changes to the change scope, stepped with `Ctrl+A`: the selected pad (or the marked pads when there are marks), the current bank, all pads. The panel always names the scope on its second row, under the pad and its bank:
-`scope   pad Q`, `scope   3 marked`, `scope   bank 2`, `scope   all pads`, the same word as
-the help line (68). Volume and pitch change relatively: every pad in the scope moves by the same step and the differences between them stay; a pad at a limit stays there and the pop-up says how many pads hit it. The mode is set to the next mode of the selected pad on every pad of the scope, with `H`. Clearing a pad acts on the selected pad only.
+The system SHALL apply the pad changes to the change scope: the marked pads, or the selected pad when no pad is marked. The panel always names the scope on its second row, under the pad and its bank:
+`scope   pad Q` or `scope   17 marked`, the same word as the help line (68). Volume and pitch change relatively: every pad in the scope moves by the same step and the differences between them stay; a pad at a limit stays there and the pop-up says how many pads hit it. The mode is set to the next mode of the selected pad on every pad of the scope, with `H`. `Backspace` outside the edit takes the sound off the selected pad when no pad is marked; with marks it takes the sound off every marked pad with a sound, after a question in the question box: `Clear 3 pads?`, that their files on disk stay, and `Enter: clear · Esc: keep`. The clear of many pads is one undo step.
 
 #### Scenario: A bank lower
-- **WHEN** the scope is bank 2 and the owner lowers the pitch twice
+- **WHEN** all 16 pads of bank 2 are marked and the owner lowers the pitch twice
 - **THEN** every pad of bank 2 is two semitones lower and a melody laid out from slices keeps its shape
 
 #### Scenario: All pads quieter
-- **WHEN** the scope is all pads and the owner lowers the volume by 3 dB
+- **WHEN** the owner presses `Ctrl+A` on each of the eight banks and lowers the volume by 3 dB
 - **THEN** all 128 pads are 3 dB quieter, pads on other banks too
 
 #### Scenario: A limit
@@ -153,38 +157,68 @@ the help line (68). Volume and pitch change relatively: every pad in the scope m
 - **THEN** the others go up by one, the pad at +24 stays, and the pop-up says that 1 pad is at the limit
 
 #### Scenario: The scope is always named
-- **WHEN** the owner presses `Ctrl+A`
-- **THEN** the panel shows the next scope on its second row, under the pad and its bank:
-  "scope   pad Q", "scope   bank 2" or "scope   all pads"; no row under the blocks names it
+- **WHEN** no pad is marked and the owner presses `Ctrl+A` on bank 2
+- **THEN** the panel's second row changes from "scope   pad Q" to "scope   16 marked"; no
+  row under the blocks names it
 
 #### Scenario: Mode for a bank
-- **WHEN** the scope is bank 1 and the owner presses `H`
+- **WHEN** all 16 pads of bank 1 are marked and the owner presses `H`
 - **THEN** every pad of bank 1 gets the next mode of the selected pad
 
 #### Scenario: Clear stays on one pad
-- **WHEN** the scope is a bank and the owner presses `Backspace`
-- **THEN** only the selected pad is cleared
+- **WHEN** no pad is marked, all pads of the bank hold sounds, the edit is closed and the
+  owner presses `Backspace`
+- **THEN** only the selected pad is cleared, and nothing asks
+
+#### Scenario: Clear the marked pads
+- **WHEN** pads Q, W and E hold sounds and are marked, the edit is closed, the owner
+  presses `Backspace` and then `Enter`
+- **THEN** the question says `Clear 3 pads?` before anything changes, and after `Enter`
+  pads Q, W and E are empty; one `Ctrl+Z` brings back the three sounds
+
+#### Scenario: Esc keeps the marked pads
+- **WHEN** pads are marked, the owner presses `Backspace` and then `Esc`
+- **THEN** every pad keeps its sound and the marks stay
 
 ### Requirement: Marking pads
-The system SHALL turn marking on and off with `M`, the marker key; while it is on, a pad hit marks or unmarks the pad and the pad still sounds. Marked pads are framed in the grid and become the scope instead of the selected pad; `Esc` drops all marks.
+The system SHALL turn marking on and off with `M`, the marker key; while it is on, a pad hit marks or unmarks the pad and the pad still sounds. `Ctrl+A` marks the 16 pads of the open bank and turns marking on; when all 16 are marked already, it unmarks them. Marks stay when the bank turns. While marking is on or pads are marked, the title line of the pads screen shows a yellow plate next to `F2 PADS`: `MARK · hit pads · 17 marked` while marking is on, `17 MARKED · Esc drops` while it is off. Marked pads become the scope instead of the selected pad. `Esc` drops all marks and turns marking off; in the pad edit the first `Esc` closes the edit and keeps the marks.
 
 #### Scenario: Three kicks quieter
 - **WHEN** the owner presses `M`, hits three pads, presses `M` and lowers the volume by 4 dB
-- **THEN** the panel says "change: 3 marked" and only these three pads are 4 dB quieter
+- **THEN** the panel says "scope   3 marked" and only these three pads are 4 dB quieter
 
 #### Scenario: Unmark
 - **WHEN** marking is on and the owner hits a marked pad again
 - **THEN** that pad is no longer marked
 
 #### Scenario: Drop the marks
-- **WHEN** pads are marked and the owner presses `Esc`
+- **WHEN** pads are marked, the edit is closed and the owner presses `Esc`
 - **THEN** no pad is marked and the scope is the selected pad again
+
+#### Scenario: The bank, then a few more
+- **WHEN** on bank 2 the owner presses `Ctrl+A`, hits pads Q and W, turns to bank 5 and
+  hits pads 1, 2 and 3
+- **THEN** 17 pads are marked: bank 2 without Q and W, and pads 1, 2 and 3 of bank 5
+
+#### Scenario: Ctrl+A again unmarks the bank
+- **WHEN** all 16 pads of bank 2 and pad 1 of bank 5 are marked and the owner presses
+  `Ctrl+A` on bank 2
+- **THEN** only pad 1 of bank 5 stays marked and marking stays on
+
+#### Scenario: Esc in the edit keeps the marks
+- **WHEN** three pads are marked, the edit is open and the owner presses `Esc`
+- **THEN** the edit closes and the three pads stay marked; a second `Esc` drops the marks
+
+#### Scenario: The mark plate
+- **WHEN** the owner presses `M` on the pads screen and hits three pads, then presses `M`
+- **THEN** the title line shows `MARK · hit pads · 3 marked` on yellow while marking is
+  on, then `3 MARKED · Esc drops`; after `Esc` the plate is gone
 
 ### Requirement: Pad knobs for the scope
 The system SHALL let the learned `pad.volume` and `pad.pitch` knobs set the selected pad with soft takeover and move the other pads of the scope by the same amount.
 
 #### Scenario: Pitch knob on a bank
-- **WHEN** the scope is bank 2 and the owner turns the learned pitch knob up by 3 semitones
+- **WHEN** all 16 pads of bank 2 are marked and the owner turns the learned pitch knob up by 3 semitones
 - **THEN** the selected pad and every other pad of bank 2 are 3 semitones higher
 
 ### Requirement: Pad pitch in the session
@@ -237,7 +271,7 @@ The system SHALL give each pad an envelope of three times in milliseconds: attac
 - **THEN** the sound fades out over 300 ms, without a click
 
 #### Scenario: The envelope follows the scope
-- **WHEN** the scope is bank 2 and the owner raises the release
+- **WHEN** all 16 pads of bank 2 are marked and the owner raises the release
 - **THEN** every pad of bank 2 gets the longer release and the panel names the scope
 
 #### Scenario: Old session
@@ -511,7 +545,7 @@ stays within 50 % of the buffer budget (128 samples at 48 kHz).
 ### Requirement: Undo on the pads
 The system SHALL undo the last change of the pads with `Ctrl+Z` on the pads and files
 screens, one step a press, back through the last 100 steps: a parameter of a pad (volume,
-pitch, envelope, filter, drive, sends), the mode, a swap, a clear, a file put on a pad,
+pitch, envelope, filter, drive, sends), the mode, a swap, a clear, a reset, a file put on a pad,
 the source of a pad, a shared effect slot. A knob turn or a run of value keys on one
 parameter is one step, on every pad it touched. An undone pad sounds as it did before the
 step. The status line says what came back (`undo: volume on 16 pads`), or `nothing to
@@ -524,8 +558,8 @@ no steps. The history lives until the program closes.
 - **THEN** pad Q is at 0 dB again and sounds so, after one press
 
 #### Scenario: Undo over the scope
-- **WHEN** the scope is the bank, the owner raises the cutoff of the 16 pads and presses
-  `Ctrl+Z`
+- **WHEN** all 16 pads of the bank are marked, the owner raises the cutoff of the 16 pads
+  and presses `Ctrl+Z`
 - **THEN** every one of the 16 pads has its cutoff back, and the status says
   `undo: cutoff on 16 pads`
 
@@ -546,9 +580,9 @@ no steps. The history lives until the program closes.
 - **THEN** nothing changes and the status says `nothing to undo`
 
 #### Scenario: What changes no pad
-- **WHEN** the owner raises the volume of pad Q, then presses `Ctrl+A` three times, turns
+- **WHEN** the owner raises the volume of pad Q, then presses `Ctrl+A` twice, turns
   the bank and selects pad W, and presses `Ctrl+Z`
-- **THEN** the volume of pad Q comes back; the bank, the selection and the scope stay as
+- **THEN** the volume of pad Q comes back; the bank, the selection and the marks stay as
   they are
 
 #### Scenario: Undo links it back
@@ -657,3 +691,71 @@ frame with its pages tells the mode, and the hint is gone.
 - **WHEN** the pads screen is open with the pad edit closed
 - **THEN** the first row of the panel says `Enter: edit`; after `Enter` the panel is framed
   and the hint is gone
+
+### Requirement: Marks in the bank row
+The system SHALL show the marks in the bank row: a bank with marked pads shows in its
+glyphs only the marked pads, as yellow dots, the open bank and the closed banks alike, in
+the bank row above the grid and in the pad line of the hidden grid. A bank with no marks
+shows its fill as before. While pads of the open bank are held or flash, its glyphs show
+those pads in white, and the yellow marks again after.
+
+#### Scenario: Marks in another bank are seen
+- **WHEN** all 16 pads of bank 2 are marked, the owner turns to bank 5, hits three pads
+  with marking on and turns back to bank 2
+- **THEN** the bank row shows bank 2 with all dots yellow and bank 5 with three yellow dots
+  at the places of its marked pads, and the other banks show their fill
+
+#### Scenario: A hit over the marks
+- **WHEN** bank 2 has marks and the owner holds pad Q of bank 2 with marking off
+- **THEN** while pad Q is held or flashes the glyphs of bank 2 show only pad Q in white,
+  and the yellow marks after
+
+#### Scenario: No marks, the fill
+- **WHEN** no pad is marked
+- **THEN** every bank in the bank row shows its fill, a dot for every pad with a sound
+
+### Requirement: Reset a pad to clean
+The system SHALL reset with `Backspace` in the pad edit every pad of the change scope to a
+freshly loaded pad: volume 0 dB, one-shot, pitch 0, the envelope, the filter, the drive,
+the sends and the mute group at their defaults. The file and the source of the pad (the
+whole file, a slice or its own piece with its bounds) stay. An empty pad in the scope is
+skipped. It asks first in the question box, as the other questions do, naming the pads:
+`Reset pad Q to clean?` or `Reset 17 pads to clean?`, then what stays and
+`Enter: reset · Esc: keep`; `Enter` resets, `Esc` keeps, and other keys do nothing while
+it asks. A reset sounding pad changes without a click. The reset is one undo step. The
+help line of the pad edit names the key: `Bksp reset`.
+
+#### Scenario: A pad back to clean
+- **WHEN** pad Q plays slice 3 with the pitch -5, the filter low-pass and the volume -6 dB,
+  the owner opens the edit, presses `Backspace` and `Enter`
+- **THEN** pad Q plays slice 3 with the pitch 0, the filter off, the volume 0 dB, one-shot,
+  and its top frame carries only `◻`
+
+#### Scenario: The question names the pads
+- **WHEN** 17 pads are marked, the owner opens the edit and presses `Backspace`
+- **THEN** the question box says `Reset 17 pads to clean?` and `Enter: reset · Esc: keep`,
+  and no pad has changed yet
+
+#### Scenario: Esc keeps
+- **WHEN** the reset question is open and the owner presses `Esc`
+- **THEN** the question is gone, every pad keeps its settings and the edit stays open
+
+#### Scenario: Undo a reset
+- **WHEN** 16 marked pads with different settings are reset and the owner presses
+  `Ctrl+Z`
+- **THEN** every one of the 16 pads has its own settings back and the status says
+  `undo: reset on 16 pads`
+
+#### Scenario: The edit names the reset key
+- **WHEN** the pad edit is open
+- **THEN** the help line names `Bksp reset`
+
+#### Scenario: A sounding pad resets without a click
+- **WHEN** pad Q sounds with the volume −12 dB and the filter low-pass, and the owner
+  resets it
+- **THEN** the sound goes on and comes to 0 dB and an open filter without a click
+
+#### Scenario: Backspace outside the edit
+- **WHEN** no pad is marked, the edit is closed and the owner presses `Backspace` on the
+  pads screen
+- **THEN** only the selected pad is cleared, as before, and nothing asks
