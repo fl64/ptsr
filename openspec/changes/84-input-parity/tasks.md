@@ -8,17 +8,24 @@
 
 ## 1. Paired input driver
 
+- [ ] 1.0 Extract shared MIDI state publication unchanged for production and tests.
+  Cover the published fields without changing their rules. Run `task check` and commit.
 - [ ] 1.1 Add the test driver for key events, raw MIDI bytes and explicit frames. Reuse
   the production dispatch and profile initialization. Keep extraction separate from
   behavior changes. Run `task check` and commit.
 - [ ] 1.2 Add paired baseline tests for Pads, edit, marking, file in hand, swap,
-  copy (83a), question and learn. Keep X-Session default tests unchanged. Record differences in
+  question and learn. Keep X-Session default tests unchanged. Record differences in
   design.md; stop for a scope decision instead of hiding a new fix. Run `task check`
   and commit.
 
+- [ ] 1.3 Add failing raw-MIDI regressions for silent copy targets, replacement and
+  original held-pad release. Publish the copy hand and keep the visible target in sync
+  with the keyboard. Test notes and learned pad buttons across banks, empty and occupied
+  targets, cancel and confirm. Run `task check` and commit this repair separately.
+
 ## 2. Chop parity
 
-- [ ] 2.1 Add failing regression tests for all six delta scenarios through raw bytes
+- [ ] 2.1 Add failing regression tests for all six Chop delta scenarios through raw bytes
   and App. In the same step, preserve velocity in PadHit and route Chop hits through
   the keyboard Chop handler. Check banks, selection, plans and no duplicate audio.
   Run `task check` and commit the fix with its tests.

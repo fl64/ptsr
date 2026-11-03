@@ -40,3 +40,31 @@ NOT sound a hit a second time.
 #### Scenario: Chop parity while learning
 - **WHEN** screen learn is open on Chop and keyboard or controller pads are hit
 - **THEN** no pad or preview sounds and no assign plan changes
+
+### Requirement: Silent MIDI copy targeting
+
+On Pads, the system SHALL route controller pad hits to the UI while a copy or its
+replacement question is open. It SHALL select the same single target in the current
+bank as a keyboard hit, without a direct audio hit or an extra UI sound. Empty targets,
+occupied targets, cancellation and confirmation SHALL follow the existing Copy a pad
+requirement. A new target hit SHALL NOT confirm replacement. A release of a pad held
+before copying SHALL still release the original pad after a bank or screen change.
+Normal performance hits outside these modes SHALL keep their direct audio route.
+
+#### Scenario: Copy parity from raw MIDI
+- **WHEN** a copy is in hand and the owner hits an empty target in another bank with
+  a keyboard pad, a MIDI note or a learned pad button in separate runs
+- **THEN** the same target is selected and receives the copy, the source stays unchanged
+  and no hit sound is sent through either audio route
+
+#### Scenario: Copy replacement parity from raw MIDI
+- **WHEN** a copy is in hand and the owner hits an occupied target with a keyboard pad,
+  a MIDI note or a learned pad button in separate runs
+- **THEN** the same target is selected and named in the question without sound or replacement
+- **AND** further pad hits stay silent and do not confirm; Esc keeps the copy in hand,
+  and Enter after a new target hit replaces only the target named in that question
+
+#### Scenario: Copy route preserves held MIDI releases
+- **WHEN** a MIDI gate pad is held before a copy is taken, the bank and screen change
+  and the original note or learned pad button is released
+- **THEN** the original pad receives its release, with no hit or release of the new bank's pad

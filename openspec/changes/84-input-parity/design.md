@@ -43,7 +43,7 @@ queue acceptance and X-Session safe defaults. Do not implement the later input m
 controller profile or sequencer here.
 
 The broad parity goal covers all screens and modes in the roadmap. This delta specifies
-Chop only, so this small fix does not silently promise fixes for other differences.
+Chop and the owner-approved MIDI copy-route repair, not fixes for all differences.
 A newly found difference is a scope decision, not permission to change more behavior.
 
 ## Decisions
@@ -82,12 +82,25 @@ queue; the UI must not trigger them again. Keep the `accepted` field and epoch f
 Keep question and learn guards before the Chop handler. Assignment previews follow the
 existing keyboard logic; do not add a new velocity rule for bare slice previews.
 
+### Silent copy targeting (owner approved on 2026-11-03)
+
+The owner approved the copy-route repair after the source audit below. Publish a copy
+in hand as a UI-only pad mode, as file-in-hand and swap already are. Do not send a direct
+pad hit while a copy or its replacement question is open. Select the same target as the
+keyboard before showing the question, so Enter acts on the named pad. Keep existing
+cancellation and original held-pad releases. This restores the 83a contract; it adds no
+new copy command or question policy. Implement it separately from the Chop fix.
+
+First extract the existing shared-state publication unchanged for production and tests.
+Then build the driver around production keyboard events, MIDI dispatch and App seeding.
+The source-only finding must get a failing raw-MIDI regression before the repair.
+
 ### Tests before completion
 
 Run the shared workflows on Pads, pad edit, marking, file in hand, pad swap, pad copy
 (from 83a), question, learn, Chop before assignment, linked-slice listen and by-hand assignment. Keep existing
 X-Session tests unchanged. Add gate release coverage after a screen and bank change.
-A difference outside the Chop delta blocks the affected step until it is documented and
+A difference outside the Chop and copy-route deltas blocks the affected step until it is documented and
 its scope is agreed. Do not skip the test or change an assertion to accept an unknown
 result.
 
@@ -111,8 +124,9 @@ No scenario goes into the main specs until its test passes.
   "Copy target from a controller in another bank" in `pad-assignment`.
   The test at `crates/app/src/main.rs:20334` injects a ready `Event::PadHit` and
   checks only App commands; it cannot detect that direct-queue hit.
-  This is a code-path finding, not a live sound or hardware result. No fix is applied.
-  Stop implementation for an owner scope decision before tasks 1.1 and 1.2.
+  This is a code-path finding, not a live sound or hardware result. The owner approved
+  an explicit copy-route delta and separate repair on 2026-11-03. The driver and raw-MIDI
+  regressions come first. No fix was included in task 0.1.
 - Other differences are not yet audited by the paired driver. In particular, the
   five-atomic snapshot and the pending-command race are work for 85, not fixes made by
   task 0.1. Record observed results here during implementation.
@@ -128,11 +142,6 @@ No scenario goes into the main specs until its test passes.
 
 ## Open questions
 
-- May 84 also restore silent MIDI copy targeting required by the 83a main spec?
-  Proposed: add an explicit copy-route delta and a raw-MIDI regression, then fix that
-  route separately from the Chop fix. Keep normal performance hits direct and preserve
-  original held-pad releases. Default: no scope extension or code until the owner
-  decides; tasks 1.1 and 1.2 remain open.
 - Does the paired driver expose another input priority difference? Default: record it,
   stop the affected task and propose a small delta or a separate change before fixing it.
 - Which physical pad controller and preset will the owner use for acceptance? Default:
