@@ -185,8 +185,10 @@ selection; this is not permission to remove that selection behavior. No new mode
 key, header behavior, sound algorithm or project/config format is approved.
 
 Test keyboard events, raw notes and learned CC through the real offline audio queues.
-Check the real frame position, pitch, loop, end/release, source identity, project
-changes, queue rejection and question/learn guards. Check that the new line does not
+Check the real frame position, pitch, retrigger, end/release, source identity, project
+changes, queue rejection and question/learn guards. The initial delta incorrectly
+named a pad loop: pads have only one-shot and gate modes. The owner approved replacing
+that case with retrigger; the existing Space preview loop stays unchanged. Check that the new line does not
 change the existing cut or transport command, and that the sound is not duplicated.
 Cover the line in the existing waveform modes and keep the original Space tests.
 Update the owner checks and release build only after the implementation passes.
@@ -418,4 +420,5 @@ needs explicit acceptance before the OpenSpec CLI archive.
   together? Not explicitly decided by the owner. Proposed default: preserve the
   existing preview line while a preview sounds; otherwise show the most recently
   started sounding pad of this chop. Do not add several lines or change which voices
-  sound. Recheck this default before implementing the display selection.
+  sound. Task 2.3 uses this default to preserve Space display and avoid a new mode.
+  Keep its pad display position separate from the preview position used by commands.

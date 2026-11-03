@@ -52,7 +52,7 @@
   scenarios, using keyboard, raw notes and learned CC through the real offline queues.
   Report real pad positions without an extra voice. Keep display position separate
   from preview transport/edit position; do not change Space, M, cursor control,
-  hit-driven selection or sound. Cover pitch, loop, stop/release, matching source and
+  hit-driven selection or sound. Cover pitch, retrigger, stop/release, matching source and
   project, queue rejection, question/learn guards and both waveform modes. Review the
   documented concurrent-voice default before code. Update user stories and live checks,
   validate, run task check, rebuild the release and commit the fix separately.

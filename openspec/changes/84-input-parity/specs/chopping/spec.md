@@ -6,7 +6,7 @@ While Chop is open in listen or slice edit and a pad plays a slice of the open c
 the system SHALL show the existing thin green playback line at that voice's actual
 position in the sample. Keyboard pads, raw MIDI notes and explicitly learned pad
 buttons SHALL give the same display behavior. The position SHALL follow the real
-pad playback, including pitch and loops, and SHALL disappear when that voice ends.
+pad playback, including pitch and retrigger, and SHALL disappear when that voice ends.
 The line SHALL use the current waveform view in Braille and picture modes. It SHALL
 NOT show another sample's position or keep an old project's position.
 
@@ -29,10 +29,10 @@ A silent, blocked or queue-rejected hit SHALL NOT create a new playback line.
 - **THEN** the green line follows the same sounding position as the keyboard path
 - **AND** no extra pad hit or preview is started to supply that position
 
-#### Scenario: Chop pad line follows pitch and loop
-- **WHEN** a linked slice pad plays with changed pitch or repeats its loop on Chop
-- **THEN** the green line follows the voice's real sample position and loop return,
-  not elapsed UI time or a bare preview's speed
+#### Scenario: Chop pad line follows pitch and retrigger
+- **WHEN** a linked slice pad plays with changed pitch or is hit again on Chop
+- **THEN** the green line follows the voice's real sample position and returns to
+  that slice's start on the new hit, not elapsed UI time or a bare preview's speed
 
 #### Scenario: Chop pad line ends with its voice
 - **WHEN** a displayed pad voice reaches its end, finishes its gate release or is stopped
