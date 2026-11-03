@@ -4538,24 +4538,42 @@ impl App {
             .unwrap_or(self.midi_row);
     }
 
+    fn focus(&self) -> input::Focus {
+        input::Focus {
+            screen: self.screen,
+            bank: self.pads.bank,
+            mode: input::Mode {
+                edit: self.edit,
+                marking: self.pads.marking,
+                text: self.pad_naming.is_some()
+                    || (self.screen == Screen::Files && self.browser.editing)
+                    || self
+                        .project_picker
+                        .as_ref()
+                        .is_some_and(|p| p.naming.is_some()),
+                picker: self.project_picker.is_some() || self.path_picker.is_some(),
+                screen_learn: self.screen_learn.is_some(),
+                midi_learn: self.learning.is_some() || self.midi_run.is_some(),
+                question: self.ask.is_some(),
+                file_in_hand: self.browser.in_hand.is_some(),
+                copy_in_hand: self.copy_in_hand.is_some(),
+                swap_in_hand: self.pad_in_hand.is_some(),
+            },
+        }
+    }
+
     fn publish_midi(&self, shared: &midi::Shared) {
-        shared.bank.store(self.pads.bank, Relaxed);
-        let screen_code = match self.screen {
-            Screen::Pads => 0,
-            Screen::Settings => 1,
-            Screen::Files => 2,
-            Screen::Chop => 3,
-            Screen::Fx => 4,
-        };
-        shared.screen.store(screen_code, Relaxed);
-        shared.edit.store(self.edit, Relaxed);
-        shared.learn.store(self.screen_learn.is_some(), Relaxed);
+        let focus = self.focus();
+        shared.bank.store(focus.bank, Relaxed);
+        shared.screen.store(focus.screen as u8, Relaxed);
+        shared.edit.store(focus.mode.edit, Relaxed);
+        shared.learn.store(focus.mode.screen_learn, Relaxed);
         shared.hand.store(
-            self.browser.in_hand.is_some()
-                || self.pad_in_hand.is_some()
-                || self.copy_in_hand.is_some()
-                || self.ask.is_some()
-                || self.screen == Screen::Chop,
+            focus.mode.file_in_hand
+                || focus.mode.swap_in_hand
+                || focus.mode.copy_in_hand
+                || focus.mode.question
+                || focus.screen == Screen::Chop,
             Relaxed,
         );
     }
@@ -9299,6 +9317,71 @@ mod tests {
             #[cfg(test)]
             sent: Vec::new(),
         }
+    }
+
+    #[test]
+    fn app_focus_keeps_overlapping_modes_below_overlays() {
+        use input::{Focus, Mode};
+        let mut app = test_app();
+        assert_eq!(app.focus(), Focus::default());
+        app.pads.bank = 7;
+        app.screen = Screen::Chop;
+        app.edit = true;
+        app.pads.marking = true;
+        app.pad_naming = Some((0, "name".into()));
+        app.project_picker = Some(super::ProjectPicker {
+            entries: Vec::new(),
+            selected: 0,
+            naming: None,
+        });
+        app.screen_learn = Some(app.learn_open());
+        app.learning = Some(super::learn::Learning::new(super::action_info("pad.copy")));
+        app.ask = Some(super::Ask::Plan { lines: Vec::new() });
+        app.browser.in_hand = Some("break.wav".into());
+        app.copy_in_hand = Some((0, app.pads.snapshot(0)));
+        app.pad_in_hand = Some(0);
+        let expected = Focus {
+            screen: Screen::Chop,
+            bank: 7,
+            mode: Mode {
+                edit: true,
+                marking: true,
+                text: true,
+                picker: true,
+                screen_learn: true,
+                midi_learn: true,
+                question: true,
+                file_in_hand: true,
+                copy_in_hand: true,
+                swap_in_hand: true,
+            },
+        };
+        assert_eq!(app.focus(), expected);
+        assert_eq!(Focus::unpack(expected.pack().unwrap()), Some(expected));
+        assert_eq!(input::route_pad(app.focus()), input::PadRoute::Ignore);
+        app.screen_learn = None;
+        assert_eq!(input::route_pad(app.focus()), input::PadRoute::Ui);
+        app.pad_naming = None;
+        assert!(!app.focus().mode.text);
+        app.project_picker.as_mut().unwrap().naming = Some("new".into());
+        assert!(app.focus().mode.text);
+        app.project_picker = None;
+        app.screen = Screen::Files;
+        app.browser.editing = true;
+        assert!(app.focus().mode.text);
+        assert!(!app.focus().mode.picker);
+        app.browser.editing = false;
+        assert!(!app.focus().mode.text);
+        app.path_picker = Some(super::PathPicker {
+            which: 0,
+            at: "target/85-picker".into(),
+            entries: Vec::new(),
+            selected: 0,
+        });
+        assert!(app.focus().mode.picker);
+        app.learning = None;
+        app.midi_run_start(super::midi_sets()[0].1);
+        assert!(app.focus().mode.midi_learn);
     }
 
     #[test]

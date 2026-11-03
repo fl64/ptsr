@@ -13,7 +13,7 @@
   parity. Extend Drive only with deterministic publish/drain fences where needed. Keep
   all 84 scenarios unchanged. Stop on an unexpected contract conflict. Run full
   `task check`; commit this test-only step with signoff.
-- [ ] 1.2 Add `Focus`, overlapping `Mode` flags, checked pack/unpack, `route_pad` and
+- [x] 1.2 Add `Focus`, overlapping `Mode` flags, checked pack/unpack, `route_pad` and
   `App::focus()` without changing the active routes. Test the represented combinations,
   all screens/banks, invalid encodings, default state and every routing context. Keep
   edit independent and retain existing pre-routing guards. Run full `task check`;

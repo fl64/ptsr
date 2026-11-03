@@ -16,6 +16,255 @@ pub enum Screen {
     Fx,
 }
 
+/// Independent input states. An overlay does not erase the state below it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Mode {
+    pub edit: bool,
+    pub marking: bool,
+    pub text: bool,
+    pub picker: bool,
+    pub screen_learn: bool,
+    pub midi_learn: bool,
+    pub question: bool,
+    pub file_in_hand: bool,
+    pub copy_in_hand: bool,
+    pub swap_in_hand: bool,
+}
+
+impl Mode {
+    fn bits(self) -> u32 {
+        [
+            self.edit,
+            self.marking,
+            self.text,
+            self.picker,
+            self.screen_learn,
+            self.midi_learn,
+            self.question,
+            self.file_in_hand,
+            self.copy_in_hand,
+            self.swap_in_hand,
+        ]
+        .into_iter()
+        .enumerate()
+        .fold(0, |bits, (shift, flag)| bits | (u32::from(flag) << shift))
+    }
+
+    fn from_bits(bits: u32) -> Self {
+        Self {
+            edit: bits & 1 != 0,
+            marking: bits & (1 << 1) != 0,
+            text: bits & (1 << 2) != 0,
+            picker: bits & (1 << 3) != 0,
+            screen_learn: bits & (1 << 4) != 0,
+            midi_learn: bits & (1 << 5) != 0,
+            question: bits & (1 << 6) != 0,
+            file_in_hand: bits & (1 << 7) != 0,
+            copy_in_hand: bits & (1 << 8) != 0,
+            swap_in_hand: bits & (1 << 9) != 0,
+        }
+    }
+}
+
+/// One complete routing snapshot, published from App to the MIDI dispatcher.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Focus {
+    pub screen: Screen,
+    /// Zero-based bank, 0..8.
+    pub bank: usize,
+    pub mode: Mode,
+}
+
+impl Default for Focus {
+    fn default() -> Self {
+        Self {
+            screen: Screen::Pads,
+            bank: 0,
+            mode: Mode::default(),
+        }
+    }
+}
+
+impl Focus {
+    /// Packs valid state into one atomic word. Invalid banks are rejected.
+    pub fn pack(self) -> Option<u32> {
+        // The spare bank bit lets unpack reject invalid banks instead of aliasing
+        // bank 9 to bank 1. This is internal state, not a saved file format.
+        (self.bank < 8)
+            .then(|| self.screen as u32 | ((self.bank as u32) << 3) | (self.mode.bits() << 7))
+    }
+
+    /// Unpacks a snapshot, rejecting unknown screens, banks and reserved bits.
+    pub fn unpack(bits: u32) -> Option<Self> {
+        if bits >> 17 != 0 {
+            return None;
+        }
+        let screen = match bits & 7 {
+            0 => Screen::Pads,
+            1 => Screen::Settings,
+            2 => Screen::Files,
+            3 => Screen::Chop,
+            4 => Screen::Fx,
+            _ => return None,
+        };
+        let bank = ((bits >> 3) & 15) as usize;
+        (bank < 8).then(|| Self {
+            screen,
+            bank,
+            mode: Mode::from_bits(bits >> 7),
+        })
+    }
+}
+
+/// Pad decision after source-specific text, picker and key-release guards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadRoute {
+    Ignore,
+    Ui,
+    Sound,
+}
+
+/// Keeps existing pad routes; text, pickers and F12 learn add no MIDI silence.
+pub fn route_pad(focus: Focus) -> PadRoute {
+    let mode = focus.mode;
+    if mode.screen_learn {
+        PadRoute::Ignore
+    } else if focus.screen == Screen::Chop
+        || mode.question
+        || mode.file_in_hand
+        || mode.copy_in_hand
+        || mode.swap_in_hand
+    {
+        PadRoute::Ui
+    } else {
+        PadRoute::Sound
+    }
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+
+    #[test]
+    fn focus_round_trips_all_screens_banks_and_overlapping_modes() {
+        for screen in [
+            Screen::Pads,
+            Screen::Settings,
+            Screen::Files,
+            Screen::Chop,
+            Screen::Fx,
+        ] {
+            for bank in 0..8 {
+                for bits in 0..1 << 10 {
+                    let focus = Focus {
+                        screen,
+                        bank,
+                        mode: Mode::from_bits(bits),
+                    };
+                    let packed = focus.pack().unwrap();
+                    assert_eq!(packed, screen as u32 | (bank as u32) << 3 | bits << 7);
+                    assert_eq!(Focus::unpack(packed), Some(focus));
+                    let expected = if bits & (1 << 4) != 0 {
+                        PadRoute::Ignore
+                    } else if screen == Screen::Chop || bits & (0b1111 << 6) != 0 {
+                        PadRoute::Ui
+                    } else {
+                        PadRoute::Sound
+                    };
+                    assert_eq!(route_pad(focus), expected, "{focus:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn focus_default_is_normal_performance_on_first_bank() {
+        assert_eq!(Focus::default().pack(), Some(0));
+        assert_eq!(Focus::unpack(0), Some(Focus::default()));
+        assert_eq!(route_pad(Focus::default()), PadRoute::Sound);
+    }
+
+    #[test]
+    fn focus_rejects_unknown_screens_banks_and_reserved_bits() {
+        for screen in 5..8 {
+            assert_eq!(Focus::unpack(screen), None);
+        }
+        for bank in 8..16 {
+            assert_eq!(Focus::unpack(bank << 3), None);
+            assert_eq!(
+                Focus {
+                    bank: bank as usize,
+                    ..Focus::default()
+                }
+                .pack(),
+                None
+            );
+        }
+        assert_eq!(
+            Focus {
+                bank: usize::MAX,
+                ..Focus::default()
+            }
+            .pack(),
+            None
+        );
+        for bit in 17..32 {
+            assert_eq!(Focus::unpack(1 << bit), None);
+        }
+        assert_eq!(Focus::unpack(u32::MAX), None);
+    }
+
+    #[test]
+    fn focus_mode_flags_keep_their_independent_meaning() {
+        let flags = [
+            Mode {
+                edit: true,
+                ..Mode::default()
+            },
+            Mode {
+                marking: true,
+                ..Mode::default()
+            },
+            Mode {
+                text: true,
+                ..Mode::default()
+            },
+            Mode {
+                picker: true,
+                ..Mode::default()
+            },
+            Mode {
+                screen_learn: true,
+                ..Mode::default()
+            },
+            Mode {
+                midi_learn: true,
+                ..Mode::default()
+            },
+            Mode {
+                question: true,
+                ..Mode::default()
+            },
+            Mode {
+                file_in_hand: true,
+                ..Mode::default()
+            },
+            Mode {
+                copy_in_hand: true,
+                ..Mode::default()
+            },
+            Mode {
+                swap_in_hand: true,
+                ..Mode::default()
+            },
+        ];
+        for (shift, mode) in flags.into_iter().enumerate() {
+            assert_eq!(mode.bits(), 1 << shift);
+            assert_eq!(Mode::from_bits(1 << shift), mode);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     /// Pad 0..16 of the current bank; velocity 0..1.
