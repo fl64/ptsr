@@ -49,7 +49,7 @@
 
 ## 3. Documentation and acceptance
 
-- [ ] 3.1 Update user stories and live checks with separate keyboard and controller
+- [x] 3.1 Update user stories and live checks with separate keyboard and controller
   passes. Validate the change, run `task check`, build the release and commit.
 - [ ] 3.2 Ask the owner to check Chop listening and assignment from both inputs and
   listen to `renders/84-input-parity.wav`. Record the result, not an assumed pass.

@@ -506,6 +506,45 @@ Use the keyboard or explicit MIDI learn for these actions.
 12. `[35]` The hint line above the help tells the next step: chop, assign, move the
     bounds.
 
+## Keyboard and controller pads on Chop
+
+`[84]` Use the same pad positions in the current bank from either input. A device
+without a profile uses notes 36–51. A control explicitly bound to `pad.1`…`pad.16`
+also works. The X-Session Pro has no physical pad grid; its default command buttons
+are not pad hits. The SMC-PAD profile is still a template, not a verified device map.
+
+### Keyboard pass
+
+1. Open a cut sample on `F3` before any slice is linked to a pad. Hit a pad key.
+   It selects and previews the slice at that position on the current bank page.
+   `PgDn` opens the next page of slices.
+2. Put slices on pads with `P`, target hits and `Enter`. In listen mode, hit a linked
+   pad. It plays with that pad's pitch, filter and other settings and selects its slice.
+   `Shift` gives full velocity; a plain key gives velocity 80.
+3. Press `P` with a slice selected. Each target hit adds that slice to the by-hand
+   plan, previews it and selects the next unplanned slice. Turn banks to add targets
+   there. Hits do not apply the plan. `Enter` applies; an occupied target asks first.
+4. Under a question or in `F10` learn, new pad hits stay silent and do not change a
+   plan. A gate key held before learn still releases its original pad, even after a
+   bank or screen change. A new silent learn key does not stop an older held pad.
+
+### Controller pass
+
+1. Repeat the listen and assign steps with controller notes or learned pad buttons
+   instead of keyboard pad hits. Use the keyboard for commands that have no binding.
+   The slice selection, plan and target must match the keyboard pass.
+2. A linked pad keeps the note velocity or the CC press value. A light hit is quieter.
+   Compare full MIDI velocity 127 with `Shift` on the keyboard. Bare slice previews
+   keep their existing preview level; they do not gain a new velocity rule.
+3. Release the original note or button after a bank or screen change, question or
+   `F10`. The original gate pad stops. Disconnecting that device also releases it.
+   New hits in learn stay silent and cannot take another control's held pad.
+
+Listen to `renders/84-input-parity.wav`: first three identical full-strength hits
+(keyboard, note, learned button), then quiet/loud note hits and quiet/loud button hits.
+These are offline tests, not physical-controller acceptance. The separate manual passes
+are in `docs/LIVE-CHECKS.md`, section 84.
+
 ## Select what plays
 
 1. On the chop screen, press `O`. The play mode changes.
@@ -543,8 +582,10 @@ Use the keyboard or explicit MIDI learn for these actions.
 
 ## Assign the slices to the pads
 
-1. On the chop screen, press `P`. Assign mode starts from the first slice.
-2. Hit the pads in sequence. Each hit puts the next slice in the list.
+1. On the chop screen, press `P`. Assign mode starts from the selected slice.
+2. Hit the keyboard or controller pads in sequence. Each hit adds the selected slice
+   to the plan at that target, previews it and selects the next unplanned slice.
+   No pad changes until you apply the plan.
    `[35]` `J` and `L` select the slice that you need and play it. A hit on a pad puts
    this slice. For example, "slice 2 on pad C" is `J` to slice 2 and a hit on C.
 3. Press `Tab`. The mode changes to "in order". A hit on a pad puts all slices from this
@@ -558,7 +599,7 @@ Use the keyboard or explicit MIDI learn for these actions.
 
 ## Assign mode ignores the rest
 
-1. Open assign mode. Press `M`, `J`, `L`, `I`, `K` or `Ctrl+J`.
+1. Open assign mode. Press `M`, `I`, `K` or `Ctrl+J`.
 2. The cuts, the zoom and the cursor do not move. The assign plan does not change. The
    status line tells you: `Enter` applies, `Esc` closes.
 3. Only these work: the pads, `Tab`, the slice selection, undo, `Enter` and `Esc`.
@@ -569,6 +610,25 @@ Use the keyboard or explicit MIDI learn for these actions.
    `in hand: pad 3 · amen 3`. `[35]` The envelope moves with the pad.
 2. Hit a different pad. The two pads change positions.
 3. Press `Esc`. The pad goes back, and there is no swap.
+
+## Select file, copy and swap targets without a hit sound
+
+`[84]` On Pads, a keyboard pad, MIDI note or learned pad button selects the same
+single target in the current bank. A target hit does not also play that pad.
+
+1. Take a copy with `Ctrl+C`. Turn to another bank and hit an empty pad. The copy
+   goes there without sound. An occupied target asks first. Further pad hits do not
+   change or confirm the question. `Esc` keeps the copy in hand; `Enter` replaces only
+   the target named in the question.
+2. Take a file with `F6` and `Enter`. Hit an occupied target in another bank. The
+   selected pad is the target named in the question. `Esc` keeps its old sound and
+   the file in hand. A target hit does not confirm replacement.
+3. Take a pad with `Ctrl+X`, turn banks and hit a target. The pads swap without a hit
+   sound, and the target stays selected. One `Ctrl+Z` on Pads restores both pads.
+4. With a clear or replacement question open, new pad hits stay silent. A gate pad
+   held before the question still stops when its original key or control is released,
+   including after a bank or screen change. Closing the question returns normal play
+   only if no file, copy or other target mode is still open. Marking still plays hits.
 
 ## MIDI knobs
 

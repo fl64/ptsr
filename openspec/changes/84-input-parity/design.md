@@ -333,7 +333,34 @@ budget. The subsequent full completion check also passes
 hard maximum below that target. This test-only step changes no callback code and does
 not resolve the benchmark variability already recorded in task 2.1.
 Strict OpenSpec validation passes all 16 items. No live, hardware or listening check
-was made. Release build, user documentation and owner acceptance remain tasks 3.1–3.3.
+was made. At that point release build, user documentation and owner acceptance were
+still open. Task 3.1 is recorded below; owner acceptance and archive remain open.
+
+## Task 3.1 verification
+
+`docs/USER-STORIES.md` now gives separate keyboard and controller passes for Chop,
+including preview, linked-pad settings, velocity, assignment and original gate release
+through learn. It also describes silent copy, file and swap targets and undo. The
+assignment instructions follow the current selected-slice rule and no longer list J/L
+slice selection as an ignored command. These are documentation corrections to existing
+specs and code, not new behavior.
+
+Section 84 of `docs/LIVE-CHECKS.md` has 21 unchecked owner checks, with separate input
+passes, a long-slice gate setup and the seven-hit WAV listening order. The device,
+preset, terminal, available MIDI release forms and listening result are explicitly
+unverified. The X-Session has no physical pad grid; the SMC-PAD profile remains work
+for 91. Automated MIDI results are not hardware acceptance.
+
+`/tmp/ptsr-84-3.1-check.log` records a green full `task check`: format check, strict
+clippy, workspace tests (603 App, 70 input and 98 TUI tests, no failures), scenario
+coverage and callback benchmark. The 32-voice run reports mean 9.11%, p99 12.15%,
+maximum 24.10% of the block budget. This does not erase the earlier maximum above 50%.
+Strict OpenSpec validation passes all 16 items, and `git diff --check` is clean.
+`task build` runs `cargo build --release -p ptsr` and passes; its output is in
+`/tmp/ptsr-84-3.1-build.log`. The release binary is `target/release/ptsr`.
+No program was started, no audio device was opened and no owner config was changed.
+The agent has not heard the WAV. Task 3.2 needs the owner's results; task 3.3 still
+needs explicit acceptance before the OpenSpec CLI archive.
 
 ## Risks / Trade-offs
 

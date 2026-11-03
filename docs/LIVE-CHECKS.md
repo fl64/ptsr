@@ -756,3 +756,118 @@ pass cannot be inferred from automated MIDI tests.
   unchanged, and that a key press dismisses one warning at a time.
 - [ ] (by ear) Listen to `renders/83a-pad-copy.wav`. The first voice is the source, the
   second is the copy placed on another pad: make sure that they sound the same.
+
+## 84 — Keyboard and controller pad parity
+
+Folder: `changes/84-input-parity` (`plan/controller-first-patterns`)
+
+Status: automated input and offline sound checks pass. The owner has not checked
+these steps or accepted change 84. All boxes below stay open until the owner reports
+results. No agent live, listening or physical-controller check is implied.
+
+### Prepare both passes
+
+Use a disposable project. These checks place, copy, swap and replace pad sounds.
+Start each pass with the same samples and banks. Use a fresh chop for the first check,
+with no slices linked to pads. Keep an empty target and an occupied target in bank 2.
+For gate checks, use a linked slice at least 10 seconds long: cut a sample of at least
+20 seconds into two slices and assign one to `2-W`. On Pads, set it to gate with `H`
+and its release to 20 ms on ENV. Keep both FX sends at 0, so an effect tail cannot hide
+the stop. Use a terminal with the kitty keyboard protocol for keyboard releases.
+
+For the controller pass, use notes 36–51 from a device without a profile, or controls
+explicitly bound to `pad.1`…`pad.16` in the GLOBAL group on `F12` MIDI. Record the device
+and preset below. The X-Session Pro has no physical pad grid; do not treat its default
+command buttons as pad hits. Its existing safe command map stays unchanged. The SMC-PAD
+profile and hardware measurements remain work for 91. A learned button that sends only
+127 can test full hits, but not low/high velocity. Record that limit instead of a pass.
+Use the keyboard for screen, bank, plan and confirmation commands without bindings.
+
+### Keyboard pass
+
+- [ ] (by ear) On a fresh Chop, use `Y` until there are 32 slices. Press `Ctrl+1` and
+  hit `3`, then press `Ctrl+2` and hit `3`. Check that slice 3, then slice 19 is selected
+  and previewed once. No pad layout is applied.
+- [ ] On that Chop, press `Ctrl+1`, hit `1` to select slice 1, then press `P` and hit `Q`.
+  Press `Ctrl+2` and hit `W`. Check the plan: slice 1 on `1-Q`, slice 2 on `2-W`.
+  Each planned slice previews once; no pad changes yet. Press `Esc`: no layout is
+  applied. Repeat the plan and use `Enter` to apply, with confirmation if asked.
+- [ ] (by ear) On Pads, change a linked pad's pitch to +12 and its filter to low-pass
+  at about 1200 Hz. Hit it, then open its slice with `F3` and hit it again. Check the
+  same higher, darker pad sound and selected slice, without a second preview sound.
+- [ ] On Chop, press `P`, hit an occupied target and press `Enter`. Wait for the preview
+  to end. Hit another pad under the replacement question. Check silence, unchanged
+  plan and unchanged question. Press `Esc`: nothing is replaced.
+- [ ] (by ear) Use the long linked gate on `2-W`. Hold `W` on Chop, press `PgDn`, then
+  `F4`, and release `W`. Only the original sound must fade out; the new bank's pad
+  must not release. Repeat from Pads to check a hold started outside Chop.
+- [ ] (by ear) Hold that gate again, turn bank, open `F4`, then `F10`. Press and release
+  a new key `Q`: it stays silent and does not stop the held gate. Release the original
+  `W`: only that gate stops. Learn stays open with the same selected item and any
+  pending control; no binding is saved. Close learn with `F10`, without `Enter`.
+- [ ] On Pads, select a loaded source and press `Ctrl+C`. Turn bank and hit an empty
+  target. Check silent placement and unchanged source. Undo with `Ctrl+Z`. Repeat with
+  an occupied target. Check its selection and name in the question. Further hits stay
+  silent and do not confirm. `Esc` keeps the copy in hand. Hit the target again and
+  press `Enter`: only the named target is replaced. One `Ctrl+Z` restores it.
+- [ ] On Pads, select a loaded source, press `Ctrl+X`, turn bank and hit a target.
+  Check a silent swap and selection of the target. One `Ctrl+Z` restores both pads.
+- [ ] On Files, press `Enter` on a sample to hold it, then hit an occupied pad in another
+  bank. Check silent targeting and selection of the pad named in the question.
+  `Esc` keeps that pad's sound and the file in hand. Cancel the held file before play.
+- [ ] On Pads, mark two loaded pads with `M`, pad hits, then `M`. Press `Backspace`.
+  Hit a pad under the clear question: no new sound, selection or mark change.
+  `Esc` keeps the sounds and marks. Drop the marks with `Esc`; a new hit plays once.
+
+### Controller pass
+
+Repeat with the same starting data. Use controller pads for every target and hit below;
+keyboard command keys remain available. Record notes and learned buttons separately if
+both are available. A physical test of one does not verify the other.
+
+- [ ] (by ear) On a fresh 32-slice Chop, hit controller pad 3 in banks 1 and 2.
+  Check slice 3 and slice 19, each selected and previewed once as in the keyboard pass.
+- [ ] Start the by-hand plan from slice 1 with `P`. Hit controller pad `Q` in bank 1,
+  then `W` in bank 2. Check the same two targets and previews, with no pad changes.
+  Cancel with `Esc`. Repeat and apply with `Enter`; target hits must not apply it.
+- [ ] (by ear) Hit the linked pad with pitch +12 and the low-pass filter on Chop.
+  Compare MIDI velocity 127 with `Shift` plus the keyboard pad: the sounds must match.
+  Hit lightly and strongly: the light linked-pad hit must be quieter, not a bare preview.
+- [ ] Open a plan replacement question, wait for preview to end, then hit controller
+  pads. Check silence and unchanged question and plan. `Esc` keeps the old targets.
+- [ ] (by ear) Hold the long linked gate from controller pad `W` in bank 2 on Chop.
+  Turn bank, open `F4` and release the original control. Only the original gate stops.
+  Repeat with `F10` open before release. Learn and its selected item stay open; no
+  binding is saved or confirmed. A new keyboard key for the same local pad in learn
+  must not stop that MIDI hold; only release of the original control stops it.
+- [ ] (by ear) Repeat the hold across a bank/screen change, then disconnect that device.
+  Check that the original gate fades out without a click. Reconnect and check the same
+  binding. If available, test note-off and note-on zero separately; a learned CC button
+  must stop its gate with CC0. Record message forms not available on this preset.
+- [ ] On Pads, take a copy with `Ctrl+C`. Hit empty and occupied controller targets in
+  another bank. Check the same selection, silent placement, replacement question,
+  cancellation and one-step undo as in the keyboard pass. Extra hits cannot confirm.
+- [ ] Take a file with `F6` and `Enter`, then hit an occupied controller target in another
+  bank. Check the selected target, silence and `Esc` as in the keyboard pass. Cancel
+  the file. Swap two loaded pads across banks with `Ctrl+X` and a controller target:
+  no hit sound, target selected, one `Ctrl+Z` restores both pads.
+- [ ] (by ear) Hold a gate from Pads. Open a copy/file replacement or clear question,
+  change bank and screen where possible, then release the original control. Only its
+  original gate stops; the question stays open. New hits under the question stay silent.
+  After cancellation and leaving any held file/copy mode, a new hit plays once.
+- [ ] (by ear) On Pads outside these modes, play fast controller hits while the screen
+  updates. Check that hits do not wait for the screen and do not sound twice. Turn
+  marking on: hits must still sound while they add or remove marks.
+
+### Offline listening and acceptance record
+
+- [ ] (by ear) Listen to `renders/84-input-parity.wav` (5.376 seconds).
+  From 0.000 to 2.304 s, the three full-strength hits are keyboard, note and learned
+  button: they must sound the same. From 2.304 to 3.840 s, listen to quiet/loud note
+  hits. From 3.840 to 5.376 s, listen to quiet/loud learned-button hits. Check silence
+  between hits and no clicks, clipping or extra hits. Recreate the WAV with
+  `cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture` if needed.
+
+Owner result: not reported. Device/preset: not recorded. Keyboard terminal: not recorded.
+Note/CC forms not tested: not recorded. Listening result: not reported.
+Archive is blocked until explicit owner acceptance and the scenario coverage check.
