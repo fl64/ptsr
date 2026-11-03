@@ -437,23 +437,50 @@ The system SHALL draw the waveforms with Braille characters by default and SHALL
 > after the key roles and the edit pages are in place.
 
 ### Requirement: Auto-chop by hits
-The system SHALL chop a sample at the starts of hits on `Ctrl+Y`, with a threshold below
-the loudest hit: every press steps the threshold lower (−6, −12, −18, −24, −30 dB, then
-−6 again), so quieter hits get their cuts. Each press replaces the cuts as equal parts do
-and is one undo step. The knob `chop.threshold` sets the threshold continuously, and the
-cuts follow it at once. The status names the threshold and the number of cuts.
+
+The system SHALL chop a sample at hit starts on H, with a threshold below the loudest
+hit. Each press SHALL step lower (-6, -12, -18, -24, -30 dB, then -6 again). Shift+H,
+`chop.hits_back`, SHALL step to the next higher value of that list, stopping at -6 dB
+without wrapping; before a hit threshold is set it SHALL start at -6 dB. A continuous
+knob value below -6 dB SHALL step to the next higher listed value. A knob value already
+at or above -6 dB SHALL stay on reverse, so reverse never adds quieter hits. Either
+command SHALL replace cuts with the same pad-link safeguards as equal parts and make
+one undo step when cuts or threshold change. A clamped reverse press SHALL change
+nothing and add no undo step. The knob `chop.threshold` SHALL still set the threshold
+continuously and recut at once. The status SHALL name the threshold and slice count.
 
 #### Scenario: Break by hits
-- **WHEN** a break is on the chop screen and the owner presses Ctrl+Y
+- **WHEN** a break is on Chop and the owner presses H
 - **THEN** cuts land on the starts of the loud hits, and the status says how many
 
 #### Scenario: More presses, more cuts
-- **WHEN** the owner presses Ctrl+Y again
-- **THEN** the quieter hits get their cuts too; Ctrl+Z brings back the cuts of the press before
+- **WHEN** the owner presses H again
+- **THEN** quieter hits get cuts too; Ctrl+Z brings back the cuts of the press before
 
 #### Scenario: The threshold on a knob
 - **WHEN** the owner turns the knob bound to `chop.threshold`
 - **THEN** cuts are added or removed at once as the threshold moves
+
+#### Scenario: Reverse the hit threshold
+- **WHEN** the hit threshold is -18 dB and the owner presses Shift+H
+- **THEN** the threshold becomes -12 dB and quieter cuts disappear
+- **AND** one Ctrl+Z restores the previous cuts and -18 dB threshold
+
+#### Scenario: Reverse hit threshold stops at the first step
+- **WHEN** the threshold is -6 dB and the owner presses Shift+H again
+- **THEN** cuts and threshold stay, no undo step is added, and the flash names -6 dB
+
+#### Scenario: Reverse a continuous hit threshold
+- **WHEN** the threshold knob has set -15 dB and the owner presses Shift+H
+- **THEN** the threshold becomes -12 dB and the cuts follow the same hit rule
+
+#### Scenario: Reverse keeps a higher knob threshold
+- **WHEN** the threshold knob has set -3 dB and the owner presses Shift+H
+- **THEN** the threshold and cuts stay and no undo step is added
+
+#### Scenario: First reverse hit command
+- **WHEN** no hit threshold has been explicitly set and the owner presses Shift+H
+- **THEN** the threshold becomes -6 dB, hit cuts are made and the status names the threshold
 
 ### Requirement: Snap to hits
 The system SHALL, when snapping is on, move a marker set in time to the nearest hit within 90 ms.
@@ -499,28 +526,28 @@ k12.
 - **THEN** the cursor moves one step right, as with `L`
 
 ### Requirement: Normalize
-The system SHALL, on `Ctrl+N` on the chop screen, set the volume of the pad the chop
-screen was opened from so the loudest peak of what that pad plays sits at −1 dB or just
-below (the volume is whole dB, rounded down), within the pad volume range (up to +6 dB);
-the status shows the gain and says when the limit stopped it. The file on disk never
-changes. When the chop screen was opened without a pad, the status says there is no pad
-to set the volume on.
+
+The system SHALL, on Ctrl+G on Chop, set the volume of the pad the screen was opened
+from so the loudest peak of what that pad plays sits at -1 dB or just below (the volume
+is whole dB, rounded down), within the pad volume range (up to +6 dB). The status SHALL
+show the gain and say when the limit stopped it. The file on disk SHALL NOT change.
+When Chop was opened without a pad, the status SHALL say there is no pad to normalize.
 
 #### Scenario: Quiet break
-- **WHEN** the owner opens a pad whose peaks are 6 dB below full scale and presses `Ctrl+N`
+- **WHEN** the owner opens a pad whose peaks are 6 dB below full scale and presses Ctrl+G
 - **THEN** the pad volume is +5 dB, the status shows "+5 dB", and the pad plays without clipping
 
 #### Scenario: Very quiet break
-- **WHEN** the peaks of the pad are 20 dB below full scale and the owner presses `Ctrl+N`
+- **WHEN** the pad peaks are 20 dB below full scale and the owner presses Ctrl+G
 - **THEN** the pad volume is +6 dB and the status says the volume limit stopped it
 
 #### Scenario: Twice in a row
-- **WHEN** the owner presses `Ctrl+N` a second time
-- **THEN** the gain is measured again from the sound, so the level does not climb twice
+- **WHEN** the owner presses Ctrl+G a second time
+- **THEN** gain is measured again from the sound, so the level does not climb twice
 
 #### Scenario: Chop without a pad
-- **WHEN** the chop screen was opened from the files screen and the owner presses `Ctrl+N`
-- **THEN** the status says there is no pad to set the volume on
+- **WHEN** Chop was opened from Files and the owner presses Ctrl+G
+- **THEN** the status says there is no pad to normalize
 
 ### Requirement: Slice edit mode
 The system SHALL open the edit mode of the selected slice with `Enter` on the chop screen
@@ -794,24 +821,30 @@ while the switch is on.
 - **THEN** the help line says `as pad` next to the play mode; `Alt+P` again takes it away
 
 ### Requirement: One rule for the hits
-The system SHALL use one hit threshold on the chop screen for the cursor's hits mode, the
-cut that snaps to a hit, the marks of the hits and the chop by hits: a hit counts when it
-is at most the threshold below the loudest hit of the region. The threshold is −12 dB
-until `Ctrl+Y` or the threshold knob sets it, then theirs. In hits mode every counted hit
-on the screen is marked with `▾` on the row over the wave, at its start; the marks show
-where the cursor jumps and where `Ctrl+Y` at the current threshold cuts.
+
+The system SHALL use one hit threshold on Chop for cursor hits mode, cuts snapped to
+hits, hit marks and hit chopping. A hit counts when it is at most the threshold below
+the loudest hit of the region. The threshold SHALL stay -12 dB until H, Shift+H, a
+learned hit command or the threshold knob sets it, then use their value. In hits mode,
+each counted hit on screen SHALL be marked with `▾` at its start. These marks SHALL
+show where the cursor jumps and where hit chopping cuts at that threshold. Explicit
+owner keymaps for `chop.hits` SHALL use this same rule, including the former Ctrl+Y.
 
 #### Scenario: The marks are the stops
 - **WHEN** hits mode is on and the screen shows four marks
-- **THEN** → from the start of the view stops at the four marks in turn
+- **THEN** Right from the start of the view stops at the four marks in turn
 
 #### Scenario: Ctrl+Y cuts at the marks
-- **WHEN** the owner presses `Ctrl+Y` and then switches hits mode on
+- **WHEN** the owner explicitly maps Ctrl+Y to `chop.hits`, presses it and turns hits mode on
 - **THEN** a mark stands at every new cut and nowhere else in the region
 
 #### Scenario: No marks in even steps
 - **WHEN** the cursor walks in even steps or cut to cut
-- **THEN** no marks are drawn
+- **THEN** no hit marks are drawn
+
+#### Scenario: H cuts at the marks by default
+- **WHEN** the default map is loaded, the owner presses H and turns hits mode on
+- **THEN** a mark stands at every new cut and nowhere else in the region
 
 ### Requirement: Enter starts the order from the selected pad
 The system SHALL, in the assign mode "all in order" with no start pad hit yet, take the
@@ -826,20 +859,128 @@ start as before.
   summary is shown; a second `Enter` applies it
 
 ### Requirement: By hits says what it replaced
-The system SHALL, when `Ctrl+Y` chops by hits over existing cuts, say in the status the
-threshold, the number of slices now and before, and that `Ctrl+Z` brings them back:
-`by hits at -12 dB: 7 slices (were 16) · Ctrl+Z brings them back`. With no cuts before
-nothing was replaced: the line ends after the number of slices.
+
+The system SHALL, when H or Shift+H chops by hits over existing cuts, name the threshold,
+new and previous slice counts, and Ctrl+Z in the status:
+`by hits at -12 dB: 7 slices (were 16) · Ctrl+Z brings them back`. With no cuts before,
+the line SHALL end after the slice count. A clamped reverse command SHALL report its
+threshold without claiming it replaced cuts.
 
 #### Scenario: By hits says what it replaced
-- **WHEN** the owner cut a break into 16 slices by hand and presses `Ctrl+Y`
-- **THEN** the status says `by hits at -6 dB: N slices (were 16) · Ctrl+Z brings them
-  back`, and `Ctrl+Z` brings the 16 slices back
+- **WHEN** the owner cut a break into 16 slices by hand and presses H
+- **THEN** the status says `by hits at -6 dB: N slices (were 16) · Ctrl+Z brings them back`
+- **AND** Ctrl+Z brings the 16 slices back
 
 ### Requirement: The header shows play
-The system SHALL show `▶` in the chop screen header next to `LISTEN` while the chop
-screen sounds, and drop it when the sound stops.
+
+In listen and slice edit, the system SHALL give the LISTEN badge a fixed width of
+10 terminal cells including its outer spaces: ` LISTEN   ` at rest and ` LISTEN ▶ `
+while the Chop preview or a linked pad voice of the open chop plays. At rest, the
+badge SHALL use dim text without the blue background. During that playback, it SHALL
+use the existing blue background and show `▶`. The following header text SHALL NOT
+move between these states. A sounding position outside the waveform view SHALL still
+keep the badge lit. A pad of another sample or chop, an old-project voice and an effect
+tail alone SHALL NOT light this badge. The assign badge SHALL keep its existing text,
+size and colors. This indicator SHALL NOT change sound, transport or edit commands.
 
 #### Scenario: The header shows play
 - **WHEN** the chop screen is open and the owner presses `Space`
-- **THEN** the header says `LISTEN ▶`; after the second `Space` it says `LISTEN`
+- **THEN** the header says `LISTEN ▶` with the blue background; after the second
+  `Space` and the preview stops, it says dim `LISTEN` if no matching pad still sounds
+
+#### Scenario: Chop listen badge has fixed width
+- **WHEN** Chop changes between silence and playback
+- **THEN** the LISTEN badge occupies the same 10 terminal cells and the file name and
+  remaining header text stay in the same columns
+
+#### Scenario: Chop listen badge lights only while playback runs
+- **WHEN** a Chop preview or linked slice pad starts and then ends or is released
+- **THEN** LISTEN lights blue with `▶` while it plays and returns to dim without `▶`
+  when neither the preview nor a linked pad of this chop still sounds
+- **AND** keyboard pads, raw notes and learned pad buttons give the same result
+
+#### Scenario: Chop listen badge stays lit beyond the waveform view
+- **WHEN** a linked pad still plays but its position is outside the zoomed waveform view
+- **THEN** the green line is hidden outside the view but LISTEN stays blue with `▶`
+
+### Requirement: Named assign order action
+
+On Chop, the system SHALL bind Tab to `chop.assign_order`. It SHALL switch by-hand and
+in-order assignment only while an assign plan is open, with the same plan and undo
+behavior as the former `edit.param_next`. It SHALL do nothing in listen or slice edit
+and SHALL NOT apply a plan. Existing owner keymaps and learned controls for
+`edit.param_next` and `chop.auto_mode_next` SHALL keep switching the order while
+assigning. Threshold commands SHALL stay ignored while assigning.
+
+#### Scenario: Tab has the named assign order action
+- **WHEN** a by-hand plan is open and the owner presses Tab
+- **THEN** the plan switches to in-order with no target until one is selected
+- **AND** the next Tab returns to an empty by-hand plan without applying either plan
+
+#### Scenario: Old parameter binding still switches assign order
+- **WHEN** a learned controller button or owner key sends `edit.param_next` while assigning
+- **THEN** it switches by-hand and in-order as Tab does
+
+#### Scenario: Old auto mode binding still switches assign order
+- **WHEN** an owner binding sends `chop.auto_mode_next` while assigning
+- **THEN** it keeps its former order-switching behavior and does not apply the plan
+
+#### Scenario: Assign order does not edit a listening slice
+- **WHEN** `chop.assign_order` is sent in listen or slice edit
+- **THEN** cuts, selection, bounds and playback stay unchanged and no plan opens
+
+#### Scenario: New hit keys stay deaf while assigning
+- **WHEN** an assign plan is open and the owner presses H or Shift+H
+- **THEN** cuts, threshold and plan stay unchanged and the status names apply and back
+
+### Requirement: Pad playback line on Chop
+
+While Chop is open in listen or slice edit and a pad plays a slice of the open chop,
+the system SHALL show the existing thin green playback line at that voice's actual
+position in the sample. Keyboard pads, raw MIDI notes and explicitly learned pad
+buttons SHALL give the same display behavior. The position SHALL follow the real
+pad playback, including pitch and retrigger, and SHALL disappear when that voice ends.
+The line SHALL use the current waveform view in Braille and picture modes. It SHALL
+NOT show another sample's position or keep an old project's position.
+
+This addition SHALL change only playback position display. It SHALL NOT add another
+pad hit or preview, change the sound, move the owner's cursor as playback advances,
+or change the existing hit-driven slice selection. Space, M, transport, editing,
+preview and assignment behavior SHALL remain unchanged. In particular, the pad's
+new display position SHALL NOT replace the preview position used by those commands.
+A silent, blocked or queue-rejected hit SHALL NOT create a new playback line.
+
+#### Scenario: Keyboard pad shows the Chop playback line
+- **WHEN** a linked slice is open on Chop in listen or slice edit, the owner hits its
+  keyboard pad and the real audio callback advances that pad voice
+- **THEN** the green line follows that voice's frame position in the waveform
+- **AND** the cursor keeps the existing hit selection but does not follow playback
+
+#### Scenario: MIDI pad shows the same Chop playback line
+- **WHEN** the same linked slice is hit from a raw MIDI note or explicitly learned pad
+  button through the real dispatch and audio queues
+- **THEN** the green line follows the same sounding position as the keyboard path
+- **AND** no extra pad hit or preview is started to supply that position
+
+#### Scenario: Chop pad line follows pitch and retrigger
+- **WHEN** a linked slice pad plays with changed pitch or is hit again on Chop
+- **THEN** the green line follows the voice's real sample position and returns to
+  that slice's start on the new hit, not elapsed UI time or a bare preview's speed
+
+#### Scenario: Chop pad line ends with its voice
+- **WHEN** a displayed pad voice reaches its end, finishes its gate release or is stopped
+- **THEN** that voice's green line disappears without starting or stopping another voice
+
+#### Scenario: Chop pad line keeps transport and edits unchanged
+- **WHEN** a linked pad sounds on Chop, its new green line is visible and the owner
+  moves the cursor, presses M or uses Space
+- **THEN** the cursor and commands keep their existing behavior, independent of the
+  new pad position display
+- **AND** Space preview, bare slice previews and assignment previews keep their existing
+  playback line behavior
+
+#### Scenario: Chop pad line rejects unrelated and silent hits
+- **WHEN** a pad plays another sample, the project changes, a question or learn blocks
+  a new hit, or the audio queue rejects a new hit
+- **THEN** no line is created from that unrelated, old-project, blocked or rejected hit
+- **AND** an already sounding matching voice keeps its valid position until it ends

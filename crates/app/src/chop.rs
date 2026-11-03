@@ -497,6 +497,30 @@ impl Chop {
         (next, n)
     }
 
+    /// Chops by hits, stepping the threshold to the next higher listed value
+    /// (−6, −12, −18, −24, −30 dB), stopping at −6 dB without wrapping (83a). Before any
+    /// hit threshold is set it starts at −6 dB. A knob value at or above −6 dB stays:
+    /// `None` means nothing changed and no undo step was made; `Some((dB, cuts))` stepped
+    /// and replaced the cuts as `chop_by_hits` does.
+    pub fn chop_by_hits_back(&mut self) -> Option<(f32, usize)> {
+        let next = if !self.threshold_set {
+            -6.0
+        } else {
+            // the next higher listed value while below −6 dB; at or above it: nothing
+            [-30.0, -24.0, -18.0, -12.0, -6.0]
+                .into_iter()
+                .find(|&s| s > self.threshold_db + 0.01)?
+        };
+        self.save_undo();
+        self.turning = None;
+        self.epoch = self.next_epoch;
+        self.next_epoch += 1;
+        self.threshold_db = next;
+        self.threshold_set = true;
+        let n = self.cut_by_hits();
+        Some((next, n))
+    }
+
     /// The threshold as a knob position 0..1: 0 is 0 dB, 1 is −40 dB below the loudest hit.
     pub fn threshold_pos(&self) -> f32 {
         (-self.threshold_db / 40.0).clamp(0.0, 1.0)

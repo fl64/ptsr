@@ -23,6 +23,7 @@ PageDown = "bank.next"
 "Ctrl+7" = "bank.7"
 "Ctrl+8" = "bank.8"
 "Ctrl+X" = "pad.take"            # the next pad hit swaps the two pads
+"Ctrl+C" = "pad.copy"            # the next pad hit gets a copy of this one (83a)
 "[" = "master.volume_down"         # same physical keys as х ъ in the Russian layout
 "]" = "master.volume_up"
 F10 = "learn.toggle"          # bind controller knobs and buttons to what the screen shows (47, 57)
@@ -34,7 +35,7 @@ F1 = "help.toggle"            # not "?": that is Shift plus a character, not a p
 Esc = "ui.back"
 "Ctrl+Q" = "app.quit"
 Space = "metronome.click"     # test click; the chop and files screens use Space for their own actions
-"Ctrl+R" = "record.mic"       # hold: record the microphone, release: stop
+"Alt+R" = "record.mic"       # hold: record the microphone, release: stop (83a)
 "Ctrl+T" = "record.output"    # toggle: record what ptsr plays right now
 
 # Two hands (21): the left fingers play, the left thumb holds Ctrl and Alt for the right
@@ -85,11 +86,12 @@ Backspace = "marker.delete"
 "Ctrl+Backspace" = "marker.delete"   # the bound a held Ctrl / Alt lights: the start
 "Alt+Backspace" = "slice.end_delete" # the end
 N = "chop.snap_toggle"       # cursor: even steps / hit to hit / cut to cut
-"Ctrl+N" = "chop.normalize"  # the pad this chop was opened from: a −1 dB peak
+"Ctrl+G" = "chop.normalize"  # the pad this chop was opened from: a −1 dB peak (83a)
+H = "chop.hits"             # chop by hits, one threshold step lower per press (83a)
+"Shift+H" = "chop.hits_back"  # one step back, stopping at −6 dB (83a)
 Y = "chop.parts"             # equal parts 2-32, away from the keys the hand moves with
-"Ctrl+Y" = "chop.hits"       # chop by hits, one threshold step lower per press
 P = "chop.assign"            # the assign mode: slices onto pads, by hand from slice 1
-Tab = "edit.param_next"      # assigning: in order / by hand
+Tab = "chop.assign_order"    # assigning: in order / by hand (83a)
 Enter = "chop.edit"          # listen: the slice edit on / off; assigning: apply the plan
 
 [screens.files]
@@ -109,10 +111,12 @@ Enter = "browser.hold"        # "file in hand": a pad hit puts it there, Enter a
 
 [screens.pads]
 "Ctrl+N" = "pad.rename"
-J = "bank.prev"        # a pad hit picks the pad; the direction keys turn the banks
-L = "bank.next"
-Left = "bank.prev"
-Right = "bank.next"
+U = "bank.prev"        # U/O turn the banks, with the edit open or closed too (83a)
+O = "bank.next"
+J = "edit.value_dec"   # the direction keys change values, not banks (83a)
+L = "edit.value_inc"
+Left = "edit.value_dec"
+Right = "edit.value_inc"
 Enter = "pad.edit"     # the pad edit on / off
 H = "pad.mode_next"    # one-shot / gate ("hold"); commands stay off the left half
 Backspace = "pad.clear"

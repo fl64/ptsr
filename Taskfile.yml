@@ -39,3 +39,24 @@ tasks:
       - task: lint
       - task: test
       - task: bench
+
+  openspec:init:
+    desc: Set up OpenSpec skills and commands (Pi by default)
+    vars:
+      OPENSPEC_TOOLS: '{{.OPENSPEC_TOOLS | default "pi"}}'
+    env:
+      OPENSPEC_TOOLS: '{{.OPENSPEC_TOOLS}}'
+    preconditions: &openspec-cli
+      - sh: command -v openspec >/dev/null 2>&1
+        msg: 'OpenSpec CLI is required. Install it with: npm install -g @fission-ai/openspec'
+    cmd: openspec init --tools "$OPENSPEC_TOOLS" --no-animation .
+
+  openspec:update:
+    desc: Update the configured OpenSpec skills and commands
+    preconditions: *openspec-cli
+    cmd: openspec update .
+
+  openspec:check:
+    desc: Validate all OpenSpec specs and active changes strictly
+    preconditions: *openspec-cli
+    cmd: openspec validate --all --strict --no-interactive

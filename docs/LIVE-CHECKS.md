@@ -16,6 +16,7 @@ How to use this file:
 
 Notes:
 
+- Section 84a is offline. Do not start the sampler for that section; use its benchmark command.
 - "(by ear)" marks a step that checks the sound. Use your headphones for these steps.
 - Some steps use the WAV files in `renders/`. The command `task test` writes them.
 - The pad keys are `1 2 3 4 / Q W E R / A S D F / Z X C V`. A pad number counts these
@@ -341,7 +342,7 @@ Superseded by 77: the pad frame has no glyphs; one `✱` on the mode line marks 
 
 ## 82 — Compact shared FX screen
 
-Folder: `changes/82-shared-fx-screen`
+Folder: `changes/archive/2026-11-03-82-shared-fx-screen`
 
 Agent verification on 2026-11-02: the full automated suite passed. Recorded input
 walkthroughs checked file loading and filtering, rename, marks, reset/clear confirmation,
@@ -351,8 +352,9 @@ screen. Tests also checked MIDI release across screens, banks and channels. The 
 A separate owner process already had a PipeWire node named ptsr, so the agent stopped
 its test session. No live sound or physical controller behavior was accepted from this run.
 Small and large layouts were checked with TestBackend, not an interactive terminal.
-The owner checks below remain open. That run does not verify the replacement X-Session
-map on hardware. All checks for the new map below remain unchecked.
+Owner acceptance on 2026-11-03: the owner first confirmed that the replacement
+X-Session profile works, then accepted all checks of change 82 and authorized closure.
+The checks below are marked from that owner acceptance, not from an agent live run.
 
 The X-Session replacement belongs to change 82. The physical control table is in
 `docs/USER-STORIES.md`, section "Set up a pad with the X-Session Pro".
@@ -360,68 +362,68 @@ The profile applies automatically when the port name contains `X-Session`.
 There is no manual profile selector. An existing user map keeps its old assignments until
 reset, including old Play roles and destructive delete, commit or replacement assignments.
 
-- [ ] Stop the running program. Start the newly built program. Connect the X-Session Pro.
+- [x] Stop the running program. Start the newly built program. Connect the X-Session Pro.
   Before reset, check that the existing map still has its previous assignments.
-- [ ] Press `F12`. Open MIDI. Select `reset to profile` for `X-Session Pro`.
+- [x] Press `F12`. Open MIDI. Select `reset to profile` for `X-Session Pro`.
   This selects a device to reset, not a profile. Press `Enter` to open the question.
   Press `Esc`. Check that the existing bindings remain unchanged, including after a restart.
-- [ ] Select that reset row again. Press `Enter` to open the question.
+- [x] Select that reset row again. Press `Enter` to open the question.
   Press `Enter` again to confirm. Check that the new physical defaults replace this device's map.
   This deletes custom bindings only for this device. Check that other devices keep their bindings.
   Restart the program. Check that the replacement map remains.
-- [ ] Press left Headphone (b2, note 44). Check that Files opens.
+- [x] Press left Headphone (b2, note 44). Check that Files opens.
   Press right Headphone (b3, note 45). Check that FX opens.
-- [ ] Check left backward (b4, note 46) and left forward (b1, note 43).
+- [x] Check left backward (b4, note 46) and left forward (b1, note 43).
   They select previous / next pads on Pads, files on Files, slices on Chop and blocks on FX.
   In edit, they select previous / next pages. A release must not repeat the command.
-- [ ] Press right backward (b5, note 56) and right forward (b6, note 57).
+- [x] Press right backward (b5, note 56) and right forward (b6, note 57).
   Check previous / next bank. Check that button releases do not change banks again.
-- [ ] On Pads, press left Cue (b7, note 58). Check that pad edit opens.
+- [x] On Pads, press left Cue (b7, note 58). Check that pad edit opens.
   Turn left numbered knobs 1–3 (k1–k3, CC24–26). Check the current page parameters.
   Close edit with left Cue. Open it again and close it with right Cue (b8, note 59).
-- [ ] On Files, press left Cue to hold a file. Press it again. No file is placed.
+- [x] On Files, press left Cue to hold a file. Press it again. No file is placed.
   Press right Cue to open Chop.
-- [ ] Start a layout plan with the keyboard. Press right Cue. The plan must not apply.
+- [x] Start a layout plan with the keyboard. Press right Cue. The plan must not apply.
   Open a replacement question with the keyboard. Neither Cue must confirm it.
   On Chop, press left Cue to cut. Press right Cue to open slice edit.
   Check that either Cue closes edit without another cut.
   Outside Files, Chop and edit, check that right Cue goes back.
-- [ ] On Files, test left Play (b10, note 70) and right Play (b9, note 69) separately.
+- [x] On Files, test left Play (b10, note 70) and right Play (b9, note 69) separately.
   Each must toggle file preview. On Chop, each must start and stop preview.
   Repeat with edit open. Neither Play must open or close edit, delete cuts or apply a layout.
   Check that both Plays do nothing on Pads and FX. Releases must not repeat commands.
-- [ ] On Chop with edit closed, turn k1–k5 (CC24–28).
+- [x] On Chop with edit closed, turn k1–k5 (CC24–28).
   Check slice start, slice end, cursor, region start and region end respectively.
   Check right Mid (k11, CC35) for threshold and right Low (k12, CC36) for zoom.
-- [ ] On each screen and in edit, move left Volume (fader_b, CC11), left Pitch (fader_a, CC12)
+- [x] On each screen and in edit, move left Volume (fader_b, CC11), left Pitch (fader_a, CC12)
   and right Volume (pitch_a, CC14). Check selected pad volume, selected pad pitch and master volume respectively.
   Check that right Pitch (pitch_b, CC15) and crossfader messages CC17 / CC20 change nothing.
-- [ ] On a disposable project, check every default button on each screen and in edit.
+- [x] On a disposable project, check every default button on each screen and in edit.
   No default may delete a cut, apply a layout or confirm replacement.
   Use keyboard commands for layout, or explicitly learn a commit control.
   An old destructive assignment remains active until reset. Do not use the old map for this safety check.
 
-- [ ] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
+- [x] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
   terminal they are beside each other. In a narrow terminal they are stacked. Cards do
   not grow to fill empty space. The selected block and parameter are clear.
-- [ ] Press `Tab` and `Shift+Tab`. Only the selected block changes. `I` and `K` select a
+- [x] Press `Tab` and `Shift+Tab`. Only the selected block changes. `I` and `K` select a
   parameter. `J` and `L` change it. Check `F1` and the bottom help.
-- [ ] Play keyboard and MIDI pads while changing effects. Hold a gate pad, change the
+- [x] Play keyboard and MIDI pads while changing effects. Hold a gate pad, change the
   screen and bank, then release it. The original pad must stop.
-- [ ] Set the sends on two pads to FX 1. On `F4`, change size and tone. Both pads must
+- [x] Set the sends on two pads to FX 1. On `F4`, change size and tone. Both pads must
   use the changed effect. Select FX 2 and use the same three knobs. FX 1 must stay unchanged.
-- [ ] In pickup mode, change FX 1, select FX 2 and move the same knob. FX 2 must wait
+- [x] In pickup mode, change FX 1, select FX 2 and move the same knob. FX 2 must wait
   for its own value. Check a second device and the scale and jump modes too.
-- [ ] Check the old page knobs. Assign a replacement with `F10`. The old knob must stop
+- [x] Check the old page knobs. Assign a replacement with `F10`. The old knob must stop
   controlling that action. Clear the new assignment, restart, and check that neither returns.
-- [ ] Press `Ctrl+Z` after a keyboard or MIDI effect change. Check the previous setting.
+- [x] Press `Ctrl+Z` after a keyboard or MIDI effect change. Check the previous setting.
   Save with `Ctrl+S` and restart. Check both slots, drive and sends.
-- [ ] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
+- [x] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
   parameter stays selected. Shared slot settings must not appear in the pad panel.
 The profile update changes no sound algorithms. It needs no new sound render.
 Use the existing change 82 WAV for the listening check.
 
-- [ ] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
+- [x] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
   parameter changes and undo for clicks. Compare with `56-reverb.wav`, `56-delay.wav`
   and `56-two-slots.wav`.
 
@@ -709,3 +711,388 @@ The owner accepts the result for now; the sound can be reviewed again during use
 - [ ] (by ear) Listen to `renders/81-drive-comparison.wav`. The first part is the old
   drive, the second is the optimized drive. Make sure they sound the same, including the
   change in drive. There is a short silence between them.
+
+## 83a — Keymap cleanup
+
+Folder: `changes/archive/2026-11-03-83a-keymap-cleanup` (`plan/controller-first-patterns`)
+
+Owner acceptance on 2026-11-03: the owner chose to accept this change without
+completing the manual checks. Open boxes below mean **not verified by the owner**;
+do not read them as failed or completed. Bugs found later get a separate change.
+
+Agent check on 2026-11-03: `task check` and `task build` passed. In an isolated
+120x40 tmux terminal, the app reported `JACK unavailable`, with no `ptsr` node in
+the owner's PipeWire graph. The agent saw U/O change banks, loaded a sample,
+used Y and H to cut it, selected hit slices with pad keys, stepped H back with
+Shift+H, changed assign order with P and Tab, copied a pad with Ctrl+C and
+undid the copy with Ctrl+Z. Old Ctrl+R, Ctrl+Y and Ctrl+N showed moved-key
+notices. Alt+R reported `No sound: there is nothing to record from.` The agent
+did not hear the sound, test microphone input, verify a physical controller or
+check owner overrides. The real SMC-PAD profile is work for change 91.
+
+The keyboard checks below remain available for a later pass; the controller
+pass cannot be inferred from automated MIDI tests.
+
+- [ ] On `F2`, hold `Alt+R` and speak. Make sure that the strip shows your voice. Release
+  it. Press `Alt+R` again: the recording stops only on the second press in a terminal
+  without releases.
+- [ ] On `F2`, press `U`, then `O`. Make sure that bank 2 opens and bank 1 comes back,
+  with the same pad selected. Press `L`: make sure that a value changes, not the bank.
+  Press `Enter` (edit open) and repeat `U` / `O` / `L`: the same behavior.
+- [ ] On `F2`, press `Ctrl+C`. Make sure that the flash says `COPY · hit a pad` and that
+  the program does not quit. Hit an empty pad: make sure that the copy lands with the
+  name ending in ` 2` and that the hit plays nothing. Press `Ctrl+Z`: make sure that the
+  target comes back. Press `Ctrl+Q`: make sure that the program quits.
+- [ ] On `F3`, press `H`. Make sure that the status says `by hits at -6 dB: N slices`.
+  Press `Shift+H`: make sure that the threshold steps back up one list value. Press it
+  at `-6 dB`: make sure that the status says `by hits stays at -6 dB` and that no undo
+  step was added.
+- [ ] On `F3`, press `Ctrl+G`. Make sure that the pad the chop came from normalizes to a
+  `-1 dB` peak. Press `P` and `Tab`: make sure that the plan switches `in order` /
+  `by hand` and that `Tab` outside a plan does nothing.
+- [ ] On `F2` and `F3`, press `Ctrl+R`, `Ctrl+Y` and `Ctrl+.` one by one. Make sure that
+  no action runs; only the moved-key flash may name the new key.
+- [ ] In your `keymap.toml`, bind `H` on the chop screen to another action. Start the
+  program. Make sure that a startup warning names `H on chop`, that your file is
+  unchanged, and that a key press dismisses one warning at a time.
+- [ ] (by ear) Listen to `renders/83a-pad-copy.wav`. The first voice is the source, the
+  second is the copy placed on another pad: make sure that they sound the same.
+
+## 84 — Keyboard and controller pad parity
+
+Folder: `changes/archive/2026-11-03-84-input-parity` (`plan/controller-first-patterns`)
+
+Owner acceptance on 2026-11-03: the owner reported that they checked and accepted
+change 84, then explicitly authorized its archive and a local signed-off commit.
+This is overall acceptance, not a separate result for every check below or the WAV.
+The boxes stay open where no individual result was reported; they do not mean failure
+or rejection of the change. No controller is available, so its physical pass remains
+unverified. Automated raw-MIDI tests do not replace that pass. No agent live, listening
+or physical-controller check is implied. The earlier missing Chop pad playback line
+was repaired in 2.3; F2 PLAY followed in 2.4.
+
+### Prepare both passes
+
+Use a disposable project. These checks place, copy, swap and replace pad sounds.
+Start each pass with the same samples and banks. Use a fresh chop for the first check,
+with no slices linked to pads. Keep an empty target and an occupied target in bank 2.
+For gate checks, use a linked slice at least 10 seconds long: cut a sample of at least
+20 seconds into two slices and assign one to `2-W`. On Pads, set it to gate with `H`
+and its release to 20 ms on ENV. Keep both FX sends at 0, so an effect tail cannot hide
+the stop. Use a terminal with the kitty keyboard protocol for keyboard releases.
+
+For the controller pass, use notes 36–51 from a device without a profile, or controls
+explicitly bound to `pad.1`…`pad.16` in the GLOBAL group on `F12` MIDI. Record the device
+and preset below. The X-Session Pro has no physical pad grid; do not treat its default
+command buttons as pad hits. Its existing safe command map stays unchanged. The SMC-PAD
+profile and hardware measurements remain work for 91. A learned button that sends only
+127 can test full hits, but not low/high velocity. Record that limit instead of a pass.
+Use the keyboard for screen, bank, plan and confirmation commands without bindings.
+
+### Keyboard pass
+
+- [ ] On F2, hit the long pad. PLAY must change from dim to blue with `▶`, without
+  moving following title text. Change bank, open pad edit with `Enter`, hide the grid
+  with `Ctrl+O`, then return to F2 from F4: PLAY stays lit while any pad still plays.
+  With two pads sounding, stop one: it stays lit until the last voice ends, including
+  gate release. Let an effect tail continue after that: PLAY is dim. Check with MARK
+  present too: its text and yellow color stay, and its column does not move on start/stop.
+- [ ] (by ear) On a fresh Chop, use `Y` until there are 32 slices. Press `Ctrl+1` and
+  hit `3`, then press `Ctrl+2` and hit `3`. Check that slice 3, then slice 19 is selected
+  and previewed once. No pad layout is applied.
+- [ ] On that Chop, press `Ctrl+1`, hit `1` to select slice 1, then press `P` and hit `Q`.
+  Press `Ctrl+2` and hit `W`. Check the plan: slice 1 on `1-Q`, slice 2 on `2-W`.
+  Each planned slice previews once; no pad changes yet. Press `Esc`: no layout is
+  applied. Repeat the plan and use `Enter` to apply, with confirmation if asked.
+- [ ] (by ear) On Pads, change a linked pad's pitch to +12 and its filter to low-pass
+  at about 1200 Hz. Hit it, then open its slice with `F3` and hit it again. Check the
+  same higher, darker pad sound and selected slice, without a second preview sound.
+- [ ] On Chop, hit a linked pad without Space. Check the thin green line moving through
+  its slice while it sounds. Hit it again: the line starts again. Open slice edit with
+  `Enter` and repeat. The owner's cursor does not follow playback; Space and M keep
+  their previous behavior. Let the sound end or release a gate: the line disappears.
+  Check once with pitch +12 and in each wave mode available in your terminal. A line
+  outside a zoomed view is hidden, not pinned to its edge. If Space preview also runs,
+  its existing line has priority until the preview stops.
+- [ ] Watch LISTEN while a linked pad starts and stops, then repeat with Space. Its
+  width and the file-name column must stay fixed. At rest it is dim; while a preview
+  or linked pad of this chop plays it is blue with `▶`. Zoom in until the sounding
+  position leaves the view: the line is hidden but LISTEN stays blue. After the last
+  matching voice stops it becomes dim, even if an effect tail still sounds.
+- [ ] On Chop, press `P`, hit an occupied target and press `Enter`. Wait for the preview
+  to end. Hit another pad under the replacement question. Check silence, unchanged
+  plan and unchanged question. Press `Esc`: nothing is replaced.
+- [ ] (by ear) Use the long linked gate on `2-W`. Hold `W` on Chop, press `PgDn`, then
+  `F4`, and release `W`. Only the original sound must fade out; the new bank's pad
+  must not release. Repeat from Pads to check a hold started outside Chop.
+- [ ] (by ear) Hold that gate again, turn bank, open `F4`, then `F10`. Press and release
+  a new key `Q`: it stays silent and does not stop the held gate. Release the original
+  `W`: only that gate stops. Learn stays open with the same selected item and any
+  pending control; no binding is saved. Close learn with `F10`, without `Enter`.
+- [ ] On Pads, select a loaded source and press `Ctrl+C`. Turn bank and hit an empty
+  target. Check silent placement and unchanged source. Undo with `Ctrl+Z`. Repeat with
+  an occupied target. Check its selection and name in the question. Further hits stay
+  silent and do not confirm. `Esc` keeps the copy in hand. Hit the target again and
+  press `Enter`: only the named target is replaced. One `Ctrl+Z` restores it.
+- [ ] On Pads, select a loaded source, press `Ctrl+X`, turn bank and hit a target.
+  Check a silent swap and selection of the target. One `Ctrl+Z` restores both pads.
+- [ ] On Files, press `Enter` on a sample to hold it, then hit an occupied pad in another
+  bank. Check silent targeting and selection of the pad named in the question.
+  `Esc` keeps that pad's sound and the file in hand. Cancel the held file before play.
+- [ ] On Pads, mark two loaded pads with `M`, pad hits, then `M`. Press `Backspace`.
+  Hit a pad under the clear question: no new sound, selection or mark change.
+  `Esc` keeps the sounds and marks. Drop the marks with `Esc`; a new hit plays once.
+
+### Controller pass
+
+Repeat with the same starting data. Use controller pads for every target and hit below;
+keyboard command keys remain available. Record notes and learned buttons separately if
+both are available. A physical test of one does not verify the other.
+
+- [ ] On F2, repeat the PLAY check above with controller notes and a learned pad
+  button separately when available. Change bank and release the original gate: PLAY
+  follows the actual pad sound, not the selected pad, held flag or brief flash. A new
+  hit under question or learn must not light it; a valid older voice can keep it lit.
+  This physical pass stays unverified while no controller is available.
+- [ ] (by ear) On a fresh 32-slice Chop, hit controller pad 3 in banks 1 and 2.
+  Check slice 3 and slice 19, each selected and previewed once as in the keyboard pass.
+- [ ] Start the by-hand plan from slice 1 with `P`. Hit controller pad `Q` in bank 1,
+  then `W` in bank 2. Check the same two targets and previews, with no pad changes.
+  Cancel with `Esc`. Repeat and apply with `Enter`; target hits must not apply it.
+- [ ] (by ear) Hit the linked pad with pitch +12 and the low-pass filter on Chop.
+  Compare MIDI velocity 127 with `Shift` plus the keyboard pad: the sounds must match.
+  Hit lightly and strongly: the light linked-pad hit must be quieter, not a bare preview.
+- [ ] Hit the linked pad on Chop in listen and slice edit. Check the same moving green
+  line, pitch speed, retrigger, end/release and fixed-width LISTEN badge behavior as
+  the keyboard pass. A new hit under question or learn must not start a line; an older
+  pad that still sounds can keep its own line. This check stays open without a controller.
+- [ ] Open a plan replacement question, wait for preview to end, then hit controller
+  pads. Check silence and unchanged question and plan. `Esc` keeps the old targets.
+- [ ] (by ear) Hold the long linked gate from controller pad `W` in bank 2 on Chop.
+  Turn bank, open `F4` and release the original control. Only the original gate stops.
+  Repeat with `F10` open before release. Learn and its selected item stay open; no
+  binding is saved or confirmed. A new keyboard key for the same local pad in learn
+  must not stop that MIDI hold; only release of the original control stops it.
+- [ ] (by ear) Repeat the hold across a bank/screen change, then disconnect that device.
+  Check that the original gate fades out without a click. Reconnect and check the same
+  binding. If available, test note-off and note-on zero separately; a learned CC button
+  must stop its gate with CC0. Record message forms not available on this preset.
+- [ ] On Pads, take a copy with `Ctrl+C`. Hit empty and occupied controller targets in
+  another bank. Check the same selection, silent placement, replacement question,
+  cancellation and one-step undo as in the keyboard pass. Extra hits cannot confirm.
+- [ ] Take a file with `F6` and `Enter`, then hit an occupied controller target in another
+  bank. Check the selected target, silence and `Esc` as in the keyboard pass. Cancel
+  the file. Swap two loaded pads across banks with `Ctrl+X` and a controller target:
+  no hit sound, target selected, one `Ctrl+Z` restores both pads.
+- [ ] (by ear) Hold a gate from Pads. Open a copy/file replacement or clear question,
+  change bank and screen where possible, then release the original control. Only its
+  original gate stops; the question stays open. New hits under the question stay silent.
+  After cancellation and leaving any held file/copy mode, a new hit plays once.
+- [ ] (by ear) On Pads outside these modes, play fast controller hits while the screen
+  updates. Check that hits do not wait for the screen and do not sound twice. Turn
+  marking on: hits must still sound while they add or remove marks.
+
+### Offline listening and acceptance record
+
+- [ ] (by ear) Listen to `renders/84-input-parity.wav` (5.376 seconds).
+  From 0.000 to 2.304 s, the three full-strength hits are keyboard, note and learned
+  button: they must sound the same. From 2.304 to 3.840 s, listen to quiet/loud note
+  hits. From 3.840 to 5.376 s, listen to quiet/loud learned-button hits. Check silence
+  between hits and no clicks, clipping or extra hits. Recreate the WAV with
+  `cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture` if needed.
+
+Owner result: checked and accepted change 84 on 2026-11-03 after 2.3 and 2.4;
+archive and local signed-off commit explicitly authorized. Individual check results
+were not listed. Device/preset: no controller available. Keyboard terminal: not recorded.
+Physical note/CC forms: all unverified. Separate WAV listening result: not reported.
+The callback benchmark has recorded peaks above the 50% budget target, including
+107.46% in the last implementation check. Their cause remains unknown; acceptance
+does not close this performance issue. Archive checks must still verify main-spec
+scenario coverage, strict validation and the full automated suite.
+
+## 84a — Offline callback timing report
+
+Folder: `changes/archive/2026-11-03-84a-benchmark-report` (`plan/controller-first-patterns`)
+
+The owner accepted this report-only change on 2026-11-03, then explicitly confirmed its
+archive with main-spec sync and a local signed-off commit. This is overall acceptance;
+individual check results were not reported. Open boxes below do not mean failure or
+rejection. Do not start `task run` for these checks. No sound device or controller is
+needed. Sound and input behavior are unchanged; no new keyboard, controller or listening
+pass is required. No new WAV is provided.
+The existing `renders/84-input-parity.wav` keeps the same samples and SHA-256.
+
+- [ ] From the repository folder, run `cargo bench -p engine --bench callback`.
+  Read the clock explanation and the unchanged exit checks above the timing groups.
+  The command must not start the sampler or require a sound device or controller.
+- [ ] Check the empty-call group: 2,000 samples for wall, thread CPU and estimated gap.
+  Read the raw means in microseconds and the separate full measurement-envelope mean.
+  No overhead is subtracted from the workload results.
+- [ ] Check the playback group: 20,000 samples. Each of wall, thread CPU and estimated
+  gap has mean, p99, maximum, sample count and count above 50% of the block budget.
+- [ ] Check the switch summary: 200 switches. The all-callback group has the same count
+  as that summary. In the current workload it is 22,000. The three phases have
+  200 first fade blocks, 200 second fade blocks and 21,600 clearing/restore blocks.
+  Each phase has the same three timing series and five statistics.
+- [ ] Read `maximum target`: `EXCEEDED` must be kept visible for any observed wall or CPU
+  maximum above 50%, even if the command succeeds. Success still means only that steady
+  wall p99 and per-switch wall peak p99 did not exceed 50%; it is not an all-block pass.
+  Equality at 50% passes those exit checks. A zero gap is valid when CPU exceeds wall.
+- [ ] Read the gap as an estimate, not proof of a cause. Record any exceedance below.
+  Accept the report separately from the still-open slow-core performance issue.
+
+Agent verification on 2026-11-03: the 9 report tests pass, including all seven named
+scenarios, exact 50% boundaries, a rare peak, clock errors and raw overhead output.
+The full offline benchmark and `task check` passed. In the final implementation check,
+steady wall p99 was 12.40%, wall maximum 41.94%, CPU maximum 41.97%, with zero wall/CPU
+blocks above 50%. The per-switch wall peak p99 was 10.05%. The full empty-call envelope
+mean was 0.445 us. These are one run's observations, not a hard-maximum guarantee.
+No engine callback, sound, live load, scheduler setting or runtime dependency changed.
+Earlier diagnostic runs showed both scheduling delays and CPU-time exceedances; their
+slow-core cause remains open. Physical-controller checks from 84 remain unverified.
+
+Archive verification on 2026-11-03: all seven scenarios are in the main audio-engine
+spec. Strict validation, `task check` and the release build passed. This run had one
+steady wall block above 50%: wall maximum 92.94%, CPU maximum 36.97%, CPU exceedance
+count zero. The report said `wall EXCEEDED; thread CPU WITHIN`, while the unchanged p99
+checks passed. The gap maximum was 74.69%; its cause is not established by that estimate.
+This result keeps the earlier performance issue open.
+
+Owner result: accepted report 84a on 2026-11-03; archive, main-spec sync and a local
+signed-off commit explicitly confirmed. Individual manual checks were not reported, so
+their boxes stay open. This accepts the report, not a hard-maximum performance guarantee
+or resolution of slow-core CPU spikes. No new live, listening or physical-controller
+pass is implied; the earlier controller checks remain unverified.
+
+## 85 — Shared pad input and ordered controller targets
+
+Folder: `changes/85-input-modes` (`plan/controller-first-patterns`)
+
+Implementation and offline checks are complete. Owner acceptance and archive are
+pending. No keys, profiles, saved-data formats or callback code changed. The shared
+handler keeps the existing text, picker, F10/F12 and overlapping-hand boundaries.
+Recorded MIDI and waveform checks do not mark a physical or listening pass complete.
+The final agent screen pass at `1a24909` has 66 captures under ignored
+`target/ux/85-final/`: edit/mark, banks, copy/swap/undo, filter/file questions,
+Chop listen/BOUNDS/assign cancellation, FX, F10, all F12 tabs and project text.
+Saved TOML comparisons confirmed undo/cancel and save/restart preservation. Both
+starts logged `JACK unavailable`, never `JACK: active`; no ptsr PipeWire node was
+present before, during or after. Both exits printed `UX exit: 0`. The terminal had
+no audio or kitty releases; no MIDI was injected. The design records fixture
+expectation corrections. This is screen evidence, not owner or hardware acceptance.
+The owner reported successful keyboard checks on 2026-11-03. The controller is not available.
+Only the keyboard boxes below reflect that report. Controller and WAV checks stay open.
+
+### Prepare
+
+Use a disposable project: these checks load, copy, swap and replace sounds. Prepare
+two occupied pads and an empty pad in bank 2. For releases, use the long gate and
+20 ms release from section 84, with both FX sends at zero. A keyboard gate needs
+kitty key releases; tmux without them cannot verify that part.
+
+For a controller pass, use notes 36–51 or explicit GLOBAL pad bindings. A learned
+CC button must send its zero value on release. Record missing velocity/release forms
+rather than claiming them. Do not reset a profile for this check. The X-Session's
+safe command buttons are not a pad grid. Its left Cue on Files takes a file; a second
+device can provide the pad notes. The incomplete SMC-PAD template is not accepted here.
+
+### Keyboard pass
+
+- [x] On Pads, hit a loaded pad. Open edit with `Enter`, then hit a different loaded
+  pad: it plays once and edit stays open. Close edit. Turn marking on with `M`, hit
+  pads, then open edit again. Marks and sound must coexist; no key assignment changes.
+- [x] On Files, switch preview off if it is on. Select a different file, press `Enter`
+  and hit an occupied pad at once. The old pad must not play; the question names that
+  target. Hit a second occupied pad: the first question and selection stay. `Esc`
+  keeps both old sounds and the file in hand. Hit an empty pad: it loads the file
+  without a hit sound. Wait for loading to end, then cancel any hand state before play.
+- [x] Take a copy with `Ctrl+C`, place it on an empty pad, and undo with `Ctrl+Z`.
+  Swap two loaded pads with `Ctrl+X` and a target hit, then undo. Placement is silent;
+  one undo restores the prior target or both swapped pads, including their settings.
+- [x] Repeat section 84's bare Chop listen, linked pad, slice edit and both assign
+  orders (`P`, then `Tab`). A question and F10 block new keyboard hits.
+- [x] (by ear) Hold a linked gate from Chop, change bank, open F4 and release its
+  original key. Only its original pad stops. Repeat with F10 open before release.
+  A new silent learn key must not steal that older keyboard hold.
+- [x] Open the Files filter with `/` and type pad letters. They type text, not hits.
+  Repeat pad naming (`Ctrl+N`) and project selection (`Ctrl+P`), then cancel. The
+  project picker's first Esc clears typed text; another Esc closes it. Open and close
+  F10 and all F12 tabs without saving a test binding. Save and restart the test project.
+
+### Controller pass, when hardware is available
+
+Use controller pad hits for targets below. Use existing bound commands; keyboard
+commands remain available where a controller has none. Repeat notes and learned CC
+buttons separately where possible. Record the device and preset.
+
+- [ ] On Files with preview off, take the selected file with a bound command and hit
+  an occupied pad immediately. The result is one silent target question, not the old
+  sound. Hit a different occupied pad; it cannot change or confirm the first question.
+  Esc keeps the old sounds and file in hand. An empty target loads silently.
+- [ ] Cancel the held file, then send bank-next and a pad hit quickly. The hit uses
+  the new bank once, at its original velocity. Repeat entering and leaving Chop with
+  the existing bound commands; listen and assign keep their normal meaning.
+- [ ] (by ear) Hold a long gate; change bank/screen and release its original control.
+  Repeat under a question and F10. Test note-off, note-on zero, CC zero and disconnect
+  where the device supports them. Only the actual original pad stops, without a stuck
+  gate. Also retrigger that control quickly around a command and release.
+- [ ] (by ear) On Chop, hold a keyboard gate, change bank, then hold the same local
+  position from MIDI. Release each in both orders; each stops its own original pad.
+  Repeat MIDI-first, and repeat under a question/F10. A silent new hit steals no hold.
+- [ ] (by ear) Outside target modes, play soft and strong hits while the screen updates.
+  Each hit sounds once without waiting for the screen. Compare MIDI 127 with a Shift
+  keyboard hit. A fixed-127 button cannot verify low velocity; record that limit.
+- [ ] If two devices are available, take a file from device A and hit the target from
+  B before the screen changes. It is still a silent target. Release older gates from
+  both devices during this sequence: their original releases still work.
+- [ ] An old MIDI hit delivered after Chop opens must not restart sound, preview or change an assign plan.
+
+### Offline listening
+
+Regenerate the three 85 WAV files with:
+
+```sh
+cargo test -p ptsr input_tests::render_85 -- --nocapture
+cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture
+```
+
+- [ ] (by ear) Listen to `renders/85-input-modes.wav` (2.064 s). The short hits below
+  must have one onset and end cleanly. File-target segments are intentional silence.
+  Equal-velocity keyboard, note and button segments must sound the same.
+
+| Time, seconds | Segment |
+| --- | --- |
+| 0.000–0.176 | Keyboard, velocity 80 |
+| 0.176–0.352 | Note take-file and occupied target: silence |
+| 0.352–0.528 | Direct note, velocity 80, edit and marking open |
+| 0.528–0.768 | Deferred note gate, then original release after bank/screen change |
+| 0.768–0.944 | CC-button take-file and occupied target: silence |
+| 0.944–1.120 | Direct CC button, velocity 80, edit and marking open |
+| 1.120–1.360 | Deferred CC gate, then original release after bank/screen change |
+| 1.360–1.536 | Direct note, velocity 23 |
+| 1.536–1.712 | Direct note, velocity 101 |
+| 1.712–1.888 | Direct CC button, velocity 23 |
+| 1.888–2.064 | Direct CC button, velocity 101 |
+
+- [ ] (by ear) Listen to `renders/85-mixed-holds.wav` (3.584 s): first notes, then
+  learned buttons. Each group has keyboard-first, MIDI-first and rejected-MIDI cases.
+  Each original hold must end on its own release; rejection must not steal the key.
+- [ ] (by ear) Listen to `renders/85-late-midi.wav` (about 1.451 s): accepted note,
+  rejected note, accepted button, rejected button. Accepted hits have their normal
+  Chop-entry hush without a restart; rejected segments are silent.
+- [ ] (by ear) Listen again to `renders/84-input-parity.wav` (5.376 s). Its SHA-256
+  remains `f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
+
+Automation checks finite samples, no clipping, intentional silence, one hit and timing
+within one sample against timestamped offline oracles. It also tests an older direct
+release processed before a deferred retrigger reaches UI: the newer accepted hit keeps
+its own release. Existing non-deferred Chop release merging stays unchanged. No formal
+memory-model check or exhaustive proof of every queue interleaving is claimed.
+
+Owner keyboard result, 2026-11-03: all checks possible with the keyboard passed.
+The owner cannot test a controller at present. Keyboard terminal: not reported.
+Device/preset and physical note/CC release forms: unverified. Separate WAV listening result: not reported.
+The owner approved squash merge of [PR #4](https://github.com/fl64/ptsr/pull/4) into `master` with these checks open.
+This approval does not authorize archive of 85. Tasks 5.2 and 5.3 stay open.
+Callback maximum-budget and slow-core issues remain open. Green p99 benchmark gates do not prove
+that every callback meets the 50% target. This change does not investigate that issue.
