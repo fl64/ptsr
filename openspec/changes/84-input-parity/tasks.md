@@ -42,7 +42,7 @@
   input coverage: original pad after bank/screen changes, unchanged learn pick/pending
   bindings, and no release from new silent keys, including keys of a held MIDI pad.
   Run `task check` and commit the artifacts separately, then the fix with its tests.
-- [ ] 2.2 Check velocity, note-off forms, original held-pad release after bank and
+- [x] 2.2 Check velocity, note-off forms, original held-pad release after bank and
   screen changes, queue acceptance and project epoch filtering. Render
   `renders/84-input-parity.wav` through the implemented route; check finite samples,
   no clipping, silence, levels and nearest-block timing. Run `task check` and commit.

@@ -278,7 +278,62 @@ three sources. Tests verify commands, learner state and offline samples, not har
 strict clippy, workspace tests (598 App tests, 70 input tests, no failures) and the
 callback benchmark. The 32-voice callback mean is 9.32% and p99 is 16.12% of the block
 budget; its maximum is 111.34%. Strict OpenSpec validation passes all 16 items.
-This does not finish task 2.2 or owner acceptance. The full parity WAV is not present.
+At that point task 2.2 and owner acceptance were still open, and the full parity WAV
+was not present. Task 2.2 is recorded below; owner acceptance is still open.
+
+## Task 2.2 verification
+
+Commit `9f45ae4` adds five offline route tests in `crates/app/src/input_tests.rs`.
+`Drive::offline` connects production MIDI dispatch directly to the MIDI producer from
+`audio::offline`; App uses that Audio's UI producer and project state. Both queues feed
+the real `Realtime::process`. No direct command is captured and replayed for these tests.
+The timestamped engine render is a separate comparison for one expected hit and release,
+not a substitute for the input route. Production code is unchanged in this step.
+
+The tests cover keyboard, raw note and learned CC80 hits; matched velocities 80 and 127;
+pitch +12 and low-pass at 1200 Hz; and low/high velocities 23 and 101. Separate controls
+with pitch 0 or filter off must change the samples. Note-off, note-on zero, CC0 and
+disconnect release the original absolute pad after a bank change, Files and F10 learn.
+The direct MIDI test computes the first block before App receives the event, then checks
+that App adds no second hit or release. The full-queue test uses the real 1024-slot UI
+queue: a rejected retrigger does not reset the older voice's phase, and its pending
+release reaches audio when space returns. Project tests leave old hit/release commands
+in each real queue and deliver old UI events after a new gate starts. Old and not-ready
+hits stay silent; an old release does not stop the new gate. Additional renders compare
+bare previews and assignment and check silence under questions and learn.
+
+`renders/84-input-parity.wav` is stereo float32 at 48000 Hz, 258048 frames (5.376 s).
+It contains seven segments of 0.768 s, each with a hit at local frame 4096 and release
+at 20480. The source slice would last 0.5 s at pitch +12, so post-release silence proves
+the gate stopped before the source ended. Listen in this order:
+
+- 0.000–2.304 s: keyboard, raw note, learned CC80; three identical full-strength hits.
+- 2.304–3.840 s: raw note at velocity 23, then 101.
+- 3.840–5.376 s: learned CC80 at velocity 23, then 101.
+
+All matched routes are sample-identical. Low/high peaks are 0.025652 / 0.112647,
+ratio 0.227723. An independent read of the saved WAV confirms finite samples, peak
+0.141645, maximum adjacent-sample step 0.009306, expected silence and all seven onsets
+at local frame 4097 (one sample after the block boundary). This checks existing block
+routing, not input timestamps, physical latency or a new latency guarantee.
+SHA-256: `f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
+
+Recreate the ignored local WAV with
+`cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture`.
+As with other renders, `/renders/*.wav` is ignored by git; this step does not change
+that delivery rule. The file is present in the owner's local worktree, not in the commit.
+
+`/tmp/ptsr-84-2.2-final-check.log` records a green full `task check`: formatting,
+strict clippy, workspace tests (603 App and 70 input tests, no failures) and benchmark.
+`/tmp/ptsr-84-2.2-paired.log` has 43 paired-input tests passed, no failures.
+That 32-voice callback run uses mean 8.43%, p99 10.24%, maximum 25.47% of the block
+budget. The subsequent full completion check also passes
+(`/tmp/ptsr-84-2.2-completion-check.log`), with mean 9.71%, p99 15.61% and maximum
+51.55%. The last maximum exceeds the 50% target; a green command does not prove a
+hard maximum below that target. This test-only step changes no callback code and does
+not resolve the benchmark variability already recorded in task 2.1.
+Strict OpenSpec validation passes all 16 items. No live, hardware or listening check
+was made. Release build, user documentation and owner acceptance remain tasks 3.1–3.3.
 
 ## Risks / Trade-offs
 
