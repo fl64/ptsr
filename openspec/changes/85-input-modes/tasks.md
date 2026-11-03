@@ -27,7 +27,7 @@
   representation-bound tests without weakening their assertions. Add coherent-snapshot
   checks and keep direct/UI queues, original releases and input logging unchanged.
   Do not add acknowledgements yet. Run full `task check`; commit with signoff.
-- [ ] 2.1a Reproduce and repair mixed keyboard/MIDI release-target sharing on Chop,
+- [x] 2.1a Reproduce and repair mixed keyboard/MIDI release-target sharing on Chop,
   as separately approved by the owner. Add named tests for the three mixed-hold
   scenarios using keyboard events, raw notes and learned CC80 through production
   dispatch. Check both press and release orders, a screen change, a question, F10,

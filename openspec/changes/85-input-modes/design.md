@@ -110,10 +110,12 @@ between an attempted command in the test log and a command accepted by the real 
 ### 2a. Repair mixed Chop release targets before the shared handler
 
 The owner approved this separate behavior repair after the audit at `82f84fa`.
-The MIDI entry calls `chop_pad`, which uses `Pads::apply(PadPress)` and writes
-`pressed[pad]`, the target used by keyboard releases. A MIDI hit in a new bank can
-therefore replace a still-held keyboard key's original target. The old path has not
-been reproduced on recorded input yet; capture the failing result before the fix.
+At `82f84fa`, the MIDI entry calls `chop_pad`, which uses `Pads::apply(PadPress)`
+and writes `pressed[pad]`, the target used by keyboard releases. A MIDI hit in a new
+bank can therefore replace a still-held keyboard key's original target.
+Before the repair, recorded-input tests for both accepted and full-queue-rejected
+MIDI hits failed with `release 18: [PadRelease { pad: 34 }]`. The reverse press-order
+test already passed. Keep these assertions and all existing 84 tests unchanged.
 
 Add an explicit keyboard/MIDI hit source for Chop and a pad press operation that
 keeps the existing sound, selected pad, hit flash, held display and marking logic.

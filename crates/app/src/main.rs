@@ -1576,7 +1576,7 @@ impl App {
             Action::ScreenChop if self.screen == Screen::Files => self.open_file_chop(),
             Action::ScreenChop => self.open_chop(),
             Action::PadPress { pad, velocity } if self.screen == Screen::Chop => {
-                self.chop_pad(pad, velocity);
+                self.chop_pad(pad, velocity, pads::HitSource::Keyboard);
             }
             Action::Back if self.screen == Screen::Chop && self.plan.is_some() => self.plan = None,
             Action::ChopPlay if self.screen == Screen::Chop => {
@@ -2844,7 +2844,7 @@ impl App {
     /// A pad hit on the chop screen: listening plays the real pad and, when it plays a
     /// slice of this chop, selects that slice (36); assigning plans the pad of the current
     /// bank and plays the slice planned there.
-    fn chop_pad(&mut self, pad: usize, velocity: f32) -> Option<usize> {
+    fn chop_pad(&mut self, pad: usize, velocity: f32, source: pads::HitSource) -> Option<usize> {
         self.meters.hit(Instant::now());
         let Some(mut plan) = self.plan.clone() else {
             // no slice on a pad yet: the keys play the slices, 16 a bank page (36)
@@ -2861,7 +2861,7 @@ impl App {
                 return None;
             }
             let mut queued = false;
-            for cmd in self.pads.apply(Action::PadPress { pad, velocity }) {
+            for cmd in self.pads.press(pad, velocity, source) {
                 queued |= self.try_send(cmd);
             }
             let abs = self.pads.bank * PADS_PER_BANK + pad;
@@ -4719,7 +4719,8 @@ impl App {
                 ui_press,
                 ..
             } if self.screen == Screen::Chop => {
-                if let Some(pad) = self.chop_pad(abs % PADS_PER_BANK, velocity)
+                if let Some(pad) =
+                    self.chop_pad(abs % PADS_PER_BANK, velocity, pads::HitSource::Midi)
                     && let Some(id) = ui_press
                 {
                     self.midi_ui_held.insert(id, pad);

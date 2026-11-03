@@ -168,6 +168,13 @@ pub const PAD_KEYS: [char; PADS_PER_BANK] = [
     '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
 ];
 
+/// Only keyboard hits can set the target used by a keyboard release.
+#[derive(Clone, Copy)]
+pub enum HitSource {
+    Keyboard,
+    Midi,
+}
+
 /// The parameter the pads screen changes with `Alt+←` `Alt+→` (the arrows in the edit
 /// mode); picked with `Tab`. UI state, not saved.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1315,18 +1322,28 @@ impl Pads {
         }
     }
 
-    /// Applies a pad action; returns the engine commands to send.
+    /// Starts a UI-routed pad hit without sharing keyboard release targets with MIDI.
+    pub fn press(&mut self, pad: usize, velocity: f32, source: HitSource) -> Vec<Command> {
+        if pad >= PADS_PER_BANK {
+            return Vec::new();
+        }
+        let abs = self.bank * PADS_PER_BANK + pad;
+        if matches!(source, HitSource::Keyboard) {
+            self.pressed[pad] = abs;
+        }
+        self.selected = pad;
+        self.hit_at[abs] = Some(Instant::now());
+        self.held[abs] = self.track_keys;
+        self.mark_hit(abs);
+        vec![Command::PadPress { pad: abs, velocity }]
+    }
+
+    /// Applies a keyboard pad action; returns the engine commands to send.
     /// Non-pad actions are ignored.
     pub fn apply(&mut self, action: Action) -> Vec<Command> {
         match action {
             Action::PadPress { pad, velocity } if pad < PADS_PER_BANK => {
-                let abs = self.bank * PADS_PER_BANK + pad;
-                self.pressed[pad] = abs;
-                self.selected = pad;
-                self.hit_at[abs] = Some(Instant::now());
-                self.held[abs] = self.track_keys;
-                self.mark_hit(abs);
-                vec![Command::PadPress { pad: abs, velocity }]
+                self.press(pad, velocity, HitSource::Keyboard)
             }
             Action::PadRelease { pad } if pad < PADS_PER_BANK => {
                 self.held[self.pressed[pad]] = false;
@@ -1614,6 +1631,40 @@ mod tests {
             [Command::PadPress { pad: 21, .. }]
         ));
         assert_eq!(p.selected, 5);
+    }
+
+    #[test]
+    fn midi_ui_press_keeps_keyboard_target_selection_marks_and_held_display() {
+        for track_keys in [false, true] {
+            let mut pads = Pads {
+                track_keys,
+                marking: true,
+                ..Pads::default()
+            };
+            pads.apply(press(2));
+            pads.apply(Action::BankSelect(7));
+            let commands = pads.press(2, 0.25, HitSource::Midi);
+            assert!(matches!(
+                commands[..],
+                [Command::PadPress {
+                    pad: 114,
+                    velocity: 0.25
+                }]
+            ));
+            assert_eq!(pads.selected, 2);
+            assert_eq!(pads.marked, [2, 114].into());
+            assert!(pads.hit_at[114].is_some());
+            assert_eq!(pads.held[114], track_keys);
+            assert!(pads.press(PADS_PER_BANK, 1.0, HitSource::Midi).is_empty());
+            assert_eq!(pads.selected, 2);
+            assert_eq!(pads.marked, [2, 114].into());
+            assert!(matches!(
+                pads.apply(Action::PadRelease { pad: 2 })[..],
+                [Command::PadRelease { pad: 2 }]
+            ));
+            assert!(!pads.held[2]);
+            assert_eq!(pads.held[114], track_keys);
+        }
     }
 
     #[test]

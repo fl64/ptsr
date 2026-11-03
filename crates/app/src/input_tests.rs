@@ -2177,6 +2177,298 @@ fn render_84_input_parity() {
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+enum MixedHoldGuard {
+    Chop,
+    Fx,
+    Question,
+    Learn,
+}
+
+fn render_mixed_chop_holds(
+    source: Source,
+    midi_first: bool,
+    keyboard_release_first: bool,
+    guard: MixedHoldGuard,
+    reject_midi: bool,
+) -> Stereo {
+    use engine::checks::{first_loud, first_non_finite, peak};
+    assert!(!matches!(source, Source::Keyboard));
+    assert!(!reject_midi || !midi_first);
+    let mut drive = Drive::offline();
+    let mut settings = drive.parity_pad(0, true);
+    let snap = drive.app.pads.snapshot(18);
+    let other = drive.app.pads.put_back(34, &snap);
+    for command in &other {
+        drive.app.send(command.clone());
+    }
+    settings.extend(other);
+    drive.frame();
+    let mut wave = drive.render_blocks(32);
+    let first_source = if midi_first { source } else { Source::Keyboard };
+    let first = drive.pad_press(first_source, 2);
+    assert!(first.direct.is_empty());
+    assert!(matches!(
+        first.ui[..],
+        [Command::PadPress {
+            pad: 18,
+            velocity: 1.0
+        }]
+    ));
+    append_stereo(&mut wave, drive.render_blocks(32));
+    drive.tap(KeyCode::PageDown, M::NONE);
+    assert_eq!(drive.app.pads.bank, 2);
+    if reject_midi {
+        let mut filled = 0;
+        while drive
+            .app
+            .audio
+            .as_mut()
+            .unwrap()
+            .commands
+            .push(ProjectCommand {
+                epoch: 0,
+                ready_at_send: true,
+                command: ProjectMessage::Command(Command::SetPadGain {
+                    pad: 127,
+                    gain: 1.0,
+                }),
+            })
+            .is_ok()
+        {
+            filled += 1;
+        }
+        assert_eq!(filled, 1024, "reject on the actual callback queue");
+    }
+    let second_source = if midi_first { Source::Keyboard } else { source };
+    let second = drive.pad_press(second_source, 2);
+    assert!(second.direct.is_empty());
+    assert!(matches!(
+        second.ui[..],
+        [Command::PadPress {
+            pad: 34,
+            velocity: 1.0
+        }]
+    ));
+    assert_eq!(drive.app.audio_held[18], Some(0));
+    assert_eq!(drive.app.audio_held[34], (!reject_midi).then_some(0));
+    if reject_midi {
+        assert!(drive.app.midi_ui_held.is_empty());
+    } else {
+        assert_eq!(drive.app.midi_ui_held.len(), 1);
+    }
+    append_stereo(&mut wave, drive.render_blocks(32));
+    match guard {
+        MixedHoldGuard::Chop => {}
+        MixedHoldGuard::Fx => {
+            drive.tap(KeyCode::F(4), M::NONE);
+        }
+        MixedHoldGuard::Question => {
+            drive.app.ask = Some(Ask::Plan { lines: Vec::new() });
+            drive.frame();
+        }
+        MixedHoldGuard::Learn => {
+            drive.tap(KeyCode::F(10), M::NONE);
+        }
+    }
+    let (keyboard_pad, midi_pad) = if midi_first { (34, 18) } else { (18, 34) };
+    for release_keyboard in [keyboard_release_first, !keyboard_release_first] {
+        let release_source = if release_keyboard {
+            Source::Keyboard
+        } else {
+            source
+        };
+        let release = drive.pad_release(release_source, 2);
+        if reject_midi && !release_keyboard {
+            assert!(
+                release.commands().is_empty(),
+                "a rejected hit has no audio release"
+            );
+        } else {
+            let original = if release_keyboard {
+                keyboard_pad
+            } else {
+                midi_pad
+            };
+            assert_only_release(&release, original);
+            assert_eq!(drive.app.audio_held[original], None);
+            assert!(!drive.app.pads.held[original]);
+        }
+        append_stereo(&mut wave, drive.render_blocks(64));
+    }
+    assert!(drive.app.midi_ui_held.is_empty());
+    assert_eq!(drive.app.audio_held[18], None);
+    assert_eq!(drive.app.audio_held[34], None);
+    assert_eq!(
+        drive.app.ask.is_some(),
+        matches!(guard, MixedHoldGuard::Question)
+    );
+    assert_eq!(
+        drive.app.screen_learn.is_some(),
+        matches!(guard, MixedHoldGuard::Learn)
+    );
+
+    let hit_at = 32 * RENDER_BLOCK;
+    let second_at = 64 * RENDER_BLOCK;
+    let release_at = 96 * RENDER_BLOCK;
+    let last_release_at = 160 * RENDER_BLOCK;
+    let mut expected_events = vec![engine::offline::Event {
+        frame: hit_at,
+        cmd: Command::PadPress {
+            pad: 18,
+            velocity: 1.0,
+        },
+    }];
+    if !reject_midi {
+        expected_events.push(engine::offline::Event {
+            frame: second_at,
+            cmd: Command::PadPress {
+                pad: 34,
+                velocity: 1.0,
+            },
+        });
+    }
+    for (frame, release_keyboard) in [
+        (release_at, keyboard_release_first),
+        (last_release_at, !keyboard_release_first),
+    ] {
+        if !reject_midi || release_keyboard {
+            expected_events.push(engine::offline::Event {
+                frame,
+                cmd: Command::PadRelease {
+                    pad: if release_keyboard {
+                        keyboard_pad
+                    } else {
+                        midi_pad
+                    },
+                },
+            });
+        }
+    }
+    let mut expected_engine = engine::Engine::new(RENDER_RATE);
+    for command in settings {
+        expected_engine.handle(0, command);
+    }
+    let expected = engine::offline::render(
+        &mut expected_engine,
+        &engine::offline::Scenario {
+            sample_rate: RENDER_RATE,
+            frames: wave.0.len(),
+            events: expected_events,
+        },
+        RENDER_BLOCK,
+    );
+    assert_eq!(
+        wave, expected,
+        "{source:?}, {guard:?}, MIDI first {midi_first}, keyboard release first {keyboard_release_first}, rejected {reject_midi}"
+    );
+    for channel in [&wave.0, &wave.1] {
+        assert_eq!(first_non_finite(channel), None);
+        assert!(peak(channel) < 1.0);
+        assert_eq!(peak(&channel[..hit_at]), 0.0);
+        assert!(
+            first_loud(channel, hit_at..hit_at + RENDER_BLOCK, 1e-6)
+                .unwrap()
+                .abs_diff(hit_at)
+                <= 1
+        );
+        let sounding = peak(&channel[release_at + 2048..last_release_at]);
+        if reject_midi && keyboard_release_first {
+            assert_eq!(
+                sounding, 0.0,
+                "rejected MIDI must not start when space returns"
+            );
+        } else {
+            assert!(
+                sounding > 0.01,
+                "the other accepted hold must keep sounding"
+            );
+        }
+        assert_eq!(
+            peak(&channel[last_release_at + 2048..]),
+            0.0,
+            "both gates release"
+        );
+    }
+    wave
+}
+
+/// Scenario "Chop MIDI hit keeps held keyboard release target".
+#[test]
+fn chop_midi_hit_keeps_held_keyboard_release_target() {
+    for source in [Source::Notes, Source::Button] {
+        for guard in [
+            MixedHoldGuard::Chop,
+            MixedHoldGuard::Fx,
+            MixedHoldGuard::Question,
+            MixedHoldGuard::Learn,
+        ] {
+            for keyboard_first in [true, false] {
+                render_mixed_chop_holds(source, false, keyboard_first, guard, false);
+            }
+        }
+    }
+}
+
+/// Scenario "Chop rejected MIDI hit keeps held keyboard release target".
+#[test]
+fn chop_rejected_midi_hit_keeps_held_keyboard_release_target() {
+    for source in [Source::Notes, Source::Button] {
+        for guard in [
+            MixedHoldGuard::Chop,
+            MixedHoldGuard::Fx,
+            MixedHoldGuard::Question,
+            MixedHoldGuard::Learn,
+        ] {
+            for keyboard_first in [true, false] {
+                render_mixed_chop_holds(source, false, keyboard_first, guard, true);
+            }
+        }
+    }
+}
+
+/// Scenario "Chop keyboard hit keeps held MIDI release target".
+#[test]
+fn chop_keyboard_hit_keeps_held_midi_release_target() {
+    for source in [Source::Notes, Source::Button] {
+        for guard in [
+            MixedHoldGuard::Chop,
+            MixedHoldGuard::Fx,
+            MixedHoldGuard::Question,
+            MixedHoldGuard::Learn,
+        ] {
+            for keyboard_first in [true, false] {
+                render_mixed_chop_holds(source, true, keyboard_first, guard, false);
+            }
+        }
+    }
+}
+
+#[test]
+fn render_85_mixed_holds() {
+    let mut wave = (Vec::new(), Vec::new());
+    for source in [Source::Notes, Source::Button] {
+        for (midi_first, reject_midi) in [(false, false), (true, false), (false, true)] {
+            append_stereo(
+                &mut wave,
+                render_mixed_chop_holds(
+                    source,
+                    midi_first,
+                    true,
+                    MixedHoldGuard::Chop,
+                    reject_midi,
+                ),
+            );
+        }
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/85-mixed-holds.wav");
+    engine::offline::write_wav(&path, RENDER_RATE, &wave.0, &wave.1).unwrap();
+    println!(
+        "85 mixed holds: {} frames, finite/no-clip/silence/onset/independent-release checked, sample-identical to timestamped oracle",
+        wave.0.len()
+    );
+}
+
 #[test]
 fn offline_chop_to_fx_keeps_routes_velocity_banks_and_original_releases() {
     use engine::checks::{first_loud, first_non_finite, peak};
