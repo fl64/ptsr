@@ -319,6 +319,39 @@ separately. Regenerate 84's WAV and keep its hash
 `f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
 Do not claim that a deferred hit has the latency of the direct path.
 
+## Interim keyboard screen check at `8a4481d`
+
+The owner confirmed Bluetooth listening. The agent ran the release build in the
+isolated `target/ux` environment from AGENTS.md. Both starts logged `JACK unavailable`,
+neither logged `JACK: active`, and PipeWire node lists before, during and after the
+run contained no ptsr node. Test samples, roots, config, session, logs and captures
+stayed under ignored `target/ux`; no absolute fixture path is added to tracked files.
+The terminal reported `no audio` and `no key releases` throughout. These results do
+not check sound, key-release delivery in the owner's terminal or physical controls.
+
+| Keyboard pass | Observed result |
+| --- | --- |
+| F1, Enter, L, pad keys, M, U/O | Help opened; pad edit kept its panel when another pad was selected; marking and bank changes showed their existing states. |
+| Chop Y, Enter, P, Tab, a pad, Esc | Two slices, slice edit, both assignment orders and the in-order start pad were visible; cancellation returned to LISTEN. |
+| Files filter and file targets | `qwerty` stayed text. The same-file target reported that the file was already there. A different file on an occupied pad asked; a pad under the question did not replace it; Esc kept the file in hand. An empty target received that file. |
+| Copy and swap, then Ctrl+Z | The saved copy kept source settings and used its expected ` 2` name suffix. Swap exchanged complete pad records. Each undo restored the saved session exactly. |
+| Pad name and project picker | Typed pad letters stayed text. Cancellation changed no pad name and created no project. The project picker's first Esc cleared its typed name; the second closed it. |
+| F10 and F12 | Screen learn opened and closed without saving a binding. Audio, Input, MIDI and Paths tabs opened. Detected MIDI ports alone are not a controller pass. |
+| Save, restart and quit | Saved pad records were retained. Opening the whole-file pad made the expected fresh chop; Ctrl+Z returned to the saved two-slice chop. The final saved session matched the checkpoint exactly; the Bash launch wrapper printed `UX exit: 0`. |
+
+Local evidence: 59 screen captures in `target/ux/85-late/captures/`, the isolated
+log and PipeWire snapshots, plus the saved-session comparisons. Initial screen
+expectation timeouts remain there too. They were checked against the existing panel,
+Esc, same-file, copy-name and fresh-chop rules; no production code was changed.
+The first launch wrapper used zsh's read-only `status` variable after quit. That was
+a wrapper error, not proof of the program's exit code. A repeat with an explicit Bash
+wrapper verified restart and exit code zero. No live MIDI events were injected and no
+physical-controller acceptance is claimed. The agent did not listen to the WAV files.
+
+This is an early check of the committed 2.1b state, not acceptance of 85. Tasks 2.2
+and 3.1 remain pending. Repeat the relevant pass after those changes; keep task 5.2
+open until its final check and owner acceptance requirements are met.
+
 ## Risks / Trade-offs
 
 - Pending work can temporarily defer a pad from another device too. This follows the
