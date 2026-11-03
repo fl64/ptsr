@@ -341,7 +341,7 @@ Superseded by 77: the pad frame has no glyphs; one `✱` on the mode line marks 
 
 ## 82 — Compact shared FX screen
 
-Folder: `changes/82-shared-fx-screen`
+Folder: `changes/archive/2026-11-03-82-shared-fx-screen`
 
 Agent verification on 2026-11-02: the full automated suite passed. Recorded input
 walkthroughs checked file loading and filtering, rename, marks, reset/clear confirmation,
@@ -351,8 +351,9 @@ screen. Tests also checked MIDI release across screens, banks and channels. The 
 A separate owner process already had a PipeWire node named ptsr, so the agent stopped
 its test session. No live sound or physical controller behavior was accepted from this run.
 Small and large layouts were checked with TestBackend, not an interactive terminal.
-The owner checks below remain open. That run does not verify the replacement X-Session
-map on hardware. All checks for the new map below remain unchecked.
+Owner acceptance on 2026-11-03: the owner first confirmed that the replacement
+X-Session profile works, then accepted all checks of change 82 and authorized closure.
+The checks below are marked from that owner acceptance, not from an agent live run.
 
 The X-Session replacement belongs to change 82. The physical control table is in
 `docs/USER-STORIES.md`, section "Set up a pad with the X-Session Pro".
@@ -360,68 +361,68 @@ The profile applies automatically when the port name contains `X-Session`.
 There is no manual profile selector. An existing user map keeps its old assignments until
 reset, including old Play roles and destructive delete, commit or replacement assignments.
 
-- [ ] Stop the running program. Start the newly built program. Connect the X-Session Pro.
+- [x] Stop the running program. Start the newly built program. Connect the X-Session Pro.
   Before reset, check that the existing map still has its previous assignments.
-- [ ] Press `F12`. Open MIDI. Select `reset to profile` for `X-Session Pro`.
+- [x] Press `F12`. Open MIDI. Select `reset to profile` for `X-Session Pro`.
   This selects a device to reset, not a profile. Press `Enter` to open the question.
   Press `Esc`. Check that the existing bindings remain unchanged, including after a restart.
-- [ ] Select that reset row again. Press `Enter` to open the question.
+- [x] Select that reset row again. Press `Enter` to open the question.
   Press `Enter` again to confirm. Check that the new physical defaults replace this device's map.
   This deletes custom bindings only for this device. Check that other devices keep their bindings.
   Restart the program. Check that the replacement map remains.
-- [ ] Press left Headphone (b2, note 44). Check that Files opens.
+- [x] Press left Headphone (b2, note 44). Check that Files opens.
   Press right Headphone (b3, note 45). Check that FX opens.
-- [ ] Check left backward (b4, note 46) and left forward (b1, note 43).
+- [x] Check left backward (b4, note 46) and left forward (b1, note 43).
   They select previous / next pads on Pads, files on Files, slices on Chop and blocks on FX.
   In edit, they select previous / next pages. A release must not repeat the command.
-- [ ] Press right backward (b5, note 56) and right forward (b6, note 57).
+- [x] Press right backward (b5, note 56) and right forward (b6, note 57).
   Check previous / next bank. Check that button releases do not change banks again.
-- [ ] On Pads, press left Cue (b7, note 58). Check that pad edit opens.
+- [x] On Pads, press left Cue (b7, note 58). Check that pad edit opens.
   Turn left numbered knobs 1–3 (k1–k3, CC24–26). Check the current page parameters.
   Close edit with left Cue. Open it again and close it with right Cue (b8, note 59).
-- [ ] On Files, press left Cue to hold a file. Press it again. No file is placed.
+- [x] On Files, press left Cue to hold a file. Press it again. No file is placed.
   Press right Cue to open Chop.
-- [ ] Start a layout plan with the keyboard. Press right Cue. The plan must not apply.
+- [x] Start a layout plan with the keyboard. Press right Cue. The plan must not apply.
   Open a replacement question with the keyboard. Neither Cue must confirm it.
   On Chop, press left Cue to cut. Press right Cue to open slice edit.
   Check that either Cue closes edit without another cut.
   Outside Files, Chop and edit, check that right Cue goes back.
-- [ ] On Files, test left Play (b10, note 70) and right Play (b9, note 69) separately.
+- [x] On Files, test left Play (b10, note 70) and right Play (b9, note 69) separately.
   Each must toggle file preview. On Chop, each must start and stop preview.
   Repeat with edit open. Neither Play must open or close edit, delete cuts or apply a layout.
   Check that both Plays do nothing on Pads and FX. Releases must not repeat commands.
-- [ ] On Chop with edit closed, turn k1–k5 (CC24–28).
+- [x] On Chop with edit closed, turn k1–k5 (CC24–28).
   Check slice start, slice end, cursor, region start and region end respectively.
   Check right Mid (k11, CC35) for threshold and right Low (k12, CC36) for zoom.
-- [ ] On each screen and in edit, move left Volume (fader_b, CC11), left Pitch (fader_a, CC12)
+- [x] On each screen and in edit, move left Volume (fader_b, CC11), left Pitch (fader_a, CC12)
   and right Volume (pitch_a, CC14). Check selected pad volume, selected pad pitch and master volume respectively.
   Check that right Pitch (pitch_b, CC15) and crossfader messages CC17 / CC20 change nothing.
-- [ ] On a disposable project, check every default button on each screen and in edit.
+- [x] On a disposable project, check every default button on each screen and in edit.
   No default may delete a cut, apply a layout or confirm replacement.
   Use keyboard commands for layout, or explicitly learn a commit control.
   An old destructive assignment remains active until reset. Do not use the old map for this safety check.
 
-- [ ] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
+- [x] Open `F4`. Check two compact cards with type and two parameter rows. In a wide
   terminal they are beside each other. In a narrow terminal they are stacked. Cards do
   not grow to fill empty space. The selected block and parameter are clear.
-- [ ] Press `Tab` and `Shift+Tab`. Only the selected block changes. `I` and `K` select a
+- [x] Press `Tab` and `Shift+Tab`. Only the selected block changes. `I` and `K` select a
   parameter. `J` and `L` change it. Check `F1` and the bottom help.
-- [ ] Play keyboard and MIDI pads while changing effects. Hold a gate pad, change the
+- [x] Play keyboard and MIDI pads while changing effects. Hold a gate pad, change the
   screen and bank, then release it. The original pad must stop.
-- [ ] Set the sends on two pads to FX 1. On `F4`, change size and tone. Both pads must
+- [x] Set the sends on two pads to FX 1. On `F4`, change size and tone. Both pads must
   use the changed effect. Select FX 2 and use the same three knobs. FX 1 must stay unchanged.
-- [ ] In pickup mode, change FX 1, select FX 2 and move the same knob. FX 2 must wait
+- [x] In pickup mode, change FX 1, select FX 2 and move the same knob. FX 2 must wait
   for its own value. Check a second device and the scale and jump modes too.
-- [ ] Check the old page knobs. Assign a replacement with `F10`. The old knob must stop
+- [x] Check the old page knobs. Assign a replacement with `F10`. The old knob must stop
   controlling that action. Clear the new assignment, restart, and check that neither returns.
-- [ ] Press `Ctrl+Z` after a keyboard or MIDI effect change. Check the previous setting.
+- [x] Press `Ctrl+Z` after a keyboard or MIDI effect change. Check the previous setting.
   Save with `Ctrl+S` and restart. Check both slots, drive and sends.
-- [ ] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
+- [x] Return to `F2`. Check only TONE, ENV, FILTER, SOURCE and FX. The previous pad
   parameter stays selected. Shared slot settings must not appear in the pad panel.
 The profile update changes no sound algorithms. It needs no new sound render.
 Use the existing change 82 WAV for the listening check.
 
-- [ ] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
+- [x] (by ear) Listen to `renders/82-shared-fx-screen.wav`. Check reverb and delay,
   parameter changes and undo for clicks. Compare with `56-reverb.wav`, `56-delay.wav`
   and `56-two-slots.wav`.
 
