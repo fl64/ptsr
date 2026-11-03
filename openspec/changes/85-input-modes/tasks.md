@@ -80,7 +80,7 @@
   Add only module/import and necessary visibility plumbing. Keep tests and terminal
   setup in place; review the moved bodies for no logic changes. No cleanup or repair
   in this commit. Run full `task check`; commit this move-only step with signoff.
-- [ ] 4.2 Add the standalone `renders/85-input-modes.wav` generator through production
+- [x] 4.2 Add the standalone `renders/85-input-modes.wav` generator through production
   input dispatch and offline Audio, with a silent file target, a direct hit before
   UI delivery and a deferred gate followed by its original release. Check every segment
   for finite samples, no clipping, silence, single onset and expected block-relative

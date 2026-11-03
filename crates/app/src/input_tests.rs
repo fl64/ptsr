@@ -2697,12 +2697,21 @@ fn render_mode_direct(source: Source, velocity: u8, edit_marking: bool) -> Stere
         drive.bind_pad_button(2);
     }
     let mut wave = drive.render_blocks(32);
-    drive.raw_ordered_hit(source, velocity);
-    let notifications = drive.queued_events();
-    assert!(notifications.iter().any(|e| matches!(e.event,
-        midi::Event::PadHit { abs: 18, sound: midi::PadSound::DirectAccepted, velocity: v, .. }
-        if v == f32::from(velocity)/127.0)));
-    assert!(notifications.iter().all(|e| e.sequence().is_none()));
+    let notifications = if matches!(source, Source::Keyboard) {
+        let hit = drive.velocity_hit(source, velocity);
+        assert!(
+            matches!(hit.ui[..], [Command::PadPress { pad: 18, velocity: v }] if v == f32::from(velocity)/127.0)
+        );
+        Vec::new()
+    } else {
+        drive.raw_ordered_hit(source, velocity);
+        let events = drive.queued_events();
+        assert!(events.iter().any(|e| matches!(e.event,
+            midi::Event::PadHit { abs: 18, sound: midi::PadSound::DirectAccepted, velocity: v, .. }
+            if v == f32::from(velocity)/127.0)));
+        assert!(events.iter().all(|e| e.sequence().is_none()));
+        events
+    };
     let before_ui = drive.render_blocks(2);
     assert!(
         engine::checks::peak(&before_ui.0) > 0.005,
@@ -2716,8 +2725,12 @@ fn render_mode_direct(source: Source, velocity: u8, edit_marking: bool) -> Stere
         drive.frame().ui.is_empty(),
         "direct notification cannot start another sound"
     );
-    drive.raw_ordered_release(source, RecordedRelease::Off);
-    assert!(drive.frame().ui.is_empty());
+    if matches!(source, Source::Keyboard) {
+        assert_only_release(&drive.pad_release(source, 2), 18);
+    } else {
+        drive.raw_ordered_release(source, RecordedRelease::Off);
+        assert!(drive.frame().ui.is_empty());
+    }
     append_stereo(&mut wave, drive.render_blocks(32));
     let mut engine = engine::Engine::new(RENDER_RATE);
     for cmd in settings {
@@ -2761,6 +2774,65 @@ fn render_mode_direct(source: Source, velocity: u8, edit_marking: bool) -> Stere
         assert_eq!(engine::checks::peak(&channel[OFF + 2048..]), 0.0);
     }
     wave
+}
+
+fn render_mode_target(source: Source) -> Stereo {
+    let mut drive = Drive::offline();
+    drive.parity_pad(0, false);
+    drive.ordered_file();
+    if matches!(source, Source::Button) {
+        drive.bind_pad_button(2);
+    }
+    let before = drive.app.pads.snapshot(18);
+    let mut wave = drive.render_blocks(32);
+    drive.bytes(PAD_PORT, &[0xb0, 82, 127]);
+    drive.raw_ordered_hit(source, 80);
+    drive.midi().recorded_fence();
+    append_stereo(&mut wave, drive.render_blocks(2));
+    assert_silent_target(&drive.frame());
+    assert!(matches!(drive.app.ask, Some(Ask::PutFile { abs: 18, .. })));
+    assert_eq!(drive.app.pads.snapshot(18), before);
+    append_stereo(&mut wave, drive.render_blocks(32));
+    for channel in [&wave.0, &wave.1] {
+        assert_eq!(engine::checks::first_non_finite(channel), None);
+        assert_eq!(
+            engine::checks::peak(channel),
+            0.0,
+            "silent take-file target"
+        );
+    }
+    wave
+}
+
+#[test]
+fn render_85_input_modes() {
+    let keyboard = render_mode_direct(Source::Keyboard, 80, false);
+    let mut wave = keyboard.clone();
+    for source in [Source::Notes, Source::Button] {
+        append_stereo(&mut wave, render_mode_target(source));
+        let direct = render_mode_direct(source, 80, true);
+        assert_eq!(
+            direct, keyboard,
+            "matching velocity across keyboard, notes and learned button"
+        );
+        append_stereo(&mut wave, direct);
+        append_stereo(
+            &mut wave,
+            render_ordered_gate(source, 80, RecordedRelease::Off, false, MixedHoldGuard::Fx),
+        );
+    }
+    for source in [Source::Notes, Source::Button] {
+        for velocity in [23, 101] {
+            append_stereo(&mut wave, render_mode_direct(source, velocity, false));
+        }
+    }
+    assert_eq!(wave.0.len(), 99_072);
+    assert_eq!(wave.1.len(), wave.0.len());
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/85-input-modes.wav");
+    engine::offline::write_wav(&path, RENDER_RATE, &wave.0, &wave.1).unwrap();
+    println!(
+        "85 input modes: 99072 frames, 2.064 s; silent targets, one direct/deferred onset, original releases, finite/no-clip and sample-identical timestamped oracles checked"
+    );
 }
 
 /// Scenario "Hit from a controller": unchanged direct path, also with edit and marks.
