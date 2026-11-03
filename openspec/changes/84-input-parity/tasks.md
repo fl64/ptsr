@@ -61,12 +61,25 @@
   Commit this scope extension separately from code. Update user stories and live checks,
   validate, run task check, rebuild the release and commit the fix separately.
 
+- [ ] 2.4 Add the owner-approved PLAY badge on F2, fixed at 10 cells, dim at rest and
+  blue with the play icon while any current-project pad sounds in any bank. Commit
+  the approved artifacts separately before implementation. Add failing tests for
+  the five pad-playback delta scenarios using keyboard, raw notes and learned CC
+  through production dispatch and real offline queues. Read the existing audio voice
+  snapshot, not held keys, flashes, output levels or a UI timer. Cover natural end,
+  gate release, multiple voices, bank/selection/screen changes, edit and hidden grid,
+  guards, full queue, project readiness/switch, no audio, previews and effect tails.
+  Keep MARK text/colors and frame geometry; update its existing title assertion only
+  for the added badge. Update owner docs, validate strictly, run task check, build
+  the release and commit the implementation. Keep sound, keys, F3 and transport unchanged.
+
 ## 3. Documentation and acceptance
 
 - [x] 3.1 Update user stories and live checks with separate keyboard and controller
   passes. Validate the change, run `task check`, build the release and commit.
 - [ ] 3.2 Ask the owner to check Chop listening and assignment from both inputs and
-  listen to `renders/84-input-parity.wav`. Include the pad playback line after 2.3.
+  listen to `renders/84-input-parity.wav`. Include the pad playback line after 2.3
+  and the F2 PLAY badge after 2.4.
   Record the result, not an assumed pass. The owner has no controller at present;
   keep its physical pass unverified, not passed or waived by automated MIDI tests.
 - [ ] 3.3 Archive with `openspec archive` only after acceptance and scenario coverage

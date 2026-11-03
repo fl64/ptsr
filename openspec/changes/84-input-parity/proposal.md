@@ -12,7 +12,9 @@ During the keyboard check, the owner also found that a linked slice sounds on a 
 hit in Chop but has no moving green playback line. Space already has that line.
 The owner approved adding the line for pad playback, without changing sound or edit
 commands. During implementation, the owner also requested a fixed-width LISTEN badge
-that lights blue only while playback runs, keeping the play icon.
+that lights blue only while playback runs, keeping the play icon. The owner then
+approved a matching fixed-width PLAY badge on F2 for any sounding pad across all banks,
+not only the selected pad, excluding previews and effect tails.
 
 ## What Changes
 
@@ -35,6 +37,9 @@ that lights blue only while playback runs, keeping the play icon.
 - Keep the LISTEN badge at 10 cells including padding, dim at rest and blue with `▶`
   while the Chop preview or a linked pad of this chop plays. Do not shift the file name
   or change the assign badge.
+- Show a 10-cell PLAY badge on F2: dim at rest, blue with `▶` while any current-project
+  pad sounds. Keep MARK, pad edit and the hidden-grid layout; use actual voice state,
+  not hit flashes, preview audio or effect tails.
 - Record other differences before deciding their scope. Do not hide extra fixes in this step.
 
 ## Capabilities
@@ -49,12 +54,13 @@ that lights blue only while playback runs, keeping the play icon.
 - `chopping`: show the existing green playback line for a sounding pad slice too,
   with a fixed-width LISTEN badge that lights only during playback; keep transport
   and edit commands unchanged.
+- `pad-playback`: add a fixed-width PLAY badge on F2 for actual pad playback in any bank.
 
 ## Impact
 
 Input and application tests, the MIDI pad-hit event, shared state publication, copy,
 file and swap targets, question guards, the Chop input route and read-only pad playback
-position reporting from audio to the waveform. No new dependency,
+position reporting from audio to the waveform and Pads playback badge. No new dependency,
 key, profile default, audio algorithm or saved file format.
 
 ## Out of scope
@@ -99,7 +105,12 @@ Do two passes, one with keyboard pads and one with controller pads:
    LISTEN must stay the same width, dim at rest and blue with `▶` while the preview
    or a matching pad sounds, also when its position is outside the waveform view.
    Repeat with raw notes or a learned pad button when hardware is available.
-8. Listen to `renders/84-input-parity.wav` after implementation. Paired hits must match;
+8. On F2, hit a long pad, change selection and bank, open pad edit and hide the grid.
+   PLAY must stay blue with `▶` while any pad plays, then become dim after the last
+   voice ends, including gate release. Its width and MARK's position must stay fixed.
+   An effect tail or a preview alone must not light it. Repeat from controller pads
+   when hardware is available.
+9. Listen to `renders/84-input-parity.wav` after implementation. Paired hits must match;
    light and strong MIDI hits must differ in level, with no clicks or clipping.
 
 The owner has no controller available at this check. The physical-controller pass

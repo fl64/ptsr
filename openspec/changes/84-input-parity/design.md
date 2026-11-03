@@ -213,13 +213,43 @@ change, not a new transport mode. Keep M, Space, cursor control and audio unchan
 Extend the existing pad-line tests and add terminal-cell assertions for fixed width,
 colors, movement and stop. The original Space header scenario stays in the delta.
 
+### Pads PLAY badge (owner approved after task 2.3)
+
+The owner asked whether F2 needs LISTEN too, then approved PLAY as the more precise
+label on the pad screen. The owner also approved the implementation plan. Keep this
+as task 2.4 in change 84 on the same branch, not a new mode or the later visual redesign.
+
+Show a 10-cell badge after F2 PADS: ` PLAY     ` at rest, ` PLAY ▶   ` during actual
+pad playback, using the same dim and blue styles as LISTEN. Keep MARK after it, with
+its existing text and yellow style; only its initial column changes to make room.
+Start/stop does not move MARK or other title content. Pad edit and hidden-grid views
+use the same title. Do not change F3, input routing, audio or saved data.
+
+Read any active pad entry from the existing task 2.3 atomic voice snapshot, checking
+its coherent revision and project epoch. Add a read-only cross-crate Stats query and
+a Pads view boolean. App must check current project readiness before and after the
+query. No new callback stores or audio algorithms are needed. The badge counts real
+pad voices across all banks, including release fades, independently of UI held/hit
+state, selection and the open bank. A preview, even one that borrows pad settings,
+is not a pad hit and does not count. Effects alone do not count either.
+
+Add tests for all five pad-playback delta scenarios. Drive keyboard, raw notes and
+learned CC through production profile/dispatch and real offline queues. Check natural
+end while held, release fades, multiple pads, selection and bank changes, return to F2,
+edit and hidden grid, guards, full queues, readiness, project replacement and no audio.
+Check audible previews and effect tails with an idle badge. Terminal tests cover
+width, colors, the play icon, unchanged MARK text/colors and shared frame geometry.
+Keep the existing MARK regression, updating only its expected title to include PLAY.
+Run strict validation, task check and the release build; commit artifacts separately
+before implementation. No live or physical-controller acceptance is implied.
+
 ### Tests before completion
 
 Run the shared workflows on Pads, pad edit, marking, file in hand, pad swap, pad copy
 (from 83a), question, learn, Chop before assignment, linked-slice listen and by-hand assignment. Keep existing
 X-Session tests unchanged. Add gate release coverage after a screen and bank change.
 A difference outside the Chop, copy, approved file/swap/question, held-keyboard learn
-and pad playback line deltas blocks the affected step until it is documented and its scope is agreed.
+and pad playback line / Pads PLAY badge deltas blocks the affected step until it is documented and its scope is agreed.
 Do not skip the test or change an assertion to accept an unknown result.
 
 Render paired linked-pad hits and low/high MIDI velocity through the implemented route
