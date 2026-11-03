@@ -51,3 +51,37 @@ A silent, blocked or queue-rejected hit SHALL NOT create a new playback line.
   a new hit, or the audio queue rejects a new hit
 - **THEN** no line is created from that unrelated, old-project, blocked or rejected hit
 - **AND** an already sounding matching voice keeps its valid position until it ends
+
+## MODIFIED Requirements
+
+### Requirement: The header shows play
+
+In listen and slice edit, the system SHALL give the LISTEN badge a fixed width of
+10 terminal cells including its outer spaces: ` LISTEN   ` at rest and ` LISTEN ▶ `
+while the Chop preview or a linked pad voice of the open chop plays. At rest, the
+badge SHALL use dim text without the blue background. During that playback, it SHALL
+use the existing blue background and show `▶`. The following header text SHALL NOT
+move between these states. A sounding position outside the waveform view SHALL still
+keep the badge lit. A pad of another sample or chop, an old-project voice and an effect
+tail alone SHALL NOT light this badge. The assign badge SHALL keep its existing text,
+size and colors. This indicator SHALL NOT change sound, transport or edit commands.
+
+#### Scenario: The header shows play
+- **WHEN** the chop screen is open and the owner presses `Space`
+- **THEN** the header says `LISTEN ▶` with the blue background; after the second
+  `Space` and the preview stops, it says dim `LISTEN` if no matching pad still sounds
+
+#### Scenario: Chop listen badge has fixed width
+- **WHEN** Chop changes between silence and playback
+- **THEN** the LISTEN badge occupies the same 10 terminal cells and the file name and
+  remaining header text stay in the same columns
+
+#### Scenario: Chop listen badge lights only while playback runs
+- **WHEN** a Chop preview or linked slice pad starts and then ends or is released
+- **THEN** LISTEN lights blue with `▶` while it plays and returns to dim without `▶`
+  when neither the preview nor a linked pad of this chop still sounds
+- **AND** keyboard pads, raw notes and learned pad buttons give the same result
+
+#### Scenario: Chop listen badge stays lit beyond the waveform view
+- **WHEN** a linked pad still plays but its position is outside the zoomed waveform view
+- **THEN** the green line is hidden outside the view but LISTEN stays blue with `▶`

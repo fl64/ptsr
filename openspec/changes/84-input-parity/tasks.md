@@ -54,7 +54,11 @@
   from preview transport/edit position; do not change Space, M, cursor control,
   hit-driven selection or sound. Cover pitch, retrigger, stop/release, matching source and
   project, queue rejection, question/learn guards and both waveform modes. Review the
-  documented concurrent-voice default before code. Update user stories and live checks,
+  documented concurrent-voice default before code. Include the later owner-approved
+  fixed-width LISTEN badge: dim at rest, blue with the existing play icon only during
+  matching playback, including outside the visible wave. Preserve the Space header
+  scenario and test the three new badge scenarios. Keep the assign badge unchanged.
+  Commit this scope extension separately from code. Update user stories and live checks,
   validate, run task check, rebuild the release and commit the fix separately.
 
 ## 3. Documentation and acceptance

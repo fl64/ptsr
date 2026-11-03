@@ -182,7 +182,8 @@ UI timer for the real position. Keep a separate display position from the previe
 position used by transport and edits: adding the line must not change M or Space.
 Playback progress must not drag the owner's cursor. Keep existing hit-driven slice
 selection; this is not permission to remove that selection behavior. No new mode,
-key, header behavior, sound algorithm or project/config format is approved.
+key, sound algorithm or project/config format is approved. The later header request
+below explicitly extends this visual step.
 
 Test keyboard events, raw notes and learned CC through the real offline audio queues.
 Check the real frame position, pitch, retrigger, end/release, source identity, project
@@ -196,6 +197,21 @@ Update the owner checks and release build only after the implementation passes.
 The owner also reported that no controller is currently available. The physical MIDI
 pass remains unverified. No test result or acceptance is inferred from its absence.
 The keyboard report is not acceptance of the rest of 84, and archive remains blocked.
+
+### Fixed LISTEN badge (owner approved during task 2.3)
+
+The owner requested that LISTEN stop moving the following header text when `▶` appears,
+and stop wearing a blue background in silence. Keep a 10-cell badge including padding:
+` LISTEN   ` at rest, ` LISTEN ▶ ` while the Chop preview or a linked pad of this chop
+plays. Dim text on the normal background means idle; the existing blue background means
+playing. Keep the play icon. Assignment keeps its existing badge and behavior.
+
+Use the actual playback state before clipping a position to the waveform view, so the
+badge stays lit when a voice advances beyond a zoomed view. Foreign samples/chops,
+old projects and effects alone do not light this Chop badge. This is a visible state
+change, not a new transport mode. Keep M, Space, cursor control and audio unchanged.
+Extend the existing pad-line tests and add terminal-cell assertions for fixed width,
+colors, movement and stop. The original Space header scenario stays in the delta.
 
 ### Tests before completion
 

@@ -10,7 +10,9 @@ selection and undo, file placement loses target selection, and a clear question 
 not stop direct MIDI pad hits. The owner approved these narrow repairs in 84.
 During the keyboard check, the owner also found that a linked slice sounds on a pad
 hit in Chop but has no moving green playback line. Space already has that line.
-The owner approved adding the line for pad playback, with no other behavior change.
+The owner approved adding the line for pad playback, without changing sound or edit
+commands. During implementation, the owner also requested a fixed-width LISTEN badge
+that lights blue only while playback runs, keeping the play icon.
 
 ## What Changes
 
@@ -30,6 +32,9 @@ The owner approved adding the line for pad playback, with no other behavior chan
 - Show the moving green playback line for a pad hit in the open Chop editor too.
   Read the real sounding position without another audio hit. Keep Space, M, the
   owner-controlled edit cursor, pad sound and existing selection behavior unchanged.
+- Keep the LISTEN badge at 10 cells including padding, dim at rest and blue with `▶`
+  while the Chop preview or a linked pad of this chop plays. Do not shift the file name
+  or change the assign badge.
 - Record other differences before deciding their scope. Do not hide extra fixes in this step.
 
 ## Capabilities
@@ -42,7 +47,8 @@ The owner approved adding the line for pad playback, with no other behavior chan
   linked Chop gate pads keep their original release route; keyboard pads held before
   F10 release through learn without letting new hits sound.
 - `chopping`: show the existing green playback line for a sounding pad slice too,
-  without changing transport or edit commands.
+  with a fixed-width LISTEN badge that lights only during playback; keep transport
+  and edit commands unchanged.
 
 ## Impact
 
@@ -90,6 +96,8 @@ Do two passes, one with keyboard pads and one with controller pads:
 7. In listen and slice edit, hit a linked pad on Chop. The green line must follow
    its sounding position and disappear when it ends. Check pitch and gate release.
    The owner's cursor must not follow that line; Space and M must work as before.
+   LISTEN must stay the same width, dim at rest and blue with `▶` while the preview
+   or a matching pad sounds, also when its position is outside the waveform view.
    Repeat with raw notes or a learned pad button when hardware is available.
 8. Listen to `renders/84-input-parity.wav` after implementation. Paired hits must match;
    light and strong MIDI hits must differ in level, with no clicks or clipping.
