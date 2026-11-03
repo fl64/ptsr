@@ -280,6 +280,22 @@ specs by hand and do not mark physical checks passed because recorded tests pass
 
 ## Open questions
 
+- Before task 2.2, should 85 also repair the existing mixed keyboard/MIDI hold
+  bookkeeping on Chop in a separate behavior step? Source audit at `82f84fa` found
+  that MIDI `PadHit` calls `chop_pad` (`main.rs:4717–4726`), which calls
+  `Pads::apply(PadPress)` (`main.rs:2864`). That writes the keyboard release target
+  `pressed[pad]` (`pads.rs:1324`); a later keyboard release reads this same target
+  (`pads.rs:1332–1334`, including the F10 path at `main.rs:5781–5788`). Thus a MIDI
+  Chop hit in a new bank can overwrite a still-held keyboard key's original bank.
+  This is a source-only finding, not a recorded-input or listening reproduction.
+  Section 2 says not to overwrite that target, but task 2.2 also requires a
+  behavior-preserving refactor. Silently correcting the old path in that refactor
+  would hide a second behavior repair. Proposed scope: first add an explicit delta
+  and a separate task with mixed keyboard/raw-note/learned-button regressions on
+  the real routes and offline audio, then repair only this release-target sharing
+  in its own green commit. Default: pause task 2.2 until the owner decides; keep
+  the committed production paths unchanged. The command/hit ordering fix remains
+  a separate step.
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later
   change; recorded notes and learned CC tests do not accept the SMC-PAD template.
