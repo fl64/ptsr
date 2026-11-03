@@ -1611,6 +1611,11 @@ impl HeldKeys {
 pub struct HeldPads([bool; 16], bool);
 
 impl HeldPads {
+    /// Whether a pad key was accepted by the held-key filter and has not released.
+    pub fn is_held(&self, pad: usize) -> bool {
+        self.0.get(pad).copied().unwrap_or(false)
+    }
+
     /// Drops presses of a key that is already held; passes everything else through.
     pub fn filter(&mut self, action: Action) -> Option<Action> {
         match action {
@@ -2780,6 +2785,25 @@ mod tests {
                 Action::RecordMic(true)
             ]
         );
+    }
+
+    #[test]
+    fn held_pad_query_keeps_filter_state() {
+        let mut held = HeldPads::default();
+        assert!(!held.is_held(4));
+        assert!(!held.is_held(16));
+        let press = Action::PadPress {
+            pad: 4,
+            velocity: 1.0,
+        };
+        assert_eq!(held.filter(press), Some(press));
+        assert!(held.is_held(4));
+        assert!(held.is_held(4), "a query does not consume the hold");
+        assert!(!held.is_held(5));
+        assert_eq!(held.filter(press), None);
+        held.filter(Action::PadRelease { pad: 4 });
+        assert!(!held.is_held(4));
+        assert_eq!(held.filter(press), Some(press));
     }
 
     /// Recorded from Ghostty, Russian layout, Shift held: key auto-repeat arrives as presses.

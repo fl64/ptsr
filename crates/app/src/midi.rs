@@ -34,11 +34,19 @@ pub enum Event {
     /// A controller hit; `accepted` says the audio queue accepted the note.
     PadHit {
         abs: usize,
+        velocity: f32,
         accepted: bool,
+        ui_press: Option<u64>,
     },
     /// A controller pad was released (or its device disappeared).
     PadRelease {
         abs: usize,
+        /// Dispatch queued the audio release; App must not send it again.
+        direct: bool,
+    },
+    UiPadRelease {
+        abs: usize,
+        id: u64,
     },
     Action(Action),
     Param {
@@ -76,6 +84,13 @@ enum Raw {
     Seeded(String),
     #[cfg(test)]
     Fence(Sender<()>),
+}
+
+#[derive(Clone, Copy)]
+struct UiHold {
+    abs: usize,
+    epoch: u64,
+    id: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -163,6 +178,11 @@ impl Midi {
     #[cfg(test)]
     pub fn recorded_connect(&self, port: &str) {
         self.updates.send(Raw::Connected(port.into())).unwrap();
+    }
+
+    #[cfg(test)]
+    pub fn recorded_disconnect(&self, port: &str) {
+        self.updates.send(Raw::Disconnected(port.into())).unwrap();
     }
 
     #[cfg(test)]
@@ -348,6 +368,8 @@ fn dispatch(
     };
     let mut defaults: HashMap<String, Profile> = HashMap::new();
     let mut pressed: HashMap<(String, u8, Key), Vec<(usize, u64)>> = HashMap::new();
+    let mut ui_pressed: HashMap<(String, u8, Key), Vec<UiHold>> = HashMap::new();
+    let mut next_ui_press = 0u64;
     let mut pending = VecDeque::new();
     let mut closed = false;
     loop {
@@ -394,8 +416,25 @@ fn dispatch(
                         for &(abs, epoch) in held.iter() {
                             pending.push_back(release_command(abs, epoch));
                             send(
-                                Event::PadRelease { abs },
+                                Event::PadRelease { abs, direct: true },
                                 Some(Stamp { epoch, ready: true }),
+                            );
+                        }
+                    }
+                    *p != port
+                });
+                ui_pressed.retain(|(p, _, _), held| {
+                    if *p == port {
+                        for hold in held.iter() {
+                            send(
+                                Event::UiPadRelease {
+                                    abs: hold.abs,
+                                    id: hold.id,
+                                },
+                                Some(Stamp {
+                                    epoch: hold.epoch,
+                                    ready: true,
+                                }),
                             );
                         }
                     }
@@ -463,29 +502,70 @@ fn dispatch(
         let channel = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
         };
-        if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. })
-            && let Some(held) = pressed.remove(&(port.clone(), channel, msg.key()))
-        {
-            for (abs, epoch) in held {
-                pending.push_back(release_command(abs, epoch));
-                send(
-                    Event::PadRelease { abs },
-                    Some(Stamp { epoch, ready: true }),
-                );
+        if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+            let key = (port.clone(), channel, msg.key());
+            let direct = pressed.remove(&key);
+            let ui = ui_pressed.remove(&key);
+            let tracked = direct.is_some() || ui.is_some();
+            if let Some(held) = direct {
+                for (abs, epoch) in held {
+                    pending.push_back(release_command(abs, epoch));
+                    send(
+                        Event::PadRelease { abs, direct: true },
+                        Some(Stamp { epoch, ready: true }),
+                    );
+                }
             }
-            continue;
+            if let Some(held) = ui {
+                for hold in held {
+                    send(
+                        Event::UiPadRelease {
+                            abs: hold.abs,
+                            id: hold.id,
+                        },
+                        Some(Stamp {
+                            epoch: hold.epoch,
+                            ready: true,
+                        }),
+                    );
+                }
+            }
+            if tracked {
+                continue;
+            }
         }
         if shared.learn.load(Relaxed) {
             continue;
         }
 
         match resolved {
-            Some(Resolved::Action(Action::PadPress { pad, .. })) if shared.hand.load(Relaxed) => {
+            Some(Resolved::Action(Action::PadPress { pad, velocity }))
+                if shared.hand.load(Relaxed) =>
+            {
                 let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
+                let ui_press = (screen == Screen::Chop && stamp.ready).then(|| {
+                    let held = ui_pressed.entry((port, channel, msg.key())).or_default();
+                    if let Some(hold) = held
+                        .iter()
+                        .find(|hold| hold.abs == abs && hold.epoch == stamp.epoch)
+                    {
+                        return hold.id;
+                    }
+                    let id = next_ui_press;
+                    next_ui_press = next_ui_press.wrapping_add(1);
+                    held.push(UiHold {
+                        abs,
+                        epoch: stamp.epoch,
+                        id,
+                    });
+                    id
+                });
                 send(
                     Event::PadHit {
                         abs,
+                        velocity,
                         accepted: false,
+                        ui_press,
                     },
                     Some(stamp),
                 );
@@ -507,11 +587,19 @@ fn dispatch(
                         }
                     }
                 }
-                send(Event::PadHit { abs, accepted }, Some(stamp));
+                send(
+                    Event::PadHit {
+                        abs,
+                        velocity,
+                        accepted,
+                        ui_press: None,
+                    },
+                    Some(stamp),
+                );
             }
             Some(Resolved::Action(Action::PadRelease { pad })) => {
                 let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
-                send(Event::PadRelease { abs }, Some(stamp));
+                send(Event::PadRelease { abs, direct: false }, Some(stamp));
             }
             Some(Resolved::Action(a)) => {
                 send(Event::Action(a), Some(stamp));
@@ -686,7 +774,7 @@ mod tests {
                 None,
                 Arc::new(Shared::default()),
             );
-            assert!(rx.try_iter().any(|event| matches!(event.event, Event::PadHit { abs: 0, accepted } if accepted == expected)));
+            assert!(rx.try_iter().any(|event| matches!(event.event, Event::PadHit { abs: 0, accepted, .. } if accepted == expected)));
         }
     }
 
@@ -1221,7 +1309,8 @@ mod tests {
                 send(XS, press, test_stamp()).event,
                 Event::PadHit {
                     abs: 16,
-                    accepted: true
+                    accepted: true,
+                    ..
                 }
             ));
             shared.screen.store(4, Relaxed);
@@ -1244,7 +1333,13 @@ mod tests {
             ));
             assert!(rx.try_recv().is_err());
             let released = send(XS, release, stale);
-            assert!(matches!(released.event, Event::PadRelease { abs: 16 }));
+            assert!(matches!(
+                released.event,
+                Event::PadRelease {
+                    abs: 16,
+                    direct: true
+                }
+            ));
             let stamp = released.stamp.unwrap();
             assert_eq!(stamp.epoch, 0);
             assert!(stamp.ready);
@@ -1252,7 +1347,8 @@ mod tests {
                 send(PADS, note_on(36), test_stamp()).event,
                 Event::PadHit {
                     abs: 32,
-                    accepted: false
+                    accepted: false,
+                    ..
                 }
             ));
             raw_tx.send(Raw::Msg(XS.into(), release, stale)).unwrap();
@@ -1355,7 +1451,13 @@ mod tests {
                 assert_eq!(
                     events
                         .iter()
-                        .filter(|event| matches!(event, Event::PadRelease { abs: 0 }))
+                        .filter(|event| matches!(
+                            event,
+                            Event::PadRelease {
+                                abs: 0,
+                                direct: true
+                            }
+                        ))
                         .count(),
                     2
                 );
@@ -1403,23 +1505,43 @@ mod tests {
                 send(hit(80)),
                 Event::PadHit {
                     abs: 0,
-                    accepted: true
+                    accepted: true,
+                    ..
                 }
             ));
             shared.screen.store(after, Relaxed);
             shared.bank.store(2, Relaxed);
-            assert!(matches!(send(off), Event::PadRelease { abs: 0 }));
+            assert!(matches!(
+                send(off),
+                Event::PadRelease {
+                    abs: 0,
+                    direct: true
+                }
+            ));
             assert!(matches!(
                 send(hit(47)),
                 Event::PadHit {
                     abs: 32,
-                    accepted: true
+                    accepted: true,
+                    ..
                 }
             ));
             shared.screen.store(before, Relaxed);
             shared.bank.store(1, Relaxed);
-            assert!(matches!(send(off), Event::PadRelease { abs: 32 }));
-            assert!(matches!(send(off), Event::PadRelease { abs: 16 }));
+            assert!(matches!(
+                send(off),
+                Event::PadRelease {
+                    abs: 32,
+                    direct: true
+                }
+            ));
+            assert!(matches!(
+                send(off),
+                Event::PadRelease {
+                    abs: 16,
+                    direct: false
+                }
+            ));
             raw_tx.send(Raw::Disconnected(PADS.into())).unwrap();
             assert!(matches!(
                 rx.recv_timeout(Duration::from_secs(1)).unwrap().event,

@@ -367,6 +367,7 @@ struct App {
     audio: Option<Audio>,
     pending_audio: std::collections::VecDeque<ProjectCommand>,
     audio_held: [Option<u64>; PADS],
+    midi_ui_held: std::collections::HashMap<u64, usize>,
     restoring_project: bool,
     midi_preview_blocked: bool,
     cfg: AudioConfig,
@@ -569,6 +570,7 @@ impl App {
     fn apply_session(&mut self, sess: session::Session) {
         self.pending_audio.clear();
         self.audio_held.fill(None);
+        self.midi_ui_held.clear();
         self.restoring_project = false;
         if let Some(audio) = &self.audio {
             audio
@@ -810,6 +812,10 @@ impl App {
     }
 
     fn send(&mut self, cmd: Command) {
+        self.try_send(cmd);
+    }
+
+    fn try_send(&mut self, cmd: Command) -> bool {
         // the first sound ends the splash (73): a note that can sound, or a preview
         let sounds = match &cmd {
             Command::PadPress { pad, .. } => self.pad_sounds(*pad),
@@ -826,18 +832,17 @@ impl App {
                 && matches!(&cmd, Command::Preview { sound: Some(_), .. })
                 && (!ready || !self.pending_audio.is_empty() || self.midi_preview_blocked)
             {
-                return;
+                return false;
             }
             match &cmd {
                 Command::PadPress { pad, .. } => {
                     if !ready || !self.pending_audio.is_empty() || *pad >= PADS {
-                        return;
+                        return false;
                     }
-                    self.audio_held[*pad] = Some(epoch);
                 }
                 Command::PadRelease { pad } => {
                     if *pad >= PADS || self.audio_held[*pad].take() != Some(epoch) || !ready {
-                        return;
+                        return false;
                     }
                 }
                 _ => {}
@@ -854,15 +859,19 @@ impl App {
             };
             if let Some(pad) = press {
                 if self.audio.as_mut().unwrap().commands.push(message).is_err() {
-                    self.audio_held[pad] = None;
-                } else if sounds {
+                    return false;
+                }
+                self.audio_held[pad] = Some(epoch);
+                if sounds {
                     self.splash = false;
                 }
             } else {
                 self.pending_audio.push_back(message);
                 self.flush_audio();
             }
+            return true;
         }
+        false
     }
 
     fn flush_audio(&mut self) {
@@ -1559,7 +1568,7 @@ impl App {
             Action::ScreenChop if self.screen == Screen::Files => self.open_file_chop(),
             Action::ScreenChop => self.open_chop(),
             Action::PadPress { pad, velocity } if self.screen == Screen::Chop => {
-                self.chop_pad(pad, velocity)
+                self.chop_pad(pad, velocity);
             }
             Action::Back if self.screen == Screen::Chop && self.plan.is_some() => self.plan = None,
             Action::ChopPlay if self.screen == Screen::Chop => {
@@ -2792,7 +2801,7 @@ impl App {
     /// A pad hit on the chop screen: listening plays the real pad and, when it plays a
     /// slice of this chop, selects that slice (36); assigning plans the pad of the current
     /// bank and plays the slice planned there.
-    fn chop_pad(&mut self, pad: usize, velocity: f32) {
+    fn chop_pad(&mut self, pad: usize, velocity: f32) -> Option<usize> {
         self.meters.hit(Instant::now());
         let Some(mut plan) = self.plan.clone() else {
             // no slice on a pad yet: the keys play the slices, 16 a bank page (36)
@@ -2806,10 +2815,11 @@ impl App {
                 if c.select_slice(slice) {
                     self.play_slice(slice);
                 }
-                return;
+                return None;
             }
+            let mut queued = false;
             for cmd in self.pads.apply(Action::PadPress { pad, velocity }) {
-                self.send(cmd);
+                queued |= self.try_send(cmd);
             }
             let abs = self.pads.bank * PADS_PER_BANK + pad;
             if let Some(c) = self.chop.as_mut()
@@ -2821,11 +2831,9 @@ impl App {
                 let slice = c.slice_of(id);
                 c.select_slice(slice);
             }
-            return;
+            return queued.then_some(abs);
         };
-        let Some(c) = self.chop.as_mut() else {
-            return;
-        };
+        let c = self.chop.as_mut()?;
         let abs = self.pads.bank * PADS_PER_BANK + pad;
         self.pads.selected = pad;
         let (count, before) = (c.slices().len(), c.selected);
@@ -2848,6 +2856,7 @@ impl App {
         if let Some(&(slice, _)) = plan.targets(count).iter().find(|t| t.1 == abs) {
             self.play_slice(slice);
         }
+        None
     }
 
     /// A new plan; the old one and the slice selected before go to undo.
@@ -4655,8 +4664,17 @@ impl App {
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
             midi::Event::PadHit { .. } if self.ask.is_some() => {}
-            midi::Event::PadHit { abs, .. } if self.screen == Screen::Chop => {
-                self.play_slice(abs % PADS_PER_BANK)
+            midi::Event::PadHit {
+                abs,
+                velocity,
+                ui_press,
+                ..
+            } if self.screen == Screen::Chop => {
+                if let Some(pad) = self.chop_pad(abs % PADS_PER_BANK, velocity)
+                    && let Some(id) = ui_press
+                {
+                    self.midi_ui_held.insert(id, pad);
+                }
             }
             midi::Event::PadHit { abs, .. } if self.browser.in_hand.is_some() => {
                 self.put_in_hand(abs);
@@ -4679,7 +4697,7 @@ impl App {
                     self.note_step(before, "swap".into());
                 }
             }
-            midi::Event::PadHit { abs, accepted } => {
+            midi::Event::PadHit { abs, accepted, .. } => {
                 // The MIDI reader reports whether the audio queue accepted the note.
                 if accepted && self.pad_sounds(abs) {
                     self.splash = false;
@@ -4687,7 +4705,19 @@ impl App {
                 self.meters.hit(Instant::now());
                 self.pads.hit(abs)
             }
-            midi::Event::PadRelease { abs } => self.pads.release(abs),
+            midi::Event::PadRelease { abs, direct } => {
+                if direct {
+                    self.midi_ui_held.retain(|_, pad| *pad != abs);
+                    self.audio_held[abs] = None;
+                }
+                self.pads.release(abs);
+            }
+            midi::Event::UiPadRelease { abs, id } => {
+                if self.midi_ui_held.remove(&id) == Some(abs) {
+                    self.send(Command::PadRelease { pad: abs });
+                    self.pads.release(abs);
+                }
+            }
             midi::Event::Action(action) => {
                 // quitting from a controller is not offered
                 self.apply(action);
@@ -5695,6 +5725,20 @@ impl App {
         if self.project_picker.is_some() && self.project_picker_key(k) {
             return false;
         }
+        // Learn must not swallow the release of a key held before F10. New silent
+        // learn keys are not in HeldPads and must not release another control's pad.
+        if self.screen_learn.is_some()
+            && kitty
+            && let Some(action @ Action::PadRelease { pad }) =
+                keymap.resolve_in(self.screen, self.edit_keys(), k)
+            && held.is_held(pad)
+        {
+            held.filter(action);
+            for cmd in self.pads.apply(action) {
+                self.send(cmd);
+            }
+            return false;
+        }
         if self.screen_learn.is_some() && self.learn_key(keymap, k) {
             return false;
         }
@@ -5894,6 +5938,7 @@ fn main() -> std::io::Result<()> {
         audio,
         pending_audio: Default::default(),
         audio_held: [None; PADS],
+        midi_ui_held: Default::default(),
         restoring_project: false,
         midi_preview_blocked: false,
         cfg,
@@ -9131,6 +9176,7 @@ mod tests {
             audio: None,
             pending_audio: Default::default(),
             audio_held: [None; PADS],
+            midi_ui_held: Default::default(),
             restoring_project: false,
             midi_preview_blocked: false,
             cfg: AudioConfig::default(),
@@ -9417,6 +9463,8 @@ mod tests {
         app.midi_event(super::midi::Event::PadHit {
             accepted: false,
             abs: empty,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert!(
             app.splash,
@@ -9434,11 +9482,15 @@ mod tests {
         app.midi_event(super::midi::Event::PadHit {
             accepted: false,
             abs: 4,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert!(app.splash, "a rejected controller note keeps the splash");
         app.midi_event(super::midi::Event::PadHit {
             accepted: true,
             abs: 4,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert!(!app.splash, "the controller note ended the splash");
     }
@@ -11133,6 +11185,8 @@ Enter = "browser.hold"
         app.midi_event(super::midi::Event::PadHit {
             accepted: false,
             abs: 0,
+            velocity: 1.0,
+            ui_press: None,
         });
         let delayed = super::midi::UiEvent::stamped(
             super::midi::Event::Action(Action::ChopPlay),
@@ -13464,6 +13518,8 @@ Enter = "browser.hold"
         app.midi_event(super::midi::Event::PadHit {
             accepted: false,
             abs: 3,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert!(
             !app.sent
@@ -17551,6 +17607,8 @@ Enter = "browser.hold"
         app.midi_event(super::midi::Event::PadHit {
             abs: 37,
             accepted: true,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert_eq!(app.pads.selected_abs(), 37);
         assert_eq!((app.fx_slot, app.fx_param), (1, 1));
@@ -20053,6 +20111,8 @@ Enter = "browser.hold"
         app.midi_event(super::midi::Event::PadHit {
             abs: 1,
             accepted: true,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
         assert!(app.copy_in_hand.is_none());
@@ -20400,6 +20460,8 @@ Enter = "browser.hold"
         app.midi_event(super::midi::Event::PadHit {
             abs: 16 + 2, // bank 2, pad E
             accepted: true,
+            velocity: 1.0,
+            ui_press: None,
         });
         assert!(
             !app.sent
@@ -20413,7 +20475,10 @@ Enter = "browser.hold"
         assert!(app.copy_in_hand.is_none(), "the hand clears");
         // a release of a held pad still works: no crash, nothing else changes
         let before = app.pads.snapshot(4);
-        app.midi_event(super::midi::Event::PadRelease { abs: 4 });
+        app.midi_event(super::midi::Event::PadRelease {
+            abs: 4,
+            direct: false,
+        });
         assert_eq!(app.pads.snapshot(4), before);
     }
 
@@ -21705,10 +21770,15 @@ Enter = "browser.hold"
         app.midi_event(super::midi::Event::PadHit {
             accepted: false,
             abs: 4,
+            velocity: 1.0,
+            ui_press: None,
         });
         app.pads.hit_at[4] = Some(two_seconds_ago);
         assert!(lit(&mut app), "held from a controller");
-        app.midi_event(super::midi::Event::PadRelease { abs: 4 });
+        app.midi_event(super::midi::Event::PadRelease {
+            abs: 4,
+            direct: false,
+        });
         assert!(!lit(&mut app));
     }
 

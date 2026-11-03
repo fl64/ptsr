@@ -31,7 +31,7 @@
 
 ## 2. Chop parity
 
-- [ ] 2.1 Add failing regression tests for all six Chop delta scenarios through raw bytes
+- [x] 2.1 Add failing regression tests for all six Chop delta scenarios through raw bytes
   and App. In the same step, preserve velocity in PadHit and route Chop hits through
   the keyboard Chop handler. Check banks, selection, plans and no duplicate audio.
   Include the owner-approved linked gate release repair and five additional release
