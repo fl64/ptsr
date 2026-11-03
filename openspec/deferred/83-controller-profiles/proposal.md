@@ -1,3 +1,11 @@
+## Status: superseded plan (2026-11-03)
+
+Do not activate this draft. Change 91 in `docs/plans/SMC-PAD-INTEGRATION.md` replaces its
+absolute-CC plan with measured relative encoders and two pad layers. Keep these artifacts
+as research until 91 carries the sources, physical orientation, two-controller tests and
+owner-binding migration safeguards. The text below records the former plan, not current
+requirements. Change 82 is accepted and archived.
+
 ## Why
 
 The SMC-PAD file is an invalid template. The X-Session Pro file does not identify the

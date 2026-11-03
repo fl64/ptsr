@@ -314,6 +314,8 @@ const CURVE_BOTTOM_DB: f32 = -36.0;
 pub type PanelRow = (PadParam, &'static str, String);
 
 pub struct Pads {
+    /// Any real pad voice in the current ready project, across all banks; not hit flashes or FX tails.
+    pub playing: bool,
     pub bank: usize,
     pub pads: Vec<PadView>,
     pub selected: usize,
@@ -972,7 +974,16 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
 
 fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
-    let mut title = vec![Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT))];
+    let (badge, badge_style) = if p.playing {
+        (" PLAY ▶   ", Style::new().fg(BG).bg(CYAN))
+    } else {
+        (" PLAY     ", Style::new().fg(DIM).bg(BG))
+    };
+    let mut title = vec![
+        Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT)),
+        " ".into(),
+        Span::styled(badge, badge_style),
+    ];
     if let Some(plate) = &p.mark_plate {
         title.push(" ".into());
         title.push(Span::styled(
@@ -2252,11 +2263,21 @@ fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<Wav
     ])
     .areas(pf.strip);
     let slices = c.bounds.len().saturating_sub(1);
+    let badge = if matches!(c.mode.as_str(), "LISTEN" | "LISTEN ▶") {
+        format!(" {:<8} ", c.mode)
+    } else {
+        format!(" {} ", c.mode)
+    };
+    let badge_style = if c.mode == "LISTEN" {
+        Style::new().fg(DIM).bg(BG)
+    } else {
+        Style::new().fg(BG).bg(CYAN)
+    };
     frame.render_widget(
         Line::from(vec![
             Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
             " ".into(),
-            Span::styled(format!(" {} ", c.mode), Style::new().fg(BG).bg(CYAN)),
+            Span::styled(badge, badge_style),
             format!("   cuts of {}", c.file).into(),
             match c.which {
                 Some((i, n)) => format!(" · chop {i} of {n}").into(),
@@ -2668,6 +2689,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             // pads 1 and W of the current bank (2) hold a sound
+            playing: false,
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
             mark_plate: None,
@@ -3201,6 +3223,7 @@ mod tests {
             pickup: None,
             scope: String::new(),
             param: PadParam::Volume,
+            playing: false,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
             mark_plate: None,
@@ -3710,6 +3733,93 @@ mod tests {
         );
     }
 
+    /// Scenario "Pads PLAY badge has fixed width".
+    #[test]
+    fn pads_play_badge_has_fixed_width() {
+        for (width, height) in [(60, 24), (80, 30), (100, 40)] {
+            for hidden in [false, true] {
+                for edit in [false, true] {
+                    for marked in [false, true] {
+                        let mut first: Option<Vec<Vec<(String, Color, Color)>>> = None;
+                        let mut mark_column = None;
+                        for playing in [false, true, false] {
+                            let mut p = idle_pads();
+                            p.playing = playing;
+                            p.hidden = hidden;
+                            p.edit = edit.then_some("TONE");
+                            if marked {
+                                p.mark_plate = Some("MARK · hit pads · 3 marked".into());
+                            }
+                            let rows = render_pads_at(p, width, height);
+                            let y = (0..rows.len())
+                                .find(|&y| row_text(&rows, y).contains("F2 PADS"))
+                                .unwrap();
+                            let row = &rows[y];
+                            let badge = row
+                                .windows(4)
+                                .position(|cells| {
+                                    cells.iter().map(|cell| cell.0.as_str()).collect::<String>()
+                                        == "PLAY"
+                                })
+                                .expect("PLAY badge");
+                            let text: String = row[badge - 1..badge + 9]
+                                .iter()
+                                .map(|cell| cell.0.as_str())
+                                .collect();
+                            assert_eq!(
+                                text,
+                                if playing {
+                                    " PLAY ▶   "
+                                } else {
+                                    " PLAY     "
+                                }
+                            );
+                            for cell in &row[badge - 1..badge + 9] {
+                                assert_eq!(
+                                    (cell.1, cell.2),
+                                    if playing { (BG, CYAN) } else { (DIM, BG) }
+                                );
+                            }
+                            if marked {
+                                let at = row
+                                    .windows(4)
+                                    .position(|cells| {
+                                        cells.iter().map(|cell| cell.0.as_str()).collect::<String>()
+                                            == "MARK"
+                                    })
+                                    .unwrap();
+                                if let Some(column) = mark_column {
+                                    assert_eq!(at, column);
+                                }
+                                mark_column = Some(at);
+                                let plate = "MARK · hit pads · 3 marked";
+                                assert_eq!(
+                                    row[at..at + plate.chars().count()]
+                                        .iter()
+                                        .map(|cell| cell.0.as_str())
+                                        .collect::<String>(),
+                                    plate
+                                );
+                                for cell in &row[at..at + plate.chars().count()] {
+                                    assert_eq!((cell.1, cell.2), (BG, MARK));
+                                }
+                            }
+                            if let Some(before) = &first {
+                                for (i, (old, new)) in before.iter().zip(&rows).enumerate() {
+                                    if i != y {
+                                        assert_eq!(old, new, "only the title changes");
+                                    }
+                                }
+                            } else {
+                                first = Some(rows);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// 76 "The mark plate": the plate stands on the title line, black on yellow.
     #[test]
     fn the_mark_plate_is_yellow_on_the_title_line() {
@@ -3721,7 +3831,7 @@ mod tests {
             .expect("the title line");
         let title = row_text(&rows, y);
         assert!(
-            title.contains("F2 PADS   MARK · hit pads · 3 marked "),
+            title.contains("F2 PADS   PLAY       MARK · hit pads · 3 marked "),
             "{title}"
         );
         assert!(
@@ -4804,6 +4914,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         Chop {
             owners: Vec::new(),
@@ -5009,6 +5120,128 @@ mod tests {
         );
     }
 
+    /// Scenario "Chop listen badge has fixed width".
+    #[test]
+    fn chop_listen_badge_has_fixed_width() {
+        let wave = [0.1; 4000];
+        let (status, help) = chop_status();
+        let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        let mut file_column = None;
+        for mode in ["LISTEN", "LISTEN ▶", "LISTEN"] {
+            let mut view = chop_demo(&wave);
+            view.mode = mode.into();
+            term.draw(|frame| draw(frame, &status, &Screen::Chop(Box::new(view)), &help))
+                .unwrap();
+            let header = term
+                .backend()
+                .buffer()
+                .content()
+                .chunks(100)
+                .find(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains("F3 CHOP")
+                })
+                .unwrap();
+            let cells: Vec<_> = header.iter().map(|cell| cell.symbol()).collect();
+            let badge = cells
+                .windows(6)
+                .position(|w| w.concat() == "LISTEN")
+                .unwrap();
+            let file = cells
+                .windows(7)
+                .position(|w| w.concat() == "cuts of")
+                .unwrap();
+            assert_eq!(file - (badge - 1) - 3, 10, "fixed badge width: {mode}");
+            if let Some(column) = file_column {
+                assert_eq!(file, column, "file text must not jump");
+            } else {
+                file_column = Some(file);
+            }
+            let playing = mode.ends_with('▶');
+            assert_eq!(header[badge].fg, if playing { BG } else { DIM });
+            assert_eq!(header[badge].bg, if playing { CYAN } else { BG });
+            assert_eq!(header[badge + 7].symbol(), if playing { "▶" } else { " " });
+        }
+        let mut view = chop_demo(&wave);
+        view.mode = "ASSIGN · by hand".into();
+        term.draw(|frame| draw(frame, &status, &Screen::Chop(Box::new(view)), &help))
+            .unwrap();
+        let header = term
+            .backend()
+            .buffer()
+            .content()
+            .chunks(100)
+            .find(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .contains("F3 CHOP")
+            })
+            .unwrap();
+        let text = header.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(text.contains(" ASSIGN · by hand    cuts of"));
+        let start = text.find(" ASSIGN").unwrap();
+        for cell in &header[start..start + " ASSIGN · by hand ".chars().count()] {
+            assert_eq!(
+                (cell.fg, cell.bg),
+                (BG, CYAN),
+                "assign badge stays unchanged"
+            );
+        }
+    }
+
+    /// Scenario "Keyboard pad shows the Chop playback line": the supplied position
+    /// uses the same green overlay in both wave modes and never moves the edit cursor.
+    #[test]
+    fn chop_pad_playback_line_in_braille_and_picture() {
+        let wave: Vec<f32> = (0..4000).map(|i| (i % 40) as f32 / 80.0).collect();
+        let (status, help) = chop_status();
+        for graphics in [false, true] {
+            for edit in [false, true] {
+                let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+                for position in [Some(0.6), Some(0.7), None] {
+                    let mut view = chop_demo(&wave);
+                    view.cursor = Some(0.1);
+                    view.playhead = position;
+                    view.edit = edit;
+                    let screen = Screen::Chop(Box::new(view));
+                    let mut images = Vec::new();
+                    term.draw(|frame| {
+                        if graphics {
+                            draw_gfx(frame, &status, &screen, &help, &mut images);
+                        } else {
+                            draw(frame, &status, &screen, &help);
+                        }
+                    })
+                    .unwrap();
+                    let strip = frame_at(100, 30).strip;
+                    for y in strip.y + 3..strip.y + strip.height {
+                        let buffer = term.backend().buffer();
+                        let cursor = buffer.cell((10, y)).unwrap();
+                        assert_eq!((cursor.symbol(), cursor.fg), ("┃", WHITE));
+                        for (at, x) in [(0.6, 60), (0.7, 70)] {
+                            let cell = buffer.cell((x, y)).unwrap();
+                            let is_line = cell.symbol() == "│" && cell.fg == METER;
+                            assert_eq!(
+                                is_line,
+                                position == Some(at),
+                                "graphics {graphics}, edit {edit}, row {y}"
+                            );
+                        }
+                    }
+                    if graphics {
+                        assert_eq!(images.len(), 1);
+                        assert_eq!(images[0].id, 1);
+                    } else {
+                        assert!(images.is_empty());
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn chop_screen_shows_markers_cursor_and_slice_pads() {
         let wave: Vec<f32> = (0..4000).map(|i| (i % 1000) as f32 / 1000.0).collect();
@@ -5203,6 +5436,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         let help = Help {
             groups: &[],
@@ -5383,6 +5617,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         }
     }
 
@@ -5593,6 +5828,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         // quiet start, loud middle: the envelope must show the difference
         let wave: Vec<f32> = (0..1600).map(|i| if i < 800 { 0.1 } else { 1.0 }).collect();
@@ -5690,6 +5926,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         let wave: Vec<f32> = vec![0.5; 100];
         let c = Chop {
@@ -6216,6 +6453,7 @@ mod tests {
             pickup: None,
             scope: String::new(),
             param: PadParam::Volume,
+            playing: false,
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
             mark_plate: None,

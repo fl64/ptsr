@@ -16,6 +16,255 @@ pub enum Screen {
     Fx,
 }
 
+/// Independent input states. An overlay does not erase the state below it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Mode {
+    pub edit: bool,
+    pub marking: bool,
+    pub text: bool,
+    pub picker: bool,
+    pub screen_learn: bool,
+    pub midi_learn: bool,
+    pub question: bool,
+    pub file_in_hand: bool,
+    pub copy_in_hand: bool,
+    pub swap_in_hand: bool,
+}
+
+impl Mode {
+    fn bits(self) -> u32 {
+        [
+            self.edit,
+            self.marking,
+            self.text,
+            self.picker,
+            self.screen_learn,
+            self.midi_learn,
+            self.question,
+            self.file_in_hand,
+            self.copy_in_hand,
+            self.swap_in_hand,
+        ]
+        .into_iter()
+        .enumerate()
+        .fold(0, |bits, (shift, flag)| bits | (u32::from(flag) << shift))
+    }
+
+    fn from_bits(bits: u32) -> Self {
+        Self {
+            edit: bits & 1 != 0,
+            marking: bits & (1 << 1) != 0,
+            text: bits & (1 << 2) != 0,
+            picker: bits & (1 << 3) != 0,
+            screen_learn: bits & (1 << 4) != 0,
+            midi_learn: bits & (1 << 5) != 0,
+            question: bits & (1 << 6) != 0,
+            file_in_hand: bits & (1 << 7) != 0,
+            copy_in_hand: bits & (1 << 8) != 0,
+            swap_in_hand: bits & (1 << 9) != 0,
+        }
+    }
+}
+
+/// One complete routing snapshot, published from App to the MIDI dispatcher.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Focus {
+    pub screen: Screen,
+    /// Zero-based bank, 0..8.
+    pub bank: usize,
+    pub mode: Mode,
+}
+
+impl Default for Focus {
+    fn default() -> Self {
+        Self {
+            screen: Screen::Pads,
+            bank: 0,
+            mode: Mode::default(),
+        }
+    }
+}
+
+impl Focus {
+    /// Packs valid state into one atomic word. Invalid banks are rejected.
+    pub fn pack(self) -> Option<u32> {
+        // The spare bank bit lets unpack reject invalid banks instead of aliasing
+        // bank 9 to bank 1. This is internal state, not a saved file format.
+        (self.bank < 8)
+            .then(|| self.screen as u32 | ((self.bank as u32) << 3) | (self.mode.bits() << 7))
+    }
+
+    /// Unpacks a snapshot, rejecting unknown screens, banks and reserved bits.
+    pub fn unpack(bits: u32) -> Option<Self> {
+        if bits >> 17 != 0 {
+            return None;
+        }
+        let screen = match bits & 7 {
+            0 => Screen::Pads,
+            1 => Screen::Settings,
+            2 => Screen::Files,
+            3 => Screen::Chop,
+            4 => Screen::Fx,
+            _ => return None,
+        };
+        let bank = ((bits >> 3) & 15) as usize;
+        (bank < 8).then(|| Self {
+            screen,
+            bank,
+            mode: Mode::from_bits(bits >> 7),
+        })
+    }
+}
+
+/// Pad decision after source-specific text, picker and key-release guards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadRoute {
+    Ignore,
+    Ui,
+    Sound,
+}
+
+/// Keeps existing pad routes; text, pickers and F12 learn add no MIDI silence.
+pub fn route_pad(focus: Focus) -> PadRoute {
+    let mode = focus.mode;
+    if mode.screen_learn {
+        PadRoute::Ignore
+    } else if focus.screen == Screen::Chop
+        || mode.question
+        || mode.file_in_hand
+        || mode.copy_in_hand
+        || mode.swap_in_hand
+    {
+        PadRoute::Ui
+    } else {
+        PadRoute::Sound
+    }
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+
+    #[test]
+    fn focus_round_trips_all_screens_banks_and_overlapping_modes() {
+        for screen in [
+            Screen::Pads,
+            Screen::Settings,
+            Screen::Files,
+            Screen::Chop,
+            Screen::Fx,
+        ] {
+            for bank in 0..8 {
+                for bits in 0..1 << 10 {
+                    let focus = Focus {
+                        screen,
+                        bank,
+                        mode: Mode::from_bits(bits),
+                    };
+                    let packed = focus.pack().unwrap();
+                    assert_eq!(packed, screen as u32 | (bank as u32) << 3 | bits << 7);
+                    assert_eq!(Focus::unpack(packed), Some(focus));
+                    let expected = if bits & (1 << 4) != 0 {
+                        PadRoute::Ignore
+                    } else if screen == Screen::Chop || bits & (0b1111 << 6) != 0 {
+                        PadRoute::Ui
+                    } else {
+                        PadRoute::Sound
+                    };
+                    assert_eq!(route_pad(focus), expected, "{focus:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn focus_default_is_normal_performance_on_first_bank() {
+        assert_eq!(Focus::default().pack(), Some(0));
+        assert_eq!(Focus::unpack(0), Some(Focus::default()));
+        assert_eq!(route_pad(Focus::default()), PadRoute::Sound);
+    }
+
+    #[test]
+    fn focus_rejects_unknown_screens_banks_and_reserved_bits() {
+        for screen in 5..8 {
+            assert_eq!(Focus::unpack(screen), None);
+        }
+        for bank in 8..16 {
+            assert_eq!(Focus::unpack(bank << 3), None);
+            assert_eq!(
+                Focus {
+                    bank: bank as usize,
+                    ..Focus::default()
+                }
+                .pack(),
+                None
+            );
+        }
+        assert_eq!(
+            Focus {
+                bank: usize::MAX,
+                ..Focus::default()
+            }
+            .pack(),
+            None
+        );
+        for bit in 17..32 {
+            assert_eq!(Focus::unpack(1 << bit), None);
+        }
+        assert_eq!(Focus::unpack(u32::MAX), None);
+    }
+
+    #[test]
+    fn focus_mode_flags_keep_their_independent_meaning() {
+        let flags = [
+            Mode {
+                edit: true,
+                ..Mode::default()
+            },
+            Mode {
+                marking: true,
+                ..Mode::default()
+            },
+            Mode {
+                text: true,
+                ..Mode::default()
+            },
+            Mode {
+                picker: true,
+                ..Mode::default()
+            },
+            Mode {
+                screen_learn: true,
+                ..Mode::default()
+            },
+            Mode {
+                midi_learn: true,
+                ..Mode::default()
+            },
+            Mode {
+                question: true,
+                ..Mode::default()
+            },
+            Mode {
+                file_in_hand: true,
+                ..Mode::default()
+            },
+            Mode {
+                copy_in_hand: true,
+                ..Mode::default()
+            },
+            Mode {
+                swap_in_hand: true,
+                ..Mode::default()
+            },
+        ];
+        for (shift, mode) in flags.into_iter().enumerate() {
+            assert_eq!(mode.bits(), 1 << shift);
+            assert_eq!(Mode::from_bits(1 << shift), mode);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     /// Pad 0..16 of the current bank; velocity 0..1.
@@ -34,6 +283,8 @@ pub enum Action {
     MasterVolume(i8),
     /// Take the selected pad in hand; the next pad hit swaps the two.
     PadTake,
+    /// Take a copy of the selected loaded pad (83a); the next pad hit places it.
+    PadCopy,
     PadRename,
     PadSelect(Dir),
     PadModeNext,
@@ -77,6 +328,12 @@ pub enum Action {
     /// Chop screen: chop by hits, stepping the threshold one lower; like equal parts
     /// this replaces the cuts and is one undo step.
     ChopHits,
+    /// Chop screen: chop by hits, stepping the threshold one higher, stopping at −6 dB
+    /// without wrapping (83a); the same cuts, undo history and hit rule as `chop.hits`.
+    ChopHitsBack,
+    /// Chop screen: switch the assign plan between in order and by hand (83a); nothing
+    /// in listen or slice edit, and it applies no plan.
+    ChopAssignOrder,
     /// Chop screen: the next equal-parts count only (`L`); the assign mode ignores it.
     ChopEqualParts,
     /// The next or previous parameter of the selected object (`K`, `I`); `Tab` while
@@ -191,6 +448,7 @@ impl Action {
             "bank.prev" => Self::BankPrev,
             "master.volume_down" => Self::MasterVolume(-1),
             "pad.take" => Self::PadTake,
+            "pad.copy" => Self::PadCopy,
             "pad.rename" => Self::PadRename,
             "master.volume_up" => Self::MasterVolume(1),
             b if b.starts_with("bank.") => match b[5..].parse::<usize>() {
@@ -235,6 +493,8 @@ impl Action {
             "chop.auto_mode_next" => Self::ChopParts,
             "chop.parts" => Self::ChopEqualParts,
             "chop.hits" => Self::ChopHits,
+            "chop.hits_back" => Self::ChopHitsBack,
+            "chop.assign_order" => Self::ChopAssignOrder,
             "edit.param_next" => Self::ParamNext,
             "edit.param_prev" => Self::ParamPrev,
             "edit.page_next" => Self::PageNext,
@@ -765,6 +1025,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "pad.copy",
+        label: "copy pad",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
         name: "pad.mode_next",
         label: "pad mode",
         group: Group::Pads,
@@ -1164,6 +1430,18 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "chop.hits_back",
+        label: "chop by hits, one step back",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.assign_order",
+        label: "assign: in order / by hand",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
         name: "slice.start_left",
         label: "slice start left",
         group: Group::Chop,
@@ -1504,12 +1782,14 @@ pub const ACTIONS: &[ActionInfo] = &[
     },
 ];
 
-/// A key with or without Ctrl and Alt; characters are lowercase Latin.
+/// A key with or without Ctrl, Alt and Shift; characters are lowercase Latin. `Shift+Tab`
+/// is the `BackTab` code with `shift` false: it is its own key, not a shifted command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Chord {
     code: KeyCode,
     ctrl: bool,
     alt: bool,
+    shift: bool,
 }
 
 /// The pad block in Latin, in pad order.
@@ -1580,6 +1860,11 @@ impl HeldKeys {
 pub struct HeldPads([bool; 16], bool);
 
 impl HeldPads {
+    /// Whether a pad key was accepted by the held-key filter and has not released.
+    pub fn is_held(&self, pad: usize) -> bool {
+        self.0.get(pad).copied().unwrap_or(false)
+    }
+
     /// Drops presses of a key that is already held; passes everything else through.
     pub fn filter(&mut self, action: Action) -> Option<Action> {
         match action {
@@ -1654,11 +1939,13 @@ impl HeldModifiers {
 }
 
 pub struct Keymap {
-    global: HashMap<Chord, Action>,
+    /// `None` is an explicit `none` of the keymap: it runs nothing and blocks the Shift
+    /// and Tab fallbacks, unlike a chord that no entry names.
+    global: HashMap<Chord, Option<Action>>,
     /// The edit layer: over the screen keys while an edit mode is open, the same on
     /// every screen.
-    edit: HashMap<Chord, Action>,
-    screens: HashMap<Screen, HashMap<Chord, Action>>,
+    edit: HashMap<Chord, Option<Action>>,
+    screens: HashMap<Screen, HashMap<Chord, Option<Action>>>,
     default_velocity: f32,
     shift_velocity: f32,
 }
@@ -1678,7 +1965,7 @@ impl Keymap {
     }
 
     /// Lays a keymap file over this one (64): a key of a section replaces that key of the
-    /// section, `"none"` takes it away, the rest stays. Returns the warnings; an error
+    /// section, `"none"` keeps it silent, the rest stays. Returns the warnings; an error
     /// names the line and leaves the keymap as it was.
     pub fn overlay(&mut self, text: &str) -> Result<Vec<String>, String> {
         let t: toml::Table = text.parse().map_err(|e: toml::de::Error| {
@@ -1701,7 +1988,7 @@ impl Keymap {
             }
         }
         let mut section =
-            |name: &str, table: Option<&toml::Value>, map: &mut HashMap<Chord, Action>| {
+            |name: &str, table: Option<&toml::Value>, map: &mut HashMap<Chord, Option<Action>>| {
                 for (key, action) in table.and_then(|v| v.as_table()).into_iter().flatten() {
                     let chord = match parse_chord(key) {
                         Ok(chord) => chord,
@@ -1711,12 +1998,14 @@ impl Keymap {
                         }
                     };
                     match action.as_str() {
+                        // `none` is remembered, not removed: it blocks the fallback of
+                        // the shifted twin; a later overlay may bind the key again
                         Some("none") => {
-                            map.remove(&chord);
+                            map.insert(chord, None);
                         }
                         a => match a.and_then(Action::parse) {
                             Some(action) => {
-                                map.insert(chord, action);
+                                map.insert(chord, Some(action));
                             }
                             // a binding to nothing is named, not skipped quietly (71)
                             None => warnings.push(format!(
@@ -1801,44 +2090,92 @@ impl Keymap {
         if e.kind != KeyEventKind::Press {
             // a hold action stops on the release of its key
             if e.kind == KeyEventKind::Release {
-                let code = match e.code {
-                    KeyCode::Char(c) => KeyCode::Char(normalize(c)),
-                    c => c,
-                };
-                let bound = self
-                    .screens
-                    .get(&screen)
-                    .and_then(|m| m.get(&Chord { code, ctrl, alt }))
-                    .or_else(|| self.global.get(&Chord { code, ctrl, alt }))
-                    .copied();
-                if matches!(bound, Some(Action::RecordMic(_))) {
+                let (code, shift) = chord_parts(e);
+                // the Shift key may come up before or after the key of the chord, so
+                // both twins answer the microphone question
+                let mic = [shift, !shift].iter().any(|shift| {
+                    let chord = Chord {
+                        code,
+                        ctrl,
+                        alt,
+                        shift: *shift,
+                    };
+                    matches!(
+                        self.screens
+                            .get(&screen)
+                            .and_then(|m| m.get(&chord))
+                            .or_else(|| self.global.get(&chord)),
+                        Some(&Some(Action::RecordMic(_)))
+                    )
+                });
+                if mic {
                     return Some(Action::RecordMic(false));
                 }
             }
             return None;
         }
-        let code = match e.code {
-            KeyCode::Char(c) => KeyCode::Char(normalize(c)),
-            // with the kitty protocol Shift+Tab may come as Tab with Shift
-            KeyCode::Tab if e.modifiers.contains(KeyModifiers::SHIFT) => KeyCode::BackTab,
-            c => c,
-        };
-        let find = |code| {
-            let chord = Chord { code, ctrl, alt };
-            editing
-                .then(|| self.edit.get(&chord))
-                .flatten()
-                .or_else(|| self.screens.get(&screen).and_then(|m| m.get(&chord)))
-                .or_else(|| self.global.get(&chord))
-        };
-        // Shift+Tab where nothing binds it acts as Tab, as before the page keys (54)
-        find(code)
-            .or_else(|| {
-                (code == KeyCode::BackTab)
-                    .then(|| find(KeyCode::Tab))
-                    .flatten()
-            })
-            .map(|&a| with_step(a, true))
+        let (code, shift) = chord_parts(e);
+        self.bound(
+            screen,
+            editing,
+            Chord {
+                code,
+                ctrl,
+                alt,
+                shift,
+            },
+        )
+        .map(|a| with_step(a, true))
+    }
+
+    /// The entry of the chord: `Some(&Some(action))` when a section binds it, `Some(&None)`
+    /// for an explicit `none`, `None` when no entry names it. The edit layer comes first
+    /// when it is open, then the screen, then the shared keys.
+    fn entry(&self, screen: Screen, editing: bool, c: Chord) -> Option<&Option<Action>> {
+        editing
+            .then(|| self.edit.get(&c))
+            .flatten()
+            .or_else(|| self.screens.get(&screen).and_then(|m| m.get(&c)))
+            .or_else(|| self.global.get(&c))
+    }
+
+    /// The action the chord runs. A Shift chord no entry names acts as its plain chord,
+    /// as before Shift commands; an explicit `none`, of either twin, runs nothing and
+    /// blocks the fallback. `Shift+Tab` no entry names acts as `Tab`, as before the page
+    /// keys (54); its explicit `none` blocks that fallback too.
+    fn bound(&self, screen: Screen, editing: bool, c: Chord) -> Option<Action> {
+        match self.entry(screen, editing, c) {
+            Some(&Some(a)) => Some(a),
+            Some(&None) => None,
+            None => {
+                if c.shift {
+                    match self.entry(screen, editing, Chord { shift: false, ..c }) {
+                        Some(&Some(a)) => Some(a),
+                        _ => None,
+                    }
+                } else if c.code == KeyCode::BackTab {
+                    self.entry(
+                        screen,
+                        editing,
+                        Chord {
+                            code: KeyCode::Tab,
+                            shift: false,
+                            ..c
+                        },
+                    )
+                    .and_then(|a| *a)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Looks up an explicit chord in edit, screen and global priority order. An outer
+    /// `None` means no entry (or an invalid chord); `Some(None)` means an explicit removal.
+    /// Unlike resolution, this does not use Shift or Tab fallback or change action steps.
+    pub fn binding_for(&self, screen: Screen, editing: bool, key: &str) -> Option<Option<Action>> {
+        self.entry(screen, editing, parse_chord(key).ok()?).copied()
     }
 
     /// Keys of an action in the edit layer, for the help line of the edit mode.
@@ -1846,7 +2183,7 @@ impl Keymap {
         let mut keys: Vec<String> = self
             .edit
             .iter()
-            .filter(|(_, a)| **a == action)
+            .filter(|(_, a)| **a == Some(action))
             .map(|(c, _)| chord_name(c))
             .collect();
         keys.sort();
@@ -1862,7 +2199,7 @@ impl Keymap {
             .chain([&self.global])
             .flat_map(|m| {
                 m.iter()
-                    .filter(|(_, a)| **a == action)
+                    .filter(|(_, a)| **a == Some(action))
                     .map(|(c, _)| chord_name(c))
             })
             .collect();
@@ -1878,7 +2215,10 @@ impl Keymap {
             .get(&screen)
             .into_iter()
             .chain([&self.global])
-            .flat_map(|m| m.iter().map(|(c, a)| (chord_name(c), *a)))
+            .flat_map(|m| {
+                m.iter()
+                    .filter_map(|(c, a)| a.as_ref().map(|a| (chord_name(c), *a)))
+            })
             .collect();
         all.sort_by(|a, b| a.0.cmp(&b.0));
         all
@@ -1888,6 +2228,22 @@ impl Keymap {
 /// A character that, without the kitty protocol, means Shift+digit or an uppercase letter.
 fn is_shifted(c: char) -> bool {
     c.is_uppercase() || SHIFTED_DIGITS.iter().any(|(s, _)| *s == c)
+}
+
+/// The chord of an event: the normalized key, and whether Shift is part of it. Without
+/// the kitty protocol Shift arrives as an uppercase character; `Shift+Tab` is the
+/// `BackTab` key in both protocols, never a shifted command.
+fn chord_parts(e: &KeyEvent) -> (KeyCode, bool) {
+    match e.code {
+        KeyCode::Char(c) => (
+            KeyCode::Char(normalize(c)),
+            e.modifiers.contains(KeyModifiers::SHIFT) || is_shifted(c),
+        ),
+        // with the kitty protocol Shift+Tab may come as Tab with Shift
+        KeyCode::Tab if e.modifiers.contains(KeyModifiers::SHIFT) => (KeyCode::BackTab, false),
+        KeyCode::BackTab => (KeyCode::BackTab, false),
+        c => (c, e.modifiers.contains(KeyModifiers::SHIFT)),
+    }
 }
 
 /// A tap of a value or a bound key is the fine step, a held key repeats the coarse one;
@@ -1906,16 +2262,23 @@ fn with_step(a: Action, tap: bool) -> Action {
 }
 
 fn parse_chord(key: &str) -> Result<Chord, String> {
-    // both orders of the modifiers are fine: Ctrl+Alt+Left and Alt+Ctrl+Left
+    // any order of the modifiers is fine: Ctrl+Alt+Left, Alt+Ctrl+Left, Ctrl+Shift+H;
+    // `Shift+Tab` is its own key, not a shifted command
     let mut ctrl = false;
     let mut alt = false;
+    let mut shift = false;
     let mut name = key;
-    for _ in 0..2 {
+    for _ in 0..3 {
         if let Some(rest) = name.strip_prefix("Ctrl+") {
             ctrl = true;
             name = rest;
         } else if let Some(rest) = name.strip_prefix("Alt+") {
             alt = true;
+            name = rest;
+        } else if name != "Shift+Tab"
+            && let Some(rest) = name.strip_prefix("Shift+")
+        {
+            shift = true;
             name = rest;
         }
     }
@@ -1943,12 +2306,6 @@ fn parse_chord(key: &str) -> Result<Chord, String> {
             KeyCode::F(f[1..].parse().map_err(|_| "unknown key".to_string())?)
         }
         c if c.chars().count() == 1 => KeyCode::Char(normalize(c.chars().next().unwrap_or(' '))),
-        c if c.strip_prefix("Shift+").is_some_and(|k| {
-            k.chars().count() == 1 && PADS_US.contains(&normalize(k.chars().next().unwrap_or(' ')))
-        }) =>
-        {
-            return Err("pad keys cannot be commands".into());
-        }
         _ => return Err("unknown key".into()),
     };
     if let KeyCode::Char(c) = code
@@ -1958,7 +2315,24 @@ fn parse_chord(key: &str) -> Result<Chord, String> {
     {
         return Err("pad keys cannot be commands".into());
     }
-    Ok(Chord { code, ctrl, alt })
+    Ok(Chord {
+        code,
+        ctrl,
+        alt,
+        shift,
+    })
+}
+
+/// The normalized chord name of an event, independent of keyboard layout or event kind.
+/// Uppercase legacy characters name Shift chords, as extended Shift events do.
+pub fn key_name(e: &KeyEvent) -> String {
+    let (code, shift) = chord_parts(e);
+    chord_name(&Chord {
+        code,
+        ctrl: e.modifiers.contains(KeyModifiers::CONTROL),
+        alt: e.modifiers.contains(KeyModifiers::ALT),
+        shift,
+    })
 }
 
 fn chord_name(c: &Chord) -> String {
@@ -1979,13 +2353,16 @@ fn chord_name(c: &Chord) -> String {
         KeyCode::F(n) => format!("F{n}"),
         other => format!("{other:?}"),
     };
-    if c.ctrl || c.alt {
+    if c.ctrl || c.alt || c.shift {
         let mut name = String::new();
         if c.ctrl {
             name.push_str("Ctrl+");
         }
         if c.alt {
             name.push_str("Alt+");
+        }
+        if c.shift {
+            name.push_str("Shift+");
         }
         name.push_str(&key);
         name
@@ -2171,6 +2548,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn inspect_entries_keeps_removals_and_layer_priority() {
+        let (k, warnings) = Keymap::from_toml(
+            "[global]\nH = \"help.toggle\"\n\"Shift+H\" = \"help.toggle\"\n[edit]\nH = \"none\"\n[screens.chop]\nH = \"chop.hits\"\n",
+        )
+        .unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            k.binding_for(Screen::Pads, false, "H"),
+            Some(Some(Action::HelpToggle))
+        );
+        assert_eq!(
+            k.binding_for(Screen::Chop, false, "Р"),
+            Some(Some(Action::ChopHits))
+        );
+        assert_eq!(k.binding_for(Screen::Chop, true, "H"), Some(None));
+        assert_eq!(
+            k.binding_for(Screen::Pads, false, "Shift+H"),
+            Some(Some(Action::HelpToggle))
+        );
+        assert_eq!(k.binding_for(Screen::Pads, false, "Shift+J"), None);
+        assert_eq!(k.binding_for(Screen::Pads, false, "not a key"), None);
+        assert_eq!(k.binding_for(Screen::Pads, false, "Q"), None);
+    }
+
+    #[test]
+    fn event_names_use_the_same_chords_as_keymap_entries() {
+        for (us, ru) in [('r', 'к'), ('n', 'т'), ('y', 'н'), ('h', 'р')] {
+            for mods in [
+                KeyModifiers::NONE,
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+                KeyModifiers::SHIFT,
+            ] {
+                assert_eq!(
+                    key_name(&ev(KeyCode::Char(us), mods, KeyEventKind::Press)),
+                    key_name(&ev(KeyCode::Char(ru), mods, KeyEventKind::Release))
+                );
+            }
+        }
+        for c in ['H', 'Р'] {
+            assert_eq!(key_name(&press(c)), "Shift+H");
+        }
+        assert_eq!(
+            key_name(&ev(KeyCode::Tab, KeyModifiers::SHIFT, KeyEventKind::Press)),
+            "Shift+Tab"
+        );
+        assert_eq!(
+            key_name(&ev(
+                KeyCode::BackTab,
+                KeyModifiers::NONE,
+                KeyEventKind::Press
+            )),
+            "Shift+Tab"
+        );
+    }
+
     fn keymap() -> Keymap {
         let (k, warnings) = Keymap::from_toml(KEYMAP).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
@@ -2328,22 +2762,23 @@ mod tests {
     #[test]
     fn record_keys_start_and_stop() {
         let k = keymap();
-        let ctrl = |c, kind| ev(KeyCode::Char(c), KeyModifiers::CONTROL, kind);
+        let alt = |c, kind| ev(KeyCode::Char(c), KeyModifiers::ALT, kind);
         assert_eq!(
-            k.resolve(Screen::Pads, &ctrl('r', KeyEventKind::Press)),
+            k.resolve(Screen::Pads, &alt('r', KeyEventKind::Press)),
             Some(Action::RecordMic(true)),
-            "pressing Ctrl+R starts the microphone"
+            "pressing Alt+R starts the microphone"
         );
         assert_eq!(
-            k.resolve(Screen::Pads, &ctrl('r', KeyEventKind::Release)),
+            k.resolve(Screen::Pads, &alt('r', KeyEventKind::Release)),
             Some(Action::RecordMic(false)),
-            "releasing Ctrl+R stops it"
+            "releasing Alt+R stops it"
         );
         assert_eq!(
-            k.resolve(Screen::Files, &ctrl('r', KeyEventKind::Repeat)),
+            k.resolve(Screen::Files, &alt('r', KeyEventKind::Repeat)),
             None,
             "auto-repeat must not restart the recording"
         );
+        let ctrl = |c, kind| ev(KeyCode::Char(c), KeyModifiers::CONTROL, kind);
         assert_eq!(
             k.resolve(Screen::Pads, &ctrl('t', KeyEventKind::Press)),
             Some(Action::RecordOutputToggle)
@@ -2458,16 +2893,36 @@ mod tests {
             k.resolve(Screen::Pads, &press('ь')),
             Some(Action::PadMarkToggle)
         );
-        assert_eq!(k.resolve(Screen::Pads, &press('u')), None, "U is free");
+        // 83a "Keyboard bank controls": U/O turn the banks, also in the Russian layout
+        assert_eq!(k.resolve(Screen::Pads, &press('u')), Some(Action::BankPrev));
+        assert_eq!(k.resolve(Screen::Pads, &press('г')), Some(Action::BankPrev));
+        assert_eq!(k.resolve(Screen::Pads, &press('o')), Some(Action::BankNext));
+        assert_eq!(k.resolve(Screen::Pads, &press('щ')), Some(Action::BankNext));
         assert_eq!(
             k.resolve(Screen::Settings, &key(KeyCode::Right)),
             Some(Action::SettingsValue(1))
         );
-        // 21 "Banks on J and L": the direction keys turn the banks, no pad is picked
-        assert_eq!(k.resolve(Screen::Pads, &press('l')), Some(Action::BankNext));
+        // 83a: the direction keys change values, not banks, with the edit open or closed
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('l')),
+            Some(Action::EditValue {
+                up: true,
+                fine: true
+            })
+        );
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('д')),
+            Some(Action::EditValue {
+                up: true,
+                fine: true
+            })
+        );
         assert_eq!(
             k.resolve(Screen::Pads, &key(KeyCode::Left)),
-            Some(Action::BankPrev)
+            Some(Action::EditValue {
+                up: false,
+                fine: true
+            })
         );
         // ↑ picks no pad: it walks the parameters, with the edit closed too (70)
         assert_eq!(
@@ -2559,15 +3014,15 @@ mod tests {
         );
     }
 
-    /// Hold and speak: Ghostty repeats a held Ctrl+R as presses, they must not stop the recording.
+    /// Hold and speak: Ghostty repeats a held Alt+R as presses, they must not stop the recording.
     #[test]
     fn hold_and_speak_ignores_auto_repeat() {
         let k = keymap();
         let mut held = HeldPads::default();
-        let ctrl_r = |kind| ev(KeyCode::Char('к'), KeyModifiers::CONTROL, kind);
+        let alt_r = |kind| ev(KeyCode::Char('к'), KeyModifiers::ALT, kind);
         let mut got = Vec::new();
-        for e in std::iter::repeat_n(ctrl_r(KeyEventKind::Press), 20)
-            .chain([ctrl_r(KeyEventKind::Release), ctrl_r(KeyEventKind::Press)])
+        for e in std::iter::repeat_n(alt_r(KeyEventKind::Press), 20)
+            .chain([alt_r(KeyEventKind::Release), alt_r(KeyEventKind::Press)])
         {
             got.extend(k.resolve(Screen::Pads, &e).and_then(|a| held.filter(a)));
         }
@@ -2579,6 +3034,25 @@ mod tests {
                 Action::RecordMic(true)
             ]
         );
+    }
+
+    #[test]
+    fn held_pad_query_keeps_filter_state() {
+        let mut held = HeldPads::default();
+        assert!(!held.is_held(4));
+        assert!(!held.is_held(16));
+        let press = Action::PadPress {
+            pad: 4,
+            velocity: 1.0,
+        };
+        assert_eq!(held.filter(press), Some(press));
+        assert!(held.is_held(4));
+        assert!(held.is_held(4), "a query does not consume the hold");
+        assert!(!held.is_held(5));
+        assert_eq!(held.filter(press), None);
+        held.filter(Action::PadRelease { pad: 4 });
+        assert!(!held.is_held(4));
+        assert_eq!(held.filter(press), Some(press));
     }
 
     /// Recorded from Ghostty, Russian layout, Shift held: key auto-repeat arrives as presses.
@@ -2643,18 +3117,15 @@ mod tests {
     #[test]
     fn help_shows_keys() {
         let k = keymap();
-        assert_eq!(
-            k.keys_for(Screen::Pads, Action::BankNext),
-            ["L", "PgDn", "→"]
-        );
+        // 83a: U/O turn the banks on pads; the arrows change values there
+        assert_eq!(k.keys_for(Screen::Pads, Action::BankNext), ["O", "PgDn"]);
+        assert_eq!(k.keys_for(Screen::Pads, Action::BankPrev), ["PgUp", "U"]);
         let down = Action::EditValue {
             up: false,
             fine: false,
         };
-        assert!(
-            k.keys_for(Screen::Pads, down).is_empty(),
-            "values change in the edit"
-        );
+        // 83a: the value keys sit on the screen layer too, with the edit closed
+        assert_eq!(k.keys_for(Screen::Pads, down), ["J", "←"]);
         assert_eq!(k.edit_keys_for(down), ["J", "←"]);
     }
 
@@ -2749,6 +3220,242 @@ mod tests {
         assert_eq!(
             k.resolve(Screen::Settings, &key(KeyCode::BackTab)),
             k.resolve(Screen::Settings, &key(KeyCode::Tab))
+        );
+    }
+
+    /// Scenario "An unbound Shift chord acts as its plain key" (keyboard, 83a): with no
+    /// Shift command bound, the shifted press of a command key runs the plain key's
+    /// action in both input forms and both layouts.
+    #[test]
+    fn an_unbound_shift_chord_acts_as_its_plain_key() {
+        let k = keymap();
+        let shift = |c| ev(KeyCode::Char(c), KeyModifiers::SHIFT, KeyEventKind::Press);
+        // the extended protocol names the base key and the modifier
+        assert_eq!(
+            k.resolve(Screen::Pads, &shift('h')),
+            Some(Action::PadModeNext)
+        );
+        // without it, Shift arrives as an uppercase character; Р is the Russian H key
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('H')),
+            Some(Action::PadModeNext)
+        );
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('Р')),
+            Some(Action::PadModeNext)
+        );
+        assert_eq!(
+            k.resolve(Screen::Pads, &shift('р')),
+            Some(Action::PadModeNext)
+        );
+        // a Shift chord of the pad block stays a full-velocity pad, not a command
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('Й')),
+            Some(Action::PadPress {
+                pad: 4,
+                velocity: 1.0
+            })
+        );
+        assert_eq!(
+            k.resolve(Screen::Pads, &shift('й')),
+            Some(Action::PadPress {
+                pad: 4,
+                velocity: 1.0
+            })
+        );
+    }
+
+    /// Scenario "An explicit none on a Shift chord blocks the fallback" (keyboard, 83a):
+    /// the owner's `none` keeps the shifted press silent, of the Tab fallback too, and
+    /// the plain key keeps its action without Shift.
+    #[test]
+    fn an_explicit_none_on_a_shift_chord_blocks_the_fallback() {
+        let (mut k, warnings) = Keymap::from_toml(KEYMAP).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        k.overlay("[screens.pads]\n\"Shift+H\" = \"none\"\n[screens.settings]\n\"Shift+Tab\" = \"none\"\n")
+            .unwrap();
+        let shift = |c| ev(KeyCode::Char(c), KeyModifiers::SHIFT, KeyEventKind::Press);
+        for e in [shift('h'), press('H'), press('Р'), shift('р')] {
+            assert_eq!(k.resolve(Screen::Pads, &e), None, "{e:?}");
+        }
+        // the plain key keeps its action without Shift
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('h')),
+            Some(Action::PadModeNext)
+        );
+        // the `none` blocks the Tab fallback of Shift+Tab as well
+        let back_tab = ev(KeyCode::BackTab, KeyModifiers::SHIFT, KeyEventKind::Press);
+        assert_eq!(k.resolve(Screen::Settings, &back_tab), None);
+        assert_eq!(
+            k.resolve(
+                Screen::Settings,
+                &ev(KeyCode::Tab, KeyModifiers::NONE, KeyEventKind::Press)
+            ),
+            Some(Action::SettingsTab)
+        );
+        // a plain `none` silences the key for the shifted press too, and a later
+        // overlay may bind the chord again
+        k.overlay("[screens.pads]\nH = \"none\"\n").unwrap();
+        assert_eq!(k.resolve(Screen::Pads, &press('h')), None);
+        assert_eq!(k.resolve(Screen::Pads, &shift('h')), None);
+        k.overlay("[screens.pads]\n\"Shift+H\" = \"pad.clear\"\n")
+            .unwrap();
+        assert_eq!(k.resolve(Screen::Pads, &shift('h')), Some(Action::PadClear));
+        assert_eq!(k.resolve(Screen::Pads, &press('H')), Some(Action::PadClear));
+    }
+
+    /// Scenario "Shift H is a distinct command in both input forms" (keyboard, 83a), on
+    /// the resolution level: an existing action stands in for the future `chop.hits_back`.
+    #[test]
+    fn a_bound_shift_chord_is_distinct_from_its_plain_key() {
+        let (mut k, warnings) = Keymap::from_toml(KEYMAP).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        k.overlay("[screens.chop]\n\"Shift+H\" = \"chop.normalize\"\n")
+            .unwrap();
+        let shift = |c| ev(KeyCode::Char(c), KeyModifiers::SHIFT, KeyEventKind::Press);
+        assert_eq!(
+            k.resolve(Screen::Chop, &shift('h')),
+            Some(Action::ChopNormalize)
+        );
+        // the legacy uppercase input, in both layouts
+        assert_eq!(
+            k.resolve(Screen::Chop, &press('H')),
+            Some(Action::ChopNormalize)
+        );
+        assert_eq!(
+            k.resolve(Screen::Chop, &press('Р')),
+            Some(Action::ChopNormalize)
+        );
+        assert_eq!(
+            k.resolve(Screen::Chop, &shift('р')),
+            Some(Action::ChopNormalize)
+        );
+        // the plain key keeps its own command: H chops by hits on the chop screen (83a)
+        assert_eq!(k.resolve(Screen::Chop, &press('h')), Some(Action::ChopHits));
+        // another screen keeps its layers: on Pads the shift chord falls back to plain H
+        assert_eq!(
+            k.resolve(Screen::Pads, &shift('h')),
+            Some(Action::PadModeNext)
+        );
+        // the help names the chord
+        assert!(
+            k.keys_for(Screen::Chop, Action::ChopNormalize)
+                .contains(&"Shift+H".into())
+        );
+        // a held shifted key acts once, and its release runs nothing
+        assert_eq!(
+            k.resolve(
+                Screen::Chop,
+                &ev(
+                    KeyCode::Char('h'),
+                    KeyModifiers::SHIFT,
+                    KeyEventKind::Repeat
+                )
+            ),
+            None
+        );
+        assert_eq!(
+            k.resolve(
+                Screen::Chop,
+                &ev(
+                    KeyCode::Char('h'),
+                    KeyModifiers::SHIFT,
+                    KeyEventKind::Release
+                )
+            ),
+            None
+        );
+        // Shift+Tab, the Ctrl/Alt chords and the pads keep their behavior; 83a: the chop
+        // Tab fallback lands on the named assign order action
+        assert_eq!(
+            k.resolve(
+                Screen::Chop,
+                &ev(KeyCode::Tab, KeyModifiers::SHIFT, KeyEventKind::Press)
+            ),
+            Some(Action::ChopAssignOrder),
+            "Shift+Tab falls back to Tab on the chop screen"
+        );
+        assert_eq!(
+            k.resolve(
+                Screen::Chop,
+                &ev(
+                    KeyCode::Char('j'),
+                    KeyModifiers::CONTROL,
+                    KeyEventKind::Press
+                )
+            ),
+            Some(Action::SliceBound {
+                end: false,
+                right: false,
+                fine: true
+            })
+        );
+    }
+
+    /// Shift chords parse for commands, keep `Shift+Tab` its own key and refuse the pad
+    /// block, alone or with Shift, as commands.
+    #[test]
+    fn shift_chord_parsing() {
+        let (k, warnings) = Keymap::from_toml(
+            "[global]\n\"Shift+H\" = \"help.toggle\"\n\"Alt+Shift+H\" = \"help.toggle\"\n\"Ctrl+Shift+Tab\" = \"help.toggle\"\n",
+        )
+        .unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            k.resolve(
+                Screen::Pads,
+                &ev(KeyCode::Char('h'), KeyModifiers::SHIFT, KeyEventKind::Press)
+            ),
+            Some(Action::HelpToggle)
+        );
+        assert_eq!(
+            k.resolve(
+                Screen::Pads,
+                &ev(
+                    KeyCode::Char('h'),
+                    KeyModifiers::ALT | KeyModifiers::SHIFT,
+                    KeyEventKind::Press
+                )
+            ),
+            Some(Action::HelpToggle)
+        );
+        assert_eq!(
+            k.resolve(
+                Screen::Pads,
+                &ev(
+                    KeyCode::Tab,
+                    KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                    KeyEventKind::Press
+                )
+            ),
+            Some(Action::HelpToggle),
+            "Ctrl+Shift+Tab is the Ctrl chord of the BackTab key"
+        );
+        assert_eq!(
+            k.bindings(Screen::Pads),
+            [
+                ("Alt+Shift+H".into(), Action::HelpToggle),
+                ("Ctrl+Shift+Tab".into(), Action::HelpToggle),
+                ("Shift+H".into(), Action::HelpToggle),
+            ]
+        );
+        // the pad block stays out of the commands, with Shift too
+        let (k, warnings) = Keymap::from_toml(
+            "[global]\n\"Shift+Q\" = \"help.toggle\"\n\"Shift+!\" = \"help.toggle\"\nQ = \"help.toggle\"\n",
+        )
+        .unwrap();
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        assert!(
+            warnings
+                .iter()
+                .all(|w| w.ends_with("pad keys cannot be commands"))
+        );
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('q')),
+            Some(Action::PadPress {
+                pad: 4,
+                velocity: 80.0 / 127.0
+            })
         );
     }
 
@@ -2908,7 +3615,8 @@ mod tests {
                 Screen::Chop,
                 &ev(KeyCode::Tab, KeyModifiers::NONE, KeyEventKind::Press)
             ),
-            Some(Action::ParamNext)
+            // 83a: Tab is the named assign order action on the chop screen
+            Some(Action::ChopAssignOrder)
         );
         assert_eq!(k.resolve(Screen::Chop, &ctrl('z')), Some(Action::Undo));
         assert_eq!(
@@ -2925,18 +3633,20 @@ mod tests {
         ));
     }
 
-    /// 04d "More presses, more cuts": Ctrl+Y chops by hits on the chop screen; the global
-    /// `edit.redo` it was bound to is gone (a redo, if ever, takes Ctrl+Shift+Z).
+    /// 83a chopping "H cuts at the marks by default": H chops by hits on the chop
+    /// screen; the old Ctrl+Y stays reserved for redo in 93a and runs nothing by default.
     #[test]
-    fn ctrl_y_chops_by_hits() {
+    fn h_chops_by_hits_and_ctrl_y_stays_free() {
         let k = keymap();
+        assert_eq!(k.resolve(Screen::Chop, &press('h')), Some(Action::ChopHits));
+        assert_eq!(k.resolve(Screen::Chop, &press('р')), Some(Action::ChopHits));
         let ctrl = |c, screen| {
             k.resolve(
                 screen,
                 &ev(KeyCode::Char(c), KeyModifiers::CONTROL, KeyEventKind::Press),
             )
         };
-        assert_eq!(ctrl('y', Screen::Chop), Some(Action::ChopHits));
+        assert_eq!(ctrl('y', Screen::Chop), None);
         assert_eq!(ctrl('y', Screen::Pads), None);
     }
 

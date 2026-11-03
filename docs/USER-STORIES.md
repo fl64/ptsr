@@ -35,6 +35,18 @@ Notes:
 6. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` page the banks on all screens with pads: on the
    pads, in edit mode, on the chop screen, in the files.
 
+## Read pad playback
+
+1. Open `F2`. Next to `F2 PADS`, PLAY is dim when no pad plays.
+2. Hit a keyboard pad or a controller pad. While a real pad voice plays, PLAY is blue
+   with `▶`. A brief pad flash or a queued hit alone does not light it.
+3. Change bank, open pad edit with `Enter` or hide the grid with `Ctrl+O`. PLAY counts
+   all sounding pads in all banks, not only the selected pad or the bank in view.
+4. When the last pad voice ends, PLAY becomes dim. A gate stays active through its
+   release fade. A sample preview or an effect tail alone does not keep PLAY lit.
+5. PLAY keeps the same width on start and stop. An existing MARK plate stays in place
+   and keeps its yellow color. PLAY is an indicator, not a new transport control.
+
 ## Your own keys
 
 1. `[64]` Create the file `~/.config/ptsr/keymap.toml`. Write in it only the keys
@@ -165,8 +177,11 @@ Notes:
    each pad. Outside edit mode, `Backspace` takes the sound off the selected pad. If pads have
    marks, it first asks `Clear 3 pads?`. `Enter` takes the sounds off the marked pads, the
    files on disk stay. `Esc` keeps them. `Ctrl+Z` brings the sounds back.
-10. Outside edit mode, `J` and `L` page the banks. `[43]` `PgUp` `PgDn` also page the
-    banks in edit mode.
+10. `[83a]` `U` and `O` turn the banks, with the edit open or closed; `J` `L` and the
+    arrows change the selected value instead. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` also
+    turn the banks. `[83a]` `Ctrl+C` takes a copy of the selected loaded pad: the next
+    pad hit places it (an occupied pad asks first), the copy keeps every setting with a
+    name ending in ` 2`, and `Ctrl+Z` brings the target back.
 11. `[21]` Turn knobs 1–3 of the controller in edit mode. They change the parameters of
     the page.
 12. `[21]` The strip above the grid shows the envelope of the pad as a line on the wave.
@@ -452,17 +467,20 @@ Use the keyboard or explicit MIDI learn for these actions.
 7. Press `N`. The cursor step changes: equal steps, from hit to hit, from cut to cut.
     `[51]` In hit mode, marks `▾` are above the wave. The cursor stops only on them. They
     are the hits that are a maximum of 12 dB quieter than the loudest hit. The program
-    ignores small rises in a sound. After `Ctrl+Y`, the marks are exactly on its cuts.
+    ignores small rises in a sound. After `H`, the marks are exactly on its cuts.
     The two use the same threshold.
     `[04d]` When the mode "from hit to hit" is on, `M` puts the cut on the nearest hit.
     The maximum distance is 90 ms from the point where you pressed. The status shows
     "marker snapped to hit". Set `N` to a different mode: the cut goes where you pressed.
 8. Press `Y`. The program chops into equal parts: 2, 4, 8, 16, 32.
-    `[04d]` Press `Ctrl+Y`. The program chops by hits. The first press puts cuts on the
+    `[83a]` Press `H`. The program chops by hits. The first press puts cuts on the
     loudest hits. Each next press decreases the threshold: −12, −18, −24, −30 dB, then −6
-    again. Quieter hits get their own cuts. The status names the threshold and the number
+    again. `Shift+H` steps the threshold one value back, stopping at −6 dB without
+    wrapping. Quieter hits get their own cuts. The status names the threshold and the number
     of cuts. `Ctrl+Z` returns the cuts of the previous press.
-    `[68]` `Ctrl+Y` replaces manual cuts, and the status tells you:
+    `[83a]` Press `Ctrl+G`. The pad this chop came from normalizes to a −1 dB peak.
+    `[83a]` While assigning, `Tab` switches the plan between in order and by hand.
+    `[68]` `H` replaces manual cuts, and the status tells you:
     `by hits at -6 dB: 3 slices (were 16) · Ctrl+Z brings them back`.
     `[04d]` Knob k11 of the X-Session changes the same threshold continuously. The range
     is from 0 to −40 dB below the loudest hit. Cuts show and disappear immediately with
@@ -499,6 +517,56 @@ Use the keyboard or explicit MIDI learn for these actions.
     line tells how many pads returned.
 12. `[35]` The hint line above the help tells the next step: chop, assign, move the
     bounds.
+
+## Keyboard and controller pads on Chop
+
+`[84]` Use the same pad positions in the current bank from either input. A device
+without a profile uses notes 36–51. A control explicitly bound to `pad.1`…`pad.16`
+also works. The X-Session Pro has no physical pad grid; its default command buttons
+are not pad hits. The SMC-PAD profile is still a template, not a verified device map.
+
+### Keyboard pass
+
+1. Open a cut sample on `F3` before any slice is linked to a pad. Hit a pad key.
+   It selects and previews the slice at that position on the current bank page.
+   `PgDn` opens the next page of slices.
+2. Put slices on pads with `P`, target hits and `Enter`. In listen mode, hit a linked
+   pad. It plays with that pad's pitch, filter and other settings and selects its slice.
+   `Shift` gives full velocity; a plain key gives velocity 80. In listen and slice edit,
+   the thin green line follows that pad's real playback position and pitch. It starts
+   again on a new hit and disappears when the voice ends. Playback progress does not
+   move your edit cursor. `Space` and `M` keep their existing behavior.
+3. Press `P` with a slice selected. Each target hit adds that slice to the by-hand
+   plan, previews it and selects the next unplanned slice. Turn banks to add targets
+   there. Hits do not apply the plan. `Enter` applies; an occupied target asks first.
+4. Under a question or in `F10` learn, new pad hits stay silent and do not change a
+   plan. A gate key held before learn still releases its original pad, even after a
+   bank or screen change. A new silent learn key does not stop an older held pad.
+
+### Controller pass
+
+1. Repeat the listen and assign steps with controller notes or learned pad buttons
+   instead of keyboard pad hits. Use the keyboard for commands that have no binding.
+   The slice selection, plan and target must match the keyboard pass.
+2. A linked pad keeps the note velocity or the CC press value. A light hit is quieter.
+   Compare full MIDI velocity 127 with `Shift` on the keyboard. Bare slice previews
+   keep their existing preview level; they do not gain a new velocity rule.
+3. Release the original note or button after a bank or screen change, question or
+   `F10`. The original gate pad stops. Disconnecting that device also releases it.
+   New hits in learn stay silent and cannot take another control's held pad.
+
+The same green line works with Braille and picture waves. If several pads of this chop
+sound, it follows the most recently started voice that still sounds. While a Space or
+slice preview sounds, its existing line has priority. A pad of another sample does not
+put a line on this waveform. The line does not scroll the view to follow the sound.
+The LISTEN badge keeps the same width: dim at rest, blue with `▶` while a preview or
+linked pad of this chop plays. A voice beyond the visible wave still lights it. The
+file name does not shift. An effect tail alone does not keep LISTEN lit.
+
+Listen to `renders/84-input-parity.wav`: first three identical full-strength hits
+(keyboard, note, learned button), then quiet/loud note hits and quiet/loud button hits.
+These are offline tests, not physical-controller acceptance. The separate manual passes
+are in `docs/LIVE-CHECKS.md`, section 84.
 
 ## Select what plays
 
@@ -537,8 +605,10 @@ Use the keyboard or explicit MIDI learn for these actions.
 
 ## Assign the slices to the pads
 
-1. On the chop screen, press `P`. Assign mode starts from the first slice.
-2. Hit the pads in sequence. Each hit puts the next slice in the list.
+1. On the chop screen, press `P`. Assign mode starts from the selected slice.
+2. Hit the keyboard or controller pads in sequence. Each hit adds the selected slice
+   to the plan at that target, previews it and selects the next unplanned slice.
+   No pad changes until you apply the plan.
    `[35]` `J` and `L` select the slice that you need and play it. A hit on a pad puts
    this slice. For example, "slice 2 on pad C" is `J` to slice 2 and a hit on C.
 3. Press `Tab`. The mode changes to "in order". A hit on a pad puts all slices from this
@@ -552,7 +622,7 @@ Use the keyboard or explicit MIDI learn for these actions.
 
 ## Assign mode ignores the rest
 
-1. Open assign mode. Press `M`, `J`, `L`, `I`, `K` or `Ctrl+J`.
+1. Open assign mode. Press `M`, `I`, `K` or `Ctrl+J`.
 2. The cuts, the zoom and the cursor do not move. The assign plan does not change. The
    status line tells you: `Enter` applies, `Esc` closes.
 3. Only these work: the pads, `Tab`, the slice selection, undo, `Enter` and `Esc`.
@@ -563,6 +633,54 @@ Use the keyboard or explicit MIDI learn for these actions.
    `in hand: pad 3 · amen 3`. `[35]` The envelope moves with the pad.
 2. Hit a different pad. The two pads change positions.
 3. Press `Esc`. The pad goes back, and there is no swap.
+
+## Select file, copy and swap targets without a hit sound
+
+`[84]` On Pads, a keyboard pad, MIDI note or learned pad button selects the same
+single target in the current bank. A target hit does not also play that pad.
+
+1. Take a copy with `Ctrl+C`. Turn to another bank and hit an empty pad. The copy
+   goes there without sound. An occupied target asks first. Further pad hits do not
+   change or confirm the question. `Esc` keeps the copy in hand; `Enter` replaces only
+   the target named in the question.
+2. Take a file with `F6` and `Enter`. Hit an occupied target in another bank. The
+   selected pad is the target named in the question. `Esc` keeps its old sound and
+   the file in hand. A target hit does not confirm replacement.
+3. Take a pad with `Ctrl+X`, turn banks and hit a target. The pads swap without a hit
+   sound, and the target stays selected. One `Ctrl+Z` on Pads restores both pads.
+4. With a clear or replacement question open, new pad hits stay silent. A gate pad
+   held before the question still stops when its original key or control is released,
+   including after a bank or screen change. Closing the question returns normal play
+   only if no file, copy or other target mode is still open. Marking still plays hits.
+
+## Controller commands and the next pad hit
+
+`[85]` Use the current controller bindings. This change adds no key or device profile.
+
+1. On Files, select a file and switch preview off if you want to hear only pad sounds.
+   Press the controller's take-file command, then hit a pad at once. Even before the
+   screen updates, that hit selects a file target; it does not play the old sound.
+   An empty target loads the file. An occupied target asks before replacement.
+2. Hit a different occupied pad while that question is open. The first target and
+   question stay. The new hit neither plays nor confirms replacement. `Esc` keeps
+   both old sounds and the file in hand. Keyboard `Enter`, target hits and `Esc`
+   keep the same behavior.
+3. Cancel the held file, turn the bank and hit a pad. Commands keep their received
+   order; the hit uses the bank and mode left by them. This also applies when the
+   command comes from one controller and the pad from another. Each hit keeps the
+   velocity of its original note or learned button.
+4. Release a gate control while the screen is still catching up. Its original pad
+   still receives the release, also for note-on zero, CC zero or device disconnect.
+   A delayed new hit keeps its own release even if an older direct hit already stopped.
+   Changing bank, screen, a question or F10 does not move that release to another pad.
+5. Outside pending commands and target modes, controller hits still go straight to
+   sound without waiting for the screen. The later screen update does not play them
+   twice. Keyboard/MIDI Chop holds stay independent; opening Chop does not replay an
+   old direct notification. Text, pickers and F12 learn keep their existing boundaries.
+
+These paths have recorded-input and offline audio tests. They do not prove physical
+controller operation or owner listening. Use the separate passes and render map in
+`docs/LIVE-CHECKS.md`, section 85. The SMC-PAD map remains an incomplete template.
 
 ## MIDI knobs
 
@@ -653,7 +771,7 @@ Use the keyboard or explicit MIDI learn for these actions.
 
 ## Record sound
 
-1. Hold `Ctrl+R`. The program records the microphone. Release the keys. The program stops
+1. `[83a]` Hold `Alt+R`. The program records the microphone. Release the keys. The program stops
    and saves the recording. `[11]` The file goes to `samples` of the open project. If no
    project is open, it goes to the samples root from the settings. The recording is "in
    hand" immediately: hit a pad.

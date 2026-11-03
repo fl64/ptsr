@@ -93,43 +93,44 @@ each send naming the kind of its slot.
   attack of ENV
 
 ### Requirement: Key roles
-The system SHALL split the work between the hands and give every key one meaning per
-layer: the left fingers play the pads, the left thumb holds `Ctrl` and `Alt` for the
-right hand's keys; the right hand moves and changes with the direction letters `J` `L`
-`I` `K` (the arrows are the same keys) and gives the commands. In the edit mode `I` `K`
-pick the parameter and `J` `L` change the picked value on every screen; outside it they
-walk what the screen shows (the chop cursor and zoom, the banks on the pads screen). A
-tap is the fine step, holding repeats the coarse step. A command letter means the same on
-every screen it is bound on; no command sits on the left half of the keyboard. `−` `=`
-and the arrows do not pick a pad.
+
+The system SHALL split work between the hands: left fingers play pads; the left thumb
+holds Ctrl and Alt for the right hand's commands. I/K and Up/Down SHALL pick the
+parameter in edit. On Pads and FX, J/L and Left/Right SHALL change the selected value
+with edit open or closed. On Chop outside slice edit they SHALL keep cursor and zoom
+roles; in slice edit they SHALL pick and change bounds. On Files they SHALL keep file
+navigation. U/O SHALL turn banks on Pads, including during pad edit. A tap SHALL be a
+fine step and holding SHALL repeat the coarse step. Ctrl/Alt chords SHALL keep the same
+action or role where bound, with named test exceptions; plain letters MAY have screen
+roles, such as H for pad mode on Pads and hit cuts on Chop. No command SHALL use a pad
+block key alone or with Shift. Minus, equal and arrows SHALL NOT pick a pad.
 
 #### Scenario: The same keys on a pad and on a slice
-- **WHEN** the owner edits a pad on the pads screen and a slice on the chop screen
-- **THEN** `I` `K` pick the parameter and `J` `L` change it on both screens, and the
-  arrows do the same as the letters
+- **WHEN** the owner edits a pad on Pads and a slice on Chop
+- **THEN** I/K pick the parameter and J/L change it on both screens
+- **AND** the arrows do the same as the letters
 
 #### Scenario: A tap is fine, holding is coarse
-- **WHEN** the edit mode of a pad is open on the attack and the owner taps `L`, then
-  holds it
-- **THEN** the tap raises the attack by 1 ms and every repeat of the held key by 5 ms
+- **WHEN** pad edit is open on attack and the owner taps L, then holds it
+- **THEN** the tap raises attack by 1 ms and each repeat of the held key by 5 ms
 
 #### Scenario: Arrows change the picked value
-- **WHEN** the edit mode is open and the owner presses `→`
+- **WHEN** edit is open and the owner presses Right
 - **THEN** the picked value moves a fine step and the selection stays
 
 #### Scenario: Enter closes too
-- **WHEN** the edit mode of a pad is open and the owner presses `Enter`
-- **THEN** the mode closes, as with `Esc`
+- **WHEN** pad edit is open and the owner presses Enter
+- **THEN** edit closes, as with Esc
 
 #### Scenario: Minus and equal are free
-- **WHEN** no edit mode is open and the owner presses `−` on the pads screen
+- **WHEN** no edit is open and the owner presses Minus on Pads
 - **THEN** nothing changes
 
 #### Scenario: No command on the left half
 - **WHEN** the default keymap is loaded
-- **THEN** no command is bound to `1`–`5`, `Q`–`T`, `A`–`G`, `Z`–`B` without `Ctrl` or
-  `Alt`, and every command letter but the direction letters `J` `L` `I` `K` and the marker
-  key `M` means the same on every screen it is bound on
+- **THEN** no command uses `1`–`5`, `Q`–`T`, `A`–`G`, `Z`–`B` without Ctrl or Alt
+- **AND** each bound Ctrl/Alt chord keeps the same action role across screens, except
+  named and explained test cases
 
 ### Requirement: The screen shows the layer
 The system SHALL show at all times which layer is active, which object and which
