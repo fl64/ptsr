@@ -60,6 +60,14 @@ fn pad_profile() -> Profile {
 
 impl Drive {
     fn new() -> Self {
+        Self::with_audio(false)
+    }
+
+    fn offline() -> Self {
+        Self::with_audio(true)
+    }
+
+    fn with_audio(offline: bool) -> Self {
         let mut app = tests::test_app();
         app.pads.track_keys = true;
         app.profiles = vec![
@@ -72,8 +80,23 @@ impl Drive {
         ];
         let shared = Arc::new(midi::Shared::default());
         app.publish_midi(&shared);
-        let project = Arc::new(ProjectState::default());
-        let (producer, consumer) = rtrb::RingBuffer::new(1024);
+        // In render tests the MIDI writer owns the callback's real queue. Do not
+        // capture and replay direct commands: that would hide UI-dependent timing.
+        let (project, producer, direct, audio_rt) = if offline {
+            let (mut audio, rt) = audio::offline(48_000);
+            let project = audio.project.clone();
+            let producer = audio.midi_commands.take().unwrap();
+            app.audio = Some(audio);
+            (project, producer, None, Some(rt))
+        } else {
+            let (producer, consumer) = rtrb::RingBuffer::new(1024);
+            (
+                Arc::new(ProjectState::default()),
+                producer,
+                Some(consumer),
+                None,
+            )
+        };
         let (midi, worker) = midi::Midi::recorded(
             app.profiles.clone(),
             producer,
@@ -91,9 +114,9 @@ impl Drive {
             mods: Default::default(),
             shared,
             project,
-            direct: Some(consumer),
+            direct,
             worker: Some(worker),
-            audio_rt: None,
+            audio_rt,
         };
         drive.midi().recorded_connect(PAD_PORT);
         drive.midi().recorded_connect(XS_PORT);
@@ -134,7 +157,7 @@ impl Drive {
 
     fn frame(&mut self) -> Frame {
         self.midi().recorded_fence();
-        let direct = std::iter::from_fn(|| self.direct.as_mut().unwrap().pop().ok()).collect();
+        let direct = std::iter::from_fn(|| self.direct.as_mut()?.pop().ok()).collect();
         let events: Vec<_> = self.midi().events.try_iter().collect();
         for event in events {
             self.app.midi_ui_event(event);
@@ -328,6 +351,7 @@ impl Drop for Drive {
     fn drop(&mut self) {
         // Abandon the audio queue before joining, even if a failing test left it full.
         self.direct.take();
+        self.audio_rt.take();
         self.app.midi.take();
         self.worker.take().unwrap().join().unwrap();
     }
@@ -1612,6 +1636,560 @@ fn copy_replacement_parity_from_raw_midi() {
             assert_eq!(&seen, expected, "{source:?}");
         } else {
             expected = Some(seen);
+        }
+    }
+}
+
+const RENDER_RATE: u32 = 48_000;
+const RENDER_BLOCK: usize = 128;
+const PARITY_HIT: usize = 32 * RENDER_BLOCK;
+const PARITY_RELEASE: usize = PARITY_HIT + 128 * RENDER_BLOCK;
+const PARITY_END: usize = PARITY_RELEASE + 128 * RENDER_BLOCK;
+type Stereo = (Vec<f32>, Vec<f32>);
+
+impl Drive {
+    fn render_blocks(&mut self, blocks: usize) -> Stereo {
+        let mut out = (Vec::new(), Vec::new());
+        let (mut left, mut right) = ([0.0; RENDER_BLOCK], [0.0; RENDER_BLOCK]);
+        for _ in 0..blocks {
+            self.audio_rt
+                .as_mut()
+                .unwrap()
+                .process(&mut left, &mut right);
+            out.0.extend_from_slice(&left);
+            out.1.extend_from_slice(&right);
+            self.app.audio.as_mut().unwrap().free_garbage();
+        }
+        out
+    }
+
+    fn parity_pad(&mut self, pitch: i8, filtered: bool) -> Vec<Command> {
+        use std::f64::consts::TAU;
+        let sound = Arc::new(Sample::mono(
+            (0..4 * RENDER_RATE as usize)
+                .map(|i| {
+                    let t = i as f64 / f64::from(RENDER_RATE);
+                    // Each one-second slice starts at a zero crossing, also in
+                    // the filter-off control. No hard sample edge hides routing checks.
+                    (0.2 * (TAU * 220.0 * t).sin() + 0.08 * (TAU * 3_600.0 * t).sin()) as f32
+                })
+                .collect(),
+        ));
+        self.prepare_chop(sound, 4);
+        self.link_chop_pad(18, 3);
+        self.app.pads.pitch[18] = pitch;
+        self.app.pads.volume_db[18] = -3;
+        self.app.pads.attack_ms[18] = 0;
+        self.app.pads.decay_ms[18] = 0;
+        self.app.pads.release_ms[18] = 20;
+        if !filtered {
+            self.app.pads.filter[18] = engine::filter::FilterKind::Off;
+        }
+        let pad = self.app.pads.snapshot(18);
+        let commands = self.app.pads.put_back(18, &pad);
+        for command in &commands {
+            self.app.send(command.clone());
+        }
+        self.tap(KeyCode::Char('2'), M::CONTROL);
+        commands
+    }
+
+    fn velocity_hit(&mut self, source: Source, velocity: u8) -> Frame {
+        match source {
+            Source::Keyboard => {
+                assert!(matches!(velocity, 80 | 127));
+                self.key(
+                    KeyCode::Char('3'),
+                    if velocity == 127 { M::SHIFT } else { M::NONE },
+                    KeyEventKind::Press,
+                );
+            }
+            Source::Notes => self.bytes(PAD_PORT, &[0x90, 38, velocity]),
+            Source::Button => {
+                self.bind_pad_button(2);
+                self.bytes(PAD_PORT, &[0xb0, 80, velocity]);
+            }
+        }
+        self.frame()
+    }
+}
+
+fn append_stereo(to: &mut Stereo, from: Stereo) {
+    to.0.extend(from.0);
+    to.1.extend(from.1);
+}
+
+fn check_parity_wave(wave: &Stereo) {
+    use engine::checks::{first_loud, first_non_finite, max_step, peak};
+    for channel in [&wave.0, &wave.1] {
+        assert_eq!(first_non_finite(channel), None);
+        assert!(peak(channel) < 1.0, "clipping");
+        assert_eq!(peak(&channel[..PARITY_HIT]), 0.0);
+        let onset = first_loud(channel, PARITY_HIT..PARITY_HIT + RENDER_BLOCK, 1e-6).unwrap();
+        assert!(
+            onset.abs_diff(PARITY_HIT) <= 1,
+            "nearest-block onset: {onset}, head {:?}",
+            &channel[PARITY_HIT..PARITY_HIT + 5]
+        );
+        assert!(peak(&channel[PARITY_RELEASE - RENDER_BLOCK..PARITY_RELEASE]) > 0.01);
+        assert_eq!(
+            peak(&channel[PARITY_RELEASE + 2_048..]),
+            0.0,
+            "gate tail ends"
+        );
+        assert!(max_step(channel) < 0.08, "unexpected sample jump");
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum RecordedRelease {
+    Off,
+    Zero,
+    Disconnect,
+}
+
+/// Raw input -> production dispatch/App -> real queues -> callback. The separate
+/// timestamped engine render is only an oracle; it does not feed this route.
+fn render_chop_route(
+    source: Source,
+    velocity: u8,
+    pitch: i8,
+    filtered: bool,
+    release: RecordedRelease,
+) -> Stereo {
+    let mut drive = Drive::offline();
+    let settings = drive.parity_pad(pitch, filtered);
+    let mut wave = drive.render_blocks(PARITY_HIT / RENDER_BLOCK);
+    let hit = drive.velocity_hit(source, velocity);
+    assert!(
+        matches!(hit.ui[..], [Command::PadPress { pad: 18, velocity: v }]
+        if v == f32::from(velocity) / 127.0)
+    );
+    assert_eq!(drive.app.chop.as_ref().unwrap().selected, 3);
+    append_stereo(
+        &mut wave,
+        drive.render_blocks((PARITY_RELEASE - PARITY_HIT) / RENDER_BLOCK),
+    );
+    drive.tap(KeyCode::PageDown, M::NONE);
+    drive.tap(KeyCode::F(6), M::NONE);
+    drive.tap(KeyCode::F(10), M::NONE);
+    let frame = match release {
+        RecordedRelease::Off => drive.pad_release(source, 2),
+        RecordedRelease::Zero => {
+            assert!(matches!(source, Source::Notes));
+            drive.bytes(PAD_PORT, &[0x90, 38, 0]);
+            drive.frame()
+        }
+        RecordedRelease::Disconnect => {
+            assert!(!matches!(source, Source::Keyboard));
+            drive.midi().recorded_disconnect(PAD_PORT);
+            drive.frame()
+        }
+    };
+    assert_only_release(&frame, 18);
+    assert!(!drive.app.pads.held[18]);
+    assert!(!drive.app.pads.held[34]);
+    assert!(drive.app.screen_learn.is_some());
+    append_stereo(
+        &mut wave,
+        drive.render_blocks((PARITY_END - PARITY_RELEASE) / RENDER_BLOCK),
+    );
+    check_parity_wave(&wave);
+
+    let mut engine = engine::Engine::new(RENDER_RATE);
+    for setting in settings {
+        engine.handle(0, setting);
+    }
+    let expected = engine::offline::render(
+        &mut engine,
+        &engine::offline::Scenario {
+            sample_rate: RENDER_RATE,
+            frames: PARITY_END,
+            events: vec![
+                engine::offline::Event {
+                    frame: PARITY_HIT,
+                    cmd: Command::PadPress {
+                        pad: 18,
+                        velocity: f32::from(velocity) / 127.0,
+                    },
+                },
+                engine::offline::Event {
+                    frame: PARITY_RELEASE,
+                    cmd: Command::PadRelease { pad: 18 },
+                },
+            ],
+        },
+        RENDER_BLOCK,
+    );
+    assert_eq!(
+        wave, expected,
+        "one actual pad hit with all settings, {source:?}, {release:?}"
+    );
+    wave
+}
+
+/// Scenarios "Chop parity with linked pads", "Chop MIDI linked pad keeps velocity",
+/// "Chop linked gate release keeps original pad", "Held pad release passes screen learn".
+#[test]
+fn render_84_input_parity() {
+    use engine::checks::peak;
+    let mut all = (Vec::new(), Vec::new());
+    let keys = render_chop_route(Source::Keyboard, 127, 12, true, RecordedRelease::Off);
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let wave = render_chop_route(source, 127, 12, true, RecordedRelease::Off);
+        assert_eq!(wave, keys, "matched full velocity: {source:?}");
+        append_stereo(&mut all, wave);
+    }
+    let plain = render_chop_route(Source::Keyboard, 80, 12, true, RecordedRelease::Off);
+    for source in [Source::Notes, Source::Button] {
+        assert_eq!(
+            render_chop_route(source, 80, 12, true, RecordedRelease::Off),
+            plain
+        );
+        let low = render_chop_route(source, 23, 12, true, RecordedRelease::Off);
+        let high = render_chop_route(source, 101, 12, true, RecordedRelease::Off);
+        let ratio = peak(&low.0) / peak(&high.0);
+        assert!(
+            (ratio - 23.0 / 101.0).abs() < 1e-5,
+            "velocity ratio {ratio}"
+        );
+        println!(
+            "84 {source:?}: low peak {:.6}, high peak {:.6}, ratio {ratio:.6}",
+            peak(&low.0),
+            peak(&high.0)
+        );
+        append_stereo(&mut all, low);
+        append_stereo(&mut all, high);
+    }
+    // Sensitivity controls: equality must not pass with ignored pitch or filter.
+    let no_pitch = render_chop_route(Source::Notes, 127, 0, true, RecordedRelease::Zero);
+    let no_filter = render_chop_route(Source::Notes, 127, 12, false, RecordedRelease::Off);
+    let difference = |a: &[f32], b: &[f32]| {
+        a.iter()
+            .zip(b)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f32::max)
+    };
+    assert!(difference(&keys.0, &no_pitch.0) > 0.05);
+    assert!(difference(&keys.0, &no_filter.0) > 0.02);
+    for source in [Source::Notes, Source::Button] {
+        assert_eq!(
+            render_chop_route(source, 127, 12, true, RecordedRelease::Disconnect),
+            keys
+        );
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/84-input-parity.wav");
+    engine::offline::write_wav(&path, RENDER_RATE, &all.0, &all.1).unwrap();
+    println!(
+        "84 render: {} frames, peak {:.6}, matched routes sample-identical, onset {} (+/-1), finite/no-clip/tail-silence checked",
+        all.0.len(),
+        peak(&all.0).max(peak(&all.1)),
+        PARITY_HIT
+    );
+}
+
+/// Scenario "Hit from a controller": the real direct queue sounds before App sees
+/// the event. Processing App later must not add another hit or release.
+#[test]
+fn offline_direct_midi_uses_the_next_block_without_ui_or_duplicate() {
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(12, true);
+        drive.tap(KeyCode::F(2), M::NONE);
+        let mut actual = drive.render_blocks(PARITY_HIT / RENDER_BLOCK);
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.bytes(
+            PAD_PORT,
+            if matches!(source, Source::Notes) {
+                &[0x90, 38, 127]
+            } else {
+                &[0xb0, 80, 127]
+            },
+        );
+        drive.midi().recorded_fence();
+        // No frame(): UI has not observed this hit.
+        append_stereo(&mut actual, drive.render_blocks(1));
+        assert!(engine::checks::peak(&actual.0[PARITY_HIT..]) > 0.01);
+        assert!(
+            drive.frame().ui.is_empty(),
+            "UI must not repeat the direct hit"
+        );
+        append_stereo(
+            &mut actual,
+            drive.render_blocks((PARITY_RELEASE - PARITY_HIT) / RENDER_BLOCK - 1),
+        );
+        drive.tap(KeyCode::PageDown, M::NONE);
+        drive.tap(KeyCode::F(6), M::NONE);
+        drive.tap(KeyCode::F(10), M::NONE);
+        drive.bytes(
+            PAD_PORT,
+            if matches!(source, Source::Notes) {
+                &[0x90, 38, 0]
+            } else {
+                &[0xb0, 80, 0]
+            },
+        );
+        drive.midi().recorded_fence();
+        append_stereo(&mut actual, drive.render_blocks(1));
+        assert!(
+            drive.frame().ui.is_empty(),
+            "UI must not repeat the direct release"
+        );
+        append_stereo(
+            &mut actual,
+            drive.render_blocks((PARITY_END - PARITY_RELEASE) / RENDER_BLOCK - 1),
+        );
+        let expected = render_chop_route(Source::Keyboard, 127, 12, true, RecordedRelease::Off);
+        assert_eq!(
+            actual, expected,
+            "direct audio must match one UI hit, {source:?}"
+        );
+        check_parity_wave(&actual);
+    }
+}
+
+/// Scenario "Chop rejected hits preserve accepted gate release": fill the actual
+/// callback queue, not a replacement capture queue. The old voice must keep its phase.
+#[test]
+fn offline_full_queue_keeps_the_accepted_gate_and_delivers_pending_release() {
+    use engine::checks::{first_non_finite, peak};
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(12, true);
+        drive.render_blocks(32);
+        drive.velocity_hit(source, 127);
+        let first = drive.render_blocks(8);
+        let original = drive.app.midi_ui_held.clone();
+        let mut filled = 0;
+        while drive
+            .app
+            .audio
+            .as_mut()
+            .unwrap()
+            .commands
+            .push(ProjectCommand {
+                epoch: 0,
+                ready_at_send: true,
+                command: ProjectMessage::Command(Command::SetPadGain {
+                    pad: 127,
+                    gain: 1.0,
+                }),
+            })
+            .is_ok()
+        {
+            filled += 1;
+        }
+        assert_eq!(filled, 1024);
+        drive.velocity_hit(source, 127);
+        assert_eq!(drive.app.midi_ui_held, original);
+        assert_eq!(drive.app.audio_held[18], Some(0));
+        assert_only_release(&drive.pad_release(source, 2), 18);
+        assert_eq!(drive.app.pending_audio.len(), 1);
+        let after_full = drive.render_blocks(1);
+        assert_eq!(drive.app.pending_audio.len(), 1);
+        drive.app.flush_audio();
+        assert!(drive.app.pending_audio.is_empty());
+        let tail = drive.render_blocks(128);
+        assert_eq!(first_non_finite(&tail.0), None);
+        assert!(peak(&tail.0) < 1.0);
+        assert_eq!(peak(&tail.0[4_096..]), 0.0, "pending release reaches audio");
+        let mut reference = Drive::offline();
+        reference.parity_pad(12, true);
+        reference.render_blocks(32);
+        reference.velocity_hit(Source::Keyboard, 127);
+        assert_eq!(first, reference.render_blocks(8));
+        assert_eq!(
+            after_full,
+            reference.render_blocks(1),
+            "rejected hit must not retrigger"
+        );
+    }
+    // A rejected first hit must not become a voice after queue space returns.
+    let mut drive = Drive::offline();
+    drive.parity_pad(12, true);
+    drive.render_blocks(32);
+    while drive
+        .app
+        .audio
+        .as_mut()
+        .unwrap()
+        .commands
+        .push(ProjectCommand {
+            epoch: 0,
+            ready_at_send: true,
+            command: ProjectMessage::Command(Command::SetPadGain {
+                pad: 127,
+                gain: 1.0,
+            }),
+        })
+        .is_ok()
+    {}
+    drive.velocity_hit(Source::Notes, 127);
+    assert!(drive.app.midi_ui_held.is_empty());
+    assert!(drive.pad_release(Source::Notes, 2).commands().is_empty());
+    assert_eq!(peak(&drive.render_blocks(16).0), 0.0);
+}
+
+/// Scenario "Chop release keeps direct route and epoch": stale commands stay in
+/// the real callback queues; stale UI events are delivered after the new gate starts.
+#[test]
+fn offline_project_switch_filters_both_routes_and_stale_releases() {
+    use engine::checks::peak;
+    use std::sync::atomic::Ordering::{Acquire, Release};
+    for source in [Source::Notes, Source::Button] {
+        for linked in [false, true] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(12, true);
+            if !linked {
+                drive.tap(KeyCode::F(2), M::NONE);
+            }
+            drive.render_blocks(32);
+            drive.velocity_hit(source, 127);
+            assert!(peak(&drive.render_blocks(8).0) > 0.01);
+            // Leave accepted old-epoch hit/release commands in either real queue.
+            drive.pad_release(source, 2);
+            drive.velocity_hit(source, 127);
+            drive.bytes(
+                PAD_PORT,
+                if matches!(source, Source::Notes) {
+                    &[0x80, 38, 0]
+                } else {
+                    &[0xb0, 80, 0]
+                },
+            );
+            drive.bytes(
+                PAD_PORT,
+                if matches!(source, Source::Notes) {
+                    &[0x90, 38, 127]
+                } else {
+                    &[0xb0, 80, 127]
+                },
+            );
+            drive.midi().recorded_fence();
+            let old: Vec<_> = drive.midi().events.try_iter().collect();
+            assert!(
+                old.iter()
+                    .any(|event| matches!(event.event, midi::Event::PadHit { .. }))
+            );
+            assert!(old.iter().any(|event| matches!(
+                event.event,
+                midi::Event::UiPadRelease { .. } | midi::Event::PadRelease { .. }
+            )));
+            drive.app.apply_session(session::Session::default());
+            for _ in 0..256 {
+                drive.app.flush_audio();
+                drive.render_blocks(1);
+                if drive.project.ready.load(Acquire) == 1 && drive.app.pending_audio.is_empty() {
+                    break;
+                }
+            }
+            assert_eq!(drive.project.ready.load(Acquire), 1);
+            assert!(drive.app.pending_audio.is_empty());
+            drive.frame();
+            drive.app.pads.track_keys = true;
+            drive.parity_pad(12, true);
+            assert_eq!(
+                peak(&drive.render_blocks(32).0),
+                0.0,
+                "no queued old-project hit"
+            );
+            drive.velocity_hit(Source::Keyboard, 127);
+            drive.render_blocks(8);
+            for event in old {
+                drive.app.midi_ui_event(event);
+            }
+            assert!(drive.frame().commands().is_empty());
+            assert!(
+                peak(&drive.render_blocks(32).0) > 0.01,
+                "old release cannot stop new gate"
+            );
+            assert_eq!(drive.app.audio_held[18], Some(1));
+            assert_only_release(&drive.pad_release(Source::Keyboard, 2), 18);
+            assert_eq!(peak(&drive.render_blocks(64).0[4_096..]), 0.0);
+            drive.project.ready.store(0, Release);
+            drive.velocity_hit(source, 127);
+            drive.project.ready.store(1, Release);
+            drive.frame();
+            assert!(drive.pad_release(source, 2).commands().is_empty());
+            assert_eq!(
+                peak(&drive.render_blocks(32).0),
+                0.0,
+                "not-ready hit cannot sound later"
+            );
+        }
+    }
+}
+
+/// Scenarios "Chop parity before pad assignment", "Chop parity in by-hand assignment",
+/// "Chop parity while a question is open" and "Chop parity while learning".
+#[test]
+fn offline_preview_assignment_and_guards_match_through_all_inputs() {
+    use engine::checks::{first_non_finite, peak};
+    let sound = Arc::new(Sample::mono(
+        (0..96_000)
+            .map(|i| (std::f32::consts::TAU * 220.0 * i as f32 / 48_000.0).sin() * 0.2)
+            .collect(),
+    ));
+    for mode in ["preview", "plan", "question", "learn"] {
+        let mut expected = None;
+        for source in [Source::Keyboard, Source::Notes, Source::Button] {
+            let mut drive = Drive::offline();
+            drive.prepare_chop(sound.clone(), 4);
+            drive.tap(KeyCode::PageDown, M::NONE);
+            match mode {
+                "plan" => {
+                    drive.tap(KeyCode::Char('p'), M::NONE);
+                }
+                "question" => {
+                    drive.load_pad(18, sound.clone(), "occupied");
+                    drive.tap(KeyCode::Char('p'), M::NONE);
+                    drive.pad_press(Source::Keyboard, 2);
+                    drive.pad_release(Source::Keyboard, 2);
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    assert!(drive.app.ask.is_some());
+                }
+                "learn" => {
+                    drive.tap(KeyCode::F(10), M::NONE);
+                }
+                _ => {}
+            }
+            // Let the setup preview end before a guard is tested.
+            assert_eq!(peak(&drive.render_blocks(512).0[60_000..]), 0.0);
+            drive.pad_press(source, 2);
+            let mut wave = drive.render_blocks(32);
+            assert!(drive.app.audio_held.iter().all(Option::is_none));
+            let release = drive.pad_release(source, 2);
+            if matches!(source, Source::Keyboard) {
+                // Pads::apply can return a keyboard release attempt even for a
+                // preview. App::try_send rejects it without an accepted pad hold.
+                assert!(
+                    release
+                        .commands()
+                        .iter()
+                        .all(|command| matches!(command, Command::PadRelease { .. }))
+                );
+            } else {
+                assert!(release.commands().is_empty());
+            }
+            assert!(drive.app.pending_audio.is_empty());
+            append_stereo(&mut wave, drive.render_blocks(224));
+            for channel in [&wave.0, &wave.1] {
+                assert_eq!(first_non_finite(channel), None);
+                assert!(peak(channel) < 1.0);
+                if matches!(mode, "question" | "learn") {
+                    assert_eq!(peak(channel), 0.0, "guarded {source:?}, {mode}");
+                } else {
+                    assert!(peak(channel) > 0.01, "preview {source:?}, {mode}");
+                    assert_eq!(peak(&channel[26_000..]), 0.0);
+                }
+            }
+            if let Some(expected) = &expected {
+                assert_eq!(&wave, expected, "{mode}, {source:?}");
+            } else {
+                expected = Some(wave);
+            }
         }
     }
 }
