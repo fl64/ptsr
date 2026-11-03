@@ -19488,6 +19488,123 @@ Enter = "browser.hold"
         app.apply(Action::PadPress { pad, velocity: 1.0 });
     }
 
+    /// 83a pad-assignment "The copy sounds like the source": the source and the copy
+    /// render the same with matched velocity; the undone target restores its sound →
+    /// `renders/83a-pad-copy.wav`.
+    #[test]
+    fn render_the_pad_copy() {
+        use engine::Engine;
+        use engine::checks::{first_non_finite, peak};
+        use engine::offline::{Event, Scenario, render, write_wav};
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        use std::path::Path;
+
+        let sr = 48_000;
+        let ms = |n: usize| sr as usize / 1000 * n;
+        let sound = std::sync::Arc::new(Sample::mono(
+            (0..sr as usize * 2)
+                .map(|i| (i as f32 * 220.0 * std::f32::consts::TAU / sr as f32).sin() * 0.5)
+                .collect(),
+        ));
+        let mut app = test_app();
+        app.screen = Screen::Pads;
+        app.pads.sound[0] = Some(sound.clone());
+        app.pads.file[0] = Some("kick.wav".into());
+        app.pads.pitch[0] = 0;
+        app.pads.selected = 0;
+        // a real copy command: Ctrl+C, then a hit on empty W
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        let snap = app.copy_in_hand.as_ref().map(|(_, s)| s.clone());
+        assert!(snap.is_some(), "the copy is in hand");
+        hit(&mut app, 1);
+        let copy = app.pads.sound[1].clone().expect("the copy lies on W");
+        assert_eq!(app.pads.pitch[1], app.pads.pitch[0], "the same settings");
+        // the engine side: source and copy render the same, matched velocity
+        let play = |snd: &Sample| {
+            let events = vec![
+                Event {
+                    frame: 0,
+                    cmd: Command::SetPadSound {
+                        pad: 0,
+                        sound: Some(std::sync::Arc::new(Sample {
+                            left: snd.left.clone(),
+                            right: snd.right.clone(),
+                        })),
+                    },
+                },
+                Event {
+                    frame: ms(100),
+                    cmd: Command::PadPress {
+                        pad: 0,
+                        velocity: 1.0,
+                    },
+                },
+            ];
+            let sc = Scenario {
+                sample_rate: sr,
+                frames: ms(600),
+                events,
+            };
+            render(&mut Engine::new(sr), &sc, 128)
+        };
+        let (q_l, q_r) = play(&sound);
+        let (w_l, w_r) = play(&copy);
+        assert_eq!(q_l, w_l, "the copy sounds like the source");
+        assert_eq!(q_r, w_r);
+        assert_eq!(first_non_finite(&w_l), None);
+        assert!(peak(&w_l) < 1.0, "no clipping");
+        // the hit timing within one sample
+        let onset = |l: &[f32]| l.iter().position(|x| x.abs() > 0.01).unwrap_or(usize::MAX);
+        assert!((onset(&q_l) as isize - onset(&w_l) as isize).abs() <= 1);
+        // the expected silence before the hit
+        assert!(q_l[..ms(100)].iter().all(|x| x.abs() < 1e-6));
+        // a real undo restores the target: the copy leaves W
+        app.apply(Action::Undo);
+        assert!(app.pads.file[1].is_none(), "the target is empty again");
+        // one render with both voices: the source, then the copy
+        let events = vec![
+            Event {
+                frame: 0,
+                cmd: Command::SetPadSound {
+                    pad: 0,
+                    sound: Some(sound.clone()),
+                },
+            },
+            Event {
+                frame: 0,
+                cmd: Command::SetPadSound {
+                    pad: 1,
+                    sound: Some(copy),
+                },
+            },
+            Event {
+                frame: ms(50),
+                cmd: Command::PadPress {
+                    pad: 0,
+                    velocity: 1.0,
+                },
+            },
+            // a softer hit for the copy: the two voices stay below full scale
+            Event {
+                frame: ms(300),
+                cmd: Command::PadPress {
+                    pad: 1,
+                    velocity: 0.5,
+                },
+            },
+        ];
+        let sc = Scenario {
+            sample_rate: sr,
+            frames: ms(600),
+            events,
+        };
+        let (l, r) = render(&mut Engine::new(sr), &sc, 128);
+        assert_eq!(first_non_finite(&l), None);
+        assert!(peak(&l) < 1.0, "no clipping");
+        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/83a-pad-copy.wav");
+        write_wav(&out, sr, &l, &r).unwrap();
+    }
+
     /// A pad loaded for the copy tests: bank 1, pad Q, with the settings the copy keeps.
     fn loaded_q(app: &mut super::App) {
         let wave: Vec<f32> = (0..48_000)

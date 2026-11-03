@@ -47,7 +47,7 @@
   marks, source/target load guards, cancellation, old swap behavior, names, source links,
   persistence and one-step undo. Add the visible copy instructions in the same step.
   Test Ctrl+C as input, not quit, in both terminal event forms. Run `task check` and commit.
-- [ ] 4.2 Make `renders/83a-pad-copy.wav` from the actual App copy and undo commands.
+- [x] 4.2 Make `renders/83a-pad-copy.wav` from the actual App copy and undo commands.
   Compare source/copy sound with full settings and matched velocity. Check the restored
   target after undo, finite samples, no clipping, expected silence, timing within one
   sample and click-free replacement of a sounding target. Run `task check` and commit.
