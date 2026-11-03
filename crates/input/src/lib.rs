@@ -2479,22 +2479,23 @@ mod tests {
     #[test]
     fn record_keys_start_and_stop() {
         let k = keymap();
-        let ctrl = |c, kind| ev(KeyCode::Char(c), KeyModifiers::CONTROL, kind);
+        let alt = |c, kind| ev(KeyCode::Char(c), KeyModifiers::ALT, kind);
         assert_eq!(
-            k.resolve(Screen::Pads, &ctrl('r', KeyEventKind::Press)),
+            k.resolve(Screen::Pads, &alt('r', KeyEventKind::Press)),
             Some(Action::RecordMic(true)),
-            "pressing Ctrl+R starts the microphone"
+            "pressing Alt+R starts the microphone"
         );
         assert_eq!(
-            k.resolve(Screen::Pads, &ctrl('r', KeyEventKind::Release)),
+            k.resolve(Screen::Pads, &alt('r', KeyEventKind::Release)),
             Some(Action::RecordMic(false)),
-            "releasing Ctrl+R stops it"
+            "releasing Alt+R stops it"
         );
         assert_eq!(
-            k.resolve(Screen::Files, &ctrl('r', KeyEventKind::Repeat)),
+            k.resolve(Screen::Files, &alt('r', KeyEventKind::Repeat)),
             None,
             "auto-repeat must not restart the recording"
         );
+        let ctrl = |c, kind| ev(KeyCode::Char(c), KeyModifiers::CONTROL, kind);
         assert_eq!(
             k.resolve(Screen::Pads, &ctrl('t', KeyEventKind::Press)),
             Some(Action::RecordOutputToggle)
@@ -2609,16 +2610,36 @@ mod tests {
             k.resolve(Screen::Pads, &press('ь')),
             Some(Action::PadMarkToggle)
         );
-        assert_eq!(k.resolve(Screen::Pads, &press('u')), None, "U is free");
+        // 83a "Keyboard bank controls": U/O turn the banks, also in the Russian layout
+        assert_eq!(k.resolve(Screen::Pads, &press('u')), Some(Action::BankPrev));
+        assert_eq!(k.resolve(Screen::Pads, &press('г')), Some(Action::BankPrev));
+        assert_eq!(k.resolve(Screen::Pads, &press('o')), Some(Action::BankNext));
+        assert_eq!(k.resolve(Screen::Pads, &press('щ')), Some(Action::BankNext));
         assert_eq!(
             k.resolve(Screen::Settings, &key(KeyCode::Right)),
             Some(Action::SettingsValue(1))
         );
-        // 21 "Banks on J and L": the direction keys turn the banks, no pad is picked
-        assert_eq!(k.resolve(Screen::Pads, &press('l')), Some(Action::BankNext));
+        // 83a: the direction keys change values, not banks, with the edit open or closed
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('l')),
+            Some(Action::EditValue {
+                up: true,
+                fine: true
+            })
+        );
+        assert_eq!(
+            k.resolve(Screen::Pads, &press('д')),
+            Some(Action::EditValue {
+                up: true,
+                fine: true
+            })
+        );
         assert_eq!(
             k.resolve(Screen::Pads, &key(KeyCode::Left)),
-            Some(Action::BankPrev)
+            Some(Action::EditValue {
+                up: false,
+                fine: true
+            })
         );
         // ↑ picks no pad: it walks the parameters, with the edit closed too (70)
         assert_eq!(
@@ -2710,15 +2731,15 @@ mod tests {
         );
     }
 
-    /// Hold and speak: Ghostty repeats a held Ctrl+R as presses, they must not stop the recording.
+    /// Hold and speak: Ghostty repeats a held Alt+R as presses, they must not stop the recording.
     #[test]
     fn hold_and_speak_ignores_auto_repeat() {
         let k = keymap();
         let mut held = HeldPads::default();
-        let ctrl_r = |kind| ev(KeyCode::Char('к'), KeyModifiers::CONTROL, kind);
+        let alt_r = |kind| ev(KeyCode::Char('к'), KeyModifiers::ALT, kind);
         let mut got = Vec::new();
-        for e in std::iter::repeat_n(ctrl_r(KeyEventKind::Press), 20)
-            .chain([ctrl_r(KeyEventKind::Release), ctrl_r(KeyEventKind::Press)])
+        for e in std::iter::repeat_n(alt_r(KeyEventKind::Press), 20)
+            .chain([alt_r(KeyEventKind::Release), alt_r(KeyEventKind::Press)])
         {
             got.extend(k.resolve(Screen::Pads, &e).and_then(|a| held.filter(a)));
         }
@@ -2794,18 +2815,15 @@ mod tests {
     #[test]
     fn help_shows_keys() {
         let k = keymap();
-        assert_eq!(
-            k.keys_for(Screen::Pads, Action::BankNext),
-            ["L", "PgDn", "→"]
-        );
+        // 83a: U/O turn the banks on pads; the arrows change values there
+        assert_eq!(k.keys_for(Screen::Pads, Action::BankNext), ["O", "PgDn"]);
+        assert_eq!(k.keys_for(Screen::Pads, Action::BankPrev), ["PgUp", "U"]);
         let down = Action::EditValue {
             up: false,
             fine: false,
         };
-        assert!(
-            k.keys_for(Screen::Pads, down).is_empty(),
-            "values change in the edit"
-        );
+        // 83a: the value keys sit on the screen layer too, with the edit closed
+        assert_eq!(k.keys_for(Screen::Pads, down), ["J", "←"]);
         assert_eq!(k.edit_keys_for(down), ["J", "←"]);
     }
 
@@ -3010,8 +3028,8 @@ mod tests {
             k.resolve(Screen::Chop, &shift('р')),
             Some(Action::ChopNormalize)
         );
-        // the plain key is its own command: H is free on the chop screen today
-        assert_eq!(k.resolve(Screen::Chop, &press('h')), None);
+        // the plain key keeps its own command: H chops by hits on the chop screen (83a)
+        assert_eq!(k.resolve(Screen::Chop, &press('h')), Some(Action::ChopHits));
         // another screen keeps its layers: on Pads the shift chord falls back to plain H
         assert_eq!(
             k.resolve(Screen::Pads, &shift('h')),
@@ -3311,18 +3329,20 @@ mod tests {
         ));
     }
 
-    /// 04d "More presses, more cuts": Ctrl+Y chops by hits on the chop screen; the global
-    /// `edit.redo` it was bound to is gone (a redo, if ever, takes Ctrl+Shift+Z).
+    /// 83a chopping "H cuts at the marks by default": H chops by hits on the chop
+    /// screen; the old Ctrl+Y stays reserved for redo in 93a and runs nothing by default.
     #[test]
-    fn ctrl_y_chops_by_hits() {
+    fn h_chops_by_hits_and_ctrl_y_stays_free() {
         let k = keymap();
+        assert_eq!(k.resolve(Screen::Chop, &press('h')), Some(Action::ChopHits));
+        assert_eq!(k.resolve(Screen::Chop, &press('р')), Some(Action::ChopHits));
         let ctrl = |c, screen| {
             k.resolve(
                 screen,
                 &ev(KeyCode::Char(c), KeyModifiers::CONTROL, KeyEventKind::Press),
             )
         };
-        assert_eq!(ctrl('y', Screen::Chop), Some(Action::ChopHits));
+        assert_eq!(ctrl('y', Screen::Chop), None);
         assert_eq!(ctrl('y', Screen::Pads), None);
     }
 

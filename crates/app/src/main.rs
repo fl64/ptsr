@@ -5342,7 +5342,7 @@ impl App {
                 at.elapsed().as_secs(),
                 at.elapsed().subsec_millis() / 100,
                 if *source == audio::SOURCE_MIC {
-                    "release Ctrl+R to stop"
+                    "release Alt+R to stop"
                 } else {
                     "Ctrl+T to stop"
                 }
@@ -7712,8 +7712,11 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                             hold_keys(keymap.keys_for(screen, Action::ChopRegionClear)),
                             "whole".into(),
                         ),
-                        item(&[Action::ChopEqualParts], "equal parts".into()),
-                        item(&[Action::ChopHits], "by hits".into()),
+                        item(
+                            &[Action::ChopEqualParts, Action::ChopHits],
+                            // one item: 83a added H, and the line must fit the band
+                            "parts/hits".into(),
+                        ),
                         (
                             hold_keys(keymap.keys_for(screen, Action::Undo)),
                             "undo".into(),
@@ -9749,13 +9752,37 @@ Enter = "browser.hold"
 
     #[test]
     fn planned_defaults_do_not_produce_shadow_warnings() {
+        // 83a task 2.1 ships Alt+R, Ctrl+G, H and U/O; the reverse threshold (3.1) and
+        // pad copy (4.1) have not shipped, so their chords produce no shadow warning yet.
         let (_, warnings) = loaded_notice_map(
             super::DEFAULT_KEYMAP,
-            "[global]\n\"Alt+R\" = \"none\"\n[screens.chop]\nH = \"chop.normalize\"\n\"Shift+H\" = \"none\"\n\"Ctrl+G\" = \"bank.next\"\n[screens.pads]\nU = \"none\"\nO = \"bank.prev\"\nJ = \"bank.next\"\n\"Ctrl+C\" = \"none\"\n",
+            "[screens.chop]\n\"Shift+H\" = \"none\"\n[screens.pads]\n\"Ctrl+C\" = \"none\"\n",
         );
         assert!(
             warnings.is_empty(),
             "new bindings have not shipped: {warnings:?}"
+        );
+    }
+
+    /// 83a keyboard "An owner key hides a new default" on the shipped map: the owner's
+    /// `none` wins and their file stays, while the startup names the hidden default.
+    #[test]
+    fn shipped_defaults_shadow_warn_when_the_owner_overrides_them() {
+        let (keymap, warnings) =
+            loaded_notice_map(super::DEFAULT_KEYMAP, "[global]\n\"Alt+R\" = \"none\"\n");
+        assert_eq!(
+            warnings,
+            [
+                "keymap.toml: Alt+R on pads hides record.mic",
+                "keymap.toml: Alt+R on chop hides record.mic",
+                "keymap.toml: Alt+R on files hides record.mic",
+                "keymap.toml: Alt+R on fx hides record.mic",
+                "keymap.toml: Alt+R on settings hides record.mic",
+            ]
+        );
+        assert_eq!(
+            keymap.binding_for(input::Screen::Pads, false, "Alt+R"),
+            Some(None)
         );
     }
 
@@ -11154,7 +11181,7 @@ Enter = "browser.hold"
         )));
         for (k, t) in [
             ("Ctrl+Z", "undo"),
-            ("Ctrl+Y", "by hits"),
+            ("Y H", "parts/hits"),
             ("Ctrl+J L", "left"),
             ("Alt+J L", "right"),
         ] {
@@ -12073,12 +12100,20 @@ Enter = "browser.hold"
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].name, "CTRL");
         let items = line(&groups);
-        for want in [("R", "mic: hold"), ("T", "output"), ("1…8", "bank")] {
+        for want in [("T", "output"), ("1…8", "bank")] {
             assert!(
                 items.contains(&(want.0.into(), want.1.into())),
                 "{want:?} missing in {items:?}"
             );
         }
+        // 83a: the microphone moved to Alt+R, so the Alt group names it
+        let alt = line(&super::modifier_groups(
+            &keymap,
+            input::Screen::Pads,
+            input::Modifier::Alt,
+            false,
+        ));
+        assert!(alt.contains(&("R".into(), "mic: hold".into())), "{alt:?}");
         // every key there is a Ctrl combo, shown by its bare letter under CTRL
         for (k, _) in &items {
             assert!(
@@ -12411,7 +12446,7 @@ Enter = "browser.hold"
             ("J L", "cursor"),
             ("I K", "zoom"),
             ("M", "cut"),
-            ("Y", "equal parts"),
+            ("Y H", "parts/hits"),
             ("Ctrl J L", "left"),
             ("Alt J L", "right"),
             ("Ctrl ,", "whole"),
@@ -12447,7 +12482,8 @@ Enter = "browser.hold"
                 ("J L".to_string(), "right bound".to_string()),
                 // 49: the loop of the play; 50: play as the pad
                 ("O".to_string(), "loop".to_string()),
-                ("P".to_string(), "as pad".to_string())
+                ("P".to_string(), "as pad".to_string()),
+                ("R".to_string(), "mic: hold".to_string())
             ],
             "the Alt combos of the chop screen and nothing else"
         );
@@ -12523,7 +12559,7 @@ Enter = "browser.hold"
             items.contains(&("Enter".into(), "edit".into())),
             "{items:?}"
         );
-        assert!(items.contains(&("J L".into(), "bank".into())), "{items:?}");
+        assert!(items.contains(&("U O".into(), "bank".into())), "{items:?}");
         assert!(
             items
                 .iter()
@@ -13443,9 +13479,10 @@ Enter = "browser.hold"
         );
     }
 
-    /// 51 "Ctrl+Y cuts at the marks" and "No marks in even steps".
+    /// 51 chopping "H cuts at the marks by default": H lands the cuts on hit starts
+    /// and "No marks in even steps": the cursor walks without marks.
     #[test]
-    fn ctrl_y_cuts_at_the_marks() {
+    fn h_cuts_at_the_marks() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let mut app = test_app();
         app.screen = Screen::Chop;
@@ -13457,7 +13494,7 @@ Enter = "browser.hold"
                 .len()
         };
         assert_eq!(view(&app), 0, "even steps: no marks");
-        chop_key(&mut app, KeyCode::Char('y'), M::CONTROL); // −6 dB
+        chop_key(&mut app, KeyCode::Char('h'), M::NONE); // −6 dB
         chop_key(&mut app, KeyCode::Char('n'), M::NONE);
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [24_000, 48_000]);
@@ -13467,6 +13504,30 @@ Enter = "browser.hold"
             "a mark at every cut and nowhere else"
         );
         assert_eq!(view(&app), 2);
+    }
+
+    /// 83a chopping "Ctrl+Y cuts at the marks": the old chord stays an owner-remap
+    /// compatibility path; an explicit binding cuts at the hit starts as H does.
+    #[test]
+    fn ctrl_y_cuts_at_the_marks() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (mut keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        keymap
+            .overlay("[screens.chop]\n\"Ctrl+Y\" = \"chop.hits\"\n")
+            .unwrap();
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        let k = ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('y'), M::CONTROL);
+        app.apply(
+            keymap
+                .resolve_in(Screen::Chop, app.edit_keys(), &k)
+                .unwrap(),
+        );
+        app.apply(Action::ChopSnapToggle);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.markers, [24_000, 48_000]);
+        assert_eq!(c.strong_hits(), c.markers, "a mark at every cut");
     }
 
     /// Recorded: N three times on the chop screen. 43 "N walks the three modes".
@@ -13604,7 +13665,7 @@ Enter = "browser.hold"
         app.screen = input::Screen::Chop;
         // 0.55 is 4.3 dB below 0.9: both pass −6 dB; 0.3 is −9.5, 0.15 is −15.6
         app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
-        chop_key(&mut app, KeyCode::Char('y'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('h'), M::NONE);
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [24_000, 48_000], "the two loudest hits at −6 dB");
         assert_eq!(c.threshold_db, -6.0);
@@ -13628,7 +13689,7 @@ Enter = "browser.hold"
         let hand = c.markers.clone();
         assert_eq!(c.slices().len(), 16);
         app.chop = Some(c);
-        chop_key(&mut app, KeyCode::Char('y'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('h'), M::NONE);
         assert_eq!(
             app.flash.as_ref().map(|f| f.0.as_str()),
             Some("by hits at -6 dB: 3 slices (were 16) · Ctrl+Z brings them back")
@@ -13646,14 +13707,14 @@ Enter = "browser.hold"
         let mut app = test_app();
         app.screen = input::Screen::Chop;
         app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
-        let ctrl_y = |app: &mut super::App| chop_key(app, KeyCode::Char('y'), M::CONTROL);
+        let h = |app: &mut super::App| chop_key(app, KeyCode::Char('h'), M::NONE);
         let state = |app: &super::App| {
             let c = app.chop.as_ref().unwrap();
             (c.markers.clone(), app.flash.as_ref().map(|f| f.0.clone()))
         };
-        ctrl_y(&mut app);
+        h(&mut app);
         assert_eq!(state(&app).0, [24_000, 48_000]);
-        ctrl_y(&mut app);
+        h(&mut app);
         let (markers, flash) = state(&app);
         assert_eq!(
             markers,
@@ -13664,7 +13725,7 @@ Enter = "browser.hold"
             flash.as_deref(),
             Some("by hits at -12 dB: 4 slices (were 3) · Ctrl+Z brings them back")
         );
-        ctrl_y(&mut app);
+        h(&mut app);
         let (markers, flash) = state(&app);
         assert_eq!(
             markers,
@@ -13681,25 +13742,25 @@ Enter = "browser.hold"
             [24_000, 48_000, 72_000],
             "Ctrl+Z back a step"
         );
-        ctrl_y(&mut app);
+        h(&mut app);
         assert_eq!(
             state(&app).0,
             [24_000, 48_000, 72_000, 96_000],
             "−18 dB again, all four"
         );
-        ctrl_y(&mut app);
+        h(&mut app);
         assert_eq!(
             state(&app).0,
             [24_000, 48_000, 72_000, 96_000],
             "−24 dB holds all"
         );
-        ctrl_y(&mut app);
+        h(&mut app);
         assert_eq!(
             state(&app).0,
             [24_000, 48_000, 72_000, 96_000],
             "−30 dB holds all"
         );
-        ctrl_y(&mut app);
+        h(&mut app);
         let (markers, flash) = state(&app);
         assert_eq!(
             markers,
@@ -13720,9 +13781,9 @@ Enter = "browser.hold"
         let mut app = test_app();
         app.screen = input::Screen::Chop;
         app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
-        let ctrl_y = |app: &mut super::App| chop_key(app, KeyCode::Char('y'), M::CONTROL);
-        ctrl_y(&mut app);
-        ctrl_y(&mut app);
+        let h = |app: &mut super::App| chop_key(app, KeyCode::Char('h'), M::NONE);
+        h(&mut app);
+        h(&mut app);
         let (markers, db) = {
             let c = app.chop.as_ref().unwrap();
             (c.markers.clone(), c.threshold_db)
@@ -13733,7 +13794,7 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [24_000, 48_000], "the cuts of the first press");
         assert_eq!(c.threshold_db, -6.0, "the threshold came back with them");
-        ctrl_y(&mut app);
+        h(&mut app);
         let c = app.chop.as_ref().unwrap();
         assert_eq!(
             c.markers,
@@ -13753,7 +13814,7 @@ Enter = "browser.hold"
         app.takeover.response = input::midi::Response::Pickup;
         app.screen = input::Screen::Chop;
         app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
-        chop_key(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL);
+        chop_key(&mut app, KeyCode::Char('h'), KeyModifiers::NONE);
         assert_eq!(app.chop.as_ref().unwrap().markers, [24_000, 48_000]);
         // the knob sits far from the −6 dB (0.15 of the way): it waits, naming the way
         xsession(&mut app, knob(K11, 127));
@@ -13863,7 +13924,7 @@ Enter = "browser.hold"
             48_000,
         ));
         for _ in 0..3 {
-            chop_key(&mut app, KeyCode::Char('y'), M::CONTROL); // −6, −12, −18 dB
+            chop_key(&mut app, KeyCode::Char('h'), M::NONE); // −6, −12, −18 dB
         }
         let slices = app.chop.as_ref().unwrap().slices();
         let hits = [24_000, 48_000, 72_000, 96_000];
@@ -14890,9 +14951,11 @@ Enter = "browser.hold"
                 }
                 assert!(!left.contains(&k), "{k} is on the left half ({screen:?})");
                 // the direction letters act like the arrows: their meaning follows the screen;
-                // M is the marker key: a pad mark here, a cut marker there
+                // M is the marker key: a pad mark here, a cut marker there;
+                // 83a: H is the pad mode here and hits there, O picks the play mode and
+                // turns the bank
                 if k.chars().all(|c| c.is_ascii_alphabetic())
-                    && !"JLIKM".contains(&k)
+                    && !"JLIKMHOU".contains(&k)
                     && let Some(was) = letters.insert(k.clone(), a)
                 {
                     assert_eq!(was, a, "{k} means two things");
@@ -14904,7 +14967,7 @@ Enter = "browser.hold"
     #[test]
     fn no_kitty_protocol_keeps_the_ctrl_combos() {
         let items = line(&pads_line(false));
-        assert!(items.iter().any(|(k, _)| k == "Ctrl+R"), "{items:?}");
+        assert!(items.iter().any(|(k, _)| k == "Alt+R"), "{items:?}");
     }
 
     #[test]
@@ -15067,7 +15130,7 @@ Enter = "browser.hold"
         let pads = super::full_help(&keymap, input::Screen::Pads, true);
         assert!(
             pads.iter()
-                .any(|r| r.0.contains('J') && r.1 == "previous / next bank"),
+                .any(|r| r.0.contains('U') && r.0.contains('O') && r.1 == "previous / next bank"),
             "{pads:?}"
         );
         let chop = super::full_help(&keymap, input::Screen::Chop, true);
@@ -15082,7 +15145,7 @@ Enter = "browser.hold"
     fn a_text_does_not_repeat_its_key() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let rows = super::full_help(&keymap, input::Screen::Pads, true);
-        assert!(rows.contains(&("Ctrl+R".into(), "record the microphone: hold".into())));
+        assert!(rows.contains(&("Alt+R".into(), "record the microphone: hold".into())));
         for (keys, text) in rows.iter().filter(|r| !r.0.is_empty()) {
             for k in keys.split(' ').filter(|k| k.len() > 1) {
                 assert!(!text.contains(k), "{text} repeats {k}");
@@ -16197,7 +16260,7 @@ Enter = "browser.hold"
         };
         open_chop_from_pads(&mut app);
         assert_eq!(app.chop_from, Some(0));
-        chop_key(&mut app, KeyCode::Char('n'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
         assert_eq!(app.pads.volume_db[0], 5, "0.5 is −6 dB, so +5 dB");
         assert!(flash(&app).contains("+5 dB"), "{}", flash(&app));
         let gain = app
@@ -16219,7 +16282,7 @@ Enter = "browser.hold"
         let mut app = test_app();
         quiet_pad(&mut app, 0.1);
         open_chop_from_pads(&mut app);
-        chop_key(&mut app, KeyCode::Char('n'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
         assert_eq!(app.pads.volume_db[0], super::pads::MAX_DB, "the limit");
         assert_eq!(
             flash(&app),
@@ -16235,7 +16298,7 @@ Enter = "browser.hold"
         let mut app = test_app();
         quiet_pad(&mut app, 0.5);
         open_chop_from_pads(&mut app);
-        chop_key(&mut app, KeyCode::Char('n'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
         let gains = |app: &super::App| {
             app.sent
                 .iter()
@@ -16243,7 +16306,7 @@ Enter = "browser.hold"
                 .count()
         };
         let after_first = gains(&app);
-        chop_key(&mut app, KeyCode::Char('n'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
         assert_eq!(app.pads.volume_db[0], 5, "the level did not climb");
         assert_eq!(
             gains(&app),
@@ -16266,7 +16329,7 @@ Enter = "browser.hold"
         let sound = app.pads.sound[0].clone().unwrap();
         app.show_file_chop(std::path::PathBuf::from("break.wav"), sound);
         assert_eq!(app.chop_from, None);
-        chop_key(&mut app, KeyCode::Char('n'), M::CONTROL);
+        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
         assert_eq!(flash(&app), "no pad to set the volume on");
         assert_eq!(app.pads.volume_db[0], 0, "nothing changed");
     }
@@ -16282,13 +16345,13 @@ Enter = "browser.hold"
 
         let sr = 48_000;
         let ms = |n: usize| sr as usize / 1000 * n;
-        // the app side decides the gain: the quiet pad, Ctrl+N
+        // the app side decides the gain: the quiet pad, Ctrl+G (83a)
         let mut app = test_app();
         quiet_pad(&mut app, 0.5);
         open_chop_from_pads(&mut app);
         chop_key(
             &mut app,
-            ratatui::crossterm::event::KeyCode::Char('n'),
+            ratatui::crossterm::event::KeyCode::Char('g'),
             ratatui::crossterm::event::KeyModifiers::CONTROL,
         );
         let db = app.pads.volume_db[0];
@@ -20175,14 +20238,23 @@ Enter = "browser.hold"
         assert!(!lit(&mut app));
     }
 
-    /// Scenario "L turns to the next bank" (pad-playback): L on bank 1 opens bank 2 with
-    /// the same place selected.
+    /// Scenario "L turns to the next bank" (pad-playback): an explicit owner binding of L
+    /// keeps the old bank turn; the shipped map has U/O for banks (83a).
     #[test]
     fn l_turns_to_the_next_bank() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (mut keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        keymap
+            .overlay("[screens.pads]\nL = \"bank.next\"\n")
+            .unwrap();
         let mut app = test_app();
         app.pads.selected = 6;
-        pads_key(&mut app, KeyCode::Char('l'), M::NONE);
+        let k = ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('l'), M::NONE);
+        app.apply(
+            keymap
+                .resolve_in(Screen::Pads, app.edit_keys(), &k)
+                .unwrap(),
+        );
         assert_eq!((app.pads.bank, app.pads.selected), (1, 6));
     }
 

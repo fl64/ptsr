@@ -20,7 +20,7 @@
 
 ## 2. Existing key moves
 
-- [ ] 2.1 Move microphone to Alt+R, normalize to Ctrl+G and hit chopping to H. On Pads,
+- [x] 2.1 Move microphone to Alt+R, normalize to Ctrl+G and hit chopping to H. On Pads,
   use J/L and arrows for values and U/O for banks with edit open or closed. Keep output,
   Space and all controller defaults. Update affected help and recording hints in this
   same step. Update recorded input events, not assertions that protect behavior.
