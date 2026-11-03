@@ -58,7 +58,7 @@
   Keep old scenario names that mention Ctrl+Y and L as explicit owner-remap tests;
   default H and U/O need their own tests. Do not skip failures to make the check pass.
   Run strict OpenSpec validation, `task check` and `task build`.
-- [ ] 5.2 Update README, user stories, live checks, vision, backlog, project context and
+- [x] 5.2 Update README, user stories, live checks, vision, backlog, project context and
   OpenSpec context with implemented keys, the branch exception and the render to hear.
   Replace stale unconfirmed-A text only in the approved documentation scope for that
   step. Preserve Downloads and owner configuration. Run `task check` and commit.

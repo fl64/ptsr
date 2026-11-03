@@ -710,3 +710,34 @@ The owner accepts the result for now; the sound can be reviewed again during use
 - [ ] (by ear) Listen to `renders/81-drive-comparison.wav`. The first part is the old
   drive, the second is the optimized drive. Make sure they sound the same, including the
   change in drive. There is a short silence between them.
+
+## 83a — Keymap cleanup
+
+Folder: `changes/83a-keymap-cleanup` (active, `plan/controller-first-patterns`)
+
+Keyboard first; the controller pass comes with the SMC-PAD work (91).
+
+- [ ] On `F2`, hold `Alt+R` and speak. Make sure that the strip shows your voice. Release
+  it. Press `Alt+R` again: the recording stops only on the second press in a terminal
+  without releases.
+- [ ] On `F2`, press `U`, then `O`. Make sure that bank 2 opens and bank 1 comes back,
+  with the same pad selected. Press `L`: make sure that a value changes, not the bank.
+  Press `Enter` (edit open) and repeat `U` / `O` / `L`: the same behavior.
+- [ ] On `F2`, press `Ctrl+C`. Make sure that the flash says `COPY · hit a pad` and that
+  the program does not quit. Hit an empty pad: make sure that the copy lands with the
+  name ending in ` 2` and that the hit plays nothing. Press `Ctrl+Z`: make sure that the
+  target comes back. Press `Ctrl+Q`: make sure that the program quits.
+- [ ] On `F3`, press `H`. Make sure that the status says `by hits at -6 dB: N slices`.
+  Press `Shift+H`: make sure that the threshold steps back up one list value. Press it
+  at `-6 dB`: make sure that the status says `by hits stays at -6 dB` and that no undo
+  step was added.
+- [ ] On `F3`, press `Ctrl+G`. Make sure that the pad the chop came from normalizes to a
+  `-1 dB` peak. Press `P` and `Tab`: make sure that the plan switches `in order` /
+  `by hand` and that `Tab` outside a plan does nothing.
+- [ ] On `F2` and `F3`, press `Ctrl+R`, `Ctrl+Y` and `Ctrl+.` one by one. Make sure that
+  no action runs; only the moved-key flash may name the new key.
+- [ ] In your `keymap.toml`, bind `H` on the chop screen to another action. Start the
+  program. Make sure that a startup warning names `H on chop`, that your file is
+  unchanged, and that a key press dismisses one warning at a time.
+- [ ] (by ear) Listen to `renders/83a-pad-copy.wav`. The first voice is the source, the
+  second is the copy placed on another pad: make sure that they sound the same.

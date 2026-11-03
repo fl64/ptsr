@@ -165,8 +165,11 @@ Notes:
    each pad. Outside edit mode, `Backspace` takes the sound off the selected pad. If pads have
    marks, it first asks `Clear 3 pads?`. `Enter` takes the sounds off the marked pads, the
    files on disk stay. `Esc` keeps them. `Ctrl+Z` brings the sounds back.
-10. Outside edit mode, `J` and `L` page the banks. `[43]` `PgUp` `PgDn` also page the
-    banks in edit mode.
+10. `[83a]` `U` and `O` turn the banks, with the edit open or closed; `J` `L` and the
+    arrows change the selected value instead. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` also
+    turn the banks. `[83a]` `Ctrl+C` takes a copy of the selected loaded pad: the next
+    pad hit places it (an occupied pad asks first), the copy keeps every setting with a
+    name ending in ` 2`, and `Ctrl+Z` brings the target back.
 11. `[21]` Turn knobs 1–3 of the controller in edit mode. They change the parameters of
     the page.
 12. `[21]` The strip above the grid shows the envelope of the pad as a line on the wave.
@@ -452,17 +455,20 @@ Use the keyboard or explicit MIDI learn for these actions.
 7. Press `N`. The cursor step changes: equal steps, from hit to hit, from cut to cut.
     `[51]` In hit mode, marks `▾` are above the wave. The cursor stops only on them. They
     are the hits that are a maximum of 12 dB quieter than the loudest hit. The program
-    ignores small rises in a sound. After `Ctrl+Y`, the marks are exactly on its cuts.
+    ignores small rises in a sound. After `H`, the marks are exactly on its cuts.
     The two use the same threshold.
     `[04d]` When the mode "from hit to hit" is on, `M` puts the cut on the nearest hit.
     The maximum distance is 90 ms from the point where you pressed. The status shows
     "marker snapped to hit". Set `N` to a different mode: the cut goes where you pressed.
 8. Press `Y`. The program chops into equal parts: 2, 4, 8, 16, 32.
-    `[04d]` Press `Ctrl+Y`. The program chops by hits. The first press puts cuts on the
+    `[83a]` Press `H`. The program chops by hits. The first press puts cuts on the
     loudest hits. Each next press decreases the threshold: −12, −18, −24, −30 dB, then −6
-    again. Quieter hits get their own cuts. The status names the threshold and the number
+    again. `Shift+H` steps the threshold one value back, stopping at −6 dB without
+    wrapping. Quieter hits get their own cuts. The status names the threshold and the number
     of cuts. `Ctrl+Z` returns the cuts of the previous press.
-    `[68]` `Ctrl+Y` replaces manual cuts, and the status tells you:
+    `[83a]` Press `Ctrl+G`. The pad this chop came from normalizes to a −1 dB peak.
+    `[83a]` While assigning, `Tab` switches the plan between in order and by hand.
+    `[68]` `H` replaces manual cuts, and the status tells you:
     `by hits at -6 dB: 3 slices (were 16) · Ctrl+Z brings them back`.
     `[04d]` Knob k11 of the X-Session changes the same threshold continuously. The range
     is from 0 to −40 dB below the loudest hit. Cuts show and disappear immediately with
@@ -653,7 +659,7 @@ Use the keyboard or explicit MIDI learn for these actions.
 
 ## Record sound
 
-1. Hold `Ctrl+R`. The program records the microphone. Release the keys. The program stops
+1. `[83a]` Hold `Alt+R`. The program records the microphone. Release the keys. The program stops
    and saves the recording. `[11]` The file goes to `samples` of the open project. If no
    project is open, it goes to the samples root from the settings. The recording is "in
    hand" immediately: hit a pad.

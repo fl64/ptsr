@@ -15,9 +15,10 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
 - The owner requested continuation in the current branch. This step still changes
   documents and specifications only; it implements no new behavior.
-- Keymap cleanup 83a is active in `openspec/changes/83a-keymap-cleanup/`, before parity
-  84. The owner confirmed A on 2026-11-03: J/L change values on Pads, U/O turn banks.
-  Its plan is `KEYMAP-CLEANUP.md`; implementation tasks remain open.
+- Keymap cleanup 83a is implemented in `openspec/changes/83a-keymap-cleanup/` on
+  `plan/controller-first-patterns`: the shipped map has Alt+R mic, Ctrl+G normalize,
+  H / Shift+H hits, U/O banks, J/L values, Tab assign order and Ctrl+C pad copy.
+  The owner checks (section 83a of `docs/LIVE-CHECKS.md`) and the archive remain.
 - The later parity draft stays in `openspec/deferred/84-input-parity/`. Do not activate
   it until 83a is implemented, tested, accepted and archived. Follow the owner's branch
   instruction above. Main specs and shipped keys stay unchanged in this step.

@@ -94,7 +94,10 @@ parity and refactors (84–90), SMC-PAD and its command panel (91–94), then tr
 patterns (95–101).
 The goal is every action without typed text from the SMC-PAD, with the same logical
 behavior as the keyboard. These features are planned, not shipped. Start with the
-[keymap plan](docs/plans/KEYMAP-CLEANUP.md) and its open J/L choice. The later parity
+[keymap plan](docs/plans/KEYMAP-CLEANUP.md). Its cleanup 83a is implemented: Alt+R
+records the microphone, Ctrl+G normalizes, H / Shift+H chop by hits, U/O turn banks on
+Pads while J/L change values, Tab switches the assign order and Ctrl+C copies a pad;
+the owner checks are in `docs/LIVE-CHECKS.md`. The later parity
 change is prepared in `openspec/deferred/84-input-parity/`.
 
 [Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter

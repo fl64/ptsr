@@ -363,7 +363,7 @@ them. The keys in use are in `config/keymap.toml`; the table below is historical
 
 - Arrows: navigation. Enter: confirm. Esc: back or cancel. Space: start/stop.
 - PageUp / PageDown: bank. Tab / Shift+Tab: next/previous element.
-- Ctrl+letter: actions. Ctrl+Z is undo; Ctrl+S saves. Today Ctrl+R holds microphone recording and Ctrl+Y chops by hits. Planned cleanup 83a moves microphone hold to Alt+R, Chop normalize to Ctrl+G, and Chop hits to H / Shift+H. It reserves Ctrl+R for pattern recording (97), Ctrl+Y for redo and Ctrl+. for panic (93a). These moves are not implemented yet.
+- Ctrl+letter: actions. Ctrl+Z is undo; Ctrl+S saves. The cleanup 83a is implemented: Alt+R holds microphone recording, Chop normalize sits on Ctrl+G, Chop hits on H and Shift+H (one step back, stopping at -6 dB), Pads banks on U/O and values on J/L with the arrows, and Ctrl+C takes a pad copy. Ctrl+R is reserved for pattern recording (97), Ctrl+Y for redo and Ctrl+. for panic (93a). Owner keymaps and learned bindings keep working; moved-key flashes name the new keys.
 - Ctrl+B stays the Files favorite key; bake needs a different key in its own change. Ctrl+D means duplicate or double where bound. Do not add Ctrl+Shift+letter defaults. Check new chords in both extended and legacy terminal input.
 - **Ctrl+K: command palette.** Fuzzy search in Russian and English. It shows the hotkey of each command.
 - You can remap all hotkeys in `keymap.toml`.
@@ -500,9 +500,10 @@ The agent does not hear sound. Thus three checks apply to each feature: an autom
 Defaults that wait for the owner are marked "(default)". The full list of questions is in `docs/plans/README.md`.
 
 - **Controller first** (section 17): everything without typed text from the SMC-PAD; the keyboard stays the reference and loses nothing.
-- **Keymap cleanup 83a** comes before 84. J/L on Pads still needs the owner's choice;
-  proposed A changes values and uses U/O for banks. Keep owner keymaps and learned MIDI
-  action names working. No keys change during document preparation.
+- **Keymap cleanup 83a** is implemented on `plan/controller-first-patterns`: J/L change
+  values and U/O turn banks on Pads, H / Shift+H chop by hits, Ctrl+G normalizes, Alt+R
+  records, Ctrl+C copies a pad, Tab switches the assign order. The owner checks are in
+  `docs/LIVE-CHECKS.md` (section 83a); 84 waits until they pass.
 - **One input route:** the keyboard and the controller go through one decision about what a press means. A test runs each input scenario from both.
 - **Hold STOP is the command panel** (default). PAD BANK layer 2 is the same panel as a latch.
 - **Destructive actions:** keep X-Session direct safe defaults unchanged. For the SMC panel, the proposed default is a visible question for destructive changes in both held and latched forms. Change 92 must record the owner's choice before code.
