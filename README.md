@@ -97,8 +97,9 @@ behavior as the keyboard. These features are planned, not shipped. Start with th
 [keymap plan](docs/plans/KEYMAP-CLEANUP.md). Its cleanup 83a is implemented: Alt+R
 records the microphone, Ctrl+G normalizes, H / Shift+H chop by hits, U/O turn banks on
 Pads while J/L change values, Tab switches the assign order and Ctrl+C copies a pad;
-the owner checks are in `docs/LIVE-CHECKS.md`. The later parity
-change is prepared in `openspec/deferred/84-input-parity/`.
+the owner checks are in `docs/LIVE-CHECKS.md`. The owner accepted 83a without completing
+those checks; it is archived. Input parity is now active in
+`openspec/changes/84-input-parity/` on the same branch by owner request.
 
 [Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
 locks, slice motion and the launcher. They are not requirements for the current step.

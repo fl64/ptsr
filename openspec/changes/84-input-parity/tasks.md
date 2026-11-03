@@ -1,8 +1,10 @@
 ## 0. Activate and confirm scope
 
-- [ ] 0.1 Merge document preparation, finish keymap cleanup 83a, then activate this
-  draft on its own branch. Recheck the Chop routes and test helpers against that base.
-  Record any changed assumptions before code.
+- [x] 0.1 Activate after the 83a archive (`2b084d1`). Keep the existing branch
+  `plan/controller-first-patterns` by owner request; no preparation merge is needed.
+  Recheck the Chop routes and test helpers against that base. Record the branch
+  exception, baseline and changed assumptions before code. Validate strictly,
+  run `task check` and commit these artifacts separately.
 
 ## 1. Paired input driver
 
@@ -10,7 +12,7 @@
   the production dispatch and profile initialization. Keep extraction separate from
   behavior changes. Run `task check` and commit.
 - [ ] 1.2 Add paired baseline tests for Pads, edit, marking, file in hand, swap,
-  question and learn. Keep X-Session default tests unchanged. Record differences in
+  copy (83a), question and learn. Keep X-Session default tests unchanged. Record differences in
   design.md; stop for a scope decision instead of hiding a new fix. Run `task check`
   and commit.
 

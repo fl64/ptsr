@@ -13,15 +13,16 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
   `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
-- The owner requested continuation in the current branch. This step still changes
-  documents and specifications only; it implements no new behavior.
-- Keymap cleanup 83a is implemented in `openspec/changes/83a-keymap-cleanup/` on
-  `plan/controller-first-patterns`: the shipped map has Alt+R mic, Ctrl+G normalize,
-  H / Shift+H hits, U/O banks, J/L values, Tab assign order and Ctrl+C pad copy.
-  The owner checks (section 83a of `docs/LIVE-CHECKS.md`) and the archive remain.
-- The later parity draft stays in `openspec/deferred/84-input-parity/`. Do not activate
-  it until 83a is implemented, tested, accepted and archived. Follow the owner's branch
-  instruction above. Main specs and shipped keys stay unchanged in this step.
+- The owner requested continuation in `plan/controller-first-patterns`, including 84.
+  This is an exception to the separate-branch rule. Push and PR need a separate request.
+- Keymap cleanup 83a is accepted and archived at `2b084d1` in
+  `openspec/changes/archive/2026-11-03-83a-keymap-cleanup/`: the shipped map has Alt+R
+  mic, Ctrl+G normalize, H / Shift+H hits, U/O banks, J/L values, Tab assign order and
+  Ctrl+C pad copy. The owner accepted without completing the manual checks in
+  section 83a of `docs/LIVE-CHECKS.md`; no physical SMC-PAD or listening pass is implied.
+- Input parity 84 is active in `openspec/changes/84-input-parity/` after a source check
+  against `2b084d1`. Its scope is paired input tests and the Chop pad route, not 85+.
+  No preparation merge is needed. Task 0.1 changes artifacts only, not behavior.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -144,7 +145,7 @@ answer, take the default and write the question into `design.md` under "Open que
 
 | Before | Question | Default |
 |---|---|---|
-| 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | A confirmed on 2026-11-03; recorded in the active 83a proposal |
+| 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | A confirmed on 2026-11-03; recorded in the archived 83a proposal |
 | 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, erase, panel). Change `docs/ui/STYLE.md`? | Yes |
 | 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |
 | 89 | How long is a "hold" for a button? | 300 ms, or at once when another control is used while the button is down |

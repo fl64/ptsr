@@ -19,8 +19,9 @@ template. Transport and pattern sequencing are not implemented.
 The next goal: every action that does not need typed text can be done from the SMC-PAD.
 The keyboard stays the reference and keeps its controls. The work order is:
 
-0. Keymap cleanup (83a). Ask the owner about J/L on Pads before code: proposed A changes
-   values and moves banks to U/O. Reserve the later recording, redo and panic chords.
+0. Keymap cleanup (83a) is accepted and archived. J/L change values; U/O change banks.
+   The owner accepted without completing the manual checks. The later recording,
+   redo and panic chords stay reserved.
 1. Input parity and refactors, then visible modes and new input controls (84–90).
 2. A measured SMC-PAD profile, the command panel, reach checks and comfort (91–93a).
    Pad lights (94) are optional.
@@ -28,9 +29,10 @@ The keyboard stays the reference and keeps its controls. The work order is:
    (95–100a). Input timestamps (101) are conditional on a measured or heard need.
 
 Read [plans/README.md](plans/README.md) before preparing a change. Start with
-[KEYMAP-CLEANUP.md](plans/KEYMAP-CLEANUP.md). The later parity draft is in
-`openspec/deferred/84-input-parity/`; it waits for 83a. Each implementation gets its own
-branch and active OpenSpec change. The preparation branch does not implement these features.
+[KEYMAP-CLEANUP.md](plans/KEYMAP-CLEANUP.md) for the shipped keys. Input parity 84 is
+active in `openspec/changes/84-input-parity/`, based on the 83a archive at `2b084d1`.
+The owner requested the same branch `plan/controller-first-patterns` as an exception
+to the separate-branch rule. Only one change is active; push and PR need a separate request.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
 parameter locks, slice motion and PaulStretch. It and `docs/plans/` are guides, not

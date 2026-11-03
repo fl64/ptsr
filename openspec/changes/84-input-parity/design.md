@@ -1,22 +1,35 @@
 ## Context
 
-This is the first implementation draft from `docs/plans/REFACTOR-INPUT.md`. It is kept
-in `openspec/deferred/` during document preparation. Change 82 is accepted and archived.
-Keymap cleanup 83a now comes first (`docs/plans/KEYMAP-CLEANUP.md`). Activate 84 on its own
-branch after the preparation and 83a are merged; test the keys that 83a actually ships.
-The J/L choice belongs to 83a, not to this draft.
+Change 84 is active after keymap cleanup 83a. The owner authorized this work on
+2026-11-03 and requested the existing branch `plan/controller-first-patterns`.
+This is an explicit exception to the separate-branch rule. No preparation merge is
+needed before 84. Push and PR creation need a separate owner request.
 
-The baseline for this draft is `origin/master` at `861424e`, the merge of PR #3.
-Source locations below describe that baseline and can move. Recheck them after 83a:
+The implementation baseline is `2b084d1`: 83a was accepted and archived through
+`openspec archive` in `openspec/changes/archive/2026-11-03-83a-keymap-cleanup/`.
+The owner accepted 83a without completing the manual checks. This is not evidence of
+sound heard by the owner or of physical SMC-PAD tests. Automated `task check` passed
+at that baseline (559 App tests and 69 input tests). Change 82 is also archived.
 
-- `crates/app/src/main.rs:1535`: keyboard Chop pad presses call `chop_pad`.
-- `crates/app/src/main.rs:2722`: `chop_pad` handles unassigned slice pages, linked pad
-  sounds and selection, and targets in an assign plan.
-- `crates/app/src/main.rs:4438`: the MIDI Chop branch calls `play_slice` instead.
+Task 0.1 rechecked these source locations at `2b084d1`:
+
+- `crates/app/src/main.rs:5637`: `App::keyboard_event` is the production keyboard
+  entry point, including text, learn and held-key guards. Use it in the paired driver.
+- `crates/app/src/main.rs:1558` and `:2792`: keyboard Chop pad presses call `chop_pad`.
+  It handles slice pages, linked pad sounds and selection, and assign-plan targets.
+- `crates/app/src/main.rs:4633`: the MIDI Chop branch still calls `play_slice` instead.
+  The question guard is before it; the screen-learn guard is at `:4574`.
+- `crates/app/src/main.rs:4640`: the MIDI pad-copy route from 83a is present. Include
+  copy in the baseline tests; keep J/L values, U/O banks and Tab assign order.
 - `crates/app/src/midi.rs:35`: `Event::PadHit` carries the absolute pad and audio queue
-  acceptance, but no hit velocity.
-- `crates/app/src/midi.rs:286`: `dispatch` already resolves profiles and routes events.
-  Its test helper `dispatched` at line 928 drives that path, but does not drive App.
+  acceptance, but no hit velocity. Both send sites are at `:431` and `:455`.
+- `crates/app/src/midi.rs:286`: `dispatch` resolves profiles and tracks held pads.
+  Its test helper `dispatched` at `:928` does not drive App or profile seeding by App.
+- `crates/input/src/midi.rs:620`: `Profile::resolve_in` preserves note velocity and
+  resolves edit and learned bindings. `Msg::parse` at `:29` accepts raw MIDI bytes.
+- `crates/app/src/main.rs:9107` and `:9766`: `test_app` and `NoticeInput` provide the
+  App fixture and keyboard held-state helper. The shared MIDI state is published in
+  the main loop at `:6073`; re-use that production publication in the driver.
 
 Do not infer hardware support from the tests. The SMC-PAD profile is still a template.
 The X-Session Pro has no pads; use its shipped profile for regression and explicit
@@ -91,7 +104,7 @@ No scenario goes into the main specs until its test passes.
   Fix in 84; preserve original velocity for the linked-pad path.
 - Other differences are not yet audited by the paired driver. In particular, the
   five-atomic snapshot and the pending-command race are work for 85, not fixes made by
-  this preparation. Record observed results here during implementation.
+  task 0.1. Record observed results here during implementation.
 
 ## Risks / Trade-offs
 

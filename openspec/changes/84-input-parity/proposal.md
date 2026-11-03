@@ -29,7 +29,9 @@ dependency, key, profile default, audio algorithm or saved file format.
 
 The mode model and pending-action race fix (85), screen registry, visual redesign,
 confirm, button holds, relative encoders, the SMC-PAD profile, command panel and patterns.
-This draft is not active and has no implementation or completed test tasks.
+This change is active on `plan/controller-first-patterns` by owner request after the
+83a archive (`2b084d1`). The branch exception and baseline are recorded in `design.md`.
+No push or PR is authorized.
 
 ## How to verify
 
