@@ -309,6 +309,28 @@ specs by hand and do not mark physical checks passed because recorded tests pass
 
 ## Open questions
 
+- Before task 2.2, should direct-hit notifications that reach App after Chop opens
+  get a separate behavior repair? Source audit at `7272d92` found that dispatch
+  sends direct `PadHit` notifications with `accepted` true or false and no
+  `ui_press` (`midi.rs:570–596`). App checks its current screen, not the original
+  audio disposition: the Chop arm (`main.rs:4716–4727`) calls `chop_pad` without
+  checking `accepted`; the linked-pad path calls `try_send` again
+  (`main.rs:2864–2866`). Thus a late accepted notification can repeat a hit, and
+  a late rejected notification can become a new UI attempt. The same branch can
+  select a Chop slice, preview a bare slice or change an assignment plan.
+  This is a source-only finding, not a recorded-input or listening reproduction.
+  The delta already forbids replaying accepted or rejected direct hits, but task
+  2.2 also requires a behavior-preserving refactor. Proposed scope: add a separate
+  explicit scenario and repair step before 2.2; carry the original audio
+  disposition and keep late direct notifications as notifications when Chop
+  opens, without a new sound, preview or assignment action. Reproduce accepted
+  and rejected cases through recorded MIDI and actual offline queues. Keep the
+  original absolute pad, direct releases and existing Chop-entry hush; do not
+  change other hand/text/picker priorities or add command acknowledgements in
+  this step. Default: pause before task 2.2 until the owner confirms this scope;
+  leave production paths unchanged. The controller-command ordering repair
+  remains separate. Keyboard-origin state publication races are not otherwise
+  added to 85 by this proposal.
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later
   change; recorded notes and learned CC tests do not accept the SMC-PAD template.
