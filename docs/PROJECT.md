@@ -33,10 +33,11 @@ Read [plans/README.md](plans/README.md) before preparing a change. Start with
 accepted input parity 84 on 2026-11-03. It is archived in
 `openspec/changes/archive/2026-11-03-84-input-parity/`, based on 83a at `2b084d1`.
 Its physical-controller pass remains unverified. Callback benchmark peaks above the
-50% budget target remain unresolved. Change 84a (`84a-benchmark-report`) is active,
-pending owner acceptance. It adds wall time, thread CPU time, estimated gaps, exceedance
-counts and timer overhead to the offline benchmark. Workload, sound, the 50% target and
-wall p99 exit checks stay unchanged. Slow-core CPU spikes still need investigation.
+50% budget target remain unresolved. The owner accepted report-only change 84a on
+2026-11-03. It is archived in `openspec/changes/archive/2026-11-03-84a-benchmark-report/`.
+It adds wall time, thread CPU time, estimated gaps, exceedance counts and timer overhead
+to the offline benchmark. Workload, sound, the 50% target and wall p99 exit checks stay
+unchanged. Slow-core CPU spikes still need investigation. No change is active.
 Input modes 85 is next in the input plan, not active.
 The owner requested `plan/controller-first-patterns` for 84 and confirmed it for 84a as
 exceptions to the separate-branch rule. Activate only one change at a time; push and PR

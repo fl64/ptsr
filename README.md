@@ -101,9 +101,10 @@ the owner checks are in `docs/LIVE-CHECKS.md`. The owner accepted 83a without co
 those checks; it is archived. The owner checked and accepted input parity 84; it is
 archived in `openspec/changes/archive/2026-11-03-84-input-parity/` on the same branch
 by owner request. Physical-controller checks remain unverified, and callback benchmark
-peaks above the 50% budget target remain unresolved. Change 84a adds the benchmark
-report below and is active, pending owner acceptance. The owner approved the same branch
-for 84a. Input modes 85 is next in the input plan, not active.
+peaks above the 50% budget target remain unresolved. The owner accepted the benchmark
+report below (84a) on 2026-11-03. It is archived in
+`openspec/changes/archive/2026-11-03-84a-benchmark-report/` on the same approved branch.
+No change is active. Input modes 85 is next in the input plan, not active.
 
 [Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
 locks, slice motion and the launcher. They are not requirements for the current step.

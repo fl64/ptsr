@@ -26,7 +26,8 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   line, fixed LISTEN and F2 PLAY badges. Physical-controller checks remain unverified.
   Callback benchmark peaks above the 50% budget target remain unresolved. Input modes
   85 is next in the plan, not active; it still needs specifications and owner approval.
-- Report-only change 84a (`84a-benchmark-report`) is active, pending owner acceptance.
+- The owner accepted report-only change 84a on 2026-11-03. It is archived in
+  `openspec/changes/archive/2026-11-03-84a-benchmark-report/`. No change is active.
   It was inserted before 85 after the benchmark investigation. Wall and thread CPU times,
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays

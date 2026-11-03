@@ -33,7 +33,27 @@ These runs do not close earlier CPU spikes or physical-controller checks.
   live checks. Update project/plan/OpenSpec context for active 84a, not active 85.
   Validate, run `task check`, build the release and commit the docs. No new render,
   keyboard/controller pass or listening test is needed for unchanged sound/input.
-- [ ] 2.2 Ask the owner to read and accept the new offline report. Record actual results.
+- [x] 2.2 Ask the owner to read and accept the new offline report. Record actual results.
   Do not claim the slow-core performance issue or physical-controller checks are closed.
-- [ ] 2.3 After explicit acceptance, archive with `openspec archive`, check all seven
+- [x] 2.3 After explicit acceptance, archive with `openspec archive`, check all seven
   scenarios in the main specs, validate, run `task check` and commit separately.
+
+Owner acceptance (2026-11-03): the owner accepted the report, then explicitly confirmed
+archive with main-spec sync and a local signed-off commit. This is overall report
+acceptance, not a separate result for every manual check or a hard-maximum performance
+pass. Individual check results were not reported. Slow-core CPU spikes and the physical
+controller checks from 84 remain open. Input modes 85 stays inactive; no push or PR
+was requested.
+
+Archive verification (2026-11-03): `openspec archive 84a-benchmark-report --yes --json`
+added one requirement and archived the change here. All seven delta scenarios and
+their requirement match the main audio-engine spec exactly. All four prior requirements
+remain unchanged; proposal, design, delta and `.openspec.yaml` were preserved byte for
+byte. Main-spec scenario coverage passed. Strict validation passed all 15 main specs;
+no active change remains. Full `task check` and `task build` passed; logs are
+`/tmp/ptsr-84a-archive-check.log` and `/tmp/ptsr-84a-archive-build.log`.
+The check recorded one steady wall block above 50% (maximum 92.94%); the CPU maximum
+was 36.97%, with zero CPU blocks above 50%. The report marked the wall maximum
+EXCEEDED even though its unchanged p99 gate passed. The estimated gap maximum was
+74.69%, not proof of a cause. This does not close the performance issue. No code or
+dependency changed, and the parity WAV hash remains the one recorded above.

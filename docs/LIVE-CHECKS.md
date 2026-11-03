@@ -912,11 +912,14 @@ scenario coverage, strict validation and the full automated suite.
 
 ## 84a — Offline callback timing report
 
-Folder: `changes/84a-benchmark-report` (`plan/controller-first-patterns`)
+Folder: `changes/archive/2026-11-03-84a-benchmark-report` (`plan/controller-first-patterns`)
 
-This is a report-only change, pending owner acceptance. Do not start `task run` for these
-checks. No sound device or controller is needed. Sound and input behavior are unchanged;
-no new keyboard, controller or listening pass is required. No new WAV is provided.
+The owner accepted this report-only change on 2026-11-03, then explicitly confirmed its
+archive with main-spec sync and a local signed-off commit. This is overall acceptance;
+individual check results were not reported. Open boxes below do not mean failure or
+rejection. Do not start `task run` for these checks. No sound device or controller is
+needed. Sound and input behavior are unchanged; no new keyboard, controller or listening
+pass is required. No new WAV is provided.
 The existing `renders/84-input-parity.wav` keeps the same samples and SHA-256.
 
 - [ ] From the repository folder, run `cargo bench -p engine --bench callback`.
@@ -948,4 +951,15 @@ No engine callback, sound, live load, scheduler setting or runtime dependency ch
 Earlier diagnostic runs showed both scheduling delays and CPU-time exceedances; their
 slow-core cause remains open. Physical-controller checks from 84 remain unverified.
 
-Owner result: not yet reported. The boxes above stay open until the owner reports checks.
+Archive verification on 2026-11-03: all seven scenarios are in the main audio-engine
+spec. Strict validation, `task check` and the release build passed. This run had one
+steady wall block above 50%: wall maximum 92.94%, CPU maximum 36.97%, CPU exceedance
+count zero. The report said `wall EXCEEDED; thread CPU WITHIN`, while the unchanged p99
+checks passed. The gap maximum was 74.69%; its cause is not established by that estimate.
+This result keeps the earlier performance issue open.
+
+Owner result: accepted report 84a on 2026-11-03; archive, main-spec sync and a local
+signed-off commit explicitly confirmed. Individual manual checks were not reported, so
+their boxes stay open. This accepts the report, not a hard-maximum performance guarantee
+or resolution of slow-core CPU spikes. No new live, listening or physical-controller
+pass is implied; the earlier controller checks remain unverified.
