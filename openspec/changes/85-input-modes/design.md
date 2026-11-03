@@ -39,7 +39,8 @@ step, not mixed into this planning-only artifact edit.
 handler; coherent publication to MIDI; an explicit, separately tested ordering repair.
 The refactor and move keep the current behavior. The ordering step changes a race
 outcome. The separately approved hold step below repairs mixed keyboard/MIDI release
-targets on Chop before the shared handler. Keep original releases, local queue
+targets on Chop before the shared handler. Another separately approved step keeps
+late direct notifications from starting Chop actions. Keep original releases, local queue
 acceptance and project filtering distinct from UI processing acknowledgements.
 
 **Non-Goals:** a new universal command resolver, priority normalization, UI modes or
@@ -133,6 +134,40 @@ finite, silence, onset and release timing checks. Write `renders/85-mixed-holds.
 for owner listening. Commit this repair separately before task 2.2, after full
 `task check`; do not mix in sequencing or the shared handler.
 
+### 2b. Keep late direct notifications out of Chop actions
+
+The owner approved this separate repair after the audit at `7272d92`. At that
+baseline, dispatch sends direct notifications with `accepted` true or false, but
+App's Chop branch ignores that result and calls `chop_pad`. This can replay an
+accepted hit, retry a rejected hit, preview a bare slice or change a plan.
+
+Replace the ambiguous boolean in `Event::PadHit` with an explicit three-way sound
+disposition: UI-unattempted, direct accepted, direct rejected. Dispatch records it
+when it chooses the original route. Mechanically adapt event constructors and
+assertions without changing the meaning or strength of old tests. On Chop only
+UI-unattempted hits may call `chop_pad`; direct notifications use the existing
+normal notification effects on their captured absolute pad, without a Chop
+slice/preview/plan action or a new UI audio hold. Preserve question/F10 guards,
+direct releases, project filtering, velocity and Chop-entry hush. Other hand
+priorities are not normalized by this repair.
+
+Reproduce both failures before the repair, then keep the assertions. Test raw notes
+and learned CC80 with low/high velocity in linked listen, bare-slice listen and
+assignment, with and without a bank change. Fill the actual MIDI audio queue with
+hits on an unloaded pad for rejection; consume those filler notifications before
+the tested hit, without processing audio. Do not replace dispatch or its producer.
+Use actual keyboard events to open Chop, then consume the delayed real events.
+Compare audio with a timestamped oracle; check finite/no-clip, silence, nearest-block
+onset and the normal hush. Write `renders/85-late-midi.wav`. Run full `task check`
+and commit this repair separately before 2.2; no acknowledgement protocol belongs here.
+
+The owner also requested an agent-operated terminal pass and confirmed listening
+to separate audio, not the sampler. Use only the isolated `target/ux` launch from
+`AGENTS.md`; verify the unavailable JACK log and absence of a ptsr PipeWire node
+before driving it. Record the keyboard screen pass separately from offline audio,
+owner listening and physical-controller acceptance. Do not claim that a TUI capture
+checks the sound. Run this pass against the release build before owner acceptance.
+
 ### 3. Preserve source boundaries and record divergences
 
 The common pad handler does not authorize a new priority policy. Preserve these
@@ -225,8 +260,8 @@ Test both orderings of direct/UI retriggers and multiple accepted pads for one c
 
 1. Artifacts only, then review. No implementation is authorized by CLI file existence.
 2. Characterize compatibility and add the Focus/table model without changing routes.
-3. Replace shared publication, repair mixed Chop holds in their own behavior step,
-   then unify pad semantics without the sequence repair.
+3. Replace shared publication, repair mixed Chop holds and late direct notifications
+   in separate behavior steps, then unify pad semantics without the sequence repair.
 4. Add same-update race regressions, reproduce failure on the real routes, then repair
    ordering and deferred hold bookkeeping together. Red tests are not a separate
    green commit; keep their final assertions when making this step green.
@@ -241,8 +276,8 @@ Test both orderings of direct/UI retriggers and multiple accepted pads for one c
 Representation-bound low-level tests must adapt from five atomic fields to the packed
 value; keep the same screen/bank/edit/learn/hand assertions, with the owner-approved
 Chop fixture correction below. Do not remove, skip or weaken behavioral tests from 84.
-Keep exact names for all ten ordering delta scenarios and the three added mixed-hold
-scenarios.
+Keep exact names for all ten ordering delta scenarios, the three added mixed-hold
+scenarios and the two late-notification scenarios.
 
 The owner approved the Chop fixture correction before task 2.1 on 2026-11-03.
 At `53d317e`, `midi.rs:on_screen` leaves `hand` false even for Chop, and
@@ -309,28 +344,6 @@ specs by hand and do not mark physical checks passed because recorded tests pass
 
 ## Open questions
 
-- Before task 2.2, should direct-hit notifications that reach App after Chop opens
-  get a separate behavior repair? Source audit at `7272d92` found that dispatch
-  sends direct `PadHit` notifications with `accepted` true or false and no
-  `ui_press` (`midi.rs:570–596`). App checks its current screen, not the original
-  audio disposition: the Chop arm (`main.rs:4716–4727`) calls `chop_pad` without
-  checking `accepted`; the linked-pad path calls `try_send` again
-  (`main.rs:2864–2866`). Thus a late accepted notification can repeat a hit, and
-  a late rejected notification can become a new UI attempt. The same branch can
-  select a Chop slice, preview a bare slice or change an assignment plan.
-  This is a source-only finding, not a recorded-input or listening reproduction.
-  The delta already forbids replaying accepted or rejected direct hits, but task
-  2.2 also requires a behavior-preserving refactor. Proposed scope: add a separate
-  explicit scenario and repair step before 2.2; carry the original audio
-  disposition and keep late direct notifications as notifications when Chop
-  opens, without a new sound, preview or assignment action. Reproduce accepted
-  and rejected cases through recorded MIDI and actual offline queues. Keep the
-  original absolute pad, direct releases and existing Chop-entry hush; do not
-  change other hand/text/picker priorities or add command acknowledgements in
-  this step. Default: pause before task 2.2 until the owner confirms this scope;
-  leave production paths unchanged. The controller-command ordering repair
-  remains separate. Keyboard-origin state publication races are not otherwise
-  added to 85 by this proposal.
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later
   change; recorded notes and learned CC tests do not accept the SMC-PAD template.

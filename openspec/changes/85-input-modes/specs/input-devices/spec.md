@@ -30,6 +30,35 @@ direct release of a pad already accepted by the audio queue or stop sound proces
 
 ## ADDED Requirements
 
+### Requirement: Late direct MIDI notifications do not start Chop actions
+
+The system SHALL retain whether a MIDI pad hit was routed to the UI, accepted by
+its direct audio queue, or rejected by that queue. If Chop opens before a direct
+hit notification reaches App, that notification SHALL remain a report of the
+original direct hit. It SHALL NOT start another pad sound, preview a bare slice,
+select a Chop slice or change an assignment plan. A rejected direct hit SHALL NOT
+be retried after queue space returns. Keep the original absolute pad and direct
+release route. The existing Chop-entry hush SHALL remain. Actual UI-routed Chop
+hits SHALL retain their current listen, preview, assignment and release behavior.
+Other text, picker, question, learn and hand priorities SHALL remain unchanged.
+
+#### Scenario: Late accepted direct MIDI notification does not restart Chop
+- **WHEN** a raw note or learned pad button starts a direct pad on Pads, Chop opens
+  from the keyboard before the hit notification is consumed, and the UI then
+  consumes it in linked listen, bare-slice listen or assignment mode
+- **THEN** that hit sounds once before Chop entry and keeps its original velocity;
+  Chop entry hushes it without a later restart, preview or assignment action
+- **AND** its original control retains the direct release of its original absolute
+  pad, including after a bank change; no UI audio hold or duplicate release is added
+
+#### Scenario: Late rejected direct MIDI notification stays silent on Chop
+- **WHEN** the actual MIDI audio queue rejects a raw-note or learned-button hit on
+  Pads, space returns, Chop opens before the hit notification is consumed, and the
+  UI consumes it in linked listen, bare-slice listen or assignment mode
+- **THEN** the rejected hit stays silent, no slice is selected or previewed, and
+  no assignment action or UI audio hold results
+- **AND** its release does not release another accepted hold or add a UI audio release
+
 ### Requirement: Keyboard and MIDI keep separate Chop release targets
 
 On Chop, the system SHALL keep a held keyboard pad's original absolute release

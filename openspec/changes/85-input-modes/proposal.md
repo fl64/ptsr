@@ -20,6 +20,10 @@ before the next screen update can play the old sound instead of choosing its tar
   shared handler. A MIDI hit must not replace the remembered release target of a
   keyboard key held in another bank, even when the MIDI audio hit is rejected.
   The owner approved this added scope after the source audit at `82f84fa`.
+- Repair late direct MIDI notifications on Chop in another separate behavior step.
+  Keep the original accepted/rejected result. Opening Chop before a notification
+  arrives must not turn it into a new hit, preview or assignment action. The owner
+  approved this repair after the audit at `7272d92`.
 - Move the input dispatch into its own file in a separate move-only step.
 
 ## Capabilities
@@ -32,7 +36,8 @@ None. This change adds no user mode or command.
 
 - `input-devices`: specify the pending-command exception to direct MIDI playback,
   ordered target hits, safe releases for hits that wait for the UI, and separate
-  keyboard/MIDI release targets on Chop. The shared input model and code move do
+  keyboard/MIDI release targets on Chop. Specify that late direct notifications
+  do not start a new Chop action. The shared input model and code move do
   not change other requirements.
 
 ## Impact
@@ -92,6 +97,9 @@ owner's sound graph, change the owner's configuration or claim hardware acceptan
    keep sounding until its own control is released. Repeat in reverse release order.
 3. Start the MIDI hold first, then the keyboard hold in the other bank. Repeat the
    releases after a screen change, with a question open and with F10 open.
+4. Hit a pad on Pads and open Chop immediately from the keyboard. The old hit must
+   not restart, preview a slice or change a plan after Chop opens. The existing
+   Chop-entry hush must remain. Repeat with a learned pad button.
 
 ### Automated checks and listening
 
@@ -103,6 +111,13 @@ including a release or disconnect before the UI handles a deferred hit. Run the 
 Keep `renders/84-input-parity.wav` unchanged. Add `renders/85-mixed-holds.wav` for the
 separate hold repair: keyboard then MIDI, MIDI then keyboard, and rejected MIDI hits.
 Each original release must stop only its own pad, without a stuck gate.
+Add `renders/85-late-midi.wav` for late accepted and rejected notifications: hear
+one accepted hit before Chop entry, then its normal hush without a restart; rejected
+hits stay silent. Automated tests fill the real MIDI audio queue for rejection.
+The owner also requested an agent-operated terminal pass. Run that pass only in the
+isolated `target/ux` environment required by `AGENTS.md`, after the owner confirms
+Bluetooth listening. Check no active JACK connection and no ptsr PipeWire node before
+continuing. This does not check sound or physical controller behavior.
 Add `renders/85-input-modes.wav` with a
 silent take-file/target segment, a normal direct hit and a deferred gate hit followed
 by its release. Tests check finite samples, no clipping, intended silence, one hit

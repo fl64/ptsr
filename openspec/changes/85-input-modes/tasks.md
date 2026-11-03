@@ -19,7 +19,7 @@
   edit independent and retain existing pre-routing guards. Run full `task check`;
   commit this model step with signoff.
 
-## 2. Routing refactor and separate Chop hold repair
+## 2. Routing refactor and separate Chop repairs
 
 - [x] 2.1 Replace the five MIDI Shared atomics with one packed Focus publication and
   one snapshot read per raw message. Use the snapshot for screen, edit, bank and the
@@ -38,6 +38,17 @@
   `renders/85-mixed-holds.wav`. Keep the first failing assertions. Run full
   `task check`; commit this repair separately before 2.2. No sequencing or shared
   handler changes belong in this step.
+- [ ] 2.1b Reproduce and repair late direct notifications after Chop opens, as
+  separately approved by the owner. Add named accepted/rejected regressions through
+  raw notes and learned CC80, low/high velocity, linked listen, bare-slice listen,
+  assignment and a bank change. Reject through the actual full MIDI audio queue.
+  Carry explicit UI-unattempted/direct-accepted/direct-rejected sound disposition;
+  only actual UI hits may start a Chop action. Keep original direct releases,
+  epochs, existing guards, other hand priorities and Chop-entry hush. Mechanically
+  adapt old event assertions without weakening them. Compare real offline audio
+  with a timestamped oracle; check finite/no-clip, silence, onset and hush timing.
+  Write `renders/85-late-midi.wav`. Keep red assertions, run full `task check` and
+  commit this repair separately before 2.2. No sequencing or common handler yet.
 - [ ] 2.2 Make keyboard and MIDI call one `App::pad_hit`, with explicit input source and
   unattempted/direct-accepted/direct-rejected sound disposition. Keep wrapper undo,
   synchronization, existing source-specific priorities and original keyboard/MIDI hold
@@ -84,7 +95,10 @@
   callback performance issue and unverified hardware facts. Check that every delta
   scenario has its named test, run strict OpenSpec validation, full `task check` and
   `task build`; commit this documentation-only step with signoff.
-- [ ] 5.2 Ask the owner to check keyboard behavior and listen to both named renders.
+- [ ] 5.2 Run the owner-requested agent keyboard screen pass in the isolated
+  `target/ux` release launch from AGENTS.md; verify no active sound connection first.
+  Record observed screens, separately from sound and hardware checks. Ask the
+  owner to check keyboard behavior and listen to all named renders.
   Record the result without claiming a controller pass while none is available.
   Physical-only gaps remain explicitly unverified; do not put automatable scenarios
   into `openspec/untested.md`. Any acceptance record is a separate artifact-only
