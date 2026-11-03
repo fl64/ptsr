@@ -980,7 +980,8 @@ starts logged `JACK unavailable`, never `JACK: active`; no ptsr PipeWire node wa
 present before, during or after. Both exits printed `UX exit: 0`. The terminal had
 no audio or kitty releases; no MIDI was injected. The design records fixture
 expectation corrections. This is screen evidence, not owner or hardware acceptance.
-Owner boxes below stay open until reported.
+The owner reported successful keyboard checks on 2026-11-03. The controller is not available.
+Only the keyboard boxes below reflect that report. Controller and WAV checks stay open.
 
 ### Prepare
 
@@ -997,24 +998,23 @@ device can provide the pad notes. The incomplete SMC-PAD template is not accepte
 
 ### Keyboard pass
 
-- [ ] On Pads, hit a loaded pad. Open edit with `Enter`, then hit a different loaded
+- [x] On Pads, hit a loaded pad. Open edit with `Enter`, then hit a different loaded
   pad: it plays once and edit stays open. Close edit. Turn marking on with `M`, hit
   pads, then open edit again. Marks and sound must coexist; no key assignment changes.
-- [ ] On Files, switch preview off if it is on. Select a different file, press `Enter`
+- [x] On Files, switch preview off if it is on. Select a different file, press `Enter`
   and hit an occupied pad at once. The old pad must not play; the question names that
   target. Hit a second occupied pad: the first question and selection stay. `Esc`
   keeps both old sounds and the file in hand. Hit an empty pad: it loads the file
   without a hit sound. Wait for loading to end, then cancel any hand state before play.
-- [ ] Take a copy with `Ctrl+C`, place it on an empty pad, and undo with `Ctrl+Z`.
+- [x] Take a copy with `Ctrl+C`, place it on an empty pad, and undo with `Ctrl+Z`.
   Swap two loaded pads with `Ctrl+X` and a target hit, then undo. Placement is silent;
   one undo restores the prior target or both swapped pads, including their settings.
-- [ ] Repeat section 84's bare Chop listen, linked pad, slice edit and both assign
-  orders (`P`, then `Tab`). A question and F10 block new hits. An old hit delivered
-  after Chop opens must not restart sound, preview or change an assign plan.
-- [ ] (by ear) Hold a linked gate from Chop, change bank, open F4 and release its
+- [x] Repeat section 84's bare Chop listen, linked pad, slice edit and both assign
+  orders (`P`, then `Tab`). A question and F10 block new keyboard hits.
+- [x] (by ear) Hold a linked gate from Chop, change bank, open F4 and release its
   original key. Only its original pad stops. Repeat with F10 open before release.
   A new silent learn key must not steal that older keyboard hold.
-- [ ] Open the Files filter with `/` and type pad letters. They type text, not hits.
+- [x] Open the Files filter with `/` and type pad letters. They type text, not hits.
   Repeat pad naming (`Ctrl+N`) and project selection (`Ctrl+P`), then cancel. The
   project picker's first Esc clears typed text; another Esc closes it. Open and close
   F10 and all F12 tabs without saving a test binding. Save and restart the test project.
@@ -1045,6 +1045,7 @@ buttons separately where possible. Record the device and preset.
 - [ ] If two devices are available, take a file from device A and hit the target from
   B before the screen changes. It is still a silent target. Release older gates from
   both devices during this sequence: their original releases still work.
+- [ ] An old MIDI hit delivered after Chop opens must not restart sound, preview or change an assign plan.
 
 ### Offline listening
 
@@ -1088,7 +1089,10 @@ release processed before a deferred retrigger reaches UI: the newer accepted hit
 its own release. Existing non-deferred Chop release merging stays unchanged. No formal
 memory-model check or exhaustive proof of every queue interleaving is claimed.
 
-Owner result: pending. Keyboard terminal: not reported. Device/preset and physical
-note/CC release forms: unverified. Separate listening result: not reported. Callback
-maximum-budget and slow-core issues remain open; green p99 benchmark gates do not prove
+Owner keyboard result, 2026-11-03: all checks possible with the keyboard passed.
+The owner cannot test a controller at present. Keyboard terminal: not reported.
+Device/preset and physical note/CC release forms: unverified. Separate WAV listening result: not reported.
+The owner approved squash merge of [PR #4](https://github.com/fl64/ptsr/pull/4) into `master` with these checks open.
+This approval does not authorize archive of 85. Tasks 5.2 and 5.3 stay open.
+Callback maximum-budget and slow-core issues remain open. Green p99 benchmark gates do not prove
 that every callback meets the 50% target. This change does not investigate that issue.

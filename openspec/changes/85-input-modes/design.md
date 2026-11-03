@@ -437,6 +437,20 @@ owner checks are in section 85 of `docs/LIVE-CHECKS.md`. The owner is asked to c
 keyboard behavior and listen to all four named WAV files before acceptance. Tasks 5.2
 and 5.3 remain open for that result and explicit archive permission; no push/PR occurred.
 
+## Owner keyboard result and squash merge approval — 2026-11-03
+
+The owner reported that all checks possible with the keyboard passed.
+The owner cannot test a physical controller at present. The owner did not report the terminal or separate WAV listening.
+Section 85 of `docs/LIVE-CHECKS.md` records the keyboard result.
+The late MIDI notification check remains in the controller pass, not in the completed keyboard pass.
+Recorded MIDI and waveform tests do not replace hardware checks or owner listening.
+
+The owner approved squash merge of [PR #4](https://github.com/fl64/ptsr/pull/4) into `master` with these checks open.
+This approval replaces the earlier request to preserve separate commits in `master`.
+The local branch keeps its signed-off commits. The squash commit must include the signoff.
+Tasks 5.2 and 5.3 remain open for the remaining listening result and explicit archive permission.
+This approval does not authorize archive or close the callback performance issue.
+
 ## Risks / Trade-offs
 
 - Pending work can temporarily defer a pad from another device too. This follows the

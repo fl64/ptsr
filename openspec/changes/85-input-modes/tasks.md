@@ -104,8 +104,10 @@
   Record the result without claiming a controller pass while none is available.
   Agent part recorded at `1a24909`: 66 isolated final captures, two unavailable-JACK
   starts, zero sound connections and two zero exits; full saved-session comparisons.
-  Owner keyboard/listening result is pending, so this task stays open. See design
-  and section 85 of `docs/LIVE-CHECKS.md`; no controller or listening pass is implied.
+  On 2026-11-03 the owner reported that all checks possible with the keyboard passed.
+  The owner cannot test a controller at present. Separate WAV listening remains unreported, so this task stays open.
+  See design and section 85 of `docs/LIVE-CHECKS.md` for the separate results.
+  The owner approved squash merge of PR #4 into `master`, not archive of 85.
   Physical-only gaps remain explicitly unverified; do not put automatable scenarios
   into `openspec/untested.md`. Any acceptance record is a separate artifact-only
   signed-off commit after full `task check` and git authorization.
