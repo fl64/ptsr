@@ -12,10 +12,33 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - After each completed task, make a commit with a clear message.
 - **Everything you agree on with the owner goes into the spec at once.** A decision from the conversation (behavior, UX, keys, knobs, texts) goes into the proposal/design/spec/tasks of the active change before the code. Write a question without an answer in design.md, section "Open questions", together with the option you took by default.
 - **Commit after each step, and keep commits atomic**: one commit = one logical edit. Do not mix these in one commit: different steps, specs and code of other tasks, an AGENTS.md edit and code. An artifact edit without code is a separate commit. Code with the spec of its own step is one commit. Commit only when `task check` is green. A step is not done until it is committed.
-- **A commit message carries the scope of what changes.** Format: `<change>: <scope> — what changed` (for example, `09: chop — cursor: arrows move it, snaps to peaks, M cuts on pause`). The scope is the area the owner sees, not a crate name for its own sake: `chop`, `pads`, `files`, `settings`, `midi`, `tui` (drawing), `engine` (sound), `specs` (artifacts only), `docs`, `build`. The main scope goes first; a step that touches two areas is two commits (or takes the scope of the area the step was made for).
+- **A commit message carries the scope of what changes.** Format: `<change>: <scope> — what changed` (for example, `09: chop — cursor: arrows move it, snaps to peaks, M cuts on pause`). Use the shared scope table in "Branch and pull request names" below. The scope is the area the owner sees, not a crate name for its own sake. The main scope goes first; a step that touches two areas is two commits (or takes the scope of the area the step was made for).
 - At the end of a change, write to the owner: what is done, **what to check by hand and by ear** (exact steps), which files in `renders/` to listen to.
 - All repository texts are in English and follow ASD-STE100 Simplified Technical English: `README.md`, `AGENTS.md`, `docs/`, the `openspec/` artifacts and commit messages. Key names of the Russian layout (`х`, `Й`) are technical names and stay. Talk to the owner in Russian.
 - `docs/VISION.md` and `docs/plans/` are guides, not requirements. Requirements are only in `openspec/specs/` and in active changes. A deferred draft does not authorize code.
+
+## Branch and pull request names
+
+- Use the OpenSpec change folder name for the branch: `<change>-<short-name>`, for example `85-input-modes`. Do not add a scope to the branch name.
+- Use this PR title format: `<type>(<scope>): <summary> [<change>]`. Example: `fix(pads): preserve original gate releases [85]`. Use a conventional type for the main purpose. Write the summary in English.
+- Combine changes in one branch or PR only with the owner's explicit approval. For a combined PR, use the same title format with a range: `fix(input): align keyboard and MIDI pad control [83a–85]`.
+- The title names the main purpose. The description must cover the entire diff to the target branch, not only the last change. Keep implemented work, future plans and unverified checks separate.
+- Use the same scopes for commits and PRs. Choose the main affected area, not a Rust crate name. Tests use the scope of the behavior they check, not `tests`. For a PR with several areas, choose the main one and list the other areas in the description. This does not change the atomic commit rule above.
+- Do not add scope aliases: use `input`, not `keyboard`, `keymap` or `controls`; use `tui`, not `ui`.
+
+| Scope | Area |
+| --- | --- |
+| `pads` | Pad play, copy, swap and pad parameters |
+| `chop` | Chopping, cursor, slices and slice assignment |
+| `files` | File browser, filter and sample loading |
+| `settings` | Settings and their persistence |
+| `midi` | MIDI devices, profiles and control learning |
+| `input` | Keys, event routing and shared keyboard/MIDI rules |
+| `tui` | Drawing, indicators, hints and layout |
+| `engine` | Sound, voices, effects and audio-thread work |
+| `specs` | OpenSpec requirements and artifacts only |
+| `docs` | Documentation and plans |
+| `build` | Build, dependencies, Taskfile, CI and development tools |
 
 ## Controller-first development
 
