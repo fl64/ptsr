@@ -5440,6 +5440,10 @@ impl App {
         let warning_shown = self.keymap_warning_shown;
         self.keymap_warning_shown = false;
         self.dismiss_startup();
+        // Text, picker and learn modes take every key, so their early returns skip the
+        // held-key accounting below; a Ghostty repeat after such a state change would then
+        // count as a new press and dismiss a warning. Track held keys on every event.
+        let tracked = if kitty { keys_down.repeat(k) } else { *k };
         if self.pad_naming.is_some() && self.pad_name_key(k) {
             return false;
         }
@@ -5454,7 +5458,7 @@ impl App {
         if typing && self.filter_key(k) {
             return false;
         }
-        let k = if kitty { keys_down.repeat(k) } else { *k };
+        let k = tracked;
         if warning_shown
             && k.kind == event::KeyEventKind::Press
             && !matches!(k.code, event::KeyCode::Modifier(_))
@@ -9806,6 +9810,33 @@ Enter = "browser.hold"
         );
         assert!(app.keymap_warnings.is_empty());
         assert_eq!(app.pads.bank, 1, "the normal command still runs");
+    }
+
+    /// 83a "Only a visible keymap warning is dismissed": Enter closes pad naming and
+    /// a Ghostty repeat of the still-held key must not count as the new press that
+    /// dismisses the warning the next frame shows.
+    #[test]
+    fn a_repeat_after_a_mode_change_does_not_dismiss_a_warning() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        let mut app = test_app();
+        app.pads.file[0] = Some("/samples/kick.wav".into());
+        app.keymap_warnings.push_back("pending warning".into());
+        let mut input = NoticeInput::default();
+        let enter = KeyEvent::new(KeyCode::Enter, M::NONE);
+        // Pad naming hides the warning, so Enter saves the name without dismissing it.
+        app.pad_naming = Some((0, "kick".into()));
+        input.event(&mut app, &keymap, enter, true);
+        assert_eq!(app.keymap_warnings.len(), 1);
+        assert_eq!(app.frame_notice().as_deref(), Some("pending warning"));
+        // The next frame showed the warning, but Enter is still held: a Ghostty repeat
+        // is not a new press and must not dismiss it.
+        input.event(&mut app, &keymap, enter, true);
+        assert_eq!(
+            app.keymap_warnings.len(),
+            1,
+            "a Ghostty repeat is not a new press after a mode change"
+        );
     }
 
     #[test]
