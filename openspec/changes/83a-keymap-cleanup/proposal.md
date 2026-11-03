@@ -27,8 +27,8 @@ unbound old key moved; do not change their own bindings.
 On 2026-11-03 the owner confirmed option A: J/L change values on Pads, U/O turn banks.
 The owner also requested this work in `plan/controller-first-patterns`, not a new branch.
 This is an exception to the usual branch-per-change rule. Keep one active change and
-small, separate commits. The approved step now is specifications only; code is not part
-of this commit.
+small, separate commits. On the same day the owner approved the start of the code; each
+task of `tasks.md` lands as its own commit after `task check`.
 
 ## Capabilities
 

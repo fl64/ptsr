@@ -8,7 +8,7 @@
 
 ## 1. Key resolution and migration feedback
 
-- [ ] 1.1 Read the implementation files and call sites in full before the code plan.
+- [x] 1.1 Read the implementation files and call sites in full before the code plan.
   Add explicit Shift command support with tests for both layouts, extended events,
   legacy uppercase input, Shift+Tab, pad velocity and unchanged Ctrl/Alt behavior.
   Use existing actions in parser fixtures; add no unimplemented command. Run

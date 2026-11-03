@@ -14,7 +14,10 @@ Alt+R SHALL record the microphone, Ctrl+T the output; Ctrl+R SHALL stay reserved
 pattern recording until change 97. A bound Ctrl+D SHALL mean duplicate or double.
 The shipped map SHALL NOT use Ctrl+Shift+letter chords. New command chords SHALL work
 in English and Russian layouts, with and without the extended keyboard protocol, or
-state their replacement. Shift on a pad SHALL remain full velocity, not a command.
+state their replacement. Shift on a pad SHALL remain full velocity, not a command. An
+unbound Shift command chord SHALL keep acting as its plain key, in both input forms. An
+explicit `none` on the chord SHALL block that fallback and run nothing, also for the Tab
+fallback of `Shift+Tab`.
 
 #### Scenario: Shipped modified chords have one role
 - **WHEN** the shipped map is checked across screens and edit layers
@@ -26,6 +29,16 @@ state their replacement. Shift on a pad SHALL remain full velocity, not a comman
   uppercase characters in either keyboard layout
 - **THEN** H resolves to `chop.hits` and Shift+H to `chop.hits_back`
 - **AND** Shift+Tab, existing Ctrl/Alt chords and full-velocity pads keep their behavior
+
+#### Scenario: An unbound Shift chord acts as its plain key
+- **WHEN** a Shift command chord is not bound on the screen and its plain key is
+- **THEN** the shifted press runs the plain key's action in both input forms and both layouts
+- **AND** a Shift chord of the pad block stays a full-velocity pad, not a command
+
+#### Scenario: An explicit none on a Shift chord blocks the fallback
+- **WHEN** the owner sets a Shift command chord to `none` and presses it in either input form
+- **THEN** no action runs for the shifted press
+- **AND** the plain key without Shift keeps its own action
 
 #### Scenario: Unbound Shift Tab keeps its fallback
 - **WHEN** a screen has a Tab action but no explicit Shift+Tab action

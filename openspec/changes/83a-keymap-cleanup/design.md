@@ -1,9 +1,10 @@
 ## Context
 
-Source plan: `docs/plans/KEYMAP-CLEANUP.md`. Baseline: preparation commit `0b1da2c` on
-`plan/controller-first-patterns`. No feature code changes are included in this step.
-The owner confirmed option A and continuation in this same branch on 2026-11-03.
-Only 83a is active. Keep 84 deferred until the keymap cleanup is accepted.
+Source plan: `docs/plans/KEYMAP-CLEANUP.md`. Baseline: specification commit `acfd174` on
+`plan/controller-first-patterns`. The owner confirmed option A, continuation in this
+same branch and the start of the code on 2026-11-03. Each task of `tasks.md` lands as
+its own commit after `task check`. Only 83a is active. Keep 84 deferred until the
+keymap cleanup is accepted.
 
 Existing code gives the implementation boundaries:
 
@@ -58,9 +59,11 @@ edit layers too; owner overrides are not forced to obey the shipped-map test.
 Add Shift distinction only as needed for explicit command chords, keeping Shift pad
 velocity and current unbound-Shift fallback. A shipped Shift+H must be distinct from H
 in both extended events and legacy uppercase text, including the Russian physical H
-key. Shift+Tab and existing Ctrl/Alt bindings stay compatible. Where Shift+Tab has no
-previous-page binding, keep its current Tab fallback rather than adding a new Settings
-navigation action in this cleanup. Ctrl+C is a command in raw mode, not quit. Alt+R without releases toggles recording; tests drive both event
+key. Shift+Tab and existing Ctrl/Alt bindings stay compatible. The fallback answers an
+absent chord only: an explicit owner `none` on a Shift chord, including `Shift+Tab`,
+keeps the key silent and does not fall through to the plain key or Tab. Where Shift+Tab
+has no previous-page binding, keep its current Tab fallback rather than adding a new
+Settings navigation action in this cleanup. Ctrl+C is a command in raw mode, not quit. Alt+R without releases toggles recording; tests drive both event
 forms. A remap of old Ctrl+R to microphone retains the previous behavior.
 
 ### Notices respect input priority
