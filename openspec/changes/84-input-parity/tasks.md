@@ -47,11 +47,23 @@
   `renders/84-input-parity.wav` through the implemented route; check finite samples,
   no clipping, silence, levels and nearest-block timing. Run `task check` and commit.
 
+- [ ] 2.3 Add the owner-approved green playback line for linked pad hits in the open
+  Chop listen and slice editor. First add failing tests for all six chopping delta
+  scenarios, using keyboard, raw notes and learned CC through the real offline queues.
+  Report real pad positions without an extra voice. Keep display position separate
+  from preview transport/edit position; do not change Space, M, cursor control,
+  hit-driven selection or sound. Cover pitch, loop, stop/release, matching source and
+  project, queue rejection, question/learn guards and both waveform modes. Review the
+  documented concurrent-voice default before code. Update user stories and live checks,
+  validate, run task check, rebuild the release and commit the fix separately.
+
 ## 3. Documentation and acceptance
 
 - [x] 3.1 Update user stories and live checks with separate keyboard and controller
   passes. Validate the change, run `task check`, build the release and commit.
 - [ ] 3.2 Ask the owner to check Chop listening and assignment from both inputs and
-  listen to `renders/84-input-parity.wav`. Record the result, not an assumed pass.
+  listen to `renders/84-input-parity.wav`. Include the pad playback line after 2.3.
+  Record the result, not an assumed pass. The owner has no controller at present;
+  keep its physical pass unverified, not passed or waived by automated MIDI tests.
 - [ ] 3.3 Archive with `openspec archive` only after acceptance and scenario coverage
   in the main specs. Validate specs, run `task check` and commit the archive.

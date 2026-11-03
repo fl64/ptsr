@@ -44,8 +44,8 @@ controller profile or sequencer here.
 
 The broad parity goal covers all screens and modes in the roadmap. This delta specifies
 Chop and the owner-approved MIDI copy, file/swap target and question-route repairs,
-plus the separately approved held-keyboard release through learn, not fixes for all
-differences.
+plus the separately approved held-keyboard release through learn and pad playback
+line, not fixes for all differences.
 A newly found difference is a scope decision, not permission to change more behavior.
 
 ## Decisions
@@ -160,13 +160,48 @@ Do not change confirmation commands, marking sound, the five-atomic snapshot or 
 pending-command protocol. Test keyboard, notes and explicitly learned pad buttons at
 published frame boundaries. Further differences still require an owner scope decision.
 
+### Pad playback line (owner approved during acceptance)
+
+The owner reported a missing green line while playing a slice from a pad key in the
+open Chop editor. They clarified that Space already shows the green moving line.
+The final agreement is only to show that line for pad playback too. The earlier
+suggestion to change M was withdrawn. Space, M, cursor control, slice selection and
+the sound keep their existing behavior. This agreement does not change the main
+spec's existing cut rules or resolve wording differences between older requirements.
+
+At `efea1e0`, `App::playhead` reads only `preview_frame` (`main.rs:2742–2746`),
+and the engine publishes only a voice marked `preview` (`engine/src/lib.rs:965–972`).
+A linked Chop hit starts a real pad through `Pads::apply` (`main.rs:2824–2827`), not
+that preview voice. The waveform already draws a green line when given a position
+(`tui/src/lib.rs:2430–2433`). This source path explains the missing position for linked
+pad hits; it is not a live agent check. The owner has identified the pad trigger path.
+
+Implement read-only audio position reporting and pass a matching pad's position to
+the waveform. Do not start an extra preview, change an audio route or substitute a
+UI timer for the real position. Keep a separate display position from the preview
+position used by transport and edits: adding the line must not change M or Space.
+Playback progress must not drag the owner's cursor. Keep existing hit-driven slice
+selection; this is not permission to remove that selection behavior. No new mode,
+key, header behavior, sound algorithm or project/config format is approved.
+
+Test keyboard events, raw notes and learned CC through the real offline audio queues.
+Check the real frame position, pitch, loop, end/release, source identity, project
+changes, queue rejection and question/learn guards. Check that the new line does not
+change the existing cut or transport command, and that the sound is not duplicated.
+Cover the line in the existing waveform modes and keep the original Space tests.
+Update the owner checks and release build only after the implementation passes.
+
+The owner also reported that no controller is currently available. The physical MIDI
+pass remains unverified. No test result or acceptance is inferred from its absence.
+The keyboard report is not acceptance of the rest of 84, and archive remains blocked.
+
 ### Tests before completion
 
 Run the shared workflows on Pads, pad edit, marking, file in hand, pad swap, pad copy
 (from 83a), question, learn, Chop before assignment, linked-slice listen and by-hand assignment. Keep existing
 X-Session tests unchanged. Add gate release coverage after a screen and bank change.
-A difference outside the Chop, copy, approved file/swap/question and held-keyboard
-learn deltas blocks the affected step until it is documented and its scope is agreed.
+A difference outside the Chop, copy, approved file/swap/question, held-keyboard learn
+and pad playback line deltas blocks the affected step until it is documented and its scope is agreed.
 Do not skip the test or change an assertion to accept an unknown result.
 
 Render paired linked-pad hits and low/high MIDI velocity through the implemented route
@@ -375,6 +410,12 @@ needs explicit acceptance before the OpenSpec CLI archive.
 
 - Will further paired tests expose a difference outside the approved repairs?
   Default: record it and stop the affected task for another scope decision.
-- Which physical pad controller and preset will the owner use for acceptance? Default:
-  the existing notes 36–51 fallback or an explicit learned pad binding. No SMC-PAD
-  relative mode or port assumption is needed for 84.
+- Which physical pad controller and preset will the owner use for acceptance? The
+  owner has no controller at present. Default: keep that pass unverified and use the
+  existing notes 36–51 fallback or an explicit learned binding for automated tests.
+  No SMC-PAD relative mode or port assumption is needed for 84.
+- Which line should win if a Space preview and several matching pad voices sound
+  together? Not explicitly decided by the owner. Proposed default: preserve the
+  existing preview line while a preview sounds; otherwise show the most recently
+  started sounding pad of this chop. Do not add several lines or change which voices
+  sound. Recheck this default before implementing the display selection.

@@ -8,6 +8,9 @@ pad hit before the replacement question. This breaks the silent copy rule from 8
 Paired baseline tests then confirmed three more differences: MIDI swap loses target
 selection and undo, file placement loses target selection, and a clear question does
 not stop direct MIDI pad hits. The owner approved these narrow repairs in 84.
+During the keyboard check, the owner also found that a linked slice sounds on a pad
+hit in Chop but has no moving green playback line. Space already has that line.
+The owner approved adding the line for pad playback, with no other behavior change.
 
 ## What Changes
 
@@ -24,6 +27,9 @@ not stop direct MIDI pad hits. The owner approved these narrow repairs in 84.
 - Select the same target for MIDI file placement and swap; record the same swap undo step.
 - Keep pad hits silent under an open question, without losing original held-pad releases
   or changing confirmation commands. Keep marking audible as before.
+- Show the moving green playback line for a pad hit in the open Chop editor too.
+  Read the real sounding position without another audio hit. Keep Space, M, the
+  owner-controlled edit cursor, pad sound and existing selection behavior unchanged.
 - Record other differences before deciding their scope. Do not hide extra fixes in this step.
 
 ## Capabilities
@@ -35,11 +41,14 @@ not stop direct MIDI pad hits. The owner approved these narrow repairs in 84.
   swap undo and pad silence under questions match the existing keyboard route;
   linked Chop gate pads keep their original release route; keyboard pads held before
   F10 release through learn without letting new hits sound.
+- `chopping`: show the existing green playback line for a sounding pad slice too,
+  without changing transport or edit commands.
 
 ## Impact
 
 Input and application tests, the MIDI pad-hit event, shared state publication, copy,
-file and swap targets, question guards and the Chop input route. No new dependency,
+file and swap targets, question guards, the Chop input route and read-only pad playback
+position reporting from audio to the waveform. No new dependency,
 key, profile default, audio algorithm or saved file format.
 
 ## Out of scope
@@ -78,5 +87,12 @@ Do two passes, one with keyboard pads and one with controller pads:
    and one Ctrl+Z must restore both pads. Mark two loaded pads and press Backspace:
    pad hits must stay silent under the question. Release a gate pad held before it;
    the original pad must stop even after the bank and screen change.
-7. Listen to `renders/84-input-parity.wav` after implementation. Paired hits must match;
+7. In listen and slice edit, hit a linked pad on Chop. The green line must follow
+   its sounding position and disappear when it ends. Check pitch and gate release.
+   The owner's cursor must not follow that line; Space and M must work as before.
+   Repeat with raw notes or a learned pad button when hardware is available.
+8. Listen to `renders/84-input-parity.wav` after implementation. Paired hits must match;
    light and strong MIDI hits must differ in level, with no clicks or clipping.
+
+The owner has no controller available at this check. The physical-controller pass
+remains unverified, not passed or waived. Raw-MIDI automated tests still apply.
