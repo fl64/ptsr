@@ -74,6 +74,8 @@ enum Raw {
     Learned(String, Scope, HashMap<Key, String>),
     /// The roles of a profile are copied into the learned maps (59): only those act now.
     Seeded(String),
+    #[cfg(test)]
+    Fence(Sender<()>),
 }
 
 #[derive(Clone, Copy)]
@@ -134,6 +136,54 @@ pub struct Midi {
 }
 
 impl Midi {
+    #[cfg(test)]
+    pub fn recorded(
+        profiles: Vec<Profile>,
+        commands: rtrb::Producer<ProjectCommand>,
+        project: Arc<ProjectState>,
+        shared: Arc<Shared>,
+    ) -> (Self, std::thread::JoinHandle<()>) {
+        let (updates, raw_rx) = mpsc::channel();
+        let (tx, events) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                profiles,
+                LearnedMaps::new(),
+                Vec::new(),
+                Some(commands),
+                Some(project),
+                shared,
+            );
+        });
+        (Self { events, updates }, worker)
+    }
+
+    #[cfg(test)]
+    pub fn recorded_connect(&self, port: &str) {
+        self.updates.send(Raw::Connected(port.into())).unwrap();
+    }
+
+    #[cfg(test)]
+    pub fn recorded_bytes(&self, port: &str, bytes: &[u8], project: &ProjectState) {
+        if let Some(msg) = Msg::parse(bytes) {
+            self.updates
+                .send(Raw::Msg(port.into(), msg, Stamp::capture(Some(project))))
+                .unwrap();
+        }
+    }
+
+    #[cfg(test)]
+    pub fn recorded_fence(&self) {
+        // The dispatch loop flushes pending releases before it reads this marker.
+        // This bounds a recorded frame without depending on thread timing or sleeps.
+        let (tx, rx) = mpsc::channel();
+        self.updates.send(Raw::Fence(tx)).unwrap();
+        rx.recv_timeout(Duration::from_secs(2))
+            .expect("recorded MIDI frame did not finish");
+    }
+
     /// Replaces the learned assignments of `profile` in `group` in the MIDI thread.
     pub fn set_learned(&self, profile: &str, group: Group, map: HashMap<Key, String>) {
         let _ = self
@@ -370,6 +420,11 @@ fn dispatch(
                     }
                 }
                 seeded.push(name);
+                continue;
+            }
+            #[cfg(test)]
+            Raw::Fence(done) => {
+                done.send(()).unwrap();
                 continue;
             }
             Raw::Msg(port, msg, stamp) => (port, msg, stamp),

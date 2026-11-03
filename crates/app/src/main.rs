@@ -10,6 +10,9 @@ mod pads;
 mod session;
 mod wav;
 
+#[cfg(test)]
+mod input_tests;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9108,7 +9111,7 @@ mod tests {
     }
 
     /// The program without a sound card: a real loader thread, no audio, no MIDI.
-    fn test_app() -> super::App {
+    pub(super) fn test_app() -> super::App {
         use super::*;
         App {
             audio: None,
