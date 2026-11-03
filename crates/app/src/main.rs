@@ -4483,6 +4483,26 @@ impl App {
             .unwrap_or(self.midi_row);
     }
 
+    fn publish_midi(&self, shared: &midi::Shared) {
+        shared.bank.store(self.pads.bank, Relaxed);
+        let screen_code = match self.screen {
+            Screen::Pads => 0,
+            Screen::Settings => 1,
+            Screen::Files => 2,
+            Screen::Chop => 3,
+            Screen::Fx => 4,
+        };
+        shared.screen.store(screen_code, Relaxed);
+        shared.edit.store(self.edit, Relaxed);
+        shared.learn.store(self.screen_learn.is_some(), Relaxed);
+        shared.hand.store(
+            self.browser.in_hand.is_some()
+                || self.pad_in_hand.is_some()
+                || self.screen == Screen::Chop,
+            Relaxed,
+        );
+    }
+
     fn midi_ui_event(&mut self, ev: midi::UiEvent) {
         let preview_ready = ev.preview_ready();
         if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
@@ -6070,23 +6090,7 @@ fn main() -> std::io::Result<()> {
         {
             app.record_stop();
         }
-        shared.bank.store(app.pads.bank, Relaxed);
-        let screen_code = match app.screen {
-            Screen::Pads => 0,
-            Screen::Settings => 1,
-            Screen::Files => 2,
-            Screen::Chop => 3,
-            Screen::Fx => 4,
-        };
-        shared.screen.store(screen_code, Relaxed);
-        shared.edit.store(app.edit, Relaxed);
-        shared.learn.store(app.screen_learn.is_some(), Relaxed);
-        shared.hand.store(
-            app.browser.in_hand.is_some()
-                || app.pad_in_hand.is_some()
-                || app.screen == Screen::Chop,
-            Relaxed,
-        );
+        app.publish_midi(&shared);
         if app
             .pickup
             .as_ref()
@@ -9185,6 +9189,44 @@ mod tests {
             recording: None,
             #[cfg(test)]
             sent: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn shared_midi_publication_keeps_the_existing_routes() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let shared = super::midi::Shared::default();
+        let mut app = test_app();
+        for (screen, code) in [
+            (Screen::Pads, 0),
+            (Screen::Settings, 1),
+            (Screen::Files, 2),
+            (Screen::Chop, 3),
+            (Screen::Fx, 4),
+        ] {
+            app.screen = screen;
+            for bank in [0, 7] {
+                app.pads.bank = bank;
+                for edit in [true, false] {
+                    app.edit = edit;
+                    for learn in [true, false] {
+                        app.screen_learn = learn.then(|| app.learn_open());
+                        for hand in [1, 2, 0] {
+                            app.browser.in_hand = (hand == 1).then(|| "break.wav".into());
+                            app.pad_in_hand = (hand == 2).then_some(4);
+                            app.publish_midi(&shared);
+                            assert_eq!(shared.bank.load(Relaxed), bank);
+                            assert_eq!(shared.screen.load(Relaxed), code);
+                            assert_eq!(shared.edit.load(Relaxed), edit);
+                            assert_eq!(shared.learn.load(Relaxed), learn);
+                            assert_eq!(
+                                shared.hand.load(Relaxed),
+                                hand != 0 || screen == Screen::Chop
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 

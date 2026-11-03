@@ -8,7 +8,7 @@
 
 ## 1. Paired input driver
 
-- [ ] 1.0 Extract shared MIDI state publication unchanged for production and tests.
+- [x] 1.0 Extract shared MIDI state publication unchanged for production and tests.
   Cover the published fields without changing their rules. Run `task check` and commit.
 - [ ] 1.1 Add the test driver for key events, raw MIDI bytes and explicit frames. Reuse
   the production dispatch and profile initialization. Keep extraction separate from
