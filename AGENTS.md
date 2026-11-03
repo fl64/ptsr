@@ -15,7 +15,16 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - **A commit message carries the scope of what changes.** Format: `<change>: <scope> — what changed` (for example, `09: chop — cursor: arrows move it, snaps to peaks, M cuts on pause`). The scope is the area the owner sees, not a crate name for its own sake: `chop`, `pads`, `files`, `settings`, `midi`, `tui` (drawing), `engine` (sound), `specs` (artifacts only), `docs`, `build`. The main scope goes first; a step that touches two areas is two commits (or takes the scope of the area the step was made for).
 - At the end of a change, write to the owner: what is done, **what to check by hand and by ear** (exact steps), which files in `renders/` to listen to.
 - All repository texts are in English and follow ASD-STE100 Simplified Technical English: `README.md`, `AGENTS.md`, `docs/`, the `openspec/` artifacts and commit messages. Key names of the Russian layout (`х`, `Й`) are technical names and stay. Talk to the owner in Russian.
-- `docs/VISION.md` is a guideline, not a requirement. Requirements are only in `openspec/specs/` and in active changes.
+- `docs/VISION.md` and `docs/plans/` are guides, not requirements. Requirements are only in `openspec/specs/` and in active changes. A deferred draft does not authorize code.
+
+## Controller-first development
+
+- Read `docs/PROJECT.md` and `docs/plans/README.md` before preparing the next change. The order is keymap cleanup (83a), input and visual control (84–90), SMC-PAD (91–94), then transport and patterns (95–101). Keep the owner decisions in each change's design. Ask about J/L on Pads before 83a code; proposed option A is not acceptance.
+- The goal is every action without typed text from the SMC-PAD, without losing keyboard controls. The plans do not prove that goal is met. Measure the Linux device in 91 before accepting its profile.
+- From 84, test each shared input scenario with keyboard events and raw MIDI through the real profile and dispatch. Controller-only holds, layers and velocity need MIDI tests, not a fake keyboard equivalent. Do not replace production routing with a test-only path.
+- Refactors keep the agreed behavior and keymap. List each behavior fix in a delta with a test; do not hide a race fix inside a code move. New scope or a contradiction means stop and propose a spec edit.
+- From 87, each new mode needs its visible badge, pad state and hints. From 92, each new action states its keyboard and controller paths, or its text-only exception. Change 93 checks reach from screens and modes; 93a adds comfort before transport. Pad lights (94) are optional.
+- Each proposal gives separate owner checks for keyboard and controller, plus the renders to hear. Keep current capabilities, planned work and unverified hardware facts separate in documents and reports.
 
 ## Real time — you must not break it
 
@@ -39,7 +48,7 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 
 - The left half of the keyboard is **only pads**: physical keys `1 2 3 4 / Q W E R / A S D F / Z X C V`, in any layout (including Russian), with a key release event. Shift on pads = full hit velocity.
 - The only exception is an open text input line (filter, name). While it is open, all keys type text and the pads are silent. The line opens explicitly (`/`) and closes with Enter or Esc.
-- Commands are only on the right half, arrows, F keys, Space, Enter, Esc, Tab, Backspace and Ctrl+letter. **Never** assign commands to the keys of the pad block. This rule also applies to these keys with Shift. Shift on pads is only hit velocity. With arrows and other command keys, Ctrl, Alt and Shift are modifiers (Shift is a fine step).
+- Commands are only on the right half, arrows, F keys, Space, Enter, Esc, Tab, Backspace and Ctrl/Alt+letter. **Never** assign commands to the keys of the pad block. This rule also applies to these keys with Shift. Shift on pads is only hit velocity. With arrows and other command keys, Ctrl, Alt and Shift are modifiers (Shift is a fine step).
 - The program thinks in **logical actions** (`chop.cut`, `slice.fade`, `pad.trigger`), not in the buttons of a specific device. Profiles in `config/devices/*.toml` and `config/keymap.toml` decide what each button does.
 - Several MIDI devices work at the same time. One setting in F12 (MIDI tab) decides how absolute knobs and faders catch a value: `jump` (default, the parameter goes to the knob position at once), `pickup` (waits until the knob reaches the value) or `scale` (catches up toward the end stop). Takeover is counted separately for each device and knob. A value jump is smoothed without a click.
 - At the bottom of each screen: help by groups, with the current states of the toggles. F1 shows the full help.
