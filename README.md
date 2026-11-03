@@ -62,6 +62,7 @@ Start ptsr from the repository folder. ptsr reads the controller profiles from `
 - `F6` opens the files. Select a file and press `Enter` to take it in hand. Hit a pad to put the file on it.
 - `F3` opens the chop screen for the selected pad. `Y` cuts equal parts. `P` starts the assign of the slices to the pads.
 - `Enter` on the pads screen opens the pad edit. `Tab` turns the page, `I` `K` select a parameter, `J` `L` change it.
+- `F4` opens the shared FX screen. `Tab` selects FX 1 or FX 2; the same page knobs control the selected block.
 - `F12` opens the settings: the sound device, the buffer, MIDI and the knob response.
 
 `docs/USER-STORIES.md` gives each task step by step.
@@ -81,10 +82,23 @@ The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these
 ## Controllers
 
 - ptsr has a profile for the M-Audio X-Session Pro: `config/devices/xsession-pro.toml`.
-- `config/devices/smc-pad.toml` is a template for the M-VAVE SMC-PAD. It is not complete, and ptsr does not read it yet.
+- `config/devices/smc-pad.toml` is a template for the M-VAVE SMC-PAD. It is not complete, and ptsr does not read it yet. The [SMC-PAD plan](docs/plans/SMC-PAD-INTEGRATION.md) describes the next integration, not current controls.
 - A device without a profile plays the pads from notes 36–51.
 - More than one controller can work at the same time.
 - To bind a control to an action, press `F10` on a screen (learn mode), or use the MIDI tab in `F12`.
+
+## Next work
+
+The [development plan](docs/plans/README.md) sets the order: keymap cleanup (83a), input
+parity and refactors (84–90), SMC-PAD and its command panel (91–94), then transport and
+patterns (95–101).
+The goal is every action without typed text from the SMC-PAD, with the same logical
+behavior as the keyboard. These features are planned, not shipped. Start with the
+[keymap plan](docs/plans/KEYMAP-CLEANUP.md) and its open J/L choice. The later parity
+change is prepared in `openspec/deferred/84-input-parity/`.
+
+[Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
+locks, slice motion and the launcher. They are not requirements for the current step.
 
 ## Development
 

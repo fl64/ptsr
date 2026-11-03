@@ -2,7 +2,14 @@
 
 # Technical brief: the ptsr terminal sampler
 
-Version 2 · 28.10.2026 · project name: ptsr.
+Version 3 · 03.11.2026 · project name: ptsr. Version 3 adds modulation, pattern ideas, slice ideas, the controller-first goal and visual control (sections 12, 16a, 17, 20, 22, 24). The detailed plans for the next changes are in [plans/README.md](plans/README.md).
+
+Current status: change 82 (shared FX and X-Session defaults) is accepted and archived.
+The next work is keymap cleanup (83a), input parity, visual control, SMC-PAD integration
+and then patterns.
+These are plans, not shipped features. See `docs/PROJECT.md` for the current state.
+SMC-PAD hardware details below are reference assumptions until change 91 measures the
+owner's device on Linux.
 
 ## 1. Goal and context
 
@@ -51,7 +58,7 @@ The target terminal is kitty, WezTerm, foot or Ghostty. The program needs the ex
 
 | Device | Role | Connection |
 | --- | --- | --- |
-| M-VAVE SMC-PAD | main controller: 16 velocity pads, 8 encoders, utility buttons | USB-MIDI (the first versions do not support Bluetooth) |
+| M-VAVE SMC-PAD | main controller: 16 velocity pads with pressure (two layers with PAD BANK), 8 endless encoders (two banks with KNOB BANK), 5 buttons that send MIDI (LEFT, RIGHT, PLAY, STOP, RECORD); SHIFT, PAD BANK, KNOB BANK and Note Repeat are local and send nothing | USB-MIDI (the first versions do not support Bluetooth) |
 | Roland SP-404 MK2 | controller, sound card, external instrument that follows the MIDI clock | USB (audio + MIDI), no hub |
 | Computer keyboard | pads, navigation, commands | terminal with the kitty protocol |
 | Any MIDI device | notes and CC through the mapping from the config | USB-MIDI |
@@ -161,12 +168,15 @@ All editing is non-destructive. Samples in the library do not change. The projec
 - Volume, pan, pitch (semitones and cents), envelope (attack, hold, decay, release), filter.
 - Mute group: the pads in the group silence each other. Example: closed and open hi-hat.
 - **Pad link**: one press triggers a group of pads.
+- **Slice follow**: when a pad that plays a slice ends, it starts the next slice, a random slice, or a slice from a list. The break rebuilds itself while it plays. A follow chain stops at a set count or on the next hit.
 - 2 effect slots, send to buses 1 and 2, output (master or a separate JACK channel).
 - BPM sync: time stretch makes a loop follow the project tempo.
 
 **16 Levels:** the program spreads the selected pad across 16 pads. On these pads, one parameter changes in steps from pad to pad. This parameter is pitch, volume, filter, decay or start point. The result is new pads in the same program. The source pad does not change.
 
 **Keygroup program:** a sample or a set of samples plays by notes. The notes come from a MIDI keyboard, from the pads in chromatic mode, or from the piano roll. In chromatic mode, 16 pads are 16 degrees of the selected scale. Note zones have a root note, with up to 4 layers in a zone. Polyphony or mono with legato and portamento. This replaces the chromatic mode of the SP-404. It gives melodies and bass lines from samples.
+
+**Playhead mode:** the 16 pads are 16 start points in one long sample. A knob moves the window of the 16 points across the sample, and a second knob sets the window width. Each hit plays from its point. This is a quick way to play a long recording or a texture without chopping it first.
 
 **Live mode:** it locks all functions that you do not need on stage (deletion, project change, editors). One button toggles it. The status line shows its state.
 
@@ -209,6 +219,7 @@ Waveform: pixel graphics through the kitty protocol. In other terminals, Braille
 - **Recording to an audio clip** on an audio track: into the selected launcher cell. The length is a multiple of bars, or free.
 - **Skip back**: the program always records the last 60 seconds of the input and the master. You can configure the length. One button saves this audio to a pad or a clip.
 - **Resampling**: the program records the master, a bus or a track, with its effects, to a new pad or a clip.
+- **Live slicing**: the program records the input or the master and cuts the recording by hits at once. The slices go onto the pads without the chop screen. The owner can open the chop screen later to correct the cuts.
 - **Looper**: live loop recording with layer overdub and undo of the last layer. The loop length is in bars, in sync with the tempo. You can save the result to a clip or a pad.
 - **Input effect**: processing during recording (section 10).
 
@@ -223,6 +234,8 @@ Effects are in five locations:
 - **Buses 1 and 2 (send)**: a chain of up to 3 effects. By default, bus 1 is a reverb and bus 2 is a delay.
 - **Performance effect on the master**: one active "live" effect. When you select it, encoders 1–8 immediately become its knobs. Hold the button to turn it on temporarily.
 - **Input**: one slot. It operates during recording and monitoring.
+
+**Sidechain (ducking):** a pad, a track or a bus can make another part quieter while it sounds. Example: the kick makes the texture and the reverb tail quieter, so the mix "breathes". Settings: source, amount, attack, release.
 
 Each effect has up to 8 parameters, dry/wet and bypass. The program smooths parameter changes without clicks. Patterns record parameters and effect on/off as automation. The limiter on the master is always on.
 
@@ -258,6 +271,11 @@ A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio
 - **Step mode (like TR-REC):** a step grid. A pad adds or deletes a hit.
 - **Substeps (ratchets):** 2, 3, 4, 6, 8 hits in a step, with decreasing or increasing volume.
 - **Per-step parameters:** velocity, pitch, gate length, reverse, sample start point, trigger probability, off-grid shift (microtiming).
+- **Parameter locks:** any pad parameter can have its own value on one step: filter, cutoff, decay, drive, sends, the slice. The step plays with this value, and the next step returns to the pad value. You set a lock in step mode: hold a step and turn a knob.
+- **Row lengths (polyrhythm):** each pad row of a pattern can have its own length in steps, for example 12 steps for the hi-hat and 16 for the kick. The rows drift against each other and meet again after the common length.
+- **Euclidean fill:** for one pad row, set the number of hits, the number of steps and the rotation. The program spreads the hits as evenly as possible. Two knobs change it live.
+- **Mutations:** commands that change a pattern by chance: shuffle the slices on the pads, thin the hits, move hits by one step, swap two rows. Each mutation is one undo step, so you can roll again.
+- **Humanize:** a small random change of time and velocity for each hit at playback. One knob sets the amount. The stored hits do not change.
 - **Piano roll** for keygroup programs.
 - Swing 50–75 %, note repeat (roll) at the selected beat.
 - Automation recording for effects and pads, effect on/off included.
@@ -304,11 +322,25 @@ Algorithm: the program cuts the sound into overlapping windows and calculates an
 - **Parameters on encoders:** stretch, window size, position, pitch, spectral spread, tonal/noise, filter, volume.
 - Spectral processing from PaulXStretch (harmonics, frequency shift, compression): after the basic version.
 
+## 16a. Modulation and performance control
+
+The sound moves without hands on the knobs, and one hand moves many parameters at a time.
+
+- **LFOs:** each pad and each effect slot can have up to 2 LFOs. Shapes: sine, triangle, square, ramp, random steps, smooth random. The rate is free (Hz) or in tempo (1/16 … 8 bars). Targets: any pad or effect parameter, with an amount from −100 to +100 %. A pad LFO can restart on each hit or run freely.
+- **Pad pressure:** the SMC-PAD sends pressure after a hit. The pressure of a sounding pad can move one or two of its parameters (for example cutoff and drive) or the note repeat rate. A setting per pad sets the target and the amount. Pressure is off by default.
+- **Macros:** 8 macro knobs per project. One macro moves up to 8 parameters, each with its own range and direction. Example: one turn closes the filter and opens the reverb send.
+- **Snapshots and morph:** a snapshot keeps the values of the pads, the effects and the macros. There are 8 snapshot slots per project. A knob morphs smoothly between two snapshots; a pad jumps to a snapshot on the next beat. Snapshots never change samples, slices or patterns.
+- All modulation is smoothed. No change makes a click. The sequencer can record macro and morph moves as automation.
+
 ## 17. Interface and control
 
 You do all work without a mouse. The left hand is on the pads (1234/QWER/ASDF/ZXCV). The right hand is on navigation. Functions are on F-keys and Ctrl. There is no vim style. The mouse is an addition (clicks, drag of markers and clips). No function needs the mouse.
 
-**Screens:**
+**Screens** (the original long-term idea, not the current or next keymap):
+
+Today F1 is help, F2 Pads, F3 Chop, F4 FX, F6 Files, F10 learn and F12 Settings.
+Change 98 proposes Pattern on F5, not F4. Keep these keys until a separate spec changes
+them. The keys in use are in `config/keymap.toml`; the table below is historical.
 
 | Key | Screen | Content |
 | --- | --- | --- |
@@ -331,11 +363,16 @@ You do all work without a mouse. The left hand is on the pads (1234/QWER/ASDF/ZX
 
 - Arrows: navigation. Enter: confirm. Esc: back or cancel. Space: start/stop.
 - PageUp / PageDown: bank. Tab / Shift+Tab: next/previous element.
-- Ctrl+letter: actions. Ctrl+Z / Ctrl+Y: undo and redo. Ctrl+S: save. Ctrl+R: record. Ctrl+B: bake. Ctrl+D: duplicate.
+- Ctrl+letter: actions. Ctrl+Z is undo; Ctrl+S saves. Today Ctrl+R holds microphone recording and Ctrl+Y chops by hits. Planned cleanup 83a moves microphone hold to Alt+R, Chop normalize to Ctrl+G, and Chop hits to H / Shift+H. It reserves Ctrl+R for pattern recording (97), Ctrl+Y for redo and Ctrl+. for panic (93a). These moves are not implemented yet.
+- Ctrl+B stays the Files favorite key; bake needs a different key in its own change. Ctrl+D means duplicate or double where bound. Do not add Ctrl+Shift+letter defaults. Check new chords in both extended and legacy terminal input.
 - **Ctrl+K: command palette.** Fuzzy search in Russian and English. It shows the hotkey of each command.
 - You can remap all hotkeys in `keymap.toml`.
 
-**Controller:** the default SMC-PAD utility buttons are bank ±, screen ±, shift, start/stop, record. The screen shows the pads and encoders in their physical layout.
+**Controller first:** after the start, every action that does not need typed text is possible from the SMC-PAD alone. A frequent action takes 1 press. Any other action takes not more than 2 presses, plus knob turns for values. The keyboard and the controller do the same thing for the same action. Typed text (names, the file filter) stays on the keyboard.
+
+**Controller:** the SMC-PAD buttons have one role on every screen: PLAY plays or stops what the screen is about, STOP is back, RECORD records, LEFT and RIGHT turn the main list of the screen. **Hold STOP** and the pads become a command panel of 16 cells: the top row opens screens, the bottom row is FX, settings, undo and projects, the two middle rows are the commands of the screen. The screen shows the panel with labels in the physical layout while STOP is held. PAD BANK gives the same panel as a latch. With STOP held, LEFT is undo, RIGHT is redo and PLAY stops all sound (panic). The first knob bank works for the screen, the second knob bank is the same on every screen (the selected pad, the sends, the tempo, the master).
+
+**Visual control:** at one look the owner sees what the pads do now, what plays, what records, what waits and what the last press did. Badges in the title line show the modes (yellow: the pads do something other than sound; cyan: on or playing; magenta: records, waits or asks). Pads show small glyphs for the mode (target, planned slice, step, erase). Messages have levels (done, info, warning, error), and an error stays until the next action; F1 keeps the last messages. A knob change shows the value on every screen. The status line shows the transport, the recording, the connected devices and the audio state. The hints name the controls of the device that the owner used last.
 
 **Stage protection:** destructive actions need a confirmation. Live mode blocks them fully.
 
@@ -375,9 +412,18 @@ The next stage starts only after the previous stage passes the automated tests a
 4. **Effects, stage 1.** Pad slots, two buses, performance effect, limiter, MIDI learn. *Done when:* I turn the filter and the bitcrush live, without clicks.
 5. **Recording.** Input, monitoring, recording to a pad, skip back, resampling.
 
+### Between 0.1 and 0.2: controller first and visual control
+
+5a0. **Keymap cleanup:** consistent chords, moved-key notices, microphone on Alt+R,
+reserved recording and redo keys, and pad copy (`docs/plans/KEYMAP-CLEANUP.md`). The J/L
+choice on Pads is still open: proposed A changes values and moves banks to U/O.
+5a. **Input refactor:** one route for keyboard and controller, named modes, button hold, relative encoders, confirm (`docs/plans/REFACTOR-INPUT.md`).
+5b. **Visual control:** badges, pad glyphs, messages with levels, the value pop-up, the status line (`docs/plans/VISUAL.md`).
+5c. **SMC-PAD:** the profile, the command panel, the reach test, panic and redo (`docs/plans/SMC-PAD-INTEGRATION.md`, `docs/plans/CROSS-CUTTING.md`).
+
 ### Version 0.2: patterns and the launcher
 
-6. **Pattern sequencer:** recording, quantization, overdub, step mode with substeps and step parameters, swing, note repeat, pad mute.
+6. **Pattern sequencer:** transport, recording, quantization, overdub, step mode with substeps and step parameters, swing, note repeat, pad mute (`docs/plans/PATTERNS.md`). Then parameter locks, row lengths, Euclidean fill, mutations and humanize.
 7. **Clip launcher and scenes**, tracks, mixer, launcher mode on the SMC-PAD.
 8. **Time stretch, audio tracks and audio clips** with disk streaming and warp. Pad BPM sync.
 9. **Pad link, live mode, 16 Levels.**
@@ -397,6 +443,8 @@ The next stage starts only after the previous stage passes the automated tests a
 17. **Looper.**
 18. **DJ mode.**
 19. **UX polish:** command palette for all commands, mappings, themes.
+20. **Modulation:** LFOs, pad pressure, macros, snapshots and morph (section 16a).
+21. **Slices in motion:** slice follow, playhead mode, live slicing (sections 7 and 9), sidechain (section 10).
 
 ## 21. Testing and rules for the agent
 
@@ -428,10 +476,10 @@ The agent does not hear sound. Thus three checks apply to each feature: an autom
 
 ## 22. Open questions
 
-- [ ] Which notes, CC and buttons the SMC-PAD sends by default. Capture them on the MIDI debug screen and write the mapping.
+- [ ] Which notes, CC and buttons the SMC-PAD sends by default. Other people measured it on Windows and over Bluetooth: pads notes 36–51 on channel 10 (52–67 on the second layer), encoders CC 30–37 (38–45), buttons CC 25–29. Check it on Linux on the MIDI debug screen.
 - [ ] The MIDI TRS wiring type of the SMC-PAD (A or B). Is an adapter necessary for a direct connection to the SP-404?
-- [ ] Absolute or relative CC on the SMC-PAD encoders. Can CubeSuite change this?
-- [ ] SMC-PAD pad lights: can MIDI control the colors? The launcher needs this.
+- [ ] Absolute or relative CC on the SMC-PAD encoders. Factory: an absolute counter that stops at 0 and 127. MidiSuite can set them to relative (64 ± n). Do it once on the owner's device.
+- [ ] SMC-PAD pad lights: can MIDI control the colors? Over Bluetooth, yes, when the Led field of a pad equals its note (velocity is the color). Over USB it was seen only on the third port. Not tested on Linux. The launcher needs this; the screen must work without it.
 - [ ] The final project name.
 - [ ] Is a web editor on top of the same engine necessary later?
 - [ ] Raspberry Pi: decide before version 0.4. This lets us reserve a CPU budget for PaulStretch and granular effects.
@@ -443,6 +491,22 @@ The agent does not hear sound. Thus three checks apply to each feature: an autom
 - **More than one controller at the same time.** Example: SMC-PAD pads + X-Session Pro knobs.
 - **M-Audio X-Session Pro**: the test controller. It has 12 knobs, 4 faders, a crossfader, 10 buttons and no pads.
 - **Keyboard:** the left half is pads only. Commands are on the right half, arrows, F-keys and Ctrl+letter. Shift on pads is only hit strength. With arrows, Shift makes a smaller increment (fine step).
-- **Help at the bottom of the screen**, by groups, with toggle states and a hint about the next action. Full help is on `?`.
+- **Help at the bottom of the screen**, by groups, with toggle states and a hint about the next action. Full help is on `F1`.
 - **Chopping:** "on beat" with snap to hits. Coarse and fine marker moves. A large slice view with the envelope. Slice parameters pop up on change, instead of permanent tiles.
 - **Work order:** SDD with OpenSpec. The first stage is loading, chopping, assignment to pads and pad play.
+
+## 24. Decisions after version 3 (03.11.2026)
+
+Defaults that wait for the owner are marked "(default)". The full list of questions is in `docs/plans/README.md`.
+
+- **Controller first** (section 17): everything without typed text from the SMC-PAD; the keyboard stays the reference and loses nothing.
+- **Keymap cleanup 83a** comes before 84. J/L on Pads still needs the owner's choice;
+  proposed A changes values and uses U/O for banks. Keep owner keymaps and learned MIDI
+  action names working. No keys change during document preparation.
+- **One input route:** the keyboard and the controller go through one decision about what a press means. A test runs each input scenario from both.
+- **Hold STOP is the command panel** (default). PAD BANK layer 2 is the same panel as a latch.
+- **Destructive actions:** keep X-Session direct safe defaults unchanged. For the SMC panel, the proposed default is a visible question for destructive changes in both held and latched forms. Change 92 must record the owner's choice before code.
+- **Visual control** (section 17): one badge model, levels for messages; yellow means "the pads do something other than sound" (default; changes `docs/ui/STYLE.md`).
+- **Patterns:** the sequencer is in the audio thread; time in ticks (960 per quarter); a pattern keeps the hits as played, and quantize applies at playback (it is non-destructive); a pattern uses absolute pads 0–127 (default); one pattern plays at a time until the launcher exists (default).
+- **New projects from the controller** get a date name; the owner can rename them from the keyboard.
+- **Modulation, parameter locks and slice motion** (sections 7, 12, 16a) come after the pattern sequencer. Parameter locks come first of them, because they fit the pattern model.
