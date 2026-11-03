@@ -715,7 +715,22 @@ The owner accepts the result for now; the sound can be reviewed again during use
 
 Folder: `changes/83a-keymap-cleanup` (active, `plan/controller-first-patterns`)
 
-Keyboard first; the controller pass comes with the SMC-PAD work (91).
+Owner acceptance on 2026-11-03: the owner chose to accept this change without
+completing the manual checks. Open boxes below mean **not verified by the owner**;
+do not read them as failed or completed. Bugs found later get a separate change.
+
+Agent check on 2026-11-03: `task check` and `task build` passed. In an isolated
+120x40 tmux terminal, the app reported `JACK unavailable`, with no `ptsr` node in
+the owner's PipeWire graph. The agent saw U/O change banks, loaded a sample,
+used Y and H to cut it, selected hit slices with pad keys, stepped H back with
+Shift+H, changed assign order with P and Tab, copied a pad with Ctrl+C and
+undid the copy with Ctrl+Z. Old Ctrl+R, Ctrl+Y and Ctrl+N showed moved-key
+notices. Alt+R reported `No sound: there is nothing to record from.` The agent
+did not hear the sound, test microphone input, verify a physical controller or
+check owner overrides. The real SMC-PAD profile is work for change 91.
+
+The keyboard checks below remain available for a later pass; the controller
+pass cannot be inferred from automated MIDI tests.
 
 - [ ] On `F2`, hold `Alt+R` and speak. Make sure that the strip shows your voice. Release
   it. Press `Alt+R` again: the recording stops only on the second press in a terminal

@@ -30,6 +30,12 @@ This is an exception to the usual branch-per-change rule. Keep one active change
 small, separate commits. On the same day the owner approved the start of the code; each
 task of `tasks.md` lands as its own commit after `task check`.
 
+On 2026-11-03, the owner accepted 83a without completing the manual keyboard,
+controller and listening checks. The agent may do an isolated terminal check and run
+all automated tests, but SHALL NOT mark the sound or physical controller as tested.
+The remaining checks stay open in `docs/LIVE-CHECKS.md`; a reported bug gets its own
+specification and fix. This acceptance permits archive after the automated checks pass.
+
 ## Capabilities
 
 ### Modified Capabilities

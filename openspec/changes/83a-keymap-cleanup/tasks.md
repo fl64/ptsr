@@ -62,9 +62,10 @@
   OpenSpec context with implemented keys, the branch exception and the render to hear.
   Replace stale unconfirmed-A text only in the approved documentation scope for that
   step. Preserve Downloads and owner configuration. Run `task check` and commit.
-- [ ] 5.3 Ask the owner for separate keyboard and controller passes from the proposal,
-  legacy-terminal checks where available, and listening to `renders/83a-pad-copy.wav`.
-  Record actual acceptance; simulated MIDI does not prove the SMC-PAD hardware map.
+- [x] 5.3 Record the owner's 2026-11-03 acceptance without manual keyboard,
+  controller or listening checks. Run the available isolated terminal walkthrough
+  and automated checks. Keep untested items open in `docs/LIVE-CHECKS.md`; simulated
+  MIDI does not prove the SMC-PAD hardware map.
 - [ ] 5.4 Only after tests and owner acceptance, archive through `openspec archive`.
   Check the rebuilt main specs and scenario coverage, run strict validation and
   `task check`, then commit. Do not archive manually or start 84 early.
