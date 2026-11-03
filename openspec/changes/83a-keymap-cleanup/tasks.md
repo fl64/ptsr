@@ -54,7 +54,7 @@
 
 ## 5. Documents, verification and acceptance
 
-- [ ] 5.1 Add named tests for every new delta scenario and check coverage before archive.
+- [x] 5.1 Add named tests for every new delta scenario and check coverage before archive.
   Keep old scenario names that mention Ctrl+Y and L as explicit owner-remap tests;
   default H and U/O need their own tests. Do not skip failures to make the check pass.
   Run strict OpenSpec validation, `task check` and `task build`.

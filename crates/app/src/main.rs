@@ -3193,14 +3193,12 @@ impl App {
         } else {
             snap.name = Some(name);
         }
-        // one undo step for the target only: the source did not change, so only the
-        // target's snapshot answers the undo
-        let b = self.before();
+        // the undo step is the apply's own: only the target changed (the snapshot was
+        // taken at pickup, the source stays), so the step restores the target alone
+        let _ = source;
         for cmd in self.pads.put_back(abs, &snap) {
             self.send(cmd);
         }
-        let _ = source;
-        self.note_step_pads(b, abs, "copy".into());
         self.dirty();
         self.flash = Some(("copy placed".into(), Instant::now()));
     }
@@ -5245,6 +5243,7 @@ impl App {
             Action::PadEdit if matches!(self.ask, Some(Ask::ClearPads { .. })) => "clear".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),
+            _ if self.copy_in_hand.is_some() => "copy".into(),
             _ => "change".into(),
         }
     }
@@ -5262,14 +5261,6 @@ impl App {
         if pads.is_empty() && fx.is_none() {
             return;
         }
-        self.push_step(pads, fx, what);
-    }
-
-    /// 83a: the undo of a copy: only the given target goes into the step, whatever
-    /// else changed since `b` was taken.
-    fn note_step_pads(&mut self, b: Before, target: usize, what: String) {
-        let fx = (b.fx != self.pads.fx).then_some(b.fx);
-        let pads = vec![(target, b.pads[target].clone())];
         self.push_step(pads, fx, what);
     }
 
@@ -8077,9 +8068,24 @@ fn modifier_groups(
     pads_hidden: bool,
 ) -> Vec<tui::HelpGroup> {
     if m == input::Modifier::Shift {
+        // 83a: a Shift command (as Shift+H on Chop) joins the full-velocity pads;
+        // its text names what the shifted key does, not the unshifted command
+        let mut items = vec![("1-4 Q-R A-F Z-V".into(), "pads at full velocity".into())];
+        for (k, a) in keymap.bindings(screen) {
+            let Some(rest) = k.strip_prefix("Shift+") else {
+                continue;
+            };
+            // a Shift chord of the pad block stays a full-velocity pad, not a command
+            if rest.chars().count() == 1 && "1234QWERASDFZXCV".contains(rest) {
+                continue;
+            }
+            items.push((k.clone(), shift_text(a)));
+        }
+        items.sort();
+        items.dedup();
         return vec![tui::HelpGroup {
             name: "SHIFT",
-            items: vec![("1-4 Q-R A-F Z-V".into(), "pads at full velocity".into())],
+            items,
         }];
     }
     let (prefix, name) = match m {
@@ -8114,6 +8120,15 @@ fn modifier_groups(
 }
 
 /// Short texts for the Ctrl view of the help line.
+/// The text of a Shift command in the Shift view of the help line (83a): what the
+/// shifted key does, not the unshifted command.
+fn shift_text(a: Action) -> String {
+    match a {
+        Action::ChopHitsBack => "fewer hit cuts".into(),
+        a => ctrl_text(a),
+    }
+}
+
 fn ctrl_text(a: Action) -> String {
     match a {
         Action::RecordMic(_) => "mic: hold".into(),
@@ -19486,6 +19501,502 @@ Enter = "browser.hold"
 
     fn hit(app: &mut super::App, pad: usize) {
         app.apply(Action::PadPress { pad, velocity: 1.0 });
+    }
+
+    /// 83a pad-playback "U and O turn banks on Pads" and "U and O turn banks during pad edit": U/O turn banks with edit open or closed, keeping the pad position; J/L and the arrows change values, not banks.
+    #[test]
+    fn u_and_o_turn_banks_on_pads() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        for editing in [false, true] {
+            let mut app = test_app();
+            app.pads.selected = 6; // pad E
+            app.pads.file[6] = Some("/samples/kick.wav".into());
+            app.edit = editing;
+            let _ = editing; // the walk runs twice: edit open and closed
+            pads_key(&mut app, KeyCode::Char('o'), M::NONE);
+            assert_eq!((app.pads.bank, app.pads.selected), (1, 6));
+            pads_key(&mut app, KeyCode::Char('u'), M::NONE);
+            assert_eq!((app.pads.bank, app.pads.selected), (0, 6));
+            // the Russian twins: щ is the physical O, г is the physical U
+            pads_key(&mut app, KeyCode::Char('щ'), M::NONE);
+            assert_eq!(app.pads.bank, 1, "the Russian O turns the bank");
+            pads_key(&mut app, KeyCode::Char('г'), M::NONE);
+            assert_eq!(app.pads.bank, 0, "the Russian U turns the bank back");
+            let volume = app.pads.volume_db[6];
+            pads_key(&mut app, KeyCode::Char('l'), M::NONE);
+            assert_eq!(app.pads.bank, 0, "L changes no bank");
+            assert_eq!(app.pads.volume_db[6], volume + 1, "L changes the value");
+            app.edit = editing; // a value key may close it; keep the state
+            pads_key(&mut app, KeyCode::Right, M::NONE);
+            assert_eq!(app.pads.bank, 0, "Right changes no bank");
+        }
+    }
+
+    /// 83a pad-playback "Value keys work with pad edit closed" and "Value arrows work with pad edit closed": J/L and Left/Right change the selected value with the edit closed, without turning banks or picking another pad.
+    #[test]
+    fn value_keys_work_with_pad_edit_closed() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.pads.file[0] = Some("/samples/kick.wav".into());
+        app.pads.selected = 0;
+        let volume = app.pads.volume_db[0];
+        pads_key(&mut app, KeyCode::Char('l'), M::NONE);
+        assert_eq!(app.pads.volume_db[0], volume + 1);
+        assert_eq!(app.pads.selected, 0, "no other pad is picked");
+        assert_eq!(app.pads.bank, 0);
+        pads_key(&mut app, KeyCode::Char('j'), M::NONE);
+        assert_eq!(app.pads.volume_db[0], volume);
+        pads_key(&mut app, KeyCode::Right, M::NONE);
+        assert_eq!(app.pads.volume_db[0], volume + 1);
+        pads_key(&mut app, KeyCode::Left, M::NONE);
+        assert_eq!(app.pads.volume_db[0], volume);
+    }
+
+    /// 83a pad-playback "Undo one pad copy": one Ctrl+Z restores the target's full
+    /// previous state in one step, without changing its source.
+    #[test]
+    fn undo_one_pad_copy() {
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        // something on W too: the undo restores its full previous state
+        app.pads.sound[1] = app.pads.sound[0].clone();
+        app.pads.file[1] = Some("snare.wav".into());
+        app.pads.volume_db[1] = -6;
+        let was = app.pads.snapshot(1);
+        app.apply(Action::PadCopy);
+        hit(&mut app, 1);
+        // W is occupied: the question names it; Enter confirms, Esc would keep it
+        app.pads.selected = 1;
+        app.apply(Action::PadEdit); // Enter
+        assert!(app.pads.file[1].is_some(), "the copy was placed");
+        app.apply(Action::Undo);
+        assert_eq!(app.pads.snapshot(1), was, "W's previous state is back");
+        assert_eq!(app.pads.custom_name[0].as_deref(), Some("Бочка"), "Q stays");
+        // one step: a second Ctrl+Z says there is nothing more
+        app.apply(Action::Undo);
+        assert_eq!(flash(&app), "nothing to undo");
+    }
+
+    /// 83a pad-assignment "Confirm a pad copy replacement" and "Decline a pad copy
+    /// replacement": Enter places only the named target, Esc keeps the target and the
+    /// copy stays in hand.
+    #[test]
+    fn confirm_and_decline_a_pad_copy_replacement() {
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.sound[1] = app.pads.sound[0].clone();
+        app.pads.file[1] = Some("snare.wav".into());
+        app.pads.selected = 0;
+        let was = app.pads.snapshot(1);
+        app.apply(Action::PadCopy);
+        hit(&mut app, 1); // W, occupied: the question
+        // Decline: the target stays, the copy remains in hand
+        app.apply(Action::Back);
+        assert_eq!(app.pads.snapshot(1), was);
+        assert!(app.copy_in_hand.is_some(), "the copy stays in hand");
+        // Confirm: Esc dropped nothing; a new hit, then Enter places it
+        hit(&mut app, 1);
+        app.pads.selected = 1;
+        app.apply(Action::PadEdit); // Enter
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert!(app.pads.file[0].is_some(), "the source stays");
+    }
+
+    /// 83a pad-assignment "A copied pad survives restart" and "Copy in hand is visible without a mode redesign": the placed copy saves into the session and comes back; the help line names the next step while a copy is in hand, on the same band.
+    #[test]
+    fn a_copied_pad_survives_restart() {
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        app.apply(Action::PadCopy);
+        // the help line names the copy step
+        assert_eq!(app.help_state().hand, Some("hit a pad to copy it there"));
+        hit(&mut app, 1);
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        // save and reload: the session keeps the copy's name, link and settings
+        let session = app.pads.to_session(None, app.rate);
+        let mut again = test_app();
+        again.pads.restore(&session, app.rate);
+        assert_eq!(again.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(again.pads.slice[1], Some(3), "the slice link saves");
+        assert_eq!(again.pads.link[1], app.pads.link[1]);
+        assert_eq!(again.pads.volume_db[1], app.pads.volume_db[1]);
+    }
+
+    /// 83a keyboard "Ctrl C copies instead of quitting": Ctrl+C on Pads in raw mode
+    /// resolves `pad.copy`, requests no quit, and Ctrl+Q stays the quit command.
+    #[test]
+    fn ctrl_c_copies_instead_of_quitting() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        let mut input = NoticeInput::default();
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let ctrl_c = ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('c'), M::CONTROL);
+        // raw mode with and without the extended protocol: Ctrl is the modifier either way
+        assert_eq!(
+            keymap.resolve_in(Screen::Pads, app.edit_keys(), &ctrl_c),
+            Some(Action::PadCopy)
+        );
+        let ru = ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('с'), M::CONTROL);
+        assert_eq!(
+            keymap.resolve_in(Screen::Pads, app.edit_keys(), &ru),
+            Some(Action::PadCopy),
+            "the Russian C key copies too"
+        );
+        // through the production routing: no quit, the copy is taken
+        let quit_before = app.apply(Action::Quit);
+        assert!(quit_before, "quit works when asked");
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        assert!(!input.dispatch(&mut app, &keymap, ctrl_c, true), "no quit");
+        assert!(app.copy_in_hand.is_some(), "the copy is taken");
+        // Ctrl+Q stays the quit command
+        let ctrl_q = ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('q'), M::CONTROL);
+        assert!(
+            input.dispatch(&mut app, &keymap, ctrl_q, true),
+            "Ctrl+Q quits"
+        );
+    }
+
+    /// 83a keyboard "Future commands stay unbound": Ctrl+R, Ctrl+Y and Ctrl+.` run no
+    /// action on the shipped map, and Ctrl+B keeps the Files favorite.
+    #[test]
+    fn future_commands_stay_unbound() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let ctrl = |c: char, screen| {
+            keymap.resolve(
+                screen,
+                &ratatui::crossterm::event::KeyEvent::new(KeyCode::Char(c), M::CONTROL),
+            )
+        };
+        for screen in [
+            Screen::Pads,
+            Screen::Chop,
+            Screen::Files,
+            Screen::Fx,
+            Screen::Settings,
+        ] {
+            assert_eq!(ctrl('r', screen), None, "Ctrl+R stays free ({screen:?})");
+            assert_eq!(ctrl('y', screen), None, "Ctrl+Y stays free ({screen:?})");
+            assert_eq!(ctrl('.', screen), None, "Ctrl+. stays free ({screen:?})");
+        }
+        assert_eq!(
+            ctrl('b', Screen::Files),
+            Some(Action::BrowserFavorite),
+            "the favorite keeps its key"
+        );
+    }
+
+    /// 83a keyboard "Shipped modified chords have one role": every Ctrl/Alt chord of the
+    /// shipped map keeps one role across screens and edit layers, with the exceptions
+    /// the map comments name; no Ctrl+Shift+letter command, no plain/Shift pad command.
+    #[test]
+    fn shipped_modified_chords_have_one_role() {
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let mut roles: std::collections::HashMap<(char, bool), String> = Default::default();
+        for screen in [
+            input::Screen::Pads,
+            input::Screen::Chop,
+            input::Screen::Files,
+            input::Screen::Fx,
+            input::Screen::Settings,
+        ] {
+            for (k, a) in keymap.bindings(screen) {
+                let Some(rest) = k.strip_prefix("Ctrl+").or_else(|| k.strip_prefix("Alt+")) else {
+                    continue;
+                };
+                if rest.chars().count() != 1 {
+                    continue;
+                }
+                let c = rest.chars().next().unwrap();
+                let role = super::ctrl_text(a);
+                let key = (c, k.starts_with("Alt+"));
+                roles
+                    .entry(key)
+                    .and_modify(|was| assert_eq!(was, &role, "{k} has one role"))
+                    .or_insert(role);
+            }
+        }
+        // no Ctrl+Shift+letter on the shipped map, no command on the pad block
+        let pad = "1234QWERASDFZXCV";
+        for screen in [
+            input::Screen::Pads,
+            input::Screen::Chop,
+            input::Screen::Settings,
+        ] {
+            for (k, a) in keymap.bindings(screen) {
+                assert!(
+                    !k.starts_with("Ctrl+Shift+") && !k.starts_with("Alt+Shift+"),
+                    "no double-modifier command: {k}"
+                );
+                if k.chars().count() == 1 && pad.contains(k.as_str()) {
+                    panic!("a command on the pad block: {k} = {a:?}");
+                }
+            }
+        }
+    }
+
+    /// 83a screen-help "Unbound Shift Tab keeps its fallback": Settings has no previous
+    /// page action; Shift+Tab falls back to Tab there, and its `none` blocks that.
+    #[test]
+    fn unbound_shift_tab_keeps_its_fallback() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let tab = ratatui::crossterm::event::KeyEvent::new(KeyCode::Tab, M::NONE);
+        let shift_tab = ratatui::crossterm::event::KeyEvent::new(KeyCode::Tab, M::SHIFT);
+        let back_tab = ratatui::crossterm::event::KeyEvent::new(KeyCode::BackTab, M::SHIFT);
+        let screen = Screen::Settings;
+        assert_eq!(
+            keymap.resolve_in(screen, false, &tab),
+            Some(Action::SettingsTab)
+        );
+        // the fallback answers the shifted twins; no new navigation action is added
+        for k in [shift_tab, back_tab] {
+            assert_eq!(
+                keymap.resolve_in(screen, false, &k),
+                Some(Action::SettingsTab),
+                "the Tab fallback stays"
+            );
+        }
+        // an explicit none blocks the fallback
+        let (mut k2, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        k2.overlay("[screens.settings]\n\"Shift+Tab\" = \"none\"\n")
+            .unwrap();
+        let back = ratatui::crossterm::event::KeyEvent::new(KeyCode::BackTab, M::SHIFT);
+        assert_eq!(
+            k2.resolve_in(screen, false, &back),
+            None,
+            "the none blocks it"
+        );
+    }
+
+    /// 83a screen-help "Chop help names the moved commands", "Pads help names values and new bank keys", "Shift help names reverse hit chopping" and "Microphone help follows release support": the full help names
+    /// H and Shift+H on Chop, U/O and the value keys on Pads, and the Shift view on Chop
+    /// names the reverse hit command.
+    #[test]
+    fn chop_help_names_the_moved_commands() {
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        // the chop line of F1
+        let chop = super::full_help(&keymap, input::Screen::Chop, true);
+        assert!(
+            chop.iter().any(|(k, t)| k == "H" && t.contains("by hits")),
+            "the moved hit chop is named: {chop:?}"
+        );
+        assert!(
+            chop.iter()
+                .any(|(k, t)| k == "Shift+H" && t.contains("step back")),
+            "the reverse hit chop is named: {chop:?}"
+        );
+        assert!(
+            chop.iter()
+                .any(|(k, t)| k == "Ctrl+G" && t.contains("−1 dB")),
+            "the moved normalize is named: {chop:?}"
+        );
+        // the pads line names the value keys and U/O banks
+        let pads = super::full_help(&keymap, input::Screen::Pads, true);
+        assert!(
+            pads.iter()
+                .any(|(k, t)| k.contains('U') && k.contains('O') && t.contains("bank")),
+            "{pads:?}"
+        );
+        assert!(
+            pads.iter()
+                .any(|(k, t)| k.contains("J ← L →") && t.contains("value")),
+            "the value keys are named: {pads:?}"
+        );
+        // the Shift view on Chop names the reverse hit command (35: a Shift command
+        // names its chord; the pad velocity hint stays)
+        let shift =
+            super::modifier_groups(&keymap, input::Screen::Chop, input::Modifier::Shift, false);
+        assert_eq!(shift.len(), 1, "the Shift group");
+        assert_eq!(shift[0].name, "SHIFT");
+        let items: Vec<(String, String)> = shift[0].items.clone();
+        assert!(
+            items
+                .iter()
+                .any(|(k, t)| k == "Shift+H" && t.contains("fewer hit cuts")),
+            "the reverse hit command is named, not the unshifted one: {items:?}"
+        );
+        assert!(
+            items.iter().any(|(k, _)| k == "1-4 Q-R A-F Z-V"),
+            "the full-velocity pads stay: {items:?}"
+        );
+    }
+
+    /// 83a screen-help "Help respects an owner recording key" and "Microphone help follows
+    /// release support": the full help names the microphone chord the owner bound, and
+    /// its text follows whether the terminal sends release events.
+    #[test]
+    fn help_respects_an_owner_recording_key() {
+        let (mut keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        keymap
+            .overlay(
+                "[global]
+\"Ctrl+K\" = \"record.mic\"
+",
+            )
+            .unwrap();
+        let rows = super::full_help(&keymap, input::Screen::Pads, true);
+        // the owner's chord joins the shipped one in one hold row
+        assert!(
+            rows.iter().any(|(k, t)| k.contains("Ctrl+K")
+                && k.contains("Alt+R")
+                && t.contains("microphone")
+                && t.contains("hold")),
+            "{rows:?}"
+        );
+    }
+
+    /// 83a recording "Hold and speak", "Microphone toggle without release events",
+    /// "Holding the moved microphone key does not toggle", "No microphone" and "One
+    /// recording at a time" with the shipped Alt+R: a terminal without releases toggles
+    /// on each press, repeats do not stop, and no input ports say so.
+    #[test]
+    fn microphone_toggle_without_release_events() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let alt = |kind| ratatui::crossterm::event::KeyEvent {
+            code: KeyCode::Char('r'),
+            modifiers: M::ALT,
+            kind,
+            state: ratatui::crossterm::event::KeyEventState::NONE,
+        };
+        use ratatui::crossterm::event::KeyEventKind as K;
+        // without a sound card the press names the trouble: the "No sound" case (26)
+        let mut app = test_app();
+        app.screen = Screen::Pads;
+        let mut input = NoticeInput::default();
+        input.event(&mut app, &keymap, alt(K::Press), true);
+        assert_eq!(
+            flash(&app),
+            "No sound: there is nothing to record from.",
+            "a press without a sound card starts nothing"
+        );
+        input.event(&mut app, &keymap, alt(K::Repeat), true);
+        assert_eq!(app.recording, None, "a repeat starts nothing either");
+        input.event(&mut app, &keymap, alt(K::Release), true);
+        assert_eq!(app.recording, None, "a release saves no ring");
+        // the toggle logic itself: without releases every press toggles (26)
+        use super::{Rec, record_step};
+        assert_eq!(
+            record_step(Action::RecordMic(true), None),
+            Some(Rec::Start(super::audio::SOURCE_MIC))
+        );
+        assert_eq!(
+            record_step(Action::RecordMic(true), Some(super::audio::SOURCE_MIC)),
+            Some(Rec::Stop),
+            "the next press toggles it off without releases"
+        );
+        // an output recording goes on: one recording at a time
+        assert_eq!(
+            record_step(Action::RecordMic(true), Some(super::audio::SOURCE_OUTPUT)),
+            None,
+            "the output recording goes on"
+        );
+    }
+
+    /// 83a chopping "New hit keys stay deaf while assigning" and "Assign order does not edit a listening slice": H, Shift+H and Tab do nothing while assigning and in listen mode outside a plan.
+    #[test]
+    fn new_hit_keys_stay_deaf_while_assigning() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(4));
+        // listen mode, no plan: Tab edits nothing
+        let slices = app.chop.as_ref().unwrap().slices().to_vec();
+        chop_key(&mut app, KeyCode::Tab, M::NONE);
+        assert_eq!(app.plan, None, "assign order does nothing in listen");
+        assert_eq!(app.chop.as_ref().unwrap().slices().to_vec(), slices);
+        // a plan open: the hit keys are deaf
+        app.apply(Action::ChopAssign);
+        let before = app.chop.as_ref().unwrap().slices().to_vec();
+        chop_key(&mut app, KeyCode::Char('h'), M::NONE);
+        assert_eq!(
+            app.chop.as_ref().unwrap().slices().to_vec(),
+            before,
+            "H is deaf while assigning"
+        );
+        chop_key(&mut app, KeyCode::Char('h'), M::SHIFT);
+        assert_eq!(
+            app.chop.as_ref().unwrap().slices().to_vec(),
+            before,
+            "Shift+H is deaf while assigning"
+        );
+        assert_eq!(flash(&app), "assigning: Enter applies, Esc leaves");
+    }
+
+    /// 83a midi-learn "Cleanup does not reset X Session controls" and "Cleanup learned
+    /// bindings survive restart": an initialized X-Session keeps its roles, the new
+    /// cleanup bindings save into `learned` and come back after a reload.
+    #[test]
+    fn cleanup_learned_bindings_survive_restart() {
+        let app = xsession_connected(&[
+            (input::Group::Chop, 50, "chop.assign_order"),
+            (input::Group::Chop, 51, "chop.hits_back"),
+            (input::Group::Pads, 30, "pad.copy"),
+        ]);
+        // the seeded X-Session roles stay: no reset happened
+        let p = app
+            .live_profiles()
+            .into_iter()
+            .find(|p| p.name == "X-Session Pro")
+            .unwrap();
+        assert_eq!(
+            p.assignment(input::midi::Scope::Screen(Screen::Pads), "pad.edit_only")
+                .as_deref(),
+            Some("b7 (note 58)"),
+            "the seeded role stays"
+        );
+        // the cleanup bindings resolve to their actions
+        let msg = |note: u8| input::midi::Msg::NoteOn {
+            ch: 1,
+            note,
+            velocity: 100,
+        };
+        let mut app2 = xsession_connected(&[
+            (input::Group::Chop, 50, "chop.assign_order"),
+            (input::Group::Pads, 30, "pad.copy"),
+        ]);
+        app2.screen = Screen::Chop;
+        app2.chop = Some(chop_with_parts(2));
+        assert_eq!(xs_live(&app2, msg(50)), Some(Action::ChopAssignOrder));
+        app2.screen = Screen::Pads;
+        assert_eq!(xs_live(&app2, msg(30)), Some(Action::PadCopy));
+    }
+
+    /// 83a midi-learn "Learn a button for pad copy": a learned button takes the same copy
+    /// as Ctrl+C, its release takes no second copy and plays no pad.
+    #[test]
+    fn learn_a_button_for_pad_copy() {
+        let mut app = xsession_connected(&[(input::Group::Pads, 30, "pad.copy")]);
+        app.screen = Screen::Pads;
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        let msg = input::midi::Msg::NoteOn {
+            ch: 1,
+            note: 30,
+            velocity: 100,
+        };
+        assert_eq!(xs_live(&app, msg), Some(Action::PadCopy));
+        let action = xs_live(&app, msg).unwrap();
+        app.apply(action);
+        assert_eq!(flash(&app), "COPY · hit a pad");
+        // the release adds nothing: a second press takes a fresh copy
+        let msg = input::midi::Msg::NoteOff { ch: 1, note: 30 };
+        assert_eq!(xs_live(&app, msg), None);
+        assert!(app.copy_in_hand.is_some(), "the copy stays in hand");
+        // a target from the controller gets it
+        app.midi_event(super::midi::Event::PadHit {
+            abs: 1,
+            accepted: true,
+        });
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert!(app.copy_in_hand.is_none());
     }
 
     /// 83a pad-assignment "The copy sounds like the source": the source and the copy
