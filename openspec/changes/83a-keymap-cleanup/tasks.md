@@ -13,7 +13,7 @@
   legacy uppercase input, Shift+Tab, pad velocity and unchanged Ctrl/Alt behavior.
   Use existing actions in parser fixtures; add no unimplemented command. Run
   `task check` and commit the input step.
-- [ ] 1.2 Add the App moved-key table and effective-binding guards. Test all old keys,
+- [x] 1.2 Add the App moved-key table and effective-binding guards. Test all old keys,
   valid rebound J/L, owner actions, `none`, text, questions and learn. Add individual
   startup shadow warnings tied to actual changed defaults, with matching-owner-action
   and multiple-conflict tests. Keep owner files unchanged. Run `task check` and commit.

@@ -488,6 +488,8 @@ struct App {
     /// Startup notices (config, session, keymap, terminal): the first key event of the
     /// session clears them (22), until then they hold the notice line.
     startup: Vec<String>,
+    keymap_warnings: std::collections::VecDeque<String>,
+    keymap_warning_shown: bool,
     /// The splash in the wave strip at start (73): `true` until the first sound — a note
     /// that plays or a recording that starts.
     splash: bool,
@@ -5370,7 +5372,106 @@ impl App {
                 got.unwrap_or("none")
             ));
         }
-        self.startup.first().cloned()
+        self.startup.first().cloned().or_else(|| {
+            (!self.key_notice_blocked())
+                .then(|| self.keymap_warnings.front().cloned())
+                .flatten()
+        })
+    }
+
+    fn frame_notice(&mut self) -> Option<String> {
+        let notice = self
+            .pad_naming
+            .as_ref()
+            .map(|(_, name)| format!("Name: {name}▏  Enter saves · Esc cancels"))
+            .or_else(|| self.notice());
+        self.keymap_warning_shown = !self.key_notice_blocked()
+            && self.keymap_warnings.front().is_some()
+            && notice.as_ref() == self.keymap_warnings.front();
+        notice
+    }
+
+    fn key_notice_blocked(&self) -> bool {
+        self.pad_naming.is_some()
+            || self.project_picker.is_some()
+            || self.path_picker.is_some()
+            || self.ask.is_some()
+            || self.screen_learn.is_some()
+            || self.learning.is_some()
+            || self.help_open
+            || (self.screen == Screen::Files && self.browser.editing)
+    }
+
+    fn moved_key_notice(&mut self, keymap: &Keymap, k: &event::KeyEvent) -> bool {
+        if k.kind != event::KeyEventKind::Press || self.key_notice_blocked() {
+            return false;
+        }
+        let key = input::key_name(k);
+        if keymap
+            .resolve_in(self.screen, self.edit_keys(), k)
+            .is_some()
+            || keymap
+                .binding_for(self.screen, self.edit_keys(), &key)
+                .is_some()
+        {
+            return false;
+        }
+        let row = MOVED_KEYS.iter().find(|(screen, old, _)| {
+            screen.is_none_or(|screen| screen == self.screen) && *old == key
+        });
+        if let Some((_, _, message)) = row {
+            self.flash = Some(((*message).into(), Instant::now()));
+            return true;
+        }
+        false
+    }
+
+    fn keyboard_event(
+        &mut self,
+        keymap: &Keymap,
+        k: &event::KeyEvent,
+        kitty: bool,
+        keys_down: &mut input::HeldKeys,
+        held: &mut HeldPads,
+        mods: &mut input::HeldModifiers,
+    ) -> bool {
+        // Keep the old startup dismissal rule, but acknowledge a keymap warning only
+        // after a frame showed it. A flash that expired between frames is not a read warning.
+        let warning_shown = self.keymap_warning_shown;
+        self.keymap_warning_shown = false;
+        self.dismiss_startup();
+        if self.pad_naming.is_some() && self.pad_name_key(k) {
+            return false;
+        }
+        if self.project_picker.is_some() && self.project_picker_key(k) {
+            return false;
+        }
+        if self.screen_learn.is_some() && self.learn_key(keymap, k) {
+            return false;
+        }
+        let typing = self.browser.editing && self.screen == Screen::Files;
+        mods.update(k, typing);
+        if typing && self.filter_key(k) {
+            return false;
+        }
+        let k = if kitty { keys_down.repeat(k) } else { *k };
+        if warning_shown
+            && k.kind == event::KeyEventKind::Press
+            && !matches!(k.code, event::KeyCode::Modifier(_))
+            && !self.key_notice_blocked()
+        {
+            self.keymap_warnings.pop_front();
+        }
+        let Some(action) = keymap.resolve_in(self.screen, self.edit_keys(), &k) else {
+            self.moved_key_notice(keymap, &k);
+            return false;
+        };
+        let action = if kitty {
+            held.filter(action)
+        } else {
+            Some(action)
+        };
+        action.is_some_and(|action| self.apply(action))
     }
 
     /// The first key event of the session clears the startup notices: the owner has read
@@ -5613,6 +5714,8 @@ fn main() -> std::io::Result<()> {
         input_level: 0.0,
         flash: None,
         startup: Vec::new(),
+        keymap_warnings: Default::default(),
+        keymap_warning_shown: false,
         // the splash shows from the first frame on and lives until the first sound (73)
         splash: true,
         recording: None,
@@ -5635,8 +5738,11 @@ fn main() -> std::io::Result<()> {
     if let Some(e) = project_notice {
         app.flash = Some((e, Instant::now()));
     }
-    let (keymap, keymap_notice) =
-        load_keymap(&config::xdg_dir("XDG_CONFIG_HOME", ".config").join("keymap.toml"));
+    let (keymap, keymap_notice, keymap_warnings) = load_keymap(
+        &config::xdg_dir("XDG_CONFIG_HOME", ".config").join("keymap.toml"),
+        DEFAULT_KEYMAP,
+    );
+    app.keymap_warnings.extend(keymap_warnings);
     let (profiles, profile_errors) = midi::load_profiles(DEVICES);
     if let Some(msg) = audio_msg {
         app.flash = Some((msg, Instant::now()));
@@ -5798,11 +5904,7 @@ fn main() -> std::io::Result<()> {
             let _ = execute!(std::io::stdout(), SetTitle(title.as_str()));
         }
 
-        let notice = app
-            .pad_naming
-            .as_ref()
-            .map(|(_, name)| format!("Name: {name}▏  Enter saves · Esc cancels"))
-            .or_else(|| app.notice());
+        let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let status = tui::Status {
             backend: app.audio_alive().map(|a| a.backend),
@@ -6009,38 +6111,7 @@ fn main() -> std::io::Result<()> {
         }) else {
             continue;
         };
-        // any key event at all means the startup notices were read
-        app.dismiss_startup();
-        if app.pad_naming.is_some() && app.pad_name_key(&k) {
-            continue;
-        }
-        // the project picker is open: its keys go first, raw, like the filter line (11)
-        if app.project_picker.is_some() && app.project_picker_key(&k) {
-            continue;
-        }
-        // the learn mode takes every key: it walks, clears, leaves (47)
-        if app.screen_learn.is_some() && app.learn_key(&keymap, &k) {
-            continue;
-        }
-        let typing = app.browser.editing && app.screen == Screen::Files;
-        mods.update(&k, typing);
-        if typing && app.filter_key(&k) {
-            continue;
-        }
-        // a press of a key still down is its repeat; without releases every press is new
-        let k = if kitty { keys_down.repeat(&k) } else { k };
-        let Some(action) = keymap.resolve_in(app.screen, app.edit_keys(), &k) else {
-            continue;
-        };
-        // without the kitty protocol there are no releases, so a held pad would never reset
-        let action = if kitty {
-            held.filter(action)
-        } else {
-            Some(action)
-        };
-        if let Some(action) = action
-            && app.apply(action)
-        {
+        if app.keyboard_event(&keymap, &k, kitty, &mut keys_down, &mut held, &mut mods) {
             break Ok(());
         }
     };
@@ -6140,11 +6211,65 @@ fn hint_for(app: &App) -> Option<&'static str> {
     }
 }
 
+// Temporary migration hints: remove Ctrl+R when 97 binds it, the rest after version 0.2.
+const MOVED_KEYS: &[(Option<Screen>, &str, &str)] = &[
+    (None, "Ctrl+R", "microphone moved to Alt+R"),
+    (Some(Screen::Chop), "Ctrl+N", "normalize moved to Ctrl+G"),
+    (Some(Screen::Chop), "Ctrl+Y", "chop by hits moved to H"),
+    (Some(Screen::Pads), "J", "previous bank moved to U"),
+    (Some(Screen::Pads), "L", "next bank moved to O"),
+];
+
+const CLEANUP_DEFAULTS: &[(Option<Screen>, &str, &str)] = &[
+    (None, "Alt+R", "record.mic"),
+    (Some(Screen::Chop), "Ctrl+G", "chop.normalize"),
+    (Some(Screen::Chop), "H", "chop.hits"),
+    (Some(Screen::Chop), "Shift+H", "chop.hits_back"),
+    (Some(Screen::Pads), "U", "bank.prev"),
+    (Some(Screen::Pads), "O", "bank.next"),
+    (Some(Screen::Pads), "Ctrl+C", "pad.copy"),
+    (Some(Screen::Pads), "J", "edit.value_dec"),
+    (Some(Screen::Pads), "L", "edit.value_inc"),
+    (Some(Screen::Pads), "Left", "edit.value_dec"),
+    (Some(Screen::Pads), "Right", "edit.value_inc"),
+];
+
+fn keymap_shadow_warnings(shipped: &Keymap, merged: &Keymap) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (screen, screen_name) in [
+        (Screen::Pads, "pads"),
+        (Screen::Chop, "chop"),
+        (Screen::Files, "files"),
+        (Screen::Fx, "fx"),
+        (Screen::Settings, "settings"),
+    ] {
+        for &(scope, key, name) in CLEANUP_DEFAULTS {
+            if scope.is_some_and(|scope| scope != screen) {
+                continue;
+            }
+            let Some(action) = Action::parse(name) else {
+                continue;
+            };
+            // Existing edit bindings alone do not mean the new screen default has shipped.
+            if shipped.binding_for(screen, false, key) != Some(Some(action)) {
+                continue;
+            }
+            if [false, true].into_iter().any(|editing| {
+                shipped.binding_for(screen, editing, key) == Some(Some(action))
+                    && merged.binding_for(screen, editing, key) != Some(Some(action))
+            }) {
+                warnings.push(format!("keymap.toml: {key} on {screen_name} hides {name}"));
+            }
+        }
+    }
+    warnings
+}
+
 /// The shipped keymap with the owner's file `user` over it (64); the working folder does
 /// not matter. A broken file is named with its line and the shipped keys stay.
-fn load_keymap(user: &Path) -> (Keymap, Option<String>) {
+fn load_keymap(user: &Path, defaults: &str) -> (Keymap, Option<String>, Vec<String>) {
     let (mut keymap, _) =
-        Keymap::from_toml(DEFAULT_KEYMAP).expect("the shipped keymap parses (tested in input)");
+        Keymap::from_toml(defaults).expect("the shipped keymap parses (tested in input)");
     let shown = user.display();
     let (warnings, notice) = match std::fs::read_to_string(user) {
         Ok(text) => match keymap.overlay(&text) {
@@ -6161,7 +6286,12 @@ fn load_keymap(user: &Path) -> (Keymap, Option<String>) {
         log::warn!("{w}");
     }
     let warning = warnings.into_iter().next().map(|w| format!("{shown}: {w}"));
-    (keymap, notice.or(warning))
+    let (shipped, _) = Keymap::from_toml(defaults).expect("the shipped keymap parses");
+    let shadows = keymap_shadow_warnings(&shipped, &keymap);
+    for warning in &shadows {
+        log::warn!("{warning}");
+    }
+    (keymap, notice.or(warning), shadows)
 }
 
 use pads::PAD_KEYS;
@@ -8677,6 +8807,8 @@ mod tests {
             input_level: 0.0,
             flash: None,
             startup: Vec::new(),
+            keymap_warnings: Default::default(),
+            keymap_warning_shown: false,
             splash: false,
             recording: None,
             #[cfg(test)]
@@ -9054,9 +9186,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("keymap.toml");
         std::fs::write(&path, text).unwrap();
-        let loaded = super::load_keymap(&path);
+        let (keymap, notice, _) = super::load_keymap(&path, super::DEFAULT_KEYMAP);
         std::fs::remove_dir_all(&dir).ok();
-        loaded
+        (keymap, notice)
     }
 
     fn pads_ctrl(k: &input::Keymap, c: char) -> Option<Action> {
@@ -9209,6 +9341,537 @@ mod tests {
                 Some(Action::PadPress { pad: 4, .. })
             ));
         }
+    }
+
+    // Task 1.2 tests the migration layer before task 2.1 moves the shipped keys.
+    // Every fixture binding uses an action that already has a production handler.
+    const NOTICE_DEFAULTS: &str = r#"
+[global]
+"Alt+R" = "record.mic"
+"Ctrl+T" = "record.output"
+"Ctrl+Q" = "app.quit"
+"Ctrl+Z" = "edit.undo"
+PageDown = "bank.next"
+F10 = "learn.toggle"
+Esc = "ui.back"
+[edit]
+J = "edit.value_dec"
+L = "edit.value_inc"
+Left = "edit.value_dec"
+Right = "edit.value_inc"
+[screens.chop]
+H = "chop.hits"
+"Ctrl+G" = "chop.normalize"
+Enter = "chop.edit"
+[screens.pads]
+J = "edit.value_dec"
+L = "edit.value_inc"
+Left = "edit.value_dec"
+Right = "edit.value_inc"
+U = "bank.prev"
+O = "bank.next"
+"Ctrl+N" = "pad.rename"
+Enter = "pad.edit"
+[screens.files]
+Slash = "browser.filter"
+Enter = "browser.hold"
+"#;
+
+    fn notice_map(defaults: &str, owner: &str) -> input::Keymap {
+        let (mut keymap, warnings) = input::Keymap::from_toml(defaults).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(keymap.overlay(owner).unwrap().is_empty());
+        keymap
+    }
+
+    #[derive(Default)]
+    struct NoticeInput {
+        down: input::HeldKeys,
+        pads: input::HeldPads,
+        mods: input::HeldModifiers,
+    }
+
+    impl NoticeInput {
+        fn dispatch(
+            &mut self,
+            app: &mut super::App,
+            keymap: &input::Keymap,
+            event: ratatui::crossterm::event::KeyEvent,
+            kitty: bool,
+        ) -> bool {
+            app.keyboard_event(
+                keymap,
+                &event,
+                kitty,
+                &mut self.down,
+                &mut self.pads,
+                &mut self.mods,
+            )
+        }
+
+        fn event(
+            &mut self,
+            app: &mut super::App,
+            keymap: &input::Keymap,
+            event: ratatui::crossterm::event::KeyEvent,
+            kitty: bool,
+        ) {
+            app.frame_notice();
+            assert!(!self.dispatch(app, keymap, event, kitty));
+        }
+    }
+
+    fn assert_moved_notice(screen: Screen, latin: char, russian: char, ctrl: bool, message: &str) {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        for kitty in [false, true] {
+            for c in [latin, russian] {
+                let mut app = test_app();
+                app.screen = screen;
+                app.chop = Some(chop_with_parts(4));
+                let slices = app.chop.as_ref().unwrap().slices();
+                let gain = app.pads.volume_db;
+                let mut input = NoticeInput::default();
+                input.event(
+                    &mut app,
+                    &keymap,
+                    KeyEvent::new(KeyCode::Char(c), if ctrl { M::CONTROL } else { M::NONE }),
+                    kitty,
+                );
+                assert_eq!(flash(&app), message, "{c}, kitty {kitty}");
+                assert_eq!(app.chop.as_ref().unwrap().slices(), slices);
+                assert_eq!(app.pads.volume_db, gain);
+                assert!(app.recording.is_none());
+                assert!(app.sent.is_empty(), "a notice sends no audio commands");
+                assert!(app.history.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn old_microphone_key_names_its_replacement() {
+        for screen in [
+            Screen::Pads,
+            Screen::Chop,
+            Screen::Files,
+            Screen::Settings,
+            Screen::Fx,
+        ] {
+            assert_moved_notice(screen, 'r', 'к', true, "microphone moved to Alt+R");
+        }
+    }
+
+    #[test]
+    fn old_normalize_key_names_its_replacement() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        assert_moved_notice(Screen::Chop, 'n', 'т', true, "normalize moved to Ctrl+G");
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        let mut app = test_app();
+        app.pads.file[0] = Some("/samples/kick.wav".into());
+        NoticeInput::default().event(
+            &mut app,
+            &keymap,
+            KeyEvent::new(KeyCode::Char('n'), M::CONTROL),
+            true,
+        );
+        assert!(
+            app.pad_naming.is_some(),
+            "Ctrl+N on Pads still opens naming"
+        );
+        assert!(!flash(&app).contains("moved"));
+    }
+
+    #[test]
+    fn old_hit_chop_key_names_its_replacement() {
+        assert_moved_notice(Screen::Chop, 'y', 'н', true, "chop by hits moved to H");
+    }
+
+    #[test]
+    fn unbound_bank_keys_name_their_replacements() {
+        let defaults = "[global]\nPageDown = \"bank.next\"\n";
+        let keymap = notice_map(defaults, "");
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        for (key, message) in [
+            ('j', "previous bank moved to U"),
+            ('о', "previous bank moved to U"),
+            ('l', "next bank moved to O"),
+            ('д', "next bank moved to O"),
+        ] {
+            let mut app = test_app();
+            NoticeInput::default().event(
+                &mut app,
+                &keymap,
+                KeyEvent::new(KeyCode::Char(key), M::NONE),
+                true,
+            );
+            assert_eq!(flash(&app), message);
+            assert_eq!(app.pads.bank, 0);
+        }
+    }
+
+    #[test]
+    fn rebound_bank_keys_change_values_without_a_move_notice() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        for editing in [false, true] {
+            for (key, change) in [('j', -1), ('о', -1), ('l', 1), ('д', 1)] {
+                let mut app = test_app();
+                app.edit = editing;
+                app.pads.file[0] = Some("/samples/kick.wav".into());
+                NoticeInput::default().event(
+                    &mut app,
+                    &keymap,
+                    KeyEvent::new(KeyCode::Char(key), M::NONE),
+                    true,
+                );
+                assert_eq!(app.pads.volume_db[0], change);
+                assert_eq!(app.pads.bank, 0);
+                assert!(!flash(&app).contains("moved"));
+            }
+        }
+    }
+
+    #[test]
+    fn owner_old_key_wins_over_the_move_notice() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(NOTICE_DEFAULTS, "[global]\n\"Ctrl+R\" = \"record.mic\"\n");
+        let mut app = test_app();
+        NoticeInput::default().event(
+            &mut app,
+            &keymap,
+            KeyEvent::new(KeyCode::Char('к'), M::CONTROL),
+            true,
+        );
+        assert_eq!(
+            flash(&app),
+            "No sound: there is nothing to record from.",
+            "the real microphone handler, not a moved-key notice"
+        );
+        let keymap = notice_map(
+            NOTICE_DEFAULTS,
+            "[screens.chop]\n\"Ctrl+Y\" = \"bank.next\"\n",
+        );
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        NoticeInput::default().event(
+            &mut app,
+            &keymap,
+            KeyEvent::new(KeyCode::Char('y'), M::CONTROL),
+            true,
+        );
+        assert_eq!(app.pads.bank, 1);
+        assert!(!flash(&app).contains("moved"));
+    }
+
+    #[test]
+    fn disabled_old_key_stays_silent() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(
+            NOTICE_DEFAULTS,
+            "[global]\n\"Ctrl+R\" = \"none\"\n[screens.chop]\n\"Ctrl+N\" = \"none\"\n\"Ctrl+Y\" = \"none\"\n[screens.pads]\nJ = \"none\"\nL = \"none\"\n",
+        );
+        for (screen, key, mods) in [
+            (Screen::Chop, 'r', M::CONTROL),
+            (Screen::Chop, 'т', M::CONTROL),
+            (Screen::Chop, 'н', M::CONTROL),
+            (Screen::Pads, 'j', M::NONE),
+            (Screen::Pads, 'д', M::NONE),
+        ] {
+            let mut app = test_app();
+            app.screen = screen;
+            NoticeInput::default().event(
+                &mut app,
+                &keymap,
+                KeyEvent::new(KeyCode::Char(key), mods),
+                true,
+            );
+            assert_eq!(flash(&app), "");
+            assert!(app.sent.is_empty());
+            assert_eq!(app.pads.bank, 0);
+        }
+    }
+
+    #[test]
+    fn move_notices_do_not_interrupt_other_input_modes() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        for mode in 0..5 {
+            let mut app = test_app();
+            match mode {
+                0 => {
+                    app.screen = Screen::Files;
+                    app.browser.editing = true;
+                }
+                1 => app.pad_naming = Some((0, "kick".into())),
+                2 => {
+                    app.ask = Some(super::Ask::ClearPads {
+                        pads: vec![0],
+                        lines: vec!["keep this question".into()],
+                    })
+                }
+                3 => {
+                    app.apply(Action::LearnToggle);
+                }
+                4 => {
+                    app.project_picker = Some(super::ProjectPicker {
+                        entries: vec![],
+                        selected: 0,
+                        naming: Some("project".into()),
+                    })
+                }
+                _ => unreachable!(),
+            }
+            app.flash = Some(("keep this notice".into(), std::time::Instant::now()));
+            NoticeInput::default().event(
+                &mut app,
+                &keymap,
+                KeyEvent::new(KeyCode::Char('r'), M::CONTROL),
+                true,
+            );
+            assert_eq!(flash(&app), "keep this notice", "mode {mode}");
+            assert!(app.recording.is_none());
+        }
+        // Repeats and releases are not moved-key presses, including Ghostty repeats.
+        let mut app = test_app();
+        let mut input = NoticeInput::default();
+        let event = KeyEvent::new(KeyCode::Char('r'), M::CONTROL);
+        input.event(&mut app, &keymap, event, true);
+        app.flash = None;
+        input.event(&mut app, &keymap, event, true);
+        assert_eq!(flash(&app), "");
+        input.event(
+            &mut app,
+            &keymap,
+            KeyEvent {
+                kind: super::event::KeyEventKind::Release,
+                ..event
+            },
+            true,
+        );
+        assert_eq!(flash(&app), "");
+    }
+
+    fn loaded_notice_map(defaults: &str, owner: &str) -> (input::Keymap, Vec<String>) {
+        let dir = tmp_dir("83a-notice-keymap");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("keymap.toml");
+        std::fs::write(&path, owner).unwrap();
+        let (keymap, notice, warnings) = super::load_keymap(&path, defaults);
+        assert!(notice.is_none(), "{notice:?}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            owner,
+            "owner file stays unchanged"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+        (keymap, warnings)
+    }
+
+    #[test]
+    fn an_owner_key_hides_a_new_default() {
+        let (keymap, warnings) =
+            loaded_notice_map(NOTICE_DEFAULTS, "[screens.chop]\nH = \"chop.normalize\"\n");
+        assert_eq!(warnings, ["keymap.toml: H on chop hides chop.hits"]);
+        assert_eq!(
+            keymap.binding_for(Screen::Chop, false, "H"),
+            Some(Some(Action::ChopNormalize))
+        );
+    }
+
+    #[test]
+    fn matching_owner_keys_do_not_warn() {
+        let (_, warnings) = loaded_notice_map(
+            NOTICE_DEFAULTS,
+            "[global]\n\"Alt+R\" = \"record.mic\"\n[screens.chop]\nH = \"chop.hits\"\n[screens.pads]\nJ = \"edit.value_dec\"\n",
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn all_changed_default_conflicts_are_reported() {
+        let (keymap, warnings) = loaded_notice_map(
+            NOTICE_DEFAULTS,
+            "[global]\n\"Alt+R\" = \"none\"\n[screens.chop]\nH = \"none\"\n[screens.pads]\nJ = \"none\"\nL = \"bank.next\"\n",
+        );
+        assert_eq!(
+            warnings.len(),
+            8,
+            "five global screens, Chop H and Pads J/L: {warnings:?}"
+        );
+        let distinct: std::collections::BTreeSet<_> = warnings.iter().collect();
+        assert_eq!(distinct.len(), warnings.len());
+        assert!(warnings.contains(&"keymap.toml: H on chop hides chop.hits".into()));
+        assert!(warnings.contains(&"keymap.toml: J on pads hides edit.value_dec".into()));
+        assert_eq!(keymap.binding_for(Screen::Chop, false, "H"), Some(None));
+        assert_eq!(keymap.binding_for(Screen::Pads, false, "J"), Some(None));
+        assert_eq!(
+            keymap.binding_for(Screen::Pads, false, "L"),
+            Some(Some(Action::BankNext))
+        );
+        let mut app = test_app();
+        app.keymap_warnings.extend(warnings.clone());
+        let mut input = NoticeInput::default();
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        for warning in warnings {
+            assert_eq!(app.frame_notice(), Some(warning));
+            input.event(
+                &mut app,
+                &keymap,
+                KeyEvent::new(KeyCode::Char('5'), M::NONE),
+                false,
+            );
+        }
+        assert!(app.keymap_warnings.is_empty());
+    }
+
+    #[test]
+    fn shadow_warnings_follow_effective_layers_and_normalized_chords() {
+        let defaults = format!("{NOTICE_DEFAULTS}\n[screens.fx]\n\"Alt+R\" = \"record.mic\"\n");
+        let (_, warnings) = loaded_notice_map(
+            &defaults,
+            "[global]\n\"Alt+R\" = \"none\"\n[edit]\n\"о\" = \"none\"\n",
+        );
+        assert_eq!(
+            warnings.len(),
+            5,
+            "four global conflicts and one edit-layer conflict: {warnings:?}"
+        );
+        assert!(
+            !warnings.iter().any(|w| w.contains(" on fx ")),
+            "screen binding wins over global removal"
+        );
+        assert!(warnings.contains(&"keymap.toml: J on pads hides edit.value_dec".into()));
+    }
+
+    #[test]
+    fn planned_defaults_do_not_produce_shadow_warnings() {
+        let (_, warnings) = loaded_notice_map(
+            super::DEFAULT_KEYMAP,
+            "[global]\n\"Alt+R\" = \"none\"\n[screens.chop]\nH = \"chop.normalize\"\n\"Shift+H\" = \"none\"\n\"Ctrl+G\" = \"bank.next\"\n[screens.pads]\nU = \"none\"\nO = \"bank.prev\"\nJ = \"bank.next\"\n\"Ctrl+C\" = \"none\"\n",
+        );
+        assert!(
+            warnings.is_empty(),
+            "new bindings have not shipped: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn only_a_visible_keymap_warning_is_dismissed() {
+        use ratatui::crossterm::event::{
+            KeyCode, KeyEvent, KeyEventKind as K, KeyModifiers as M, ModifierKeyCode,
+        };
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        let mut app = test_app();
+        app.keymap_warnings
+            .extend(["first warning".into(), "second warning".into()]);
+        let mut input = NoticeInput::default();
+        let key = KeyEvent::new(KeyCode::Char('5'), M::NONE);
+        input.event(&mut app, &keymap, key, true);
+        assert_eq!(app.keymap_warnings.len(), 1);
+        input.event(&mut app, &keymap, key, true); // Ghostty repeat as a plain press
+        input.event(
+            &mut app,
+            &keymap,
+            KeyEvent {
+                kind: K::Repeat,
+                ..key
+            },
+            true,
+        );
+        input.event(
+            &mut app,
+            &keymap,
+            KeyEvent {
+                kind: K::Release,
+                ..key
+            },
+            true,
+        );
+        input.event(
+            &mut app,
+            &keymap,
+            KeyEvent::new(KeyCode::Modifier(ModifierKeyCode::LeftShift), M::SHIFT),
+            true,
+        );
+        assert_eq!(
+            app.keymap_warnings.len(),
+            1,
+            "repeats, release and modifier do not acknowledge it"
+        );
+        input.event(
+            &mut app,
+            &keymap,
+            KeyEvent::new(KeyCode::PageDown, M::NONE),
+            true,
+        );
+        assert!(app.keymap_warnings.is_empty());
+        assert_eq!(app.pads.bank, 1, "the normal command still runs");
+    }
+
+    #[test]
+    fn hidden_keymap_warnings_stay_pending() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(NOTICE_DEFAULTS, "");
+        for mode in 0..8 {
+            let mut app = test_app();
+            app.keymap_warnings.push_back("pending warning".into());
+            match mode {
+                0 => {
+                    app.screen = Screen::Files;
+                    app.browser.editing = true;
+                }
+                1 => app.pad_naming = Some((0, "kick".into())),
+                2 => {
+                    app.ask = Some(super::Ask::ClearPads {
+                        pads: vec![0],
+                        lines: vec!["question".into()],
+                    })
+                }
+                3 => {
+                    app.apply(Action::LearnToggle);
+                }
+                4 => app.flash = Some(("higher priority".into(), std::time::Instant::now())),
+                5 => app.startup.push("old startup notice".into()),
+                6 => app.pads.loading[0] = Some(0),
+                7 => app.recording = Some((super::audio::SOURCE_OUTPUT, std::time::Instant::now())),
+                _ => unreachable!(),
+            }
+            // Ctrl+U is unbound and is not one of the migrated chords.
+            NoticeInput::default().event(
+                &mut app,
+                &keymap,
+                KeyEvent::new(KeyCode::Char('u'), M::CONTROL),
+                true,
+            );
+            assert_eq!(app.keymap_warnings.len(), 1, "hidden in mode {mode}");
+            app.screen = Screen::Pads;
+            app.browser.editing = false;
+            app.pad_naming = None;
+            app.ask = None;
+            app.screen_learn = None;
+            app.flash = None;
+            app.pads.loading[0] = None;
+            app.recording = None;
+            assert!(
+                app.startup.is_empty(),
+                "the old startup dismissal rule stays"
+            );
+            assert_eq!(app.frame_notice().as_deref(), Some("pending warning"));
+        }
+        // An expired flash must not acknowledge a warning that no frame showed yet.
+        let mut app = test_app();
+        app.keymap_warnings.push_back("not shown yet".into());
+        app.flash = Some(("flash".into(), std::time::Instant::now()));
+        assert_eq!(app.frame_notice().as_deref(), Some("flash"));
+        app.flash = None;
+        let mut input = NoticeInput::default();
+        assert!(!input.dispatch(
+            &mut app,
+            &keymap,
+            KeyEvent::new(KeyCode::Char('5'), M::NONE),
+            true
+        ));
+        assert_eq!(app.keymap_warnings.len(), 1);
     }
 
     fn flash(app: &super::App) -> &str {

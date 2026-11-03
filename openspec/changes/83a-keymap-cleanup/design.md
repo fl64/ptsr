@@ -82,9 +82,23 @@ entry, including `none`, suppresses the moved-key notice for that entry.
 At start, report each conflicting changed default once per chord and screen. Include
 new chords and changed existing chords, including Shift+H and the Pads value keys.
 An owner entry for the same action is not a conflict. Owner bindings and explicit
-removals win; do not rewrite their file. Deliver notices one at a time, as the current
-startup flow does. Remove the Ctrl+R moved-key row when 97 binds it; remove the rest in
-the first change after version 0.2. This lifetime is already in `docs/BACKLOG.md`.
+removals win; do not rewrite their file. The existing startup flow clears its whole
+list on the first key event; it cannot deliver several keymap warnings. Keep those
+warnings in a separate queue on the current notice line, not in a new notice model.
+Only a new non-modifier press dismisses the visible keymap warning; it still runs its
+normal action. Repeats and releases do not dismiss warnings. Text input, questions,
+learn and higher-priority notices keep hidden warnings pending. The other startup
+notices keep their current dismissal rules, including the terminal warning.
+
+Gate shadow warnings on the actual shipped cleanup bindings, not only the planned
+list. Until tasks 2.1, 3.1 and 4.1 ship a binding, it produces no shadow warning. Compare
+the effective screen and edit layers, and report each chord and screen once. Tests
+use fixture maps with existing actions for the not-yet-shipped keys; do not add action
+placeholders. App may inspect normalized key names and explicit keymap entries through
+small read-only input queries; keep chord parsing and layout handling in input.
+
+Remove the Ctrl+R moved-key row when 97 binds it; remove the rest in the first change
+after version 0.2. This lifetime is already in `docs/BACKLOG.md`.
 
 ### Pad copy is a saved pad, not a swap
 

@@ -112,6 +112,13 @@ name `keymap.toml`, the chord, screen and hidden action, for example
 `keymap.toml: H on chop hides chop.hits`. The owner's action or explicit removal SHALL
 win and the file SHALL NOT be rewritten. An entry for the same action SHALL NOT warn.
 Multiple startup warnings SHALL be delivered individually, not silently overwritten.
+Keymap warnings SHALL use their own queue on the current notice line. A new key press
+SHALL dismiss only the warning that is visible, without consuming the key's normal
+action. Repeats, releases and modifier-only events SHALL NOT dismiss a warning. A warning
+hidden by text input, questions, learn or a higher-priority notice SHALL stay pending.
+Other startup notices, including the terminal warning, SHALL keep their current dismissal
+rules. Only a new or changed binding that is present in the shipped map SHALL produce a
+shadow warning; planned bindings SHALL NOT produce warnings before they ship.
 
 #### Scenario: An owner key hides a new default
 - **WHEN** the owner maps H on Chop to another action
@@ -125,3 +132,17 @@ Multiple startup warnings SHALL be delivered individually, not silently overwrit
 - **WHEN** the owner has several entries that hide changed defaults, including `none`
 - **THEN** each conflicting chord and screen is named once through startup notices
 - **AND** every owner entry stays effective and their file stays unchanged
+
+#### Scenario: Only a visible keymap warning is dismissed
+- **WHEN** several keymap warnings wait and the owner presses a key while one is visible
+- **THEN** only that warning leaves the queue and the key keeps its normal action
+- **AND** repeats, releases and modifier-only events do not dismiss the next warning
+
+#### Scenario: Hidden keymap warnings stay pending
+- **WHEN** a keymap warning is hidden by text input, a question, learn or a higher-priority notice
+- **THEN** keyboard events do not dismiss that warning
+- **AND** it is shown when the blocking state ends, without changing other startup notices
+
+#### Scenario: Planned defaults do not produce shadow warnings
+- **WHEN** an owner entry uses a cleanup chord whose new shipped binding is not present yet
+- **THEN** no shadow warning is shown for that planned binding

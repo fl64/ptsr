@@ -1888,6 +1888,13 @@ impl Keymap {
         }
     }
 
+    /// Looks up an explicit chord in edit, screen and global priority order. An outer
+    /// `None` means no entry (or an invalid chord); `Some(None)` means an explicit removal.
+    /// Unlike resolution, this does not use Shift or Tab fallback or change action steps.
+    pub fn binding_for(&self, screen: Screen, editing: bool, key: &str) -> Option<Option<Action>> {
+        self.entry(screen, editing, parse_chord(key).ok()?).copied()
+    }
+
     /// Keys of an action in the edit layer, for the help line of the edit mode.
     pub fn edit_keys_for(&self, action: Action) -> Vec<String> {
         let mut keys: Vec<String> = self
@@ -2029,6 +2036,18 @@ fn parse_chord(key: &str) -> Result<Chord, String> {
         code,
         ctrl,
         alt,
+        shift,
+    })
+}
+
+/// The normalized chord name of an event, independent of keyboard layout or event kind.
+/// Uppercase legacy characters name Shift chords, as extended Shift events do.
+pub fn key_name(e: &KeyEvent) -> String {
+    let (code, shift) = chord_parts(e);
+    chord_name(&Chord {
+        code,
+        ctrl: e.modifiers.contains(KeyModifiers::CONTROL),
+        alt: e.modifiers.contains(KeyModifiers::ALT),
         shift,
     })
 }
@@ -2244,6 +2263,63 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn inspect_entries_keeps_removals_and_layer_priority() {
+        let (k, warnings) = Keymap::from_toml(
+            "[global]\nH = \"help.toggle\"\n\"Shift+H\" = \"help.toggle\"\n[edit]\nH = \"none\"\n[screens.chop]\nH = \"chop.hits\"\n",
+        )
+        .unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            k.binding_for(Screen::Pads, false, "H"),
+            Some(Some(Action::HelpToggle))
+        );
+        assert_eq!(
+            k.binding_for(Screen::Chop, false, "Р"),
+            Some(Some(Action::ChopHits))
+        );
+        assert_eq!(k.binding_for(Screen::Chop, true, "H"), Some(None));
+        assert_eq!(
+            k.binding_for(Screen::Pads, false, "Shift+H"),
+            Some(Some(Action::HelpToggle))
+        );
+        assert_eq!(k.binding_for(Screen::Pads, false, "Shift+J"), None);
+        assert_eq!(k.binding_for(Screen::Pads, false, "not a key"), None);
+        assert_eq!(k.binding_for(Screen::Pads, false, "Q"), None);
+    }
+
+    #[test]
+    fn event_names_use_the_same_chords_as_keymap_entries() {
+        for (us, ru) in [('r', 'к'), ('n', 'т'), ('y', 'н'), ('h', 'р')] {
+            for mods in [
+                KeyModifiers::NONE,
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+                KeyModifiers::SHIFT,
+            ] {
+                assert_eq!(
+                    key_name(&ev(KeyCode::Char(us), mods, KeyEventKind::Press)),
+                    key_name(&ev(KeyCode::Char(ru), mods, KeyEventKind::Release))
+                );
+            }
+        }
+        for c in ['H', 'Р'] {
+            assert_eq!(key_name(&press(c)), "Shift+H");
+        }
+        assert_eq!(
+            key_name(&ev(KeyCode::Tab, KeyModifiers::SHIFT, KeyEventKind::Press)),
+            "Shift+Tab"
+        );
+        assert_eq!(
+            key_name(&ev(
+                KeyCode::BackTab,
+                KeyModifiers::NONE,
+                KeyEventKind::Press
+            )),
+            "Shift+Tab"
+        );
     }
 
     fn keymap() -> Keymap {
