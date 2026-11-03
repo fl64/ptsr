@@ -20,11 +20,14 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 ## Branch and pull request names
 
 - Use the OpenSpec change folder name for the branch: `<change>-<short-name>`, for example `85-input-modes`. Do not add a scope to the branch name.
-- Use this PR title format: `<type>(<scope>): <summary> [<change>]`. Example: `fix(pads): preserve original gate releases [85]`. Use a conventional type for the main purpose. Write the summary in English.
-- Combine changes in one branch or PR only with the owner's explicit approval. For a combined PR, use the same title format with a range: `fix(input): align keyboard and MIDI pad control [83a–85]`.
-- The title names the main purpose. The description must cover the entire diff to the target branch, not only the last change. Keep implemented work, future plans and unverified checks separate.
-- Use the same scopes for commits and PRs. Choose the main affected area, not a Rust crate name. Tests use the scope of the behavior they check, not `tests`. For a PR with several areas, choose the main one and list the other areas in the description. This does not change the atomic commit rule above.
-- Do not add scope aliases: use `input`, not `keyboard`, `keymap` or `controls`; use `tui`, not `ui`.
+- Use this PR title format: `<type>(<scope>): <summary> [<change>]`. Example: `fix(pads): keep original gate releases [85]`. Use a conventional type for the main purpose. Write the summary in English.
+- Combine changes in one branch or PR only with the owner's explicit approval. For a combined PR, use the same format with a range. Example: `fix(input): keep controller commands before pad hits [83a–85]`.
+- The title gives the main purpose. The description must cover the full diff to the target branch, not only the last change. Keep completed work, future plans and unverified checks separate.
+- Use [the PR template](.github/PULL_REQUEST_TEMPLATE.md). Keep the description short and complete each section. If a section does not apply, state why.
+- Use the [asd-ste100 skill](https://github.com/danyuchn/asd-ste100-skill) for every PR title, description and changelog. Apply it before publication and after each edit. Use its STE-flavored mode for PR text. Apply its structural rules and review its lexical advice. Keep technical names and the original meaning.
+- Run the skill's `scripts/ste-lint.py` on the PR title and body. Review each finding. Revise the text or explain why the wording must stay. Report the skill mode and the lint result. A clean lint result does not prove compliance with the full ASD dictionary. If the skill is unavailable, report this before publication. Do not claim a review or an automated check that you did not do.
+- Use the same scopes for commits and PRs. Choose the main affected area, not a Rust crate name. Tests use the scope of the behavior they test, not `tests`. For a PR with several areas, choose the main scope and describe the other areas. Keep the atomic commit rule above.
+- Do not add scope aliases. Use `input`, not `keyboard`, `keymap` or `controls`. Use `tui`, not `ui`.
 
 | Scope | Area |
 | --- | --- |
