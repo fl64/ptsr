@@ -1575,8 +1575,13 @@ impl App {
             Action::ScreenFx => self.goto(Screen::Fx),
             Action::ScreenChop if self.screen == Screen::Files => self.open_file_chop(),
             Action::ScreenChop => self.open_chop(),
-            Action::PadPress { pad, velocity } if self.screen == Screen::Chop => {
-                self.chop_pad(pad, velocity, pads::HitSource::Keyboard);
+            Action::PadPress { pad, velocity } => {
+                self.pad_hit(
+                    pad,
+                    velocity,
+                    pads::HitSource::Keyboard,
+                    midi::PadSound::UiUnattempted,
+                );
             }
             Action::Back if self.screen == Screen::Chop && self.plan.is_some() => self.plan = None,
             Action::ChopPlay if self.screen == Screen::Chop => {
@@ -1939,15 +1944,6 @@ impl App {
                 self.pad_in_hand = None;
                 self.take_copy();
             }
-            Action::PadPress { pad, .. } if self.copy_in_hand.is_some() => {
-                let abs = self.pads.bank * PADS_PER_BANK + pad;
-                self.pads.selected = pad;
-                self.copy_target(abs);
-            }
-            Action::PadPress { pad, .. } if self.pad_in_hand.is_some() => {
-                self.swap_with(self.pads.bank * PADS_PER_BANK + pad);
-                self.pads.selected = pad;
-            }
             // a run waits for the next control: Esc stops it and keeps what is learned (28)
             Action::Back if self.midi_run.is_some() => self.midi_run = None,
             Action::Back if self.learning.is_some() => self.learning = None,
@@ -2148,10 +2144,6 @@ impl App {
                 self.preview_on = !self.preview_on;
                 self.preview_selection();
             }
-            Action::PadPress { pad, .. } if self.browser.in_hand.is_some() => {
-                self.put_in_hand(self.pads.bank * PADS_PER_BANK + pad);
-                self.pads.selected = pad;
-            }
             // the SOURCE page: the app changes it, it knows the cuts of the file (27)
             Action::EditValue { up, fine }
                 if self.screen == Screen::Pads
@@ -2180,9 +2172,6 @@ impl App {
             Action::PadClear if !self.pads.marked.is_empty() => self.ask_clear(),
             Action::PadClear => self.clear_pads(&[self.pads.selected_abs()]),
             pad_action => {
-                if matches!(pad_action, Action::PadPress { .. }) {
-                    self.meters.hit(Instant::now());
-                }
                 for cmd in self.pads.apply(pad_action) {
                     self.send(cmd);
                 }
@@ -4575,12 +4564,77 @@ impl App {
         }
     }
 
-    fn midi_pad_notification(&mut self, abs: usize, sound: midi::PadSound) {
+    fn pad_hit(
+        &mut self,
+        pad: usize,
+        velocity: f32,
+        source: pads::HitSource,
+        sound: midi::PadSound,
+    ) -> Option<usize> {
+        let from_midi = matches!(source, pads::HitSource::Midi);
+        // Keyboard keys name a bank position; MIDI retains its original absolute pad.
+        let (abs, local) = if from_midi {
+            (pad, pad % PADS_PER_BANK)
+        } else {
+            (self.pads.bank * PADS_PER_BANK + pad, pad)
+        };
+        if self.ask.is_some() {
+            return None;
+        }
+        if self.screen == Screen::Chop {
+            if sound == midi::PadSound::UiUnattempted {
+                return self.chop_pad(local, velocity, source);
+            }
+            // A late direct notification is not a new Chop action.
+        } else {
+            // Existing overlap order differs: MIDI file/copy/swap; keyboard copy/swap/file.
+            if from_midi && self.browser.in_hand.is_some() {
+                self.put_in_hand(abs);
+                self.pads.selected = local;
+                return None;
+            }
+            if self.copy_in_hand.is_some() {
+                let before = from_midi.then(|| self.before());
+                self.pads.selected = local;
+                self.copy_target(abs);
+                if let Some(before) = before {
+                    self.note_step(before, "copy".into());
+                }
+                return None;
+            }
+            if self.pad_in_hand.is_some() {
+                let before = (from_midi
+                    && matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx))
+                .then(|| self.before());
+                self.swap_with(abs);
+                self.pads.selected = local;
+                if let Some(before) = before {
+                    self.note_step(before, "swap".into());
+                }
+                return None;
+            }
+            if self.browser.in_hand.is_some() {
+                self.put_in_hand(abs);
+                self.pads.selected = local;
+                return None;
+            }
+            if !from_midi {
+                self.meters.hit(Instant::now());
+                let mut accepted = None;
+                for cmd in self.pads.press(local, velocity, source) {
+                    if self.try_send(cmd) {
+                        accepted = Some(abs);
+                    }
+                }
+                return accepted;
+            }
+        }
         if sound == midi::PadSound::DirectAccepted && self.pad_sounds(abs) {
             self.splash = false;
         }
         self.meters.hit(Instant::now());
         self.pads.hit(abs);
+        None
     }
 
     fn midi_event(&mut self, ev: midi::Event) {
@@ -4720,47 +4774,17 @@ impl App {
                 self.input_log
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
-            midi::Event::PadHit { .. } if self.ask.is_some() => {}
             midi::Event::PadHit {
                 abs,
                 velocity,
                 ui_press,
                 sound,
-            } if self.screen == Screen::Chop => {
-                if sound == midi::PadSound::UiUnattempted {
-                    if let Some(pad) =
-                        self.chop_pad(abs % PADS_PER_BANK, velocity, pads::HitSource::Midi)
-                        && let Some(id) = ui_press
-                    {
-                        self.midi_ui_held.insert(id, pad);
-                    }
-                } else {
-                    self.midi_pad_notification(abs, sound);
+            } => {
+                if let Some(pad) = self.pad_hit(abs, velocity, pads::HitSource::Midi, sound)
+                    && let Some(id) = ui_press
+                {
+                    self.midi_ui_held.insert(id, pad);
                 }
-            }
-            midi::Event::PadHit { abs, .. } if self.browser.in_hand.is_some() => {
-                self.put_in_hand(abs);
-                self.pads.selected = abs % PADS_PER_BANK;
-            }
-            // 83a: a controller note targets the copy as a keyboard pad hit does;
-            // the hit does not also trigger sound
-            midi::Event::PadHit { abs, .. } if self.copy_in_hand.is_some() => {
-                let before = self.before();
-                self.pads.selected = abs % PADS_PER_BANK;
-                self.copy_target(abs);
-                self.note_step(before, "copy".into());
-            }
-            midi::Event::PadHit { abs, .. } if self.pad_in_hand.is_some() => {
-                let before = matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx)
-                    .then(|| self.before());
-                self.swap_with(abs);
-                self.pads.selected = abs % PADS_PER_BANK;
-                if let Some(before) = before {
-                    self.note_step(before, "swap".into());
-                }
-            }
-            midi::Event::PadHit { abs, sound, .. } => {
-                self.midi_pad_notification(abs, sound);
             }
             midi::Event::PadRelease { abs, direct } => {
                 if direct {

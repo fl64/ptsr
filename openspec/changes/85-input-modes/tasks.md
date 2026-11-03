@@ -49,7 +49,7 @@
   with a timestamped oracle; check finite/no-clip, silence, onset and hush timing.
   Write `renders/85-late-midi.wav`. Keep red assertions, run full `task check` and
   commit this repair separately before 2.2. No sequencing or common handler yet.
-- [ ] 2.2 Make keyboard and MIDI call one `App::pad_hit`, with explicit input source and
+- [x] 2.2 Make keyboard and MIDI call one `App::pad_hit`, with explicit input source and
   unattempted/direct-accepted/direct-rejected sound disposition. Keep wrapper undo,
   synchronization, existing source-specific priorities and original keyboard/MIDI hold
   bookkeeping. Use the real offline tests to prove no duplicate sound and no UI retry
