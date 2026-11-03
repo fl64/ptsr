@@ -1,3 +1,9 @@
+## Status: do not execute (2026-11-03)
+
+These are the former tasks. Change 91 in `docs/plans/SMC-PAD-INTEGRATION.md` replaces
+this plan. Carry useful research and test cases there, then remove this folder in 91.
+No unchecked task below means that the old absolute-CC plan should be implemented.
+
 ## 1. SMC-PAD profile and emulation
 
 - [ ] 1.1 Replace the invalid template with the documented normal Note/absolute-CC map.
@@ -7,7 +13,7 @@
 
 ## 2. X-Session physical controls
 
-- X-Session physical defaults and single-controller tests belong to active change 82,
+- X-Session physical defaults and single-controller tests shipped in archived change 82,
   not this deferred change. Use that map without restoring old button roles.
 - [ ] 2.2 Test both controllers together, including separate takeover, gate release,
   save and restart. Run task check and commit.

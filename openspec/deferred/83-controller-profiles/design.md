@@ -1,3 +1,10 @@
+## Status: source material only (2026-11-03)
+
+This design is superseded by change 91 in `docs/plans/SMC-PAD-INTEGRATION.md`. Preserve
+its sources and useful test and migration details, but do not implement the old
+absolute-CC choices below. The owner's Linux messages and relative preset still need
+measurement. Change 82 is accepted and archived.
+
 ## Context
 
 See proposal.md for the problem. Change 82 supplies the FX screen and page controls.
@@ -52,7 +59,7 @@ in this profile. Do not claim the second pad set changes the ptsr bank.
 
 ### X-Session Pro
 
-The X-Session replacement is now part of active change 82. Use its physical control table
+The X-Session replacement shipped in change 82, now accepted and archived. Use its physical control table
 and safe defaults. Do not restore the former arbitrary delete or commit buttons. Keep
 existing numeric identifiers and preserve initialized user maps until confirmed reset.
 
