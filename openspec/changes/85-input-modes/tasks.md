@@ -76,7 +76,7 @@
 
 ## 4. Separate code move and render delivery
 
-- [ ] 4.1 Move the agreed dispatch methods unchanged into `crates/app/src/dispatch.rs`.
+- [x] 4.1 Move the agreed dispatch methods unchanged into `crates/app/src/dispatch.rs`.
   Add only module/import and necessary visibility plumbing. Keep tests and terminal
   setup in place; review the moved bodies for no logic changes. No cleanup or repair
   in this commit. Run full `task check`; commit this move-only step with signoff.
