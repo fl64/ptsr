@@ -3,14 +3,14 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
 use input::midi::{Key, Msg, Param, Profile, Resolved, Scope};
-use input::{Action, Focus, Group, PadRoute, Screen, route_pad};
+use input::{Action, Focus, Group, PadRoute, route_pad};
 use std::sync::atomic::Ordering::Acquire;
 
 /// midir does not report hotplug, so ports are polled.
@@ -19,7 +19,7 @@ const SCAN: Duration = Duration::from_secs(1);
 /// The original audio attempt must not be inferred from App's later screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadSound {
-    UiUnattempted,
+    UiUnattempted { deferred: bool },
     DirectAccepted,
     DirectRejected,
 }
@@ -70,6 +70,7 @@ pub enum Event {
 #[derive(Default)]
 pub struct Shared {
     focus: AtomicU32,
+    acknowledged: AtomicU64,
 }
 
 impl Shared {
@@ -85,6 +86,19 @@ impl Shared {
     /// Reads all input state with one atomic load. Only checked encodings are published.
     pub fn focus(&self) -> Focus {
         Focus::unpack(self.focus.load(Relaxed)).unwrap_or_default()
+    }
+
+    fn input(&self) -> (u64, Focus) {
+        // Observing consumed work must precede reading the state it published.
+        let acknowledged = self.acknowledged.load(Acquire);
+        (acknowledged, self.focus())
+    }
+
+    fn consumed(&self, focus: Focus, sequence: u64) {
+        if self.publish(focus) {
+            self.acknowledged
+                .store(sequence, std::sync::atomic::Ordering::Release);
+        }
     }
 }
 
@@ -133,6 +147,38 @@ pub type LearnedMaps = HashMap<(String, Scope), HashMap<Key, String>>;
 pub struct UiEvent {
     pub event: Event,
     stamp: Option<Stamp>,
+    sequence: Option<u64>,
+}
+
+struct UiSender {
+    tx: Sender<UiEvent>,
+    last_sent: u64,
+}
+
+impl UiSender {
+    fn send(&mut self, event: Event, stamp: Option<Stamp>) {
+        let sequence = matches!(
+            &event,
+            Event::Action(_)
+                | Event::PadHit {
+                    sound: PadSound::UiUnattempted { .. },
+                    ..
+                }
+        )
+        .then(|| self.last_sent.wrapping_add(1));
+        if self
+            .tx
+            .send(UiEvent {
+                event,
+                stamp,
+                sequence,
+            })
+            .is_ok()
+            && let Some(sequence) = sequence
+        {
+            self.last_sent = sequence;
+        }
+    }
 }
 
 impl UiEvent {
@@ -141,7 +187,12 @@ impl UiEvent {
         Self {
             event,
             stamp: Some(Stamp::capture(Some(project))),
+            sequence: None,
         }
+    }
+
+    pub fn sequence(&self) -> Option<u64> {
+        self.sequence
     }
 
     pub fn preview_ready(&self) -> bool {
@@ -162,6 +213,7 @@ impl UiEvent {
 pub struct Midi {
     pub events: Receiver<UiEvent>,
     updates: Sender<Raw>,
+    shared: Arc<Shared>,
 }
 
 impl Midi {
@@ -174,6 +226,7 @@ impl Midi {
     ) -> (Self, std::thread::JoinHandle<()>) {
         let (updates, raw_rx) = mpsc::channel();
         let (tx, events) = mpsc::channel();
+        let dispatch_shared = shared.clone();
         let worker = std::thread::spawn(move || {
             dispatch(
                 raw_rx,
@@ -183,10 +236,17 @@ impl Midi {
                 Vec::new(),
                 Some(commands),
                 Some(project),
-                shared,
+                dispatch_shared,
             );
         });
-        (Self { events, updates }, worker)
+        (
+            Self {
+                events,
+                updates,
+                shared,
+            },
+            worker,
+        )
     }
 
     #[cfg(test)]
@@ -216,6 +276,11 @@ impl Midi {
         self.updates.send(Raw::Fence(tx)).unwrap();
         rx.recv_timeout(Duration::from_secs(2))
             .expect("recorded MIDI frame did not finish");
+    }
+
+    /// Publishes the state after one UI event, even when its old-project body was discarded.
+    pub fn consumed(&self, focus: Focus, sequence: u64) {
+        self.shared.consumed(focus, sequence);
     }
 
     /// Replaces the learned assignments of `profile` in `group` in the MIDI thread.
@@ -290,17 +355,26 @@ pub fn start(
         .name("midi-scan".into())
         .spawn(move || scan(scan_tx, scan_project))
         .expect("spawn midi-scan");
+    let dispatch_shared = shared.clone();
     std::thread::Builder::new()
         .name("midi".into())
         .spawn(move || {
             dispatch(
-                raw_rx, tx, profiles, learned, seeded, commands, project, shared,
+                raw_rx,
+                tx,
+                profiles,
+                learned,
+                seeded,
+                commands,
+                project,
+                dispatch_shared,
             )
         })
         .expect("spawn midi");
     Midi {
         events: rx,
         updates: raw_tx,
+        shared,
     }
 }
 
@@ -377,8 +451,9 @@ fn dispatch(
     _project: Option<Arc<ProjectState>>,
     shared: Arc<Shared>,
 ) {
-    let send = |event, stamp| {
-        let _ = tx.send(UiEvent { event, stamp });
+    let mut ui = UiSender {
+        tx,
+        last_sent: shared.input().0,
     };
     let mut defaults: HashMap<String, Profile> = HashMap::new();
     let mut pressed: HashMap<(String, u8, Key), Vec<(usize, u64)>> = HashMap::new();
@@ -420,7 +495,7 @@ fn dispatch(
                     .iter()
                     .find(|p| p.matches(&port))
                     .map_or("default".into(), |p| p.name.clone());
-                send(Event::Connected { port, profile }, None);
+                ui.send(Event::Connected { port, profile }, None);
                 continue;
             }
             Raw::Disconnected(port) => {
@@ -429,7 +504,7 @@ fn dispatch(
                     if *p == port {
                         for &(abs, epoch) in held.iter() {
                             pending.push_back(release_command(abs, epoch));
-                            send(
+                            ui.send(
                                 Event::PadRelease { abs, direct: true },
                                 Some(Stamp { epoch, ready: true }),
                             );
@@ -440,7 +515,7 @@ fn dispatch(
                 ui_pressed.retain(|(p, _, _), held| {
                     if *p == port {
                         for hold in held.iter() {
-                            send(
+                            ui.send(
                                 Event::UiPadRelease {
                                     abs: hold.abs,
                                     id: hold.id,
@@ -454,7 +529,7 @@ fn dispatch(
                     }
                     *p != port
                 });
-                send(Event::Disconnected { port }, None);
+                ui.send(Event::Disconnected { port }, None);
                 continue;
             }
             Raw::Learned(name, scope, map) => {
@@ -491,14 +566,15 @@ fn dispatch(
                 p
             }),
         };
-        let focus = shared.focus();
+        let (acknowledged, focus) = shared.input();
+        let waiting = ui.last_sent != acknowledged;
         let resolved = profile.resolve_in(focus.screen, focus.mode.edit, msg);
         let meaning = match &resolved {
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
         };
-        send(
+        ui.send(
             Event::Message {
                 port: port.clone(),
                 profile: profile.name.clone(),
@@ -513,20 +589,20 @@ fn dispatch(
         if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
             let key = (port.clone(), channel, msg.key());
             let direct = pressed.remove(&key);
-            let ui = ui_pressed.remove(&key);
-            let tracked = direct.is_some() || ui.is_some();
+            let held_ui = ui_pressed.remove(&key);
+            let tracked = direct.is_some() || held_ui.is_some();
             if let Some(held) = direct {
                 for (abs, epoch) in held {
                     pending.push_back(release_command(abs, epoch));
-                    send(
+                    ui.send(
                         Event::PadRelease { abs, direct: true },
                         Some(Stamp { epoch, ready: true }),
                     );
                 }
             }
-            if let Some(held) = ui {
+            if let Some(held) = held_ui {
                 for hold in held {
-                    send(
+                    ui.send(
                         Event::UiPadRelease {
                             abs: hold.abs,
                             id: hold.id,
@@ -543,14 +619,17 @@ fn dispatch(
             }
         }
         let route = route_pad(focus);
-        if route == PadRoute::Ignore {
+        if route == PadRoute::Ignore && !(waiting && matches!(resolved, Some(Resolved::Action(_))))
+        {
             continue;
         }
 
         match resolved {
-            Some(Resolved::Action(Action::PadPress { pad, velocity })) if route == PadRoute::Ui => {
+            Some(Resolved::Action(Action::PadPress { pad, velocity }))
+                if waiting || route == PadRoute::Ui =>
+            {
                 let abs = focus.bank * PADS_PER_BANK + pad;
-                let ui_press = (focus.screen == Screen::Chop && stamp.ready).then(|| {
+                let ui_press = stamp.ready.then(|| {
                     let held = ui_pressed.entry((port, channel, msg.key())).or_default();
                     if let Some(hold) = held
                         .iter()
@@ -567,11 +646,11 @@ fn dispatch(
                     });
                     id
                 });
-                send(
+                ui.send(
                     Event::PadHit {
                         abs,
                         velocity,
-                        sound: PadSound::UiUnattempted,
+                        sound: PadSound::UiUnattempted { deferred: waiting },
                         ui_press,
                     },
                     Some(stamp),
@@ -594,7 +673,7 @@ fn dispatch(
                         }
                     }
                 }
-                send(
+                ui.send(
                     Event::PadHit {
                         abs,
                         velocity,
@@ -610,10 +689,10 @@ fn dispatch(
             }
             Some(Resolved::Action(Action::PadRelease { pad })) => {
                 let abs = focus.bank * PADS_PER_BANK + pad;
-                send(Event::PadRelease { abs, direct: false }, Some(stamp));
+                ui.send(Event::PadRelease { abs, direct: false }, Some(stamp));
             }
             Some(Resolved::Action(a)) => {
-                send(Event::Action(a), Some(stamp));
+                ui.send(Event::Action(a), Some(stamp));
             }
             Some(Resolved::Param {
                 control,
@@ -621,7 +700,7 @@ fn dispatch(
                 value,
                 takeover,
             }) => {
-                send(
+                ui.send(
                     Event::Param {
                         port,
                         control,
@@ -750,27 +829,39 @@ mod tests {
             [(Key::Cc(80), "pad.3".into())].into(),
         );
         let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let (producer, mut consumer) = rtrb::RingBuffer::new(1024);
+        let dispatch_shared = shared.clone();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![profile],
+                LearnedMaps::new(),
+                Vec::new(),
+                Some(producer),
+                None,
+                dispatch_shared,
+            )
+        });
+        let mut events = Vec::new();
         for _ in 0..1000 {
             raw_tx
                 .send(Raw::Msg("snapshot".into(), knob(80, 80), test_stamp()))
                 .unwrap();
+            events.push(rx.recv_timeout(Duration::from_secs(1)).unwrap().event);
+            let hit = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            // This unit test retires its UI fixture before the next message. The
+            // concurrent writer still races every profile/bank/route snapshot.
+            if let Some(sequence) = hit.sequence() {
+                shared.consumed(shared.focus(), sequence);
+            }
+            events.push(hit.event);
         }
         drop(raw_tx);
-        let (tx, rx) = mpsc::channel();
-        let (producer, mut consumer) = rtrb::RingBuffer::new(1024);
-        dispatch(
-            raw_rx,
-            tx,
-            vec![profile],
-            LearnedMaps::new(),
-            Vec::new(),
-            Some(producer),
-            None,
-            shared.clone(),
-        );
+        worker.join().unwrap();
         done.store(true, Release);
         writer.join().unwrap();
-        let events: Vec<_> = rx.try_iter().map(|event| event.event).collect();
         assert_eq!(events.len(), 2000);
         for pair in events.chunks_exact(2) {
             let Event::Message { meaning, .. } = &pair[0] else {
@@ -793,7 +884,10 @@ mod tests {
                 );
             } else {
                 assert!(meaning.contains("pad: 2,"), "{meaning}");
-                assert_eq!((*abs, *sound), (114, PadSound::UiUnattempted));
+                assert_eq!(
+                    (*abs, *sound),
+                    (114, PadSound::UiUnattempted { deferred: false })
+                );
                 assert!(ui_press.is_some());
             }
         }
@@ -803,6 +897,141 @@ mod tests {
                 if velocity == 80.0 / 127.0));
         }
         assert!(matches!(shared.focus(), focus if focus == ordinary || focus == chop));
+    }
+
+    #[test]
+    fn numbered_work_wraps_and_publishes_focus_before_acknowledgement() {
+        let shared = Shared::default();
+        assert_eq!(shared.input(), (0, Focus::default()));
+        shared.acknowledged.store(u64::MAX, Relaxed);
+        let (tx, rx) = mpsc::channel();
+        let mut sender = UiSender {
+            tx,
+            last_sent: u64::MAX,
+        };
+        sender.send(Event::Action(Action::BankNext), None);
+        let action = rx.recv().unwrap();
+        assert_eq!(action.sequence(), Some(0));
+        assert_ne!(shared.input().0, sender.last_sent);
+        let focus = Focus {
+            bank: 7,
+            screen: Screen::Fx,
+            ..Focus::default()
+        };
+        shared.consumed(focus, action.sequence().unwrap());
+        assert_eq!(shared.input(), (0, focus));
+        sender.send(
+            Event::PadHit {
+                abs: 114,
+                velocity: 0.5,
+                sound: PadSound::UiUnattempted { deferred: true },
+                ui_press: Some(1),
+            },
+            None,
+        );
+        let hit = rx.recv().unwrap();
+        assert_eq!(hit.sequence(), Some(1));
+        assert_ne!(
+            shared.input().0,
+            sender.last_sent,
+            "UI hits keep their own barrier"
+        );
+        shared.consumed(Focus { bank: 8, ..focus }, 1);
+        assert_eq!(
+            shared.input(),
+            (0, focus),
+            "invalid publication cannot acknowledge work"
+        );
+        shared.consumed(focus, 1);
+        assert_eq!(shared.input(), (sender.last_sent, focus));
+    }
+
+    #[test]
+    fn direct_notifications_parameters_logs_and_releases_do_not_create_barriers() {
+        let (tx, rx) = mpsc::channel();
+        let mut sender = UiSender { tx, last_sent: 9 };
+        let events = [
+            Event::PadHit {
+                abs: 2,
+                velocity: 0.5,
+                sound: PadSound::DirectAccepted,
+                ui_press: None,
+            },
+            Event::PadHit {
+                abs: 2,
+                velocity: 0.5,
+                sound: PadSound::DirectRejected,
+                ui_press: None,
+            },
+            Event::PadRelease {
+                abs: 2,
+                direct: true,
+            },
+            Event::UiPadRelease { abs: 2, id: 1 },
+            Event::Message {
+                port: "p".into(),
+                profile: "p".into(),
+                msg: knob(80, 101),
+                meaning: "log".into(),
+            },
+            Event::Param {
+                port: "p".into(),
+                control: "cc80".into(),
+                param: Param::PadVolume,
+                value: 0.5,
+                takeover: false,
+            },
+        ];
+        for event in events {
+            sender.send(event, None);
+            assert_eq!(rx.recv().unwrap().sequence(), None);
+            assert_eq!(sender.last_sent, 9);
+        }
+    }
+
+    #[test]
+    fn acknowledgement_protocol_keeps_atomic_source_order() {
+        // Sequential postconditions cannot catch reversed atomic operations.
+        // Keep a static regression gate on the actual production methods too.
+        let code: String = include_str!("midi.rs")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let input = code
+            .split("fninput(&self)")
+            .nth(1)
+            .unwrap()
+            .split("fnconsumed(")
+            .next()
+            .unwrap();
+        assert!(
+            input.find("acknowledged.load(Acquire)").unwrap() < input.find("self.focus()").unwrap()
+        );
+        let consumed = code
+            .split("fnconsumed(&self,focus:Focus,sequence:u64)")
+            .nth(1)
+            .unwrap()
+            .split("structStamp")
+            .next()
+            .unwrap();
+        assert!(
+            consumed.find("self.publish(focus)").unwrap()
+                < consumed
+                    .find(".store(sequence,std::sync::atomic::Ordering::Release)")
+                    .unwrap()
+        );
+    }
+
+    #[test]
+    fn failed_ui_send_does_not_advance_the_sequence() {
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        let mut sender = UiSender {
+            tx,
+            last_sent: u64::MAX,
+        };
+        sender.send(Event::Action(Action::BankNext), None);
+        assert_eq!(sender.last_sent, u64::MAX);
     }
 
     #[test]
@@ -1632,7 +1861,11 @@ mod tests {
                     rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
                     Event::Message { msg: seen, .. } if seen == msg
                 ));
-                rx.recv_timeout(Duration::from_secs(1)).unwrap().event
+                let event = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+                if let Some(sequence) = event.sequence() {
+                    shared.consumed(shared.focus(), sequence);
+                }
+                event.event
             };
             let hit = |velocity| Msg::NoteOn {
                 ch: 1,
@@ -1644,7 +1877,7 @@ mod tests {
             assert!(
                 matches!(first, Event::PadHit { abs: 0, velocity, sound, ui_press }
                 if velocity == 80.0 / 127.0
-                    && sound == if before == 3 { PadSound::UiUnattempted } else { PadSound::DirectAccepted }
+                    && sound == if before == 3 { PadSound::UiUnattempted { deferred: false } } else { PadSound::DirectAccepted }
                     && ui_press.is_some() == (before == 3))
             );
             let first_ui_press = match first {

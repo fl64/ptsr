@@ -229,6 +229,23 @@ its question. After the last such event is consumed and Focus is published, new 
 hits resume the direct path. Compare equality, not `sent > ack`, and test counter wrap.
 No timeout, sleep, blocking acknowledgement wait or audio-callback work is added.
 
+Implementation evidence for task 3.1: the original same-update occupied-target
+regression observed peak `0.12420408` before UI delivery, where the expected peak was
+zero. The test keeps that silence assertion. `UiSender` numbers only successful
+sends. `Shared::input()` reads acknowledgement with Acquire before Focus;
+`Shared::consumed()` publishes Focus before its Release store. UI retirement follows
+the complete `midi_event` wrapper, including its cut and loop synchronization.
+`PadSound::UiUnattempted { deferred }` records whether input was explicitly deferred;
+its original local position remains in the captured absolute pad modulo 16. Direct
+accepted/rejected notifications keep their old absolute pad and cannot become retries.
+
+The coherent-snapshot and Chop-to-FX dispatcher unit fixtures now consume their UI
+work with the production acknowledgement method before sending the next stable-route
+message. Their original direct, bank, velocity and release assertions stay intact.
+The concurrent Focus writer still races every message snapshot. Separate recorded
+integration tests leave UI work pending to test ordering, partial consumption, old
+Ignore, both retrigger orders, rejection, disconnect and project replacement.
+
 Alternative rejected: forcing every MIDI hit through App. It would break direct
 performance. Also reject reading Focus before a new acknowledgement: that can pair a
 new ack with an older Focus and reopen the same race. The acquire/release protocol
@@ -244,9 +261,19 @@ narrow controller-command fix.
 Use the existing device/channel/control/epoch identity and UI candidate identifier for
 any hit which can start through App, not only a Chop candidate. Retain a stable candidate
 for an unreleased control; only an actual successful UI queue push acquires an App hold.
-Store the pad actually started in App's identifier-to-absolute-pad map. A deferred bank
-change can make that pad differ from the candidate's old snapshot bank. Its release
-must look up the accepted actual pad, not assume the old candidate absolute value.
+Store every distinct pad actually started in App's identifier-to-absolute-pads map.
+Use `id -> Vec<{absolute pad, deferred}>`: one stable candidate can start more than
+one bank's pad while earlier commands still wait. Do not overwrite an earlier accepted
+pad or add the same pad twice. A later accepted deferred retrigger keeps the deferred
+release flag; a rejected retrigger cannot change it. A deferred bank change can make the actual pad differ from
+the candidate's old snapshot bank. Release looks up the accepted actual pads, not
+the old candidate absolute value. A direct release removes only its overlapping pad
+from each non-deferred candidate, leaving other accepted pads for the original UI
+release. An accepted deferred hit keeps its own UI release even when an older direct
+hold of the same pad releases. The callback can process the older direct release
+before App starts the deferred hit. Clearing that newer hold would leave a gate stuck.
+The two accepted hits have distinct release obligations; this is not a second release
+of the old direct hold. Keep the pre-existing non-deferred Chop merging rule.
 
 Dispatch processes a release or disconnect before hit-mode guards and sends the original
 candidate identity even when the hit is still in the UI queue. FIFO UI delivery then
@@ -254,8 +281,11 @@ handles hit before release; there is no need for a synchronous reply to MIDI. A 
 preview-only or rejected candidate gets no App hold. A rejected retrigger must leave an
 older accepted hold intact, with no stolen hold for another control.
 
-Keep the existing direct-first release rule when direct and UI records overlap, so
-one original accepted hold does not receive both routes' releases. Preserve pending
+Keep the existing direct-first release rule for non-deferred Chop records, so one
+original accepted hold does not receive both routes' releases. Do not apply that
+merging rule to a newly accepted deferred hit: without a callback acknowledgement,
+UI cannot know whether the old direct release has already passed. Keep its own UI
+release after its accepted UI press, in that same queue. Preserve pending
 release retries, ready-at-send checks, epoch filtering and the no-new-project-release
 rule. Do not weaken the 84 full-queue and source-identity tests to fit a new structure.
 Test both orderings of direct/UI retriggers and multiple accepted pads for one control.
@@ -380,6 +410,13 @@ through the OpenSpec CLI, then verify main-spec scenario coverage. Do not sync m
 specs by hand and do not mark physical checks passed because recorded tests passed.
 
 ## Open questions
+
+- Can an older direct release retire a new deferred retrigger of the same pad?
+  Default for 3.1: no. Independent callback progress can consume that old release
+  before the deferred press exists. Keep each accepted deferred hit's UI release;
+  retain old direct-first merging only for non-deferred Chop hits. The owner requested
+  completion without intermediate questions. This clarifies the early-release
+  requirement; it changes no engine voice algorithm or audio callback.
 
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later

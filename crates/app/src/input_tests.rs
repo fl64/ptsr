@@ -238,6 +238,77 @@ impl Drive {
         }
     }
 
+    fn queued_events(&self) -> Vec<midi::UiEvent> {
+        self.midi().recorded_fence();
+        self.midi().events.try_iter().collect()
+    }
+
+    fn raw_ordered_hit(&self, source: Source, velocity: u8) {
+        self.bytes(
+            PAD_PORT,
+            &match source {
+                Source::Notes => [0x90, 38, velocity],
+                Source::Button => [0xb0, 80, velocity],
+                Source::Keyboard => panic!("raw MIDI scenario"),
+            },
+        );
+    }
+
+    fn raw_ordered_release(&self, source: Source, release: RecordedRelease) {
+        if matches!(release, RecordedRelease::Disconnect) {
+            self.midi().recorded_disconnect(PAD_PORT);
+        } else {
+            self.bytes(
+                PAD_PORT,
+                &match source {
+                    Source::Notes if matches!(release, RecordedRelease::Off) => [0x80, 38, 0],
+                    Source::Notes => [0x90, 38, 0],
+                    Source::Button => [0xb0, 80, 0],
+                    Source::Keyboard => panic!("raw MIDI scenario"),
+                },
+            );
+        }
+    }
+
+    fn bind_action(&mut self, cc: u8, action: &str) {
+        learn::assign(
+            &mut self.app.learned,
+            "Recorded pads",
+            input::Group::Global,
+            input::midi::Key::Cc(cc),
+            action,
+        );
+        self.app.sync_learned("Recorded pads", input::Group::Global);
+        self.midi().recorded_fence();
+    }
+
+    fn ordered_file(&mut self) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/85-ordered-files")
+            .join(format!(
+                "{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Relaxed)
+            ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("new.wav");
+        let tone = vec![0.1; 4096];
+        engine::offline::write_wav(&path, RENDER_RATE, &tone, &tone).unwrap();
+        self.tap(KeyCode::F(6), M::NONE);
+        self.app.browser.dir = dir;
+        self.app.browser.entries = vec![browser::Entry {
+            name: "new.wav".into(),
+            is_dir: false,
+            favorite: None,
+        }];
+        self.app.browser.selected = 0;
+        self.bind_action(82, "browser.hold");
+        self.frame();
+        path
+    }
+
     fn bind_pad_button(&mut self, pad: usize) {
         learn::assign(
             &mut self.app.learned,
@@ -2546,6 +2617,1321 @@ fn offline_chop_to_fx_keeps_routes_velocity_banks_and_original_releases() {
             expected = Some(wave);
         }
     }
+}
+
+/// Scenario "Take a file and hit a target in one update".
+#[test]
+fn take_a_file_and_hit_a_target_in_one_update() {
+    use engine::checks::peak;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        let path = drive.ordered_file();
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        let before = drive.app.pads.snapshot(18);
+        match source {
+            Source::Keyboard => {
+                drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Press);
+                drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Release);
+                drive.key(KeyCode::Char('3'), M::NONE, KeyEventKind::Press);
+                drive.key(KeyCode::Char('3'), M::NONE, KeyEventKind::Release);
+            }
+            Source::Notes | Source::Button => {
+                drive.bytes(PAD_PORT, &[0xb0, 82, 127]);
+                drive.bytes(
+                    PAD_PORT,
+                    if matches!(source, Source::Notes) {
+                        &[0x90, 38, 80]
+                    } else {
+                        &[0xb0, 80, 80]
+                    },
+                );
+                drive.midi().recorded_fence();
+            }
+        }
+        let before_ui = drive.render_blocks(2);
+        assert_eq!(
+            peak(&before_ui.0),
+            0.0,
+            "{source:?}: target must not play old sound before UI"
+        );
+        let hit = drive.frame();
+        assert_silent_target(&hit);
+        assert!(
+            matches!(drive.app.ask, Some(Ask::PutFile { abs: 18, .. })),
+            "{source:?}: bank {}, selected {}, hand {:?}, question {:?}, ui {:?}",
+            drive.app.pads.bank,
+            drive.app.pads.selected,
+            drive.app.browser.in_hand,
+            drive.app.ask.as_ref().map(|ask| ask.lines()),
+            hit.ui
+        );
+        assert_eq!(drive.app.pads.snapshot(18), before);
+        assert_eq!(drive.app.browser.in_hand.as_ref(), Some(&path));
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.pads.snapshot(18), before);
+        assert_eq!(drive.app.browser.in_hand.as_ref(), Some(&path));
+        let after = drive.render_blocks(8);
+        assert_eq!(peak(&after.0), 0.0);
+        assert!(drive.app.midi_ui_held.is_empty());
+    }
+}
+
+fn render_mode_direct(source: Source, velocity: u8, edit_marking: bool) -> Stereo {
+    const HIT: usize = 32 * RENDER_BLOCK;
+    const OFF: usize = 34 * RENDER_BLOCK;
+    const END: usize = 66 * RENDER_BLOCK;
+    let mut drive = Drive::offline();
+    let settings = drive.parity_pad(0, false);
+    drive.tap(KeyCode::F(2), M::NONE);
+    if edit_marking {
+        drive.tap(KeyCode::Char('m'), M::NONE);
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.edit && drive.app.pads.marking);
+    }
+    if matches!(source, Source::Button) {
+        drive.bind_pad_button(2);
+    }
+    let mut wave = drive.render_blocks(32);
+    drive.raw_ordered_hit(source, velocity);
+    let notifications = drive.queued_events();
+    assert!(notifications.iter().any(|e| matches!(e.event,
+        midi::Event::PadHit { abs: 18, sound: midi::PadSound::DirectAccepted, velocity: v, .. }
+        if v == f32::from(velocity)/127.0)));
+    assert!(notifications.iter().all(|e| e.sequence().is_none()));
+    let before_ui = drive.render_blocks(2);
+    assert!(
+        engine::checks::peak(&before_ui.0) > 0.005,
+        "direct hit must not wait for App"
+    );
+    append_stereo(&mut wave, before_ui);
+    for event in notifications {
+        drive.app.midi_ui_event(event);
+    }
+    assert!(
+        drive.frame().ui.is_empty(),
+        "direct notification cannot start another sound"
+    );
+    drive.raw_ordered_release(source, RecordedRelease::Off);
+    assert!(drive.frame().ui.is_empty());
+    append_stereo(&mut wave, drive.render_blocks(32));
+    let mut engine = engine::Engine::new(RENDER_RATE);
+    for cmd in settings {
+        engine.handle(0, cmd);
+    }
+    let expected = engine::offline::render(
+        &mut engine,
+        &engine::offline::Scenario {
+            sample_rate: RENDER_RATE,
+            frames: END,
+            events: vec![
+                engine::offline::Event {
+                    frame: HIT,
+                    cmd: Command::PadPress {
+                        pad: 18,
+                        velocity: f32::from(velocity) / 127.0,
+                    },
+                },
+                engine::offline::Event {
+                    frame: OFF,
+                    cmd: Command::PadRelease { pad: 18 },
+                },
+            ],
+        },
+        RENDER_BLOCK,
+    );
+    assert_eq!(
+        wave, expected,
+        "one nearest-block direct hit, original release and velocity"
+    );
+    for channel in [&wave.0, &wave.1] {
+        assert_eq!(engine::checks::first_non_finite(channel), None);
+        assert!(engine::checks::peak(channel) < 1.0);
+        assert_eq!(engine::checks::peak(&channel[..HIT]), 0.0);
+        assert!(
+            engine::checks::first_loud(channel, HIT..HIT + RENDER_BLOCK, 1e-6)
+                .unwrap()
+                .abs_diff(HIT)
+                <= 1
+        );
+        assert_eq!(engine::checks::peak(&channel[OFF + 2048..]), 0.0);
+    }
+    wave
+}
+
+/// Scenario "Hit from a controller": unchanged direct path, also with edit and marks.
+#[test]
+fn hit_from_a_controller() {
+    for source in [Source::Notes, Source::Button] {
+        for velocity in [23, 101] {
+            for edit_marking in [false, true] {
+                render_mode_direct(source, velocity, edit_marking);
+            }
+        }
+    }
+}
+
+/// Scenario "Direct MIDI resumes after pending input".
+#[test]
+fn direct_midi_resumes_after_pending_input() {
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.tap(KeyCode::Char('1'), M::CONTROL);
+        drive.bind_action(84, "bank.next");
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+        drive.raw_ordered_hit(source, 101);
+        let mut events = drive.queued_events().into_iter();
+        for event in events.by_ref() {
+            let command = matches!(event.event, midi::Event::Action(Action::BankNext));
+            drive.app.midi_ui_event(event);
+            if command {
+                break;
+            }
+        }
+        // Retiring the command is not enough: the earlier UI hit is still pending.
+        drive.raw_ordered_hit(source, 23);
+        let following = drive.queued_events();
+        assert!(following.iter().any(|event| matches!(
+            event.event,
+            midi::Event::PadHit {
+                sound: midi::PadSound::UiUnattempted { deferred: true },
+                ..
+            }
+        )));
+        assert_eq!(engine::checks::peak(&drive.render_blocks(2).0), 0.0);
+        for event in events.chain(following) {
+            drive.app.midi_ui_event(event);
+        }
+        let ui = drive.frame();
+        assert_eq!(
+            ui.ui
+                .iter()
+                .filter(|c| matches!(c, Command::PadPress { pad: 18, .. }))
+                .count(),
+            2
+        );
+        assert!(!drive.app.midi_ui_held.is_empty());
+        assert!(
+            drive
+                .app
+                .midi_ui_held
+                .values()
+                .all(|pads| pads.iter().all(|hold| hold.abs == 18 && hold.deferred))
+        );
+        drive.render_blocks(4);
+        drive.raw_ordered_hit(source, 101);
+        let direct = drive.queued_events();
+        assert!(direct.iter().any(|event| matches!(
+            event.event,
+            midi::Event::PadHit {
+                sound: midi::PadSound::DirectAccepted,
+                abs: 18,
+                ..
+            }
+        )));
+        // Stable direct sound arrives without a further UI update.
+        assert!(engine::checks::peak(&drive.render_blocks(2).0) > 0.01);
+        for event in direct {
+            drive.app.midi_ui_event(event);
+        }
+        assert!(drive.frame().ui.is_empty());
+        drive.raw_ordered_release(source, RecordedRelease::Off);
+        let releases = drive.queued_events();
+        assert_eq!(
+            releases
+                .iter()
+                .filter(|e| matches!(
+                    e.event,
+                    midi::Event::PadRelease {
+                        abs: 18,
+                        direct: true
+                    }
+                ))
+                .count(),
+            1
+        );
+        for event in releases {
+            drive.app.midi_ui_event(event);
+        }
+        let release = drive.frame();
+        assert!(
+            matches!(release.ui[..], [Command::PadRelease { pad: 18 }]),
+            "accepted deferred hold retains one UI release, separate from the direct hold"
+        );
+        assert!(drive.app.midi_ui_held.is_empty());
+    }
+}
+
+/// Scenario "Pending pad uses preceding commands in order".
+#[test]
+fn pending_pad_uses_preceding_commands_in_order() {
+    for source in [Source::Notes, Source::Button] {
+        for velocity in [23, 101] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(0, false);
+            let pad = drive.app.pads.snapshot(18);
+            for cmd in drive.app.pads.put_back(34, &pad) {
+                drive.app.send(cmd);
+            }
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.tap(KeyCode::Char('1'), M::CONTROL);
+            drive.bind_action(84, "bank.next");
+            if matches!(source, Source::Button) {
+                drive.bind_pad_button(2);
+            }
+            drive.render_blocks(32);
+            for _ in 0..2 {
+                drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+                drive.raw_ordered_hit(source, velocity);
+            }
+            drive.midi().recorded_fence();
+            assert_eq!(engine::checks::peak(&drive.render_blocks(2).0), 0.0);
+            let hit = drive.frame();
+            assert!(hit.direct.is_empty());
+            let pads: Vec<_> = hit
+                .ui
+                .iter()
+                .filter_map(|c| match c {
+                    Command::PadPress { pad, velocity: v } => {
+                        assert_eq!(*v, f32::from(velocity) / 127.0);
+                        Some(*pad)
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(pads, [18, 34]);
+            assert_eq!(
+                drive.app.midi_ui_held.len(),
+                1,
+                "same unreleased control, stable candidate"
+            );
+            assert_eq!(
+                drive
+                    .app
+                    .midi_ui_held
+                    .values()
+                    .next()
+                    .unwrap()
+                    .iter()
+                    .map(|hold| hold.abs)
+                    .collect::<Vec<_>>(),
+                [18, 34]
+            );
+            drive.raw_ordered_release(source, RecordedRelease::Off);
+            let off = drive.frame();
+            assert!(off.direct.is_empty());
+            assert!(matches!(
+                off.ui[..],
+                [
+                    Command::PadRelease { pad: 18 },
+                    Command::PadRelease { pad: 34 }
+                ]
+            ));
+            assert!(drive.app.midi_ui_held.is_empty());
+            let stopped = drive.render_blocks(32);
+            assert_eq!(engine::checks::peak(&stopped.0[2048..]), 0.0);
+        }
+    }
+    // A blocked/no-op command and F10 transitions must retire too.
+    let mut drive = Drive::new();
+    drive.bind_action(85, "ui.back");
+    drive.bind_action(86, "learn.toggle");
+    drive.bind_action(87, "screen.chop");
+    drive.bytes(PAD_PORT, &[0xb0, 85, 127]);
+    drive.bytes(PAD_PORT, &[0xb0, 87, 127]); // no file: remains Pads
+    drive.raw_ordered_hit(Source::Notes, 23);
+    assert!(matches!(
+        drive.frame().ui[..],
+        [Command::PadPress { pad: 2, .. }]
+    ));
+    drive.bytes(PAD_PORT, &[0xb0, 86, 127]);
+    drive.raw_ordered_hit(Source::Notes, 101);
+    assert_silent_target(&drive.frame());
+    assert!(drive.app.screen_learn.is_some());
+    drive.tap(KeyCode::F(10), M::NONE);
+    drive.raw_ordered_hit(Source::Notes, 101);
+    assert_eq!(
+        drive.frame().direct.len(),
+        1,
+        "normal direct route resumes after the F10 guard"
+    );
+}
+
+/// Scenario "A target question blocks a following pending hit".
+#[test]
+fn a_target_question_blocks_a_following_pending_hit() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        let pad = drive.app.pads.snapshot(18);
+        for cmd in drive.app.pads.put_back(19, &pad) {
+            drive.app.send(cmd);
+        }
+        let path = drive.ordered_file();
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+            drive.bind_action(81, "pad.4");
+        }
+        drive.render_blocks(32);
+        let before = [drive.app.pads.snapshot(18), drive.app.pads.snapshot(19)];
+        if matches!(source, Source::Keyboard) {
+            for key in [KeyCode::Enter, KeyCode::Char('3'), KeyCode::Char('4')] {
+                drive.key(key, M::NONE, KeyEventKind::Press);
+                drive.key(key, M::NONE, KeyEventKind::Release);
+            }
+        } else {
+            drive.bytes(PAD_PORT, &[0xb0, 82, 127]);
+            drive.raw_ordered_hit(source, 23);
+            drive.bytes(
+                PAD_PORT,
+                if matches!(source, Source::Notes) {
+                    &[0x90, 39, 101]
+                } else {
+                    &[0xb0, 81, 101]
+                },
+            );
+            let mut events = drive.queued_events().into_iter();
+            for event in events.by_ref() {
+                let take = matches!(event.event, midi::Event::Action(Action::BrowserHold));
+                drive.app.midi_ui_event(event);
+                if take {
+                    break;
+                }
+            }
+            drive.raw_ordered_hit(source, 101);
+            let extra = drive.queued_events();
+            assert!(extra.iter().any(|event| matches!(
+                event.event,
+                midi::Event::PadHit {
+                    sound: midi::PadSound::UiUnattempted { deferred: true },
+                    ..
+                }
+            )));
+            for event in events.chain(extra) {
+                drive.app.midi_ui_event(event);
+            }
+        }
+        assert_silent_target(&drive.frame());
+        assert!(matches!(drive.app.ask, Some(Ask::PutFile { abs: 18, .. })));
+        assert_eq!(drive.app.pads.selected_abs(), 18);
+        assert_eq!(
+            [drive.app.pads.snapshot(18), drive.app.pads.snapshot(19)],
+            before
+        );
+        assert_eq!(drive.app.browser.in_hand.as_ref(), Some(&path));
+        assert!(drive.app.midi_ui_held.is_empty());
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert_eq!(
+            [drive.app.pads.snapshot(18), drive.app.pads.snapshot(19)],
+            before
+        );
+        assert_eq!(drive.app.browser.in_hand.as_ref(), Some(&path));
+        let wave = drive.render_blocks(32);
+        assert_eq!(engine::checks::peak(&wave.0), 0.0);
+        assert_eq!(engine::checks::first_non_finite(&wave.0), None);
+    }
+}
+
+/// Scenario "Pending command order spans controllers".
+#[test]
+fn pending_command_order_spans_controllers() {
+    const OTHER: &str = "Recorded pads B";
+    let mut drive = Drive::offline();
+    drive.midi().recorded_connect(OTHER);
+    drive.frame();
+    drive.bind_action(84, "bank.next");
+    drive.bytes(PAD_PORT, &[0x90, 37, 101]);
+    drive.bytes(OTHER, &[0x92, 38, 23]);
+    let initial = drive.queued_events();
+    assert_eq!(
+        initial
+            .iter()
+            .filter(|e| matches!(
+                e.event,
+                midi::Event::PadHit {
+                    sound: midi::PadSound::DirectAccepted,
+                    ..
+                }
+            ))
+            .count(),
+        2
+    );
+    for event in initial {
+        drive.app.midi_ui_event(event);
+    }
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+    drive.bytes(OTHER, &[0x92, 38, 101]);
+    drive.bytes(PAD_PORT, &[0x80, 37, 0]);
+    drive.bytes(OTHER, &[0x82, 38, 0]);
+    let events = drive.queued_events();
+    let direct: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e.event {
+            midi::Event::PadRelease { abs, direct: true } => Some(abs),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(direct, [1, 2]);
+    for event in events {
+        drive.app.midi_ui_event(event);
+    }
+    let frame = drive.frame();
+    assert!(
+        matches!(frame.ui[..], [Command::PadPress { pad: 18, velocity }, Command::PadRelease { pad: 18 }]
+        if velocity == 101.0/127.0),
+        "cross-port UI: {:?}, bank {}",
+        frame.ui,
+        drive.app.pads.bank
+    );
+    assert!(drive.app.midi_ui_held.is_empty());
+}
+
+/// Scenario "Pending command order spans controllers": take from A, target from B,
+/// and original direct releases from both ports before any UI consumption.
+#[test]
+fn pending_file_target_spans_controllers_and_keeps_direct_releases() {
+    const OTHER: &str = "Recorded pads B";
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        let pad = drive.app.pads.snapshot(18);
+        for abs in [17, 19] {
+            for cmd in drive.app.pads.put_back(abs, &pad) {
+                drive.app.send(cmd);
+            }
+        }
+        let path = drive.ordered_file();
+        drive.midi().recorded_connect(OTHER);
+        drive.frame();
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(3);
+        }
+        drive.render_blocks(32);
+        drive.bytes(PAD_PORT, &[0x90, 37, 101]);
+        drive.bytes(OTHER, &[0x92, 38, 23]);
+        drive.frame();
+        assert!(engine::checks::peak(&drive.render_blocks(4).0) > 0.01);
+        drive.bytes(PAD_PORT, &[0xb0, 82, 127]);
+        drive.bytes(
+            OTHER,
+            if matches!(source, Source::Notes) {
+                &[0x92, 39, 101]
+            } else {
+                &[0xb2, 80, 101]
+            },
+        );
+        drive.bytes(PAD_PORT, &[0x80, 37, 0]);
+        drive.bytes(OTHER, &[0x82, 38, 0]);
+        let events = drive.queued_events();
+        let releases: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e.event {
+                midi::Event::PadRelease { abs, direct: true } => Some(abs),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(releases, [17, 18]);
+        // Both original direct gates stop while the command and target still wait.
+        assert_eq!(
+            engine::checks::peak(&drive.render_blocks(32).0[2048..]),
+            0.0
+        );
+        let before = drive.app.pads.snapshot(19);
+        for event in events {
+            drive.app.midi_ui_event(event);
+        }
+        assert_silent_target(&drive.frame());
+        assert!(matches!(drive.app.ask, Some(Ask::PutFile { abs: 19, .. })));
+        assert_eq!(drive.app.pads.snapshot(19), before);
+        assert_eq!(drive.app.browser.in_hand.as_ref(), Some(&path));
+        assert!(drive.app.midi_ui_held.is_empty());
+        let quiet = drive.render_blocks(32);
+        assert_eq!(engine::checks::peak(&quiet.0), 0.0);
+        assert_eq!(engine::checks::first_non_finite(&quiet.0), None);
+    }
+}
+
+/// Scenario "Pending pad uses preceding commands in order": paired keyboard/MIDI
+/// bank, cancelled hand and no-op commands leave the same ordinary pad hit.
+#[test]
+fn pending_cancelled_hand_matches_keyboard_command_order() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.ordered_file();
+        drive.tap(KeyCode::Char('1'), M::CONTROL);
+        drive.bind_action(84, "bank.next");
+        drive.bind_action(85, "ui.back");
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        if matches!(source, Source::Keyboard) {
+            for key in [KeyCode::Enter, KeyCode::Esc, KeyCode::PageDown] {
+                drive.key(key, M::NONE, KeyEventKind::Press);
+                drive.key(key, M::NONE, KeyEventKind::Release);
+            }
+            drive.key(KeyCode::Char('3'), M::NONE, KeyEventKind::Press);
+        } else {
+            for cc in [82, 85, 84] {
+                drive.bytes(PAD_PORT, &[0xb0, cc, 127]);
+            }
+            drive.raw_ordered_hit(source, 80);
+        }
+        let frame = drive.frame();
+        assert!(frame.direct.is_empty());
+        assert!(
+            matches!(frame.ui.iter().filter(|c| matches!(c, Command::PadPress { .. })).collect::<Vec<_>>()[..],
+            [Command::PadPress { pad: 18, velocity }] if *velocity == 80.0/127.0)
+        );
+        assert!(drive.app.browser.in_hand.is_none());
+        assert_eq!(drive.app.pads.bank, 1);
+        assert!(engine::checks::peak(&drive.render_blocks(4).0) > 0.01);
+        if matches!(source, Source::Keyboard) {
+            drive.pad_release(source, 2);
+        } else {
+            drive.raw_ordered_release(source, RecordedRelease::Off);
+            drive.frame();
+        }
+        assert_eq!(
+            engine::checks::peak(&drive.render_blocks(32).0[2048..]),
+            0.0
+        );
+    }
+}
+
+fn render_ordered_gate(
+    source: Source,
+    velocity: u8,
+    release: RecordedRelease,
+    early: bool,
+    guard: MixedHoldGuard,
+) -> Stereo {
+    const HIT: usize = 34 * RENDER_BLOCK;
+    const OFF: usize = 50 * RENDER_BLOCK;
+    const END: usize = 90 * RENDER_BLOCK;
+    let mut drive = Drive::offline();
+    let settings = drive.parity_pad(0, false);
+    drive.tap(KeyCode::F(2), M::NONE);
+    drive.tap(KeyCode::Char('1'), M::CONTROL);
+    drive.bind_action(84, "bank.next");
+    if matches!(source, Source::Button) {
+        drive.bind_pad_button(2);
+    }
+    let mut wave = drive.render_blocks(32);
+    drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+    drive.raw_ordered_hit(source, velocity);
+    if early {
+        drive.raw_ordered_release(source, release);
+    }
+    drive.midi().recorded_fence();
+    append_stereo(&mut wave, drive.render_blocks(2));
+    assert_eq!(engine::checks::peak(&wave.0), 0.0, "no old-bank direct hit");
+    let hit = drive.frame();
+    assert!(hit.direct.is_empty());
+    assert!(
+        matches!(hit.ui.first(), Some(Command::PadPress { pad: 18, velocity: v }) if *v == f32::from(velocity)/127.0)
+    );
+    if early {
+        assert!(matches!(
+            hit.ui[..],
+            [
+                Command::PadPress { pad: 18, .. },
+                Command::PadRelease { pad: 18 }
+            ]
+        ));
+    } else {
+        assert_eq!(drive.app.audio_held[18], Some(0));
+        assert_eq!(
+            drive
+                .app
+                .midi_ui_held
+                .values()
+                .next()
+                .unwrap()
+                .iter()
+                .map(|hold| hold.abs)
+                .collect::<Vec<_>>(),
+            [18]
+        );
+    }
+    append_stereo(&mut wave, drive.render_blocks(16));
+    if !early {
+        if !matches!(guard, MixedHoldGuard::Chop) {
+            drive.tap(KeyCode::Char('3'), M::CONTROL);
+        }
+        match guard {
+            MixedHoldGuard::Chop => {
+                drive.tap(KeyCode::F(3), M::NONE);
+            }
+            MixedHoldGuard::Fx => {
+                drive.tap(KeyCode::F(4), M::NONE);
+            }
+            MixedHoldGuard::Question => {
+                drive.app.ask = Some(Ask::Plan { lines: vec![] });
+                drive.frame();
+            }
+            MixedHoldGuard::Learn => {
+                drive.tap(KeyCode::F(10), M::NONE);
+            }
+        }
+        drive.raw_ordered_release(source, release);
+        let off = drive.frame();
+        assert_only_release(&off, 18);
+    }
+    assert!(drive.app.midi_ui_held.is_empty());
+    append_stereo(&mut wave, drive.render_blocks((END - OFF) / RENDER_BLOCK));
+    let mut engine = engine::Engine::new(RENDER_RATE);
+    for cmd in settings {
+        engine.handle(0, cmd);
+    }
+    let mut events = vec![engine::offline::Event {
+        frame: HIT,
+        cmd: Command::PadPress {
+            pad: 18,
+            velocity: f32::from(velocity) / 127.0,
+        },
+    }];
+    if !early && matches!(guard, MixedHoldGuard::Chop) {
+        events.push(engine::offline::Event {
+            frame: OFF,
+            cmd: Command::HushPads,
+        });
+    }
+    events.push(engine::offline::Event {
+        frame: if early { HIT } else { OFF },
+        cmd: Command::PadRelease { pad: 18 },
+    });
+    let expected = engine::offline::render(
+        &mut engine,
+        &engine::offline::Scenario {
+            sample_rate: RENDER_RATE,
+            frames: END,
+            events,
+        },
+        RENDER_BLOCK,
+    );
+    assert_eq!(
+        wave, expected,
+        "actual target, velocity, onset and release: {source:?}, {velocity}, {release:?}, early {early}, {guard:?}"
+    );
+    for channel in [&wave.0, &wave.1] {
+        assert_eq!(engine::checks::first_non_finite(channel), None);
+        assert!(engine::checks::peak(channel) < 1.0);
+        assert_eq!(engine::checks::peak(&channel[..HIT]), 0.0);
+        assert_eq!(engine::checks::peak(&channel[OFF + 2048..]), 0.0);
+        if !early {
+            let onset = engine::checks::first_loud(channel, HIT..HIT + RENDER_BLOCK, 1e-6).unwrap();
+            assert!(onset.abs_diff(HIT) <= 1);
+        }
+    }
+    wave
+}
+
+/// Scenario "Deferred gate receives an early release or disconnect".
+#[test]
+fn deferred_gate_receives_an_early_release_or_disconnect() {
+    for source in [Source::Notes, Source::Button] {
+        for velocity in [23, 101] {
+            for release in [
+                RecordedRelease::Off,
+                RecordedRelease::Zero,
+                RecordedRelease::Disconnect,
+            ] {
+                render_ordered_gate(source, velocity, release, true, MixedHoldGuard::Fx);
+            }
+        }
+    }
+}
+
+/// Scenario "Deferred release follows its actual pad across modes".
+#[test]
+fn deferred_release_follows_its_actual_pad_across_modes() {
+    for source in [Source::Notes, Source::Button] {
+        for velocity in [23, 101] {
+            for release in [
+                RecordedRelease::Off,
+                RecordedRelease::Zero,
+                RecordedRelease::Disconnect,
+            ] {
+                for guard in [
+                    MixedHoldGuard::Chop,
+                    MixedHoldGuard::Fx,
+                    MixedHoldGuard::Question,
+                    MixedHoldGuard::Learn,
+                ] {
+                    render_ordered_gate(source, velocity, release, false, guard);
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Deferred silent and rejected hits preserve accepted holds".
+#[test]
+fn deferred_silent_and_rejected_hits_preserve_accepted_holds() {
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.tap(KeyCode::Char('1'), M::CONTROL);
+        drive.bind_action(84, "bank.next");
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+        drive.raw_ordered_hit(source, 101);
+        drive.frame();
+        drive.render_blocks(4);
+        let held = drive.app.midi_ui_held.clone();
+        let mut filled = 0;
+        while drive
+            .app
+            .audio
+            .as_mut()
+            .unwrap()
+            .commands
+            .push(ProjectCommand {
+                epoch: 0,
+                ready_at_send: true,
+                command: ProjectMessage::Command(Command::SetPadGain {
+                    pad: 127,
+                    gain: 1.0,
+                }),
+            })
+            .is_ok()
+        {
+            filled += 1;
+        }
+        assert_eq!(filled, 1024);
+        drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+        drive.raw_ordered_hit(source, 23);
+        drive.frame();
+        assert_eq!(
+            drive.app.midi_ui_held, held,
+            "rejected target must not replace accepted identity"
+        );
+        assert_eq!(drive.app.audio_held[18], Some(0));
+        assert_eq!(drive.app.audio_held[34], None);
+        drive.raw_ordered_release(source, RecordedRelease::Off);
+        let off = drive.frame();
+        assert_only_release(&off, 18);
+        assert!(drive.app.midi_ui_held.is_empty());
+        assert!(!drive.app.pending_audio.is_empty());
+        let continuing = drive.render_blocks(1);
+        assert!(
+            engine::checks::peak(&continuing.0) > 0.01,
+            "accepted gate survives rejected retrigger"
+        );
+        drive.app.flush_audio();
+        let tail = drive.render_blocks(32);
+        assert_eq!(engine::checks::first_non_finite(&tail.0), None);
+        assert!(engine::checks::peak(&tail.0) < 1.0);
+        assert_eq!(
+            engine::checks::peak(&tail.0[2048..]),
+            0.0,
+            "pending release retries"
+        );
+    }
+}
+
+/// Scenario "Deferred gate receives an early release or disconnect": callback
+/// already consumed an older direct hold's release before App starts the retrigger.
+#[test]
+fn early_direct_release_cannot_steal_a_later_deferred_hold() {
+    for source in [Source::Notes, Source::Button] {
+        for release in [
+            RecordedRelease::Off,
+            RecordedRelease::Zero,
+            RecordedRelease::Disconnect,
+        ] {
+            let mut drive = Drive::offline();
+            let settings = drive.parity_pad(0, false);
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.bind_action(85, "ui.back");
+            if matches!(source, Source::Button) {
+                drive.bind_pad_button(2);
+            }
+            let mut wave = drive.render_blocks(32);
+            drive.raw_ordered_hit(source, 101);
+            drive.midi().recorded_fence();
+            append_stereo(&mut wave, drive.render_blocks(4));
+            drive.frame();
+            drive.bytes(PAD_PORT, &[0xb0, 85, 127]);
+            drive.raw_ordered_hit(source, 23);
+            drive.raw_ordered_release(source, release);
+            drive.midi().recorded_fence();
+            let old_release = drive.render_blocks(32);
+            assert_eq!(engine::checks::peak(&old_release.0[2048..]), 0.0);
+            append_stereo(&mut wave, old_release);
+            let ui = drive.frame();
+            let tail = drive.render_blocks(64);
+            assert_eq!(
+                engine::checks::peak(&tail.0[2048..]),
+                0.0,
+                "{source:?}, {release:?}: older direct release cannot retire a later UI gate"
+            );
+            append_stereo(&mut wave, tail);
+            assert!(matches!(
+                ui.ui[..],
+                [
+                    Command::PadPress { pad: 18, .. },
+                    Command::PadRelease { pad: 18 }
+                ]
+            ));
+            assert!(drive.app.midi_ui_held.is_empty());
+            let mut engine = engine::Engine::new(RENDER_RATE);
+            for cmd in settings {
+                engine.handle(0, cmd);
+            }
+            let expected = engine::offline::render(
+                &mut engine,
+                &engine::offline::Scenario {
+                    sample_rate: RENDER_RATE,
+                    frames: 132 * RENDER_BLOCK,
+                    events: vec![
+                        engine::offline::Event {
+                            frame: 32 * RENDER_BLOCK,
+                            cmd: Command::PadPress {
+                                pad: 18,
+                                velocity: 101.0 / 127.0,
+                            },
+                        },
+                        engine::offline::Event {
+                            frame: 36 * RENDER_BLOCK,
+                            cmd: Command::PadRelease { pad: 18 },
+                        },
+                        engine::offline::Event {
+                            frame: 68 * RENDER_BLOCK,
+                            cmd: Command::PadPress {
+                                pad: 18,
+                                velocity: 23.0 / 127.0,
+                            },
+                        },
+                        engine::offline::Event {
+                            frame: 68 * RENDER_BLOCK,
+                            cmd: Command::PadRelease { pad: 18 },
+                        },
+                    ],
+                },
+                RENDER_BLOCK,
+            );
+            assert_eq!(
+                wave, expected,
+                "independent callback/UI progress and both accepted holds"
+            );
+            for channel in [&wave.0, &wave.1] {
+                assert_eq!(engine::checks::first_non_finite(channel), None);
+                assert!(engine::checks::peak(channel) < 1.0);
+            }
+        }
+    }
+}
+
+/// Scenarios "Deferred silent and rejected hits preserve accepted holds" and
+/// "Deferred release follows its actual pad across modes": both direct/UI orders.
+#[test]
+fn deferred_retriggers_keep_both_release_obligations_for_both_press_orders() {
+    for source in [Source::Notes, Source::Button] {
+        for ui_first in [false, true] {
+            for same_pad in [false, true] {
+                for disconnect in [false, true] {
+                    let mut drive = Drive::offline();
+                    drive.parity_pad(0, false);
+                    let pad = drive.app.pads.snapshot(18);
+                    for cmd in drive.app.pads.put_back(34, &pad) {
+                        drive.app.send(cmd);
+                    }
+                    drive.tap(KeyCode::F(2), M::NONE);
+                    drive.bind_action(84, "bank.next");
+                    drive.bind_action(85, "ui.back");
+                    if matches!(source, Source::Button) {
+                        drive.bind_pad_button(2);
+                    }
+                    drive.render_blocks(32);
+                    if ui_first {
+                        drive.bytes(PAD_PORT, &[0xb0, 85, 127]);
+                    }
+                    drive.raw_ordered_hit(source, 101);
+                    drive.frame();
+                    drive.render_blocks(4);
+                    if ui_first {
+                        if !same_pad {
+                            drive.tap(KeyCode::Char('3'), M::CONTROL);
+                        }
+                    } else {
+                        drive.bytes(PAD_PORT, &[0xb0, if same_pad { 85 } else { 84 }, 127]);
+                    }
+                    drive.raw_ordered_hit(source, 23);
+                    drive.frame();
+                    drive.render_blocks(4);
+                    let direct_abs = if ui_first && !same_pad { 34 } else { 18 };
+                    let ui_abs = if !ui_first && !same_pad { 34 } else { 18 };
+                    assert_eq!(
+                        drive
+                            .app
+                            .midi_ui_held
+                            .values()
+                            .next()
+                            .unwrap()
+                            .iter()
+                            .map(|hold| hold.abs)
+                            .collect::<Vec<_>>(),
+                        [ui_abs]
+                    );
+                    drive.raw_ordered_release(
+                        source,
+                        if disconnect {
+                            RecordedRelease::Disconnect
+                        } else {
+                            RecordedRelease::Off
+                        },
+                    );
+                    let events = drive.queued_events();
+                    let direct: Vec<_> = events
+                        .iter()
+                        .filter_map(|e| match e.event {
+                            midi::Event::PadRelease { abs, direct: true } => Some(abs),
+                            _ => None,
+                        })
+                        .collect();
+                    assert_eq!(direct, [direct_abs]);
+                    for event in events {
+                        drive.app.midi_ui_event(event);
+                    }
+                    let off = drive.frame();
+                    assert!(
+                        matches!(off.ui[..], [Command::PadRelease { pad }] if pad == ui_abs),
+                        "each accepted deferred hold keeps its own release"
+                    );
+                    assert!(drive.app.midi_ui_held.is_empty());
+                    let stopped = drive.render_blocks(32);
+                    for channel in [&stopped.0, &stopped.1] {
+                        assert_eq!(engine::checks::first_non_finite(channel), None);
+                        assert!(engine::checks::peak(channel) < 1.0);
+                        assert_eq!(engine::checks::peak(&channel[2048..]), 0.0);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Deferred silent and rejected hits preserve accepted holds": silent,
+/// preview and assignment retriggers, including a different physical control.
+#[test]
+fn silent_deferred_candidates_do_not_steal_an_accepted_hold() {
+    for source in [Source::Notes, Source::Button] {
+        for context in ["question", "learn", "preview", "assign"] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(0, false);
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.tap(KeyCode::Char('1'), M::CONTROL);
+            drive.bind_action(84, "bank.next");
+            drive.bind_action(81, "pad.4");
+            if matches!(source, Source::Button) {
+                drive.bind_pad_button(2);
+            }
+            drive.render_blocks(32);
+            drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+            drive.raw_ordered_hit(source, 101);
+            drive.frame();
+            drive.render_blocks(4);
+            let held = drive.app.midi_ui_held.clone();
+            drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+            let command = drive.queued_events();
+            match context {
+                "question" => {
+                    drive.app.pads.marked.insert(18);
+                    drive.tap(KeyCode::Backspace, M::NONE);
+                    assert!(matches!(drive.app.ask, Some(Ask::ClearPads { .. })));
+                }
+                "learn" => {
+                    drive.tap(KeyCode::F(10), M::NONE);
+                }
+                "preview" | "assign" => {
+                    let selected = drive.app.pads.selected_abs();
+                    drive.tap(KeyCode::F(3), M::NONE);
+                    assert_eq!(
+                        drive.app.screen,
+                        Screen::Chop,
+                        "{source:?}, {context}, selected {selected}, file {:?}",
+                        drive.app.pads.file[selected]
+                    );
+                    if context == "assign" {
+                        drive.tap(KeyCode::Char('p'), M::NONE);
+                    } else {
+                        // Bare-slice listen requires no linked pads anywhere, not
+                        // merely an empty target on the newly selected bank.
+                        drive.app.pads.link.fill(None);
+                    }
+                }
+                _ => unreachable!(),
+            }
+            let learned = drive.app.learned.clone();
+            drive.raw_ordered_hit(source, 23);
+            drive.bytes(PAD_PORT, &[0xb0, 81, 101]);
+            let hits = drive.queued_events();
+            for event in command.into_iter().chain(hits) {
+                drive.app.midi_ui_event(event);
+            }
+            assert_eq!(drive.app.midi_ui_held, held, "{source:?}, {context}");
+            assert_eq!(
+                drive.app.learned, learned,
+                "deferred hit is not a learn confirmation"
+            );
+            drive.bytes(PAD_PORT, &[0xb0, 81, 0]);
+            drive.frame();
+            assert_eq!(
+                drive.app.midi_ui_held, held,
+                "another control cannot release the accepted hold"
+            );
+            drive.raw_ordered_release(source, RecordedRelease::Off);
+            assert_only_release(&drive.frame(), 18);
+            assert!(drive.app.midi_ui_held.is_empty());
+            drive.app.stop_preview();
+            let stopped = drive.render_blocks(64);
+            assert_eq!(engine::checks::first_non_finite(&stopped.0), None);
+            assert!(engine::checks::peak(&stopped.0) < 1.0);
+            assert_eq!(engine::checks::peak(&stopped.0[4096..]), 0.0);
+        }
+    }
+}
+
+/// Scenario "Old deferred input cannot affect a new project".
+#[test]
+fn old_deferred_input_cannot_affect_a_new_project() {
+    use std::sync::atomic::Ordering::Acquire;
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.bind_action(84, "bank.next");
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+        drive.raw_ordered_hit(source, 23);
+        drive.raw_ordered_release(source, RecordedRelease::Off);
+        let old = drive.queued_events();
+        assert!(old.iter().any(|e| e.sequence().is_some()));
+        drive.app.apply_session(session::Session::default());
+        for _ in 0..256 {
+            drive.app.flush_audio();
+            drive.render_blocks(1);
+            if drive.project.ready.load(Acquire) == 1 && drive.app.pending_audio.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(drive.project.ready.load(Acquire), 1);
+        assert!(drive.app.pending_audio.is_empty());
+        let before = drive.app.pads.snapshot(18);
+        for event in old {
+            drive.app.midi_ui_event(event);
+        }
+        assert_eq!(drive.app.pads.snapshot(18), before);
+        assert!(drive.app.midi_ui_held.is_empty());
+        assert!(
+            !drive
+                .app
+                .sent
+                .iter()
+                .any(|c| matches!(c, Command::PadPress { .. } | Command::PadRelease { .. }))
+        );
+        drive.frame();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        drive.raw_ordered_hit(source, 101);
+        let next = drive.queued_events();
+        assert!(
+            next.iter().any(|e| matches!(
+                e.event,
+                midi::Event::PadHit {
+                    abs: 18,
+                    sound: midi::PadSound::DirectAccepted,
+                    ..
+                }
+            )),
+            "{source:?}: stale numbered work retires; focus {:?}, ready {}, epoch {}, events {:?}",
+            drive.app.focus(),
+            drive.project.ready.load(Acquire),
+            drive.project.epoch.load(Acquire),
+            next.iter()
+                .map(|e| match &e.event {
+                    midi::Event::PadHit { abs, sound, .. } => format!(
+                        "hit {abs} {sound:?}, ready {}, seq {:?}",
+                        e.preview_ready(),
+                        e.sequence()
+                    ),
+                    midi::Event::Message { meaning, .. } => meaning.clone(),
+                    _ => "other".into(),
+                })
+                .collect::<Vec<_>>()
+        );
+        assert!(engine::checks::peak(&drive.render_blocks(2).0) > 0.01);
+        for event in next {
+            drive.app.midi_ui_event(event);
+        }
+        assert!(drive.frame().ui.is_empty());
+    }
+}
+
+/// Scenario "Take a file and hit a target in one update": empty targets finish loading.
+#[test]
+fn pending_file_on_an_empty_target_finishes_without_sound() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.app.clear_pads(&[18]);
+        let path = drive.ordered_file();
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        if matches!(source, Source::Keyboard) {
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Press);
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Release);
+            drive.key(KeyCode::Char('3'), M::NONE, KeyEventKind::Press);
+            drive.key(KeyCode::Char('3'), M::NONE, KeyEventKind::Release);
+        } else {
+            drive.bytes(PAD_PORT, &[0xb0, 82, 127]);
+            drive.raw_ordered_hit(source, 101);
+            drive.midi().recorded_fence();
+        }
+        assert_eq!(engine::checks::peak(&drive.render_blocks(2).0), 0.0);
+        assert_silent_target(&drive.frame());
+        assert!(drive.app.ask.is_none());
+        assert!(drive.app.pads.loading[18].is_some());
+        assert!(drive.app.browser.in_hand.is_none());
+        while drive.app.pads.loading[18].is_some() {
+            let reply = drive
+                .app
+                .loader
+                .as_ref()
+                .unwrap()
+                .1
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap();
+            drive.app.loader_reply(reply);
+        }
+        assert_eq!(drive.app.pads.file[18].as_ref(), Some(&path));
+        assert!(drive.app.pads.sound[18].is_some());
+        assert_silent_target(&drive.frame());
+        assert!(drive.app.midi_ui_held.is_empty());
+        let quiet = drive.render_blocks(32);
+        for channel in [&quiet.0, &quiet.1] {
+            assert_eq!(engine::checks::peak(channel), 0.0);
+            assert_eq!(engine::checks::first_non_finite(channel), None);
+        }
+    }
+}
+
+/// Scenario "Pending pad uses preceding commands in order": keep real Chop entry/exit.
+#[test]
+fn pending_chop_entry_and_exit_keep_fifo_routes() {
+    for source in [Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.app.pads.selected = 2;
+        drive.bind_action(87, "screen.chop");
+        drive.bind_action(88, "screen.pads");
+        if matches!(source, Source::Button) {
+            drive.bind_pad_button(2);
+        }
+        drive.render_blocks(32);
+        drive.bytes(PAD_PORT, &[0xb0, 87, 127]);
+        drive.raw_ordered_hit(source, 23);
+        drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+        drive.raw_ordered_hit(source, 101);
+        drive.midi().recorded_fence();
+        assert_eq!(engine::checks::peak(&drive.render_blocks(2).0), 0.0);
+        let frame = drive.frame();
+        assert!(frame.direct.is_empty());
+        let hits: Vec<_> = frame
+            .ui
+            .iter()
+            .filter_map(|c| match c {
+                Command::PadPress { pad, velocity } => Some((*pad, *velocity)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(hits, [(18, 23.0 / 127.0), (18, 101.0 / 127.0)]);
+        assert!(frame.ui.iter().any(|c| matches!(c, Command::HushPads)));
+        assert_eq!(drive.app.screen, Screen::Pads);
+        drive.raw_ordered_release(source, RecordedRelease::Off);
+        assert_only_release(&drive.frame(), 18);
+        assert!(drive.app.midi_ui_held.is_empty());
+        assert_eq!(
+            engine::checks::peak(&drive.render_blocks(32).0[2048..]),
+            0.0
+        );
+    }
+}
+
+/// Scenario "Pending pad uses preceding commands in order": old Ignore must not drop pending work.
+#[test]
+fn pending_hit_retires_under_an_old_f10_snapshot() {
+    let mut drive = Drive::offline();
+    drive.bind_action(84, "bank.next");
+    drive.bytes(PAD_PORT, &[0xb0, 84, 127]);
+    let command = drive.queued_events();
+    drive.key(KeyCode::F(10), M::NONE, KeyEventKind::Press);
+    drive.key(KeyCode::F(10), M::NONE, KeyEventKind::Release);
+    drive.app.publish_midi(&drive.shared);
+    assert_eq!(
+        input::route_pad(drive.shared.focus()),
+        input::PadRoute::Ignore
+    );
+    drive.raw_ordered_hit(Source::Notes, 101);
+    let hit = drive.queued_events();
+    assert!(hit.iter().any(|e| matches!(
+        e.event,
+        midi::Event::PadHit {
+            sound: midi::PadSound::UiUnattempted { deferred: true },
+            ..
+        }
+    )));
+    for event in command.into_iter().chain(hit) {
+        drive.app.midi_ui_event(event);
+    }
+    assert_silent_target(&drive.frame());
+    assert_eq!(
+        drive.app.pads.bank, 0,
+        "F10 blocks the command body but still retires its sequence"
+    );
+    assert!(drive.app.midi_ui_held.is_empty());
+    drive.tap(KeyCode::F(10), M::NONE);
+    drive.raw_ordered_hit(Source::Notes, 101);
+    let resumed = drive.queued_events();
+    assert!(resumed.iter().any(|e| matches!(
+        e.event,
+        midi::Event::PadHit {
+            sound: midi::PadSound::DirectAccepted,
+            ..
+        }
+    )));
+    for event in resumed {
+        drive.app.midi_ui_event(event);
+    }
+    assert!(drive.frame().ui.is_empty());
 }
 
 #[derive(Clone, Copy, Debug)]

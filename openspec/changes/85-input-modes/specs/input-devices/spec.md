@@ -147,8 +147,11 @@ SHALL retain the original device, channel, control and project identity. Its ori
 release or device disconnect SHALL release only the absolute pad actually started,
 even if the bank, screen, question or F10 state later changes. A release received
 before the UI handles the hit SHALL still follow that hit and SHALL NOT leave a gate
-sounding. Each accepted hold SHALL have its existing release behavior without an
-extra release through the other audio route. The hit SHALL keep its original velocity.
+sounding. Each accepted hold SHALL keep its own release identity. An accepted deferred
+hit is a new UI hold: an older direct release of the same absolute pad SHALL NOT
+remove its release, even when audio processes that older release before UI delivery.
+This does not repeat the older direct hold's release. Existing direct-first merging
+for non-deferred Chop hits SHALL stay unchanged. The hit SHALL keep its original velocity.
 
 A silent target, blocked hit, bare preview or audio-queue-rejected hit SHALL NOT acquire
 a pad audio hold. A rejected retrigger SHALL NOT remove an older accepted hold. An
@@ -163,6 +166,8 @@ the existing Chop and direct MIDI release behavior.
   and the resulting mode permits that pad to sound
 - **THEN** the original velocity reaches one pad hit and that accepted hold receives
   its original release, without a second hit, a duplicate release or a stuck gate
+- **AND** if an older direct hold of that same pad releases before UI delivery, the
+  later accepted deferred hit still receives its own UI release; no old hold is released twice
 
 #### Scenario: Deferred release follows its actual pad across modes
 - **WHEN** a deferred MIDI hit starts a gate after a preceding bank change and the

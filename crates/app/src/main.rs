@@ -363,11 +363,17 @@ impl Ask {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UiPadHold {
+    abs: usize,
+    deferred: bool,
+}
+
 struct App {
     audio: Option<Audio>,
     pending_audio: std::collections::VecDeque<ProjectCommand>,
     audio_held: [Option<u64>; PADS],
-    midi_ui_held: std::collections::HashMap<u64, usize>,
+    midi_ui_held: std::collections::HashMap<u64, Vec<UiPadHold>>,
     restoring_project: bool,
     midi_preview_blocked: bool,
     cfg: AudioConfig,
@@ -1580,7 +1586,7 @@ impl App {
                     pad,
                     velocity,
                     pads::HitSource::Keyboard,
-                    midi::PadSound::UiUnattempted,
+                    midi::PadSound::UiUnattempted { deferred: false },
                 );
             }
             Action::Back if self.screen == Screen::Chop && self.plan.is_some() => self.plan = None,
@@ -4556,11 +4562,17 @@ impl App {
     }
 
     fn midi_ui_event(&mut self, ev: midi::UiEvent) {
+        let sequence = ev.sequence();
         let preview_ready = ev.preview_ready();
         if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
             self.midi_preview_blocked = !preview_ready;
             self.midi_event(ev);
             self.midi_preview_blocked = false;
+        }
+        if let Some(sequence) = sequence
+            && let Some(midi) = &self.midi
+        {
+            midi.consumed(self.focus(), sequence);
         }
     }
 
@@ -4572,9 +4584,19 @@ impl App {
         sound: midi::PadSound,
     ) -> Option<usize> {
         let from_midi = matches!(source, pads::HitSource::Midi);
-        // Keyboard keys name a bank position; MIDI retains its original absolute pad.
+        let deferred =
+            from_midi && matches!(sound, midi::PadSound::UiUnattempted { deferred: true });
+        // Only an explicitly deferred MIDI hit chooses its bank after earlier commands.
         let (abs, local) = if from_midi {
-            (pad, pad % PADS_PER_BANK)
+            let local = pad % PADS_PER_BANK;
+            (
+                if deferred {
+                    self.pads.bank * PADS_PER_BANK + local
+                } else {
+                    pad
+                },
+                local,
+            )
         } else {
             (self.pads.bank * PADS_PER_BANK + pad, pad)
         };
@@ -4582,7 +4604,7 @@ impl App {
             return None;
         }
         if self.screen == Screen::Chop {
-            if sound == midi::PadSound::UiUnattempted {
+            if matches!(sound, midi::PadSound::UiUnattempted { .. }) {
                 return self.chop_pad(local, velocity, source);
             }
             // A late direct notification is not a new Chop action.
@@ -4617,6 +4639,13 @@ impl App {
                 self.put_in_hand(abs);
                 self.pads.selected = local;
                 return None;
+            }
+            if deferred {
+                self.meters.hit(Instant::now());
+                self.pads.hit(abs);
+                return self
+                    .try_send(Command::PadPress { pad: abs, velocity })
+                    .then_some(abs);
             }
             if !from_midi {
                 self.meters.hit(Instant::now());
@@ -4783,20 +4812,47 @@ impl App {
                 if let Some(pad) = self.pad_hit(abs, velocity, pads::HitSource::Midi, sound)
                     && let Some(id) = ui_press
                 {
-                    self.midi_ui_held.insert(id, pad);
+                    let deferred =
+                        matches!(sound, midi::PadSound::UiUnattempted { deferred: true });
+                    let held = self.midi_ui_held.entry(id).or_default();
+                    if let Some(hold) = held.iter_mut().find(|hold| hold.abs == pad) {
+                        hold.deferred |= deferred;
+                    } else {
+                        held.push(UiPadHold { abs: pad, deferred });
+                    }
                 }
             }
             midi::Event::PadRelease { abs, direct } => {
                 if direct {
-                    self.midi_ui_held.retain(|_, pad| *pad != abs);
+                    self.midi_ui_held.retain(|_, pads| {
+                        // The older direct release may precede a deferred UI press
+                        // in the callback. Keep the new UI hold's own release.
+                        pads.retain(|hold| hold.abs != abs || hold.deferred);
+                        !pads.is_empty()
+                    });
+                    if self
+                        .midi_ui_held
+                        .values()
+                        .flatten()
+                        .any(|hold| hold.abs == abs)
+                    {
+                        return;
+                    }
                     self.audio_held[abs] = None;
                 }
                 self.pads.release(abs);
             }
-            midi::Event::UiPadRelease { abs, id } => {
-                if self.midi_ui_held.remove(&id) == Some(abs) {
-                    self.send(Command::PadRelease { pad: abs });
-                    self.pads.release(abs);
+            midi::Event::UiPadRelease {
+                abs: _captured_abs,
+                id,
+            } => {
+                if let Some(pads) = self.midi_ui_held.remove(&id) {
+                    for hold in pads {
+                        if !hold.deferred || self.audio_held[hold.abs].is_some() {
+                            self.send(Command::PadRelease { pad: hold.abs });
+                            self.pads.release(hold.abs);
+                        }
+                    }
                 }
             }
             midi::Event::Action(action) => {

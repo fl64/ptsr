@@ -58,13 +58,15 @@
 
 ## 3. Explicit controller ordering repair
 
-- [ ] 3.1 Add named regressions for all ten delta scenarios and first capture the
+- [x] 3.1 Add named regressions for all ten delta scenarios and first capture the
   failing same-update command/hit result through raw MIDI, real profiles and both
   actual offline audio queues. Then implement the dispatcher sequence and ordered
   Focus/ack publication for actions and UI pad hits, including no-ops, stale-event
   retirement, cross-device order and counter wrap. Keep normal direct hits and original
-  direct releases independent of UI progress. Extend UI candidate holds to deferred
-  actual pads: preserve the accepted absolute pad, early note-off/CC0/disconnect,
+  direct releases independent of UI progress. Include callback progress past an older
+  direct release before a deferred retrigger reaches App; keep the newer accepted UI
+  hold's own release without changing non-deferred Chop merging. Extend UI candidate
+  holds to deferred actual pads: preserve the accepted absolute pad, early note-off/CC0/disconnect,
   route changes, both direct/UI retrigger orders, full-queue rejection and pending
   releases, and project epochs. Pair shared logical outcomes with keyboard events;
   use MIDI-only checks for deferred transport and identity. Keep the original red
