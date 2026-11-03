@@ -789,6 +789,12 @@ Use the keyboard for screen, bank, plan and confirmation commands without bindin
 
 ### Keyboard pass
 
+- [ ] On F2, hit the long pad. PLAY must change from dim to blue with `▶`, without
+  moving following title text. Change bank, open pad edit with `Enter`, hide the grid
+  with `Ctrl+O`, then return to F2 from F4: PLAY stays lit while any pad still plays.
+  With two pads sounding, stop one: it stays lit until the last voice ends, including
+  gate release. Let an effect tail continue after that: PLAY is dim. Check with MARK
+  present too: its text and yellow color stay, and its column does not move on start/stop.
 - [ ] (by ear) On a fresh Chop, use `Y` until there are 32 slices. Press `Ctrl+1` and
   hit `3`, then press `Ctrl+2` and hit `3`. Check that slice 3, then slice 19 is selected
   and previewed once. No pad layout is applied.
@@ -841,6 +847,11 @@ Repeat with the same starting data. Use controller pads for every target and hit
 keyboard command keys remain available. Record notes and learned buttons separately if
 both are available. A physical test of one does not verify the other.
 
+- [ ] On F2, repeat the PLAY check above with controller notes and a learned pad
+  button separately when available. Change bank and release the original gate: PLAY
+  follows the actual pad sound, not the selected pad, held flag or brief flash. A new
+  hit under question or learn must not light it; a valid older voice can keep it lit.
+  This physical pass stays unverified while no controller is available.
 - [ ] (by ear) On a fresh 32-slice Chop, hit controller pad 3 in banks 1 and 2.
   Check slice 3 and slice 19, each selected and previewed once as in the keyboard pass.
 - [ ] Start the by-hand plan from slice 1 with `P`. Hit controller pad `Q` in bank 1,
@@ -889,6 +900,7 @@ both are available. A physical test of one does not verify the other.
   `cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture` if needed.
 
 Owner result: missing pad playback line reported before 2.3; post-fix check not reported.
+F2 PLAY was requested after 2.3; its post-2.4 keyboard/controller checks are not reported.
 Device/preset: no controller currently available. Keyboard terminal: not recorded.
 Physical note/CC forms: all unverified. Listening result: not reported.
 Archive is blocked until explicit owner acceptance and the scenario coverage check.

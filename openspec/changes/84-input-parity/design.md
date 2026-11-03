@@ -503,6 +503,54 @@ checks stay unchecked. No program was started live, no owner's sound graph or co
 was touched, and no listening or physical-controller result is claimed. Tasks 3.2
 and 3.3 remain open for owner results and acceptance before archive.
 
+## Task 2.4 verification
+
+`7e4626e` records the owner-approved F2 PLAY scope before implementation. The four
+new real-route App tests first fail with `missing PLAY badge` in
+`/tmp/ptsr-84-play-red.log`. The terminal test also fails before drawing changes
+(`/tmp/ptsr-84-play-tui-red.log`). No existing test was skipped or removed. The MARK
+regression still checks its text and yellow style, with only the expected title updated
+to make room for PLAY. One project-switch fixture initially tried another keyboard
+press while its original key was still held. The held-filter diagnostic confirms this
+(`/tmp/ptsr-84-play-held-diagnostic.log`); the fixture now releases that control first,
+retaining both the not-held assertion and the new-project playback assertion.
+
+`Stats::pads_playing(epoch)` reads the existing coherent pad-position snapshot once,
+including all voice slots and samples. A changed revision, old epoch or absent voice
+returns false. This adds a read-only cross-crate API; the callback and snapshot writer
+are unchanged. `App::mark_pads` checks ready/current epoch around that read and supplies
+the new Pads view boolean. All constructors are initialized, including the embedded
+Pads views on F3; F3 does not draw or use PLAY. TUI draws two fixed 10-cell strings
+with the agreed dim/blue styles and keeps MARK after the badge.
+
+The four App tests cover the four playback scenarios with keyboard events, raw notes
+and learned CC through production dispatch and both actual offline audio queues, then
+render the production Pads view through TUI. They cover natural end while held, gate
+release fade, several voices across banks, selection of an empty pad, edit, hidden
+grid, return from F4, question/learn, full UI and MIDI queues, project readiness and
+replacement, missing audio, audible previews (including borrowed pad settings) and
+an audible effect tail after the last pad ends. The engine unit test checks coherent
+revision, epoch, the last slot and voice end. The terminal scenario tests 60/80/100
+columns and 24/30/40 rows with edit/grid/MARK combinations, idle/play/idle transitions,
+exact badge cells and colors, unchanged MARK text/colors/column and unchanged other rows.
+
+`/tmp/ptsr-84-play-check.log` records a green full `task check`: formatting, strict
+clippy, workspace tests (615 App, 70 input, 101 TUI and 10 engine unit tests, no failures),
+scenario coverage and callback benchmark. The callback reports mean 8.46%, p99 14.64%,
+maximum 107.46% of its block budget. That maximum exceeds the 50% target: a green
+command is not proof of that performance requirement. No cause is inferred and the
+previous benchmark variability remains unresolved. Strict OpenSpec validation passes
+all 16 items; all 35 active delta scenarios name tests (20 input, 10 chopping, 5 pads).
+`git diff --check` is clean. `task build` passes (`/tmp/ptsr-84-play-build.log`) and
+produces `target/release/ptsr`.
+
+No sound feature or new audio render is needed. The full suite recreates
+`renders/84-input-parity.wav` with the unchanged SHA-256
+`f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
+User stories and live checks now include PLAY; all 26 owner checks remain open.
+No live run, owner's audio graph or config access, listening, physical-controller
+acceptance, push or archive was performed. Tasks 3.2 and 3.3 remain open.
+
 ## Risks / Trade-offs
 
 - A helper that feeds resolved actions directly can pass while production MIDI fails.

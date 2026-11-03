@@ -314,6 +314,8 @@ const CURVE_BOTTOM_DB: f32 = -36.0;
 pub type PanelRow = (PadParam, &'static str, String);
 
 pub struct Pads {
+    /// Any real pad voice in the current ready project, across all banks; not hit flashes or FX tails.
+    pub playing: bool,
     pub bank: usize,
     pub pads: Vec<PadView>,
     pub selected: usize,
@@ -972,7 +974,16 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
 
 fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
-    let mut title = vec![Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT))];
+    let (badge, badge_style) = if p.playing {
+        (" PLAY ▶   ", Style::new().fg(BG).bg(CYAN))
+    } else {
+        (" PLAY     ", Style::new().fg(DIM).bg(BG))
+    };
+    let mut title = vec![
+        Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT)),
+        " ".into(),
+        Span::styled(badge, badge_style),
+    ];
     if let Some(plate) = &p.mark_plate {
         title.push(" ".into());
         title.push(Span::styled(
@@ -2678,6 +2689,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             // pads 1 and W of the current bank (2) hold a sound
+            playing: false,
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
             mark_plate: None,
@@ -3211,6 +3223,7 @@ mod tests {
             pickup: None,
             scope: String::new(),
             param: PadParam::Volume,
+            playing: false,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
             mark_plate: None,
@@ -3720,6 +3733,93 @@ mod tests {
         );
     }
 
+    /// Scenario "Pads PLAY badge has fixed width".
+    #[test]
+    fn pads_play_badge_has_fixed_width() {
+        for (width, height) in [(60, 24), (80, 30), (100, 40)] {
+            for hidden in [false, true] {
+                for edit in [false, true] {
+                    for marked in [false, true] {
+                        let mut first: Option<Vec<Vec<(String, Color, Color)>>> = None;
+                        let mut mark_column = None;
+                        for playing in [false, true, false] {
+                            let mut p = idle_pads();
+                            p.playing = playing;
+                            p.hidden = hidden;
+                            p.edit = edit.then_some("TONE");
+                            if marked {
+                                p.mark_plate = Some("MARK · hit pads · 3 marked".into());
+                            }
+                            let rows = render_pads_at(p, width, height);
+                            let y = (0..rows.len())
+                                .find(|&y| row_text(&rows, y).contains("F2 PADS"))
+                                .unwrap();
+                            let row = &rows[y];
+                            let badge = row
+                                .windows(4)
+                                .position(|cells| {
+                                    cells.iter().map(|cell| cell.0.as_str()).collect::<String>()
+                                        == "PLAY"
+                                })
+                                .expect("PLAY badge");
+                            let text: String = row[badge - 1..badge + 9]
+                                .iter()
+                                .map(|cell| cell.0.as_str())
+                                .collect();
+                            assert_eq!(
+                                text,
+                                if playing {
+                                    " PLAY ▶   "
+                                } else {
+                                    " PLAY     "
+                                }
+                            );
+                            for cell in &row[badge - 1..badge + 9] {
+                                assert_eq!(
+                                    (cell.1, cell.2),
+                                    if playing { (BG, CYAN) } else { (DIM, BG) }
+                                );
+                            }
+                            if marked {
+                                let at = row
+                                    .windows(4)
+                                    .position(|cells| {
+                                        cells.iter().map(|cell| cell.0.as_str()).collect::<String>()
+                                            == "MARK"
+                                    })
+                                    .unwrap();
+                                if let Some(column) = mark_column {
+                                    assert_eq!(at, column);
+                                }
+                                mark_column = Some(at);
+                                let plate = "MARK · hit pads · 3 marked";
+                                assert_eq!(
+                                    row[at..at + plate.chars().count()]
+                                        .iter()
+                                        .map(|cell| cell.0.as_str())
+                                        .collect::<String>(),
+                                    plate
+                                );
+                                for cell in &row[at..at + plate.chars().count()] {
+                                    assert_eq!((cell.1, cell.2), (BG, MARK));
+                                }
+                            }
+                            if let Some(before) = &first {
+                                for (i, (old, new)) in before.iter().zip(&rows).enumerate() {
+                                    if i != y {
+                                        assert_eq!(old, new, "only the title changes");
+                                    }
+                                }
+                            } else {
+                                first = Some(rows);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// 76 "The mark plate": the plate stands on the title line, black on yellow.
     #[test]
     fn the_mark_plate_is_yellow_on_the_title_line() {
@@ -3731,7 +3831,7 @@ mod tests {
             .expect("the title line");
         let title = row_text(&rows, y);
         assert!(
-            title.contains("F2 PADS   MARK · hit pads · 3 marked "),
+            title.contains("F2 PADS   PLAY       MARK · hit pads · 3 marked "),
             "{title}"
         );
         assert!(
@@ -4814,6 +4914,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         Chop {
             owners: Vec::new(),
@@ -5335,6 +5436,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         let help = Help {
             groups: &[],
@@ -5515,6 +5617,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         }
     }
 
@@ -5725,6 +5828,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         // quiet start, loud middle: the envelope must show the difference
         let wave: Vec<f32> = (0..1600).map(|i| if i < 800 { 0.1 } else { 1.0 }).collect();
@@ -5822,6 +5926,7 @@ mod tests {
             edit_key: String::new(),
             fx: Vec::new(),
             slot: None,
+            playing: false,
         };
         let wave: Vec<f32> = vec![0.5; 100];
         let c = Chop {
@@ -6348,6 +6453,7 @@ mod tests {
             pickup: None,
             scope: String::new(),
             param: PadParam::Volume,
+            playing: false,
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
             mark_plate: None,

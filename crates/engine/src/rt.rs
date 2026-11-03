@@ -150,6 +150,20 @@ impl Stats {
         }
     }
 
+    /// Whether any pad voice plays in this project, across all pads and samples.
+    /// Previews and effect tails have no pad entry. A changing snapshot returns false.
+    pub fn pads_playing(&self, epoch: u64) -> bool {
+        let revision = self.pad_revision.load(SeqCst);
+        if revision & 1 != 0 || self.pad_epoch.load(SeqCst) != epoch {
+            return false;
+        }
+        let playing = self
+            .pad_positions
+            .iter()
+            .any(|slot| slot.started.load(SeqCst) != 0);
+        playing && self.pad_revision.load(SeqCst) == revision
+    }
+
     pub fn add_xrun(&self) {
         self.xruns.fetch_add(1, Relaxed);
     }
@@ -517,6 +531,27 @@ mod tests {
             s.output_history(8).is_empty(),
             "the output history is apart"
         );
+    }
+
+    #[test]
+    fn pads_playing_reads_only_a_coherent_current_project_snapshot() {
+        let stats = Stats::default();
+        assert!(!stats.pads_playing(0));
+        stats.pad_positions[crate::SLOTS - 1]
+            .started
+            .store(1, SeqCst);
+        assert!(stats.pads_playing(0), "include every pad slot");
+        assert!(!stats.pads_playing(1), "old project");
+        stats.pad_revision.store(1, SeqCst);
+        assert!(!stats.pads_playing(0), "writer is in progress");
+        stats.pad_epoch.store(1, SeqCst);
+        stats.pad_revision.store(2, SeqCst);
+        assert!(!stats.pads_playing(0));
+        assert!(stats.pads_playing(1));
+        stats.pad_positions[crate::SLOTS - 1]
+            .started
+            .store(0, SeqCst);
+        assert!(!stats.pads_playing(1), "last voice ended");
     }
 
     #[test]

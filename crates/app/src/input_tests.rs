@@ -2218,6 +2218,309 @@ fn copy_route_preserves_held_midi_releases() {
     }
 }
 
+fn pads_play_badge(drive: &mut Drive) -> bool {
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = &mut drive.app;
+    let view = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+    let screen = tui::Screen::Pads(app.mark_pads(view));
+    let status = tui::Status {
+        backend: None,
+        recording: false,
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: 0,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: None,
+    };
+    let help = tui::Help {
+        groups: &[],
+        hint: None,
+        full: None,
+        question: None,
+        learn: None,
+    };
+    let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    term.draw(|frame| tui::draw(frame, &status, &screen, &help))
+        .unwrap();
+    let header = term
+        .backend()
+        .buffer()
+        .content()
+        .chunks(100)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .find(|row| row.contains("F2 PADS"))
+        .unwrap();
+    assert!(header.contains("PLAY"), "missing PLAY badge: {header}");
+    header.contains("PLAY ▶")
+}
+
+/// Scenario "Pads PLAY badge follows keyboard and MIDI playback".
+#[test]
+fn pads_play_badge_follows_keyboard_and_midi_playback() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for release in [false, true] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(0, false);
+            drive.app.pads.gate[18] = release;
+            let snap = drive.app.pads.snapshot(18);
+            for cmd in drive.app.pads.put_back(18, &snap) {
+                drive.app.send(cmd);
+            }
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.render_blocks(4);
+            assert!(!pads_play_badge(&mut drive));
+            drive.velocity_hit(source, 127);
+            assert!(!pads_play_badge(&mut drive), "a queued hit is not playback");
+            let hit = drive.render_blocks(1);
+            assert!(pads_play_badge(&mut drive), "{source:?}, release {release}");
+            assert!(engine::checks::peak(&hit.0) > 0.01);
+            if release {
+                drive.pad_release(source, 2);
+                drive.render_blocks(1);
+                assert!(pads_play_badge(&mut drive), "release fade still plays");
+            }
+            let end = drive.render_blocks(400);
+            assert!(!pads_play_badge(&mut drive));
+            if !release {
+                assert!(drive.app.pads.held[18], "held does not mean sounding");
+            }
+            for channel in [&end.0, &end.1] {
+                assert_eq!(engine::checks::first_non_finite(channel), None);
+                assert!(engine::checks::peak(channel) < 1.0);
+                assert_eq!(engine::checks::peak(&channel[49_000..]), 0.0);
+            }
+        }
+    }
+}
+
+/// Scenario "Pads PLAY badge follows all sounding pads".
+#[test]
+fn pads_play_badge_follows_all_sounding_pads() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.app.pads.gate[18] = false;
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.1; 96_000])), "second");
+        for pad in [0, 18] {
+            let snap = drive.app.pads.snapshot(pad);
+            for cmd in drive.app.pads.put_back(pad, &snap) {
+                drive.app.send(cmd);
+            }
+        }
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.render_blocks(4);
+        drive.velocity_hit(source, 127);
+        drive.render_blocks(1);
+        drive.pad_release(source, 2);
+        drive.tap(KeyCode::Char('1'), M::CONTROL);
+        drive.pad_press(source, 0);
+        drive.render_blocks(1);
+        assert!(pads_play_badge(&mut drive));
+        drive.pad_release(source, 0);
+        drive.render_blocks(16);
+        assert!(
+            pads_play_badge(&mut drive),
+            "the older pad in bank 2 still plays"
+        );
+        drive.tap(KeyCode::Char('3'), M::CONTROL);
+        assert_eq!(drive.app.pads.selected_abs(), 32);
+        assert!(
+            pads_play_badge(&mut drive),
+            "selected empty pad is not the sounding one"
+        );
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.edit);
+        assert!(pads_play_badge(&mut drive));
+        drive.tap(KeyCode::Char('o'), M::CONTROL);
+        assert!(drive.app.ui.hide_pads);
+        assert!(pads_play_badge(&mut drive));
+        drive.tap(KeyCode::F(4), M::NONE);
+        drive.tap(KeyCode::F(2), M::NONE);
+        assert!(
+            pads_play_badge(&mut drive),
+            "returning to F2 sees real pad activity"
+        );
+        drive.render_blocks(400);
+        assert!(!pads_play_badge(&mut drive), "all pad voices ended");
+    }
+}
+
+/// Scenario "Pads PLAY badge ignores silent requests and old projects".
+#[test]
+fn pads_play_badge_ignores_silent_requests_and_old_projects() {
+    use std::sync::atomic::Ordering::{Acquire, Release};
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for guard in ["question", "learn", "queue", "not-ready", "no-audio"] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(0, false);
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.app.send(Command::SetPadSound {
+                pad: 17,
+                sound: None,
+            });
+            drive.render_blocks(4);
+            match guard {
+                "question" => {
+                    drive.app.pads.marked.insert(18);
+                    drive.app.ask_clear();
+                    drive.frame();
+                }
+                "learn" => {
+                    drive.tap(KeyCode::F(10), M::NONE);
+                }
+                "queue" if matches!(source, Source::Keyboard) => {
+                    let audio = drive.app.audio.as_mut().unwrap();
+                    while audio.commands.slots() > 0 {
+                        audio
+                            .commands
+                            .push(ProjectCommand {
+                                epoch: 0,
+                                ready_at_send: true,
+                                command: ProjectMessage::Command(Command::SetPadGain {
+                                    pad: 0,
+                                    gain: 1.0,
+                                }),
+                            })
+                            .unwrap();
+                    }
+                }
+                "queue" => {
+                    // Fill the actual MIDI queue with hits of a pad with no sound.
+                    for _ in 0..1024 {
+                        drive.bytes(PAD_PORT, &[0x90, 37, 127]);
+                    }
+                    drive.frame();
+                }
+                "not-ready" => drive.project.ready.store(1, Release),
+                "no-audio" => {
+                    drive.app.audio.take();
+                }
+                _ => unreachable!(),
+            }
+            drive.velocity_hit(source, 127);
+            assert!(
+                !pads_play_badge(&mut drive),
+                "{source:?}, {guard}, before callback"
+            );
+            if guard != "no-audio" {
+                drive.project.ready.store(0, Release);
+                let silent = drive.render_blocks(8);
+                assert!(!pads_play_badge(&mut drive), "{source:?}, {guard}");
+                assert_eq!(engine::checks::peak(&silent.0), 0.0);
+            }
+        }
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.render_blocks(4);
+        drive.velocity_hit(source, 127);
+        drive.render_blocks(1);
+        assert!(pads_play_badge(&mut drive));
+        drive.project.ready.store(1, Release);
+        assert!(
+            !pads_play_badge(&mut drive),
+            "not ready hides an older snapshot"
+        );
+        drive.project.ready.store(0, Release);
+        assert!(pads_play_badge(&mut drive));
+        drive.app.apply_session(session::Session::default());
+        assert!(
+            !pads_play_badge(&mut drive),
+            "old project is hidden before its fade ends"
+        );
+        for _ in 0..256 {
+            drive.app.flush_audio();
+            drive.render_blocks(1);
+            assert!(!pads_play_badge(&mut drive));
+            if drive.project.ready.load(Acquire) == 1 && drive.app.pending_audio.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(drive.project.ready.load(Acquire), 1);
+        // A new keyboard hit needs a release of the original physical press first.
+        drive.pad_release(source, 2);
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.render_blocks(8);
+        assert!(
+            !drive.held.is_held(2),
+            "fixture still holds the original keyboard pad"
+        );
+        drive.velocity_hit(source, 127);
+        drive.render_blocks(1);
+        assert!(
+            pads_play_badge(&mut drive),
+            "a valid new-project voice lights PLAY: {source:?}"
+        );
+        drive.app.audio.take();
+        assert!(
+            !pads_play_badge(&mut drive),
+            "missing audio cannot reuse the snapshot"
+        );
+    }
+}
+
+/// Scenario "Pads PLAY badge ignores previews and effect tails".
+#[test]
+fn pads_play_badge_ignores_previews_and_effect_tails() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.app.send(Command::SetPadSends {
+            pad: 18,
+            sends: [0.0, 0.8],
+        });
+        drive.app.send(Command::SetFx {
+            slot: 1,
+            settings: engine::fx::FxSettings::Delay {
+                time_ms: 20.0,
+                feedback: 0.8,
+            },
+        });
+        drive.render_blocks(4);
+        for as_pad in [None, Some(18)] {
+            let chop = drive.app.chop.as_ref().unwrap();
+            let sound = chop.sound.clone();
+            let region = chop.slices()[3];
+            drive.app.send(Command::PreviewAs { pad: as_pad });
+            drive.app.send(Command::Preview {
+                sound: Some(sound),
+                region,
+            });
+            let wave = drive.render_blocks(32);
+            assert!(engine::checks::peak(&wave.0) > 0.01);
+            assert!(
+                !pads_play_badge(&mut drive),
+                "preview, including borrowed pad settings, is not a pad hit"
+            );
+        }
+        drive.app.send(Command::Preview {
+            sound: None,
+            region: Region::WHOLE,
+        });
+        drive.render_blocks(4);
+        drive.velocity_hit(source, 127);
+        drive.render_blocks(64);
+        assert!(pads_play_badge(&mut drive));
+        drive.pad_release(source, 2);
+        let tail = drive.render_blocks(16);
+        assert!(!pads_play_badge(&mut drive));
+        assert!(
+            engine::checks::peak(&tail.0[1024..]) > 1e-5,
+            "effect tail still sounds"
+        );
+        for channel in [&tail.0, &tail.1] {
+            assert_eq!(engine::checks::first_non_finite(channel), None);
+            assert!(engine::checks::peak(channel) < 1.0);
+        }
+    }
+}
+
 fn displayed_pad_frame(drive: &Drive) -> Option<usize> {
     let chop = drive.app.chop.as_ref()?;
     let line = drive.app.chop_display(chop).playhead?;

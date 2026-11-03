@@ -1242,6 +1242,14 @@ impl App {
 
     /// The pad panel's marks: the edit frame with its page and knobs, the lit parameter.
     fn mark_pads(&self, mut v: tui::Pads) -> tui::Pads {
+        if let Some(audio) = &self.audio {
+            use std::sync::atomic::Ordering::Acquire;
+            let epoch = audio.project.epoch.load(Acquire);
+            v.playing = audio.project.ready.load(Acquire) == epoch
+                && audio.stats.pads_playing(epoch)
+                && audio.project.epoch.load(Acquire) == epoch
+                && audio.project.ready.load(Acquire) == epoch;
+        }
         if self.edit && self.screen == Screen::Pads {
             let (page, params) = self.pads.page();
             v.edit = Some(page);
@@ -6806,6 +6814,7 @@ fn pads_view(
         })
         .collect();
     tui::Pads {
+        playing: false,
         fx,
         bank: p.bank,
         pads,
@@ -7259,6 +7268,7 @@ fn chop_view<'a>(
                 ],
                 None,
                 tui::Pads {
+                    playing: false,
                     bank: page,
                     pads,
                     selected: if c.selected / PADS_PER_BANK == page {
@@ -7370,6 +7380,7 @@ fn chop_view<'a>(
                 ],
                 Some(marks),
                 tui::Pads {
+                    playing: false,
                     bank: p.bank,
                     pads,
                     // the pad of the selected slice, when it is in this bank
@@ -7492,6 +7503,7 @@ fn chop_view<'a>(
                 side,
                 Some(marks),
                 tui::Pads {
+                    playing: false,
                     bank: p.bank,
                     pads,
                     selected: usize::MAX,

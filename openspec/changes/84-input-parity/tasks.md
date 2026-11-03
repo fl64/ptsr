@@ -61,7 +61,7 @@
   Commit this scope extension separately from code. Update user stories and live checks,
   validate, run task check, rebuild the release and commit the fix separately.
 
-- [ ] 2.4 Add the owner-approved PLAY badge on F2, fixed at 10 cells, dim at rest and
+- [x] 2.4 Add the owner-approved PLAY badge on F2, fixed at 10 cells, dim at rest and
   blue with the play icon while any current-project pad sounds in any bank. Commit
   the approved artifacts separately before implementation. Add failing tests for
   the five pad-playback delta scenarios using keyboard, raw notes and learned CC

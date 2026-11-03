@@ -35,6 +35,18 @@ Notes:
 6. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` page the banks on all screens with pads: on the
    pads, in edit mode, on the chop screen, in the files.
 
+## Read pad playback
+
+1. Open `F2`. Next to `F2 PADS`, PLAY is dim when no pad plays.
+2. Hit a keyboard pad or a controller pad. While a real pad voice plays, PLAY is blue
+   with `▶`. A brief pad flash or a queued hit alone does not light it.
+3. Change bank, open pad edit with `Enter` or hide the grid with `Ctrl+O`. PLAY counts
+   all sounding pads in all banks, not only the selected pad or the bank in view.
+4. When the last pad voice ends, PLAY becomes dim. A gate stays active through its
+   release fade. A sample preview or an effect tail alone does not keep PLAY lit.
+5. PLAY keeps the same width on start and stop. An existing MARK plate stays in place
+   and keeps its yellow color. PLAY is an indicator, not a new transport control.
+
 ## Your own keys
 
 1. `[64]` Create the file `~/.config/ptsr/keymap.toml`. Write in it only the keys
