@@ -4563,19 +4563,7 @@ impl App {
     }
 
     fn publish_midi(&self, shared: &midi::Shared) {
-        let focus = self.focus();
-        shared.bank.store(focus.bank, Relaxed);
-        shared.screen.store(focus.screen as u8, Relaxed);
-        shared.edit.store(focus.mode.edit, Relaxed);
-        shared.learn.store(focus.mode.screen_learn, Relaxed);
-        shared.hand.store(
-            focus.mode.file_in_hand
-                || focus.mode.swap_in_hand
-                || focus.mode.copy_in_hand
-                || focus.mode.question
-                || focus.screen == Screen::Chop,
-            Relaxed,
-        );
+        shared.publish(self.focus());
     }
 
     fn midi_ui_event(&mut self, ev: midi::UiEvent) {
@@ -6122,6 +6110,7 @@ fn main() -> std::io::Result<()> {
         midi::apply_learned(p, &maps);
         p.set_seeded(app.seeded.contains(&p.name));
     }
+    app.publish_midi(&shared);
     app.midi = Some(midi::start(
         profiles,
         maps,
@@ -9386,7 +9375,7 @@ mod tests {
 
     #[test]
     fn shared_midi_publication_keeps_the_existing_routes() {
-        use std::sync::atomic::Ordering::Relaxed;
+        use input::{PadRoute, route_pad};
         let shared = super::midi::Shared::default();
         let mut app = test_app();
         for (screen, code) in [
@@ -9403,17 +9392,32 @@ mod tests {
                     app.edit = edit;
                     for learn in [true, false] {
                         app.screen_learn = learn.then(|| app.learn_open());
-                        for hand in [1, 2, 0] {
+                        for hand in [1, 2, 3, 4, 0] {
                             app.browser.in_hand = (hand == 1).then(|| "break.wav".into());
                             app.pad_in_hand = (hand == 2).then_some(4);
+                            app.copy_in_hand = (hand == 3).then(|| (4, app.pads.snapshot(4)));
+                            app.ask = (hand == 4).then(|| super::Ask::Plan { lines: Vec::new() });
                             app.publish_midi(&shared);
-                            assert_eq!(shared.bank.load(Relaxed), bank);
-                            assert_eq!(shared.screen.load(Relaxed), code);
-                            assert_eq!(shared.edit.load(Relaxed), edit);
-                            assert_eq!(shared.learn.load(Relaxed), learn);
+                            let focus = shared.focus();
+                            assert_eq!(focus.bank, bank);
+                            assert_eq!(focus.screen as u8, code);
+                            assert_eq!(focus.mode.edit, edit);
+                            assert_eq!(focus.mode.screen_learn, learn);
+                            let hand_route = focus.mode.file_in_hand
+                                || focus.mode.swap_in_hand
+                                || focus.mode.copy_in_hand
+                                || focus.mode.question
+                                || focus.screen == Screen::Chop;
+                            assert_eq!(hand_route, hand != 0 || screen == Screen::Chop);
                             assert_eq!(
-                                shared.hand.load(Relaxed),
-                                hand != 0 || screen == Screen::Chop
+                                route_pad(focus),
+                                if learn {
+                                    PadRoute::Ignore
+                                } else if hand_route {
+                                    PadRoute::Ui
+                                } else {
+                                    PadRoute::Sound
+                                }
                             );
                         }
                     }

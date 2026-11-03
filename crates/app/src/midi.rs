@@ -3,14 +3,14 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
 use input::midi::{Key, Msg, Param, Profile, Resolved, Scope};
-use input::{Action, Group, Screen};
+use input::{Action, Focus, Group, PadRoute, Screen, route_pad};
 use std::sync::atomic::Ordering::Acquire;
 
 /// midir does not report hotplug, so ports are polled.
@@ -58,20 +58,26 @@ pub enum Event {
     },
 }
 
-/// UI state the MIDI thread needs: current bank and screen.
+/// One complete input snapshot. Zero is normal performance on the first bank.
 #[derive(Default)]
 pub struct Shared {
-    pub bank: AtomicUsize,
-    /// 0 pads, 1 settings, 2 files, 3 chop.
-    pub screen: AtomicU8,
-    /// Pad hits go to the UI instead of the audio thread: something is in hand and the hit
-    /// puts it on the pad, or the chop screen plays slices.
-    pub hand: AtomicBool,
-    /// An edit mode is open: the `[edit]` layer of the profiles goes first.
-    pub edit: AtomicBool,
-    /// The learn mode is open (47): a control only goes to the UI to be bound, pads stay
-    /// silent and nothing acts.
-    pub learn: AtomicBool,
+    focus: AtomicU32,
+}
+
+impl Shared {
+    /// Publishes valid state; rejects an invalid bank without changing the snapshot.
+    pub fn publish(&self, focus: Focus) -> bool {
+        let Some(bits) = focus.pack() else {
+            return false;
+        };
+        self.focus.store(bits, Relaxed);
+        true
+    }
+
+    /// Reads all input state with one atomic load. Only checked encodings are published.
+    pub fn focus(&self) -> Focus {
+        Focus::unpack(self.focus.load(Relaxed)).unwrap_or_default()
+    }
 }
 
 enum Raw {
@@ -477,14 +483,8 @@ fn dispatch(
                 p
             }),
         };
-        let screen = match shared.screen.load(Relaxed) {
-            1 => Screen::Settings,
-            2 => Screen::Files,
-            3 => Screen::Chop,
-            4 => Screen::Fx,
-            _ => Screen::Pads,
-        };
-        let resolved = profile.resolve_in(screen, shared.edit.load(Relaxed), msg);
+        let focus = shared.focus();
+        let resolved = profile.resolve_in(focus.screen, focus.mode.edit, msg);
         let meaning = match &resolved {
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
@@ -534,16 +534,15 @@ fn dispatch(
                 continue;
             }
         }
-        if shared.learn.load(Relaxed) {
+        let route = route_pad(focus);
+        if route == PadRoute::Ignore {
             continue;
         }
 
         match resolved {
-            Some(Resolved::Action(Action::PadPress { pad, velocity }))
-                if shared.hand.load(Relaxed) =>
-            {
-                let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
-                let ui_press = (screen == Screen::Chop && stamp.ready).then(|| {
+            Some(Resolved::Action(Action::PadPress { pad, velocity })) if route == PadRoute::Ui => {
+                let abs = focus.bank * PADS_PER_BANK + pad;
+                let ui_press = (focus.screen == Screen::Chop && stamp.ready).then(|| {
                     let held = ui_pressed.entry((port, channel, msg.key())).or_default();
                     if let Some(hold) = held
                         .iter()
@@ -571,7 +570,7 @@ fn dispatch(
                 );
             }
             Some(Resolved::Action(Action::PadPress { pad, velocity })) => {
-                let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
+                let abs = focus.bank * PADS_PER_BANK + pad;
                 let mut accepted = false;
                 if stamp.ready && pending.is_empty() {
                     let command = ProjectCommand {
@@ -598,7 +597,7 @@ fn dispatch(
                 );
             }
             Some(Resolved::Action(Action::PadRelease { pad })) => {
-                let abs = shared.bank.load(Relaxed) * PADS_PER_BANK + pad;
+                let abs = focus.bank * PADS_PER_BANK + pad;
                 send(Event::PadRelease { abs, direct: false }, Some(stamp));
             }
             Some(Resolved::Action(a)) => {
@@ -677,6 +676,119 @@ pub fn load_profiles(dir: &str) -> (Vec<Profile>, Vec<String>) {
 mod tests {
     use super::*;
     use input::{Screen, midi::Key};
+
+    #[test]
+    fn shared_focus_rejects_invalid_publication_and_keeps_its_default() {
+        let shared = Shared::default();
+        assert_eq!(shared.focus(), Focus::default());
+        let focus = Focus {
+            screen: Screen::Fx,
+            bank: 7,
+            ..Focus::default()
+        };
+        assert!(shared.publish(focus));
+        assert_eq!(shared.focus(), focus);
+        assert!(!shared.publish(Focus { bank: 8, ..focus }));
+        assert_eq!(shared.focus(), focus);
+    }
+
+    #[test]
+    fn concurrent_publication_cannot_mix_message_profile_bank_and_pad_route() {
+        use std::sync::atomic::{
+            AtomicBool,
+            Ordering::{Acquire, Release},
+        };
+        let ordinary = Focus::default();
+        let chop = Focus {
+            screen: Screen::Chop,
+            bank: 7,
+            mode: input::Mode {
+                edit: true,
+                marking: true,
+                text: true,
+                picker: true,
+                midi_learn: true,
+                question: true,
+                file_in_hand: true,
+                copy_in_hand: true,
+                swap_in_hand: true,
+                screen_learn: false,
+            },
+        };
+        let shared = Arc::new(Shared::default());
+        let done = Arc::new(AtomicBool::new(false));
+        let (writer_shared, writer_done) = (shared.clone(), done.clone());
+        let writer = std::thread::spawn(move || {
+            let mut writes = 0;
+            while !writer_done.load(Acquire) {
+                writer_shared.publish(if writes % 2 == 0 { chop } else { ordinary });
+                writes += 1;
+                if writes % 256 == 0 {
+                    std::thread::yield_now();
+                }
+            }
+        });
+        let mut profile = Profile::default_for("snapshot");
+        profile.set_learned(
+            Scope::Screen(Screen::Pads),
+            [(Key::Cc(80), "pad.1".into())].into(),
+        );
+        profile.set_learned(
+            Scope::Edit(Screen::Chop),
+            [(Key::Cc(80), "pad.3".into())].into(),
+        );
+        let (raw_tx, raw_rx) = mpsc::channel();
+        for _ in 0..1000 {
+            raw_tx
+                .send(Raw::Msg("snapshot".into(), knob(80, 80), test_stamp()))
+                .unwrap();
+        }
+        drop(raw_tx);
+        let (tx, rx) = mpsc::channel();
+        let (producer, mut consumer) = rtrb::RingBuffer::new(1024);
+        dispatch(
+            raw_rx,
+            tx,
+            vec![profile],
+            LearnedMaps::new(),
+            Vec::new(),
+            Some(producer),
+            None,
+            shared.clone(),
+        );
+        done.store(true, Release);
+        writer.join().unwrap();
+        let events: Vec<_> = rx.try_iter().map(|event| event.event).collect();
+        assert_eq!(events.len(), 2000);
+        for pair in events.chunks_exact(2) {
+            let Event::Message { meaning, .. } = &pair[0] else {
+                panic!("missing input log")
+            };
+            let Event::PadHit {
+                abs,
+                velocity,
+                accepted,
+                ui_press,
+            } = &pair[1]
+            else {
+                panic!("missing pad hit")
+            };
+            assert_eq!(*velocity, 80.0 / 127.0);
+            if meaning.contains("pad: 0,") {
+                assert_eq!((*abs, *accepted, *ui_press), (0, true, None));
+            } else {
+                assert!(meaning.contains("pad: 2,"), "{meaning}");
+                assert_eq!((*abs, *accepted), (114, false));
+                assert!(ui_press.is_some());
+            }
+        }
+        while let Ok(command) = consumer.pop() {
+            assert!(matches!(command.command,
+                ProjectMessage::Command(Command::PadPress { pad: 0, velocity })
+                if velocity == 80.0 / 127.0));
+        }
+        assert!(matches!(shared.focus(), focus if focus == ordinary || focus == chop));
+    }
 
     #[test]
     fn hits_while_the_project_opens_and_old_releases_stay_in_their_epoch() {
@@ -872,9 +984,9 @@ mod tests {
             consumer.pop().unwrap().command,
             ProjectMessage::Command(Command::PadPress { .. })
         ));
-        shared
-            .learn
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut focus = shared.focus();
+        focus.mode.screen_learn = true;
+        assert!(shared.publish(focus));
         raw_tx
             .send(Raw::Msg(
                 "controller".into(),
@@ -1116,10 +1228,16 @@ mod tests {
     }
 
     fn on_screen(code: u8, bank: usize) -> Shared {
-        let s = Shared::default();
-        s.screen.store(code, Relaxed);
-        s.bank.store(bank, Relaxed);
-        s
+        let shared = Shared::default();
+        set_screen(&shared, code, bank);
+        shared
+    }
+
+    fn set_screen(shared: &Shared, code: u8, bank: usize) {
+        let mut focus = shared.focus();
+        focus.screen = Focus::unpack(u32::from(code)).unwrap().screen;
+        focus.bank = bank;
+        assert!(shared.publish(focus));
     }
 
     /// Scenario "Hit on any screen" (pad-playback): the button learned for "pad 1" plays
@@ -1205,7 +1323,9 @@ mod tests {
                             .map(|(cc, value)| Raw::Msg(XS.into(), knob(cc, value), test_stamp())),
                     );
                     let shared = on_screen(4, 2);
-                    shared.edit.store(editing, Relaxed);
+                    let mut focus = shared.focus();
+                    focus.mode.edit = editing;
+                    assert!(shared.publish(focus));
                     let (events, sent) = dispatched(raw, vec![xsession()], shared);
                     assert_eq!(
                         params(&events),
@@ -1313,8 +1433,7 @@ mod tests {
                     ..
                 }
             ));
-            shared.screen.store(4, Relaxed);
-            shared.bank.store(2, Relaxed);
+            set_screen(&shared, 4, 2);
             let stale = Stamp {
                 epoch: 7,
                 ready: false,
@@ -1501,23 +1620,31 @@ mod tests {
                 velocity,
             };
             let off = Msg::NoteOff { ch: 1, note: 36 };
-            assert!(matches!(
-                send(hit(80)),
-                Event::PadHit {
-                    abs: 0,
-                    accepted: true,
-                    ..
-                }
-            ));
-            shared.screen.store(after, Relaxed);
-            shared.bank.store(2, Relaxed);
-            assert!(matches!(
-                send(off),
-                Event::PadRelease {
-                    abs: 0,
-                    direct: true
-                }
-            ));
+            let first = send(hit(80));
+            assert!(
+                matches!(first, Event::PadHit { abs: 0, velocity, accepted, ui_press }
+                if velocity == 80.0 / 127.0
+                    && accepted == (before != 3)
+                    && ui_press.is_some() == (before == 3))
+            );
+            let first_ui_press = match first {
+                Event::PadHit { ui_press, .. } => ui_press,
+                _ => unreachable!(),
+            };
+            set_screen(&shared, after, 2);
+            let first_release = send(off);
+            if let Some(original) = first_ui_press {
+                assert!(matches!(first_release, Event::UiPadRelease { abs: 0, id }
+                    if id == original));
+            } else {
+                assert!(matches!(
+                    first_release,
+                    Event::PadRelease {
+                        abs: 0,
+                        direct: true
+                    }
+                ));
+            }
             assert!(matches!(
                 send(hit(47)),
                 Event::PadHit {
@@ -1526,8 +1653,7 @@ mod tests {
                     ..
                 }
             ));
-            shared.screen.store(before, Relaxed);
-            shared.bank.store(1, Relaxed);
+            set_screen(&shared, before, 1);
             assert!(matches!(
                 send(off),
                 Event::PadRelease {
@@ -1556,18 +1682,30 @@ mod tests {
                     command.command
                 })
                 .collect();
-            assert!(
-                matches!(
-                    sent[..],
-                    [
-                        ProjectMessage::Command(Command::PadPress { pad: 0, velocity: first }),
-                        ProjectMessage::Command(Command::PadRelease { pad: 0 }),
-                        ProjectMessage::Command(Command::PadPress { pad: 32, velocity: second }),
-                        ProjectMessage::Command(Command::PadRelease { pad: 32 }),
-                    ] if first == 80.0 / 127.0 && second == 47.0 / 127.0
-                ),
-                "screen {before} -> {after}: {sent:?}"
-            );
+            if before == 3 {
+                // Chop candidates go through App, not the direct queue. The paired
+                // offline driver also checks the actual sound and release of this hit.
+                assert!(
+                    matches!(sent[..], [
+                    ProjectMessage::Command(Command::PadPress { pad: 32, velocity }),
+                    ProjectMessage::Command(Command::PadRelease { pad: 32 }),
+                ] if velocity == 47.0 / 127.0),
+                    "{sent:?}"
+                );
+            } else {
+                assert!(
+                    matches!(
+                        sent[..],
+                        [
+                            ProjectMessage::Command(Command::PadPress { pad: 0, velocity: first }),
+                            ProjectMessage::Command(Command::PadRelease { pad: 0 }),
+                            ProjectMessage::Command(Command::PadPress { pad: 32, velocity: second }),
+                            ProjectMessage::Command(Command::PadRelease { pad: 32 }),
+                        ] if first == 80.0 / 127.0 && second == 47.0 / 127.0
+                    ),
+                    "screen {before} -> {after}: {sent:?}"
+                );
+            }
             assert!(rx.try_recv().is_err(), "no stale pad events after release");
         }
     }

@@ -2177,6 +2177,85 @@ fn render_84_input_parity() {
     );
 }
 
+#[test]
+fn offline_chop_to_fx_keeps_routes_velocity_banks_and_original_releases() {
+    use engine::checks::{first_loud, first_non_finite, peak};
+    let mut expected = None;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(12, true);
+        let snap = drive.app.pads.snapshot(18);
+        for command in drive.app.pads.put_back(34, &snap) {
+            drive.app.send(command);
+        }
+        drive.frame();
+        drive.render_blocks(32);
+        let hit = drive.velocity_hit(source, 80);
+        assert!(
+            matches!(hit.ui[..], [Command::PadPress { pad: 18, velocity }]
+            if velocity == 80.0 / 127.0)
+        );
+        let mut wave = drive.render_blocks(8);
+        assert!(peak(&wave.0) > 0.01);
+        assert!(first_loud(&wave.0, 0..RENDER_BLOCK, 1e-6).unwrap() <= 1);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        drive.tap(KeyCode::F(4), M::NONE);
+        assert_eq!(drive.app.pads.bank, 2);
+        assert_eq!(drive.app.screen, Screen::Fx);
+        assert_only_release(&drive.pad_release(source, 2), 18);
+        let tail = drive.render_blocks(64);
+        assert_eq!(peak(&tail.0[2048..]), 0.0);
+        append_stereo(&mut wave, tail);
+
+        // No frame handles this hit before the next callback. Keyboard writes
+        // through App immediately; normal MIDI must use its real direct queue.
+        match source {
+            Source::Keyboard => drive.key(KeyCode::Char('3'), M::NONE, KeyEventKind::Press),
+            Source::Notes => drive.bytes(PAD_PORT, &[0x90, 38, 80]),
+            Source::Button => drive.bytes(PAD_PORT, &[0xb0, 80, 80]),
+        }
+        drive.midi().recorded_fence();
+        let direct = drive.render_blocks(1);
+        assert!(peak(&direct.0) > 0.01, "{source:?}: next block before UI");
+        assert!(first_loud(&direct.0, 0..RENDER_BLOCK, 1e-6).unwrap() <= 1);
+        append_stereo(&mut wave, direct);
+        let notification = drive.frame();
+        if matches!(source, Source::Keyboard) {
+            assert!(
+                matches!(notification.ui[..], [Command::PadPress { pad: 34, velocity }]
+                if velocity == 80.0 / 127.0)
+            );
+        } else {
+            assert!(notification.ui.is_empty(), "no second FX hit");
+        }
+        assert_eq!(drive.app.pads.selected_abs(), 34);
+        assert!(!drive.app.pads.held[18]);
+        assert!(drive.app.pads.held[34]);
+        let release = drive.pad_release(source, 2);
+        if matches!(source, Source::Keyboard) {
+            assert_only_release(&release, 34);
+        } else {
+            assert!(release.ui.is_empty(), "no second direct release");
+        }
+        assert!(!drive.app.pads.held[34]);
+        let tail = drive.render_blocks(64);
+        assert_eq!(peak(&tail.0[2048..]), 0.0, "FX gate releases its own pad");
+        append_stereo(&mut wave, tail);
+        for channel in [&wave.0, &wave.1] {
+            assert_eq!(first_non_finite(channel), None);
+            assert!(peak(channel) < 1.0);
+        }
+        if let Some(expected) = &expected {
+            assert_eq!(
+                &wave, expected,
+                "{source:?}: same sound across the route change"
+            );
+        } else {
+            expected = Some(wave);
+        }
+    }
+}
+
 /// Scenario "Hit from a controller": the real direct queue sounds before App sees
 /// the event. Processing App later must not add another hit or release.
 #[test]

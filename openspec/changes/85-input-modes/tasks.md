@@ -21,7 +21,7 @@
 
 ## 2. Behavior-preserving routing refactor
 
-- [ ] 2.1 Replace the five MIDI Shared atomics with one packed Focus publication and
+- [x] 2.1 Replace the five MIDI Shared atomics with one packed Focus publication and
   one snapshot read per raw message. Use the snapshot for screen, edit, bank and the
   shared pad-route decision. Publish before dispatcher start. Mechanically adapt
   representation-bound tests without weakening their assertions. Add coherent-snapshot
