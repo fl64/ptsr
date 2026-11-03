@@ -653,6 +653,35 @@ single target in the current bank. A target hit does not also play that pad.
    including after a bank or screen change. Closing the question returns normal play
    only if no file, copy or other target mode is still open. Marking still plays hits.
 
+## Controller commands and the next pad hit
+
+`[85]` Use the current controller bindings. This change adds no key or device profile.
+
+1. On Files, select a file and switch preview off if you want to hear only pad sounds.
+   Press the controller's take-file command, then hit a pad at once. Even before the
+   screen updates, that hit selects a file target; it does not play the old sound.
+   An empty target loads the file. An occupied target asks before replacement.
+2. Hit a different occupied pad while that question is open. The first target and
+   question stay. The new hit neither plays nor confirms replacement. `Esc` keeps
+   both old sounds and the file in hand. Keyboard `Enter`, target hits and `Esc`
+   keep the same behavior.
+3. Cancel the held file, turn the bank and hit a pad. Commands keep their received
+   order; the hit uses the bank and mode left by them. This also applies when the
+   command comes from one controller and the pad from another. Each hit keeps the
+   velocity of its original note or learned button.
+4. Release a gate control while the screen is still catching up. Its original pad
+   still receives the release, also for note-on zero, CC zero or device disconnect.
+   A delayed new hit keeps its own release even if an older direct hit already stopped.
+   Changing bank, screen, a question or F10 does not move that release to another pad.
+5. Outside pending commands and target modes, controller hits still go straight to
+   sound without waiting for the screen. The later screen update does not play them
+   twice. Keyboard/MIDI Chop holds stay independent; opening Chop does not replay an
+   old direct notification. Text, pickers and F12 learn keep their existing boundaries.
+
+These paths have recorded-input and offline audio tests. They do not prove physical
+controller operation or owner listening. Use the separate passes and render map in
+`docs/LIVE-CHECKS.md`, section 85. The SMC-PAD map remains an incomplete template.
+
 ## MIDI knobs
 
 1. Press `F12`. Change the tab with `Tab`. Open the MIDI tab.

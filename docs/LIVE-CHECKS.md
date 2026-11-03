@@ -963,3 +963,125 @@ signed-off commit explicitly confirmed. Individual manual checks were not report
 their boxes stay open. This accepts the report, not a hard-maximum performance guarantee
 or resolution of slow-core CPU spikes. No new live, listening or physical-controller
 pass is implied; the earlier controller checks remain unverified.
+
+## 85 — Shared pad input and ordered controller targets
+
+Folder: `changes/85-input-modes` (`plan/controller-first-patterns`)
+
+Implementation and offline checks are complete. Owner acceptance and archive are
+pending. No keys, profiles, saved-data formats or callback code changed. The shared
+handler keeps the existing text, picker, F10/F12 and overlapping-hand boundaries.
+Recorded MIDI and waveform checks do not mark a physical or listening pass complete.
+The interim isolated keyboard pass is recorded in the change's design; the final
+agent screen pass is still pending. Owner boxes below stay open until reported.
+
+### Prepare
+
+Use a disposable project: these checks load, copy, swap and replace sounds. Prepare
+two occupied pads and an empty pad in bank 2. For releases, use the long gate and
+20 ms release from section 84, with both FX sends at zero. A keyboard gate needs
+kitty key releases; tmux without them cannot verify that part.
+
+For a controller pass, use notes 36–51 or explicit GLOBAL pad bindings. A learned
+CC button must send its zero value on release. Record missing velocity/release forms
+rather than claiming them. Do not reset a profile for this check. The X-Session's
+safe command buttons are not a pad grid. Its left Cue on Files takes a file; a second
+device can provide the pad notes. The incomplete SMC-PAD template is not accepted here.
+
+### Keyboard pass
+
+- [ ] On Pads, hit a loaded pad. Open edit with `Enter`, then hit a different loaded
+  pad: it plays once and edit stays open. Close edit. Turn marking on with `M`, hit
+  pads, then open edit again. Marks and sound must coexist; no key assignment changes.
+- [ ] On Files, switch preview off if it is on. Select a different file, press `Enter`
+  and hit an occupied pad at once. The old pad must not play; the question names that
+  target. Hit a second occupied pad: the first question and selection stay. `Esc`
+  keeps both old sounds and the file in hand. Hit an empty pad: it loads the file
+  without a hit sound. Wait for loading to end, then cancel any hand state before play.
+- [ ] Take a copy with `Ctrl+C`, place it on an empty pad, and undo with `Ctrl+Z`.
+  Swap two loaded pads with `Ctrl+X` and a target hit, then undo. Placement is silent;
+  one undo restores the prior target or both swapped pads, including their settings.
+- [ ] Repeat section 84's bare Chop listen, linked pad, slice edit and both assign
+  orders (`P`, then `Tab`). A question and F10 block new hits. An old hit delivered
+  after Chop opens must not restart sound, preview or change an assign plan.
+- [ ] (by ear) Hold a linked gate from Chop, change bank, open F4 and release its
+  original key. Only its original pad stops. Repeat with F10 open before release.
+  A new silent learn key must not steal that older keyboard hold.
+- [ ] Open the Files filter with `/` and type pad letters. They type text, not hits.
+  Repeat pad naming (`Ctrl+N`) and project selection (`Ctrl+P`), then cancel. The
+  project picker's first Esc clears typed text; another Esc closes it. Open and close
+  F10 and all F12 tabs without saving a test binding. Save and restart the test project.
+
+### Controller pass, when hardware is available
+
+Use controller pad hits for targets below. Use existing bound commands; keyboard
+commands remain available where a controller has none. Repeat notes and learned CC
+buttons separately where possible. Record the device and preset.
+
+- [ ] On Files with preview off, take the selected file with a bound command and hit
+  an occupied pad immediately. The result is one silent target question, not the old
+  sound. Hit a different occupied pad; it cannot change or confirm the first question.
+  Esc keeps the old sounds and file in hand. An empty target loads silently.
+- [ ] Cancel the held file, then send bank-next and a pad hit quickly. The hit uses
+  the new bank once, at its original velocity. Repeat entering and leaving Chop with
+  the existing bound commands; listen and assign keep their normal meaning.
+- [ ] (by ear) Hold a long gate; change bank/screen and release its original control.
+  Repeat under a question and F10. Test note-off, note-on zero, CC zero and disconnect
+  where the device supports them. Only the actual original pad stops, without a stuck
+  gate. Also retrigger that control quickly around a command and release.
+- [ ] (by ear) On Chop, hold a keyboard gate, change bank, then hold the same local
+  position from MIDI. Release each in both orders; each stops its own original pad.
+  Repeat MIDI-first, and repeat under a question/F10. A silent new hit steals no hold.
+- [ ] (by ear) Outside target modes, play soft and strong hits while the screen updates.
+  Each hit sounds once without waiting for the screen. Compare MIDI 127 with a Shift
+  keyboard hit. A fixed-127 button cannot verify low velocity; record that limit.
+- [ ] If two devices are available, take a file from device A and hit the target from
+  B before the screen changes. It is still a silent target. Release older gates from
+  both devices during this sequence: their original releases still work.
+
+### Offline listening
+
+Regenerate the three 85 WAV files with:
+
+```sh
+cargo test -p ptsr input_tests::render_85 -- --nocapture
+cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture
+```
+
+- [ ] (by ear) Listen to `renders/85-input-modes.wav` (2.064 s). The short hits below
+  must have one onset and end cleanly. File-target segments are intentional silence.
+  Equal-velocity keyboard, note and button segments must sound the same.
+
+| Time, seconds | Segment |
+| --- | --- |
+| 0.000–0.176 | Keyboard, velocity 80 |
+| 0.176–0.352 | Note take-file and occupied target: silence |
+| 0.352–0.528 | Direct note, velocity 80, edit and marking open |
+| 0.528–0.768 | Deferred note gate, then original release after bank/screen change |
+| 0.768–0.944 | CC-button take-file and occupied target: silence |
+| 0.944–1.120 | Direct CC button, velocity 80, edit and marking open |
+| 1.120–1.360 | Deferred CC gate, then original release after bank/screen change |
+| 1.360–1.536 | Direct note, velocity 23 |
+| 1.536–1.712 | Direct note, velocity 101 |
+| 1.712–1.888 | Direct CC button, velocity 23 |
+| 1.888–2.064 | Direct CC button, velocity 101 |
+
+- [ ] (by ear) Listen to `renders/85-mixed-holds.wav` (3.584 s): first notes, then
+  learned buttons. Each group has keyboard-first, MIDI-first and rejected-MIDI cases.
+  Each original hold must end on its own release; rejection must not steal the key.
+- [ ] (by ear) Listen to `renders/85-late-midi.wav` (about 1.451 s): accepted note,
+  rejected note, accepted button, rejected button. Accepted hits have their normal
+  Chop-entry hush without a restart; rejected segments are silent.
+- [ ] (by ear) Listen again to `renders/84-input-parity.wav` (5.376 s). Its SHA-256
+  remains `f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
+
+Automation checks finite samples, no clipping, intentional silence, one hit and timing
+within one sample against timestamped offline oracles. It also tests an older direct
+release processed before a deferred retrigger reaches UI: the newer accepted hit keeps
+its own release. Existing non-deferred Chop release merging stays unchanged. No formal
+memory-model check or exhaustive proof of every queue interleaving is claimed.
+
+Owner result: pending. Keyboard terminal: not reported. Device/preset and physical
+note/CC release forms: unverified. Separate listening result: not reported. Callback
+maximum-budget and slow-core issues remain open; green p99 benchmark gates do not prove
+that every callback meets the 50% target. This change does not investigate that issue.

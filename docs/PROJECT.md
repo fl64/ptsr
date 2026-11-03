@@ -37,9 +37,15 @@ Its physical-controller pass remains unverified. Callback benchmark peaks above 
 2026-11-03. It is archived in `openspec/changes/archive/2026-11-03-84a-benchmark-report/`.
 It adds wall time, thread CPU time, estimated gaps, exceedance counts and timer overhead
 to the offline benchmark. Workload, sound, the 50% target and wall p99 exit checks stay
-unchanged. Slow-core CPU spikes still need investigation. No change is active.
-Input modes 85 is next in the input plan, not active.
-The owner requested `plan/controller-first-patterns` for 84 and confirmed it for 84a as
+unchanged. Slow-core CPU spikes still need investigation.
+Input modes 85 is active. Shared pad handling, coherent MIDI state, ordered controller
+commands and safe deferred releases are implemented. Separate repairs keep keyboard/MIDI
+Chop holds independent and prevent late direct notifications from restarting Chop.
+Input dispatch is in its own module; the move changed no method body. Offline checks
+and the three 85 renders are ready. Owner acceptance and archive remain pending.
+Physical-controller behavior is still unverified. No keys, profiles, saved-data format
+or audio callback changed. Section 85 of `docs/LIVE-CHECKS.md` has the separate passes.
+The owner requested `plan/controller-first-patterns` for 84, 84a and 85 as
 exceptions to the separate-branch rule. Activate only one change at a time; push and PR
 need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 

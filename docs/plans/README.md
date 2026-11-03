@@ -13,7 +13,7 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
   `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
-- The owner requested continuation in `plan/controller-first-patterns`, including 84 and 84a.
+- The owner requested continuation in `plan/controller-first-patterns`, including 84, 84a and 85.
   This is an exception to the separate-branch rule. Push and PR need a separate request.
 - Keymap cleanup 83a is accepted and archived at `2b084d1` in
   `openspec/changes/archive/2026-11-03-83a-keymap-cleanup/`: the shipped map has Alt+R
@@ -24,14 +24,21 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   `openspec/changes/archive/2026-11-03-84-input-parity/`, based on `2b084d1`. Its paired
   input tests cover the approved routing and release repairs, the Chop pad playback
   line, fixed LISTEN and F2 PLAY badges. Physical-controller checks remain unverified.
-  Callback benchmark peaks above the 50% budget target remain unresolved. Input modes
-  85 is next in the plan, not active; it still needs specifications and owner approval.
+  Callback benchmark peaks above the 50% budget target remain unresolved.
 - The owner accepted report-only change 84a on 2026-11-03. It is archived in
-  `openspec/changes/archive/2026-11-03-84a-benchmark-report/`. No change is active.
+  `openspec/changes/archive/2026-11-03-84a-benchmark-report/`.
   It was inserted before 85 after the benchmark investigation. Wall and thread CPU times,
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
   were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
+- Input modes 85 is active in `openspec/changes/85-input-modes/`. Implementation and
+  offline checks are complete; owner acceptance and archive remain pending. It shares
+  pad handling and MIDI state, fixes controller-command order and deferred releases,
+  and separately repairs mixed Chop holds and late direct notifications. The dispatch
+  move is behavior-neutral. Keys, profiles, saved data and the callback stay unchanged.
+  The three 85 WAV files and separate owner passes are in section 85 of
+  `docs/LIVE-CHECKS.md`. No physical-controller or listening result is implied.
+  Change 86 is next only after 85 is accepted and archived; it is not active.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

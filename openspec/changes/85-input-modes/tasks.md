@@ -90,7 +90,7 @@
 
 ## 5. Documentation, acceptance and archive
 
-- [ ] 5.1 Update `README.md`, `docs/PROJECT.md`, `docs/plans/README.md` and
+- [x] 5.1 Update `README.md`, `docs/PROJECT.md`, `docs/plans/README.md` and
   `openspec/config.yaml` to show the actual 85 status and scope. Add exact separate
   keyboard/controller passes and render segments to `docs/LIVE-CHECKS.md`; update
   `docs/USER-STORIES.md` for ordered take-file/target behavior. Retain the unresolved
