@@ -713,7 +713,7 @@ The owner accepts the result for now; the sound can be reviewed again during use
 
 ## 83a — Keymap cleanup
 
-Folder: `changes/83a-keymap-cleanup` (active, `plan/controller-first-patterns`)
+Folder: `changes/archive/2026-11-03-83a-keymap-cleanup` (`plan/controller-first-patterns`)
 
 Owner acceptance on 2026-11-03: the owner chose to accept this change without
 completing the manual checks. Open boxes below mean **not verified by the owner**;

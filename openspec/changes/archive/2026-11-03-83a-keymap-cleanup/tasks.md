@@ -66,6 +66,6 @@
   controller or listening checks. Run the available isolated terminal walkthrough
   and automated checks. Keep untested items open in `docs/LIVE-CHECKS.md`; simulated
   MIDI does not prove the SMC-PAD hardware map.
-- [ ] 5.4 Only after tests and owner acceptance, archive through `openspec archive`.
+- [x] 5.4 Only after tests and owner acceptance, archive through `openspec archive`.
   Check the rebuilt main specs and scenario coverage, run strict validation and
   `task check`, then commit. Do not archive manually or start 84 early.
