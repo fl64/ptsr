@@ -44,7 +44,8 @@ controller profile or sequencer here.
 
 The broad parity goal covers all screens and modes in the roadmap. This delta specifies
 Chop and the owner-approved MIDI copy, file/swap target and question-route repairs,
-not fixes for all differences.
+plus the separately approved held-keyboard release through learn, not fixes for all
+differences.
 A newly found difference is a scope decision, not permission to change more behavior.
 
 ## Decisions
@@ -83,6 +84,47 @@ Chop remains on the UI route. Normal performance pads still go directly to the a
 queue; the UI must not trigger them again. Keep the `accepted` field and epoch filtering.
 Keep question and learn guards before the Chop handler. Assignment previews follow the
 existing keyboard logic; do not add a new velocity rule for bare slice previews.
+
+### Linked Chop gate release (owner approved on 2026-11-03)
+
+The owner approved the narrow release repair after the four failing task 2.1 gate tests.
+Keep the original device/channel/control, absolute pad and project epoch for UI-routed
+Chop hit candidates, separate from accepted direct hits. Give a candidate a stable
+press identity until its control releases or disconnects. Carry that identity to App;
+only a Chop handler call whose pad command enters the UI audio queue records a pad hold.
+Bare previews, assignment targets, guarded and queue-rejected hits do not become holds.
+Return the local send result to the Chop handler; do not send an acknowledgement to MIDI.
+Record the audio-held epoch only after a successful push. A rejected retrigger must keep
+an older accepted hold and its release; a rejected hit from another control must not
+acquire that hold. Buffer an accepted hold's release if the UI audio queue is full.
+Chop tests use offline Audio with its real project gate, not an invented send result.
+
+On release, dispatch reports the original UI candidate and epoch without sending a
+second direct audio release. App releases a recorded pad hold through its existing
+project-scoped audio sender, before question/learn hit guards can consume it. Accepted
+direct hits retain their current queue, pending-release and acceptance rules. If one
+control has both direct and UI holds for the same pad/epoch, report the direct release
+first and clear the matching UI hold so it does not release twice. Project replacement
+clears App's UI hold records; stale stamped events remain rejected by the existing gate.
+This is local hold bookkeeping, not feedback to MIDI or 85's acknowledgement protocol.
+
+Cover note-off and note-on zero, CC0, disconnect, source/channel separation, mode guards,
+route changes and project epochs. Use offline Audio to check the UI gate actually stops;
+no owner audio device is opened. The full parity WAV remains task 2.2.
+
+### Held keyboard release through learn (owner approved on 2026-11-03)
+
+After the keyboard-only gap below was reported separately, the owner approved its narrow
+repair with "go" in the continuation session. A keyboard pad held before F10 must pass
+its release through screen learn. Use the existing held-key filter and Pads' original
+absolute target; bank or screen changes before F10 must not move the release target.
+Only a pad key already tracked as held may pass. Add a read-only held-pad query to the
+input helper so a new silent learn-mode key cannot release a pad held by MIDI.
+Do not pass new hits, other commands or unrelated releases through the learn guard.
+Keep learn picks, pending controls, Enter, Esc and saved bindings unchanged. A release
+must not pick another element or confirm a binding. Test the keyboard, raw notes and
+learned CC80 button with published frames, plus a silent new key beside an older hold.
+No change to text input, picker priority or the 85 pending-action protocol is authorized.
 
 ### Silent copy targeting (owner approved on 2026-11-03)
 
@@ -123,9 +165,9 @@ published frame boundaries. Further differences still require an owner scope dec
 Run the shared workflows on Pads, pad edit, marking, file in hand, pad swap, pad copy
 (from 83a), question, learn, Chop before assignment, linked-slice listen and by-hand assignment. Keep existing
 X-Session tests unchanged. Add gate release coverage after a screen and bank change.
-A difference outside the Chop, copy and approved file/swap/question deltas blocks the
-affected step until it is documented and its scope is agreed. Do not skip the test or
-change an assertion to accept an unknown result.
+A difference outside the Chop, copy, approved file/swap/question and held-keyboard
+learn deltas blocks the affected step until it is documented and its scope is agreed.
+Do not skip the test or change an assertion to accept an unknown result.
 
 Render paired linked-pad hits and low/high MIDI velocity through the implemented route
 to `renders/84-input-parity.wav`. Check finite samples, no clipping, expected silence,
@@ -179,9 +221,64 @@ No scenario goes into the main specs until its test passes.
   Pads, pad edit, sounding marking across banks and silent screen learn pass the
   paired baseline tests. Tasks 1.2 and 1.4 stay open until the approved repairs and
   regressions pass. Do not remove, skip or weaken the failing tests to complete them.
+- Task 2.1 draft on `4f6c1be` carries velocity and calls `chop_pad`. All six Chop
+  scenario tests pass at the command/state level. This also exposes a release gap
+  for gate pads now started by the UI route. The draft is not ready to commit.
+  `/tmp/ptsr-84-2.1-route.log` has 6 passed and 4 failed:
+  - `chop_linked_gate_release_reaches_audio` and
+    `chop_linked_button_gate_release_reaches_audio`: hit linked gate pad 18 (zero-based)
+    on Chop in bank 2, then send note-off or CC80=0. Keyboard sends one
+    `PadRelease { pad: 18 }`. Both MIDI paths send no audio command. The UI held flag
+    clears in the same bank, but the newly started gate voice gets no release.
+  - `chop_linked_gate_release_keeps_original_pad` and
+    `chop_linked_button_gate_release_keeps_original_pad`: after that hit, turn to bank 3,
+    open FX with F4 and release the original control. Keyboard still releases pad 18.
+    Both MIDI paths send no audio command and leave the original UI held flag true.
+  The MIDI hand branch (`midi.rs:484`) sends `PadHit` without recording a held identity;
+  only an accepted direct hit enters `pressed` (`midi.rs:508`). An untracked release
+  uses the current bank (`midi.rs:523`). App's `PadRelease` branch only clears UI held
+  state (`main.rs:4690`), because the old direct path had already sent the audio release.
+  A linked Chop hit now sends its pad voice through App, so that old release rule is
+  not sufficient. At the committed baseline MIDI Chop played a slice preview, not that
+  gate voice; this is a regression risk exposed by the proposed route, not a claim of
+  a heard or physical-controller result. The owner approved the narrow release extension
+  on 2026-11-03. Keep all four regressions and implement the decision above before task
+  2.1 can pass.
+- The release draft now passes its MIDI gate, queue-full retrigger, route/epoch,
+  disconnect, device/channel/control and offline gate-stop checks. A broader silent-hit
+  regression exposed an existing keyboard-only learn release gap. In
+  `chop_silent_hits_have_no_pad_release`, hold keyboard pad 18 before opening screen
+  learn with F10, send and release an ignored MIDI control, then release the original
+  keyboard key while learn stays open. The ignored MIDI control sends no pad hit or
+  release and preserves the older held state. The keyboard release then sends no
+  audio command: `keyboard_event` calls `learn_key` before `HeldPads::filter`, and
+  `learn_key` returns immediately for every `KeyEventKind::Release` (`main.rs:3806`,
+  `:5706` before further edits). This early return is present in `4f6c1be`, not added
+  by the MIDI repair. This is command/state evidence, not a heard gate result.
+  `/tmp/ptsr-84-2.1-current-check.log` has 595 passed and 1 failed; the targeted Chop
+  suite has 18 passed and 1 failed. Formatting and clippy pass. No test was removed,
+  skipped or changed to accept the missing keyboard release. The owner then approved
+  the narrow keyboard repair in the continuation session; see Decisions above. Keep
+  task 2.1 open until that repair and all regressions pass the full check.
 - The five-atomic snapshot and the pending-command race remain work for 85. The
   findings above use separate published frames; they do not authorize a same-frame
   race fix.
+
+## Task 2.1 verification
+
+After the separate keyboard approval, `held_pad_release_passes_screen_learn` reproduced
+`release 18: []` before the keyboard fix (`/tmp/ptsr-84-keyboard-learn-red.log`). The
+repair keeps that regression and `chop_silent_hits_have_no_pad_release` unchanged.
+`held_pad_release_passes_screen_learn` and `new_learn_keys_do_not_release_an_older_pad`
+cover the new delta through production keyboard, raw notes and learned CC80 routes.
+The offline gate-stop test also covers a bank/screen change followed by F10 for all
+three sources. Tests verify commands, learner state and offline samples, not hardware.
+
+`/tmp/ptsr-84-2.1-approved-check.log` records a green full `task check`: formatting,
+strict clippy, workspace tests (598 App tests, 70 input tests, no failures) and the
+callback benchmark. The 32-voice callback mean is 9.32% and p99 is 16.12% of the block
+budget; its maximum is 111.34%. Strict OpenSpec validation passes all 16 items.
+This does not finish task 2.2 or owner acceptance. The full parity WAV is not present.
 
 ## Risks / Trade-offs
 
@@ -195,8 +292,7 @@ No scenario goes into the main specs until its test passes.
 ## Open questions
 
 - Will further paired tests expose a difference outside the approved repairs?
-  Default: record it and stop the affected task for another scope decision. The new
-  approval covers only the three confirmed file/swap/question differences above.
+  Default: record it and stop the affected task for another scope decision.
 - Which physical pad controller and preset will the owner use for acceptance? Default:
   the existing notes 36–51 fallback or an explicit learned pad binding. No SMC-PAD
   relative mode or port assumption is needed for 84.

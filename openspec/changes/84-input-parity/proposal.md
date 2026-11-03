@@ -14,7 +14,10 @@ not stop direct MIDI pad hits. The owner approved these narrow repairs in 84.
 - Add one test driver for keyboard events and raw MIDI bytes through the real dispatch.
 - Compare engine commands and visible state for existing pad workflows.
 - Make controller pads on Chop use the same listen and assign logic as keyboard pads.
-- Keep the original MIDI velocity when the UI plays a linked pad.
+- Keep the original MIDI velocity when the UI plays a linked pad. Keep its original
+  release target after bank/screen changes, without adding releases for silent hits.
+- Pass a keyboard pad held before F10 through screen learn on release, preserving its
+  original pad after bank/screen changes. Keep new learn hits silent and bindings unchanged.
 - Keep normal MIDI pad hits on their direct audio path and keep the X-Session defaults.
 - Restore silent MIDI copy targeting from 83a, with the same selected target and
   replacement question as the keyboard. Keep releases of already held pads.
@@ -29,7 +32,9 @@ not stop direct MIDI pad hits. The owner approved these narrow repairs in 84.
 
 - `input-devices`: controller pad listening and assignment on Chop match keyboard pads;
   MIDI copy targeting follows the existing silent-copy contract; file and swap targets,
-  swap undo and pad silence under questions match the existing keyboard route.
+  swap undo and pad silence under questions match the existing keyboard route;
+  linked Chop gate pads keep their original release route; keyboard pads held before
+  F10 release through learn without letting new hits sound.
 
 ## Impact
 
@@ -55,9 +60,14 @@ Do two passes, one with keyboard pads and one with controller pads:
    The same slices must play and become selected.
 2. Assign slices to pads. Change a pad's pitch or filter. Hit it on Chop: both inputs
    must play that pad's sound and select its linked slice. A light MIDI hit stays quiet.
+   Set it to gate, hold it, change bank, open FX with F4 and release the original key
+   or controller pad. The original sound must stop; no new-bank pad must release.
 3. Press P and hit target pads, including a pad in another bank. The same plan must fill.
    Apply it with the keyboard; controller pad hits must not bypass replacement questions.
 4. Open a question or screen learn and hit pads. They must not play or change a plan.
+   Also hold a gate pad before F10, change bank or screen, then open learn and release
+   the original control. Only the original pad must stop; learn and its pending binding
+   must stay open. A new pad key in learn must not stop a held MIDI pad.
 5. On Pads, take a copy with Ctrl+C. Hit an empty target in another bank, then repeat
    with an occupied target. Both input passes must select the same target without sound.
    Only Enter may replace it; Esc keeps the copy in hand. Hold a gate pad before taking
