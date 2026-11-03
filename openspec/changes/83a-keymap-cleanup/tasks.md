@@ -40,7 +40,7 @@
 
 ## 4. Pad copy
 
-- [ ] 4.1 Add the copy snapshot, distinct hand state, App command and `pad.copy` learn
+- [x] 4.1 Add the copy snapshot, distinct hand state, App command and `pad.copy` learn
   entry with Ctrl+C. Use existing snapshot/restore helpers and shared samples. Route
   keyboard and MIDI target hits to App without direct duplicate sound; keep original
   releases and project epochs. Test all copy scenarios, target questions and recheck,

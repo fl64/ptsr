@@ -15,8 +15,8 @@ use crate::session::{FxState, PadState, Session};
 /// Everything a pad has, as the undo keeps it (61): the sound by reference.
 #[derive(Clone, Debug)]
 pub struct PadSnap {
-    file: Option<PathBuf>,
-    name: Option<String>,
+    pub(crate) file: Option<PathBuf>,
+    pub(crate) name: Option<String>,
     missing: bool,
     gate: bool,
     volume_db: i8,
@@ -28,8 +28,8 @@ pub struct PadSnap {
     group: u8,
     sound: Option<Arc<Sample>>,
     region: Region,
-    slice: Option<u16>,
-    link: Option<(u32, u32)>,
+    pub(crate) slice: Option<u16>,
+    pub(crate) link: Option<(u32, u32)>,
 }
 
 impl PartialEq for PadSnap {

@@ -23,6 +23,7 @@ PageDown = "bank.next"
 "Ctrl+7" = "bank.7"
 "Ctrl+8" = "bank.8"
 "Ctrl+X" = "pad.take"            # the next pad hit swaps the two pads
+"Ctrl+C" = "pad.copy"            # the next pad hit gets a copy of this one (83a)
 "[" = "master.volume_down"         # same physical keys as х ъ in the Russian layout
 "]" = "master.volume_up"
 F10 = "learn.toggle"          # bind controller knobs and buttons to what the screen shows (47, 57)

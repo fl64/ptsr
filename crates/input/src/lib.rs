@@ -34,6 +34,8 @@ pub enum Action {
     MasterVolume(i8),
     /// Take the selected pad in hand; the next pad hit swaps the two.
     PadTake,
+    /// Take a copy of the selected loaded pad (83a); the next pad hit places it.
+    PadCopy,
     PadRename,
     PadSelect(Dir),
     PadModeNext,
@@ -197,6 +199,7 @@ impl Action {
             "bank.prev" => Self::BankPrev,
             "master.volume_down" => Self::MasterVolume(-1),
             "pad.take" => Self::PadTake,
+            "pad.copy" => Self::PadCopy,
             "pad.rename" => Self::PadRename,
             "master.volume_up" => Self::MasterVolume(1),
             b if b.starts_with("bank.") => match b[5..].parse::<usize>() {
@@ -769,6 +772,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "pad.select_down",
         label: "select pad down",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pad.copy",
+        label: "copy pad",
         group: Group::Pads,
         knob: false,
     },

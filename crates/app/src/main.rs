@@ -128,6 +128,11 @@ enum Ask {
         pads: Vec<usize>,
         lines: Vec<String>,
     },
+    /// A copy in hand replaces a pad that holds something (83a).
+    CopyPad {
+        source: usize,
+        lines: Vec<String>,
+    },
 }
 
 /// The folder picker of the settings Paths tab (11): which row opened it, the folder it
@@ -349,7 +354,8 @@ impl Ask {
             | Ask::PutFile { lines, .. }
             | Ask::ResetProfile { lines, .. }
             | Ask::ResetPads { lines, .. }
-            | Ask::ClearPads { lines, .. } => lines,
+            | Ask::ClearPads { lines, .. }
+            | Ask::CopyPad { lines, .. } => lines,
         }
     }
 }
@@ -416,6 +422,9 @@ struct App {
     master_db: i8,
     /// The pad taken with Ctrl+X, waiting for the pad to swap with.
     pad_in_hand: Option<usize>,
+    /// A copy in hand (83a): the source pad it was taken from; the snapshot lives until
+    /// placement, so a later change of the source does not change what is placed.
+    copy_in_hand: Option<(usize, pads::PadSnap)>,
     /// "2.61 s ▁▃█▅▂" for the file being previewed.
     /// Duration and peak envelope of the selected file, once the preview loaded it.
     preview: Option<(f32, Vec<f32>)>,
@@ -581,6 +590,7 @@ impl App {
         self.browser.set_filter(String::new());
         self.browser.in_hand = None;
         self.pad_in_hand = None;
+        self.copy_in_hand = None;
         self.stop_preview();
         self.edit = false;
         self.set_master(sess.master_db);
@@ -1322,9 +1332,15 @@ impl App {
     /// What the help line says about the states of this moment.
     fn help_state(&self) -> HelpState {
         HelpState {
-            hand: match (self.browser.in_hand.is_some(), self.pad_in_hand.is_some()) {
-                (true, _) => Some("hit a pad to put it there"),
-                (false, true) => Some("hit a pad to swap them"),
+            hand: match (
+                self.browser.in_hand.is_some(),
+                self.pad_in_hand.is_some(),
+                self.copy_in_hand.is_some(),
+            ) {
+                (true, _, _) => Some("hit a pad to put it there"),
+                (false, true, _) => Some("hit a pad to swap them"),
+                // 83a: a copy in hand names its next step instead of the swap hint
+                (false, false, true) => Some("hit a pad to copy it there"),
                 _ => None,
             },
             preview_on: self.preview_on,
@@ -1415,6 +1431,12 @@ impl App {
                         Some(Ask::PutFile { abs, path, .. }) => {
                             let (abs, path) = (*abs, path.clone());
                             self.put_file(abs, path);
+                        }
+                        // 83a: Enter places the copy on the target the question names;
+                        // if the target changed since, place_copy asks again
+                        Some(Ask::CopyPad { source, .. }) => {
+                            let source = *source;
+                            self.place_copy_asked(source);
                         }
                         None => {}
                     }
@@ -1872,6 +1894,12 @@ impl App {
             }
             Action::Back if self.browser.in_hand.is_some() => self.browser.in_hand = None,
             Action::Back if self.pad_in_hand.is_some() => self.pad_in_hand = None,
+            // 83a: Esc drops a pending copy; in the question it keeps the target and the copy
+            Action::Back if matches!(self.ask, Some(Ask::CopyPad { .. })) => self.ask = None,
+            Action::Back if self.copy_in_hand.is_some() => {
+                self.copy_in_hand = None;
+                self.flash = Some(("copy dropped".into(), Instant::now()));
+            }
             // Esc on the files screen drops a filter first (66)
             Action::Back if self.screen == Screen::Files && self.browser.clear_filter() => {}
             // a pad in hand: Enter swaps with the selected pad instead of opening its edit
@@ -1885,6 +1913,16 @@ impl App {
             Action::PadTake => {
                 self.browser.in_hand = None;
                 self.pad_in_hand = Some(self.pads.selected_abs());
+            }
+            // 83a: Ctrl+C copies, Ctrl+Q stays the quit; a copy and a swap never share a hand
+            Action::PadCopy if self.screen == Screen::Pads => {
+                self.pad_in_hand = None;
+                self.take_copy();
+            }
+            Action::PadPress { pad, .. } if self.copy_in_hand.is_some() => {
+                let abs = self.pads.bank * PADS_PER_BANK + pad;
+                self.pads.selected = pad;
+                self.copy_target(abs);
             }
             Action::PadPress { pad, .. } if self.pad_in_hand.is_some() => {
                 self.swap_with(self.pads.bank * PADS_PER_BANK + pad);
@@ -3060,6 +3098,133 @@ impl App {
         self.pads.loading[abs] = Some(0);
         self.load_region[abs] = region;
         self.followers.push((leader, abs, self.load_gen[abs]));
+    }
+
+    /// 83a: Ctrl+C takes a copy of the selected loaded pad; the snapshot is taken now,
+    /// so later changes of the source do not change what is placed. Empty, missing and
+    /// loading sources are refused with a plain notice, nothing else changes.
+    fn take_copy(&mut self) {
+        let abs = self.pads.selected_abs();
+        if self.pads.sound[abs].is_none() {
+            self.flash = Some(("Copy what? This pad holds nothing.".into(), Instant::now()));
+            return;
+        }
+        if self.pads.missing[abs] {
+            self.flash = Some((
+                "Copy what? The file this pad plays is gone.".into(),
+                Instant::now(),
+            ));
+            return;
+        }
+        if self.pads.loading[abs].is_some() {
+            self.flash = Some((
+                "Wait until loading finishes, then copy.".into(),
+                Instant::now(),
+            ));
+            return;
+        }
+        let snap = self.pads.snapshot(abs);
+        self.copy_in_hand = Some((abs, snap));
+        self.flash = Some((("COPY · hit a pad").into(), Instant::now()));
+    }
+
+    /// 83a: a pad hit with a copy in hand picks the target: the hit does not play, the
+    /// source stays; a hit on the source cancels the copy. `false` when no copy is in
+    /// hand, or the target is loading and the copy waits.
+    fn copy_target(&mut self, abs: usize) -> bool {
+        let Some((source, snap)) = self.copy_in_hand.clone() else {
+            return false;
+        };
+        if abs == source {
+            // a hit on the original source cancels: no pad changes, no undo step
+            self.copy_in_hand = None;
+            self.flash = Some(("copy dropped".into(), Instant::now()));
+            return true;
+        }
+        if self.pads.loading[abs].is_some() {
+            self.flash = Some((
+                "Wait until loading finishes, then place the copy.".into(),
+                Instant::now(),
+            ));
+            return true;
+        }
+        if self.pads.sound[abs].is_some() && self.pads.loading[abs].is_none() {
+            let mut lines = vec!["Replace what lies on 1 pad?".to_string()];
+            lines.push(format!(
+                "  {}: {} → {}",
+                pad_place(abs),
+                pad_name(&self.pads, abs),
+                self.copy_name(&snap, abs)
+            ));
+            lines.extend(overwrite_footer());
+            // a changed target asks again: only the same question, still open, places
+            if !matches!(&self.ask,
+                Some(Ask::CopyPad { source: s, lines: old })
+                    if *s == source && old[..2] == lines[..2])
+            {
+                self.ask = Some(Ask::CopyPad { source, lines });
+                return true;
+            }
+        }
+        self.place_copy(source, snap, abs);
+        true
+    }
+
+    /// Enter in the copy question: the question names the source, so the target is the
+    /// selected pad; a changed target asks again inside `copy_target`.
+    fn place_copy_asked(&mut self, source: usize) {
+        let Some((snap_source, _)) = self.copy_in_hand.clone() else {
+            self.ask = None;
+            return;
+        };
+        debug_assert_eq!(snap_source, source, "the question names the copy in hand");
+        let abs = self.pads.selected_abs();
+        self.copy_target(abs);
+    }
+
+    /// Puts the copy on `abs`: the snapshot answers the pad, its name gets ` 2`, the
+    /// source stays and the hand clears. One undo step for the target only.
+    fn place_copy(&mut self, source: usize, mut snap: pads::PadSnap, abs: usize) {
+        self.ask = None;
+        self.copy_in_hand = None;
+        let name = self.copy_name(&snap, abs);
+        if let Some(n) = &mut snap.name {
+            *n = format!("{n} 2");
+        } else {
+            snap.name = Some(name);
+        }
+        // one undo step for the target only: the source did not change, so only the
+        // target's snapshot answers the undo
+        let b = self.before();
+        for cmd in self.pads.put_back(abs, &snap) {
+            self.send(cmd);
+        }
+        let _ = source;
+        self.note_step_pads(b, abs, "copy".into());
+        self.dirty();
+        self.flash = Some(("copy placed".into(), Instant::now()));
+    }
+
+    /// The displayed name of the copy before it is placed: the source's name plus ` 2`.
+    fn copy_name(&self, snap: &pads::PadSnap, abs: usize) -> String {
+        let _ = abs;
+        match &snap.name {
+            Some(n) => format!("{n} 2"),
+            None => {
+                // the file name as the panel shows it, without the custom name
+                let stem = snap
+                    .file
+                    .as_deref()
+                    .and_then(|f| f.file_stem())
+                    .map(|s| s.to_string_lossy().into_owned());
+                match (stem, snap.slice) {
+                    (Some(stem), Some(n)) => format!("{stem} {n} 2"),
+                    (Some(stem), None) => format!("{stem} 2"),
+                    (None, Some(n)) => format!("pad {} 2", n),
+                    (None, None) => "copy 2".into(),
+                }
+            }
+        }
     }
 
     /// Swaps the pad in hand with `abs`.
@@ -4473,6 +4638,11 @@ impl App {
             midi::Event::PadHit { abs, .. } if self.browser.in_hand.is_some() => {
                 self.put_in_hand(abs)
             }
+            // 83a: a controller note targets the copy as a keyboard pad hit does;
+            // the hit does not also trigger sound
+            midi::Event::PadHit { abs, .. } if self.copy_in_hand.is_some() => {
+                self.copy_target(abs);
+            }
             midi::Event::PadHit { abs, .. } if self.pad_in_hand.is_some() => self.swap_with(abs),
             midi::Event::PadHit { abs, accepted } => {
                 // The MIDI reader reports whether the audio queue accepted the note.
@@ -5092,6 +5262,23 @@ impl App {
         if pads.is_empty() && fx.is_none() {
             return;
         }
+        self.push_step(pads, fx, what);
+    }
+
+    /// 83a: the undo of a copy: only the given target goes into the step, whatever
+    /// else changed since `b` was taken.
+    fn note_step_pads(&mut self, b: Before, target: usize, what: String) {
+        let fx = (b.fx != self.pads.fx).then_some(b.fx);
+        let pads = vec![(target, b.pads[target].clone())];
+        self.push_step(pads, fx, what);
+    }
+
+    fn push_step(
+        &mut self,
+        pads: Vec<(usize, pads::PadSnap)>,
+        fx: Option<[pads::FxSlot; engine::FX_SLOTS]>,
+        what: String,
+    ) {
         let now = Instant::now();
         let touched: Vec<usize> = pads.iter().map(|(a, _)| *a).collect();
         if let Some(last) = self.history.last_mut()
@@ -5717,6 +5904,7 @@ fn main() -> std::io::Result<()> {
         master_db: 0,
         preview: None,
         pad_in_hand: None,
+        copy_in_hand: None,
         session_path: session::path(),
         project: start_project,
         project_cfg: loaded.config.project,
@@ -7931,6 +8119,7 @@ fn ctrl_text(a: Action) -> String {
         Action::RecordMic(_) => "mic: hold".into(),
         Action::RecordOutputToggle => "output".into(),
         Action::PadTake => "take pad".into(),
+        Action::PadCopy => "copy pad".into(),
         Action::Undo => "undo".into(),
         Action::MarkerNudge { fine: true, .. } => "nudge fine".into(),
         Action::MarkerNudge { fine: false, .. } => "slice start".into(),
@@ -7996,6 +8185,7 @@ fn describe(a: Action) -> String {
         Action::MasterVolume(s) if s < 0 => "master volume down 1 dB".into(),
         Action::MasterVolume(_) => "master volume up 1 dB".into(),
         Action::PadTake => "take the selected pad; the next pad hit swaps them".into(),
+        Action::PadCopy => "copy the selected pad; the next pad hit gets a copy".into(),
         Action::PadRename => "pads: name the selected pad".into(),
         Action::PadSelect(d) => format!("select pad {}", format!("{d:?}").to_lowercase()),
         Action::PadModeNext => "pad mode: one-shot / gate".into(),
@@ -8110,6 +8300,7 @@ fn help_section(a: Action) -> usize {
         | Action::PadMarkToggle
         | Action::PadClear
         | Action::PadTake
+        | Action::PadCopy
         | Action::PadRename
         | Action::LearnToggle => 0,
         Action::BankNext | Action::BankPrev | Action::BankSelect(_) => 1,
@@ -8942,6 +9133,7 @@ mod tests {
             master_db: 0,
             preview: None,
             pad_in_hand: None,
+            copy_in_hand: None,
             session_path: "session.toml".into(),
             project: None,
             project_cfg: config::ProjectConfig::default(),
@@ -9910,16 +10102,13 @@ Enter = "browser.hold"
 
     #[test]
     fn planned_defaults_do_not_produce_shadow_warnings() {
-        // 83a tasks 2.1 and 3.1 ship Alt+R, Ctrl+G, H, U/O and Shift+H; only pad copy
-        // (4.1) has not shipped, so its chord produces no shadow warning yet.
+        // 83a task 4.1 ships every cleanup binding; an owner override of a shipped
+        // default warns. No planned binding is left.
         let (_, warnings) = loaded_notice_map(
             super::DEFAULT_KEYMAP,
             "[screens.pads]\n\"Ctrl+C\" = \"none\"\n",
         );
-        assert!(
-            warnings.is_empty(),
-            "new bindings have not shipped: {warnings:?}"
-        );
+        assert_eq!(warnings, ["keymap.toml: Ctrl+C on pads hides pad.copy"]);
     }
 
     /// 83a keyboard "An owner key hides a new default" on the shipped map: the owner's
@@ -19297,6 +19486,267 @@ Enter = "browser.hold"
 
     fn hit(app: &mut super::App, pad: usize) {
         app.apply(Action::PadPress { pad, velocity: 1.0 });
+    }
+
+    /// A pad loaded for the copy tests: bank 1, pad Q, with the settings the copy keeps.
+    fn loaded_q(app: &mut super::App) {
+        let wave: Vec<f32> = (0..48_000)
+            .map(|i| (i as f32 * 440.0 / 48_000.0 * std::f32::consts::TAU).sin() * 0.8)
+            .collect();
+        app.pads.sound[0] = Some(std::sync::Arc::new(engine::Sample::mono(wave)));
+        app.pads.file[0] = Some(std::path::PathBuf::from("kick.wav"));
+        app.pads.custom_name[0] = Some("Бочка".into());
+        app.pads.gate[0] = true;
+        app.pads.volume_db[0] = -3;
+        app.pads.pitch[0] = 2;
+        app.pads.attack_ms[0] = 3;
+        app.pads.sends[0] = [30, 20];
+        app.pads.group[0] = 4;
+        app.pads.slice[0] = Some(3);
+        app.pads.link[0] = Some((1, 2));
+    }
+
+    /// A copy of the settings of pad `abs`, as `snapshot` has them.
+    fn settings_of(app: &super::App, abs: usize) -> Vec<(String, String)> {
+        let p = &app.pads;
+        vec![
+            ("volume".into(), p.volume_db[abs].to_string()),
+            ("pitch".into(), p.pitch[abs].to_string()),
+            ("gate".into(), p.gate[abs].to_string()),
+            ("attack".into(), p.attack_ms[abs].to_string()),
+            ("sends".into(), format!("{:?}", p.sends[abs])),
+            ("group".into(), p.group[abs].to_string()),
+            ("slice".into(), format!("{:?}", p.slice[abs])),
+            ("link".into(), format!("{:?}", p.link[abs])),
+            ("name".into(), format!("{:?}", p.custom_name[abs])),
+        ]
+    }
+
+    /// 83a pad-assignment "Copy the selected pad with all settings": Ctrl+C takes a copy,
+    /// a hit on an empty pad places it with the name plus ` 2`, and the hit plays nothing.
+    #[test]
+    fn copy_the_selected_pad_with_all_settings() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0; // Q
+        let q = settings_of(&app, 0);
+        app.sent.clear();
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        assert_eq!(flash(&app), "COPY · hit a pad");
+        app.sent.clear();
+        hit(&mut app, 1); // W
+        assert!(
+            !app.sent
+                .iter()
+                .any(|c| matches!(c, Command::PadPress { .. })),
+            "the target hit does not play: {:?}",
+            app.sent
+        );
+        // W keeps all Q's settings, with its name ending in ` 2`
+        assert!(app.pads.file[1].is_some());
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert!(app.copy_in_hand.is_none(), "the copy hand clears");
+        let w = settings_of(&app, 1);
+        // name is the one setting that differs: ` 2` was appended
+        let q: Vec<_> = q.into_iter().filter(|(k, _)| k != "name").collect();
+        let w: Vec<_> = w.into_iter().filter(|(k, _)| k != "name").collect();
+        assert_eq!(q, w, "every setting but the name copies");
+        // Q stays unchanged
+        assert_eq!(app.pads.custom_name[0].as_deref(), Some("Бочка"));
+        // one undo step for the target only: W comes back, Q stays
+        app.apply(Action::Undo);
+        assert!(app.pads.file[1].is_none(), "the target is back to empty");
+        assert!(app.pads.file[0].is_some(), "the source stays");
+    }
+
+    /// 83a pad-assignment "Copy shares sample data": both pads point at the same sample.
+    #[test]
+    fn copy_shares_sample_data() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        hit(&mut app, 1);
+        let (a, b) = (app.pads.sound[0].clone(), app.pads.sound[1].clone());
+        assert!(matches!((a, b), (Some(x), Some(y)) if std::sync::Arc::ptr_eq(&x, &y)));
+        let region = app.pads.region[0];
+        assert_eq!(app.pads.region[1], region, "the bounds come along");
+        assert_eq!(
+            app.pads.link[1], app.pads.link[0],
+            "the slice link comes along"
+        );
+    }
+
+    /// 83a pad-assignment "Copy asks before replacing a pad", "Confirm a pad copy
+    /// replacement" and "A changed copy target asks again".
+    #[test]
+    fn copy_asks_before_replacing_a_pad() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        loaded_q(&mut app); // Q again; put something on W too
+        let wave: Vec<f32> = (0..48_000)
+            .map(|i| (i as f32 * 220.0 / 48_000.0 * std::f32::consts::TAU).sin() * 0.7)
+            .collect();
+        app.pads.sound[1] = Some(std::sync::Arc::new(engine::Sample::mono(wave)));
+        app.pads.file[1] = Some(std::path::PathBuf::from("snare.wav"));
+        let was = app.pads.snapshot(1);
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        hit(&mut app, 1); // W, occupied
+        assert!(matches!(&app.ask, Some(super::Ask::CopyPad { .. })));
+        // Esc keeps the target and the copy stays in hand
+        app.apply(Action::Back);
+        assert!(app.ask.is_none());
+        assert_eq!(app.pads.snapshot(1), was, "the target stays");
+        assert!(app.copy_in_hand.is_some(), "the copy stays in hand");
+        // a hit on the source cancels
+        hit(&mut app, 0);
+        assert!(app.copy_in_hand.is_none(), "a hit on the source cancels");
+        assert_eq!(app.pads.snapshot(1), was);
+        // again: Enter confirms, only the named target is replaced
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        hit(&mut app, 1);
+        app.pads.selected = 1; // Enter answers about the selected pad
+        app.apply(Action::PadEdit); // Enter
+        assert!(app.ask.is_none(), "the question was answered");
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert!(app.pads.file[0].is_some(), "the source stays");
+        // a changed target asks again: a second Enter with a different selected pad
+        // places nothing on it
+        app.pads.sound[2] = app.pads.sound[0].clone();
+        app.pads.file[2] = Some("hat.wav".into());
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        hit(&mut app, 2); // occupied E: the question names E
+        let before_e = app.pads.snapshot(2);
+        app.pads.selected = 0; // the selection moved: Enter answers, the target changed
+        app.apply(Action::PadEdit);
+        assert!(
+            matches!(&app.ask, Some(super::Ask::CopyPad { .. })),
+            "it asks again"
+        );
+        assert_eq!(app.pads.snapshot(2), before_e, "nothing was replaced");
+    }
+
+    /// 83a pad-assignment "Esc drops a pending copy" and "Copy onto the source cancels".
+    #[test]
+    fn esc_drops_a_pending_copy() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        app.apply(Action::Back);
+        assert!(app.copy_in_hand.is_none(), "Esc drops the copy");
+        assert!(app.pads.file[1].is_none(), "no pad changed");
+        assert!(app.history.is_empty(), "no undo step was added");
+    }
+
+    /// 83a pad-assignment "Copy refuses an unavailable source or loading target".
+    #[test]
+    fn copy_refuses_an_unavailable_source_or_loading_target() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.pads.selected = 0; // empty Q
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        assert_eq!(flash(&app), "Copy what? This pad holds nothing.");
+        assert!(app.copy_in_hand.is_none());
+        // a loading source refuses
+        loaded_q(&mut app);
+        app.pads.loading[0] = Some(0);
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        assert!(flash(&app).contains("Wait until loading finishes"));
+        assert!(app.copy_in_hand.is_none());
+        app.pads.loading[0] = None;
+        // a copy in hand with a loading target waits
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        assert!(app.copy_in_hand.is_some());
+        app.pads.loading[1] = Some(0);
+        hit(&mut app, 1);
+        assert!(flash(&app).contains("Wait until loading finishes"));
+        assert!(app.pads.file[1].is_none(), "nothing was placed");
+        assert!(app.copy_in_hand.is_some(), "the copy waits");
+    }
+
+    /// 83a pad-assignment "Copy changes one target despite marks": the hit names one target.
+    #[test]
+    fn copy_changes_one_target_despite_marks() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        app.pads.marked = (0..super::PADS).collect();
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        hit(&mut app, 1);
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert!(app.pads.file[2].is_none(), "only W changed");
+        assert!(!app.pads.marked.is_empty(), "the marks stay");
+    }
+
+    /// 83a pad-assignment "Copy keeps the settings from pickup": the snapshot is taken at
+    /// Ctrl+C, later changes of the source do not change the pending copy.
+    #[test]
+    fn copy_keeps_the_settings_from_pickup() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
+        app.pads.pitch[0] = 9; // the source changes after the pickup
+        hit(&mut app, 1);
+        assert_eq!(app.pads.pitch[1], 2, "the pitch from pickup");
+        assert_eq!(app.pads.pitch[0], 9, "the source keeps its change");
+    }
+
+    /// 83a pad-assignment "Copy target from a controller in another bank": a controller
+    /// note places the copy without sound, and held releases keep working.
+    #[test]
+    fn copy_target_from_a_controller_in_another_bank() {
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        app.apply(Action::PadCopy);
+        app.pads.bank = 1; // bank 2
+        app.sent.clear();
+        app.midi_event(super::midi::Event::PadHit {
+            abs: 16 + 2, // bank 2, pad E
+            accepted: true,
+        });
+        assert!(
+            !app.sent
+                .iter()
+                .any(|c| matches!(c, Command::PadPress { .. })),
+            "the target hit plays nothing: {:?}",
+            app.sent
+        );
+        assert_eq!(app.pads.custom_name[18].as_deref(), Some("Бочка 2"));
+        assert!(app.pads.file[0].is_some(), "the source stays");
+        assert!(app.copy_in_hand.is_none(), "the hand clears");
+        // a release of a held pad still works: no crash, nothing else changes
+        let before = app.pads.snapshot(4);
+        app.midi_event(super::midi::Event::PadRelease { abs: 4 });
+        assert_eq!(app.pads.snapshot(4), before);
+    }
+
+    /// 83a midi-learn "Pick pad copy in screen learn" and "Learn a button for pad copy":
+    /// Ctrl+C picks `pad.copy` and a learned button takes the same copy without sound.
+    #[test]
+    fn pick_pad_copy_in_screen_learn() {
+        let mut app = test_app();
+        loaded_q(&mut app);
+        app.pads.selected = 0;
+        app.apply(Action::LearnToggle);
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let k = ratatui::crossterm::event::KeyEvent::new(
+            ratatui::crossterm::event::KeyCode::Char('c'),
+            ratatui::crossterm::event::KeyModifiers::CONTROL,
+        );
+        assert!(app.learn_key(&keymap, &k), "the mode takes every key");
+        assert_eq!(picked(&app).0, "pad.copy");
+        assert!(app.copy_in_hand.is_none(), "learning takes no copy");
+        assert!(app.pads.file[1].is_none(), "no pad changed");
     }
 
     /// The region of the last slice sent to the preview voice.
