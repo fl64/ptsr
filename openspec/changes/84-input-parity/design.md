@@ -102,6 +102,17 @@ No scenario goes into the main specs until its test passes.
 - Confirmed at the baseline: MIDI Chop pads bypass `chop_pad`. This loses the keyboard
   slice selection and assign-target behavior and uses only the local slice number.
   Fix in 84; preserve original velocity for the linked-pad path.
+- Source audit after task 0.1 found a separate copy-route gap at `2b084d1` (unchanged
+  by the activation commit). In `crates/app/src/main.rs:6084`, `shared.hand` includes
+  file-in-hand, swap and Chop, but not `copy_in_hand`. On Pads with a copy in hand,
+  `crates/app/src/midi.rs:438-455` therefore sends a ready hit to the direct audio
+  queue before App handles the copy. An occupied loaded target can sound before the
+  replacement question. This contradicts the existing main-spec scenario
+  "Copy target from a controller in another bank" in `pad-assignment`.
+  The test at `crates/app/src/main.rs:20334` injects a ready `Event::PadHit` and
+  checks only App commands; it cannot detect that direct-queue hit.
+  This is a code-path finding, not a live sound or hardware result. No fix is applied.
+  Stop implementation for an owner scope decision before tasks 1.1 and 1.2.
 - Other differences are not yet audited by the paired driver. In particular, the
   five-atomic snapshot and the pending-command race are work for 85, not fixes made by
   task 0.1. Record observed results here during implementation.
@@ -117,6 +128,11 @@ No scenario goes into the main specs until its test passes.
 
 ## Open questions
 
+- May 84 also restore silent MIDI copy targeting required by the 83a main spec?
+  Proposed: add an explicit copy-route delta and a raw-MIDI regression, then fix that
+  route separately from the Chop fix. Keep normal performance hits direct and preserve
+  original held-pad releases. Default: no scope extension or code until the owner
+  decides; tasks 1.1 and 1.2 remain open.
 - Does the paired driver expose another input priority difference? Default: record it,
   stop the affected task and propose a small delta or a separate change before fixing it.
 - Which physical pad controller and preset will the owner use for acceptance? Default:
