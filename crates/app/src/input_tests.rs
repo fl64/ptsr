@@ -146,6 +146,131 @@ impl Drive {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Source {
+    Keyboard,
+    Notes,
+    Button,
+}
+
+#[derive(Debug, PartialEq)]
+struct Seen {
+    screen: Screen,
+    bank: usize,
+    selected: usize,
+    slice: Option<usize>,
+    plan: Option<chop::Plan>,
+    file_hand: Option<PathBuf>,
+    swap_hand: Option<usize>,
+    copy_hand: Option<usize>,
+    marks: Vec<usize>,
+    marking: bool,
+    question: Vec<String>,
+    notice: Option<String>,
+    history: Vec<(String, Vec<usize>)>,
+    pads: Vec<pads::PadSnap>,
+}
+
+impl Drive {
+    fn seen(&self) -> Seen {
+        Seen {
+            screen: self.app.screen,
+            bank: self.app.pads.bank,
+            selected: self.app.pads.selected,
+            slice: self.app.chop.as_ref().map(|chop| chop.selected),
+            plan: self.app.plan.clone(),
+            file_hand: self.app.browser.in_hand.clone(),
+            swap_hand: self.app.pad_in_hand,
+            copy_hand: self.app.copy_in_hand.as_ref().map(|(source, _)| *source),
+            marks: self.app.pads.marked.iter().copied().collect(),
+            marking: self.app.pads.marking,
+            question: self
+                .app
+                .ask
+                .as_ref()
+                .map_or_else(Vec::new, |ask| ask.lines().to_vec()),
+            notice: self.app.flash.as_ref().map(|(text, _)| text.clone()),
+            history: self
+                .app
+                .history
+                .iter()
+                .map(|step| {
+                    (
+                        step.what.clone(),
+                        step.pads.iter().map(|(pad, _)| *pad).collect(),
+                    )
+                })
+                .collect(),
+            pads: (0..PADS).map(|pad| self.app.pads.snapshot(pad)).collect(),
+        }
+    }
+
+    fn bind_pad_button(&mut self, pad: usize) {
+        learn::assign(
+            &mut self.app.learned,
+            "Recorded pads",
+            input::Group::Global,
+            input::midi::Key::Cc(80),
+            &format!("pad.{}", pad + 1),
+        );
+        self.app.sync_learned("Recorded pads", input::Group::Global);
+        self.midi().recorded_fence();
+    }
+
+    fn pad_press(&mut self, source: Source, pad: usize) -> Frame {
+        match source {
+            Source::Keyboard => self.key(
+                KeyCode::Char("1234qwerasdfzxcv".chars().nth(pad).unwrap()),
+                M::SHIFT,
+                KeyEventKind::Press,
+            ),
+            Source::Notes => self.bytes(PAD_PORT, &[0x90, 36 + pad as u8, 127]),
+            Source::Button => {
+                self.bind_pad_button(pad);
+                self.bytes(PAD_PORT, &[0xb0, 80, 127]);
+            }
+        }
+        self.frame()
+    }
+
+    fn pad_release(&mut self, source: Source, pad: usize) -> Frame {
+        match source {
+            Source::Keyboard => self.key(
+                KeyCode::Char("1234qwerasdfzxcv".chars().nth(pad).unwrap()),
+                M::SHIFT,
+                KeyEventKind::Release,
+            ),
+            Source::Notes => self.bytes(PAD_PORT, &[0x80, 36 + pad as u8, 0]),
+            Source::Button => self.bytes(PAD_PORT, &[0xb0, 80, 0]),
+        }
+        self.frame()
+    }
+
+    fn load_pad(&mut self, pad: usize, sound: Arc<Sample>, name: &str) {
+        self.app.pads.sound[pad] = Some(sound);
+        self.app.pads.file[pad] = Some(format!("{name}.wav").into());
+        self.app.pads.custom_name[pad] = Some(name.into());
+        self.app.pads.gate[pad] = true;
+        self.app.pads.pitch[pad] = 3;
+    }
+}
+
+fn assert_silent_target(frame: &Frame) {
+    assert!(
+        frame.direct.is_empty(),
+        "a target must not enter the direct audio queue: {:?}",
+        frame.direct
+    );
+    assert!(
+        !frame.ui.iter().any(|command| matches!(
+            command,
+            Command::PadPress { .. } | Command::Preview { sound: Some(_), .. }
+        )),
+        "a target must not sound from the UI: {:?}",
+        frame.ui
+    );
+}
+
 impl Drop for Drive {
     fn drop(&mut self) {
         // Abandon the audio queue before joining, even if a failing test left it full.
@@ -231,4 +356,111 @@ fn recorded_driver_applies_seeded_buttons_and_explicit_frames() {
         Screen::Fx,
         "the shipped X-Session profile acts after App seeding"
     );
+}
+
+/// Scenario "Copy parity from raw MIDI" and 83a's controller target contract.
+#[test]
+fn copy_parity_from_raw_midi() {
+    let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+    let mut expected = None;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, sound.clone(), "source");
+        drive.tap(KeyCode::Char('c'), M::CONTROL);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        let hit = drive.pad_press(source, 2);
+        assert_silent_target(&hit);
+        assert_eq!(drive.app.pads.selected_abs(), 18, "{source:?}");
+        assert_eq!(drive.app.pads.custom_name[18].as_deref(), Some("source 2"));
+        assert_eq!(drive.app.pads.custom_name[0].as_deref(), Some("source"));
+        assert!(drive.app.copy_in_hand.is_none());
+        assert_eq!(drive.app.history.len(), 1, "the target has one undo step");
+        let seen = drive.seen();
+        if let Some(expected) = &expected {
+            assert_eq!(&seen, expected, "{source:?}");
+        } else {
+            expected = Some(seen);
+        }
+        drive.pad_release(source, 2);
+        drive.tap(KeyCode::Char('z'), M::CONTROL);
+        assert!(drive.app.pads.sound[18].is_none());
+        assert!(drive.app.pads.sound[0].is_some());
+    }
+}
+
+/// Scenario "Copy replacement parity from raw MIDI".
+#[test]
+fn copy_replacement_parity_from_raw_midi() {
+    let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+    let mut expected = None;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, sound.clone(), "source");
+        drive.load_pad(18, sound.clone(), "old target");
+        let old = drive.app.pads.snapshot(18);
+        drive.tap(KeyCode::Char('c'), M::CONTROL);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        assert_silent_target(&drive.pad_press(source, 2));
+        assert_eq!(drive.app.pads.selected_abs(), 18, "{source:?}");
+        assert_eq!(drive.app.pads.snapshot(18), old);
+        assert!(
+            drive
+                .app
+                .ask
+                .as_ref()
+                .unwrap()
+                .lines()
+                .iter()
+                .any(|line| line.contains("old target"))
+        );
+        let question = drive.seen();
+        drive.pad_release(source, 2);
+        assert_silent_target(&drive.pad_press(source, 3));
+        assert_eq!(
+            drive.seen(),
+            question,
+            "a further hit must not answer or change the target"
+        );
+        drive.pad_release(source, 3);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.ask.is_none());
+        assert!(drive.app.copy_in_hand.is_some());
+        assert_silent_target(&drive.pad_press(source, 2));
+        drive.pad_release(source, 2);
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert_eq!(drive.app.pads.custom_name[18].as_deref(), Some("source 2"));
+        assert!(drive.app.copy_in_hand.is_none());
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.history.len(), 1);
+        let seen = drive.seen();
+        if let Some(expected) = &expected {
+            assert_eq!(&seen, expected, "{source:?}");
+        } else {
+            expected = Some(seen);
+        }
+    }
+}
+
+/// Scenario "Copy route preserves held MIDI releases".
+#[test]
+fn copy_route_preserves_held_midi_releases() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+        let press = drive.pad_press(source, 0);
+        assert!(matches!(
+            press.commands()[..],
+            [Command::PadPress { pad: 0, .. }]
+        ));
+        drive.tap(KeyCode::Char('c'), M::CONTROL);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        drive.tap(KeyCode::F(4), M::NONE);
+        let release = drive.pad_release(source, 0);
+        assert!(
+            matches!(release.commands()[..], [Command::PadRelease { pad: 0 }]),
+            "{source:?}: {:?}",
+            release.commands()
+        );
+        assert!(!drive.app.pads.held[0]);
+    }
 }

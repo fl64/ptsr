@@ -4501,6 +4501,7 @@ impl App {
         shared.hand.store(
             self.browser.in_hand.is_some()
                 || self.pad_in_hand.is_some()
+                || self.copy_in_hand.is_some()
                 || self.screen == Screen::Chop,
             Relaxed,
         );
@@ -4662,7 +4663,10 @@ impl App {
             // 83a: a controller note targets the copy as a keyboard pad hit does;
             // the hit does not also trigger sound
             midi::Event::PadHit { abs, .. } if self.copy_in_hand.is_some() => {
+                let before = self.before();
+                self.pads.selected = abs % PADS_PER_BANK;
                 self.copy_target(abs);
+                self.note_step(before, "copy".into());
             }
             midi::Event::PadHit { abs, .. } if self.pad_in_hand.is_some() => self.swap_with(abs),
             midi::Event::PadHit { abs, accepted } => {

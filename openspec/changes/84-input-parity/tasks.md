@@ -18,7 +18,7 @@
   design.md; stop for a scope decision instead of hiding a new fix. Run `task check`
   and commit.
 
-- [ ] 1.3 Add failing raw-MIDI regressions for silent copy targets, replacement and
+- [x] 1.3 Add failing raw-MIDI regressions for silent copy targets, replacement and
   original held-pad release. Publish the copy hand and keep the visible target in sync
   with the keyboard. Test notes and learned pad buttons across banks, empty and occupied
   targets, cancel and confirm. Run `task check` and commit this repair separately.
