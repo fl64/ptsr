@@ -87,9 +87,10 @@ Backspace = "marker.delete"
 N = "chop.snap_toggle"       # cursor: even steps / hit to hit / cut to cut
 "Ctrl+G" = "chop.normalize"  # the pad this chop was opened from: a −1 dB peak (83a)
 H = "chop.hits"             # chop by hits, one threshold step lower per press (83a)
+"Shift+H" = "chop.hits_back"  # one step back, stopping at −6 dB (83a)
 Y = "chop.parts"             # equal parts 2-32, away from the keys the hand moves with
 P = "chop.assign"            # the assign mode: slices onto pads, by hand from slice 1
-Tab = "edit.param_next"      # assigning: in order / by hand
+Tab = "chop.assign_order"    # assigning: in order / by hand (83a)
 Enter = "chop.edit"          # listen: the slice edit on / off; assigning: apply the plan
 
 [screens.files]

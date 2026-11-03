@@ -31,7 +31,7 @@
 
 ## 3. Named Chop commands
 
-- [ ] 3.1 Add `chop.hits_back` and `chop.assign_order` to Action parsing, the catalogue,
+- [x] 3.1 Add `chop.hits_back` and `chop.assign_order` to Action parsing, the catalogue,
   App and the two learn views together with their real handlers. Bind Shift+H and Tab.
   Test threshold direction, clamp, initial and knob values, cuts, links, undo, status,
   assign guards and old `edit.param_next` / `chop.auto_mode_next` compatibility. Test

@@ -77,6 +77,12 @@ pub enum Action {
     /// Chop screen: chop by hits, stepping the threshold one lower; like equal parts
     /// this replaces the cuts and is one undo step.
     ChopHits,
+    /// Chop screen: chop by hits, stepping the threshold one higher, stopping at −6 dB
+    /// without wrapping (83a); the same cuts, undo history and hit rule as `chop.hits`.
+    ChopHitsBack,
+    /// Chop screen: switch the assign plan between in order and by hand (83a); nothing
+    /// in listen or slice edit, and it applies no plan.
+    ChopAssignOrder,
     /// Chop screen: the next equal-parts count only (`L`); the assign mode ignores it.
     ChopEqualParts,
     /// The next or previous parameter of the selected object (`K`, `I`); `Tab` while
@@ -235,6 +241,8 @@ impl Action {
             "chop.auto_mode_next" => Self::ChopParts,
             "chop.parts" => Self::ChopEqualParts,
             "chop.hits" => Self::ChopHits,
+            "chop.hits_back" => Self::ChopHitsBack,
+            "chop.assign_order" => Self::ChopAssignOrder,
             "edit.param_next" => Self::ParamNext,
             "edit.param_prev" => Self::ParamPrev,
             "edit.page_next" => Self::PageNext,
@@ -1160,6 +1168,18 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "chop.hits",
         label: "chop by hits",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.hits_back",
+        label: "chop by hits, one step back",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.assign_order",
+        label: "assign: in order / by hand",
         group: Group::Chop,
         knob: false,
     },
@@ -3063,13 +3083,14 @@ mod tests {
             ),
             None
         );
-        // Shift+Tab, the Ctrl/Alt chords and the pads keep their behavior
+        // Shift+Tab, the Ctrl/Alt chords and the pads keep their behavior; 83a: the chop
+        // Tab fallback lands on the named assign order action
         assert_eq!(
             k.resolve(
                 Screen::Chop,
                 &ev(KeyCode::Tab, KeyModifiers::SHIFT, KeyEventKind::Press)
             ),
-            Some(Action::ParamNext),
+            Some(Action::ChopAssignOrder),
             "Shift+Tab falls back to Tab on the chop screen"
         );
         assert_eq!(
@@ -3312,7 +3333,8 @@ mod tests {
                 Screen::Chop,
                 &ev(KeyCode::Tab, KeyModifiers::NONE, KeyEventKind::Press)
             ),
-            Some(Action::ParamNext)
+            // 83a: Tab is the named assign order action on the chop screen
+            Some(Action::ChopAssignOrder)
         );
         assert_eq!(k.resolve(Screen::Chop, &ctrl('z')), Some(Action::Undo));
         assert_eq!(

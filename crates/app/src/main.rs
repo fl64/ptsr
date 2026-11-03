@@ -1693,7 +1693,7 @@ impl App {
                 }
             }
             Action::ChopAssign if self.screen == Screen::Chop && !self.edit => self.start_assign(),
-            Action::ChopParts | Action::ParamNext
+            Action::ChopParts | Action::ParamNext | Action::ChopAssignOrder
                 if self.screen == Screen::Chop && self.plan.is_some() =>
             {
                 let selected = self.chop.as_ref().map_or(0, |c| c.selected);
@@ -1767,6 +1767,7 @@ impl App {
             }
             Action::ChopParts
             | Action::ChopHits
+            | Action::ChopHitsBack
             | Action::ChopEqualParts
             | Action::MarkerNudge { .. }
             | Action::EditValue { .. }
@@ -1806,6 +1807,35 @@ impl App {
                                 ));
                             }
                             self.flash = Some((text, Instant::now()));
+                        }
+                        // 83a: Shift+H steps the threshold back; a clamped step is a no-op
+                        // that still names the threshold, without claiming replaced cuts
+                        Action::ChopHitsBack => {
+                            let were = c.slices().len();
+                            match c.chop_by_hits_back() {
+                                Some((db, _)) => {
+                                    let now = c.slices().len();
+                                    let mut text = format!("by hits at {db:.0} dB: {now} slices");
+                                    if were > 1 {
+                                        text.push_str(&format!(
+                                            " (were {were}) · Ctrl+Z brings them back"
+                                        ));
+                                    }
+                                    if linked > 0 {
+                                        text.push_str(&format!(
+                                            "; {linked} pads keep their old slices, Ctrl+Z links them again"
+                                        ));
+                                    }
+                                    self.flash = Some((text, Instant::now()));
+                                }
+                                None => {
+                                    let db = c.threshold_db;
+                                    self.flash = Some((
+                                        format!("by hits stays at {db:.0} dB"),
+                                        Instant::now(),
+                                    ));
+                                }
+                            }
                         }
                         Action::MarkerNudge { right, fine } => {
                             let ms = if fine { NUDGE_FINE_MS } else { NUDGE_MS };
@@ -7625,7 +7655,10 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                         ],
                         "slice".into(),
                     ),
-                    item(&[Action::ParamNext], "in order / by hand".into()),
+                    item(
+                        &[Action::ParamNext, Action::ChopAssignOrder],
+                        "in order / by hand".into(),
+                    ),
                     item(&[Action::ChopEdit, Action::ChopCommit], "apply".into()),
                     item(&[Action::Back], "back".into()),
                     item(&[Action::Undo], "undo".into()),
@@ -7717,6 +7750,9 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                             // one item: 83a added H, and the line must fit the band
                             "parts/hits".into(),
                         ),
+                        // 83a: Shift+H; the kitty view drops the combo item (it waits for
+                        // its modifier), F1 keeps the row
+                        item(&[Action::ChopHitsBack], "hits back".into()),
                         (
                             hold_keys(keymap.keys_for(screen, Action::Undo)),
                             "undo".into(),
@@ -7925,6 +7961,7 @@ fn assign_deaf(a: &Action) -> bool {
             | Action::ChopCut
             | Action::ChopEqualParts
             | Action::ChopHits
+            | Action::ChopHitsBack
             | Action::ChopAssign
             | Action::ChopZoom { .. }
             | Action::ChopRegionStart
@@ -8000,6 +8037,8 @@ fn describe(a: Action) -> String {
         }
         Action::ChopEqualParts => "chop: equal parts 2, 4, 8, 16, 32".into(),
         Action::ChopHits => "chop: by hits, one threshold step lower per press (−6…−30 dB)".into(),
+        Action::ChopHitsBack => "chop: by hits, one threshold step back (to −6 dB)".into(),
+        Action::ChopAssignOrder => "assign: in order / by hand".into(),
         Action::SliceBound { end, right, .. } => format!(
             "chop: the slice {} {}",
             if end { "end" } else { "start" },
@@ -8093,6 +8132,8 @@ fn help_section(a: Action) -> usize {
         | Action::ChopParts
         | Action::ChopEqualParts
         | Action::ChopHits
+        | Action::ChopHitsBack
+        | Action::ChopAssignOrder
         | Action::SliceBound { .. }
         | Action::ParamNext
         | Action::ParamPrev
@@ -8469,6 +8510,123 @@ mod tests {
             })
             .unwrap();
         assert_eq!(counts, format!("{chop_actions} actions · 2 learned"));
+    }
+
+    /// 83a midi-learn "Cleanup actions appear in their learn groups": CHOP lists
+    /// `chop.assign_order` and `chop.hits_back` with labels, as buttons, not knobs.
+    #[test]
+    fn cleanup_actions_appear_in_their_learn_groups() {
+        let mut app = test_app();
+        midi_tab(&mut app);
+        jump_to_chop(&mut app);
+        // → opens the CHOP group: its actions stand under their row
+        app.apply(Action::SettingsValue(1));
+        let names: Vec<&str> = app
+            .midi_list()
+            .iter()
+            .filter_map(|r| match r {
+                super::MidiListRow::Action { info } => Some(info.name),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            names.contains(&"chop.assign_order") && names.contains(&"chop.hits_back"),
+            "{names:?}"
+        );
+        for info in input::ACTIONS
+            .iter()
+            .filter(|i| i.name == "chop.assign_order" || i.name == "chop.hits_back")
+        {
+            assert_eq!(info.group, input::Group::Chop, "{}", info.name);
+            assert!(!info.knob, "{} takes a button, not a knob", info.name);
+            assert!(!info.label.is_empty(), "{}", info.name);
+        }
+    }
+
+    /// 83a midi-learn "Pick assign order in screen learn": Tab on Chop picks
+    /// `chop.assign_order` without opening or changing a plan.
+    #[test]
+    fn pick_assign_order_in_screen_learn() {
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(2));
+        app.apply(Action::LearnToggle);
+        learn_press(&mut app, ratatui::crossterm::event::KeyCode::Tab);
+        assert_eq!(picked(&app).0, "chop.assign_order");
+        assert!(app.plan.is_none(), "learning opens no plan");
+    }
+
+    /// 83a midi-learn "Pick hits back in screen learn": Shift+H on Chop picks
+    /// `chop.hits_back` without a cut or threshold change.
+    #[test]
+    fn pick_hits_back_in_screen_learn() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+        let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        let markers = app.chop.as_ref().unwrap().markers.clone();
+        app.apply(Action::LearnToggle);
+        // the extended form; the legacy uppercase letter answers the same
+        let mut k =
+            ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('h'), KeyModifiers::SHIFT);
+        assert!(app.learn_key(&keymap, &k), "the mode takes every key");
+        assert_eq!(picked(&app).0, "chop.hits_back");
+        assert_eq!(app.chop.as_ref().unwrap().markers, markers);
+        k = ratatui::crossterm::event::KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE);
+        assert!(app.learn_key(&keymap, &k));
+        assert_eq!(picked(&app).0, "chop.hits_back");
+        assert_eq!(app.chop.as_ref().unwrap().markers, markers);
+    }
+
+    /// 83a midi-learn "Learn a button for assign order": a learned button switches
+    /// by-hand and in-order once while a plan is open and does nothing outside it.
+    #[test]
+    fn learn_a_button_for_assign_order() {
+        use super::chop::Plan;
+        let mut app = xsession_connected(&[(input::Group::Chop, 50, "chop.assign_order")]);
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(2));
+        // outside a plan the button does nothing
+        app.apply(Action::ChopAssign);
+        let msg = input::midi::Msg::NoteOn {
+            ch: 1,
+            note: 50,
+            velocity: 100,
+        };
+        assert_eq!(xs_live(&app, msg), Some(Action::ChopAssignOrder));
+        app.apply(xs_live(&app, msg).unwrap());
+        assert_eq!(app.plan, Some(Plan::InOrder(None)), "switched once");
+        app.apply(xs_live(&app, msg).unwrap());
+        assert!(matches!(app.plan, Some(Plan::ByHand(_))));
+        app.plan = None;
+        app.apply(xs_live(&app, msg).unwrap());
+        assert_eq!(app.plan, None, "outside assignment it does nothing");
+    }
+
+    /// 83a midi-learn "Learn a button for hits back": a learned button raises the
+    /// threshold one step with the cuts and undo rules of Shift+H, and stays ignored
+    /// during assignment.
+    #[test]
+    fn learn_a_button_for_hits_back() {
+        let mut app = xsession_connected(&[(input::Group::Chop, 51, "chop.hits_back")]);
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        app.chop.as_mut().unwrap().set_threshold(18.0 / 40.0);
+        let msg = input::midi::Msg::NoteOn {
+            ch: 1,
+            note: 51,
+            velocity: 100,
+        };
+        assert_eq!(xs_live(&app, msg), Some(Action::ChopHitsBack));
+        app.apply(xs_live(&app, msg).unwrap());
+        assert_eq!(app.chop.as_ref().unwrap().threshold_db, -12.0);
+        // while assigning the button is ignored like the key
+        app.apply(Action::ChopAssign);
+        let slices = app.chop.as_ref().unwrap().slices().to_vec();
+        app.apply(xs_live(&app, msg).unwrap());
+        assert_eq!(app.chop.as_ref().unwrap().slices().to_vec(), slices);
+        assert_eq!(flash(&app), "assigning: Enter applies, Esc leaves");
     }
 
     /// 28 midi-learn: "Open a group" — → on the CHOP row shows its actions under it;
@@ -9752,11 +9910,11 @@ Enter = "browser.hold"
 
     #[test]
     fn planned_defaults_do_not_produce_shadow_warnings() {
-        // 83a task 2.1 ships Alt+R, Ctrl+G, H and U/O; the reverse threshold (3.1) and
-        // pad copy (4.1) have not shipped, so their chords produce no shadow warning yet.
+        // 83a tasks 2.1 and 3.1 ship Alt+R, Ctrl+G, H, U/O and Shift+H; only pad copy
+        // (4.1) has not shipped, so its chord produces no shadow warning yet.
         let (_, warnings) = loaded_notice_map(
             super::DEFAULT_KEYMAP,
-            "[screens.chop]\n\"Shift+H\" = \"none\"\n[screens.pads]\n\"Ctrl+C\" = \"none\"\n",
+            "[screens.pads]\n\"Ctrl+C\" = \"none\"\n",
         );
         assert!(
             warnings.is_empty(),
@@ -13528,6 +13686,185 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [24_000, 48_000]);
         assert_eq!(c.strong_hits(), c.markers, "a mark at every cut");
+    }
+
+    /// 83a chopping "Reverse the hit threshold": −18 → Shift+H → −12, quieter cuts
+    /// disappear, one Ctrl+Z restores the cuts and the −18 threshold.
+    #[test]
+    fn reverse_the_hit_threshold() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        app.chop.as_mut().unwrap().set_threshold(18.0 / 40.0);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.threshold_db, -18.0);
+        assert_eq!(c.markers.len(), 4, "−18 keeps the 0.15 hit");
+        // Shift+H as the extended event, then the legacy uppercase and Russian forms
+        for code in [
+            KeyCode::Char('h'),
+            KeyCode::Char('H'),
+            KeyCode::Char('р'),
+            KeyCode::Char('Р'),
+        ] {
+            // the extended protocol names the base key and the modifier; without it
+            // Shift arrives as an uppercase character (Р is the Russian H key)
+            let m = if matches!(code, KeyCode::Char('h') | KeyCode::Char('р')) {
+                M::SHIFT
+            } else {
+                M::NONE
+            };
+            app.chop.as_mut().unwrap().set_threshold(18.0 / 40.0);
+            chop_key(&mut app, code, m);
+            println!("flash: {}", flash(&app));
+            let c = app.chop.as_ref().unwrap();
+            assert_eq!(c.threshold_db, -12.0, "{code:?}");
+            assert_eq!(c.markers, [24_000, 48_000, 72_000], "the 0.15 hit leaves");
+            // were 5 slices: −18 keeps four cuts; −12 leaves three of them
+            assert_eq!(
+                flash(&app),
+                "by hits at -12 dB: 4 slices (were 5) · Ctrl+Z brings them back",
+                "{code:?}"
+            );
+        }
+    }
+
+    /// 83a chopping "Reverse hit threshold stops at the first step": −6 stays, no undo
+    /// step is added and the flash names −6 dB.
+    #[test]
+    fn reverse_hit_threshold_stops_at_the_first_step() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        chop_key(&mut app, KeyCode::Char('h'), M::NONE); // −6, one undo step
+        let cuts = app.chop.as_ref().unwrap().markers.clone();
+        chop_key(&mut app, KeyCode::Char('h'), M::SHIFT);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.threshold_db, -6.0, "the first step holds");
+        assert_eq!(c.markers, cuts);
+        assert_eq!(flash(&app), "by hits stays at -6 dB");
+        // the clamped step added no undo step: one Ctrl+Z undoes the −6 press, not it
+        chop_key(&mut app, KeyCode::Char('z'), M::CONTROL);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.threshold_db, 0.0, "no explicit threshold again");
+        assert_eq!(c.markers, [], "the whole region is one slice again");
+    }
+
+    /// 83a chopping "Reverse a continuous hit threshold": a knob at −15 steps to −12
+    /// and the cuts follow the same hit rule.
+    #[test]
+    fn reverse_a_continuous_hit_threshold() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        app.chop.as_mut().unwrap().set_threshold(15.0 / 40.0);
+        chop_key(&mut app, KeyCode::Char('h'), M::SHIFT);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.threshold_db, -12.0, "the next higher listed step");
+        assert_eq!(c.markers, [24_000, 48_000, 72_000]);
+    }
+
+    /// 83a chopping "Reverse keeps a higher knob threshold": −3 stays and nothing changes.
+    #[test]
+    fn reverse_keeps_a_higher_knob_threshold() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        app.chop.as_mut().unwrap().set_threshold(3.0 / 40.0);
+        let cuts = app.chop.as_ref().unwrap().markers.clone();
+        chop_key(&mut app, KeyCode::Char('h'), M::SHIFT);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.threshold_db, -3.0);
+        assert_eq!(c.markers, cuts, "no cuts change");
+        assert_eq!(flash(&app), "by hits stays at -3 dB");
+    }
+
+    /// 83a chopping "First reverse hit command": without an explicit threshold Shift+H
+    /// starts at −6 and the status names the threshold.
+    #[test]
+    fn first_reverse_hit_command() {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_hits(&[0.9, 0.55, 0.3, 0.15]));
+        chop_key(&mut app, KeyCode::Char('h'), M::SHIFT);
+        let c = app.chop.as_ref().unwrap();
+        assert_eq!(c.threshold_db, -6.0);
+        assert_eq!(c.markers, [24_000, 48_000]);
+        assert_eq!(flash(&app), "by hits at -6 dB: 3 slices");
+    }
+
+    /// 83a chopping "Tab has the named assign order action": Tab switches by-hand and
+    /// in-order only while a plan is open and applies none of them.
+    #[test]
+    fn tab_has_the_named_assign_order_action() {
+        use super::chop::Plan;
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(4));
+        app.apply(Action::ChopAssign);
+        assert!(matches!(app.plan, Some(Plan::ByHand(_))));
+        chop_key(&mut app, KeyCode::Tab, M::NONE);
+        assert_eq!(app.plan, Some(Plan::InOrder(None)));
+        // the next Tab returns to an empty by-hand plan without applying either
+        let files: Vec<_> = app.pads.file.iter().filter_map(Clone::clone).collect();
+        chop_key(&mut app, KeyCode::Tab, M::NONE);
+        assert_eq!(app.plan, Some(Plan::ByHand(Vec::new())));
+        assert!(app.sent.is_empty(), "no slice sounds");
+        assert_eq!(
+            app.pads
+                .file
+                .iter()
+                .filter_map(Clone::clone)
+                .collect::<Vec<_>>(),
+            files,
+            "no plan was applied"
+        );
+        // outside a plan Tab does nothing: listen and slice edit keep their keys
+        app.plan = None;
+        app.edit = true;
+        let slices = app.chop.as_ref().unwrap().slices().to_vec();
+        chop_key(&mut app, KeyCode::Tab, M::NONE);
+        assert_eq!(app.plan, None);
+        assert_eq!(app.chop.as_ref().unwrap().slices().to_vec(), slices);
+    }
+
+    /// 83a chopping "Old parameter binding still switches assign order": `edit.param_next`
+    /// keeps switching while assigning, as a learned controller button or an owner key.
+    #[test]
+    fn old_parameter_binding_still_switches_assign_order() {
+        use super::chop::Plan;
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(4));
+        app.apply(Action::ChopAssign);
+        app.apply(Action::ParamNext);
+        assert_eq!(app.plan, Some(Plan::InOrder(None)));
+        app.apply(Action::ParamNext);
+        assert!(matches!(app.plan, Some(Plan::ByHand(_))));
+    }
+
+    /// 83a chopping "Old auto mode binding still switches assign order": the former
+    /// `chop.auto_mode_next` keeps switching by-hand and in-order while assigning.
+    #[test]
+    fn old_auto_mode_binding_still_switches_assign_order() {
+        use super::chop::Plan;
+        let mut app = test_app();
+        app.screen = Screen::Chop;
+        app.chop = Some(chop_with_parts(4));
+        app.apply(Action::ChopAssign);
+        assert_eq!(
+            Action::parse("chop.auto_mode_next"),
+            Some(Action::ChopParts)
+        );
+        app.apply(Action::ChopParts);
+        assert_eq!(app.plan, Some(Plan::InOrder(None)));
+        app.apply(Action::ChopParts);
+        assert!(matches!(app.plan, Some(Plan::ByHand(_))));
     }
 
     /// Recorded: N three times on the chop screen. 43 "N walks the three modes".
