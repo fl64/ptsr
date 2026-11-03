@@ -378,9 +378,64 @@ a wrapper error, not proof of the program's exit code. A repeat with an explicit
 wrapper verified restart and exit code zero. No live MIDI events were injected and no
 physical-controller acceptance is claimed. The agent did not listen to the WAV files.
 
-This is an early check of the committed 2.1b state, not acceptance of 85. Tasks 2.2
-and 3.1 remain pending. Repeat the relevant pass after those changes; keep task 5.2
-open until its final check and owner acceptance requirements are met.
+This was an early check of the committed 2.1b state, not acceptance of 85. Tasks 2.2
+and 3.1 were pending at that checkpoint. The final pass below follows both steps;
+task 5.2 stays open for the owner's remaining keyboard/listening result.
+
+## Final implementation and isolated screen evidence at `1a24909`
+
+Completed local commits include shared handling `c946891`, ordered input `a70f527`,
+move-only extraction `999bc68`, the final render test `c8bbbd4` and owner documents
+`1a24909`. The focused read-only follow-up review of 3.1 found no remaining blocker
+after the early-direct-release repair. It was not a formal memory-model audit or a
+physical test. Parent verification reconstructed main.rs from `a70f527` and compared
+all nine moved signatures/bodies: identical except required visibility. No terminal
+loop, tests, callback, keys, profiles or saved-data format moved or changed in 4.1.
+
+Full checks after render delivery and documents passed formatting, strict clippy,
+workspace tests and the existing benchmark exit gates. Application tests: 657; input:
+74; TUI: 101. Strict validation: 16 items passed, zero failed. `task build` completed
+the optimized release build. Some check runs still reported
+`maximum target (50 %): wall EXCEEDED; thread CPU WITHIN`; the unresolved budget issue
+and the archived 84a workload/reporting/exit gates are unchanged.
+
+The agent then ran that release twice with JACK-only, buffer 1024, private XDG paths,
+`PIPEWIRE_REMOTE=ptsr-none` and `JACK_DEFAULT_SERVER=ptsr-none`. Both starts logged
+`JACK unavailable`; neither logged `JACK: active`. Four PipeWire snapshots before,
+after startup, after restart and after exit had no ptsr node. Owner config and audio
+connections were not changed. The terminal reported `no audio` and `no key releases`.
+The test was isolated from the owner's browser/Bluetooth sound; it did not check sound.
+
+| Final keyboard pass | Observed result |
+| --- | --- |
+| F1, pad edit, another pad, marking plus edit, U/O | Help, selection, retained edit, marks and both banks showed the existing states. |
+| Copy to empty pad, swap occupied pads, each undo | Saved TOML proved source fields and expected copy name; complete settings swapped. Each undo restored the entire checkpoint. |
+| Name, Files filter and file target | Name opened/cancelled; pad letters typed the filter. Same-file placement was a no-op. A different occupied target asked; another pad left that first question intact. Esc kept the file in hand, then cancelled it. Saved data matched the checkpoint. |
+| Whole-file F3, undo and bare-slice edit | F3 made the expected fresh one-slice chop. Undo restored two slices. The bare slice opened BOUNDS edit, not linked-pad TONE edit. |
+| P, Tab and Esc | BY HAND and IN ORDER were visible; cancellation returned to LISTEN without committing a plan. |
+| F4, F10 and all F12 tabs | FX opened. F10 picked a silent learn target and closed without saving a binding. Audio, Input, MIDI and Paths opened. Settings Esc returned to Pads. |
+| Project text, save, restart and quit | Typed `check` stayed project text; first Esc cleared it and second closed the picker. Two starts restored original pad records. Fresh F3 and undo recovered saved cuts; final TOML matched the full checkpoint. Both wrappers printed `UX exit: 0`. |
+
+Evidence stays under ignored `target/ux/85-final/`: 66 successful captures, session
+checkpoints, log and PipeWire snapshots. Five earlier expectation timeouts are retained:
+uppercase SWAP instead of its lower-case hint, replacement text split across lines,
+BOUNDS instead of TONE for a bare slice, unsupported pad edit on FX, and `[Audio]`
+instead of uppercase AUDIO. Screens and the existing routing rules explained them;
+only fixture expectations changed. No production repair was made during this pass.
+After exit no ptsr process or PipeWire node remained. No live MIDI was injected.
+Detected X-Session ports are not a hardware pass. Actual kitty releases, owner listening
+and physical-controller behavior remain unverified; no owner box was marked passed.
+
+Final listening delivery is `renders/85-input-modes.wav` (99,072 frames, 2.064 s,
+SHA-256 `01fafeb65b32d3bceb00210eb40d4be904dc3ea4d7b029068f09eb07bcf3743f`),
+plus `renders/85-mixed-holds.wav` and `renders/85-late-midi.wav`. Every main render
+segment has silence/onset/release/finite/no-clip checks or a zero-only target check;
+normal/deferred sound is sample-identical to timestamped oracles. Matching-velocity
+keyboard, note and button waveforms are identical. Low/high MIDI is checked separately.
+The regenerated 84 WAV kept its original hash. The exact segment map and separate
+owner checks are in section 85 of `docs/LIVE-CHECKS.md`. The owner is asked to check
+keyboard behavior and listen to all four named WAV files before acceptance. Tasks 5.2
+and 5.3 remain open for that result and explicit archive permission; no push/PR occurred.
 
 ## Risks / Trade-offs
 

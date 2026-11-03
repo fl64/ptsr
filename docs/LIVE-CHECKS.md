@@ -972,8 +972,15 @@ Implementation and offline checks are complete. Owner acceptance and archive are
 pending. No keys, profiles, saved-data formats or callback code changed. The shared
 handler keeps the existing text, picker, F10/F12 and overlapping-hand boundaries.
 Recorded MIDI and waveform checks do not mark a physical or listening pass complete.
-The interim isolated keyboard pass is recorded in the change's design; the final
-agent screen pass is still pending. Owner boxes below stay open until reported.
+The final agent screen pass at `1a24909` has 66 captures under ignored
+`target/ux/85-final/`: edit/mark, banks, copy/swap/undo, filter/file questions,
+Chop listen/BOUNDS/assign cancellation, FX, F10, all F12 tabs and project text.
+Saved TOML comparisons confirmed undo/cancel and save/restart preservation. Both
+starts logged `JACK unavailable`, never `JACK: active`; no ptsr PipeWire node was
+present before, during or after. Both exits printed `UX exit: 0`. The terminal had
+no audio or kitty releases; no MIDI was injected. The design records fixture
+expectation corrections. This is screen evidence, not owner or hardware acceptance.
+Owner boxes below stay open until reported.
 
 ### Prepare
 

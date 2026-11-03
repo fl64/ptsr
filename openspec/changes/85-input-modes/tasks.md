@@ -102,6 +102,10 @@
   Record observed screens, separately from sound and hardware checks. Ask the
   owner to check keyboard behavior and listen to all named renders.
   Record the result without claiming a controller pass while none is available.
+  Agent part recorded at `1a24909`: 66 isolated final captures, two unavailable-JACK
+  starts, zero sound connections and two zero exits; full saved-session comparisons.
+  Owner keyboard/listening result is pending, so this task stays open. See design
+  and section 85 of `docs/LIVE-CHECKS.md`; no controller or listening pass is implied.
   Physical-only gaps remain explicitly unverified; do not put automatable scenarios
   into `openspec/untested.md`. Any acceptance record is a separate artifact-only
   signed-off commit after full `task check` and git authorization.
