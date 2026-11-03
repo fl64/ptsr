@@ -20,9 +20,12 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   mic, Ctrl+G normalize, H / Shift+H hits, U/O banks, J/L values, Tab assign order and
   Ctrl+C pad copy. The owner accepted without completing the manual checks in
   section 83a of `docs/LIVE-CHECKS.md`; no physical SMC-PAD or listening pass is implied.
-- Input parity 84 is active in `openspec/changes/84-input-parity/` after a source check
-  against `2b084d1`. Its scope is paired input tests and the Chop pad route, not 85+.
-  No preparation merge is needed. Task 0.1 changes artifacts only, not behavior.
+- The owner checked and accepted input parity 84 on 2026-11-03. It is archived in
+  `openspec/changes/archive/2026-11-03-84-input-parity/`, based on `2b084d1`. Its paired
+  input tests cover the approved routing and release repairs, the Chop pad playback
+  line, fixed LISTEN and F2 PLAY badges. Physical-controller checks remain unverified.
+  Callback benchmark peaks above the 50% budget target remain unresolved. Input modes
+  85 is next in the plan, not active; it still needs specifications and owner approval.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

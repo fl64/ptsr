@@ -759,15 +759,16 @@ pass cannot be inferred from automated MIDI tests.
 
 ## 84 — Keyboard and controller pad parity
 
-Folder: `changes/84-input-parity` (`plan/controller-first-patterns`)
+Folder: `changes/archive/2026-11-03-84-input-parity` (`plan/controller-first-patterns`)
 
-Status: automated input and offline sound checks pass. The owner has not checked
-these steps or accepted change 84. All boxes below stay open until the owner reports
-results. No agent live, listening or physical-controller check is implied.
-Before task 2.3, the owner reported that a linked pad sounds in Chop but its green
-playback line is missing. The owner confirmed that Space has that line and approved
-adding it for pad hits only. The post-fix keyboard check is still open. No controller
-is currently available to the owner; its physical pass remains unverified.
+Owner acceptance on 2026-11-03: the owner reported that they checked and accepted
+change 84, then explicitly authorized its archive and a local signed-off commit.
+This is overall acceptance, not a separate result for every check below or the WAV.
+The boxes stay open where no individual result was reported; they do not mean failure
+or rejection of the change. No controller is available, so its physical pass remains
+unverified. Automated raw-MIDI tests do not replace that pass. No agent live, listening
+or physical-controller check is implied. The earlier missing Chop pad playback line
+was repaired in 2.3; F2 PLAY followed in 2.4.
 
 ### Prepare both passes
 
@@ -899,8 +900,11 @@ both are available. A physical test of one does not verify the other.
   between hits and no clicks, clipping or extra hits. Recreate the WAV with
   `cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture` if needed.
 
-Owner result: missing pad playback line reported before 2.3; post-fix check not reported.
-F2 PLAY was requested after 2.3; its post-2.4 keyboard/controller checks are not reported.
-Device/preset: no controller currently available. Keyboard terminal: not recorded.
-Physical note/CC forms: all unverified. Listening result: not reported.
-Archive is blocked until explicit owner acceptance and the scenario coverage check.
+Owner result: checked and accepted change 84 on 2026-11-03 after 2.3 and 2.4;
+archive and local signed-off commit explicitly authorized. Individual check results
+were not listed. Device/preset: no controller available. Keyboard terminal: not recorded.
+Physical note/CC forms: all unverified. Separate WAV listening result: not reported.
+The callback benchmark has recorded peaks above the 50% budget target, including
+107.46% in the last implementation check. Their cause remains unknown; acceptance
+does not close this performance issue. Archive checks must still verify main-spec
+scenario coverage, strict validation and the full automated suite.

@@ -29,10 +29,13 @@ The keyboard stays the reference and keeps its controls. The work order is:
    (95–100a). Input timestamps (101) are conditional on a measured or heard need.
 
 Read [plans/README.md](plans/README.md) before preparing a change. Start with
-[KEYMAP-CLEANUP.md](plans/KEYMAP-CLEANUP.md) for the shipped keys. Input parity 84 is
-active in `openspec/changes/84-input-parity/`, based on the 83a archive at `2b084d1`.
-The owner requested the same branch `plan/controller-first-patterns` as an exception
-to the separate-branch rule. Only one change is active; push and PR need a separate request.
+[KEYMAP-CLEANUP.md](plans/KEYMAP-CLEANUP.md) for the shipped keys. The owner checked and
+accepted input parity 84 on 2026-11-03. It is archived in
+`openspec/changes/archive/2026-11-03-84-input-parity/`, based on 83a at `2b084d1`.
+Its physical-controller pass remains unverified. Callback benchmark peaks above the
+50% budget target remain unresolved. Input modes 85 is next in the plan, not active.
+The owner requested `plan/controller-first-patterns` for 84 as an exception to the
+separate-branch rule. Activate only one change at a time; push and PR need a separate request.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
 parameter locks, slice motion and PaulStretch. It and `docs/plans/` are guides, not

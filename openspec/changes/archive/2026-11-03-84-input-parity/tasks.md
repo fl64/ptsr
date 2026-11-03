@@ -77,10 +77,21 @@
 
 - [x] 3.1 Update user stories and live checks with separate keyboard and controller
   passes. Validate the change, run `task check`, build the release and commit.
-- [ ] 3.2 Ask the owner to check Chop listening and assignment from both inputs and
+- [x] 3.2 Ask the owner to check Chop listening and assignment from both inputs and
   listen to `renders/84-input-parity.wav`. Include the pad playback line after 2.3
   and the F2 PLAY badge after 2.4.
-  Record the result, not an assumed pass. The owner has no controller at present;
-  keep its physical pass unverified, not passed or waived by automated MIDI tests.
-- [ ] 3.3 Archive with `openspec archive` only after acceptance and scenario coverage
+  On 2026-11-03, the owner reported that they checked and accepted change 84, then
+  explicitly authorized the archive and local signed-off commit. This is overall
+  acceptance, not a separate result for every check or the WAV. No controller is
+  available; its physical pass remains unverified, not passed or waived by tests.
+  The callback benchmark peaks above the 50% target remain unresolved.
+- [x] 3.3 Archive with `openspec archive` only after acceptance and scenario coverage
   in the main specs. Validate specs, run `task check` and commit the archive.
+  On 2026-11-03, the CLI archive added seven requirements and modified one. All 35
+  delta scenarios match the main specs; other requirements and archive metadata
+  are preserved. The main-spec scenario test and strict validation pass (15 specs).
+  Full `task check` passes: 615 App, 70 input, 101 TUI and 10 engine unit tests,
+  plus integration tests, formatting and strict clippy. The archive run's callback
+  mean is 9.48%, p99 16.26% and maximum 34.08%; earlier peaks remain unresolved.
+  The render keeps its task 2.2 SHA-256. No code, sound, key or saved format changed.
+  Input modes 85 is not active. No live run, physical-controller pass, push or PR.
