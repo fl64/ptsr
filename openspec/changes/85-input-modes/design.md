@@ -37,9 +37,10 @@ step, not mixed into this planning-only artifact edit.
 
 **Goals:** one input-state computation, a pure shared pad-route decision and one pad-hit
 handler; coherent publication to MIDI; an explicit, separately tested ordering repair.
-The refactor and move keep the current behavior. Only the ordering step changes a race
-outcome. Keep original releases, local queue acceptance and project filtering distinct
-from UI processing acknowledgements.
+The refactor and move keep the current behavior. The ordering step changes a race
+outcome. The separately approved hold step below repairs mixed keyboard/MIDI release
+targets on Chop before the shared handler. Keep original releases, local queue
+acceptance and project filtering distinct from UI processing acknowledgements.
 
 **Non-Goals:** a new universal command resolver, priority normalization, UI modes or
 badges, raw-profile re-resolution after a command, an engine change or new dependencies.
@@ -105,6 +106,30 @@ resolved local pad as well; do not re-run the profile against a new screen.
 Keep keyboard pressed-pad bookkeeping separate from MIDI UI holds. Do not use a MIDI
 hit to overwrite the keyboard's held-key release target. Keep the existing distinction
 between an attempted command in the test log and a command accepted by the real queue.
+
+### 2a. Repair mixed Chop release targets before the shared handler
+
+The owner approved this separate behavior repair after the audit at `82f84fa`.
+The MIDI entry calls `chop_pad`, which uses `Pads::apply(PadPress)` and writes
+`pressed[pad]`, the target used by keyboard releases. A MIDI hit in a new bank can
+therefore replace a still-held keyboard key's original target. The old path has not
+been reproduced on recorded input yet; capture the failing result before the fix.
+
+Add an explicit keyboard/MIDI hit source for Chop and a pad press operation that
+keeps the existing sound, selected pad, hit flash, held display and marking logic.
+Only keyboard presses write `pressed[pad]`. Keep the MIDI candidate-to-accepted-pad
+map and local audio queue acceptance unchanged. This small internal pad API change
+is part of the approved repair, not the later common `App::pad_hit` refactor.
+Do not change same-absolute-pad voice rules, preview or assignment behavior.
+
+Test keyboard then raw note/learned CC80 in another bank, and the reverse press
+order. Check both release orders on Chop, after a screen change, with a question
+and with F10. Fill the actual callback queue to reject the MIDI hit: it must not
+steal the keyboard target or start when space returns. Compare both real audio
+queues and the offline waveform with timestamped engine commands. Keep no-clip,
+finite, silence, onset and release timing checks. Write `renders/85-mixed-holds.wav`
+for owner listening. Commit this repair separately before task 2.2, after full
+`task check`; do not mix in sequencing or the shared handler.
 
 ### 3. Preserve source boundaries and record divergences
 
@@ -198,7 +223,8 @@ Test both orderings of direct/UI retriggers and multiple accepted pads for one c
 
 1. Artifacts only, then review. No implementation is authorized by CLI file existence.
 2. Characterize compatibility and add the Focus/table model without changing routes.
-3. Replace shared publication, then unify pad semantics without the sequence repair.
+3. Replace shared publication, repair mixed Chop holds in their own behavior step,
+   then unify pad semantics without the sequence repair.
 4. Add same-update race regressions, reproduce failure on the real routes, then repair
    ordering and deferred hold bookkeeping together. Red tests are not a separate
    green commit; keep their final assertions when making this step green.
@@ -213,7 +239,8 @@ Test both orderings of direct/UI retriggers and multiple accepted pads for one c
 Representation-bound low-level tests must adapt from five atomic fields to the packed
 value; keep the same screen/bank/edit/learn/hand assertions, with the owner-approved
 Chop fixture correction below. Do not remove, skip or weaken behavioral tests from 84.
-Keep exact names for all ten delta scenarios.
+Keep exact names for all ten ordering delta scenarios and the three added mixed-hold
+scenarios.
 
 The owner approved the Chop fixture correction before task 2.1 on 2026-11-03.
 At `53d317e`, `midi.rs:on_screen` leaves `hand` false even for Chop, and
@@ -280,22 +307,6 @@ specs by hand and do not mark physical checks passed because recorded tests pass
 
 ## Open questions
 
-- Before task 2.2, should 85 also repair the existing mixed keyboard/MIDI hold
-  bookkeeping on Chop in a separate behavior step? Source audit at `82f84fa` found
-  that MIDI `PadHit` calls `chop_pad` (`main.rs:4717–4726`), which calls
-  `Pads::apply(PadPress)` (`main.rs:2864`). That writes the keyboard release target
-  `pressed[pad]` (`pads.rs:1324`); a later keyboard release reads this same target
-  (`pads.rs:1332–1334`, including the F10 path at `main.rs:5781–5788`). Thus a MIDI
-  Chop hit in a new bank can overwrite a still-held keyboard key's original bank.
-  This is a source-only finding, not a recorded-input or listening reproduction.
-  Section 2 says not to overwrite that target, but task 2.2 also requires a
-  behavior-preserving refactor. Silently correcting the old path in that refactor
-  would hide a second behavior repair. Proposed scope: first add an explicit delta
-  and a separate task with mixed keyboard/raw-note/learned-button regressions on
-  the real routes and offline audio, then repair only this release-target sharing
-  in its own green commit. Default: pause task 2.2 until the owner decides; keep
-  the committed production paths unchanged. The command/hit ordering fix remains
-  a separate step.
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later
   change; recorded notes and learned CC tests do not accept the SMC-PAD template.

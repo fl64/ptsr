@@ -16,6 +16,10 @@ before the next screen update can play the old sound instead of choosing its tar
   hits with no such work pending must still go straight to audio, without a second hit.
 - Keep text, pickers and F12 learn at their current input boundaries. Do not make the
   roadmap's proposed priority order into a new behavior rule.
+- Repair mixed keyboard/MIDI holds on Chop in a separate behavior step before the
+  shared handler. A MIDI hit must not replace the remembered release target of a
+  keyboard key held in another bank, even when the MIDI audio hit is rejected.
+  The owner approved this added scope after the source audit at `82f84fa`.
 - Move the input dispatch into its own file in a separate move-only step.
 
 ## Capabilities
@@ -27,13 +31,14 @@ None. This change adds no user mode or command.
 ### Modified Capabilities
 
 - `input-devices`: specify the pending-command exception to direct MIDI playback,
-  ordered target hits and safe releases for hits that wait for the UI. The shared
-  input model and code move do not change other requirements.
+  ordered target hits, safe releases for hits that wait for the UI, and separate
+  keyboard/MIDI release targets on Chop. The shared input model and code move do
+  not change other requirements.
 
 ## Impact
 
 Implementation is limited to `crates/input/src/lib.rs` and
-`crates/app/src/{main,midi,input_tests,dispatch}.rs`, with tests beside those areas.
+`crates/app/src/{main,midi,pads,input_tests,dispatch}.rs`, with tests beside those areas.
 The new `dispatch.rs` holds existing input methods; it is not a new dispatch path.
 No dependency, audio callback, profile, keymap or saved-data format changes are needed.
 Owner checks and current-status documents will be updated in a separate documentation
@@ -79,6 +84,15 @@ owner's sound graph, change the owner's configuration or claim hardware acceptan
    a learned pad button and, where available, a second device. Only the original pad
    must release. Check the existing safe X-Session navigation and knob roles.
 
+### Keyboard and controller together, when hardware is available
+
+1. On Chop, hold a linked gate pad with its keyboard key. Change bank, then hit and
+   hold the same pad position from a MIDI note or learned button.
+2. Release the keyboard key. Only its original pad must stop; the MIDI pad must
+   keep sounding until its own control is released. Repeat in reverse release order.
+3. Start the MIDI hold first, then the keyboard hold in the other bank. Repeat the
+   releases after a screen change, with a question open and with F10 open.
+
 ### Automated checks and listening
 
 Use the real keyboard and raw-MIDI driver from 84 with explicit frame fences and both
@@ -86,7 +100,10 @@ real offline audio queues. Tests must force the command/hit order without sleeps
 including a release or disconnect before the UI handles a deferred hit. Run the full
 `task check`, strict OpenSpec validation and `task build` before completion.
 
-Keep `renders/84-input-parity.wav` unchanged. Add `renders/85-input-modes.wav` with a
+Keep `renders/84-input-parity.wav` unchanged. Add `renders/85-mixed-holds.wav` for the
+separate hold repair: keyboard then MIDI, MIDI then keyboard, and rejected MIDI hits.
+Each original release must stop only its own pad, without a stuck gate.
+Add `renders/85-input-modes.wav` with a
 silent take-file/target segment, a normal direct hit and a deferred gate hit followed
 by its release. Tests check finite samples, no clipping, intended silence, one hit
 and release timing within one sample of the expected audio block. Listen for no old

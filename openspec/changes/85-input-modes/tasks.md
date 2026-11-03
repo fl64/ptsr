@@ -19,7 +19,7 @@
   edit independent and retain existing pre-routing guards. Run full `task check`;
   commit this model step with signoff.
 
-## 2. Behavior-preserving routing refactor
+## 2. Routing refactor and separate Chop hold repair
 
 - [x] 2.1 Replace the five MIDI Shared atomics with one packed Focus publication and
   one snapshot read per raw message. Use the snapshot for screen, edit, bank and the
@@ -27,6 +27,17 @@
   representation-bound tests without weakening their assertions. Add coherent-snapshot
   checks and keep direct/UI queues, original releases and input logging unchanged.
   Do not add acknowledgements yet. Run full `task check`; commit with signoff.
+- [ ] 2.1a Reproduce and repair mixed keyboard/MIDI release-target sharing on Chop,
+  as separately approved by the owner. Add named tests for the three mixed-hold
+  scenarios using keyboard events, raw notes and learned CC80 through production
+  dispatch. Check both press and release orders, a screen change, a question, F10,
+  and MIDI rejection by the actual full audio queue. Only keyboard hits may record
+  the keyboard release target; preserve all other hit effects, original MIDI holds
+  and queue acceptance. Use real offline audio and a timestamped waveform oracle;
+  check finite/no-clip, silence, onset and independent gate release timing. Write
+  `renders/85-mixed-holds.wav`. Keep the first failing assertions. Run full
+  `task check`; commit this repair separately before 2.2. No sequencing or shared
+  handler changes belong in this step.
 - [ ] 2.2 Make keyboard and MIDI call one `App::pad_hit`, with explicit input source and
   unattempted/direct-accepted/direct-rejected sound disposition. Keep wrapper undo,
   synchronization, existing source-specific priorities and original keyboard/MIDI hold

@@ -30,6 +30,41 @@ direct release of a pad already accepted by the audio queue or stop sound proces
 
 ## ADDED Requirements
 
+### Requirement: Keyboard and MIDI keep separate Chop release targets
+
+On Chop, the system SHALL keep a held keyboard pad's original absolute release
+target separate from MIDI pad holds. A later MIDI hit at the same pad position
+in another bank SHALL NOT replace that keyboard target, whether the audio queue
+accepts or rejects the MIDI hit. A later keyboard hit SHALL NOT replace an accepted
+MIDI hold's release target. Each original release SHALL reach only its own original
+absolute pad after a bank or screen change, with a question open, or with F10 open.
+A rejected MIDI hit SHALL acquire no audio hold. The other Chop behavior, velocity,
+selection, marks and existing direct MIDI release rules SHALL remain unchanged.
+
+#### Scenario: Chop MIDI hit keeps held keyboard release target
+- **WHEN** a linked gate pad is held from the keyboard on Chop, the bank changes,
+  and a raw MIDI note or learned pad button hits and holds the same pad position
+- **THEN** both pads sound once with their original velocities, and releasing either
+  original control stops only its own absolute pad while the other keeps sounding
+- **AND** both release orders work on Chop, after a screen change, with a question
+  open and with F10 open
+
+#### Scenario: Chop rejected MIDI hit keeps held keyboard release target
+- **WHEN** a keyboard gate is held on Chop, the bank changes, and the real audio
+  queue rejects a raw-note or learned-button hit at the same pad position
+- **THEN** the rejected hit starts no sound and acquires no audio hold; its release
+  does not release the keyboard pad, whose original key still releases it
+- **AND** both release orders work after a screen change, with a question open and
+  with F10 open, without replaying the rejected hit after queue space returns
+
+#### Scenario: Chop keyboard hit keeps held MIDI release target
+- **WHEN** a linked gate pad is held on Chop from a raw MIDI note or learned button,
+  the bank changes, and the keyboard hits and holds the same pad position
+- **THEN** both original controls keep their own absolute release targets, and each
+  release stops only its own pad while the other keeps sounding
+- **AND** both release orders work on Chop, after a screen change, with a question
+  open and with F10 open
+
 ### Requirement: Controller commands precede following pad hits
 
 The system SHALL consume controller commands and following UI-routed pad hits in
