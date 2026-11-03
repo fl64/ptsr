@@ -13,7 +13,7 @@
 - [x] 1.1 Add the test driver for key events, raw MIDI bytes and explicit frames. Reuse
   the production dispatch and profile initialization. Keep extraction separate from
   behavior changes. Run `task check` and commit.
-- [ ] 1.2 Add paired baseline tests for Pads, edit, marking, file in hand, swap,
+- [x] 1.2 Add paired baseline tests for Pads, edit, marking, file in hand, swap,
   question and learn. Keep X-Session default tests unchanged. Record differences in
   design.md; stop for a scope decision instead of hiding a new fix. Run `task check`
   and commit.
@@ -23,7 +23,7 @@
   with the keyboard. Test notes and learned pad buttons across banks, empty and occupied
   targets, cancel and confirm. Run `task check` and commit this repair separately.
 
-- [ ] 1.4 Repair the three task 1.2 differences approved by the owner: select the
+- [x] 1.4 Repair the three task 1.2 differences approved by the owner: select the
   same file and swap target, record the same swap undo step, and route new pad hits
   under a question to the silent UI guard. Keep confirmation commands and original
   held-pad releases. Cover the four new delta scenarios, cancellation, loading refusal

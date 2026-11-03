@@ -156,6 +156,9 @@ enum Source {
 #[derive(Debug, PartialEq)]
 struct Seen {
     screen: Screen,
+    edit: bool,
+    param: pads::Param,
+    held: Vec<bool>,
     bank: usize,
     selected: usize,
     slice: Option<usize>,
@@ -175,6 +178,9 @@ impl Drive {
     fn seen(&self) -> Seen {
         Seen {
             screen: self.app.screen,
+            edit: self.app.edit,
+            param: self.app.pads.param,
+            held: self.app.pads.held.to_vec(),
             bank: self.app.pads.bank,
             selected: self.app.pads.selected,
             slice: self.app.chop.as_ref().map(|chop| chop.selected),
@@ -356,6 +362,373 @@ fn recorded_driver_applies_seeded_buttons_and_explicit_frames() {
         Screen::Fx,
         "the shipped X-Session profile acts after App seeding"
     );
+}
+
+fn assert_full_hit(frame: &Frame, abs: usize) {
+    assert!(
+        matches!(frame.commands()[..], [Command::PadPress { pad, velocity }]
+            if *pad == abs && *velocity == 1.0),
+        "expected one full hit on pad {abs}: {:?}",
+        frame.commands()
+    );
+}
+
+fn paired_baseline(mut run: impl FnMut(&mut Drive, Source) -> Vec<Seen>) {
+    let mut expected = None;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let states = run(&mut Drive::new(), source);
+        if let Some(expected) = &expected {
+            assert_eq!(&states, expected, "{source:?}");
+        } else {
+            expected = Some(states);
+        }
+    }
+}
+
+#[test]
+fn baseline_pads_parity_from_raw_midi() {
+    paired_baseline(|drive, source| {
+        let mut states = Vec::new();
+        for bank in 0..2 {
+            if bank > 0 {
+                drive.tap(KeyCode::PageDown, M::NONE);
+            }
+            assert_full_hit(&drive.pad_press(source, 5), bank * PADS_PER_BANK + 5);
+            assert_eq!(drive.app.pads.selected, 5);
+            assert!(drive.app.pads.held[bank * PADS_PER_BANK + 5]);
+            states.push(drive.seen());
+            let release = drive.pad_release(source, 5);
+            assert!(
+                matches!(release.commands()[..], [Command::PadRelease { pad }]
+                if *pad == bank * PADS_PER_BANK + 5)
+            );
+            assert!(!drive.app.pads.held[bank * PADS_PER_BANK + 5]);
+            states.push(drive.seen());
+        }
+        states
+    });
+}
+
+#[test]
+fn baseline_pad_edit_parity_from_raw_midi() {
+    paired_baseline(|drive, source| {
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::Enter, M::NONE);
+            }
+            Source::Notes | Source::Button => {
+                drive.bytes(PAD_PORT, &[0xb0, 29, 127]);
+                drive.frame();
+                drive.bytes(PAD_PORT, &[0xb0, 29, 0]);
+                drive.frame();
+            }
+        }
+        assert!(drive.app.edit);
+        drive.tap(KeyCode::Tab, M::NONE);
+        let mut states = vec![drive.seen()];
+        assert_full_hit(&drive.pad_press(source, 4), 4);
+        assert!(drive.app.edit, "a pad hit keeps edit open");
+        states.push(drive.seen());
+        drive.pad_release(source, 4);
+        states.push(drive.seen());
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(!drive.app.edit);
+        states.push(drive.seen());
+        states
+    });
+}
+
+#[test]
+fn baseline_marking_parity_from_raw_midi() {
+    paired_baseline(|drive, source| {
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::Char('m'), M::NONE);
+            }
+            Source::Notes | Source::Button => {
+                drive.bytes(PAD_PORT, &[0xb0, 28, 127]);
+                drive.frame();
+                drive.bytes(PAD_PORT, &[0xb0, 28, 0]);
+                drive.frame();
+            }
+        }
+        assert!(drive.app.pads.marking);
+        let mut states = Vec::new();
+        for (bank, local, marked) in [(0, 4, vec![4]), (1, 2, vec![4, 18]), (0, 4, vec![18])] {
+            drive.tap(KeyCode::Char(char::from(b'1' + bank)), M::CONTROL);
+            assert_full_hit(
+                &drive.pad_press(source, local),
+                usize::from(bank) * PADS_PER_BANK + local,
+            );
+            assert_eq!(
+                drive.app.pads.marked.iter().copied().collect::<Vec<_>>(),
+                marked
+            );
+            states.push(drive.seen());
+            drive.pad_release(source, local);
+            states.push(drive.seen());
+        }
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.pads.marked.is_empty());
+        assert!(!drive.app.pads.marking);
+        states.push(drive.seen());
+        states
+    });
+}
+
+#[test]
+fn baseline_learn_keeps_pads_silent_from_raw_midi() {
+    paired_baseline(|drive, source| {
+        drive.tap(KeyCode::F(10), M::NONE);
+        assert!(drive.app.screen_learn.is_some());
+        let before = drive.seen();
+        let hit = drive.pad_press(source, 4);
+        assert!(hit.commands().is_empty(), "learn must not play a pad");
+        assert_eq!(
+            drive.seen(),
+            before,
+            "learning does not change the pad state"
+        );
+        drive.pad_release(source, 4);
+        assert!(drive.app.screen_learn.is_some());
+        // Keyboard picks an action; MIDI supplies a control. Those learner states
+        // intentionally differ, but neither input may play or select the pad.
+        vec![drive.seen()]
+    });
+}
+
+/// Scenario "Swap target and undo parity from raw MIDI".
+fn baseline_swap_parity(source: Source) {
+    let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+    for occupied in [true, false] {
+        let mut expected = None;
+        for source in [Source::Keyboard, source] {
+            let mut drive = Drive::new();
+            drive.load_pad(0, sound.clone(), "source");
+            if occupied {
+                drive.load_pad(18, sound.clone(), "target");
+            }
+            let source_pad = drive.app.pads.snapshot(0);
+            let target_pad = drive.app.pads.snapshot(18);
+            drive.tap(KeyCode::Char('x'), M::CONTROL);
+            drive.tap(KeyCode::PageDown, M::NONE);
+            let hit = drive.pad_press(source, 2);
+            assert_silent_target(&hit);
+            assert!(matches!(
+                hit.commands()[..],
+                [Command::SwapPads { a: 0, b: 18 }]
+            ));
+            assert_eq!(drive.app.pads.snapshot(0), target_pad);
+            assert_eq!(drive.app.pads.snapshot(18), source_pad);
+            assert!(drive.app.pad_in_hand.is_none());
+            assert_eq!(
+                (drive.app.pads.selected_abs(), drive.app.history.len()),
+                (18, 1),
+                "{source:?}: a swap selects its target and makes one undo step"
+            );
+            let seen = drive.seen();
+            if let Some(expected) = &expected {
+                assert_eq!(&seen, expected, "{source:?}");
+            } else {
+                expected = Some(seen);
+            }
+            drive.pad_release(source, 2);
+            assert_eq!(drive.app.history[0].what, "swap");
+            assert_eq!(
+                drive.app.history[0]
+                    .pads
+                    .iter()
+                    .map(|(pad, _)| *pad)
+                    .collect::<Vec<_>>(),
+                vec![0, 18]
+            );
+            drive.tap(KeyCode::Char('z'), M::CONTROL);
+            assert_eq!(drive.app.pads.snapshot(0), source_pad);
+            assert_eq!(drive.app.pads.snapshot(18), target_pad);
+            assert!(drive.app.history.is_empty());
+        }
+    }
+}
+
+#[test]
+fn swap_cancellation_and_loading_refusal_parity_from_raw_midi() {
+    let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+    paired_baseline(|drive, source| {
+        drive.load_pad(0, sound.clone(), "source");
+        drive.load_pad(18, sound.clone(), "target");
+        let original: Vec<_> = (0..PADS).map(|pad| drive.app.pads.snapshot(pad)).collect();
+        drive.tap(KeyCode::Char('x'), M::CONTROL);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.pad_in_hand.is_none());
+        let mut states = vec![drive.seen()];
+        drive.tap(KeyCode::Char('x'), M::CONTROL);
+        let same_source = drive.pad_press(source, 0);
+        assert_silent_target(&same_source);
+        assert!(same_source.commands().is_empty());
+        assert!(drive.app.pad_in_hand.is_none());
+        assert!(drive.app.history.is_empty());
+        states.push(drive.seen());
+        drive.pad_release(source, 0);
+        drive.tap(KeyCode::Char('x'), M::CONTROL);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        drive.app.pads.loading[18] = Some(1);
+        let refused = drive.pad_press(source, 2);
+        assert_silent_target(&refused);
+        assert!(refused.commands().is_empty());
+        assert!(drive.app.pad_in_hand.is_none());
+        assert!(drive.app.history.is_empty());
+        assert_eq!(
+            drive.app.flash.as_ref().unwrap().0,
+            "Wait until loading finishes, then swap."
+        );
+        assert_eq!(
+            (0..PADS)
+                .map(|pad| drive.app.pads.snapshot(pad))
+                .collect::<Vec<_>>(),
+            original
+        );
+        states.push(drive.seen());
+        states
+    });
+}
+
+#[test]
+fn swap_target_and_undo_parity_from_raw_midi_notes() {
+    baseline_swap_parity(Source::Notes);
+}
+
+#[test]
+fn swap_target_and_undo_parity_from_raw_midi_learned_button() {
+    baseline_swap_parity(Source::Button);
+}
+
+/// Scenario "File target parity from raw MIDI".
+fn baseline_file_hand_parity(source: Source) {
+    let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+    let mut expected = None;
+    for source in [Source::Keyboard, source] {
+        let mut drive = Drive::new();
+        drive.load_pad(18, sound.clone(), "old target");
+        // An occupied target tests routing and the question without decoding a file.
+        drive.app.browser.in_hand = Some("new file.wav".into());
+        drive.tap(KeyCode::PageDown, M::NONE);
+        let hit = drive.pad_press(source, 2);
+        assert_silent_target(&hit);
+        assert!(matches!(&drive.app.ask, Some(Ask::PutFile { abs: 18, .. })));
+        assert_eq!(
+            drive.app.pads.selected_abs(),
+            18,
+            "{source:?}: file target selection"
+        );
+        let seen = drive.seen();
+        if let Some(expected) = &expected {
+            assert_eq!(&seen, expected, "{source:?}");
+        } else {
+            expected = Some(seen);
+        }
+        drive.pad_release(source, 2);
+        let question = drive.seen();
+        assert_silent_target(&drive.pad_press(source, 3));
+        assert_eq!(drive.seen(), question);
+        drive.pad_release(source, 3);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.ask.is_none());
+        assert!(drive.app.browser.in_hand.is_some());
+        assert!(drive.app.history.is_empty());
+        assert_eq!(
+            drive.app.pads.custom_name[18].as_deref(),
+            Some("old target")
+        );
+        assert_silent_target(&drive.pad_press(source, 2));
+        assert!(matches!(&drive.app.ask, Some(Ask::PutFile { abs: 18, .. })));
+        drive.pad_release(source, 2);
+    }
+}
+
+#[test]
+fn file_target_parity_from_raw_midi_notes() {
+    baseline_file_hand_parity(Source::Notes);
+}
+
+#[test]
+fn file_target_parity_from_raw_midi_learned_button() {
+    baseline_file_hand_parity(Source::Button);
+}
+
+/// Scenario "Question pad silence from raw MIDI".
+fn baseline_question_keeps_pads_silent(source: Source) {
+    let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+    for source in [Source::Keyboard, source] {
+        let mut drive = Drive::new();
+        for pad in [0, 1, 18] {
+            drive.load_pad(pad, sound.clone(), "loaded");
+        }
+        drive.app.pads.marked.extend([0, 1]);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        drive.tap(KeyCode::Backspace, M::NONE);
+        assert!(matches!(&drive.app.ask, Some(Ask::ClearPads { .. })));
+        let before = drive.seen();
+        assert_silent_target(&drive.pad_press(source, 2));
+        assert_eq!(
+            drive.seen(),
+            before,
+            "{source:?}: a question keeps its state"
+        );
+        drive.pad_release(source, 2);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.ask.is_none());
+        assert_eq!(
+            drive.app.pads.marked.iter().copied().collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        let hit = drive.pad_press(source, 2);
+        assert_full_hit(&hit, 18);
+        match source {
+            Source::Keyboard => assert!(hit.direct.is_empty()),
+            Source::Notes | Source::Button => assert!(hit.ui.is_empty()),
+        }
+        drive.pad_release(source, 2);
+    }
+}
+
+/// Scenario "Question route preserves held releases".
+#[test]
+fn question_route_preserves_held_releases() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+        drive.load_pad(0, sound.clone(), "held");
+        drive.load_pad(16, sound, "target");
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        drive.tap(KeyCode::F(6), M::NONE);
+        drive.tap(KeyCode::PageDown, M::NONE);
+        drive.app.browser.in_hand = Some("new file.wav".into());
+        drive.frame();
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert_eq!(drive.app.screen, Screen::Files);
+        assert!(matches!(&drive.app.ask, Some(Ask::PutFile { abs: 16, .. })));
+        assert!(drive.app.pads.held[0]);
+        let question = drive.app.ask.as_ref().unwrap().lines().to_vec();
+        let release = drive.pad_release(source, 0);
+        assert!(
+            matches!(release.commands()[..], [Command::PadRelease { pad: 0 }]),
+            "{source:?}: {:?}",
+            release.commands()
+        );
+        assert!(!drive.app.pads.held[0]);
+        assert!(!drive.app.pads.held[16]);
+        assert_eq!(drive.app.ask.as_ref().unwrap().lines(), question);
+    }
+}
+
+#[test]
+fn question_pad_silence_from_raw_midi_notes() {
+    baseline_question_keeps_pads_silent(Source::Notes);
+}
+
+#[test]
+fn question_pad_silence_from_raw_midi_learned_button() {
+    baseline_question_keeps_pads_silent(Source::Button);
 }
 
 /// Scenario "Copy parity from raw MIDI" and 83a's controller target contract.
