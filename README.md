@@ -108,3 +108,27 @@ locks, slice motion and the launcher. They are not requirements for the current 
 - The tests write WAV files to `renders/`. Listen to them.
 - `docs/LIVE-CHECKS.md` lists the checks by hand and by ear.
 - Each change goes in its own branch and a pull request to `master`.
+
+### OpenSpec agent setup
+
+Install the OpenSpec CLI once with `npm install -g @fission-ai/openspec`. Then use:
+
+```sh
+task openspec:init                              # set up Pi
+task openspec:init OPENSPEC_TOOLS=pi,codex       # or set up both agents
+task openspec:update                            # update configured agent instructions
+task openspec:check                             # validate specs and active changes
+```
+
+For Pi, OpenSpec uses `.pi/skills/` for skills and `.pi/prompts/` for commands.
+The OpenSpec profile and delivery settings decide which instructions it generates.
+Run `/reload` in Pi after setup or update.
+
+These tasks do not install or upgrade the CLI. Setup and update can overwrite
+OpenSpec-generated instructions; review `git diff` before you commit them. They do
+not archive changes or change the sampler keys.
+
+OpenSpec 1.9.0 checks the version of the first installed skill. If only another skill
+is outdated, `update` can miss it. Run `openspec:init` again with the same
+`OPENSPEC_TOOLS` to regenerate the selected agents' instructions. The update task
+does not use `--force`, because that option can also remove legacy OpenSpec files.
