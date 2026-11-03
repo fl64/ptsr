@@ -101,8 +101,9 @@ the owner checks are in `docs/LIVE-CHECKS.md`. The owner accepted 83a without co
 those checks; it is archived. The owner checked and accepted input parity 84; it is
 archived in `openspec/changes/archive/2026-11-03-84-input-parity/` on the same branch
 by owner request. Physical-controller checks remain unverified, and callback benchmark
-peaks above the 50% budget target remain unresolved. Input modes 85 is next in the plan,
-not active.
+peaks above the 50% budget target remain unresolved. Change 84a adds the benchmark
+report below and is active, pending owner acceptance. The owner approved the same branch
+for 84a. Input modes 85 is next in the input plan, not active.
 
 [Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
 locks, slice motion and the launcher. They are not requirements for the current step.
@@ -115,6 +116,36 @@ locks, slice motion and the launcher. They are not requirements for the current 
 - The tests write WAV files to `renders/`. Listen to them.
 - `docs/LIVE-CHECKS.md` lists the checks by hand and by ear.
 - Each change goes in its own branch and a pull request to `master`.
+
+### Offline callback benchmark
+
+Run `cargo bench -p engine --bench callback`. No sound device or controller is needed.
+The benchmark does not start the sampler or change system scheduling settings.
+
+It keeps the same 32 voices, 128 samples at 48 kHz, 20,000 playback blocks and 200 project
+switches. The full block budget is 2.667 ms; the 50% target is 1.333 ms. Existing wall-time
+summary lines remain. New groups cover playback, all switch callbacks, and each switch
+phase: first fade block, second fade block, clearing and restore.
+
+Each group shows mean, p99, maximum, sample count and `>50 %` count for three times:
+
+- `wall`: elapsed callback time, including time when the thread cannot run.
+- `thread CPU`: time accounted to this thread. Its measurement also includes the two
+  wall-clock reads and small timer overhead. It is not an exact profile of sound code.
+- `estimated gap`: wall minus CPU for each block, with negative results set to zero.
+  This is an estimate, not proof of a particular cause or program that delayed it.
+
+`maximum target` says `EXCEEDED` when an observed wall or CPU maximum is above 50%.
+Read that line and the counts even when the command succeeds. Exit status still checks
+only steady wall p99 and per-switch wall peak p99: strictly above 50% fails; equality
+passes. A successful command does not prove that every block met the target. CPU values
+and maxima do not replace those checks.
+
+Before the workload, 2,000 empty calls show timer overhead. The separate
+`measurement-envelope mean` includes sampling and storage. Raw empty-call means are in
+microseconds. No overhead is subtracted from workload times. A CPU clock error stops the
+command with an error, not invented zero CPU time. Earlier slow-core CPU spikes remain
+open; this report does not optimize the engine.
 
 ### OpenSpec agent setup
 

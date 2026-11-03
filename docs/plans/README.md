@@ -13,7 +13,7 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
   `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
-- The owner requested continuation in `plan/controller-first-patterns`, including 84.
+- The owner requested continuation in `plan/controller-first-patterns`, including 84 and 84a.
   This is an exception to the separate-branch rule. Push and PR need a separate request.
 - Keymap cleanup 83a is accepted and archived at `2b084d1` in
   `openspec/changes/archive/2026-11-03-83a-keymap-cleanup/`: the shipped map has Alt+R
@@ -26,6 +26,11 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   line, fixed LISTEN and F2 PLAY badges. Physical-controller checks remain unverified.
   Callback benchmark peaks above the 50% budget target remain unresolved. Input modes
   85 is next in the plan, not active; it still needs specifications and owner approval.
+- Report-only change 84a (`84a-benchmark-report`) is active, pending owner acceptance.
+  It was inserted before 85 after the benchmark investigation. Wall and thread CPU times,
+  estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
+  workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
+  were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

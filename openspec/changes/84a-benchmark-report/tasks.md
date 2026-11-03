@@ -29,7 +29,7 @@ These runs do not close earlier CPU spikes or physical-controller checks.
 
 ## 2. Owner documentation
 
-- [ ] 2.1 Explain the clocks, estimated gap, counts and unchanged gate in README and
+- [x] 2.1 Explain the clocks, estimated gap, counts and unchanged gate in README and
   live checks. Update project/plan/OpenSpec context for active 84a, not active 85.
   Validate, run `task check`, build the release and commit the docs. No new render,
   keyboard/controller pass or listening test is needed for unchanged sound/input.

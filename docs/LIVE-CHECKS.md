@@ -16,6 +16,7 @@ How to use this file:
 
 Notes:
 
+- Section 84a is offline. Do not start the sampler for that section; use its benchmark command.
 - "(by ear)" marks a step that checks the sound. Use your headphones for these steps.
 - Some steps use the WAV files in `renders/`. The command `task test` writes them.
 - The pad keys are `1 2 3 4 / Q W E R / A S D F / Z X C V`. A pad number counts these
@@ -908,3 +909,43 @@ The callback benchmark has recorded peaks above the 50% budget target, including
 107.46% in the last implementation check. Their cause remains unknown; acceptance
 does not close this performance issue. Archive checks must still verify main-spec
 scenario coverage, strict validation and the full automated suite.
+
+## 84a — Offline callback timing report
+
+Folder: `changes/84a-benchmark-report` (`plan/controller-first-patterns`)
+
+This is a report-only change, pending owner acceptance. Do not start `task run` for these
+checks. No sound device or controller is needed. Sound and input behavior are unchanged;
+no new keyboard, controller or listening pass is required. No new WAV is provided.
+The existing `renders/84-input-parity.wav` keeps the same samples and SHA-256.
+
+- [ ] From the repository folder, run `cargo bench -p engine --bench callback`.
+  Read the clock explanation and the unchanged exit checks above the timing groups.
+  The command must not start the sampler or require a sound device or controller.
+- [ ] Check the empty-call group: 2,000 samples for wall, thread CPU and estimated gap.
+  Read the raw means in microseconds and the separate full measurement-envelope mean.
+  No overhead is subtracted from the workload results.
+- [ ] Check the playback group: 20,000 samples. Each of wall, thread CPU and estimated
+  gap has mean, p99, maximum, sample count and count above 50% of the block budget.
+- [ ] Check the switch summary: 200 switches. The all-callback group has the same count
+  as that summary. In the current workload it is 22,000. The three phases have
+  200 first fade blocks, 200 second fade blocks and 21,600 clearing/restore blocks.
+  Each phase has the same three timing series and five statistics.
+- [ ] Read `maximum target`: `EXCEEDED` must be kept visible for any observed wall or CPU
+  maximum above 50%, even if the command succeeds. Success still means only that steady
+  wall p99 and per-switch wall peak p99 did not exceed 50%; it is not an all-block pass.
+  Equality at 50% passes those exit checks. A zero gap is valid when CPU exceeds wall.
+- [ ] Read the gap as an estimate, not proof of a cause. Record any exceedance below.
+  Accept the report separately from the still-open slow-core performance issue.
+
+Agent verification on 2026-11-03: the 9 report tests pass, including all seven named
+scenarios, exact 50% boundaries, a rare peak, clock errors and raw overhead output.
+The full offline benchmark and `task check` passed. In the final implementation check,
+steady wall p99 was 12.40%, wall maximum 41.94%, CPU maximum 41.97%, with zero wall/CPU
+blocks above 50%. The per-switch wall peak p99 was 10.05%. The full empty-call envelope
+mean was 0.445 us. These are one run's observations, not a hard-maximum guarantee.
+No engine callback, sound, live load, scheduler setting or runtime dependency changed.
+Earlier diagnostic runs showed both scheduling delays and CPU-time exceedances; their
+slow-core cause remains open. Physical-controller checks from 84 remain unverified.
+
+Owner result: not yet reported. The boxes above stay open until the owner reports checks.
