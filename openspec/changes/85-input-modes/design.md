@@ -211,8 +211,18 @@ Test both orderings of direct/UI retriggers and multiple accepted pads for one c
    Commit execution still requires the owner's git authorization.
 
 Representation-bound low-level tests must adapt from five atomic fields to the packed
-value; keep the same screen/bank/edit/learn/hand assertions. Do not remove, skip or
-weaken behavioral tests from 84. Keep exact names for all ten delta scenarios.
+value; keep the same screen/bank/edit/learn/hand assertions, with the owner-approved
+Chop fixture correction below. Do not remove, skip or weaken behavioral tests from 84.
+Keep exact names for all ten delta scenarios.
+
+The owner approved the Chop fixture correction before task 2.1 on 2026-11-03.
+At `53d317e`, `midi.rs:on_screen` leaves `hand` false even for Chop, and
+`play_pads_on_the_fx_screen_across_screen_and_bank_switches` expects a direct accepted
+Chop hit. App always publishes Chop as UI-routed. Correct this artificial screen/route
+pair: keep all normal-screen direct assertions, check the real UI event for the Chop
+case, and prove Chop-to-FX playback through the production driver and actual audio
+queues. Keep original bank, velocity and release checks. This is a test-fixture
+correction, not a change to live Chop behavior; do not add a test-only route flag.
 
 Use keyboard events, raw notes and learned CC80 through real profile seeding and
 production dispatch. Extend Drive only to split publish/drain boundaries and pause
@@ -270,17 +280,6 @@ specs by hand and do not mark physical checks passed because recorded tests pass
 
 ## Open questions
 
-- Before task 2.1: may the low-level Chop-to-FX fixture be corrected to match
-  production? At `53d317e`, `midi.rs:on_screen` sets the screen and bank but leaves
-  `hand` false, even for Chop. `play_pads_on_the_fx_screen_across_screen_and_bank_switches`
-  therefore expects a direct accepted Chop hit. App publication always sets the UI
-  route for Chop; `route_pad` deliberately keeps that real rule. The old artificial
-  screen/route pair cannot be expressed by the approved complete Focus. Proposed:
-  retain all normal-screen direct assertions, correct the Chop case to the real UI
-  route and prove its transition to direct FX playback through the production driver,
-  keeping velocity, original bank and release checks. Do not add a test-only route
-  flag or change live Chop behavior. Default: pause task 2.1 without changing this
-  existing test until the owner approves the fixture correction.
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later
   change; recorded notes and learned CC tests do not accept the SMC-PAD template.
