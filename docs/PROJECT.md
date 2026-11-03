@@ -38,16 +38,20 @@ Its physical-controller pass remains unverified. Callback benchmark peaks above 
 It adds wall time, thread CPU time, estimated gaps, exceedance counts and timer overhead
 to the offline benchmark. Workload, sound, the 50% target and wall p99 exit checks stay
 unchanged. Slow-core CPU spikes still need investigation.
-Input modes 85 is active. Shared pad handling, coherent MIDI state, ordered controller
+The owner accepted input modes 85 on 2026-11-03. It is archived in
+`openspec/changes/archive/2026-11-03-85-input-modes/`.
+Shared pad handling, coherent MIDI state, ordered controller
 commands and safe deferred releases are implemented. Separate repairs keep keyboard/MIDI
 Chop holds independent and prevent late direct notifications from restarting Chop.
 Input dispatch is in its own module; the move changed no method body. Offline checks
-and the three 85 renders are ready. Owner acceptance and archive remain pending.
-Physical-controller behavior is still unverified. No keys, profiles, saved-data format
+and the three 85 renders are ready. This is overall acceptance, not individual listening results.
+Separate WAV listening remains unreported. Physical-controller behavior is still unverified.
+No keys, profiles, saved-data format
 or audio callback changed. Section 85 of `docs/LIVE-CHECKS.md` has the separate passes.
 The owner requested `plan/controller-first-patterns` for 84, 84a and 85 as
-exceptions to the separate-branch rule. Activate only one change at a time; push and PR
-need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
+exceptions to the separate-branch rule. Closure of 85 and work on 86 now share
+`86-screen-registry` and one MR by owner request. Change 86 is next, but is not active yet.
+Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
 parameter locks, slice motion and PaulStretch. It and `docs/plans/` are guides, not

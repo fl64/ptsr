@@ -966,10 +966,11 @@ pass is implied; the earlier controller checks remain unverified.
 
 ## 85 — Shared pad input and ordered controller targets
 
-Folder: `changes/85-input-modes` (`plan/controller-first-patterns`)
+Folder: `changes/archive/2026-11-03-85-input-modes`
 
-Implementation and offline checks are complete. Owner acceptance and archive are
-pending. No keys, profiles, saved-data formats or callback code changed. The shared
+The owner accepted 85 on 2026-11-03 and authorized its archive and a local signed-off commit.
+Closure of 85 and work on 86 share `86-screen-registry` and one MR by owner request.
+Implementation and offline checks are complete. No keys, profiles, saved-data formats or callback code changed. The shared
 handler keeps the existing text, picker, F10/F12 and overlapping-hand boundaries.
 Recorded MIDI and waveform checks do not mark a physical or listening pass complete.
 The final agent screen pass at `1a24909` has 66 captures under ignored
@@ -980,8 +981,9 @@ starts logged `JACK unavailable`, never `JACK: active`; no ptsr PipeWire node wa
 present before, during or after. Both exits printed `UX exit: 0`. The terminal had
 no audio or kitty releases; no MIDI was injected. The design records fixture
 expectation corrections. This is screen evidence, not owner or hardware acceptance.
-The owner reported successful keyboard checks on 2026-11-03. The controller is not available.
-Only the keyboard boxes below reflect that report. Controller and WAV checks stay open.
+The owner reported successful keyboard checks on 2026-11-03, then accepted the whole change.
+The controller is not available. Only the keyboard boxes below reflect an individual check result.
+Controller and WAV checks stay open where no individual result was reported. Open boxes do not mean rejection.
 
 ### Prepare
 
@@ -1092,7 +1094,9 @@ memory-model check or exhaustive proof of every queue interleaving is claimed.
 Owner keyboard result, 2026-11-03: all checks possible with the keyboard passed.
 The owner cannot test a controller at present. Keyboard terminal: not reported.
 Device/preset and physical note/CC release forms: unverified. Separate WAV listening result: not reported.
-The owner approved squash merge of [PR #4](https://github.com/fl64/ptsr/pull/4) into `master` with these checks open.
-This approval does not authorize archive of 85. Tasks 5.2 and 5.3 stay open.
+[PR #4](https://github.com/fl64/ptsr/pull/4) is merged into `master` at `fd6a566`.
+The owner later accepted 85 and authorized archive and a local signed-off commit on 2026-11-03.
+This later decision replaces the earlier archive restriction. It does not report individual WAV or hardware results.
+Keep the archive and status update separate from 86 specifications and code in the combined MR.
 Callback maximum-budget and slow-core issues remain open. Green p99 benchmark gates do not prove
 that every callback meets the 50% target. This change does not investigate that issue.

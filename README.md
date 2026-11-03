@@ -104,13 +104,16 @@ by owner request. Physical-controller checks remain unverified, and callback ben
 peaks above the 50% budget target remain unresolved. The owner accepted the benchmark
 report below (84a) on 2026-11-03. It is archived in
 `openspec/changes/archive/2026-11-03-84a-benchmark-report/` on the same approved branch.
-Input modes 85 is active on the same approved branch. Its implementation and offline
-checks are complete; owner acceptance and archive are pending. Keyboard and MIDI share
-pad handling. Controller commands precede following target hits, without delaying normal
-direct MIDI play. Mixed Chop holds and late direct notifications have separate repairs.
+The owner accepted input modes 85 on 2026-11-03. It is archived in
+`openspec/changes/archive/2026-11-03-85-input-modes/`.
+Closure of 85 and work on 86 share `86-screen-registry` by owner request.
+Keyboard and MIDI share pad handling. Controller commands precede following target hits,
+without delaying normal direct MIDI play. Mixed Chop holds and late direct notifications have separate repairs.
 Keys, profiles, saved data and the audio callback stay unchanged. See section 85 of
 `docs/LIVE-CHECKS.md` for separate keyboard/controller checks and the three 85 WAV files.
-Recorded MIDI does not verify physical hardware; the callback timing issue stays open.
+This is overall acceptance. Separate WAV listening remains unreported, and physical-controller checks remain unverified.
+Recorded MIDI tests do not replace physical checks. The callback timing issue stays open.
+Change 86, the screen registry, is next. It is not active yet.
 
 [Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
 locks, slice motion and the launcher. They are not requirements for the current step.

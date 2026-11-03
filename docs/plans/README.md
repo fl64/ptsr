@@ -14,7 +14,9 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   all remaining checks. It is archived in
   `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
 - The owner requested continuation in `plan/controller-first-patterns`, including 84, 84a and 85.
-  This is an exception to the separate-branch rule. Push and PR need a separate request.
+  This is an exception to the separate-branch rule. The owner now requests closure of 85
+  and work on 86 in one MR from `86-screen-registry`. Keep their commits separate.
+  Push and PR need a separate request.
 - Keymap cleanup 83a is accepted and archived at `2b084d1` in
   `openspec/changes/archive/2026-11-03-83a-keymap-cleanup/`: the shipped map has Alt+R
   mic, Ctrl+G normalize, H / Shift+H hits, U/O banks, J/L values, Tab assign order and
@@ -31,14 +33,16 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
   were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
-- Input modes 85 is active in `openspec/changes/85-input-modes/`. Implementation and
-  offline checks are complete; owner acceptance and archive remain pending. It shares
+- The owner accepted input modes 85 on 2026-11-03. It is archived in
+  `openspec/changes/archive/2026-11-03-85-input-modes/`. Implementation and offline checks are complete.
+  It shares
   pad handling and MIDI state, fixes controller-command order and deferred releases,
   and separately repairs mixed Chop holds and late direct notifications. The dispatch
   move is behavior-neutral. Keys, profiles, saved data and the callback stay unchanged.
   The three 85 WAV files and separate owner passes are in section 85 of
-  `docs/LIVE-CHECKS.md`. No physical-controller or listening result is implied.
-  Change 86 is next only after 85 is accepted and archived; it is not active.
+  `docs/LIVE-CHECKS.md`. This is overall acceptance, not individual listening results.
+  Physical-controller checks remain unverified, and separate WAV listening remains unreported.
+  Change 86 is next. It is not active yet.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
