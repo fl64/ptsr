@@ -415,6 +415,64 @@ No program was started, no audio device was opened and no owner config was chang
 The agent has not heard the WAV. Task 3.2 needs the owner's results; task 3.3 still
 needs explicit acceptance before the OpenSpec CLI archive.
 
+## Task 2.3 verification
+
+`353a082` corrects the initial pad-loop scenario to retrigger before implementation.
+`6f577bf` records the later fixed-width LISTEN request separately from code.
+The initial real-route regression run has 43 input tests passed and all six new line
+scenarios failed (`/tmp/ptsr-84-pad-line-red.log`): after the first audio block the line
+is `None` instead of `Some(144128)`. The badge regression fails with 8 cells instead of
+10 (`/tmp/ptsr-84-listen-red.log`), and the real-pad badge test fails with `LISTEN`
+instead of `LISTEN ▶` (`/tmp/ptsr-84-listen-state-red.log`). No old test was removed,
+skipped or weakened. A new Space-cut fixture was advanced beyond the existing 10 ms
+minimum cut gap; its cut-position assertion stays unchanged.
+
+`Realtime::process` now reports pad voice positions through the existing shared Stats,
+after processing audio. The fixed snapshot has one entry per engine voice slot. Its
+writer uses only bounded atomic stores; the reader tries once and rejects an overlapping
+update. SeqCst fields and an odd/even revision prevent mixing sample identity, pad,
+frame, start order or project epoch across updates. No sample pointer is dereferenced.
+The new cross-crate `Stats::pad_position` read API returns the newest sounding voice
+accepted by the caller's pad filter for the retained sample and project epoch. No
+allocation, lock, new command or sample-reference drop was added to the callback.
+
+The production frame uses `App::chop_display`. It filters the snapshot by the open
+chop's sample, file and link epoch, and checks project readiness before and after the
+read. It uses preview priority as documented, otherwise the newest sounding matching
+pad. Only the waveform position and LISTEN badge use this result. The existing
+`playhead` and `preview_frame` used by M and Space are unchanged. The badge is set
+before clipping the line to the view, so an offscreen voice still lights it. TUI pads
+LISTEN to 10 cells and dims it at rest; the assign badge is unchanged.
+
+Eight new App tests cover the six line scenarios and badge playback/view state through
+keyboard events, raw notes and learned CC via production dispatch and the actual offline
+queues. They cover listen and slice edit, pitch -12/0/+12, retrigger, natural end,
+release and hush, source and chop identity, a reused Sample across a project switch,
+queue-full rejection, not-ready input, question/learn, zoom and unchanged M/Space/loop
+behavior. The effect-tail test has audio after the pad ends but an idle LISTEN badge.
+Two new engine tests cover source/pad/epoch/start order and concurrent snapshot reads.
+Two new terminal tests cover the line in Braille/picture and listen/edit, and badge
+width, file column, colors and play icon across start/stop, plus unchanged assign
+badge text, width and colors. Rejected/unrelated/stale pad tests also check idle LISTEN.
+
+`/tmp/ptsr-84-pad-line-completion-check.log` records a green full `task check`: format,
+strict clippy, workspace tests (611 App, 70 input, 100 TUI, 9 engine unit tests, no
+failures), scenario coverage and callback benchmark. The 32-voice callback reports
+mean 8.33%, p99 12.76%, maximum 28.81%; project-switch peak p99 is 18.74%, maximum
+26.98%. The earlier pre-implementation correction check had maximum 121.60%
+(`/tmp/ptsr-84-pad-line-correction-check.log`). This does not establish a hard maximum
+below 50% or resolve the benchmark variability already recorded above.
+
+`task build` passes (`/tmp/ptsr-84-pad-line-completion-build.log`), producing
+`target/release/ptsr`. No new sound feature was added: the regenerated
+`renders/84-input-parity.wav` retains SHA-256
+`f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
+The route render remains sample-identical to the one-hit/release engine oracle.
+User stories and live checks include the line, badge and precedence; the 24 owner
+checks stay unchecked. No program was started live, no owner's sound graph or config
+was touched, and no listening or physical-controller result is claimed. Tasks 3.2
+and 3.3 remain open for owner results and acceptance before archive.
+
 ## Risks / Trade-offs
 
 - A helper that feeds resolved actions directly can pass while production MIDI fails.

@@ -2217,3 +2217,386 @@ fn copy_route_preserves_held_midi_releases() {
         assert!(!drive.app.pads.held[0]);
     }
 }
+
+fn displayed_pad_frame(drive: &Drive) -> Option<usize> {
+    let chop = drive.app.chop.as_ref()?;
+    let line = drive.app.chop_display(chop).playhead?;
+    Some(chop.view.start + (line * (chop.view.end - chop.view.start) as f32).round() as usize)
+}
+
+fn check_pad_playback_line(source: Source) {
+    for edit in [false, true] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.render_blocks(4);
+        if edit {
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(drive.app.edit);
+        }
+        assert_eq!(displayed_pad_frame(&drive), None);
+        assert_full_hit(&drive.velocity_hit(source, 127), 18);
+        let chop = drive.app.chop.as_ref().unwrap();
+        let start = chop.slices()[3].start;
+        let cursor = chop.cursor;
+        assert_eq!(
+            drive.app.chop_display(chop).mode,
+            "LISTEN",
+            "not lit before audio starts"
+        );
+        let mut wave = drive.render_blocks(1);
+        assert_eq!(displayed_pad_frame(&drive), Some(start + RENDER_BLOCK));
+        append_stereo(&mut wave, drive.render_blocks(3));
+        assert_eq!(displayed_pad_frame(&drive), Some(start + 4 * RENDER_BLOCK));
+        let chop = drive.app.chop.as_ref().unwrap();
+        assert_eq!(
+            chop.cursor, cursor,
+            "progress must not drag the owner's cursor"
+        );
+        assert_eq!(
+            drive.app.chop_display(chop).mode,
+            "LISTEN ▶",
+            "the owner-approved badge follows actual pad playback"
+        );
+        assert_eq!(drive.app.playhead(), None, "not a transport preview");
+        assert!(
+            drive.frame().commands().is_empty(),
+            "drawing must not start another voice"
+        );
+        for samples in [&wave.0, &wave.1] {
+            assert_eq!(engine::checks::first_non_finite(samples), None);
+            assert!(engine::checks::peak(samples) < 1.0);
+        }
+    }
+}
+
+/// Scenario "Keyboard pad shows the Chop playback line".
+#[test]
+fn keyboard_pad_shows_the_chop_playback_line() {
+    check_pad_playback_line(Source::Keyboard);
+}
+
+/// Scenario "MIDI pad shows the same Chop playback line".
+#[test]
+fn midi_pad_shows_the_same_chop_playback_line() {
+    check_pad_playback_line(Source::Notes);
+    check_pad_playback_line(Source::Button);
+}
+
+/// Scenario "Chop pad line follows pitch and retrigger".
+#[test]
+fn chop_pad_line_follows_pitch_and_retrigger() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for (pitch, step) in [(-12, 64), (0, 128), (12, 256)] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(pitch, false);
+            drive.render_blocks(4);
+            drive.velocity_hit(source, 127);
+            drive.render_blocks(3);
+            assert_eq!(displayed_pad_frame(&drive), Some(144_000 + 3 * step));
+            drive.pad_release(source, 2);
+            assert_full_hit(&drive.velocity_hit(source, 127), 18);
+            drive.render_blocks(1);
+            assert_eq!(
+                displayed_pad_frame(&drive),
+                Some(144_000 + step),
+                "{source:?}, pitch {pitch}"
+            );
+        }
+    }
+}
+
+/// Scenario "Chop pad line ends with its voice".
+#[test]
+fn chop_pad_line_ends_with_its_voice() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for ending in ["end", "release", "hush"] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(0, false);
+            drive.render_blocks(4);
+            drive.velocity_hit(source, 127);
+            drive.render_blocks(1);
+            assert!(displayed_pad_frame(&drive).is_some());
+            match ending {
+                "release" => {
+                    drive.pad_release(source, 2);
+                    drive.render_blocks(1);
+                    assert!(
+                        displayed_pad_frame(&drive).is_some(),
+                        "release still sounds"
+                    );
+                }
+                "hush" => drive.app.send(Command::HushPads),
+                _ => {}
+            }
+            let wave = drive.render_blocks(400);
+            assert_eq!(displayed_pad_frame(&drive), None, "{source:?}, {ending}");
+            assert_eq!(engine::checks::peak(&wave.0[49_000..]), 0.0);
+        }
+    }
+}
+
+/// Scenario "Chop pad line keeps transport and edits unchanged".
+#[test]
+fn chop_pad_line_keeps_transport_and_edits_unchanged() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.render_blocks(4);
+        drive.velocity_hit(source, 127);
+        drive.render_blocks(1);
+        assert!(displayed_pad_frame(&drive).is_some());
+        // Move within the same slice: the owner's cursor moves, no slice pick preview.
+        drive.tap(KeyCode::Right, M::NONE);
+        let cursor = drive.app.chop.as_ref().unwrap().cursor;
+        drive.render_blocks(1);
+        assert_eq!(drive.app.playhead(), None);
+        let sounding = displayed_pad_frame(&drive).unwrap();
+        assert_ne!(cursor, sounding);
+        drive.tap(KeyCode::Char('m'), M::NONE);
+        assert!(drive.app.chop.as_ref().unwrap().markers.contains(&cursor));
+        assert!(!drive.app.chop.as_ref().unwrap().markers.contains(&sounding));
+        assert_eq!(drive.app.chop.as_ref().unwrap().cursor, cursor);
+        let play = drive.tap(KeyCode::Char(' '), M::NONE);
+        assert!(
+            play.ui
+                .iter()
+                .any(|cmd| matches!(cmd, Command::Preview { sound: Some(_), .. }))
+        );
+        assert!(
+            !play
+                .ui
+                .iter()
+                .any(|cmd| matches!(cmd, Command::PadPress { .. }))
+        );
+        // Existing cuts must be at least 10 ms apart; let the preview pass that gap.
+        drive.render_blocks(8);
+        assert_eq!(
+            displayed_pad_frame(&drive),
+            drive.app.playhead(),
+            "Space line keeps priority"
+        );
+        let preview_at = drive.app.playhead().unwrap();
+        drive.tap(KeyCode::Char('m'), M::NONE);
+        assert!(
+            drive
+                .app
+                .chop
+                .as_ref()
+                .unwrap()
+                .markers
+                .contains(&preview_at),
+            "Space cut keeps its old rule"
+        );
+        let stop = drive.tap(KeyCode::Char(' '), M::NONE);
+        assert!(
+            stop.ui
+                .iter()
+                .any(|cmd| matches!(cmd, Command::Preview { sound: None, .. }))
+        );
+        drive.render_blocks(4);
+        assert_eq!(drive.app.playhead(), None);
+        assert!(
+            displayed_pad_frame(&drive).is_some(),
+            "stopping preview must not stop the pad"
+        );
+        drive.tap(KeyCode::Char('o'), M::ALT);
+        drive.tap(KeyCode::Char(' '), M::NONE);
+        drive.render_blocks(900);
+        assert!(
+            drive.app.playhead().is_some(),
+            "existing Space loop still plays"
+        );
+        assert_eq!(displayed_pad_frame(&drive), drive.app.playhead());
+    }
+}
+
+/// Scenario "Chop pad line rejects unrelated and silent hits".
+#[test]
+fn chop_pad_line_rejects_unrelated_and_silent_hits() {
+    use std::sync::atomic::Ordering::{Acquire, Release};
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for guard in ["question", "learn", "queue"] {
+            let mut drive = Drive::offline();
+            drive.parity_pad(0, false);
+            drive.link_chop_pad(19, 2);
+            let target = drive.app.pads.snapshot(19);
+            for cmd in drive.app.pads.put_back(19, &target) {
+                drive.app.send(cmd);
+            }
+            drive.render_blocks(4);
+            drive.velocity_hit(Source::Keyboard, 127);
+            drive.render_blocks(1);
+            assert_eq!(displayed_pad_frame(&drive), Some(144_128));
+            if guard == "question" {
+                drive.app.pads.marked.insert(18);
+                drive.app.ask_clear();
+                drive.frame();
+            } else if guard == "learn" {
+                drive.tap(KeyCode::F(10), M::NONE);
+            } else {
+                let audio = drive.app.audio.as_mut().unwrap();
+                while audio.commands.slots() > 0 {
+                    audio
+                        .commands
+                        .push(ProjectCommand {
+                            epoch: 0,
+                            ready_at_send: true,
+                            command: ProjectMessage::Command(Command::SetPadGain {
+                                pad: 0,
+                                gain: 1.0,
+                            }),
+                        })
+                        .unwrap();
+                }
+            }
+            drive.pad_press(source, 3);
+            assert!(
+                drive.app.audio_held[19].is_none(),
+                "blocked hit has no audio hold"
+            );
+            drive.render_blocks(1);
+            assert_eq!(
+                displayed_pad_frame(&drive),
+                Some(144_256),
+                "older voice survives {guard}"
+            );
+        }
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        let sound = drive.app.chop.as_ref().unwrap().sound.clone();
+        drive.load_pad(19, Arc::new(Sample::mono(vec![0.1; 96_000])), "other");
+        let snap = drive.app.pads.snapshot(19);
+        for cmd in drive.app.pads.put_back(19, &snap) {
+            drive.app.send(cmd);
+        }
+        drive.render_blocks(4);
+        drive.pad_press(source, 3);
+        drive.render_blocks(1);
+        assert_eq!(
+            displayed_pad_frame(&drive),
+            None,
+            "another sample is not this waveform"
+        );
+        let chop = drive.app.chop.as_ref().unwrap();
+        assert_eq!(drive.app.chop_display(chop).mode, "LISTEN");
+        drive.velocity_hit(Source::Keyboard, 127);
+        drive.render_blocks(1);
+        assert!(displayed_pad_frame(&drive).is_some());
+        drive.app.apply_session(session::Session::default());
+        // Reuse the very same Sample allocation to test epoch, not just pointer filtering.
+        drive.prepare_chop(sound, 4);
+        drive.link_chop_pad(18, 3);
+        assert_eq!(
+            displayed_pad_frame(&drive),
+            None,
+            "old project position is hidden immediately"
+        );
+        let chop = drive.app.chop.as_ref().unwrap();
+        assert_eq!(drive.app.chop_display(chop).mode, "LISTEN");
+        for _ in 0..256 {
+            drive.app.flush_audio();
+            drive.render_blocks(1);
+            assert_eq!(displayed_pad_frame(&drive), None);
+            if drive.project.ready.load(Acquire) == 1 && drive.app.pending_audio.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(drive.project.ready.load(Acquire), 1);
+        drive.project.ready.store(0, Release);
+        drive.velocity_hit(source, 127);
+        drive.project.ready.store(1, Release);
+        drive.render_blocks(4);
+        assert_eq!(
+            displayed_pad_frame(&drive),
+            None,
+            "not-ready hits cannot create a line"
+        );
+        let chop = drive.app.chop.as_ref().unwrap();
+        assert_eq!(drive.app.chop_display(chop).mode, "LISTEN");
+    }
+}
+
+/// Scenario "Chop listen badge stays lit beyond the waveform view".
+#[test]
+fn chop_pad_line_uses_the_visible_wave_and_current_chop() {
+    let mut drive = Drive::offline();
+    drive.parity_pad(0, false);
+    drive.render_blocks(4);
+    drive.velocity_hit(Source::Keyboard, 127);
+    drive.render_blocks(4);
+    for _ in 0..4 {
+        drive.tap(KeyCode::Char('i'), M::NONE);
+    }
+    let chop = drive.app.chop.as_ref().unwrap();
+    let view = drive.app.chop_display(chop);
+    let expected = (144_512 - chop.view.start) as f32 / (chop.view.end - chop.view.start) as f32;
+    assert_eq!(view.playhead, Some(expected));
+    assert_eq!(displayed_pad_frame(&drive), Some(144_512));
+    for _ in 0..4 {
+        drive.tap(KeyCode::Char('i'), M::NONE);
+    }
+    assert_eq!(
+        displayed_pad_frame(&drive),
+        None,
+        "do not clamp offscreen progress to an edge"
+    );
+    let chop = drive.app.chop.as_ref().unwrap();
+    assert_eq!(
+        drive.app.chop_display(chop).mode,
+        "LISTEN ▶",
+        "offscreen voice still plays"
+    );
+    for _ in 0..8 {
+        drive.tap(KeyCode::Char('k'), M::NONE);
+    }
+    assert_eq!(displayed_pad_frame(&drive), Some(144_512));
+    drive.app.pads.link[18].as_mut().unwrap().1 += 1;
+    assert_eq!(
+        displayed_pad_frame(&drive),
+        None,
+        "another chop of the same Sample is not this chop"
+    );
+    let chop = drive.app.chop.as_ref().unwrap();
+    assert_eq!(drive.app.chop_display(chop).mode, "LISTEN");
+}
+
+/// Scenario "Chop listen badge lights only while playback runs".
+#[test]
+fn chop_listen_badge_lights_only_while_playback_runs() {
+    use engine::checks::peak;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.parity_pad(0, false);
+        drive.app.send(Command::SetPadSends {
+            pad: 18,
+            sends: [0.0, 0.8],
+        });
+        drive.app.send(Command::SetFx {
+            slot: 1,
+            settings: engine::fx::FxSettings::Delay {
+                time_ms: 20.0,
+                feedback: 0.8,
+            },
+        });
+        drive.render_blocks(4);
+        let mode = |d: &Drive| d.app.chop_display(d.app.chop.as_ref().unwrap()).mode;
+        assert_eq!(mode(&drive), "LISTEN");
+        drive.velocity_hit(source, 127);
+        assert_eq!(mode(&drive), "LISTEN", "queued input alone is not playback");
+        drive.render_blocks(64);
+        assert_eq!(mode(&drive), "LISTEN ▶");
+        drive.pad_release(source, 2);
+        let tail = drive.render_blocks(16);
+        assert_eq!(mode(&drive), "LISTEN");
+        assert!(
+            peak(&tail.0[1_024..]) > 1e-5,
+            "effect tail alone must not keep the badge lit"
+        );
+        drive.tap(KeyCode::Char(' '), M::NONE);
+        drive.render_blocks(1);
+        assert_eq!(mode(&drive), "LISTEN ▶");
+        drive.tap(KeyCode::Char(' '), M::NONE);
+        drive.render_blocks(4);
+        assert_eq!(mode(&drive), "LISTEN");
+    }
+}

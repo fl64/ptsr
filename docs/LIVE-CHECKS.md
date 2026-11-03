@@ -764,6 +764,10 @@ Folder: `changes/84-input-parity` (`plan/controller-first-patterns`)
 Status: automated input and offline sound checks pass. The owner has not checked
 these steps or accepted change 84. All boxes below stay open until the owner reports
 results. No agent live, listening or physical-controller check is implied.
+Before task 2.3, the owner reported that a linked pad sounds in Chop but its green
+playback line is missing. The owner confirmed that Space has that line and approved
+adding it for pad hits only. The post-fix keyboard check is still open. No controller
+is currently available to the owner; its physical pass remains unverified.
 
 ### Prepare both passes
 
@@ -795,6 +799,18 @@ Use the keyboard for screen, bank, plan and confirmation commands without bindin
 - [ ] (by ear) On Pads, change a linked pad's pitch to +12 and its filter to low-pass
   at about 1200 Hz. Hit it, then open its slice with `F3` and hit it again. Check the
   same higher, darker pad sound and selected slice, without a second preview sound.
+- [ ] On Chop, hit a linked pad without Space. Check the thin green line moving through
+  its slice while it sounds. Hit it again: the line starts again. Open slice edit with
+  `Enter` and repeat. The owner's cursor does not follow playback; Space and M keep
+  their previous behavior. Let the sound end or release a gate: the line disappears.
+  Check once with pitch +12 and in each wave mode available in your terminal. A line
+  outside a zoomed view is hidden, not pinned to its edge. If Space preview also runs,
+  its existing line has priority until the preview stops.
+- [ ] Watch LISTEN while a linked pad starts and stops, then repeat with Space. Its
+  width and the file-name column must stay fixed. At rest it is dim; while a preview
+  or linked pad of this chop plays it is blue with `▶`. Zoom in until the sounding
+  position leaves the view: the line is hidden but LISTEN stays blue. After the last
+  matching voice stops it becomes dim, even if an effect tail still sounds.
 - [ ] On Chop, press `P`, hit an occupied target and press `Enter`. Wait for the preview
   to end. Hit another pad under the replacement question. Check silence, unchanged
   plan and unchanged question. Press `Esc`: nothing is replaced.
@@ -833,6 +849,10 @@ both are available. A physical test of one does not verify the other.
 - [ ] (by ear) Hit the linked pad with pitch +12 and the low-pass filter on Chop.
   Compare MIDI velocity 127 with `Shift` plus the keyboard pad: the sounds must match.
   Hit lightly and strongly: the light linked-pad hit must be quieter, not a bare preview.
+- [ ] Hit the linked pad on Chop in listen and slice edit. Check the same moving green
+  line, pitch speed, retrigger, end/release and fixed-width LISTEN badge behavior as
+  the keyboard pass. A new hit under question or learn must not start a line; an older
+  pad that still sounds can keep its own line. This check stays open without a controller.
 - [ ] Open a plan replacement question, wait for preview to end, then hit controller
   pads. Check silence and unchanged question and plan. `Esc` keeps the old targets.
 - [ ] (by ear) Hold the long linked gate from controller pad `W` in bank 2 on Chop.
@@ -868,6 +888,7 @@ both are available. A physical test of one does not verify the other.
   between hits and no clicks, clipping or extra hits. Recreate the WAV with
   `cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture` if needed.
 
-Owner result: not reported. Device/preset: not recorded. Keyboard terminal: not recorded.
-Note/CC forms not tested: not recorded. Listening result: not reported.
+Owner result: missing pad playback line reported before 2.3; post-fix check not reported.
+Device/preset: no controller currently available. Keyboard terminal: not recorded.
+Physical note/CC forms: all unverified. Listening result: not reported.
 Archive is blocked until explicit owner acceptance and the scenario coverage check.

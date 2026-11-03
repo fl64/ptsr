@@ -2738,6 +2738,41 @@ impl App {
             .count()
     }
 
+    fn chop_display<'a>(&self, chop: &'a chop::Chop) -> tui::Chop<'a> {
+        let preview = self.playhead();
+        let mut view = chop_view(chop, self.plan.as_ref(), preview, self.rate, &self.pads);
+        // Only the line and badge use pad positions. Space and M still use the
+        // preview position, so observing a pad cannot change transport or edits.
+        if preview.is_none()
+            && self.plan.is_none()
+            && self.screen == Screen::Chop
+            && let Some(audio) = &self.audio
+        {
+            use std::sync::atomic::Ordering::Acquire;
+            let epoch = audio.project.epoch.load(Acquire);
+            if audio.project.ready.load(Acquire) == epoch {
+                let position = audio.stats.pad_position(&chop.sound, epoch, |pad| {
+                    self.pads.file[pad].as_ref() == Some(&chop.file)
+                        && self.pads.link[pad].is_some_and(|(_, e)| e == chop.epoch)
+                });
+                if audio.project.epoch.load(Acquire) == epoch
+                    && audio.project.ready.load(Acquire) == epoch
+                {
+                    if position.is_some() {
+                        view.mode.push_str(" ▶");
+                    }
+                    view.playhead = position
+                        .filter(|p| (chop.view.start..chop.view.end).contains(p))
+                        .map(|p| {
+                            (p - chop.view.start) as f32
+                                / (chop.view.end - chop.view.start).max(1) as f32
+                        });
+                }
+            }
+        }
+        view
+    }
+
     /// Where the chop screen playback is, in frames of the sample.
     fn playhead(&self) -> Option<usize> {
         if self.screen != Screen::Chop {
@@ -6228,8 +6263,7 @@ fn main() -> std::io::Result<()> {
             Some(p) => tui::Screen::ProjectPicker(p),
             None => match (app.screen, &app.chop) {
                 (Screen::Chop, Some(c)) => {
-                    let mut view =
-                        chop_view(c, app.plan.as_ref(), app.playhead(), app.rate, &app.pads);
+                    let mut view = app.chop_display(c);
                     // the keyboard of slices draws the slices' own waves
                     if view.slice_keys.is_none() {
                         bank_waves(&mut view.pads, &mut app.pads, app.rate);

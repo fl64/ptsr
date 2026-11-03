@@ -520,7 +520,10 @@ are not pad hits. The SMC-PAD profile is still a template, not a verified device
    `PgDn` opens the next page of slices.
 2. Put slices on pads with `P`, target hits and `Enter`. In listen mode, hit a linked
    pad. It plays with that pad's pitch, filter and other settings and selects its slice.
-   `Shift` gives full velocity; a plain key gives velocity 80.
+   `Shift` gives full velocity; a plain key gives velocity 80. In listen and slice edit,
+   the thin green line follows that pad's real playback position and pitch. It starts
+   again on a new hit and disappears when the voice ends. Playback progress does not
+   move your edit cursor. `Space` and `M` keep their existing behavior.
 3. Press `P` with a slice selected. Each target hit adds that slice to the by-hand
    plan, previews it and selects the next unplanned slice. Turn banks to add targets
    there. Hits do not apply the plan. `Enter` applies; an occupied target asks first.
@@ -539,6 +542,14 @@ are not pad hits. The SMC-PAD profile is still a template, not a verified device
 3. Release the original note or button after a bank or screen change, question or
    `F10`. The original gate pad stops. Disconnecting that device also releases it.
    New hits in learn stay silent and cannot take another control's held pad.
+
+The same green line works with Braille and picture waves. If several pads of this chop
+sound, it follows the most recently started voice that still sounds. While a Space or
+slice preview sounds, its existing line has priority. A pad of another sample does not
+put a line on this waveform. The line does not scroll the view to follow the sound.
+The LISTEN badge keeps the same width: dim at rest, blue with `▶` while a preview or
+linked pad of this chop plays. A voice beyond the visible wave still lights it. The
+file name does not shift. An effect tail alone does not keep LISTEN lit.
 
 Listen to `renders/84-input-parity.wav`: first three identical full-strength hits
 (keyboard, note, learned button), then quiet/loud note hits and quiet/loud button hits.

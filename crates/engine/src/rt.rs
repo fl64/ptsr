@@ -1,7 +1,10 @@
 //! Engine wrapper for the audio thread: command queue in, counters for the UI out.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{
+    AtomicU32, AtomicU64, AtomicUsize,
+    Ordering::{Relaxed, SeqCst},
+};
 use std::time::Instant;
 
 pub use crate::Command;
@@ -23,6 +26,18 @@ pub struct Stats {
     rec_hist: History,
     buffer_size: AtomicU32,
     sample_rate: AtomicU32,
+    pad_revision: AtomicU64,
+    pad_epoch: AtomicU64,
+    pad_positions: [PadPosition; crate::SLOTS],
+}
+
+#[derive(Default)]
+struct PadPosition {
+    // Compare sample identity only; never dereference a pointer from another thread.
+    sound: AtomicUsize,
+    pad: AtomicUsize,
+    frame: AtomicUsize,
+    started: AtomicU64,
 }
 
 /// History length: ~2.7 s of blocks at 128 samples / 48 kHz.
@@ -73,11 +88,68 @@ impl Default for Stats {
             rec_hist: History::default(),
             buffer_size: AtomicU32::new(0),
             sample_rate: AtomicU32::new(0),
+            pad_revision: AtomicU64::new(0),
+            pad_epoch: AtomicU64::new(0),
+            pad_positions: std::array::from_fn(|_| PadPosition::default()),
         }
     }
 }
 
 impl Stats {
+    // One writer, bounded stores, no waiting. SeqCst orders the fields with the revision
+    // so a reader cannot combine an old voice identity with a new position or epoch.
+    fn record_pad_positions(&self, voices: &[crate::Voice], epoch: u64) {
+        self.pad_revision.fetch_add(1, SeqCst);
+        self.pad_epoch.store(epoch, SeqCst);
+        for (slot, voice) in self.pad_positions.iter().zip(voices) {
+            if let Some((pad, sound)) = voice.pad.zip(voice.sound.as_ref())
+                && voice.fade != Some(0)
+                && voice.delay == 0
+                && voice.pos > voice.pos0
+            {
+                slot.sound.store(Arc::as_ptr(sound) as usize, SeqCst);
+                slot.pad.store(pad, SeqCst);
+                slot.frame.store(voice.pos, SeqCst);
+                slot.started.store(voice.started, SeqCst);
+            } else {
+                slot.started.store(0, SeqCst);
+            }
+        }
+        self.pad_revision.fetch_add(1, SeqCst);
+    }
+
+    /// Sample-frame position of the newest sounding voice of an accepted pad and sample
+    /// in this project. Returns no position if a callback changes the snapshot during read.
+    /// The caller keeps `sound` alive; identity is compared, never dereferenced here.
+    pub fn pad_position(
+        &self,
+        sound: &Arc<crate::Sample>,
+        epoch: u64,
+        mut accepts_pad: impl FnMut(usize) -> bool,
+    ) -> Option<usize> {
+        let revision = self.pad_revision.load(SeqCst);
+        if revision & 1 != 0 || self.pad_epoch.load(SeqCst) != epoch {
+            return None;
+        }
+        let mut newest = 0;
+        let mut position = None;
+        for slot in &self.pad_positions {
+            let started = slot.started.load(SeqCst);
+            if started > newest
+                && slot.sound.load(SeqCst) == Arc::as_ptr(sound) as usize
+                && accepts_pad(slot.pad.load(SeqCst))
+            {
+                newest = started;
+                position = Some(slot.frame.load(SeqCst));
+            }
+        }
+        if self.pad_revision.load(SeqCst) == revision {
+            position
+        } else {
+            None
+        }
+    }
+
     pub fn add_xrun(&self) {
         self.xruns.fetch_add(1, Relaxed);
     }
@@ -306,6 +378,8 @@ impl Realtime {
             }
         }
         self.engine.process(left, right);
+        self.stats
+            .record_pad_positions(&self.engine.voices, self.epoch);
 
         let budget = left.len() as f32 / self.sample_rate as f32;
         let permille = (started.elapsed().as_secs_f32() / budget * 1000.0) as u32;
@@ -443,6 +517,93 @@ mod tests {
             s.output_history(8).is_empty(),
             "the output history is apart"
         );
+    }
+
+    #[test]
+    fn pad_position_snapshot_keeps_source_pad_epoch_and_start_order() {
+        let sample = Arc::new(crate::Sample::mono(vec![0.1; 4096]));
+        let other = Arc::new(crate::Sample::mono(vec![0.2; 4096]));
+        let stats = Arc::new(Stats::default());
+        let mut engine = Engine::with_sounds(48_000, vec![], vec![]);
+        for (pad, sound) in [(0, sample.clone()), (1, sample.clone()), (2, other.clone())] {
+            engine.handle(
+                0,
+                Command::SetPadSound {
+                    pad,
+                    sound: Some(sound),
+                },
+            );
+        }
+        engine.handle(
+            0,
+            Command::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            },
+        );
+        let mut rt = Realtime::new(engine, vec![], stats.clone(), 48_000);
+        let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+        rt.process(&mut l, &mut r);
+        assert_eq!(stats.pad_position(&sample, 0, |_| true), Some(128));
+        rt.engine.handle(
+            0,
+            Command::PadPress {
+                pad: 1,
+                velocity: 1.0,
+            },
+        );
+        rt.engine.handle(
+            0,
+            Command::PadPress {
+                pad: 2,
+                velocity: 1.0,
+            },
+        );
+        rt.process(&mut l, &mut r);
+        assert_eq!(stats.pad_position(&sample, 0, |_| true), Some(128));
+        assert_eq!(stats.pad_position(&sample, 0, |pad| pad == 0), Some(256));
+        assert_eq!(stats.pad_position(&other, 0, |pad| pad == 2), Some(128));
+        assert_eq!(stats.pad_position(&sample, 1, |_| true), None);
+        assert_eq!(stats.pad_position(&sample, 0, |pad| pad == 2), None);
+        rt.engine.handle(0, Command::HushPads);
+        rt.process(&mut [0.0; 512], &mut [0.0; 512]);
+        assert_eq!(stats.pad_position(&sample, 0, |_| true), None);
+    }
+
+    #[test]
+    fn pad_position_snapshot_never_mixes_concurrent_voice_fields() {
+        let a = Arc::new(crate::Sample::mono(vec![0.1; 4096]));
+        let b = Arc::new(crate::Sample::mono(vec![0.2; 4096]));
+        let stats = Arc::new(Stats::default());
+        let writer = stats.clone();
+        let (wa, wb) = (a.clone(), b.clone());
+        let thread = std::thread::spawn(move || {
+            let mut voices: [crate::Voice; crate::SLOTS] =
+                std::array::from_fn(|_| Default::default());
+            for turn in 0..10_000 {
+                let (sample, pad, frame) = if turn & 1 == 0 {
+                    (&wa, 1, 1111)
+                } else {
+                    (&wb, 2, 2222)
+                };
+                voices[0].sound = Some(sample.clone());
+                voices[0].pad = Some(pad);
+                voices[0].pos = frame;
+                voices[0].started = turn + 1;
+                writer.record_pad_positions(&voices, 0);
+            }
+        });
+        for _ in 0..10_000 {
+            if let Some(frame) = stats.pad_position(&a, 0, |pad| pad == 1) {
+                assert_eq!(frame, 1111);
+            }
+            if let Some(frame) = stats.pad_position(&b, 0, |pad| pad == 2) {
+                assert_eq!(frame, 2222);
+            }
+        }
+        thread.join().unwrap();
+        assert_eq!(stats.pad_position(&b, 0, |pad| pad == 2), Some(2222));
+        assert_eq!(stats.pad_position(&a, 0, |_| true), None);
     }
 
     /// Scenario "UI hangs" (audio-engine): the UI thread stops answering for 2 seconds with

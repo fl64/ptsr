@@ -47,7 +47,7 @@
   `renders/84-input-parity.wav` through the implemented route; check finite samples,
   no clipping, silence, levels and nearest-block timing. Run `task check` and commit.
 
-- [ ] 2.3 Add the owner-approved green playback line for linked pad hits in the open
+- [x] 2.3 Add the owner-approved green playback line for linked pad hits in the open
   Chop listen and slice editor. First add failing tests for all six chopping delta
   scenarios, using keyboard, raw notes and learned CC through the real offline queues.
   Report real pad positions without an extra voice. Keep display position separate

@@ -2252,11 +2252,21 @@ fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<Wav
     ])
     .areas(pf.strip);
     let slices = c.bounds.len().saturating_sub(1);
+    let badge = if matches!(c.mode.as_str(), "LISTEN" | "LISTEN ▶") {
+        format!(" {:<8} ", c.mode)
+    } else {
+        format!(" {} ", c.mode)
+    };
+    let badge_style = if c.mode == "LISTEN" {
+        Style::new().fg(DIM).bg(BG)
+    } else {
+        Style::new().fg(BG).bg(CYAN)
+    };
     frame.render_widget(
         Line::from(vec![
             Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
             " ".into(),
-            Span::styled(format!(" {} ", c.mode), Style::new().fg(BG).bg(CYAN)),
+            Span::styled(badge, badge_style),
             format!("   cuts of {}", c.file).into(),
             match c.which {
                 Some((i, n)) => format!(" · chop {i} of {n}").into(),
@@ -5007,6 +5017,128 @@ mod tests {
             WHITE,
             "no modifier held: the plain cursor"
         );
+    }
+
+    /// Scenario "Chop listen badge has fixed width".
+    #[test]
+    fn chop_listen_badge_has_fixed_width() {
+        let wave = [0.1; 4000];
+        let (status, help) = chop_status();
+        let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        let mut file_column = None;
+        for mode in ["LISTEN", "LISTEN ▶", "LISTEN"] {
+            let mut view = chop_demo(&wave);
+            view.mode = mode.into();
+            term.draw(|frame| draw(frame, &status, &Screen::Chop(Box::new(view)), &help))
+                .unwrap();
+            let header = term
+                .backend()
+                .buffer()
+                .content()
+                .chunks(100)
+                .find(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains("F3 CHOP")
+                })
+                .unwrap();
+            let cells: Vec<_> = header.iter().map(|cell| cell.symbol()).collect();
+            let badge = cells
+                .windows(6)
+                .position(|w| w.concat() == "LISTEN")
+                .unwrap();
+            let file = cells
+                .windows(7)
+                .position(|w| w.concat() == "cuts of")
+                .unwrap();
+            assert_eq!(file - (badge - 1) - 3, 10, "fixed badge width: {mode}");
+            if let Some(column) = file_column {
+                assert_eq!(file, column, "file text must not jump");
+            } else {
+                file_column = Some(file);
+            }
+            let playing = mode.ends_with('▶');
+            assert_eq!(header[badge].fg, if playing { BG } else { DIM });
+            assert_eq!(header[badge].bg, if playing { CYAN } else { BG });
+            assert_eq!(header[badge + 7].symbol(), if playing { "▶" } else { " " });
+        }
+        let mut view = chop_demo(&wave);
+        view.mode = "ASSIGN · by hand".into();
+        term.draw(|frame| draw(frame, &status, &Screen::Chop(Box::new(view)), &help))
+            .unwrap();
+        let header = term
+            .backend()
+            .buffer()
+            .content()
+            .chunks(100)
+            .find(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .contains("F3 CHOP")
+            })
+            .unwrap();
+        let text = header.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(text.contains(" ASSIGN · by hand    cuts of"));
+        let start = text.find(" ASSIGN").unwrap();
+        for cell in &header[start..start + " ASSIGN · by hand ".chars().count()] {
+            assert_eq!(
+                (cell.fg, cell.bg),
+                (BG, CYAN),
+                "assign badge stays unchanged"
+            );
+        }
+    }
+
+    /// Scenario "Keyboard pad shows the Chop playback line": the supplied position
+    /// uses the same green overlay in both wave modes and never moves the edit cursor.
+    #[test]
+    fn chop_pad_playback_line_in_braille_and_picture() {
+        let wave: Vec<f32> = (0..4000).map(|i| (i % 40) as f32 / 80.0).collect();
+        let (status, help) = chop_status();
+        for graphics in [false, true] {
+            for edit in [false, true] {
+                let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+                for position in [Some(0.6), Some(0.7), None] {
+                    let mut view = chop_demo(&wave);
+                    view.cursor = Some(0.1);
+                    view.playhead = position;
+                    view.edit = edit;
+                    let screen = Screen::Chop(Box::new(view));
+                    let mut images = Vec::new();
+                    term.draw(|frame| {
+                        if graphics {
+                            draw_gfx(frame, &status, &screen, &help, &mut images);
+                        } else {
+                            draw(frame, &status, &screen, &help);
+                        }
+                    })
+                    .unwrap();
+                    let strip = frame_at(100, 30).strip;
+                    for y in strip.y + 3..strip.y + strip.height {
+                        let buffer = term.backend().buffer();
+                        let cursor = buffer.cell((10, y)).unwrap();
+                        assert_eq!((cursor.symbol(), cursor.fg), ("┃", WHITE));
+                        for (at, x) in [(0.6, 60), (0.7, 70)] {
+                            let cell = buffer.cell((x, y)).unwrap();
+                            let is_line = cell.symbol() == "│" && cell.fg == METER;
+                            assert_eq!(
+                                is_line,
+                                position == Some(at),
+                                "graphics {graphics}, edit {edit}, row {y}"
+                            );
+                        }
+                    }
+                    if graphics {
+                        assert_eq!(images.len(), 1);
+                        assert_eq!(images[0].id, 1);
+                    } else {
+                        assert!(images.is_empty());
+                    }
+                }
+            }
+        }
     }
 
     #[test]
