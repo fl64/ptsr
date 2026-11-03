@@ -140,6 +140,10 @@ The owner approved this separate repair after the audit at `7272d92`. At that
 baseline, dispatch sends direct notifications with `accepted` true or false, but
 App's Chop branch ignores that result and calls `chop_pad`. This can replay an
 accepted hit, retry a rejected hit, preview a bare slice or change a plan.
+Before the repair, both recorded regressions reached an extra UI
+`PadPress { pad: 18, velocity: 0.18110237 }` after Chop opened. Keep those empty-UI
+queue assertions. The rejection fixture must explicitly clear the filler's engine
+sample: offline Engine starts with built-in pad test tones even when UI pads are empty.
 
 Replace the ambiguous boolean in `Event::PadHit` with an explicit three-way sound
 disposition: UI-unattempted, direct accepted, direct rejected. Dispatch records it

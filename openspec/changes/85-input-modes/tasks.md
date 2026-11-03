@@ -38,7 +38,7 @@
   `renders/85-mixed-holds.wav`. Keep the first failing assertions. Run full
   `task check`; commit this repair separately before 2.2. No sequencing or shared
   handler changes belong in this step.
-- [ ] 2.1b Reproduce and repair late direct notifications after Chop opens, as
+- [x] 2.1b Reproduce and repair late direct notifications after Chop opens, as
   separately approved by the owner. Add named accepted/rejected regressions through
   raw notes and learned CC80, low/high velocity, linked listen, bare-slice listen,
   assignment and a bank change. Reject through the actual full MIDI audio queue.

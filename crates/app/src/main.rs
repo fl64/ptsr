@@ -4575,6 +4575,14 @@ impl App {
         }
     }
 
+    fn midi_pad_notification(&mut self, abs: usize, sound: midi::PadSound) {
+        if sound == midi::PadSound::DirectAccepted && self.pad_sounds(abs) {
+            self.splash = false;
+        }
+        self.meters.hit(Instant::now());
+        self.pads.hit(abs);
+    }
+
     fn midi_event(&mut self, ev: midi::Event) {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
@@ -4717,13 +4725,17 @@ impl App {
                 abs,
                 velocity,
                 ui_press,
-                ..
+                sound,
             } if self.screen == Screen::Chop => {
-                if let Some(pad) =
-                    self.chop_pad(abs % PADS_PER_BANK, velocity, pads::HitSource::Midi)
-                    && let Some(id) = ui_press
-                {
-                    self.midi_ui_held.insert(id, pad);
+                if sound == midi::PadSound::UiUnattempted {
+                    if let Some(pad) =
+                        self.chop_pad(abs % PADS_PER_BANK, velocity, pads::HitSource::Midi)
+                        && let Some(id) = ui_press
+                    {
+                        self.midi_ui_held.insert(id, pad);
+                    }
+                } else {
+                    self.midi_pad_notification(abs, sound);
                 }
             }
             midi::Event::PadHit { abs, .. } if self.browser.in_hand.is_some() => {
@@ -4747,13 +4759,8 @@ impl App {
                     self.note_step(before, "swap".into());
                 }
             }
-            midi::Event::PadHit { abs, accepted, .. } => {
-                // The MIDI reader reports whether the audio queue accepted the note.
-                if accepted && self.pad_sounds(abs) {
-                    self.splash = false;
-                }
-                self.meters.hit(Instant::now());
-                self.pads.hit(abs)
+            midi::Event::PadHit { abs, sound, .. } => {
+                self.midi_pad_notification(abs, sound);
             }
             midi::Event::PadRelease { abs, direct } => {
                 if direct {
@@ -9595,7 +9602,7 @@ mod tests {
         pads_key(&mut app, KeyCode::Char(PAD_KEYS[empty]), M::NONE);
         assert!(app.splash, "an empty pad makes no sound");
         app.midi_event(super::midi::Event::PadHit {
-            accepted: false,
+            sound: super::midi::PadSound::DirectRejected,
             abs: empty,
             velocity: 1.0,
             ui_press: None,
@@ -9614,14 +9621,14 @@ mod tests {
         app.splash = true;
         assert!(app.pads.file[4].is_some(), "pad Q has a sample");
         app.midi_event(super::midi::Event::PadHit {
-            accepted: false,
+            sound: super::midi::PadSound::DirectRejected,
             abs: 4,
             velocity: 1.0,
             ui_press: None,
         });
         assert!(app.splash, "a rejected controller note keeps the splash");
         app.midi_event(super::midi::Event::PadHit {
-            accepted: true,
+            sound: super::midi::PadSound::DirectAccepted,
             abs: 4,
             velocity: 1.0,
             ui_press: None,
@@ -11317,7 +11324,7 @@ Enter = "browser.hold"
             velocity: 1.0,
         });
         app.midi_event(super::midi::Event::PadHit {
-            accepted: false,
+            sound: super::midi::PadSound::DirectRejected,
             abs: 0,
             velocity: 1.0,
             ui_press: None,
@@ -13650,7 +13657,7 @@ Enter = "browser.hold"
         learn_press(&mut app, KeyCode::Char('q'));
         learn_press(&mut app, KeyCode::Char('h')); // the pad mode key
         app.midi_event(super::midi::Event::PadHit {
-            accepted: false,
+            sound: super::midi::PadSound::DirectRejected,
             abs: 3,
             velocity: 1.0,
             ui_press: None,
@@ -17740,7 +17747,7 @@ Enter = "browser.hold"
         );
         app.midi_event(super::midi::Event::PadHit {
             abs: 37,
-            accepted: true,
+            sound: super::midi::PadSound::DirectAccepted,
             velocity: 1.0,
             ui_press: None,
         });
@@ -20244,7 +20251,7 @@ Enter = "browser.hold"
         // a target from the controller gets it
         app.midi_event(super::midi::Event::PadHit {
             abs: 1,
-            accepted: true,
+            sound: super::midi::PadSound::DirectAccepted,
             velocity: 1.0,
             ui_press: None,
         });
@@ -20593,7 +20600,7 @@ Enter = "browser.hold"
         app.sent.clear();
         app.midi_event(super::midi::Event::PadHit {
             abs: 16 + 2, // bank 2, pad E
-            accepted: true,
+            sound: super::midi::PadSound::DirectAccepted,
             velocity: 1.0,
             ui_press: None,
         });
@@ -21902,7 +21909,7 @@ Enter = "browser.hold"
         app.apply(Action::PadRelease { pad: 4 });
         assert!(!lit(&mut app), "dark after the release");
         app.midi_event(super::midi::Event::PadHit {
-            accepted: false,
+            sound: super::midi::PadSound::DirectRejected,
             abs: 4,
             velocity: 1.0,
             ui_press: None,

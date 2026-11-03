@@ -2548,6 +2548,261 @@ fn offline_chop_to_fx_keeps_routes_velocity_banks_and_original_releases() {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum LateChop {
+    Linked,
+    Bare,
+    Assign,
+    AssignOrder,
+}
+
+fn render_late_direct_notification(
+    source: Source,
+    rejected: bool,
+    mode: LateChop,
+    change_bank: bool,
+    velocity: u8,
+) -> Stereo {
+    use engine::checks::{first_loud, first_non_finite, peak};
+    let mut drive = Drive::offline();
+    let mut settings = drive.parity_pad(0, true);
+    // Offline Engine starts with built-in test tones, unlike the empty UI fixture.
+    let clear_filler = Command::SetPadSound {
+        pad: 31,
+        sound: None,
+    };
+    drive.app.send(clear_filler.clone());
+    settings.push(clear_filler);
+    drive.tap(KeyCode::F(2), M::NONE);
+    if matches!(source, Source::Button) {
+        drive.bind_pad_button(2);
+    }
+    let mut wave = drive.render_blocks(32);
+    if rejected {
+        // Fill the production MIDI queue, not the UI queue. The filler pad is empty.
+        for _ in 0..1024 {
+            drive.bytes(PAD_PORT, &[0x91, 51, 127]);
+        }
+        drive.frame();
+    }
+    // Select the fixture's loaded pad before the delayed hit. Filler notifications
+    // were consumed without a callback, so the real rejection queue is still full.
+    drive.app.pads.selected = 2;
+    let hit = if matches!(source, Source::Notes) {
+        [0x90, 38, velocity]
+    } else {
+        [0xb0, 80, velocity]
+    };
+    drive.bytes(PAD_PORT, &hit);
+    drive.midi().recorded_fence();
+    let delayed: Vec<_> = drive.midi().events.try_iter().collect();
+    assert!(delayed.iter().any(|event| matches!(event.event,
+        midi::Event::PadHit { abs: 18, sound, velocity: v, ui_press: None }
+        if sound == if rejected { midi::PadSound::DirectRejected } else { midi::PadSound::DirectAccepted }
+            && v == f32::from(velocity) / 127.0)));
+    append_stereo(&mut wave, drive.render_blocks(8));
+    assert_eq!(peak(&wave.0[32 * RENDER_BLOCK..]) == 0.0, rejected);
+    for kind in [KeyEventKind::Press, KeyEventKind::Release] {
+        drive.key(KeyCode::F(3), M::NONE, kind);
+    }
+    assert_eq!(drive.app.screen, Screen::Chop);
+    match mode {
+        LateChop::Linked => {}
+        LateChop::Bare => drive.app.pads.link[18] = None,
+        LateChop::Assign | LateChop::AssignOrder => {
+            for kind in [KeyEventKind::Press, KeyEventKind::Release] {
+                drive.key(KeyCode::Char('p'), M::NONE, kind);
+            }
+            assert_eq!(drive.app.plan, Some(chop::Plan::ByHand(Vec::new())));
+            if matches!(mode, LateChop::AssignOrder) {
+                for kind in [KeyEventKind::Press, KeyEventKind::Release] {
+                    drive.key(KeyCode::Tab, M::NONE, kind);
+                }
+                assert_eq!(drive.app.plan, Some(chop::Plan::InOrder(None)));
+            }
+        }
+    }
+    if change_bank {
+        for kind in [KeyEventKind::Press, KeyEventKind::Release] {
+            drive.key(KeyCode::Char('3'), M::CONTROL, kind);
+        }
+        assert_eq!(drive.app.pads.bank, 2);
+    }
+    drive.app.chop.as_mut().unwrap().select_slice(1);
+    let (slice, cursor, plan) = (
+        drive.app.chop.as_ref().unwrap().selected,
+        drive.app.chop.as_ref().unwrap().cursor,
+        drive.app.plan.clone(),
+    );
+    let entry = std::mem::take(&mut drive.app.sent);
+    assert_eq!(
+        entry
+            .iter()
+            .filter(|c| matches!(c, Command::HushPads))
+            .count(),
+        1
+    );
+    assert!(!entry.iter().any(|c| matches!(
+        c,
+        Command::PadPress { .. } | Command::Preview { sound: Some(_), .. }
+    )));
+    for event in delayed {
+        drive.app.midi_ui_event(event);
+    }
+    let notification = drive.frame();
+    assert!(
+        notification.ui.is_empty(),
+        "late {source:?}, rejected {rejected}, {mode:?}: {:?}",
+        notification.ui
+    );
+    assert_eq!(drive.app.chop.as_ref().unwrap().selected, slice);
+    assert_eq!(drive.app.chop.as_ref().unwrap().cursor, cursor);
+    assert_eq!(drive.app.plan, plan);
+    assert!(drive.app.midi_ui_held.is_empty());
+    append_stereo(&mut wave, drive.render_blocks(64));
+    drive.bytes(
+        PAD_PORT,
+        if matches!(source, Source::Notes) {
+            &[0x80, 38, 0]
+        } else {
+            &[0xb0, 80, 0]
+        },
+    );
+    drive.midi().recorded_fence();
+    let releases: Vec<_> = drive.midi().events.try_iter().collect();
+    if !rejected {
+        assert!(releases.iter().any(|event| matches!(
+            event.event,
+            midi::Event::PadRelease {
+                abs: 18,
+                direct: true
+            }
+        )));
+    }
+    for event in releases {
+        drive.app.midi_ui_event(event);
+    }
+    assert!(drive.frame().ui.is_empty(), "no extra UI audio release");
+    let release_at = wave.0.len();
+    append_stereo(&mut wave, drive.render_blocks(32));
+
+    let mut expected_engine = engine::Engine::new(RENDER_RATE);
+    for setting in settings {
+        expected_engine.handle(0, setting);
+    }
+    let mut events = Vec::new();
+    if !rejected {
+        events.push(engine::offline::Event {
+            frame: 32 * RENDER_BLOCK,
+            cmd: Command::PadPress {
+                pad: 18,
+                velocity: f32::from(velocity) / 127.0,
+            },
+        });
+    }
+    events.extend(entry.into_iter().map(|cmd| engine::offline::Event {
+        frame: 40 * RENDER_BLOCK,
+        cmd,
+    }));
+    if !rejected {
+        events.push(engine::offline::Event {
+            frame: release_at,
+            cmd: Command::PadRelease { pad: 18 },
+        });
+    }
+    let expected = engine::offline::render(
+        &mut expected_engine,
+        &engine::offline::Scenario {
+            sample_rate: RENDER_RATE,
+            frames: wave.0.len(),
+            events,
+        },
+        RENDER_BLOCK,
+    );
+    assert_eq!(
+        wave, expected,
+        "{source:?}, rejected {rejected}, {mode:?}, bank change {change_bank}, velocity {velocity}"
+    );
+    for channel in [&wave.0, &wave.1] {
+        assert_eq!(first_non_finite(channel), None);
+        assert!(peak(channel) < 1.0);
+        assert_eq!(peak(&channel[..32 * RENDER_BLOCK]), 0.0);
+        if rejected {
+            assert_eq!(peak(channel), 0.0, "a rejected hit stays silent");
+        } else {
+            assert!(
+                first_loud(channel, 32 * RENDER_BLOCK..33 * RENDER_BLOCK, 1e-6)
+                    .unwrap()
+                    .abs_diff(32 * RENDER_BLOCK)
+                    <= 1
+            );
+        }
+        assert_eq!(
+            peak(&channel[40 * RENDER_BLOCK + 2048..]),
+            0.0,
+            "Chop hush without restart"
+        );
+    }
+    wave
+}
+
+/// Scenario "Late accepted direct MIDI notification does not restart Chop".
+#[test]
+fn late_accepted_direct_midi_notification_does_not_restart_chop() {
+    for source in [Source::Notes, Source::Button] {
+        for mode in [
+            LateChop::Linked,
+            LateChop::Bare,
+            LateChop::Assign,
+            LateChop::AssignOrder,
+        ] {
+            for change_bank in [false, true] {
+                for velocity in [23, 101] {
+                    render_late_direct_notification(source, false, mode, change_bank, velocity);
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Late rejected direct MIDI notification stays silent on Chop".
+#[test]
+fn late_rejected_direct_midi_notification_stays_silent_on_chop() {
+    for source in [Source::Notes, Source::Button] {
+        for mode in [
+            LateChop::Linked,
+            LateChop::Bare,
+            LateChop::Assign,
+            LateChop::AssignOrder,
+        ] {
+            for change_bank in [false, true] {
+                for velocity in [23, 101] {
+                    render_late_direct_notification(source, true, mode, change_bank, velocity);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn render_85_late_midi() {
+    let mut wave = (Vec::new(), Vec::new());
+    for source in [Source::Notes, Source::Button] {
+        for rejected in [false, true] {
+            append_stereo(
+                &mut wave,
+                render_late_direct_notification(source, rejected, LateChop::Linked, false, 101),
+            );
+        }
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/85-late-midi.wav");
+    engine::offline::write_wav(&path, RENDER_RATE, &wave.0, &wave.1).unwrap();
+    println!(
+        "85 late MIDI: {} frames, finite/no-clip/silence/onset/hush checked, sample-identical to timestamped oracle",
+        wave.0.len()
+    );
+}
+
 /// Scenario "Hit from a controller": the real direct queue sounds before App sees
 /// the event. Processing App later must not add another hit or release.
 #[test]

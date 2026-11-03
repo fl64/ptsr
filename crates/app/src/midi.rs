@@ -16,6 +16,14 @@ use std::sync::atomic::Ordering::Acquire;
 /// midir does not report hotplug, so ports are polled.
 const SCAN: Duration = Duration::from_secs(1);
 
+/// The original audio attempt must not be inferred from App's later screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadSound {
+    UiUnattempted,
+    DirectAccepted,
+    DirectRejected,
+}
+
 pub enum Event {
     Connected {
         port: String,
@@ -31,11 +39,11 @@ pub enum Event {
         msg: Msg,
         meaning: String,
     },
-    /// A controller hit; `accepted` says the audio queue accepted the note.
+    /// A controller hit with its original audio disposition.
     PadHit {
         abs: usize,
         velocity: f32,
-        accepted: bool,
+        sound: PadSound,
         ui_press: Option<u64>,
     },
     /// A controller pad was released (or its device disappeared).
@@ -563,7 +571,7 @@ fn dispatch(
                     Event::PadHit {
                         abs,
                         velocity,
-                        accepted: false,
+                        sound: PadSound::UiUnattempted,
                         ui_press,
                     },
                     Some(stamp),
@@ -590,7 +598,11 @@ fn dispatch(
                     Event::PadHit {
                         abs,
                         velocity,
-                        accepted,
+                        sound: if accepted {
+                            PadSound::DirectAccepted
+                        } else {
+                            PadSound::DirectRejected
+                        },
                         ui_press: None,
                     },
                     Some(stamp),
@@ -767,7 +779,7 @@ mod tests {
             let Event::PadHit {
                 abs,
                 velocity,
-                accepted,
+                sound,
                 ui_press,
             } = &pair[1]
             else {
@@ -775,10 +787,13 @@ mod tests {
             };
             assert_eq!(*velocity, 80.0 / 127.0);
             if meaning.contains("pad: 0,") {
-                assert_eq!((*abs, *accepted, *ui_press), (0, true, None));
+                assert_eq!(
+                    (*abs, *sound, *ui_press),
+                    (0, PadSound::DirectAccepted, None)
+                );
             } else {
                 assert!(meaning.contains("pad: 2,"), "{meaning}");
-                assert_eq!((*abs, *accepted), (114, false));
+                assert_eq!((*abs, *sound), (114, PadSound::UiUnattempted));
                 assert!(ui_press.is_some());
             }
         }
@@ -886,7 +901,12 @@ mod tests {
                 None,
                 Arc::new(Shared::default()),
             );
-            assert!(rx.try_iter().any(|event| matches!(event.event, Event::PadHit { abs: 0, accepted, .. } if accepted == expected)));
+            let expected_sound = if expected {
+                PadSound::DirectAccepted
+            } else {
+                PadSound::DirectRejected
+            };
+            assert!(rx.try_iter().any(|event| matches!(event.event, Event::PadHit { abs: 0, sound, .. } if sound == expected_sound)));
         }
     }
 
@@ -1429,7 +1449,7 @@ mod tests {
                 send(XS, press, test_stamp()).event,
                 Event::PadHit {
                     abs: 16,
-                    accepted: true,
+                    sound: PadSound::DirectAccepted,
                     ..
                 }
             ));
@@ -1466,7 +1486,7 @@ mod tests {
                 send(PADS, note_on(36), test_stamp()).event,
                 Event::PadHit {
                     abs: 32,
-                    accepted: false,
+                    sound: PadSound::DirectRejected,
                     ..
                 }
             ));
@@ -1622,9 +1642,9 @@ mod tests {
             let off = Msg::NoteOff { ch: 1, note: 36 };
             let first = send(hit(80));
             assert!(
-                matches!(first, Event::PadHit { abs: 0, velocity, accepted, ui_press }
+                matches!(first, Event::PadHit { abs: 0, velocity, sound, ui_press }
                 if velocity == 80.0 / 127.0
-                    && accepted == (before != 3)
+                    && sound == if before == 3 { PadSound::UiUnattempted } else { PadSound::DirectAccepted }
                     && ui_press.is_some() == (before == 3))
             );
             let first_ui_press = match first {
@@ -1649,7 +1669,7 @@ mod tests {
                 send(hit(47)),
                 Event::PadHit {
                     abs: 32,
-                    accepted: true,
+                    sound: PadSound::DirectAccepted,
                     ..
                 }
             ));
