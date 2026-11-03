@@ -1640,6 +1640,295 @@ fn copy_replacement_parity_from_raw_midi() {
     }
 }
 
+#[test]
+fn modes_85_text_and_project_picker_keep_source_boundaries() {
+    for context in ["name", "filter", "project"] {
+        for source in [Source::Keyboard, Source::Notes, Source::Button] {
+            let mut drive = Drive::new();
+            drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+            match context {
+                "name" => {
+                    drive.tap(KeyCode::Char('n'), M::CONTROL);
+                    assert!(drive.app.pad_naming.is_some());
+                }
+                "filter" => {
+                    drive.tap(KeyCode::F(6), M::NONE);
+                    drive.tap(KeyCode::Char('/'), M::NONE);
+                    assert!(drive.app.browser.editing);
+                }
+                "project" => {
+                    drive.app.paths.projects = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../target/85-no-project-root");
+                    drive.tap(KeyCode::Char('p'), M::CONTROL);
+                    assert!(drive.app.project_picker.is_some());
+                }
+                _ => unreachable!(),
+            }
+            let hit = drive.pad_press(source, 4);
+            if matches!(source, Source::Keyboard) {
+                if context == "filter" {
+                    assert!(matches!(
+                        hit.commands()[..],
+                        [Command::Preview {
+                            sound: None,
+                            region: Region::WHOLE,
+                        }]
+                    ));
+                } else {
+                    assert!(hit.commands().is_empty(), "{context}: typing is silent");
+                }
+                assert_eq!(drive.app.pads.selected, 0);
+                match context {
+                    "name" => assert_eq!(drive.app.pad_naming.as_ref().unwrap().1, "sourceq"),
+                    "filter" => assert_eq!(drive.app.browser.filter, "q"),
+                    "project" => assert_eq!(
+                        drive.app.project_picker.as_ref().unwrap().naming.as_deref(),
+                        Some("q")
+                    ),
+                    _ => unreachable!(),
+                }
+            } else {
+                assert_full_hit(&hit, 4);
+                assert!(hit.ui.is_empty(), "{context}: existing direct MIDI route");
+                assert_eq!(drive.app.pads.selected, 4);
+                assert!(drive.app.browser.filter.is_empty());
+                if context == "name" {
+                    assert_eq!(drive.app.pad_naming.as_ref().unwrap().1, "source");
+                }
+                if context == "project" {
+                    assert!(drive.app.project_picker.as_ref().unwrap().naming.is_none());
+                }
+            }
+            // Keyboard releases pass the text guards too. `sent` records this
+            // attempt even without an accepted sound; keep that existing boundary.
+            assert_only_release(&drive.pad_release(source, 4), 4);
+        }
+    }
+}
+
+#[test]
+fn modes_85_folder_picker_consumes_actions_not_direct_midi_hits() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.tap(KeyCode::F(12), M::NONE);
+        drive.app.settings_tab = 3;
+        // A fixed empty listing avoids reading the owner's folders. The production
+        // picker handler must still consume resolved keyboard and controller actions.
+        drive.app.path_picker = Some(PathPicker {
+            which: 0,
+            at: "target/85-picker".into(),
+            entries: Vec::new(),
+            selected: 0,
+        });
+        drive.frame();
+        let hit = drive.pad_press(source, 4);
+        if matches!(source, Source::Keyboard) {
+            assert!(hit.commands().is_empty());
+            assert_eq!(drive.app.pads.selected, 0);
+        } else {
+            assert_full_hit(&hit, 4);
+            assert!(hit.ui.is_empty());
+            assert_eq!(drive.app.pads.selected, 4);
+        }
+        assert!(drive.app.path_picker.is_some());
+        let release = drive.pad_release(source, 4);
+        if matches!(source, Source::Keyboard) {
+            assert!(release.commands().is_empty());
+        } else {
+            assert_only_release(&release, 4);
+        }
+        drive.bytes(PAD_PORT, &[0xb0, 27, 127]);
+        assert!(drive.frame().commands().is_empty());
+        assert_eq!(drive.app.pads.bank, 0, "the picker consumes MIDI actions");
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.path_picker.is_none());
+    }
+}
+
+#[test]
+fn modes_85_f12_learning_does_not_acquire_f10_silence() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for run in [false, true] {
+            let mut drive = Drive::new();
+            drive.tap(KeyCode::F(12), M::NONE);
+            drive.app.settings_tab = 2;
+            drive.app.midi_open = vec![input::Group::Pads, input::Group::Global];
+            drive.app.midi_row = drive
+                .app
+                .midi_list()
+                .iter()
+                .position(|row| {
+                    if run {
+                        matches!(
+                            row,
+                            MidiListRow::Set {
+                                name: "pads 1–16",
+                                ..
+                            }
+                        )
+                    } else {
+                        matches!(row, MidiListRow::Action { info } if info.name == "pad.copy")
+                    }
+                })
+                .unwrap();
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert_eq!(drive.app.learning.is_some(), !run);
+            assert_eq!(drive.app.midi_run.is_some(), run);
+            assert!(drive.app.screen_learn.is_none());
+            let hit = drive.pad_press(source, 4);
+            assert_full_hit(&hit, 4);
+            if matches!(source, Source::Keyboard) {
+                assert!(hit.direct.is_empty());
+                if !run {
+                    assert!(drive.app.learning.as_ref().unwrap().pending.is_none());
+                }
+            } else {
+                assert!(hit.ui.is_empty());
+                if !run {
+                    assert!(drive.app.learning.as_ref().unwrap().pending.is_some());
+                }
+            }
+            assert_only_release(&drive.pad_release(source, 4), 4);
+        }
+    }
+}
+
+#[test]
+fn modes_85_question_keeps_keyboard_and_midi_edit_resolution() {
+    for keyboard in [true, false] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.edit);
+        for (group, action) in [
+            (input::Group::Pads, "pad.edit"),
+            (input::Group::PadsEdit, "ui.back"),
+        ] {
+            learn::assign(
+                &mut drive.app.learned,
+                "Recorded pads",
+                group,
+                input::midi::Key::Cc(81),
+                action,
+            );
+            drive.app.sync_learned("Recorded pads", group);
+        }
+        drive.app.pads.marked.insert(0);
+        drive.app.ask_clear();
+        drive.frame();
+        assert!(!drive.app.edit_keys(), "a question disables keyboard edit");
+        assert!(drive.app.ask.is_some());
+        if keyboard {
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(drive.app.pads.file[0].is_none(), "screen Enter confirms");
+        } else {
+            drive.bytes(PAD_PORT, &[0xb0, 81, 127]);
+            drive.frame();
+            assert!(drive.app.input_log.last().unwrap().ends_with("-> Back"));
+            assert!(
+                drive.app.pads.file[0].is_some(),
+                "MIDI retains its edit layer"
+            );
+        }
+        assert!(drive.app.ask.is_none());
+        assert!(drive.app.edit);
+    }
+}
+
+#[test]
+fn modes_85_chop_precedes_hand_targets_and_keeps_edit() {
+    let sound = Arc::new(Sample::mono(vec![0.25; 32_000]));
+    paired_baseline(|drive, source| {
+        drive.prepare_chop(sound.clone(), 4);
+        drive.link_chop_pad(4, 2);
+        drive.app.browser.in_hand = Some("new file.wav".into());
+        drive.app.pad_in_hand = Some(0);
+        drive.app.copy_in_hand = Some((0, drive.app.pads.snapshot(4)));
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.edit);
+        let before = drive.seen().pads;
+        let hit = drive.pad_press(source, 4);
+        assert_full_hit(&hit, 4);
+        assert!(hit.direct.is_empty());
+        assert_eq!(drive.app.chop.as_ref().unwrap().selected, 2);
+        assert_eq!(drive.seen().pads, before);
+        assert!(drive.app.ask.is_none());
+        assert!(drive.app.browser.in_hand.is_some());
+        assert!(drive.app.copy_in_hand.is_some());
+        assert_eq!(drive.app.pad_in_hand, Some(0));
+        assert!(drive.app.edit);
+        assert_only_release(&drive.pad_release(source, 4), 4);
+        vec![drive.seen()]
+    });
+}
+
+#[test]
+fn modes_85_overlapping_hands_keep_source_specific_priority() {
+    for with_file in [false, true] {
+        for source in [Source::Keyboard, Source::Notes, Source::Button] {
+            let mut drive = Drive::new();
+            let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+            drive.load_pad(0, sound.clone(), "source");
+            drive.load_pad(4, sound, "target");
+            drive.tap(KeyCode::Char('c'), M::CONTROL);
+            drive.tap(KeyCode::Char('x'), M::CONTROL);
+            assert!(drive.app.copy_in_hand.is_some());
+            assert_eq!(drive.app.pad_in_hand, Some(0));
+            if with_file {
+                drive.tap(KeyCode::F(6), M::NONE);
+                drive.app.browser.dir = "target/85-files".into();
+                drive.app.browser.entries = vec![browser::Entry {
+                    name: "new file.wav".into(),
+                    is_dir: false,
+                    favorite: None,
+                }];
+                drive.app.browser.selected = 0;
+                drive.tap(KeyCode::Enter, M::NONE);
+                drive.tap(KeyCode::F(2), M::NONE);
+                assert!(drive.app.browser.in_hand.is_some());
+            }
+            let before = drive.seen().pads;
+            assert_silent_target(&drive.pad_press(source, 4));
+            if with_file && !matches!(source, Source::Keyboard) {
+                assert!(matches!(drive.app.ask, Some(Ask::PutFile { abs: 4, .. })));
+            } else {
+                assert!(matches!(
+                    drive.app.ask,
+                    Some(Ask::CopyPad { source: 0, .. })
+                ));
+            }
+            assert_eq!(drive.seen().pads, before);
+            assert_eq!(drive.app.pads.selected_abs(), 4);
+            assert!(drive.app.history.is_empty());
+            assert!(drive.app.copy_in_hand.is_some());
+            assert_eq!(drive.app.pad_in_hand, Some(0));
+            let release = drive.pad_release(source, 4);
+            if matches!(source, Source::Keyboard) {
+                // A keyboard target keeps its existing release attempt. It did
+                // not start an accepted audio hold and adds no new pad hit.
+                assert_only_release(&release, 4);
+            } else {
+                assert!(release.commands().is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn modes_85_marking_and_edit_still_coexist_and_sound() {
+    paired_baseline(|drive, source| {
+        drive.tap(KeyCode::Char('m'), M::NONE);
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.pads.marking);
+        assert!(drive.app.edit);
+        assert_full_hit(&drive.pad_press(source, 4), 4);
+        assert!(drive.app.pads.marked.contains(&4));
+        assert!(drive.app.edit);
+        assert_only_release(&drive.pad_release(source, 4), 4);
+        vec![drive.seen()]
+    });
+}
+
 const RENDER_RATE: u32 = 48_000;
 const RENDER_BLOCK: usize = 128;
 const PARITY_HIT: usize = 32 * RENDER_BLOCK;

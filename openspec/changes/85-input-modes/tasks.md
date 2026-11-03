@@ -7,7 +7,7 @@
 
 ## 1. Characterize and model existing input
 
-- [ ] 1.1 Add production-route characterization tests for existing text, project/folder
+- [x] 1.1 Add production-route characterization tests for existing text, project/folder
   pickers, F10 versus F12 learn, edit under questions, Chop with a hand state, overlapping
   hands and edit with marking. Keep source-specific expectations explicit, not invented
   parity. Extend Drive only with deterministic publish/drain fences where needed. Keep
