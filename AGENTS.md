@@ -15,6 +15,7 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - **A commit message carries the scope of what changes.** Format: `<change>: <scope> — what changed` (for example, `09: chop — cursor: arrows move it, snaps to peaks, M cuts on pause`). Use the shared scope table in "Branch and pull request names" below. The scope is the area the owner sees, not a crate name for its own sake. The main scope goes first; a step that touches two areas is two commits (or takes the scope of the area the step was made for).
 - At the end of a change, write to the owner: what is done, **what to check by hand and by ear** (exact steps), which files in `renders/` to listen to.
 - All repository texts are in English and follow ASD-STE100 Simplified Technical English: `README.md`, `AGENTS.md`, `docs/`, the `openspec/` artifacts and commit messages. Key names of the Russian layout (`х`, `Й`) are technical names and stay. Talk to the owner in Russian.
+- Prefer the `asd-ste100` skill for new or revised English documentation. Use STE-flavored mode for descriptions and Strict mode for procedures. Run its `scripts/ste-lint.py` on the changed text. Review the results without a full dictionary compliance claim. Keep the original meaning and technical names. Do not rewrite unrelated documents only for style.
 - `docs/VISION.md` and `docs/plans/` are guides, not requirements. Requirements are only in `openspec/specs/` and in active changes. A deferred draft does not authorize code.
 
 ## Branch and pull request names
