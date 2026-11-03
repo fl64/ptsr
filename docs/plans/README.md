@@ -4,21 +4,23 @@ These plans were imported from the owner's eight planning documents on 2026-11-0
 The vision is in `../VISION.md`; the other seven documents are here. These plans are a guide
 for the agent, like `docs/VISION.md`. They are not requirements. Requirements come only from `openspec/specs/` and
 from the active change. Each change below starts as an OpenSpec change (proposal, design, spec
-deltas, tasks) and follows `AGENTS.md`: one change at a time, its own branch, specs first, a test
-for each scenario, atomic commits, `task check` green.
+deltas, tasks) and follows `AGENTS.md`: one change at a time, specs first, a test for each
+scenario, atomic commits, `task check` green. A change normally has its own branch; the
+owner requested continuation in `plan/controller-first-patterns` for this work.
 
 ## Current status (2026-11-03)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
   `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
-- This preparation branch changes documents only. It does not implement changes 83a–101.
-- Keymap cleanup 83a now comes before parity 84. Its plan is `KEYMAP-CLEANUP.md`.
-  The J/L decision is still open: proposed A changes values on Pads and uses U/O for
-  banks. Ask the owner before 83a implementation; no key changes in this preparation.
-- A later parity draft is prepared in `openspec/deferred/84-input-parity/`. Activate it
-  on its own implementation branch after this preparation and 83a are merged. No new
-  behavior is added to the main specs in this preparation.
+- The owner requested continuation in the current branch. This step still changes
+  documents and specifications only; it implements no new behavior.
+- Keymap cleanup 83a is active in `openspec/changes/83a-keymap-cleanup/`, before parity
+  84. The owner confirmed A on 2026-11-03: J/L change values on Pads, U/O turn banks.
+  Its plan is `KEYMAP-CLEANUP.md`; implementation tasks remain open.
+- The later parity draft stays in `openspec/deferred/84-input-parity/`. Do not activate
+  it until 83a is implemented, tested, accepted and archived. Follow the owner's branch
+  instruction above. Main specs and shipped keys stay unchanged in this step.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -57,7 +59,7 @@ of track 1. Track 3 needs the screen registry (a new screen), `ui.confirm`, the 
 (erase, note repeat) and the command panel of track 2 (controller paths for the new actions).
 
 ```
-83a keymap cleanup (J/L choice first)
+83a keymap cleanup (A confirmed; specifications first)
     │
     ▼
 84 parity ─► 85 modes ─► 86 screens ─► 87 badges ─► 88 confirm ─► 89 hold ─► 90 relative
@@ -141,7 +143,7 @@ answer, take the default and write the question into `design.md` under "Open que
 
 | Before | Question | Default |
 |---|---|---|
-| 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | A proposed, not confirmed; ask before code |
+| 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | A confirmed on 2026-11-03; recorded in the active 83a proposal |
 | 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, erase, panel). Change `docs/ui/STYLE.md`? | Yes |
 | 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |
 | 89 | How long is a "hold" for a button? | 300 ms, or at once when another control is used while the button is down |

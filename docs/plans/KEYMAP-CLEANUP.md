@@ -4,6 +4,14 @@ Read `README.md` first. This change makes the shipped keys consistent before the
 and before patterns add new keys. It is small, but it changes keys that the owner already uses,
 so it must tell the owner about every moved key.
 
+## Agreed status (2026-11-03)
+
+The owner confirmed option A and requested work in the current branch,
+`plan/controller-first-patterns`. Keep one active change and separate commits, without
+creating a new branch for this work. The active specification is
+[83a-keymap-cleanup](../../openspec/changes/83a-keymap-cleanup/proposal.md).
+The current approved step prepares specifications only; no code or keys have changed.
+
 ## 1. Why now
 
 - Muscle memory is still young. Each later change adds keys (patterns, panic, redo); a clean base
@@ -93,12 +101,12 @@ Now `J` / `L` turn banks on Pads but change values on FX; `I` / `K` select a par
 So on Pads the owner selects a parameter with `I` / `K` and cannot change it with `J` / `L`
 without `Enter` first.
 
-- Option A (default): `J` / `L` change the value on Pads too; banks move to `U` / `O`.
+- Option A (confirmed on 2026-11-03): `J` / `L` change the value on Pads too; banks move to `U` / `O`.
 - Option B: keep `J` / `L` as banks; then on FX values also need the edit open (rule 4 is
   written the other way).
 
-Ask the owner before you start. Write the answer into the proposal. If the answer is B, drop
-rows #10, #11 and the `J` / `L` row of §4.1, and write rule 4 for B.
+The owner chose A. Keep rows #10 and #11 and record the answer in the active proposal.
+Option B is not selected; do not ask the same question again before implementation.
 
 ### 4.4 `pad.copy`
 
