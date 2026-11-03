@@ -270,6 +270,17 @@ specs by hand and do not mark physical checks passed because recorded tests pass
 
 ## Open questions
 
+- Before task 2.1: may the low-level Chop-to-FX fixture be corrected to match
+  production? At `53d317e`, `midi.rs:on_screen` sets the screen and bank but leaves
+  `hand` false, even for Chop. `play_pads_on_the_fx_screen_across_screen_and_bank_switches`
+  therefore expects a direct accepted Chop hit. App publication always sets the UI
+  route for Chop; `route_pad` deliberately keeps that real rule. The old artificial
+  screen/route pair cannot be expressed by the approved complete Focus. Proposed:
+  retain all normal-screen direct assertions, correct the Chop case to the real UI
+  route and prove its transition to direct FX playback through the production driver,
+  keeping velocity, original bank and release checks. Do not add a test-only route
+  flag or change live Chop behavior. Default: pause task 2.1 without changing this
+  existing test until the owner approves the fixture correction.
 - Which physical controller and preset will be available for acceptance? Default:
   leave the hardware pass unverified. Use the measured hardware only in its own later
   change; recorded notes and learned CC tests do not accept the SMC-PAD template.
