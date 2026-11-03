@@ -23,6 +23,12 @@
   with the keyboard. Test notes and learned pad buttons across banks, empty and occupied
   targets, cancel and confirm. Run `task check` and commit this repair separately.
 
+- [ ] 1.4 Repair the three task 1.2 differences approved by the owner: select the
+  same file and swap target, record the same swap undo step, and route new pad hits
+  under a question to the silent UI guard. Keep confirmation commands and original
+  held-pad releases. Cover the four new delta scenarios, cancellation, loading refusal
+  and return to direct performance. Run `task check` and commit with the paired tests.
+
 ## 2. Chop parity
 
 - [ ] 2.1 Add failing regression tests for all six Chop delta scenarios through raw bytes

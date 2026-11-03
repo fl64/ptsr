@@ -68,3 +68,47 @@ Normal performance hits outside these modes SHALL keep their direct audio route.
 - **WHEN** a MIDI gate pad is held before a copy is taken, the bank and screen change
   and the original note or learned pad button is released
 - **THEN** the original pad receives its release, with no hit or release of the new bank's pad
+
+### Requirement: MIDI file and swap target parity
+
+On Pads, a controller note or learned pad button used as a file-in-hand or swap target
+SHALL select the same pad in the current bank as a keyboard hit. The target hit SHALL
+NOT also sound. A successful swap SHALL make the same one-step undo for both pads as
+the keyboard. Existing file loading, questions, confirmation commands, cancellation,
+same-source swap and loading refusal SHALL stay unchanged.
+
+#### Scenario: File target parity from raw MIDI
+- **WHEN** a file is in hand and the owner hits an occupied target in another bank
+  with a keyboard pad, raw MIDI note or learned pad button in separate runs
+- **THEN** the same target is selected and named in the replacement question without sound
+- **AND** Esc keeps the old target and file in hand without an undo step
+
+#### Scenario: Swap target and undo parity from raw MIDI
+- **WHEN** the owner takes a loaded pad with Ctrl+X and hits a target in another bank
+  with a keyboard pad, raw MIDI note or learned pad button in separate runs
+- **THEN** the same two pads swap without a hit sound, the target is selected and the hand clears
+- **AND** one Ctrl+Z restores both pads; cancellation and loading refusal change no pad
+  and add no undo step
+
+### Requirement: Silent MIDI pad hits under a question
+
+While a question is open, the system SHALL route new controller pad hits to the UI
+instead of the direct audio queue. As for keyboard hits, they SHALL NOT sound, select
+another pad, change marks or answer the question. Releases of pads held before the
+question SHALL still reach their original pad after a bank or screen change. Closing
+the question SHALL restore the normal direct MIDI pad route when no other UI-only
+pad mode remains. A file or copy still in hand SHALL keep its silent targeting route.
+This rule SHALL NOT change which commands confirm a question or silence normal marking.
+
+#### Scenario: Question pad silence from raw MIDI
+- **WHEN** the owner marks two loaded pads, opens their clear question and hits a pad
+  in another bank with a keyboard pad, raw MIDI note or learned pad button in separate runs
+- **THEN** neither audio route gets a new hit, the question and pad state stay unchanged,
+  and Esc keeps the sounds and marks
+- **AND** a new hit after Esc uses the normal performance route once
+
+#### Scenario: Question route preserves held releases
+- **WHEN** a gate pad is held, the bank and screen change, a replacement question
+  opens and the owner releases the original key, note or learned pad button
+- **THEN** only the original pad receives its release; the question stays open and no
+  new-bank pad sounds or releases
