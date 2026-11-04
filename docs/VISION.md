@@ -144,6 +144,10 @@ All editing is non-destructive. Samples in the library do not change. The projec
 - Import copies the file into the library. The source file does not change. Formats: WAV, FLAC, AIFF, MP3, OGG.
 - Metadata: original name, duration, sample rate, channels, BPM (if detected), tags, date added.
 - Search by name and tags. Filters by tags and duration. Preview directly from the list (loops play in the project tempo).
+- **Automatic categories:** analyse each sample once and propose a tag: kick, snare, hat, cymbal, perc, bass, texture, vocal or loop.
+  The owner can correct the tag. It works like other tags.
+- **Similar sounds:** find samples that sound like the selected sample, from its spectrum, envelope and length.
+  This works in the file browser and on a pad.
 - Input recordings, resamples and baked results go into the library immediately, with the tags `rec`, `resample`, `baked`.
 
 **Project** (`~/ptsr/projects/<name>/`):
@@ -171,10 +175,23 @@ All editing is non-destructive. Samples in the library do not change. The projec
 - **Slice follow**: when a pad that plays a slice ends, it starts the next slice, a random slice, or a slice from a list. The break rebuilds itself while it plays. A follow chain stops at a set count or on the next hit.
 - 2 effect slots, send to buses 1 and 2, output (master or a separate JACK channel).
 - BPM sync: time stretch makes a loop follow the project tempo.
+- **Pad presets:** save envelope, filter, pitch, mode, mute group, sends and the pad's own effects, when available, without the sample.
+  Apply a preset to another pad or the marked pads.
+- **Kits:** save and load one bank of 16 pads with their samples and settings.
+  Import a folder of WAV files as a kit, in name order.
+- **Sound variation per hit:** set random amounts per pad for start point, pitch, filter cutoff and volume.
+  These change the sound. Humanize in section 12 changes only timing and velocity.
+- **Folder round robin:** each hit plays the next sample from a folder, or selects a random sample from that folder.
 
 **16 Levels:** the program spreads the selected pad across 16 pads. On these pads, one parameter changes in steps from pad to pad. This parameter is pitch, volume, filter, decay or start point. The result is new pads in the same program. The source pad does not change.
 
 **Keygroup program:** a sample or a set of samples plays by notes. The notes come from a MIDI keyboard, from the pads in chromatic mode, or from the piano roll. In chromatic mode, 16 pads are 16 degrees of the selected scale. Note zones have a root note, with up to 4 layers in a zone. Polyphony or mono with legato and portamento. This replaces the chromatic mode of the SP-404. It gives melodies and bass lines from samples.
+
+- **Chord mode:** a pad plays a triad, a seventh chord or a custom note set in the project key.
+- **Arpeggiator:** hold pads in chromatic or chord mode to play notes in tempo: up, down, up-down or random.
+  Controls are rate (1/8–1/32, including triplets), octave range and gate.
+- **Project key and tuning:** the project has a key and scale. Root-note detection proposes a sample note for owner confirmation.
+  A tune command adjusts pad pitch to fit the root note to the key. The screen can show notes instead of semitones.
 
 **Playhead mode:** the 16 pads are 16 start points in one long sample. A knob moves the window of the 16 points across the sample, and a second knob sets the window width. Each hit plays from its point. This is a quick way to play a long recording or a texture without chopping it first.
 
@@ -194,6 +211,15 @@ The editor is the core of the first version. It chops a sample into slices and l
 The chopping result is a new drum program. Or it is slices on the pads of the current program, from the selected pad onward. The source sample does not change.
 
 **Operations on a sample or a slice:** trim, snap of points to zero crossings, fades with a curve shape, normalize, gain, reverse, loop points, "bake", resampling of a slice with effects to a new pad.
+
+**Quick sample operations:** one key or one panel cell for each operation, without opening the full editor.
+All operations stay non-destructive until bake.
+
+- Trim silence from the start and end, with a threshold setting.
+- Fade in and fade out, with a length setting.
+- Reverse.
+- Loop with a crossfade for loop and gate pads, with a crossfade-length setting.
+- Remove DC offset.
 
 **Encoders on the chopping screen:**
 
@@ -221,7 +247,10 @@ Waveform: pixel graphics through the kitty protocol. In other terminals, Braille
 - **Resampling**: the program records the master, a bus or a track, with its effects, to a new pad or a clip.
 - **Live slicing**: the program records the input or the master and cuts the recording by hits at once. The slices go onto the pads without the chop screen. The owner can open the chop screen later to correct the cuts.
 - **Looper**: live loop recording with layer overdub and undo of the last layer. The loop length is in bars, in sync with the tempo. You can save the result to a clip or a pad.
-- **Input effect**: processing during recording (section 10).
+- **Record through effects:** the input can pass through the effect chain before recording (section 10).
+- **Input noise gate:** a threshold controls the gate.
+- **Auto-start by threshold:** arm recording, then start on the first sound above the threshold.
+  A short pre-roll keeps the attack.
 
 The program saves recordings as 32-bit float WAV at the system sample rate. The recordings go into the library immediately. A separate thread writes the files. The audio thread only puts data into a queue.
 
@@ -276,6 +305,15 @@ A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio
 - **Euclidean fill:** for one pad row, set the number of hits, the number of steps and the rotation. The program spreads the hits as evenly as possible. Two knobs change it live.
 - **Mutations:** commands that change a pattern by chance: shuffle the slices on the pads, thin the hits, move hits by one step, swap two rows. Each mutation is one undo step, so you can roll again.
 - **Humanize:** a small random change of time and velocity for each hit at playback. One knob sets the amount. The stored hits do not change.
+- **Groove templates:** extract timing offsets and velocities from a break or recorded take, per step of a 1/16 or 1/32 grid.
+  Save the result as a groove. Apply it to any pattern at playback, with amount 0–100 %.
+  Include a few MPC-style swing grooves at 50–75 %. Like quantize, this is non-destructive and acts in pattern compilation.
+- **Pattern variations:** each slot holds up to four variations (A/B/C/D) of one pattern. A variation starts as a copy.
+  Switch at the next bar or loop end, as with slots.
+- **Pattern chains:** an ordered list of slots with repeat counts, for example A1 ×4, A2 ×2, A3 ×1.
+  Play and loop the chain. This is a light song mode before the launcher and scenes.
+- **Recording takes:** keep each recording pass as a take. Listen and select one, or merge two.
+  Undo still removes the last pass.
 - **Piano roll** for keygroup programs.
 - Swing 50–75 %, note repeat (roll) at the selected beat.
 - Automation recording for effects and pads, effect on/off included.
@@ -531,8 +569,10 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
 - **Visual control** (section 17): one badge model, levels for messages; yellow means "the pads do something other than sound" (default; changes `docs/ui/STYLE.md`).
 - **Patterns:** the sequencer is in the audio thread; time in ticks (960 per quarter); a pattern keeps the hits as played, and quantize applies at playback (it is non-destructive); a pattern uses absolute pads 0–127 (default); one pattern plays at a time until the launcher exists (default).
 - **New projects from the controller** get a date name; the owner can rename them from the keyboard.
-- **Modulation, parameter locks and slice motion** (sections 7, 12, 16a) come after the pattern sequencer. Parameter locks come first of them, because they fit the pattern model.
+- **Modulation, parameter locks and slice motion** (sections 7, 12, 16a) remain later ideas after the pattern sequencer.
+  The priority below replaces the earlier parameter-locks-first order.
 - **Sample workflows** (section 16b): extend 95–100 with fast grids, half-time, fills and velocity ramps.
   Changes 102–108 plan sample tempo, break patterns, locks, resampling, bass, mix and movement.
   Resolve callback budget failures before 95. Describe tasks without specific genre names.
   These plans do not authorize code.
+- Priority after the pattern sequencer: groove templates, pattern variations and chains, quick sample operations.

@@ -471,6 +471,10 @@ They are part of these changes.
 
 ## 5. Later, not planned here
 
+Groove templates, pattern variations, pattern chains and recording takes remain later work.
+They reuse the raw hit model of 96. Each needs its own OpenSpec change before code.
+They are not part of 95–101.
+
 Change 104 covers parameter locks, including pitch, start point, filter and sends.
 See [SAMPLE-WORKFLOWS.md](SAMPLE-WORKFLOWS.md). Step velocity belongs to 98.
 These are not unassigned later work.
