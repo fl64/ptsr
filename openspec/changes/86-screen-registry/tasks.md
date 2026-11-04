@@ -1,13 +1,14 @@
 ## 1. Review and approval
 
-- [ ] 1.1 Review the proposal, design and both deltas with the owner. Obtain a new implementation request. Run strict OpenSpec validation, STE lint and `task check` before the separate artifact commit.
+- [x] 1.1 Review the proposal, design and both deltas with the owner. Obtain a new implementation request. Run strict OpenSpec validation, STE lint and `task check` before the separate artifact commit.
 
-Implementation has not started. Do not mark a task complete before its checks and signed-off atomic commit.
+The owner approved implementation. The artifacts are in `2eba501`. Implementation started with task 2.1.
+Do not mark a task complete before its checks and signed-off atomic commit.
 Use the existing `86-screen-registry` branch. Keep accepted closure of 85 separate. Push and MR publication need separate requests.
 
 ## 2. Screen registry without valid-state behavior changes
 
-- [ ] 2.1 Add the static screen registry and reverse lookups in `crates/input/src/lib.rs`. Use registry codes in focus packing. Test exact codes, keys, titles, groups, uniqueness, every screen and invalid decoding. Preserve bank and mode layouts. Run `task check` before the input-scope commit.
+- [x] 2.1 Add the static screen registry and reverse lookups in `crates/input/src/lib.rs`. Use registry codes in focus packing. Test exact codes, keys, titles, groups, uniqueness, every screen and invalid decoding. Preserve bank and mode layouts. Run `task check` before the input-scope commit.
 - [ ] 2.2 Use registry section names and rules in keyboard and MIDI profile parsing and resolution. Preserve override priority, explicit `none`, saved groups and all FX inheritance cases. Add `existing_screen_bindings_survive_the_registry_change` and `fx_controls_keep_their_priority_through_the_registry` through production keyboard and raw MIDI paths. Keep existing assertions. Run `task check` before the input-scope commit.
 - [ ] 2.3 Replace duplicate App screen metadata with registry access in group setup, help, learn availability and keymap diagnostics. Keep the explicit Settings compatibility case and presentation order. Add the three screen-help scenario tests with keyboard and raw MIDI actions. Cover effective keys, edit groups, Settings refusal, F12 entry, modifiers and narrow help. Run `task check` before the input-scope commit.
 
