@@ -624,18 +624,50 @@ Reset the X-Session map as described in section 82 when you finish these steps.
 ## 12 — The program is named ptsr
 
 Folder: `changes/archive/2026-11-01-12-rename-ptsr`
+Current update: `changes/archive/2026-11-04-86a-remove-legacy-migration`
 
-- [ ] Make sure that `~/.config/ptsr/` does not exist and `~/.config/arasaka-404/` does.
-  Start the program with `task run`. Make sure that the status line says
-  `settings moved from ~/.config/arasaka-404`.
-- [ ] Make sure that the pads have the same sounds as before, and the settings screen
-  (`F12`) shows the same audio device and the same MIDI bindings.
-- [ ] Make sure that your own keys from `keymap.toml` work as before. Make sure that
-  `~/.config/arasaka-404/` and `~/.local/share/arasaka-404/` are still there.
-- [ ] Restart the program. Make sure that the status line does not say that the settings
-  moved.
-- [ ] If you linked the sound to `arasaka-404` by hand (for example in a patchbay), link it
-  again to the `ptsr` client.
+The owner accepted 86a on 2026-11-04 and authorized archive and merge of PR #5.
+This is overall acceptance. Individual keyboard, controller and listening results remain unreported.
+The manual boxes below stay open.
+
+Startup no longer copies older program folders. Keep all owner folders on disk.
+The historical archive stays unchanged. The checks below replace its obsolete migration checks.
+
+**Keyboard**
+
+- [ ] Start with `task run`. Open `F12`. Check the saved sound device and MIDI bindings.
+- [ ] Open `F2`. Check the saved pads and an owner key from `keymap.toml`.
+- [ ] Restart. Check that the same settings and session load, without a settings-moved notice.
+
+**Controller**
+
+- [ ] Use an existing learned control. Check that its saved action still works.
+
+**Listening**
+
+- [ ] On `F2`, play a previously saved pad. Check that its sound stays the same.
+
+No new render: this change removes startup file copying, not sound processing.
+Automated file-loading tests do not replace these manual checks.
+
+**Local automated results (86a)**
+
+- `task check`: passed. 945 workspace tests, including 669 App tests. Format, Clippy and benchmark checks passed.
+- `task build`: passed. Release build completed.
+- `openspec validate --all --strict --no-interactive`: `Totals: 16 passed, 0 failed (16 items)`.
+- Main-spec coverage passed. The prose cleanup preserved all 679 scenario texts. This separate behavior change replaces three obsolete migration scenarios with two file-loading scenarios, for 678 total.
+- The new tests call the production settings, keymap and session loaders. They cover conflicting legacy files, current defaults, saved keys, MIDI bindings, pad state and unchanged source files. These tests do not start the sampler.
+
+All benchmark maximum summaries were within target in this run. Earlier maximum-budget and slow-core CPU issues remain open.
+
+**Archive verification (2026-11-04)**
+
+The archive keeps all five change artifacts. Both added requirements match the main spec, and both removed requirements are absent.
+Archive used `--skip-specs` because the delta was already fully applied. The main project spec stayed byte-identical.
+After archive, `task check` passed all 945 tests, including coverage of 678 main-spec scenarios. The release build passed.
+Strict validation reported `Totals: 15 passed, 0 failed (15 items)`. There are no active changes.
+All benchmark maximum summaries were within target in this run. Earlier timing issues remain open.
+Independent review of `59d437a` found no lost limits or changed behavior in the prose cleanup.
 
 ## 76 — Marks are the scope, and a pad can be reset
 
@@ -966,49 +998,50 @@ pass is implied; the earlier controller checks remain unverified.
 
 ## 85 — Shared pad input and ordered controller targets
 
-Folder: `changes/85-input-modes` (`plan/controller-first-patterns`)
+Folder: `changes/archive/2026-11-03-85-input-modes`
 
-Implementation and offline checks are complete. Owner acceptance and archive are
-pending. No keys, profiles, saved-data formats or callback code changed. The shared
+The owner accepted 85 on 2026-11-03 and authorized its archive and a local signed-off commit.
+Closure of 85 and work on 86 share `86-screen-registry` and one MR by owner request.
+Implementation and offline checks are complete. No keys, profiles, saved-data formats or callback code changed. The shared
 handler keeps the existing text, picker, F10/F12 and overlapping-hand boundaries.
 Recorded MIDI and waveform checks do not mark a physical or listening pass complete.
-The final agent screen pass at `1a24909` has 66 captures under ignored
-`target/ux/85-final/`: edit/mark, banks, copy/swap/undo, filter/file questions,
-Chop listen/BOUNDS/assign cancellation, FX, F10, all F12 tabs and project text.
-Saved TOML comparisons confirmed undo/cancel and save/restart preservation. Both
-starts logged `JACK unavailable`, never `JACK: active`; no ptsr PipeWire node was
-present before, during or after. Both exits printed `UX exit: 0`. The terminal had
-no audio or kitty releases; no MIDI was injected. The design records fixture
+The final agent screen pass at `1a24909` has 66 captures under ignored `target/ux/85-final/`.
+These cover edit/mark, banks, copy/swap/undo and filter/file questions.
+They also cover Chop listen/BOUNDS/assign cancellation, FX, F10, all F12 tabs and project text.
+Saved TOML comparisons proved undo/cancel and save/restart preservation.
+Both starts logged `JACK unavailable`, never `JACK: active`.
+PipeWire had no ptsr node before, during or after the run. Both exits printed `UX exit: 0`.
+The terminal had no audio or kitty releases. The agent injected no MIDI. The design records fixture
 expectation corrections. This is screen evidence, not owner or hardware acceptance.
-The owner reported successful keyboard checks on 2026-11-03. The controller is not available.
-Only the keyboard boxes below reflect that report. Controller and WAV checks stay open.
+The owner reported successful keyboard checks on 2026-11-03, then accepted the whole change.
+The controller is not available. Only the keyboard boxes below reflect an individual check result.
+Controller and WAV checks stay open where no individual result was reported. Open boxes do not mean rejection.
 
 ### Prepare
 
 Use a disposable project: these checks load, copy, swap and replace sounds. Prepare
 two occupied pads and an empty pad in bank 2. For releases, use the long gate and
 20 ms release from section 84, with both FX sends at zero. A keyboard gate needs
-kitty key releases; tmux without them cannot verify that part.
+kitty key releases. Tmux without them cannot check that part.
 
 For a controller pass, use notes 36–51 or explicit GLOBAL pad bindings. A learned
 CC button must send its zero value on release. Record missing velocity/release forms
 rather than claiming them. Do not reset a profile for this check. The X-Session's
-safe command buttons are not a pad grid. Its left Cue on Files takes a file; a second
-device can provide the pad notes. The incomplete SMC-PAD template is not accepted here.
+safe command buttons are not a pad grid. Its left Cue on Files takes a file.
+A second device can provide the pad notes. The incomplete SMC-PAD template is not accepted here.
 
 ### Keyboard pass
 
 - [x] On Pads, hit a loaded pad. Open edit with `Enter`, then hit a different loaded
   pad: it plays once and edit stays open. Close edit. Turn marking on with `M`, hit
-  pads, then open edit again. Marks and sound must coexist; no key assignment changes.
+  pads, then open edit again. Marks and sound must coexist. No key assignment changes.
 - [x] On Files, switch preview off if it is on. Select a different file, press `Enter`
-  and hit an occupied pad at once. The old pad must not play; the question names that
-  target. Hit a second occupied pad: the first question and selection stay. `Esc`
+  and hit an occupied pad at once. The old pad must not play. The question names that target. Hit a second occupied pad: the first question and selection stay. `Esc`
   keeps both old sounds and the file in hand. Hit an empty pad: it loads the file
   without a hit sound. Wait for loading to end, then cancel any hand state before play.
 - [x] Take a copy with `Ctrl+C`, place it on an empty pad, and undo with `Ctrl+Z`.
-  Swap two loaded pads with `Ctrl+X` and a target hit, then undo. Placement is silent;
-  one undo restores the prior target or both swapped pads, including their settings.
+  Swap two loaded pads with `Ctrl+X` and a target hit. Undo the swap.
+  Placement is silent. One undo restores the prior target or both swapped pads, including their settings.
 - [x] Repeat section 84's bare Chop listen, linked pad, slice edit and both assign
   orders (`P`, then `Tab`). A question and F10 block new keyboard hits.
 - [x] (by ear) Hold a linked gate from Chop, change bank, open F4 and release its
@@ -1016,32 +1049,32 @@ device can provide the pad notes. The incomplete SMC-PAD template is not accepte
   A new silent learn key must not steal that older keyboard hold.
 - [x] Open the Files filter with `/` and type pad letters. They type text, not hits.
   Repeat pad naming (`Ctrl+N`) and project selection (`Ctrl+P`), then cancel. The
-  project picker's first Esc clears typed text; another Esc closes it. Open and close
+  project picker's first Esc clears typed text. Another Esc closes it. Open and close
   F10 and all F12 tabs without saving a test binding. Save and restart the test project.
 
 ### Controller pass, when hardware is available
 
-Use controller pad hits for targets below. Use existing bound commands; keyboard
-commands remain available where a controller has none. Repeat notes and learned CC
+Use controller pad hits for targets below. Use existing bound commands.
+Keyboard commands remain available where a controller has none. Repeat notes and learned CC
 buttons separately where possible. Record the device and preset.
 
 - [ ] On Files with preview off, take the selected file with a bound command and hit
   an occupied pad immediately. The result is one silent target question, not the old
-  sound. Hit a different occupied pad; it cannot change or confirm the first question.
+  sound. Hit a different occupied pad. It cannot change or answer the first question.
   Esc keeps the old sounds and file in hand. An empty target loads silently.
 - [ ] Cancel the held file, then send bank-next and a pad hit quickly. The hit uses
   the new bank once, at its original velocity. Repeat entering and leaving Chop with
-  the existing bound commands; listen and assign keep their normal meaning.
-- [ ] (by ear) Hold a long gate; change bank/screen and release its original control.
+  the existing bound commands. Listen and assign keep their normal meaning.
+- [ ] (by ear) Hold a long gate. Change bank/screen. Release its original control.
   Repeat under a question and F10. Test note-off, note-on zero, CC zero and disconnect
   where the device supports them. Only the actual original pad stops, without a stuck
   gate. Also retrigger that control quickly around a command and release.
 - [ ] (by ear) On Chop, hold a keyboard gate, change bank, then hold the same local
-  position from MIDI. Release each in both orders; each stops its own original pad.
+  position from MIDI. Release each in both orders. Each stops its own original pad.
   Repeat MIDI-first, and repeat under a question/F10. A silent new hit steals no hold.
 - [ ] (by ear) Outside target modes, play soft and strong hits while the screen updates.
   Each hit sounds once without waiting for the screen. Compare MIDI 127 with a Shift
-  keyboard hit. A fixed-127 button cannot verify low velocity; record that limit.
+  keyboard hit. A fixed-127 button cannot check low velocity. Record that limit.
 - [ ] If two devices are available, take a file from device A and hit the target from
   B before the screen changes. It is still a silent target. Release older gates from
   both devices during this sequence: their original releases still work.
@@ -1076,10 +1109,10 @@ cargo test -p ptsr input_tests::render_84_input_parity -- --nocapture
 
 - [ ] (by ear) Listen to `renders/85-mixed-holds.wav` (3.584 s): first notes, then
   learned buttons. Each group has keyboard-first, MIDI-first and rejected-MIDI cases.
-  Each original hold must end on its own release; rejection must not steal the key.
+  Each original hold must end on its own release. Rejection must not steal the key.
 - [ ] (by ear) Listen to `renders/85-late-midi.wav` (about 1.451 s): accepted note,
   rejected note, accepted button, rejected button. Accepted hits have their normal
-  Chop-entry hush without a restart; rejected segments are silent.
+  Chop-entry hush without a restart. Rejected segments are silent.
 - [ ] (by ear) Listen again to `renders/84-input-parity.wav` (5.376 s). Its SHA-256
   remains `f795d105ad3f098d03857203e0eaffed73e782dd1d51bcfdfec233f7d35a4da6`.
 
@@ -1092,7 +1125,280 @@ memory-model check or exhaustive proof of every queue interleaving is claimed.
 Owner keyboard result, 2026-11-03: all checks possible with the keyboard passed.
 The owner cannot test a controller at present. Keyboard terminal: not reported.
 Device/preset and physical note/CC release forms: unverified. Separate WAV listening result: not reported.
-The owner approved squash merge of [PR #4](https://github.com/fl64/ptsr/pull/4) into `master` with these checks open.
-This approval does not authorize archive of 85. Tasks 5.2 and 5.3 stay open.
+[PR #4](https://github.com/fl64/ptsr/pull/4) is merged into `master` at `fd6a566`.
+The owner later accepted 85 and authorized archive and a local signed-off commit on 2026-11-03.
+This later decision replaces the earlier archive restriction. It does not report individual WAV or hardware results.
+Keep the archive and status update separate from 86 specifications and code in the combined MR.
 Callback maximum-budget and slow-core issues remain open. Green p99 benchmark gates do not prove
 that every callback meets the 50% target. This change does not investigate that issue.
+
+## 86 — Screen registry and invalid MIDI state
+
+Folder: `changes/archive/2026-11-04-86-screen-registry` (`86-screen-registry` branch)
+
+Implementation is complete through `a186fbb`. The owner accepted 86 on 2026-11-04.
+This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
+The owner authorized archive, local signed-off commits and one PR with closure of 85.
+Keep the closure commits separate. The owner also requested an ASD-STE100 review of the relevant documents.
+The registry keeps existing keys, help, learned assignments and FX controls for valid input.
+Invalid shared MIDI state rejects new actions without a fallback screen. Original releases still work.
+No audio callback, sound algorithm, profile or saved-data format changed.
+
+### Automated evidence (2026-11-04)
+
+The agent reviewed the full 86 diff from `a1e4829` through `a186fbb`.
+Existing behavior assertions remain. Focus-read assertions now check the `Result` representation.
+Implementation commits are `0cebfed` (registry), `719d90b` (bindings), `44eb4d6` (help and learning) and `a186fbb` (invalid MIDI state).
+
+All nine delta scenarios have tests with matching names in `crates/app/src/input_tests.rs`.
+The separate delta check reported `Delta coverage: 9/9 named tests.`
+The main-spec coverage test passed too. It does not inspect active deltas.
+Raw MIDI uses the production profiles, dispatcher and App. Only state corruption uses test-only injection.
+Tests cover unknown codes, invalid banks, reserved bits, original releases, full queues, project epochs and recovery with earlier UI work pending.
+
+Commands completed successfully:
+
+```sh
+openspec validate --all --strict --no-interactive
+cargo test -p ptsr --test scenarios
+cargo test -p ptsr input_tests::render_85 -- --nocapture
+task check
+task build
+```
+
+Strict validation reported `Totals: 16 passed, 0 failed (16 items)`.
+The main-spec check reported one passed test. The explicit render check reported three passed tests.
+`task check` passed formatting, Clippy, all workspace tests and the benchmark.
+Its input, App and TUI test summaries were:
+
+```text
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.36s
+test result: ok. 101 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+```
+
+The release build passed. Local logs are `target/86-step-4.1-check.log`,
+`target/86-step-4.1-build.log`, `target/86-step-4.1-renders.log` and `target/86-step-4.1-delta-coverage.log`.
+These ignored artifacts do not replace this record or owner checks.
+
+The recorded benchmark in `target/86-step-4.1-check.log` reported:
+
+```text
+32 voices with pitch, envelope, filter, drive and sends, reverb and delay, block 128 @ 48000 Hz, budget 2.667 ms: mean 7.83 %, p99 10.22 %, max 30.83 %
+  wall: mean 7.83 %, p99 10.22 %, max 30.83 %, samples 20000, >50 % 0
+  thread CPU: mean 7.84 %, p99 10.15 %, max 29.07 %, samples 20000, >50 % 0
+project switch: 200 switches, 22000 callbacks, mean 0.17 %, callback p99 7.04 %, switch peak p99 9.43 %, max 10.53 %
+```
+
+Playback and switch groups had zero wall/CPU blocks above 50% in this run.
+This is one observation, not a maximum-budget guarantee. Earlier callback peaks and slow-core CPU spikes remain unresolved.
+No scheduler or system setting changed. A green p99 gate does not close the timing issue.
+
+The three existing WAV checks passed finite-sample, clipping, silence and timing checks against timestamped waveform references.
+The regenerated files also matched their SHA-256 values from before this verification run:
+
+```text
+01fafeb65b32d3bceb00210eb40d4be904dc3ea4d7b029068f09eb07bcf3743f  renders/85-input-modes.wav
+22685916966160ee50774ee80245c3644ab6dae301f05137f15e74eea8d97bce  renders/85-mixed-holds.wav
+b80bdb052a43559e435bcd72c456323b84fb27b62df1b5cc54e68e5fdce08514  renders/85-late-midi.wav
+```
+
+No new WAV is necessary. The agent did not run the sampler live, hear sound or test physical MIDI hardware for 86.
+Keyboard, controller and listening results for 86 remain unreported. Automation does not mark those checks complete.
+
+### Documentation handover verification (2026-11-04)
+
+The documentation check passed strict OpenSpec validation, `task check` and `task build`.
+The validation and App test reported:
+
+```text
+Totals: 16 passed, 0 failed (16 items)
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.10s
+```
+
+The playback wall maximum was 20.46%, and its thread CPU maximum was 19.81%.
+The switch wall maximum was 9.08%, and its thread CPU maximum was 9.11%.
+All workload groups reported zero wall and CPU blocks above 50% in this run.
+This observation does not close the earlier timing issue. The three 85 WAV hashes still match the values above.
+Local logs use the prefix `target/86-step-4.2-`: `check.log`, `build.log`, `openspec.log` and `ste.log`.
+
+STE review used STE-flavored descriptions and Strict procedures. The lint found zero hard violations and four passive-voice suggestions.
+The suggestions concern `is recorded` in the status descriptions. The actor is irrelevant there, so that wording stays.
+The new owner procedures have no lint findings. This check does not establish full ASD dictionary compliance.
+
+### Prepare the owner checks
+
+Use a disposable project because these checks change pad and effect settings.
+Start the program from the repository folder with `task run`.
+Keep the existing keyboard and controller maps. Do not reset or replace saved assignments.
+The keys below are defaults. If your map replaces a key, use its existing replacement and record it.
+
+1. Open Files with `F6`.
+2. Select a sample at least 20 seconds long.
+3. Press `Enter` to take the file in hand.
+4. Hit an empty pad to load the file.
+5. Wait for loading to finish.
+6. Open Chop with `F3`.
+7. Press `Y` to make two slices from a fresh sample.
+8. Press `P` to open the assignment plan.
+9. Hit two empty pads to select the targets.
+10. Press `Enter` to apply the plan.
+
+For the release checks, use one linked slice as a long gate.
+On Pads, select that pad. Press `H` until its mode is gate (`⇥`).
+Set its release to 20 ms on ENV. Set both FX sends to zero.
+Use a terminal with the kitty keyboard protocol. A terminal without key releases cannot check keyboard gate release.
+For the FX sound check, use another loaded pad with a nonzero send to the selected block.
+
+For controller commands, use the X-Session Pro with its existing assignments.
+Its default command buttons are not pad controls.
+For pad holds, use a second device with notes 36–51 or existing GLOBAL pad bindings.
+Use keyboard commands where the controller has no assignment.
+Record unavailable devices, bindings and release forms instead of marking them complete.
+The incomplete SMC-PAD template is not a verified hardware profile.
+
+### Keyboard pass
+
+- [ ] Open Pads (`F2`), Chop (`F3`), FX (`F4`), Files (`F6`) and Settings (`F12`) in sequence.
+  Check the screen title after each key. Open `F1` on each screen.
+  Check that the full help names that screen's controls. Close help with `F1`.
+  Check the bottom help, including modifier hints and the current Settings tab.
+- [ ] On Pads, select the loaded pad. Press `Enter` to open edit.
+  Check pages with `Tab` and `Shift+Tab`. Select parameters with `I` and `K`.
+  Change a value with `J` and `L`. Check that the bank does not change.
+  Close edit with `Esc`.
+- [ ] Open the linked slice on Chop with `F3`. Press `Enter` to open slice edit.
+  Check that only the `BOUNDS` page is available. Close edit with `Esc`.
+- [ ] Open FX with `F4`. Select each block with `Tab` and `Shift+Tab`.
+  Select parameters with `I` and `K`. Change values with `J` and `L`.
+  Check that these controls need no separate edit mode.
+- [ ] Open `F10` on Pads, Files, Chop and FX in separate runs.
+  Check the corresponding group: `PADS`, `FILES`, `CHOP` or `FX`.
+  Close learn with `F10` without saving a binding.
+  Repeat with Pads edit and Chop edit open. Check `PADS · EDIT` and `CHOP · EDIT` respectively.
+  Check that FX has no separate edit group.
+- [ ] On Settings, press `F10`. Check that screen learn does not open.
+  Open the MIDI tab for its existing learning list. Do not save a test binding.
+- [ ] Open `F12` from Pads, Chop, Files and FX in separate runs.
+  Open the MIDI tab. Check that the list shows the corresponding screen group expanded.
+  Check the group order: `GLOBAL`, `PADS`, `PADS · EDIT`, `SETTINGS`, `FILES`, `CHOP`, `CHOP · EDIT`, `FX`.
+- [ ] (by ear) On Chop, hold the long linked gate's pad key.
+  Change bank with `PgDn`. Open FX with `F4`. Release the original key.
+  Check that only the original pad stops. The new bank must not select a different release target.
+- [ ] Restart the program. Check an existing custom key or explicit `none` entry if your map has one.
+  Check that its previous effect remains. Do not create or replace an owner assignment for this check.
+
+### Controller pass, when hardware is available
+
+Use the existing map. The physical names below describe the X-Session defaults from change 82.
+If your map replaces a default, use its existing assignment and record the difference.
+
+- [ ] Press left Headphone for Files and right Headphone for FX if your map retains those defaults.
+  Check that each opens its existing screen.
+- [ ] On Pads, press left Cue to open edit if that assignment is present.
+  Check the existing page buttons and numbered knobs 1–3.
+  Close edit with a Cue button that already has this role.
+- [ ] On FX, select both blocks with the existing page buttons.
+  Check the same numbered parameter knobs on each block, without another edit mode.
+  Check any saved FX assignment with its existing priority. Do not learn a replacement for this check.
+- [ ] Open `F12` from Pads, Chop, Files and FX in separate runs.
+  Use an existing controller assignment for entry if available. Otherwise, use `F12` on the keyboard.
+  Open the MIDI tab. Check the corresponding expanded group and the group order from the keyboard pass.
+- [ ] Test one saved screen assignment and one saved GLOBAL assignment.
+  Restart the program. Check that both retain their previous roles without learning again.
+- [ ] (by ear) On Chop, hold the long linked gate from a pad controller.
+  Change bank. Open FX. Release the original control.
+  Check that only the original pad stops. Repeat the sequence with a device disconnect instead of release.
+  Check that the original gate stops without a stuck note.
+- [ ] Repeat the release check with note-off, note-on zero and learned-button zero where the device supports them.
+  Record the available forms. A command-only device cannot check pad holds.
+
+Invalid internal state is an automated fault test. Do not change internal state or configuration to reproduce it by hand.
+
+### Listening pass
+
+These are the existing regression references, not new sound features.
+Section 85 gives the segment times and the command to regenerate the files.
+
+- [ ] (by ear) Listen to `renders/85-input-modes.wav` (2.064 s).
+  Check one onset per accepted hit, intentional silence for file targets and clean gate stops.
+  Check that equal-velocity keyboard, note and button hits sound the same.
+- [ ] (by ear) Listen to `renders/85-mixed-holds.wav` (3.584 s).
+  Check that each original hold ends on its own release. A rejected hit must not steal another hold.
+- [ ] (by ear) Listen to `renders/85-late-midi.wav` (about 1.451 s).
+  Check the normal Chop-entry fade without a second hit. Rejected segments must stay silent.
+
+During the live keyboard and controller passes, listen for missing releases, duplicate hits and changed FX response.
+No new WAV is necessary because the sound algorithm does not change.
+
+Owner result, 2026-11-04: overall acceptance of 86. Individual keyboard and listening results remain unreported.
+Keyboard terminal and custom keys: not reported.
+Controller device, preset, assignments and physical release forms: unverified. Separate WAV listening: not reported.
+The owner explicitly authorized archive, local signed-off commits and PR publication. All individual manual boxes stay open.
+Earlier callback peaks and slow-core CPU spikes remain open.
+
+### Archive verification (2026-11-04)
+
+`openspec archive 86-screen-registry --yes` added four requirements and nine scenarios to the two main specs.
+The archive comparison preserved all earlier main-spec text and found named tests for all nine scenarios.
+Strict validation, main-spec scenario coverage, `task check` and `task build` passed.
+The validation and App test reported:
+
+```text
+Totals: 15 passed, 0 failed (15 items)
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.58s
+```
+
+The callback benchmark passed its existing p99 exit checks but exceeded the maximum-budget target:
+
+```text
+paired timing: steady playback
+  wall: mean 7.99 %, p99 9.36 %, max 93.23 %, samples 20000, >50 % 2
+  thread CPU: mean 7.99 %, p99 9.28 %, max 93.30 %, samples 20000, >50 % 2
+  maximum target (50 %): wall EXCEEDED; thread CPU EXCEEDED
+```
+
+The switch workload reported zero wall and CPU blocks above 50%.
+These results keep the earlier maximum-budget and slow-core issues open. They do not identify a cause.
+Local logs use the prefix `target/86-closure-`: `check.log`, `build.log`, `openspec.log` and `scenarios.log`.
+No sampler live run, owner listening or physical-controller result comes from these checks.
+
+### PR preparation checks (2026-11-04)
+
+The separate documentation edit simplifies English without changing behavior or scenario titles.
+The main and archived 85 requirements match. All unrelated input requirements remain unchanged.
+The ASD-STE100 review uses STE-flavored descriptions and Strict procedures.
+The selected text has zero hard lint findings. Remaining advice concerns passive voice and one necessary temporal condition.
+These results do not prove full ASD dictionary compliance.
+
+`task check`, main-spec scenario coverage and `task build` passed again.
+The App test reported:
+
+```text
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.87s
+```
+
+This run reported steady wall p99 9.28%, maximum 28.32%, and CPU p99 9.26%, maximum 16.15%.
+Both steady and switch workloads had zero blocks above 50%.
+This observation does not close the earlier maximum-budget or slow-core issue.
+
+The current OpenSpec 1.14.3 rejects specification warnings in strict mode.
+These warnings concern requirements longer than 500 characters and placeholder Purpose sections.
+An isolated copy of the unchanged `b54856d` specifications gives the same strict result as the edited documents:
+
+```text
+Totals: 3 passed, 12 failed (15 items)
+OpenSpec strict exit: 1
+```
+
+Validation without strict mode reports:
+
+```text
+Totals: 15 passed, 0 failed (15 items)
+OpenSpec standard exit: 0
+```
+
+At that stage, strict validation remained a merge blocker.
+The later specification cleanup resolved these warnings without changing scenario text.
+Evidence: `target/86-new-cli-baseline.log` and the logs with prefix `target/86-pr-`.
+No new owner, listening or hardware result comes from these checks.

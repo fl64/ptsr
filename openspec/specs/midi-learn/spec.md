@@ -6,7 +6,11 @@ MIDI learn on the F12 MIDI tab: every action by group (global and per screen), o
 ## Requirements
 
 ### Requirement: Learn a control for an action
-The system SHALL let the owner pick an action on the MIDI tab of the settings screen (F12), wait for a control to be moved and show it pending on the row before it saves anything. The pending row shows what the control drives now: in the group of the row, the action that loses the control, in the taken colour with a warning; in the other groups, each action that the control keeps, in grey, with `stays` (for example `b9 on GLOBAL: bank next · stays`). `Enter` assigns the control to the action and saves it. `Esc` drops the pending control and changes nothing. Another control moved before `Enter` takes the place of the pending one.
+The F12 MIDI tab SHALL let the owner select an action and wait for a moved control.
+The row SHALL show that control pending without saving.
+`Enter` SHALL assign and save it.
+`Esc` SHALL drop it without changes.
+Another control moved before `Enter` SHALL replace the pending control.
 
 #### Scenario: Knob for pad volume
 - **WHEN** the owner selects "pad volume", presses Enter, turns a knob, touching a neighbour knob briefly, and presses Enter again
@@ -25,6 +29,12 @@ The system SHALL let the owner pick an action on the MIDI tab of the settings sc
 - **WHEN** left Cue (b7) opens pad edit from the X-Session Pro profile, and the owner
   clears the "open pad edit only" row and restarts the program
 - **THEN** b7 does nothing on the pads screen, and the row still has no control
+
+### Requirement: MIDI tab pending assignment warnings
+
+The pending row SHALL show the control's current actions.
+Within the row's group, the losing action SHALL use the taken colour and a warning.
+In other groups, retained actions SHALL appear grey with `stays`, for example `b9 on GLOBAL: bank next · stays`.
 
 #### Scenario: See what the button leaves before it is saved
 - **WHEN** b9 switches the pad mode in the PADS group and turns to the next bank in the GLOBAL group, and on the MIDI tab of F12 the owner selects "pad mark" in PADS, presses Enter and presses b9
@@ -108,37 +118,12 @@ The system SHALL show pads 1–16 and banks 1–8 as one row each with how many 
 - **THEN** pads 1–5 stay learned and the row says "5 of 16 learned"
 
 ### Requirement: Learn on the screen
-The system SHALL turn a learn mode on and off with `F10` on the pads, chop and files
-screens. While it is open the top line of the screen says that the mode is on, what is
-picked, its control and what to do next, in words; elements with a control carry a label
-with it, elements without one carry none. An element is picked by its own key: a keyboard
-pad key picks that pad, a key of a screen command picks that command, `PgUp` `PgDn` pick
-the bank switch, `I` `K` walk the pad parameters of the panel. `F10` pressed within 5 s
-after an action was done (a key, a pad hit, a value step) opens the mode with that action
-picked, in the layer and on the page where it was done: a value step picks the parameter
-it changed. The top line says when the pick is the last thing done, and a refused control
-says that `I` `K`, a pad or a command key pick another. The picked element is lit and its label shows its control, or "none"; the top
-line names the action, its layer and page (`cutoff · PADS · EDIT · FILTER`).
-A binding goes to the layer where the element was picked: with the edit open, to the edit
-group of the screen, and works while the edit is open; with it closed, to the screen's
-group. A knob for a parameter drives that parameter directly. A parameter takes a knob or
-a fader, a command takes a button or a pad: the other kind is not shown as pending, and the
-top line says why in words — a parameter has a value to turn and a button only presses; a
-command acts once per press and a knob would repeat it on every tick.
-A control moved on the controller does not bind at once: it stands next to the old one
-in the label of the picked element and in the top line, in the pending colour
-(`pad 5 → k3`). Another control moved before the answer takes its place. `Enter` binds it
-as a learned assignment of the group of that layer, and the pick moves on to the next element
-(the next pad, the next parameter, the next command); the control just bound is not heard
-by the mode until another control moves or an element is picked by its key. `Esc` drops
-the pending control, the old one stays, the pick stays. A control that already drives
-another element in the same layer lights that element in the "taken" colour, and the top
-line warns that it loses the control; `Enter` moves it. A control bound in another layer
-is named in the top line in grey, with no warning: the layers work at different times. A command takes a button or a pad of the
-controller: a knob turned for it is not shown as pending and the top line says that a
-button is needed and why. `Backspace` puts "none" as pending; `Enter` clears the picked element's
-control, `Esc` keeps it. `F10` leaves the mode, a pending control is dropped. While the
-mode is open no pad sounds and no command acts; the keys keep what they do outside it.
+`F10` SHALL toggle screen learn on Pads, Chop and Files.
+The top line SHALL name the mode, selected element, control and next step in words.
+Bound elements SHALL carry control labels.
+Unbound elements SHALL carry none.
+The selected element SHALL be lit and show its control or "none".
+The top line SHALL name action, layer and page (`cutoff · PADS · EDIT · FILTER`).
 
 #### Scenario: Pick by the pad key
 - **WHEN** the mode is open on the pads screen and the owner presses pad key Q
@@ -147,6 +132,13 @@ mode is open no pad sounds and no command acts; the keys keep what they do outsi
 #### Scenario: The binding is shown
 - **WHEN** pad Q plays from controller pad 5 and the owner picks pad Q
 - **THEN** the label of pad Q and the top line say `pad 5`; a pad with no control says `none`
+
+### Requirement: Screen learn waits for confirmation
+
+A moved control SHALL appear beside the old one in the selected label and top line, in pending colour (`pad 5 → k3`).
+It SHALL NOT bind immediately.
+`Enter` SHALL bind it in the selected layer's learned group and advance to the next pad, parameter or command.
+Learn SHALL ignore that control until another control moves or a key selects an element.
 
 #### Scenario: A turn waits for Enter
 - **WHEN** pad Q is picked, bound to controller pad 5, and the owner hits controller pad 6
@@ -158,6 +150,13 @@ mode is open no pad sounds and no command acts; the keys keep what they do outsi
 - **WHEN** the pitch, bound to cc 24, is picked with `I` `K` and the owner turns cc 26
 - **THEN** the pitch row of the pad panel says `◂ cc 24 → cc 26`, `cc 26` in the pending
   colour, and the pitch still follows cc 24
+
+### Requirement: Screen learn recalls the last action
+
+`F10` within 5 s of a key action, pad hit or value step SHALL select that action in its original layer and page.
+A value step SHALL select its changed parameter.
+The top line SHALL identify a last-action selection.
+After a refused control, it SHALL explain that `I` `K`, pad keys or command keys select another element.
 
 #### Scenario: Do, then F10
 - **WHEN** the pad edit is open on the FILTER page, the owner steps the cutoff with `L`,
@@ -178,10 +177,25 @@ mode is open no pad sounds and no command acts; the keys keep what they do outsi
 - **WHEN** the owner presses `PgDn` and presses `F10` 10 s later
 - **THEN** the mode opens with nothing picked, as without an action
 
+### Requirement: Screen learn checks control types
+
+Parameters SHALL accept knobs/faders that drive them directly.
+Commands SHALL accept buttons/controller pads.
+Wrong control types SHALL NOT become pending.
+The top line SHALL explain why: parameters have values to turn, buttons only press, commands act once per press, and knobs would repeat each tick.
+
 #### Scenario: A button for a parameter
 - **WHEN** the cutoff is picked and the owner presses controller button b6
 - **THEN** nothing is pending, and the top line says the cutoff needs a knob or a fader
   because it has a value to turn and a button only presses
+
+### Requirement: Screen learn preserves layer scope
+
+An element selected in edit SHALL bind to that screen's edit group and work while edit is open.
+Otherwise, it SHALL bind to the screen group.
+A control's losing element in the same layer SHALL light in taken colour with a top-line warning.
+`Enter` SHALL move it.
+Other-layer assignments SHALL appear grey in the top line without warning, because layers act at different times.
 
 #### Scenario: Taken in this layer
 - **WHEN** k5 turns the resonance in the pad edit and the owner learns k5 for the cutoff in
@@ -194,6 +208,12 @@ mode is open no pad sounds and no command acts; the keys keep what they do outsi
   cutoff in the pad edit
 - **THEN** the top line names `k5 on PADS: volume` in grey with no warning; after `Enter`
   k5 turns the volume with the edit closed and the cutoff with it open
+
+### Requirement: Screen learn pending control replacement
+
+`Esc` SHALL drop a pending control while keeping the old binding and selected element.
+Another moved control SHALL replace the pending control.
+`F10` SHALL leave learn and drop pending input.
 
 #### Scenario: Esc keeps the old one
 - **WHEN** a control stands pending for the cutoff and the owner presses `Esc`
@@ -213,6 +233,13 @@ mode is open no pad sounds and no command acts; the keys keep what they do outsi
 - **WHEN** knob k5 turns the volume, the owner picks the cutoff with `I` `K` and turns k5
 - **THEN** the volume row lights too and the line says k5 leaves the volume; `Esc` keeps k5 on the volume, `Enter` moves it to the cutoff
 
+### Requirement: Screen learn key selection is silent
+
+Each element's own key SHALL select it: pad keys select pads, command keys select commands, and `PgUp`/`PgDn` select bank switches.
+`I`/`K` SHALL walk pad-panel parameters.
+While learn is open, no pad SHALL sound and no command SHALL execute.
+Outside learn, keys SHALL keep their existing behavior.
+
 #### Scenario: A command by its key
 - **WHEN** the mode is open on the chop screen and the owner presses `M`
 - **THEN** "cut" is picked and lit, and no cut is made
@@ -220,6 +247,11 @@ mode is open no pad sounds and no command acts; the keys keep what they do outsi
 #### Scenario: Silent while learning
 - **WHEN** the mode is open and the owner presses a pad key and the pad mode key `H`
 - **THEN** no pad sounds, the mode of no pad changes, and `H` picks "pad mode"
+
+### Requirement: Screen learn clearing needs confirmation
+
+`Backspace` SHALL make "none" pending.
+`Enter` SHALL clear the selected element's control, and `Esc` SHALL keep it.
 
 #### Scenario: Clear waits for Enter
 - **WHEN** the cutoff, bound to k5, is picked and the owner presses `Backspace`
@@ -260,15 +292,9 @@ keeps.
 
 ### Requirement: Learn the keymap cleanup actions
 
-The system SHALL list `pad.copy` in PADS and `chop.assign_order` and `chop.hits_back`
-in CHOP on the F12 MIDI tab. F10 SHALL select these commands by Ctrl+C on Pads, Tab
-and Shift+H on Chop, or their effective owner keys. Learning SHALL NOT execute them.
-They SHALL accept a controller button or pad, not an absolute knob. A learned copy
-command SHALL take the selected pad in hand; another controller pad or keyboard pad
-SHALL be a target. Assign-order and hits-back SHALL follow their Chop mode guards.
-Their saved bindings SHALL survive restart. Old `edit.param_next` bindings SHALL keep
-switching assignment order. No existing owner binding or X-Session default SHALL be
-reset or reassigned by this cleanup.
+F12 MIDI SHALL list `pad.copy` in PADS and `chop.assign_order`/`chop.hits_back` in CHOP.
+F10 SHALL select them with Ctrl+C on Pads, Tab/Shift+H on Chop, or effective owner keys, without executing them.
+They SHALL accept controller buttons/pads, not absolute knobs.
 
 #### Scenario: Cleanup actions appear in their learn groups
 - **WHEN** the owner opens the F12 MIDI tab
@@ -286,6 +312,12 @@ reset or reassigned by this cleanup.
 - **WHEN** F10 learn is open on Chop and the owner presses Shift+H
 - **THEN** `chop.hits_back` is selected and no cuts or threshold change
 
+### Requirement: Learned cleanup command behavior
+
+Learned copy SHALL take the selected pad in hand and accept keyboard/controller pads as targets.
+Assign-order and hits-back SHALL keep their Chop mode guards.
+Old `edit.param_next` bindings SHALL keep switching assignment order.
+
 #### Scenario: Learn a button for pad copy
 - **WHEN** a button is bound to `pad.copy`, the owner presses it on Pads and hits a target pad
 - **THEN** it takes and places the same copy as Ctrl+C and a keyboard target
@@ -300,6 +332,11 @@ reset or reassigned by this cleanup.
 - **WHEN** a button bound to `chop.hits_back` is pressed in Chop listen mode
 - **THEN** it raises the threshold one step with the same cuts and undo rules as Shift+H
 - **AND** it stays ignored during assignment
+
+### Requirement: Cleanup bindings keep saved assignments
+
+Saved cleanup-command bindings SHALL survive restart.
+The cleanup SHALL NOT reset or reassign existing owner bindings or X-Session defaults.
 
 #### Scenario: Cleanup learned bindings survive restart
 - **WHEN** the owner saves bindings for all three new actions and restarts

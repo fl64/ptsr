@@ -1,7 +1,7 @@
 # editing Specification
 
 ## Purpose
-TBD - created by archiving change 21-edit-mode. Update Purpose after archive.
+Edit pad and slice parameters through shared pages, keys and controller knobs. Show the active layer, selected parameter and changed settings.
 
 ## Requirements
 
@@ -25,23 +25,25 @@ mode.
 - **THEN** the help closes and the edit mode stays open
 
 ### Requirement: Parameter pages
-The system SHALL group the parameters of the edited object into pages of at most 3; knob k
-turns the k-th parameter of the current page, on every screen. In the edit, and on the pads
-screen with the edit closed too, `Tab` turns the page forward and `Shift+Tab` back, in a
-ring, and the pick lands on the first parameter of the new page; `I` `K` (`↑` `↓`) walk all parameters of the object one by one, on the
-pads screen with the edit closed too, and the page follows the picked parameter. A knob bound to the page (`edit.page`) splits its travel
-into equal parts, one per page in this order, and turns to the page under it at once, no
-pickup; the pick lands on the first parameter of that page, and a turn that stays inside
-the part of the current page keeps the pick. An object with one page keeps it on `Tab`
-and on the page knob. The pads screen
-has TONE (volume, pitch, mute group), ENV (attack, decay, release), FILTER (filter, cutoff, reso),
-SOURCE (source, start, end), FX (drive, send 1, send 2), in this order; the chop screen has BOUNDS (slice start,
-slice end). Shared effects are controlled on the FX screen. The panel shows the FX block,
-each send naming the kind of its slot.
+The system SHALL group edited parameters into pages of at most 3.
+On every screen, knob k SHALL turn parameter k of the current page.
+Pads SHALL use these pages in order:
+- TONE: volume, pitch, mute group.
+- ENV: attack, decay, release.
+- FILTER: filter, cutoff, reso.
+- SOURCE: source, start, end.
+- FX: drive, send 1, send 2.
+Chop SHALL use BOUNDS: slice start, slice end.
 
 #### Scenario: The envelope page fills three knobs
 - **WHEN** the picked parameter of a pad is attack, decay or release
 - **THEN** the page is ENV and the knobs turn attack, decay and release, in this order
+
+### Requirement: Parameter page keys
+
+In edit, and on Pads with edit closed, `Tab` SHALL select the next page and `Shift+Tab` the previous page, cyclically.
+A page change SHALL select its first parameter.
+An object with one page SHALL keep its page and selected parameter on `Tab`.
 
 #### Scenario: Tab turns the page
 - **WHEN** the pad edit is open on the pitch of TONE and the owner presses `Tab` twice
@@ -50,6 +52,13 @@ each send naming the kind of its slot.
 #### Scenario: Shift+Tab turns back
 - **WHEN** the pad edit is open on TONE and the owner presses `Shift+Tab`
 - **THEN** the page is FX and the drive is picked
+
+### Requirement: Parameter page knob
+
+The `edit.page` knob SHALL divide its travel equally among pages in their defined order.
+It SHALL select the page at its position immediately, without pickup, and select that page's first parameter.
+A turn within the current page's part SHALL keep the selected parameter.
+An object with one page SHALL keep that page on the page knob.
 
 #### Scenario: A knob picks the page
 - **WHEN** the pad edit is open on TONE and the page knob is turned to the middle of its
@@ -60,6 +69,13 @@ each send naming the kind of its slot.
 #### Scenario: One page
 - **WHEN** the slice edit is open on the slice end and the owner presses `Tab`
 - **THEN** the page stays BOUNDS and the slice end stays picked
+
+### Requirement: Parameter selection follows the page
+
+In edit, and on Pads with edit closed, `I` `K` (`↑` `↓`) SHALL select each object parameter in sequence.
+The page SHALL follow the selected parameter.
+Shared effects SHALL use the FX screen.
+The pad panel SHALL show the FX block, with each send naming its slot's effect kind.
 
 #### Scenario: Up down walks the parameters
 - **WHEN** the edit mode is open and the owner presses `K` and then `I`
@@ -94,21 +110,22 @@ each send naming the kind of its slot.
 
 ### Requirement: Key roles
 
-The system SHALL split work between the hands: left fingers play pads; the left thumb
-holds Ctrl and Alt for the right hand's commands. I/K and Up/Down SHALL pick the
-parameter in edit. On Pads and FX, J/L and Left/Right SHALL change the selected value
-with edit open or closed. On Chop outside slice edit they SHALL keep cursor and zoom
-roles; in slice edit they SHALL pick and change bounds. On Files they SHALL keep file
-navigation. U/O SHALL turn banks on Pads, including during pad edit. A tap SHALL be a
-fine step and holding SHALL repeat the coarse step. Ctrl/Alt chords SHALL keep the same
-action or role where bound, with named test exceptions; plain letters MAY have screen
-roles, such as H for pad mode on Pads and hit cuts on Chop. No command SHALL use a pad
-block key alone or with Shift. Minus, equal and arrows SHALL NOT pick a pad.
+I/K and Up/Down SHALL select the parameter in edit.
+On Pads and FX, J/L and Left/Right SHALL change the selected value with edit open or closed.
+On Chop outside slice edit, they SHALL keep cursor and zoom roles.
+In slice edit, they SHALL select and change bounds.
+On Files, they SHALL keep file navigation.
+U/O SHALL change banks on Pads, including during pad edit.
 
 #### Scenario: The same keys on a pad and on a slice
 - **WHEN** the owner edits a pad on Pads and a slice on Chop
 - **THEN** I/K pick the parameter and J/L change it on both screens
 - **AND** the arrows do the same as the letters
+
+### Requirement: Value key steps
+
+A value key tap SHALL make a fine step.
+Holding the key SHALL repeat the coarse step.
 
 #### Scenario: A tap is fine, holding is coarse
 - **WHEN** pad edit is open on attack and the owner taps L, then holds it
@@ -122,6 +139,14 @@ block key alone or with Shift. Minus, equal and arrows SHALL NOT pick a pad.
 - **WHEN** pad edit is open and the owner presses Enter
 - **THEN** edit closes, as with Esc
 
+### Requirement: Command keys preserve pad access
+
+The system SHALL reserve left fingers for pads and the left thumb's Ctrl/Alt for right-hand commands.
+Bound Ctrl/Alt chords SHALL keep their action or role, except named test exceptions.
+Plain letters MAY have screen roles, such as H for pad mode on Pads and hit cuts on Chop.
+Commands SHALL NOT use pad block keys alone or with Shift.
+Minus, equal and arrows SHALL NOT select a pad.
+
 #### Scenario: Minus and equal are free
 - **WHEN** no edit is open and the owner presses Minus on Pads
 - **THEN** nothing changes
@@ -133,22 +158,11 @@ block key alone or with Shift. Minus, equal and arrows SHALL NOT pick a pad.
   named and explained test cases
 
 ### Requirement: The screen shows the layer
-The system SHALL show at all times which layer is active, which object and which
-parameter are picked, and, in the edit mode, which parameter every knob turns now:
-
-- the edit mode changes the frame colour of the panel it edits and names the mode and
-  every page of the object in the frame title, the current page lit
-  (`EDIT · TONE ENV FILTER SOURCE FX`), so the owner sees where `I` `K` and
-  `Tab` lead; a title wider than the panel drops `EDIT ·` first and keeps every page, the
-  frame colour still telling the mode;
-- the picked parameter is highlighted in the panel; on the chop screen the bound that the
-  keys move now is drawn in its own colour, the lines stay thin: the bound of a held
-  modifier (`Ctrl` the left one, `Alt` the right one), else the picked bound in the edit
-  mode, else the bound that just moved;
-- in the edit mode every parameter of the page carries its knob number in the panel;
-- a knob turn or a value key lights the changed parameter for about a second, in and out
-  of the edit mode;
-- the help line of an edit mode says that a pad hit listens.
+The system SHALL always show the active layer, selected object and selected parameter.
+Edit SHALL change the edited panel's frame colour and name the mode and all pages in its title, with the current page lit.
+The pad title SHALL use `EDIT · TONE ENV FILTER SOURCE FX`.
+A title wider than the panel SHALL omit `EDIT ·` first but keep all pages.
+Frame colour SHALL still identify edit mode.
 
 #### Scenario: The frame tells the mode
 - **WHEN** the owner presses `Enter` on a pad and then `Esc`
@@ -161,14 +175,30 @@ parameter are picked, and, in the edit mode, which parameter every knob turns no
 - **THEN** the lit page in the title moves through every page in order, the other pages
   stay named in it
 
+### Requirement: Edit parameter labels
+
+The panel SHALL highlight the selected parameter.
+In edit, it SHALL show each current-page parameter's knob number and identify what each knob turns.
+The edit help line SHALL say that a pad hit listens.
+
 #### Scenario: The knob numbers
 - **WHEN** the pad edit mode is open on the ENV page
 - **THEN** the panel shows the knob number 1 next to attack, 2 next to decay, 3 next to
   release, and the help line names the ENV page
 
+### Requirement: Changed parameter flash
+
+A knob turn or value key SHALL light the changed parameter for about a second, with edit open or closed.
+
 #### Scenario: A knob lights what it turns
 - **WHEN** the owner turns the knob bound to the pad volume outside the edit mode
 - **THEN** the volume line of the pad panel lights for about a second
+
+### Requirement: Active slice bound colour
+
+On Chop, the system SHALL colour the bound that keys currently move, while keeping bound lines thin.
+A held modifier SHALL take priority: `Ctrl` for the left bound, `Alt` for the right bound.
+Without a held modifier, it SHALL colour the selected bound in edit, otherwise the bound that last moved.
 
 #### Scenario: The picked bound is visible
 - **WHEN** the slice edit is open and the slice end is the picked parameter
@@ -183,13 +213,12 @@ parameter are picked, and, in the edit mode, which parameter every knob turns no
   hides under it
 
 ### Requirement: The pad marks its settings
-The system SHALL end the mode line of a pad (under its name) with `✱` when the pitch, the
-envelope (attack, decay, release), the filter (its type is not off; the cutoff and the
-reso of a filter that is off count for nothing), the drive or a send differ from a fresh
-pad. The volume, the mode and the mute group are on the mode line already and do not
-count; the source (a slice or the pad's own piece) does not count either. The top frame
-of a pad carries no glyph. The pad panel draws a changed value bright and a default value
-dim, and the block line with a change carries `●`. F1 names `✱`.
+The pad mode line SHALL end with `✱` when pitch, envelope (attack, decay, release), an active filter, drive or a send differs from a fresh pad.
+An off filter's cutoff and reso SHALL NOT count.
+Volume, mode and mute group SHALL NOT count again.
+The source, whether a slice or the pad's own piece, SHALL NOT count.
+The pad's top frame SHALL carry no glyph.
+F1 SHALL name `✱`.
 
 #### Scenario: A filter marks the pad
 - **WHEN** pad R plays a whole file, the owner turns its filter to low-pass and closes the edit
@@ -206,6 +235,12 @@ dim, and the block line with a change carries `●`. F1 names `✱`.
 #### Scenario: The mark goes with the setting
 - **WHEN** the pitch of a pad is +2 and the owner turns it back to 0
 - **THEN** the `✱` is gone from its mode line
+
+### Requirement: Pad panel marks changed values
+
+The pad panel SHALL draw changed values bright and default values dim.
+A block line with a change SHALL carry `●`.
+An off filter's cutoff and reso SHALL remain dim and SHALL NOT mark the FILTER block.
 
 #### Scenario: The panel names the settings
 - **WHEN** a pad that plays a whole file, with the pitch -5 and the filter low-pass, is selected
