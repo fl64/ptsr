@@ -1364,12 +1364,10 @@ impl App {
         }
         if screen == Screen::Settings {
             // the MIDI tab opens folded, with the group of the screen it came from (28)
-            self.midi_open = vec![match from {
-                Screen::Pads => input::Group::Pads,
-                Screen::Files => input::Group::Files,
-                Screen::Chop => input::Group::Chop,
-                Screen::Fx => input::Group::Fx,
-                Screen::Settings => input::Group::Global,
+            self.midi_open = vec![if from == Screen::Settings {
+                input::Group::Global
+            } else {
+                from.group()
             }];
             self.midi_row = self.midi_row.min(self.midi_list().len().saturating_sub(1));
         }
@@ -2694,25 +2692,21 @@ impl App {
 
     /// The group of the layer in sight (57): the edit group with the edit open.
     fn layer_group(&self) -> input::Group {
-        use input::Group;
-        match (self.screen, self.edit) {
-            (Screen::Pads, true) => Group::PadsEdit,
-            (Screen::Pads, false) => Group::Pads,
-            (Screen::Chop, true) => Group::ChopEdit,
-            (Screen::Chop, false) => Group::Chop,
-            (Screen::Fx, _) => Group::Fx,
-            _ => Group::Files,
+        if self.edit
+            && let Some(group) = self.screen.rules().ui_edit_group
+        {
+            return group;
         }
+        self.screen_group()
     }
 
     /// The screen's own group, under its edit group.
     fn screen_group(&self) -> input::Group {
-        use input::Group;
-        match self.screen {
-            Screen::Pads => Group::Pads,
-            Screen::Chop => Group::Chop,
-            Screen::Fx => Group::Fx,
-            _ => Group::Files,
+        // Keep the existing Settings helper result, not its registry identity.
+        if self.screen == Screen::Settings {
+            input::Group::Files
+        } else {
+            self.screen.group()
         }
     }
 
@@ -5050,13 +5044,14 @@ const CLEANUP_DEFAULTS: &[(Option<Screen>, &str, &str)] = &[
 
 fn keymap_shadow_warnings(shipped: &Keymap, merged: &Keymap) -> Vec<String> {
     let mut warnings = Vec::new();
-    for (screen, screen_name) in [
-        (Screen::Pads, "pads"),
-        (Screen::Chop, "chop"),
-        (Screen::Files, "files"),
-        (Screen::Fx, "fx"),
-        (Screen::Settings, "settings"),
+    for screen in [
+        Screen::Pads,
+        Screen::Chop,
+        Screen::Files,
+        Screen::Fx,
+        Screen::Settings,
     ] {
+        let screen_name = screen.key();
         for &(scope, key, name) in CLEANUP_DEFAULTS {
             if scope.is_some_and(|scope| scope != screen) {
                 continue;
@@ -6266,7 +6261,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
             ),
         ],
     };
-    if st.edit && matches!(screen, Screen::Pads | Screen::Chop) {
+    if st.edit && screen.rules().ui_edit_group.is_some() {
         // the edit line shows only the edit keys and the way out
         // a slice has one page (BOUNDS): no page keys to offer there (54)
         let walk = if screen == Screen::Chop {

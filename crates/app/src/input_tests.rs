@@ -446,7 +446,38 @@ impl Drop for Drive {
     }
 }
 
+const REGISTRY_SCREEN_COMMANDS: [(Screen, KeyCode, u8); 5] = [
+    (Screen::Pads, KeyCode::F(2), 90),
+    (Screen::Settings, KeyCode::F(12), 91),
+    (Screen::Files, KeyCode::F(6), 92),
+    (Screen::Chop, KeyCode::F(3), 93),
+    (Screen::Fx, KeyCode::F(4), 94),
+];
+
 impl Drive {
+    fn registry_screen_checks() -> Self {
+        let mut drive = Self::new();
+        for (number, action) in [
+            (90, "screen.pads"),
+            (91, "screen.settings"),
+            (92, "screen.files"),
+            (93, "screen.chop"),
+            (94, "screen.fx"),
+            (95, "help.toggle"),
+            (96, "learn.toggle"),
+            (97, "pad.edit"),
+            (98, "chop.edit"),
+            (99, "settings.tab_next"),
+            (100, "browser.preview_toggle"),
+            (101, "chop.loop_toggle"),
+        ] {
+            drive.bind_action(number, action);
+        }
+        drive.prepare_chop(Arc::new(Sample::mono(vec![0.25; 48_000])), 4);
+        drive.link_chop_pad(0, 0);
+        drive
+    }
+
     fn save_registry_bindings(&self) -> PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
         static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -779,6 +810,490 @@ fn fx_controls_keep_their_priority_through_the_registry() {
     );
     assert!(!drive.app.edit);
     assert!(drive.app.learned["X-Session Pro"]["fx"].is_empty());
+}
+
+#[test]
+fn each_registered_screen_keeps_its_effective_help() {
+    use ratatui::crossterm::event::ModifierKeyCode;
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        assert!(
+            drive
+                .keymap
+                .overlay("[global]\nF8 = \"bank.next\"\nPageDown = \"none\"\n")
+                .unwrap()
+                .is_empty()
+        );
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            let (action, old_key, group_names, headings): (&str, &str, &[&str], &[&str]) =
+                match screen {
+                    Screen::Pads => (
+                        "pad.edit",
+                        "Enter",
+                        &["PAD", "CHANGE", "BANK", "REC", ""],
+                        &[
+                            "PADS",
+                            "BANK",
+                            "CHOP",
+                            "SOUND",
+                            "SCREENS",
+                            "GLYPHS ON A PAD",
+                        ],
+                    ),
+                    Screen::Settings => (
+                        "settings.row_next",
+                        "K",
+                        &["SETTINGS", "REC", ""],
+                        &["PADS", "BANK", "CHOP", "SETTINGS", "SOUND", "SCREENS"],
+                    ),
+                    Screen::Files => (
+                        "browser.hold",
+                        "Enter",
+                        &["FILES", "BANK", "REC", ""],
+                        &[
+                            "PADS",
+                            "BANK",
+                            "FILES",
+                            "CHOP",
+                            "SOUND",
+                            "SCREENS",
+                            "GLYPHS ON A PAD",
+                        ],
+                    ),
+                    Screen::Chop => (
+                        "chop.cut",
+                        "M",
+                        &["MOVE", "CUT", "PADS", "BOUNDS", "BANK", "REC", ""],
+                        &["PADS", "BANK", "CHOP", "SOUND", "SCREENS"],
+                    ),
+                    Screen::Fx => (
+                        "edit.page_next",
+                        "Tab",
+                        &["SHARED FX", "BANK", "REC", ""],
+                        &["PADS", "BANK", "CHOP", "SOUND", "SCREENS"],
+                    ),
+                };
+            assert!(
+                drive
+                    .keymap
+                    .overlay(&format!(
+                        "[screens.{}]\nF9 = \"{action}\"\n{old_key} = \"none\"\n",
+                        screen.key()
+                    ))
+                    .unwrap()
+                    .is_empty()
+            );
+            // F3 from Files uses its selected file. This check opens the loaded pad.
+            drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+            drive.registry_command(source, key, M::NONE, number);
+            assert_eq!(drive.app.screen, screen);
+            let groups = help_groups(&drive.keymap, screen, &drive.app.help_state());
+            assert_eq!(
+                groups.iter().map(|group| group.name).collect::<Vec<_>>(),
+                group_names
+            );
+            assert!(
+                groups
+                    .iter()
+                    .flat_map(|group| &group.items)
+                    .any(|(keys, _)| keys.split(' ').any(|key| key == "F9")),
+                "{screen:?}: override must be visible"
+            );
+            let normal =
+                without_modifiers(help_groups(&drive.keymap, screen, &drive.app.help_state()));
+            assert!(
+                normal
+                    .iter()
+                    .flat_map(|group| &group.items)
+                    .all(|(keys, _)| !keys.contains('+'))
+            );
+            for width in [100, 252] {
+                assert_eq!(tui::help_rows(&groups, width), 3);
+                assert_eq!(tui::help_rows(&normal, width), 3);
+            }
+            assert_eq!(tui::help_dropped(&groups, 252), 0);
+            let dropped = tui::help_dropped(&groups, 100);
+            assert!(dropped < groups.len());
+            assert_eq!(groups[0].name, group_names[0]);
+            if screen == Screen::Files {
+                let kept = &groups[..groups.len() - dropped];
+                assert!(kept.iter().any(|group| group.name == "BANK"));
+                assert!(!kept.iter().any(|group| group.name.is_empty()));
+            }
+            drive.registry_command(source, KeyCode::F(1), M::NONE, 95);
+            assert!(drive.app.help_open);
+            let full = full_help(&drive.keymap, screen, true);
+            assert_eq!(
+                full.iter()
+                    .filter(|(keys, _)| keys.is_empty())
+                    .map(|(_, text)| text.as_str())
+                    .collect::<Vec<_>>(),
+                headings
+            );
+            assert!(
+                full.iter()
+                    .any(|(keys, text)| keys.split(' ').any(|key| key == "F8")
+                        && text == "previous / next bank")
+            );
+            assert!(
+                !full
+                    .iter()
+                    .any(|(keys, _)| keys.split(' ').any(|key| key == "PgDn"))
+            );
+            assert!(
+                full.iter()
+                    .any(|(keys, _)| keys.split(' ').any(|key| key == "F9"))
+            );
+            assert!(
+                full_help(&drive.keymap, screen, false)
+                    .iter()
+                    .any(|(_, text)| text == "NO KEY RELEASES")
+            );
+            for (code, flags, expected, name) in [
+                (
+                    ModifierKeyCode::LeftControl,
+                    M::CONTROL,
+                    input::Modifier::Ctrl,
+                    "CTRL",
+                ),
+                (
+                    ModifierKeyCode::LeftAlt,
+                    M::ALT,
+                    input::Modifier::Alt,
+                    "ALT",
+                ),
+                (
+                    ModifierKeyCode::LeftShift,
+                    M::SHIFT,
+                    input::Modifier::Shift,
+                    "SHIFT",
+                ),
+            ] {
+                // Modifier help follows keyboard holds, also after a MIDI screen command.
+                drive.key(KeyCode::Modifier(code), flags, KeyEventKind::Press);
+                assert_eq!(drive.mods.get(), Some(expected));
+                let held = modifier_groups(&drive.keymap, screen, expected, drive.app.ui.hide_pads);
+                assert_eq!(held.len(), 1);
+                assert_eq!(held[0].name, name);
+                if expected == input::Modifier::Shift {
+                    assert!(
+                        held[0]
+                            .items
+                            .iter()
+                            .any(|(_, text)| text == "pads at full velocity")
+                    );
+                    if screen == Screen::Chop {
+                        assert!(
+                            held[0]
+                                .items
+                                .contains(&("Shift+H".into(), "fewer hit cuts".into()))
+                        );
+                    }
+                }
+                drive.key(KeyCode::Modifier(code), M::NONE, KeyEventKind::Release);
+                assert_eq!(drive.mods.get(), None);
+            }
+            drive.registry_command(source, KeyCode::F(1), M::NONE, 95);
+            assert!(!drive.app.help_open);
+            let texts = |drive: &Drive| {
+                help_groups(&drive.keymap, screen, &drive.app.help_state())
+                    .into_iter()
+                    .flat_map(|group| group.items.into_iter().map(|(_, text)| text))
+                    .collect::<Vec<_>>()
+            };
+            match screen {
+                Screen::Pads => {
+                    assert!(
+                        texts(&drive)
+                            .iter()
+                            .any(|text| text.starts_with("mark: off"))
+                    );
+                    drive.registry_command(source, KeyCode::Char('m'), M::NONE, 28);
+                    assert!(
+                        texts(&drive)
+                            .iter()
+                            .any(|text| text.starts_with("mark: on"))
+                    );
+                    drive.registry_command(source, KeyCode::Char('m'), M::NONE, 28);
+                }
+                Screen::Files => {
+                    assert!(texts(&drive).contains(&"preview: on".into()));
+                    drive.registry_command(source, KeyCode::Char(' '), M::NONE, 100);
+                    assert!(texts(&drive).contains(&"preview: off".into()));
+                }
+                Screen::Chop => {
+                    drive.registry_command(source, KeyCode::Char('o'), M::ALT, 101);
+                    assert!(texts(&drive).iter().any(|text| text.contains("loop: on")));
+                }
+                Screen::Fx => {
+                    assert!(texts(&drive).contains(&"FX 1 selected".into()));
+                    assert!(texts(&drive).contains(&"parameter".into()));
+                    assert!(
+                        full.iter()
+                            .any(|(_, text)| text == "select the next / previous shared FX block")
+                    );
+                    assert!(
+                        full.iter()
+                            .any(|(_, text)| text == "select the next / previous effect parameter")
+                    );
+                }
+                Screen::Settings => {
+                    let tabs = "audio / input / MIDI / paths";
+                    for expected in [
+                        vec!["row", "change", tabs, "back"],
+                        vec![tabs, "back"],
+                        vec![
+                            "learn",
+                            "clear",
+                            "row",
+                            "open / close",
+                            "groups",
+                            tabs,
+                            "back",
+                        ],
+                        vec!["row", "open", tabs, "back"],
+                    ] {
+                        let groups = help_groups(&drive.keymap, screen, &drive.app.help_state());
+                        assert_eq!(
+                            groups[0]
+                                .items
+                                .iter()
+                                .map(|(_, text)| text.as_str())
+                                .collect::<Vec<_>>(),
+                            expected
+                        );
+                        assert_eq!(full_help(&drive.keymap, screen, true), full);
+                        drive.registry_command(source, KeyCode::Tab, M::NONE, 99);
+                    }
+                }
+            }
+            if matches!(screen, Screen::Pads | Screen::Chop) {
+                assert!(
+                    drive
+                        .keymap
+                        .overlay(
+                            "[edit]\nF7 = \"edit.param_next\"\nK = \"none\"\nDown = \"none\"\n"
+                        )
+                        .unwrap()
+                        .is_empty()
+                );
+                let (key, number) = if screen == Screen::Pads {
+                    (KeyCode::F(9), 97)
+                } else {
+                    (KeyCode::Enter, 98)
+                };
+                drive.registry_command(source, key, M::NONE, number);
+                assert!(drive.app.edit);
+                let edit = help_groups(&drive.keymap, screen, &drive.app.help_state());
+                assert_eq!(edit.len(), 1);
+                assert_eq!(edit[0].name, "EDIT");
+                assert!(
+                    edit[0]
+                        .items
+                        .iter()
+                        .any(|(keys, _)| keys.split(' ').any(|key| key == "F7"))
+                );
+                assert!(
+                    !edit[0]
+                        .items
+                        .iter()
+                        .any(|(keys, _)| keys.split(' ').any(|key| matches!(key, "K" | "↓")))
+                );
+                assert!(
+                    edit[0]
+                        .items
+                        .iter()
+                        .any(|(_, text)| text == drive.app.help_state().page)
+                );
+                if screen == Screen::Chop {
+                    assert_eq!(edit[0].items.len(), 4);
+                    assert_eq!(edit[0].items[0].1, "BOUNDS");
+                    assert!(!edit[0].items.iter().any(|(keys, _)| keys.contains("Tab")));
+                }
+                assert_eq!(tui::help_rows(&edit, 100), 3);
+            }
+        }
+    }
+}
+
+#[test]
+fn screen_learning_keeps_its_existing_entry_points() {
+    use input::Group;
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number, editing, group) in [
+            (Screen::Pads, KeyCode::F(2), 90, false, Group::Pads),
+            (Screen::Pads, KeyCode::F(2), 90, true, Group::PadsEdit),
+            (Screen::Files, KeyCode::F(6), 92, false, Group::Files),
+            (Screen::Chop, KeyCode::F(3), 93, false, Group::Chop),
+            (Screen::Chop, KeyCode::F(3), 93, true, Group::ChopEdit),
+            (Screen::Fx, KeyCode::F(4), 94, false, Group::Fx),
+        ] {
+            let mut drive = Drive::registry_screen_checks();
+            drive.registry_command(source, key, M::NONE, number);
+            if editing {
+                drive.registry_command(
+                    source,
+                    KeyCode::Enter,
+                    M::NONE,
+                    if screen == Screen::Pads { 97 } else { 98 },
+                );
+            }
+            assert_eq!(drive.app.edit, editing);
+            let before = drive.app.learned.clone();
+            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            let learn = drive.app.screen_learn.as_ref().unwrap();
+            assert_eq!(learn.group, group);
+            assert_eq!(drive.app.learn_group(), group);
+            assert_eq!(
+                learn.page,
+                if screen == Screen::Pads && editing {
+                    Some(drive.app.pads.page().0)
+                } else {
+                    None
+                }
+            );
+            assert!(drive.app.learn_lines().unwrap()[0].contains(group.title()));
+            if screen == Screen::Chop {
+                assert_eq!(drive.app.help_state().page, "BOUNDS");
+                assert!(
+                    drive
+                        .app
+                        .learn_params()
+                        .iter()
+                        .all(|(name, _)| !name.starts_with("edit.page"))
+                );
+            }
+            if screen == Screen::Fx {
+                assert!(!drive.app.edit);
+                assert_eq!(group, Group::Fx);
+            }
+            drive.tap(KeyCode::Char('q'), M::NONE);
+            assert_eq!(drive.app.learn_picked().unwrap().0, "pad.5");
+            drive.bytes(PAD_PORT, &[0x90, 110, 100]);
+            drive.bytes(PAD_PORT, &[0x80, 110, 0]);
+            let pending = drive.frame();
+            assert!(pending.commands().is_empty());
+            assert_eq!(
+                drive
+                    .app
+                    .screen_learn
+                    .as_ref()
+                    .unwrap()
+                    .pending
+                    .as_ref()
+                    .unwrap()
+                    .1,
+                input::midi::Key::Note(110)
+            );
+            assert_eq!(drive.app.learned, before);
+            // Screen learn captures MIDI as candidates. Esc cancels through its existing key path.
+            drive.tap(KeyCode::Esc, M::NONE);
+            assert!(drive.app.screen_learn.as_ref().unwrap().pending.is_none());
+            drive.tap(KeyCode::Esc, M::NONE);
+            assert!(drive.app.screen_learn.is_none());
+            assert_eq!(drive.app.edit, editing);
+            assert_eq!(drive.app.learned, before);
+        }
+        let mut drive = Drive::registry_screen_checks();
+        drive.registry_command(source, KeyCode::F(12), M::NONE, 91);
+        for tab in 0..4 {
+            assert_eq!(drive.app.settings_tab, tab);
+            let before = drive.app.learned.clone();
+            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            assert!(drive.app.screen_learn.is_none());
+            assert!(drive.app.learning.is_none() && drive.app.midi_run.is_none());
+            assert_eq!(drive.app.learned, before);
+            assert_eq!(drive.app.screen_group(), Group::Files);
+            assert_eq!(drive.app.layer_group(), Group::Files);
+            drive.registry_command(source, KeyCode::Tab, M::NONE, 99);
+        }
+    }
+}
+
+#[test]
+fn midi_list_keeps_screen_groups_and_their_order() {
+    use input::{Group, midi::Scope};
+    let groups = [
+        Group::Global,
+        Group::Pads,
+        Group::PadsEdit,
+        Group::Settings,
+        Group::Files,
+        Group::Chop,
+        Group::ChopEdit,
+        Group::Fx,
+    ];
+    let identities = [
+        ("global", "GLOBAL", Scope::Global),
+        ("pads", "PADS", Scope::Screen(Screen::Pads)),
+        ("pads_edit", "PADS · EDIT", Scope::Edit(Screen::Pads)),
+        ("settings", "SETTINGS", Scope::Screen(Screen::Settings)),
+        ("files", "FILES", Scope::Screen(Screen::Files)),
+        ("chop", "CHOP", Scope::Screen(Screen::Chop)),
+        ("chop_edit", "CHOP · EDIT", Scope::Edit(Screen::Chop)),
+        ("fx", "FX", Scope::Screen(Screen::Fx)),
+    ];
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number, group) in [
+            (Screen::Pads, KeyCode::F(2), 90, Group::Pads),
+            (Screen::Files, KeyCode::F(6), 92, Group::Files),
+            (Screen::Chop, KeyCode::F(3), 93, Group::Chop),
+            (Screen::Fx, KeyCode::F(4), 94, Group::Fx),
+        ] {
+            for editing in [false, true] {
+                if editing && !matches!(screen, Screen::Pads | Screen::Chop) {
+                    continue;
+                }
+                let mut drive = Drive::registry_screen_checks();
+                let saved = drive.app.learned.clone();
+                drive.registry_command(source, key, M::NONE, number);
+                if editing {
+                    drive.registry_command(
+                        source,
+                        KeyCode::Enter,
+                        M::NONE,
+                        if screen == Screen::Pads { 97 } else { 98 },
+                    );
+                    assert!(drive.app.edit);
+                }
+                drive.registry_command(source, KeyCode::F(12), M::NONE, 91);
+                assert_eq!(drive.app.screen, Screen::Settings);
+                assert!(!drive.app.edit);
+                assert_eq!(drive.app.midi_open, [group]);
+                drive.registry_command(source, KeyCode::Tab, M::NONE, 99);
+                drive.registry_command(source, KeyCode::Tab, M::NONE, 99);
+                assert_eq!(drive.app.settings_tab, 2);
+                let rows = drive.app.midi_list();
+                let listed: Vec<_> = rows
+                    .iter()
+                    .filter_map(|row| match row {
+                        MidiListRow::Group { group } => Some(*group),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(listed, groups);
+                assert_eq!(
+                    listed
+                        .iter()
+                        .map(|group| (group.key(), group.title(), group.scope()))
+                        .collect::<Vec<_>>(),
+                    identities
+                );
+                let visible: Vec<_> = rows
+                    .iter()
+                    .filter_map(|row| match row {
+                        MidiListRow::Action { info } => Some(info.group),
+                        MidiListRow::Set { infos, .. } => Some(infos[0].group),
+                        _ => None,
+                    })
+                    .collect();
+                assert!(!visible.is_empty());
+                assert!(visible.iter().all(|visible| *visible == group));
+                assert_eq!(drive.app.learned, saved);
+                assert!(drive.app.screen_learn.is_none());
+            }
+        }
+    }
 }
 
 #[test]
