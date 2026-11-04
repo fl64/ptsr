@@ -219,41 +219,6 @@ pub fn xdg_base(var: &str, fallback: &str) -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
 }
 
-/// For each base, copies the folder of the working name `arasaka-404` into `ptsr` when
-/// only the old folder exists (12); the old folders stay as they are. Gives the first
-/// old folder that was copied.
-pub fn move_old_folders(bases: &[PathBuf]) -> Result<Option<PathBuf>, String> {
-    let mut moved = None;
-    for base in bases {
-        let (old, new) = (base.join("arasaka-404"), base.join("ptsr"));
-        if new.exists() || !old.is_dir() {
-            continue;
-        }
-        // via a side folder: a copy cut short leaves no half folder that wins the next start
-        let part = base.join("ptsr.part");
-        let _ = std::fs::remove_dir_all(&part);
-        copy_dir(&old, &part)
-            .and_then(|()| std::fs::rename(&part, &new))
-            .map_err(|e| format!("cannot copy {} to {}: {e}", old.display(), new.display()))?;
-        moved.get_or_insert(old);
-    }
-    Ok(moved)
-}
-
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let (src, dst) = (entry.path(), to.join(entry.file_name()));
-        if src.is_dir() {
-            copy_dir(&src, &dst)?;
-        } else {
-            std::fs::copy(&src, &dst)?;
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

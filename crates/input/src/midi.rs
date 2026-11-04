@@ -335,12 +335,10 @@ impl Profile {
         {
             let screen = match key.as_str() {
                 "global" => None,
-                "pads" => Some(Screen::Pads),
-                "settings" => Some(Screen::Settings),
-                "files" => Some(Screen::Files),
-                "chop" => Some(Screen::Chop),
-                "fx" => Some(Screen::Fx),
-                _ => continue,
+                key => match Screen::from_key(key) {
+                    Some(screen) => Some(screen),
+                    None => continue,
+                },
             };
             let map = section
                 .as_table()
@@ -392,8 +390,11 @@ impl Profile {
         }
         for (control, action) in &self.edit {
             if let Some(key) = self.key_of(control) {
-                for screen in [Screen::Pads, Screen::Chop] {
-                    out.push((Scope::Edit(screen), key, action.clone()));
+                for group in Screen::ALL
+                    .into_iter()
+                    .filter_map(|screen| screen.rules().ui_edit_group)
+                {
+                    out.push((group.scope(), key, action.clone()));
                 }
             }
         }
@@ -546,7 +547,7 @@ impl Profile {
     /// control the profile does not name.
     /// Profile assignments are looked up in the group first, then in any screen section.
     pub fn assignment(&self, scope: Scope, action: &str) -> Option<String> {
-        if scope == Scope::Screen(Screen::Fx) {
+        if matches!(scope, Scope::Screen(screen) if screen.rules().fx_page_controls) {
             // Include inherited page controls, also after the profile was seeded.
             let mut keys: Vec<_> = self
                 .learned
@@ -633,7 +634,8 @@ impl Profile {
             Msg::NoteOn { note, .. } | Msg::NoteOff { note, .. } => self.notes.get(&note),
             Msg::Cc { cc, .. } => self.ccs.get(&cc),
         };
-        if screen == Screen::Fx
+        let rules = screen.rules();
+        if rules.fx_page_controls
             && let Some((action, name)) = self.fx_binding(msg.key())
         {
             let mut resolved = learned_resolved(action, msg, value, on)?;
@@ -643,7 +645,7 @@ impl Profile {
             return Some(resolved);
         }
         // FX has no separate edit mode; its inherited controls were resolved above.
-        let edit = edit && screen != Screen::Fx;
+        let edit = edit && rules.midi_edit_layer;
         // the learned edit group of the screen goes first inside the edit (28), over the
         // profile's `[edit]` layer; outside the edit it does nothing
         if edit
@@ -665,7 +667,7 @@ impl Profile {
                 .into_iter()
                 .find_map(|s| self.learned.get(&s).and_then(|m| m.get(&msg.key())));
             if let Some(action) = learned {
-                if screen == Screen::Fx && fx_compatible(action) {
+                if rules.fx_page_controls && fx_compatible(action) {
                     return None;
                 }
                 return learned_resolved(action, msg, value, on);
@@ -681,7 +683,7 @@ impl Profile {
                 true => self.edit.get(name).map(String::as_str),
                 false => self.action_name(screen, name),
             }?;
-            (screen != Screen::Fx || !fx_compatible(action)).then_some(action)
+            (!rules.fx_page_controls || !fx_compatible(action)).then_some(action)
         };
         match control {
             Control::Pad(pad) if on => Some(Resolved::Action(Action::PadPress {
@@ -881,6 +883,80 @@ mod tests {
 
     fn xsession() -> Profile {
         Profile::from_toml("xsession-pro.toml", XSESSION).unwrap()
+    }
+
+    #[test]
+    fn registry_sections_keep_profile_roles_and_midi_edit_layers() {
+        let mut text = String::from(
+            "[device]\nname = \"Registry\"\nmatch_port = \"Registry\"\n\
+             [controls.buttons]\nbutton = { cc = 90 }\n\
+             [screens.global]\nbutton = \"bank.next\"\n\
+             [edit]\nbutton = \"edit.page_next\"\n",
+        );
+        for key in ["pads", "settings", "files", "chop", "fx"] {
+            text.push_str(&format!("[screens.{key}]\nbutton = \"help.toggle\"\n"));
+        }
+        text.push_str("[screens.unknown]\nbutton = \"ui.quit\"\n");
+        let profile = Profile::from_toml("registry.toml", &text).unwrap();
+        let roles = profile.roles();
+        assert_eq!(roles.len(), 8);
+        for screen in Screen::ALL {
+            assert!(roles.contains(&(Scope::Screen(screen), Key::Cc(90), "help.toggle".into())));
+            assert_eq!(
+                roles.contains(&(Scope::Edit(screen), Key::Cc(90), "edit.page_next".into())),
+                matches!(screen, Screen::Pads | Screen::Chop),
+            );
+            let msg = Msg::Cc {
+                ch: 1,
+                cc: 90,
+                value: 127,
+            };
+            assert_eq!(
+                profile.resolve_in(screen, false, msg),
+                Some(Resolved::Action(Action::HelpToggle))
+            );
+            assert_eq!(
+                profile.resolve_in(screen, true, msg),
+                Some(Resolved::Action(if screen == Screen::Fx {
+                    Action::HelpToggle
+                } else {
+                    Action::PageNext
+                })),
+            );
+        }
+        let mut seeded = profile.clone();
+        for scope in roles.iter().map(|(scope, _, _)| *scope) {
+            seeded.set_learned(
+                scope,
+                roles
+                    .iter()
+                    .filter(|(s, _, _)| *s == scope)
+                    .map(|(_, key, action)| (*key, action.clone()))
+                    .collect(),
+            );
+        }
+        seeded.set_seeded(true);
+        for screen in Screen::ALL {
+            let msg = Msg::Cc {
+                ch: 1,
+                cc: 90,
+                value: 127,
+            };
+            assert_eq!(
+                seeded.resolve_in(screen, false, msg),
+                profile.resolve_in(screen, false, msg)
+            );
+            assert_eq!(
+                seeded.resolve_in(screen, true, msg),
+                Some(Resolved::Action(
+                    if matches!(screen, Screen::Pads | Screen::Chop) {
+                        Action::PageNext
+                    } else {
+                        Action::HelpToggle
+                    }
+                )),
+            );
+        }
     }
 
     #[test]

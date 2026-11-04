@@ -65,17 +65,11 @@ pad hit SHALL swap it and Esc SHALL put it back. A copy in hand SHALL instead us
 
 ### Requirement: Copy a pad
 
-On Pads, the system SHALL take a snapshot of the selected loaded pad with Ctrl+C or
-`pad.copy` and show `COPY · hit a pad`. The next keyboard or controller pad hit SHALL
-select a single target in any bank without also playing it. The source SHALL stay
-unchanged. The copy SHALL share sample data and keep the file, bounds, slice link,
-mode, volume, pitch, envelope, filter, drive, mute group and sends. Its custom name
-SHALL be the displayed source name plus ` 2`. Marks and held state SHALL NOT be copied.
-An occupied target SHALL ask before replacement. Esc in that question SHALL keep the
-target and copy in hand; Esc outside it or a hit on the original source SHALL cancel.
-One successful placement SHALL clear the hand, save the change and make one undo step
-for the target. A cancelled or refused copy SHALL change no pad and add no undo step.
-Empty, missing or loading sources and loading targets SHALL be refused with a notice.
+On Pads, Ctrl+C or `pad.copy` SHALL snapshot the selected loaded pad and show `COPY · hit a pad`.
+The next keyboard/controller pad hit SHALL silently select one target in any bank, leaving the source unchanged.
+The copy SHALL share sample data and keep file, bounds, slice link, mode, volume, pitch, envelope, filter, drive, mute group and sends.
+Its name SHALL be the displayed source name plus ` 2`.
+Marks and held state SHALL NOT be copied.
 
 #### Scenario: Copy the selected pad with all settings
 - **WHEN** Q has a loaded slice, custom name, gate mode, volume, pitch, envelope, filter,
@@ -87,6 +81,13 @@ Empty, missing or loading sources and loading targets SHALL be refused with a no
 - **WHEN** a loaded pad is copied to another pad
 - **THEN** both use the same sample allocation, not a decoded or duplicated sample buffer
 - **AND** a linked copied slice follows later cut edits as its source does
+
+### Requirement: Pad copy confirmation and cancellation
+
+Occupied targets SHALL ask before replacement.
+Esc in that question SHALL keep the target and copy in hand.
+Esc outside it or a hit on the original source SHALL cancel.
+Cancelled or refused copies SHALL change no pad and add no undo step.
 
 #### Scenario: Copy asks before replacing a pad
 - **WHEN** a copy is in hand and the owner hits an occupied pad
@@ -120,6 +121,11 @@ Empty, missing or loading sources and loading targets SHALL be refused with a no
 #### Scenario: Copy keeps the settings from pickup
 - **WHEN** the owner takes a copy of Q, changes Q's pitch and then puts the copy on W
 - **THEN** W has the pitch from pickup, not Q's later pitch
+
+### Requirement: Pad copy placement and refusal
+
+Empty, missing or loading sources and loading targets SHALL be refused with a notice.
+One successful placement SHALL clear the hand, save the change and make one undo step for the target.
 
 #### Scenario: Copy refuses an unavailable source or loading target
 - **WHEN** the source is empty, missing or loading, or a chosen target is loading

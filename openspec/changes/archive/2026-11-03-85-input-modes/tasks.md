@@ -97,7 +97,7 @@
   callback performance issue and unverified hardware facts. Check that every delta
   scenario has its named test, run strict OpenSpec validation, full `task check` and
   `task build`; commit this documentation-only step with signoff.
-- [ ] 5.2 Run the owner-requested agent keyboard screen pass in the isolated
+- [x] 5.2 Run the owner-requested agent keyboard screen pass in the isolated
   `target/ux` release launch from AGENTS.md; verify no active sound connection first.
   Record observed screens, separately from sound and hardware checks. Ask the
   owner to check keyboard behavior and listen to all named renders.
@@ -105,14 +105,22 @@
   Agent part recorded at `1a24909`: 66 isolated final captures, two unavailable-JACK
   starts, zero sound connections and two zero exits; full saved-session comparisons.
   On 2026-11-03 the owner reported that all checks possible with the keyboard passed.
-  The owner cannot test a controller at present. Separate WAV listening remains unreported, so this task stays open.
+  The owner then accepted 85 and authorized its archive on 2026-11-03.
+  This is overall acceptance, not a separate result for each WAV or controller check.
+  The owner cannot test a controller at present. Separate WAV listening remains unreported.
   See design and section 85 of `docs/LIVE-CHECKS.md` for the separate results.
-  The owner approved squash merge of PR #4 into `master`, not archive of 85.
+  PR #4 is merged into `master`. The owner approved closure of 85 and work on 86
+  in one MR from `86-screen-registry`, with a separate signed-off archive commit.
   Physical-only gaps remain explicitly unverified; do not put automatable scenarios
   into `openspec/untested.md`. Any acceptance record is a separate artifact-only
   signed-off commit after full `task check` and git authorization.
-- [ ] 5.3 Only after explicit owner acceptance, archive with the OpenSpec CLI and verify
+- [x] 5.3 Only after explicit owner acceptance, archive with the OpenSpec CLI and check
   the resulting main specs retain the original direct-hit scenario plus all new
   scenarios. Run strict validation, main-spec scenario coverage, full `task check`
   and release build again. Commit only the archive/status artifacts with signoff
   and authorization. Do not sync main specs by hand. Do not push or open a PR.
+  Archive completed on 2026-11-03 through `openspec archive 85-input-modes --yes`.
+  The main spec retains all 48 earlier scenarios and adds 14, including one original direct-hit scenario.
+  Strict validation, scenario coverage, full `task check` and `task build` passed.
+  This run reported steady wall maximum 48.99% and CPU maximum 48.85%, with no blocks above 50%.
+  These observations do not close the earlier maximum-budget or slow-core issue.

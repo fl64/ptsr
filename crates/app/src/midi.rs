@@ -83,12 +83,18 @@ impl Shared {
         true
     }
 
-    /// Reads all input state with one atomic load. Only checked encodings are published.
-    pub fn focus(&self) -> Focus {
-        Focus::unpack(self.focus.load(Relaxed)).unwrap_or_default()
+    /// Reads one snapshot. Returns its packed value if the encoding is invalid.
+    pub fn focus(&self) -> Result<Focus, u32> {
+        let bits = self.focus.load(Relaxed);
+        Focus::unpack(bits).ok_or(bits)
     }
 
-    fn input(&self) -> (u64, Focus) {
+    #[cfg(test)]
+    pub fn inject_focus(&self, bits: u32) {
+        self.focus.store(bits, Relaxed);
+    }
+
+    fn input(&self) -> (u64, Result<Focus, u32>) {
         // Observing consumed work must precede reading the state it published.
         let acknowledged = self.acknowledged.load(Acquire);
         (acknowledged, self.focus())
@@ -120,6 +126,9 @@ struct UiHold {
     epoch: u64,
     id: u64,
 }
+
+type DirectHolds = HashMap<(String, u8, Key), Vec<(usize, u64)>>;
+type UiHolds = HashMap<(String, u8, Key), Vec<UiHold>>;
 
 #[derive(Clone, Copy)]
 struct Stamp {
@@ -456,11 +465,12 @@ fn dispatch(
         last_sent: shared.input().0,
     };
     let mut defaults: HashMap<String, Profile> = HashMap::new();
-    let mut pressed: HashMap<(String, u8, Key), Vec<(usize, u64)>> = HashMap::new();
-    let mut ui_pressed: HashMap<(String, u8, Key), Vec<UiHold>> = HashMap::new();
+    let mut pressed = DirectHolds::new();
+    let mut ui_pressed = UiHolds::new();
     let mut next_ui_press = 0u64;
     let mut pending = VecDeque::new();
     let mut closed = false;
+    let mut invalid_reported = false;
     loop {
         while let Some(command) = pending.pop_front() {
             let Some(queue) = commands.as_mut() else {
@@ -557,6 +567,28 @@ fn dispatch(
             }
             Raw::Msg(port, msg, stamp) => (port, msg, stamp),
         };
+        let (acknowledged, snapshot) = shared.input();
+        let focus = match snapshot {
+            Ok(focus) => {
+                invalid_reported = false;
+                focus
+            }
+            Err(bits) => {
+                if !invalid_reported {
+                    log::error!("MIDI rejected new input: invalid state {bits:#010x}");
+                    invalid_reported = true;
+                }
+                release_tracked(
+                    &port,
+                    msg,
+                    &mut pressed,
+                    &mut ui_pressed,
+                    &mut pending,
+                    &mut ui,
+                );
+                continue;
+            }
+        };
         let profile = match profiles.iter().find(|p| p.matches(&port)) {
             Some(p) => p,
             None => defaults.entry(port.clone()).or_insert_with(|| {
@@ -566,7 +598,6 @@ fn dispatch(
                 p
             }),
         };
-        let (acknowledged, focus) = shared.input();
         let waiting = ui.last_sent != acknowledged;
         let resolved = profile.resolve_in(focus.screen, focus.mode.edit, msg);
         let meaning = match &resolved {
@@ -586,37 +617,15 @@ fn dispatch(
         let channel = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
         };
-        if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
-            let key = (port.clone(), channel, msg.key());
-            let direct = pressed.remove(&key);
-            let held_ui = ui_pressed.remove(&key);
-            let tracked = direct.is_some() || held_ui.is_some();
-            if let Some(held) = direct {
-                for (abs, epoch) in held {
-                    pending.push_back(release_command(abs, epoch));
-                    ui.send(
-                        Event::PadRelease { abs, direct: true },
-                        Some(Stamp { epoch, ready: true }),
-                    );
-                }
-            }
-            if let Some(held) = held_ui {
-                for hold in held {
-                    ui.send(
-                        Event::UiPadRelease {
-                            abs: hold.abs,
-                            id: hold.id,
-                        },
-                        Some(Stamp {
-                            epoch: hold.epoch,
-                            ready: true,
-                        }),
-                    );
-                }
-            }
-            if tracked {
-                continue;
-            }
+        if release_tracked(
+            &port,
+            msg,
+            &mut pressed,
+            &mut ui_pressed,
+            &mut pending,
+            &mut ui,
+        ) {
+            continue;
         }
         let route = route_pad(focus);
         if route == PadRoute::Ignore && !(waiting && matches!(resolved, Some(Resolved::Action(_))))
@@ -716,6 +725,50 @@ fn dispatch(
     }
 }
 
+fn release_tracked(
+    port: &str,
+    msg: Msg,
+    pressed: &mut DirectHolds,
+    ui_pressed: &mut UiHolds,
+    pending: &mut VecDeque<ProjectCommand>,
+    ui: &mut UiSender,
+) -> bool {
+    if !matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+        return false;
+    }
+    let channel = match msg {
+        Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
+    };
+    let key = (port.to_string(), channel, msg.key());
+    let direct = pressed.remove(&key);
+    let held_ui = ui_pressed.remove(&key);
+    let tracked = direct.is_some() || held_ui.is_some();
+    if let Some(held) = direct {
+        for (abs, epoch) in held {
+            pending.push_back(release_command(abs, epoch));
+            ui.send(
+                Event::PadRelease { abs, direct: true },
+                Some(Stamp { epoch, ready: true }),
+            );
+        }
+    }
+    if let Some(held) = held_ui {
+        for hold in held {
+            ui.send(
+                Event::UiPadRelease {
+                    abs: hold.abs,
+                    id: hold.id,
+                },
+                Some(Stamp {
+                    epoch: hold.epoch,
+                    ready: true,
+                }),
+            );
+        }
+    }
+    tracked
+}
+
 fn release_command(pad: usize, epoch: u64) -> ProjectCommand {
     ProjectCommand {
         epoch,
@@ -771,16 +824,16 @@ mod tests {
     #[test]
     fn shared_focus_rejects_invalid_publication_and_keeps_its_default() {
         let shared = Shared::default();
-        assert_eq!(shared.focus(), Focus::default());
+        assert_eq!(shared.focus(), Ok(Focus::default()));
         let focus = Focus {
             screen: Screen::Fx,
             bank: 7,
             ..Focus::default()
         };
         assert!(shared.publish(focus));
-        assert_eq!(shared.focus(), focus);
+        assert_eq!(shared.focus(), Ok(focus));
         assert!(!shared.publish(Focus { bank: 8, ..focus }));
-        assert_eq!(shared.focus(), focus);
+        assert_eq!(shared.focus(), Ok(focus));
     }
 
     #[test]
@@ -854,7 +907,7 @@ mod tests {
             // This unit test retires its UI fixture before the next message. The
             // concurrent writer still races every profile/bank/route snapshot.
             if let Some(sequence) = hit.sequence() {
-                shared.consumed(shared.focus(), sequence);
+                shared.consumed(shared.focus().unwrap(), sequence);
             }
             events.push(hit.event);
         }
@@ -896,13 +949,13 @@ mod tests {
                 ProjectMessage::Command(Command::PadPress { pad: 0, velocity })
                 if velocity == 80.0 / 127.0));
         }
-        assert!(matches!(shared.focus(), focus if focus == ordinary || focus == chop));
+        assert!(matches!(shared.focus(), Ok(focus) if focus == ordinary || focus == chop));
     }
 
     #[test]
     fn numbered_work_wraps_and_publishes_focus_before_acknowledgement() {
         let shared = Shared::default();
-        assert_eq!(shared.input(), (0, Focus::default()));
+        assert_eq!(shared.input(), (0, Ok(Focus::default())));
         shared.acknowledged.store(u64::MAX, Relaxed);
         let (tx, rx) = mpsc::channel();
         let mut sender = UiSender {
@@ -919,7 +972,7 @@ mod tests {
             ..Focus::default()
         };
         shared.consumed(focus, action.sequence().unwrap());
-        assert_eq!(shared.input(), (0, focus));
+        assert_eq!(shared.input(), (0, Ok(focus)));
         sender.send(
             Event::PadHit {
                 abs: 114,
@@ -939,11 +992,11 @@ mod tests {
         shared.consumed(Focus { bank: 8, ..focus }, 1);
         assert_eq!(
             shared.input(),
-            (0, focus),
+            (0, Ok(focus)),
             "invalid publication cannot acknowledge work"
         );
         shared.consumed(focus, 1);
-        assert_eq!(shared.input(), (sender.last_sent, focus));
+        assert_eq!(shared.input(), (sender.last_sent, Ok(focus)));
     }
 
     #[test]
@@ -1233,7 +1286,7 @@ mod tests {
             consumer.pop().unwrap().command,
             ProjectMessage::Command(Command::PadPress { .. })
         ));
-        let mut focus = shared.focus();
+        let mut focus = shared.focus().unwrap();
         focus.mode.screen_learn = true;
         assert!(shared.publish(focus));
         raw_tx
@@ -1483,7 +1536,7 @@ mod tests {
     }
 
     fn set_screen(shared: &Shared, code: u8, bank: usize) {
-        let mut focus = shared.focus();
+        let mut focus = shared.focus().unwrap();
         focus.screen = Focus::unpack(u32::from(code)).unwrap().screen;
         focus.bank = bank;
         assert!(shared.publish(focus));
@@ -1572,7 +1625,7 @@ mod tests {
                             .map(|(cc, value)| Raw::Msg(XS.into(), knob(cc, value), test_stamp())),
                     );
                     let shared = on_screen(4, 2);
-                    let mut focus = shared.focus();
+                    let mut focus = shared.focus().unwrap();
                     focus.mode.edit = editing;
                     assert!(shared.publish(focus));
                     let (events, sent) = dispatched(raw, vec![xsession()], shared);
@@ -1863,7 +1916,7 @@ mod tests {
                 ));
                 let event = rx.recv_timeout(Duration::from_secs(1)).unwrap();
                 if let Some(sequence) = event.sequence() {
-                    shared.consumed(shared.focus(), sequence);
+                    shared.consumed(shared.focus().unwrap(), sequence);
                 }
                 event.event
             };

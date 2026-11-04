@@ -451,6 +451,22 @@ The local branch keeps its signed-off commits. The squash commit must include th
 Tasks 5.2 and 5.3 remain open for the remaining listening result and explicit archive permission.
 This approval does not authorize archive or close the callback performance issue.
 
+## Owner acceptance and combined MR — 2026-11-03
+
+The owner accepted change 85, then authorized its archive and a local signed-off commit.
+This later decision replaces the earlier archive restriction above.
+The owner requested one MR for closure of 85 and work on 86 from `86-screen-registry`.
+Keep the archive and status update in a separate commit from 86 specifications and code.
+PR #4 is merged at `fd6a566`. Do not change `master` directly.
+
+This is overall acceptance, not a separate result for each listening check.
+The earlier successful keyboard result remains recorded. Separate WAV listening remains unreported.
+No controller is available, so physical-controller behavior remains unverified.
+Keep the unreported listening boxes and controller boxes open in `docs/LIVE-CHECKS.md`.
+Acceptance does not resolve callback maxima above the 50% target or slow-core CPU spikes.
+The closure step changes no sound, keys, profiles, saved data or Rust code.
+Push and MR publication still need a separate request.
+
 ## Risks / Trade-offs
 
 - Pending work can temporarily defer a pad from another device too. This follows the
