@@ -624,18 +624,37 @@ Reset the X-Session map as described in section 82 when you finish these steps.
 ## 12 — The program is named ptsr
 
 Folder: `changes/archive/2026-11-01-12-rename-ptsr`
+Current update: `changes/86a-remove-legacy-migration`
 
-- [ ] Make sure that `~/.config/ptsr/` does not exist and `~/.config/arasaka-404/` does.
-  Start the program with `task run`. Make sure that the status line says
-  `settings moved from ~/.config/arasaka-404`.
-- [ ] Make sure that the pads have the same sounds as before, and the settings screen
-  (`F12`) shows the same audio device and the same MIDI bindings.
-- [ ] Make sure that your own keys from `keymap.toml` work as before. Make sure that
-  `~/.config/arasaka-404/` and `~/.local/share/arasaka-404/` are still there.
-- [ ] Restart the program. Make sure that the status line does not say that the settings
-  moved.
-- [ ] If you linked the sound to `arasaka-404` by hand (for example in a patchbay), link it
-  again to the `ptsr` client.
+Startup no longer copies older program folders. Keep all owner folders on disk.
+The historical archive stays unchanged. The checks below replace its obsolete migration checks.
+
+**Keyboard**
+
+- [ ] Start with `task run`. Open `F12`. Check the saved sound device and MIDI bindings.
+- [ ] Open `F2`. Check the saved pads and an owner key from `keymap.toml`.
+- [ ] Restart. Check that the same settings and session load, without a settings-moved notice.
+
+**Controller**
+
+- [ ] Use an existing learned control. Check that its saved action still works.
+
+**Listening**
+
+- [ ] On `F2`, play a previously saved pad. Check that its sound stays the same.
+
+No new render: this change removes startup file copying, not sound processing.
+Automated file-loading tests do not replace these manual checks.
+
+**Local automated results (86a)**
+
+- `task check`: passed. 945 workspace tests, including 669 App tests. Format, Clippy and benchmark checks passed.
+- `task build`: passed. Release build completed.
+- `openspec validate --all --strict --no-interactive`: `Totals: 16 passed, 0 failed (16 items)`.
+- Main-spec coverage passed. The prose cleanup preserved all 679 scenario texts. This separate behavior change replaces three obsolete migration scenarios with two file-loading scenarios, for 678 total.
+- The new tests call the production settings, keymap and session loaders. They cover conflicting legacy files, current defaults, saved keys, MIDI bindings, pad state and unchanged source files. These tests do not start the sampler.
+
+All benchmark maximum summaries were within target in this run. Earlier maximum-budget and slow-core CPU issues remain open.
 
 ## 76 — Marks are the scope, and a pad can be reset
 

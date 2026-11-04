@@ -4350,18 +4350,6 @@ impl App {
     }
 }
 
-/// Copies the old `arasaka-404` folders under these bases (12) and gives the startup
-/// notice that names where the settings came from; a failed copy only speaks in the log.
-fn settings_moved(bases: &[PathBuf]) -> Option<String> {
-    match config::move_old_folders(bases) {
-        Ok(old) => old.map(|o| format!("settings moved from {}", tilde(&o.display().to_string()))),
-        Err(e) => {
-            log::error!("{e}");
-            None
-        }
-    }
-}
-
 /// `~/…` instead of the full home path, so the files title stays short.
 fn tilde(path: &str) -> String {
     let Ok(home) = std::env::var("HOME") else {
@@ -4409,11 +4397,6 @@ fn step_in(list: &[String], current: Option<&str>, step: isize) -> Option<String
 
 fn main() -> std::io::Result<()> {
     init_log();
-    // before anything reads the config, the keymap or the session (12)
-    let moved = settings_moved(&[
-        config::xdg_base("XDG_CONFIG_HOME", ".config"),
-        config::xdg_base("XDG_DATA_HOME", ".local/share"),
-    ]);
     let loaded = config::load();
     let cfg = loaded.config.audio;
     let learned = loaded.config.midi;
@@ -4622,7 +4605,7 @@ fn main() -> std::io::Result<()> {
     let graphics = app.ui.graphics && graphics_support();
     let mut shown = tui::Shown::default();
     // the startup notices live on the app: the first key event of the session clears them
-    for notice in [moved, loaded.error, session_notice, keymap_notice] {
+    for notice in [loaded.error, session_notice, keymap_notice] {
         app.startup.extend(notice);
     }
     if !kitty {
@@ -8109,96 +8092,122 @@ mod tests {
         assert!(!app.splash, "the controller note ended the splash");
     }
 
-    /// The config and data bases under one temp folder, with the old folders filled as
-    /// the owner had them (12).
-    fn old_folders(name: &str) -> (std::path::PathBuf, [std::path::PathBuf; 2]) {
+    fn startup_file_fixture(name: &str) -> (std::path::PathBuf, [std::path::PathBuf; 2]) {
         let root = tmp_dir(name);
         let bases = [root.join("config"), root.join("share")];
         let old_cfg = bases[0].join("arasaka-404");
         std::fs::create_dir_all(old_cfg.join("devices")).unwrap();
-        std::fs::write(old_cfg.join("config.toml"), "[audio]\noutput = \"Buds\"\n").unwrap();
-        std::fs::write(old_cfg.join("keymap.toml"), "[screens.pads]\n").unwrap();
+        std::fs::write(
+            old_cfg.join("config.toml"),
+            "[audio]\noutput = \"Legacy\"\n[midi.\"X-Session Pro\".pads]\n\"cc 31\" = \"pad.pitch\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            old_cfg.join("keymap.toml"),
+            "[screens.pads]\n\"Ctrl+G\" = \"none\"\n",
+        )
+        .unwrap();
         std::fs::write(old_cfg.join("devices/my.toml"), "name = \"My\"\n").unwrap();
         let old_data = bases[1].join("arasaka-404");
         std::fs::create_dir_all(&old_data).unwrap();
-        std::fs::write(old_data.join("session.toml"), "browser_dir = \"/s\"\n").unwrap();
+        std::fs::write(
+            old_data.join("session.toml"),
+            "version = 3\nbrowser_dir = \"/legacy\"\n[pads.0]\nfile = \"/legacy.wav\"\n",
+        )
+        .unwrap();
         (root, bases)
     }
 
-    /// Scenario "The settings move at the first start" (12): the config and the session
-    /// are copied into the `ptsr` folders, the old folders stay, the status line names
-    /// the move once.
     #[test]
-    fn the_settings_move_at_the_first_start() {
-        let (root, bases) = old_folders("move-first");
-        let notice = super::settings_moved(&bases);
-        assert_eq!(
-            notice.as_deref(),
-            Some(
-                format!(
-                    "settings moved from {}",
-                    bases[0].join("arasaka-404").display()
-                )
-                .as_str()
-            )
-        );
-        for (base, file) in [
-            (&bases[0], "config.toml"),
-            (&bases[0], "keymap.toml"),
-            (&bases[0], "devices/my.toml"),
-            (&bases[1], "session.toml"),
-        ] {
-            let (old, new) = (
-                base.join("arasaka-404").join(file),
-                base.join("ptsr").join(file),
-            );
-            assert_eq!(
-                std::fs::read(&new).unwrap(),
-                std::fs::read(&old).unwrap(),
-                "{file} is copied"
-            );
-        }
-        let loaded = super::config::load_from(&bases[0].join("ptsr/config.toml"));
-        assert_eq!(loaded.config.audio.output.as_deref(), Some("Buds"));
-        assert!(!bases[0].join("ptsr.part").exists(), "no side folder stays");
-        // the second start finds the new folders: nothing moves, nothing is said
-        assert_eq!(super::settings_moved(&bases), None);
-        std::fs::remove_dir_all(&root).ok();
-    }
-
-    /// Scenario "The new folder wins" (12): with `ptsr` there, the old folder is not copied.
-    #[test]
-    fn the_new_folder_wins() {
-        let (root, bases) = old_folders("move-wins");
+    fn current_ptsr_files_load() {
+        let (root, bases) = startup_file_fixture("current-files");
+        let snapshot: Vec<_> = [
+            bases[0].join("arasaka-404/config.toml"),
+            bases[0].join("arasaka-404/keymap.toml"),
+            bases[0].join("arasaka-404/devices/my.toml"),
+            bases[1].join("arasaka-404/session.toml"),
+        ]
+        .into_iter()
+        .map(|p| {
+            let bytes = std::fs::read(&p).unwrap();
+            (p, bytes)
+        })
+        .collect();
         for base in &bases {
             std::fs::create_dir_all(base.join("ptsr")).unwrap();
         }
-        std::fs::write(bases[0].join("ptsr/config.toml"), "[audio]\n").unwrap();
-        // the data base first: its `ptsr` folder is empty and still wins
-        let data_first = [bases[1].clone(), bases[0].clone()];
-        assert_eq!(super::settings_moved(&data_first), None, "nothing is said");
-        assert!(
-            !bases[0].join("ptsr/keymap.toml").exists(),
-            "nothing is copied"
-        );
-        assert!(
-            !bases[1].join("ptsr/session.toml").exists(),
-            "nothing is copied"
-        );
+        let cfg = bases[0].join("ptsr/config.toml");
+        let config_text = "[audio]\noutput = \"Current\"\n[midi.\"X-Session Pro\".pads]\n\"cc 31\" = \"pad.volume\"\n";
+        std::fs::write(&cfg, config_text).unwrap();
+        let keys = bases[0].join("ptsr/keymap.toml");
+        let key_text = "[screens.pads]\n\"Ctrl+G\" = \"pad.mark_bank\"\n";
+        std::fs::write(&keys, key_text).unwrap();
+        let sess = bases[1].join("ptsr/session.toml");
+        let session_text = "version = 3\nbrowser_dir = \"/current\"\n[pads.0]\nfile = \"/current.wav\"\ngate = true\npitch = 7\n";
+        std::fs::write(&sess, session_text).unwrap();
+
+        let loaded = super::config::load_from(&cfg);
+        assert_eq!(loaded.error, None);
+        assert_eq!(loaded.user_path, Some(cfg.clone()));
+        assert_eq!(loaded.config.audio.output.as_deref(), Some("Current"));
         assert_eq!(
-            std::fs::read_to_string(bases[0].join("ptsr/config.toml")).unwrap(),
-            "[audio]\n"
+            loaded.config.midi["X-Session Pro"]["pads"]["cc 31"],
+            "pad.volume"
         );
-        std::fs::remove_dir_all(&root).ok();
+        let (keymap, notice, _) = super::load_keymap(&keys, super::DEFAULT_KEYMAP);
+        assert_eq!(notice, None);
+        assert_eq!(pads_ctrl(&keymap, 'g'), Some(Action::PadMarkBank));
+        let session = super::session::load(&sess).unwrap();
+        assert_eq!(session.browser_dir, Some("/current".into()));
+        assert_eq!(session.pads["0"].file, Some("/current.wav".into()));
+        assert!(session.pads["0"].gate);
+        assert_eq!(session.pads["0"].pitch, 7);
+        for (path, bytes) in snapshot {
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+        for (path, text) in [(cfg, config_text), (keys, key_text), (sess, session_text)] {
+            assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+        }
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
-    /// Scenario "A first start without old folders" (12): no folder is made, nothing is said.
     #[test]
-    fn a_first_start_without_old_folders() {
-        let root = tmp_dir("move-none");
-        let bases = [root.join("config"), root.join("share")];
-        assert_eq!(super::settings_moved(&bases), None);
-        assert!(!root.exists(), "no folder is made");
+    fn legacy_folders_stay_unused_without_current_files() {
+        let (root, bases) = startup_file_fixture("legacy-unused");
+        let snapshot: Vec<_> = [
+            bases[0].join("arasaka-404/config.toml"),
+            bases[0].join("arasaka-404/keymap.toml"),
+            bases[0].join("arasaka-404/devices/my.toml"),
+            bases[1].join("arasaka-404/session.toml"),
+        ]
+        .into_iter()
+        .map(|p| {
+            let bytes = std::fs::read(&p).unwrap();
+            (p, bytes)
+        })
+        .collect();
+        let loaded = super::config::load_from(&bases[0].join("ptsr/config.toml"));
+        let defaults = super::config::load_from(&root.join("absent/config.toml"));
+        assert_eq!(loaded.error, None);
+        assert_eq!(loaded.config.audio, defaults.config.audio);
+        assert!(loaded.config.midi.is_empty());
+        let (keymap, notice, _) =
+            super::load_keymap(&bases[0].join("ptsr/keymap.toml"), super::DEFAULT_KEYMAP);
+        assert_eq!(notice, None);
+        assert_eq!(pads_ctrl(&keymap, 'g'), None);
+        assert_eq!(pads_ctrl(&keymap, 'a'), Some(Action::PadMarkBank));
+        assert_eq!(
+            super::session::load(&bases[1].join("ptsr/session.toml")).unwrap(),
+            super::session::Session::default()
+        );
+        for base in &bases {
+            assert!(!base.join("ptsr").exists());
+            assert!(!base.join("ptsr.part").exists());
+        }
+        for (path, bytes) in snapshot {
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     /// 68 sample-loading "Ctrl+B on a file": in "breaks" with a file selected the status

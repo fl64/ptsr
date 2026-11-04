@@ -77,7 +77,7 @@ Start ptsr from the repository folder. ptsr reads the controller profiles from `
 | `~/.local/state/ptsr/ptsr.log` | the log |
 | `~/ptsr/projects/`, `~/ptsr/samples/` | the projects and the samples (change the roots in F12) |
 
-The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these folders. At the first start, ptsr copies the settings and the session from the old `arasaka-404` folders, if they exist.
+The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these folders. ptsr reads settings and sessions from the current `ptsr` folders only.
 
 ## Controllers
 

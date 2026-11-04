@@ -2,7 +2,7 @@
 
 ## 1. Remove obsolete startup migration
 
-- [ ] 1.1 Remove folder-copy helpers, their startup call and notice. Replace three migration tests with the two delta scenarios. Sync the main project spec and current documentation. Verify targeted tests, scenario coverage, strict OpenSpec, `task check`, `task build` and STE lint. Commit with signoff.
+- [x] 1.1 Remove folder-copy helpers, their startup call and notice. Replace three migration tests with the two delta scenarios. Sync the main project spec and current documentation. Verify targeted tests, scenario coverage, strict OpenSpec, `task check`, `task build` and STE lint. Commit with signoff.
 
 ## Workflow follow-up
 
