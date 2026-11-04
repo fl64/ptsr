@@ -1,5 +1,7 @@
 <!--
-Use <type>(<scope>): <summary> [<change>] for the title. Use the scopes from AGENTS.md.
+Use <type>(<scope>): <summary> [<change>] for commits and this title. Use types and scopes from AGENTS.md.
+Use an OpenSpec number or an approved range. Repository-only work uses a stable repo-<short-name> identifier.
+Use this PR title unchanged for the final squash commit. Do not supply a different merge title.
 Cover the full diff to the target branch. Aim for at most 250 words, excluding the checklist.
 Complete each section. For an inapplicable section, give one short reason.
 This is a review summary, not an agent activity log.
@@ -44,6 +46,7 @@ Do not repeat old render lists or acceptance history. State relevant unverified 
 - [ ] Required check results and unresolved limits are explicit.
 - [ ] Applicable specifications, tests and user documents are current.
 - [ ] All commits have signoffs. Any spec archive has owner approval.
+- [ ] The current title and head commit pass `Change names`. The squash title will use the PR title.
 
 ## Changelog entries
 
