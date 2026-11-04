@@ -1,5 +1,21 @@
 # Plans: controller-first work, patterns and sample workflows
 
+## Start here: v1.0.0
+
+[V1.md](V1.md) is the release plan: sample → chop → pads → pattern → resample → effects → export.
+It selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
+Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
+Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
+The new quality, export and release changes reserve numbers 109–120. Callback work keeps 94a.
+
+The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4),
+tempo/resample/effects/export (0.5), then data safety and release (0.6).
+See [V1 owner questions](V1.md#6-owner-questions) for the hardware-dependent work order.
+The [friction log](../V1-FRICTION.md) starts with current-program sessions. It has no recorded sessions yet.
+These documents do not activate a change or claim success on a release criterion.
+
+## Broader planning context
+
 These plans were imported from the owner's eight planning documents on 2026-11-03.
 The vision is in `../VISION.md`. This folder also holds later plans for project safety
 and sample workflows. Describe musical tasks without specific genre names.
@@ -155,7 +171,10 @@ How to verify: repeat the two-variant move with a disposable project from each i
 Open a pad from each variant and move a cut. Only that variant's linked pads follow it.
 Planned render: `renders/86d-portable-chops.wav`. Compare restored slices with their source regions.
 
-## Tracks and visual rules, in this order
+## Broader tracks and visual rules
+
+This is the full roadmap, not the 1.0 feature list. V1 selects reduced scopes from it.
+Unselected parts remain `1.x`, even when they have a planned change number.
 
 | Order | Track | Document | Changes |
 |---|---|---|---|
@@ -281,6 +300,11 @@ answer, take the default and write the question into `design.md` under "Open que
 
 | Before | Question | Default |
 |---|---|---|
+| 0.2 | Is the SMC-PAD at hand? Without it, 90–93 cannot be accepted | If not, do 0.3 and 0.4 first, then 0.2. Keep unverified controller checks open |
+| 0.4 | One swing amount in 1.0? | Yes, if 96 makes it cheap |
+| 0.5 | Export format default | 24-bit WAV at the project rate |
+| 0.6 | Release form | One binary in tar.gz on GitHub Releases, built for glibc 2.28 |
+| 0.6 | How many autosave versions | 10 |
 | 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | The owner chose A on 2026-11-03. The archived 83a proposal records the choice |
 | 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, `erase`, panel). Change `docs/ui/STYLE.md`? | Yes |
 | 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |

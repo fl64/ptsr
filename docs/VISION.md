@@ -576,3 +576,4 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
   Resolve callback budget failures before 95. Describe tasks without specific genre names.
   These plans do not authorize code.
 - Priority after the pattern sequencer: groove templates, pattern variations and chains, quick sample operations.
+- **V1 minimum:** [plans/V1.md](plans/V1.md) sets the core loop and eight release criteria. It overrides earlier priorities and stages. Everything outside its scope is `1.x`. Only the owner can add scope.
