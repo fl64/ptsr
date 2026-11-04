@@ -39,9 +39,25 @@ tasks:
         msg: 'cargo-deny is required. Install it with: cargo install cargo-deny --version 0.20.2 --locked'
     cmd: cargo deny check licenses
 
-  check:
-    desc: Format, dependency licenses, Clippy, tests and benchmark before a commit
+  names:
+    desc: Test the name checker and check new branch commits
     cmds:
+      - python3 -B -m unittest discover -s scripts -p test_check_names.py
+      - python3 -B scripts/check_names.py --range origin/master..HEAD
+
+  hooks:install:
+    desc: Enable commit title and signoff checks in this clone
+    preconditions:
+      - sh: |
+          current="$(git config --get core.hooksPath || true)"
+          test -z "$current" || test "$current" = .githooks
+        msg: 'core.hooksPath has another value. Review its hooks before you change it.'
+    cmd: git config --local core.hooksPath .githooks
+
+  check:
+    desc: Names, format, dependency licenses, Clippy, tests and benchmark before a commit
+    cmds:
+      - task: names
       - cargo fmt --all --check
       - task: licenses
       - task: lint

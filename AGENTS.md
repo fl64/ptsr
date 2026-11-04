@@ -12,7 +12,7 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - After each completed task, make a commit with a clear message.
 - **Everything you agree on with the owner goes into the spec at once.** A decision from the conversation (behavior, UX, keys, knobs, texts) goes into the proposal/design/spec/tasks of the active change before the code. Write a question without an answer in design.md, section "Open questions", together with the option you took by default.
 - **Commit after each step, and keep commits atomic**: one commit = one logical edit. Do not mix these in one commit: different steps, specs and code of other tasks, an AGENTS.md edit and code. An artifact edit without code is a separate commit. Code with the spec of its own step is one commit. Commit only when `task check` is green. A step is not done until it is committed.
-- **A commit message carries the scope of what changes.** Format: `<change>: <scope> — what changed` (for example, `09: chop — cursor: arrows move it, snaps to peaks, M cuts on pause`). Use the shared scope table in "Branch and pull request names" below. The scope is the area the owner sees, not a crate name for its own sake. The main scope goes first; a step that touches two areas is two commits (or takes the scope of the area the step was made for).
+- **Use one title format for commits and pull requests:** `<type>(<scope>): <summary> [<change>]`. Example: `fix(chop): keep the cursor at the cut [09]`. This rule includes the final squash commit. Use the types, identifiers and scopes below. Keep each commit atomic.
 - At the end of a change, write to the owner: what is done, **what to check by hand and by ear** (exact steps), which files in `renders/` to listen to.
 - All repository texts are in English and follow ASD-STE100 Simplified Technical English: `README.md`, `AGENTS.md`, `docs/`, the `openspec/` artifacts and commit messages. Key names of the Russian layout (`х`, `Й`) are technical names and stay. Talk to the owner in Russian.
 - Prefer the `asd-ste100` skill for new or revised English documentation. Use STE-flavored mode for descriptions and Strict mode for procedures. Run its `scripts/ste-lint.py` on the changed text. Review the results without a full dictionary compliance claim. Keep the original meaning and technical names. Do not rewrite unrelated documents only for style.
@@ -20,9 +20,20 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 
 ## Branch and pull request names
 
-- Use the OpenSpec change folder name for the branch: `<change>-<short-name>`, for example `85-input-modes`. Do not add a scope to the branch name.
-- Use this PR title format: `<type>(<scope>): <summary> [<change>]`. Example: `fix(pads): keep original gate releases [85]`. Use a conventional type for the main purpose. Write the summary in English.
-- Combine changes in one branch or PR only with the owner's explicit approval. For a combined PR, use the same format with a range. Example: `fix(input): keep controller commands before pad hits [83a–85]`.
+- For OpenSpec work, use the change folder name for the branch: `<change>-<short-name>`, for example `85-input-modes`.
+- For repository rules, tools or documentation without an OpenSpec change, use one stable `repo-<short-name>` identifier and branch. Example: `repo-format`. Do not use release labels such as `v1` as change identifiers. Do not add a scope to branch names.
+- Use `<type>(<scope>): <summary> [<change>]` for every new commit and PR title. Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Write a nonempty English summary. Start it with a lowercase ASCII letter or digit. Keep the title on one line. Use the scopes in the table below.
+- Use the OpenSpec number, with its optional lowercase letter, as the change identifier. Examples: `85`, `86a`. Repository-only work uses its stable `repo-<short-name>` identifier.
+- Combine changes in one branch or PR only with the owner's explicit approval. Use an ascending numeric range with an ASCII hyphen or an en dash. Example: `fix(input): keep controller commands before pad hits [83a-85]`.
+- Historical titles stay unchanged. This rule applies to new commits, not to the existing history of `master`.
+- Enable the local commit hook with `task hooks:install`. The hook checks the title and a `Signed-off-by` trailer. Use `git commit --signoff`.
+- Run `task names` before publication. It tests the checker and checks all branch commits against `origin/master`. Fetch `origin/master` first. `task check` includes this task.
+- The `Change names` CI check must pass before merge. It checks the PR title and every new commit, including signoffs. A title edit starts a new check.
+- Merge only by squash. Let GitHub use the PR title for the final commit. Do not supply a different `--subject` or API `commit_title`. Only GitHub's final commit may add ` (#<PR number>)`.
+- Before merge, check the current title, head commit and successful CI result. Use an exact-head merge guard. Keep the final commit's signoff. After merge, check its title against the PR title.
+- Keep `master` protected: require a PR and the `Change names` check, with no bypass actors. Do not push directly or use an admin merge bypass.
+- CI checks the format, not the quality of English. Local hooks are optional for other clones. GitHub without Enterprise cannot enforce the manually edited final squash title. Follow the merge procedure above. Administrators can change repository protection.
 - The title gives the main purpose. The description must cover the full diff to the target branch, not only the last change. Keep completed work, future plans and unverified checks separate.
 - Use [the PR template](.github/PULL_REQUEST_TEMPLATE.md). Complete each section. If a section does not apply, state why in one sentence.
 - Write for the reviewer, not as an agent activity log. Aim for at most 250 words, excluding the checklist. State the user-facing effect first.
