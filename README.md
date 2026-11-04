@@ -113,12 +113,14 @@ Keys, profiles, saved data and the audio callback stay unchanged. See section 85
 `docs/LIVE-CHECKS.md` for separate keyboard/controller checks and the three 85 WAV files.
 This is overall acceptance. Separate WAV listening remains unreported, and physical-controller checks remain unverified.
 Recorded MIDI tests do not replace physical checks. The callback timing issue stays open.
-Change 86, the screen registry, is active in `openspec/changes/86-screen-registry/`.
+The owner accepted the screen registry (86) on 2026-11-04.
+Its archive is `openspec/changes/archive/2026-11-04-86-screen-registry/`.
 Implementation is complete at `a186fbb`. Offline verification is recorded in `e90543c`.
 Existing keys, help, learned assignments and FX controls stay unchanged for valid input.
 Invalid shared MIDI state rejects new actions without losing original held-pad releases.
 Section 86 of `docs/LIVE-CHECKS.md` records the evidence and separate keyboard, controller and listening checks.
-Owner acceptance and archive remain pending. The callback timing issue remains open.
+This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
+The callback timing issue remains open. Change 87 is next, but it is not active.
 
 [Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
 locks, slice motion and the launcher. They are not requirements for the current step.

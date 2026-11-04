@@ -26,4 +26,4 @@ Do not claim listening or physical-controller verification from automated result
 
 ## 5. Acceptance and archive
 
-- [ ] 5.1 Obtain owner acceptance and record its exact scope without inventing individual hardware or listening results. Synchronize and archive 86 through the OpenSpec CLI. Check that every added scenario remains in the main specs with its named test. Run strict OpenSpec validation, STE lint, `task check` and `task build` before the separate closure commit. Keep closure of 85 intact.
+- [x] 5.1 Obtain owner acceptance and record its exact scope without inventing individual hardware or listening results. Synchronize and archive 86 through the OpenSpec CLI. Check that every added scenario remains in the main specs with its named test. Run strict OpenSpec validation, STE lint, `task check` and `task build` before the separate closure commit. Keep closure of 85 intact.

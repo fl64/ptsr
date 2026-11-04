@@ -51,12 +51,14 @@ or audio callback changed. Section 85 of `docs/LIVE-CHECKS.md` has the separate 
 The owner requested `plan/controller-first-patterns` for 84, 84a and 85 as
 exceptions to the separate-branch rule. Closure of 85 and work on 86 now share
 `86-screen-registry` and one MR by owner request.
-Change 86 is active in `openspec/changes/86-screen-registry/`.
+The owner accepted the screen registry (86) on 2026-11-04.
+Its archive is `openspec/changes/archive/2026-11-04-86-screen-registry/`.
 Implementation is complete at `a186fbb`. Offline verification is recorded in `e90543c`.
 The registry keeps existing controls, help, learned assignments and FX rules for valid input.
 Invalid shared MIDI state rejects new actions while preserving original releases and pending-input order.
 Section 86 of `docs/LIVE-CHECKS.md` records verification and separate keyboard, controller and listening checks.
-Owner acceptance and archive remain pending. The callback timing issue remains open.
+This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
+The callback timing issue remains open. Change 87 is next, but it is not active.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

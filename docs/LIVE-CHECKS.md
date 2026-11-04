@@ -1103,10 +1103,12 @@ that every callback meets the 50% target. This change does not investigate that 
 
 ## 86 — Screen registry and invalid MIDI state
 
-Folder: `changes/86-screen-registry` (`86-screen-registry` branch)
+Folder: `changes/archive/2026-11-04-86-screen-registry` (`86-screen-registry` branch)
 
-Implementation is complete through `a186fbb`. Owner acceptance and archive remain pending.
-Closure of 85 stays separate in the same branch. Push and PR need a separate request.
+Implementation is complete through `a186fbb`. The owner accepted 86 on 2026-11-04.
+This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
+The owner authorized archive, local signed-off commits and one PR with closure of 85.
+Keep the closure commits separate. The owner also requested an ASD-STE100 review of the relevant documents.
 The registry keeps existing keys, help, learned assignments and FX controls for valid input.
 Invalid shared MIDI state rejects new actions without a fallback screen. Original releases still work.
 No audio callback, sound algorithm, profile or saved-data format changed.
@@ -1298,6 +1300,34 @@ Section 85 gives the segment times and the command to regenerate the files.
 During the live keyboard and controller passes, listen for missing releases, duplicate hits and changed FX response.
 No new WAV is necessary because the sound algorithm does not change.
 
-Owner result: not reported. Keyboard terminal and custom keys: not reported.
+Owner result, 2026-11-04: overall acceptance of 86. Individual keyboard and listening results remain unreported.
+Keyboard terminal and custom keys: not reported.
 Controller device, preset, assignments and physical release forms: unverified. Separate WAV listening: not reported.
-Acceptance and archive remain pending. Earlier callback peaks and slow-core CPU spikes remain open.
+The owner explicitly authorized archive, local signed-off commits and PR publication. All individual manual boxes stay open.
+Earlier callback peaks and slow-core CPU spikes remain open.
+
+### Archive verification (2026-11-04)
+
+`openspec archive 86-screen-registry --yes` added four requirements and nine scenarios to the two main specs.
+The archive comparison preserved all earlier main-spec text and found named tests for all nine scenarios.
+Strict validation, main-spec scenario coverage, `task check` and `task build` passed.
+The validation and App test reported:
+
+```text
+Totals: 15 passed, 0 failed (15 items)
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.58s
+```
+
+The callback benchmark passed its existing p99 exit checks but exceeded the maximum-budget target:
+
+```text
+paired timing: steady playback
+  wall: mean 7.99 %, p99 9.36 %, max 93.23 %, samples 20000, >50 % 2
+  thread CPU: mean 7.99 %, p99 9.28 %, max 93.30 %, samples 20000, >50 % 2
+  maximum target (50 %): wall EXCEEDED; thread CPU EXCEEDED
+```
+
+The switch workload reported zero wall and CPU blocks above 50%.
+These results keep the earlier maximum-budget and slow-core issues open. They do not identify a cause.
+Local logs use the prefix `target/86-closure-`: `check.log`, `build.log`, `openspec.log` and `scenarios.log`.
+No sampler live run, owner listening or physical-controller result comes from these checks.

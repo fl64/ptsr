@@ -13,7 +13,9 @@ Change 86 gives these tables one source before later changes add screens.
 - Add registry tests and recorded-input tests. Keep all existing behavior assertions.
 
 This is a refactor for valid states, with one explicit correction for invalid MIDI state. It is not entirely behavior-neutral.
-These artifacts propose work. They do not report an implementation or owner acceptance.
+This proposal defined the planned work. The owner accepted the implementation on 2026-11-04.
+This is overall acceptance. Individual keyboard, physical-controller and WAV listening results remain unreported.
+The owner authorized archive, local signed-off commits and one PR for closure of 85 and work on 86.
 
 ## Capabilities
 

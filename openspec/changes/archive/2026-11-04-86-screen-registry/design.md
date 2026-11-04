@@ -173,6 +173,16 @@ Update general status documents when the owner accepts the implementation plan. 
 After owner acceptance, synchronize and archive through the OpenSpec CLI. Do not archive by moving folders manually.
 If rollback is necessary, revert only the affected 86 commits. Do not reset shared history or undo accepted closure of 85.
 
+## Owner acceptance and publication (2026-11-04)
+
+The owner accepted 86 on 2026-11-04. This is overall acceptance, not individual check results.
+Keyboard, physical-controller and separate WAV listening results remain unreported. Keep their manual boxes open.
+The owner then authorized archive, local signed-off commits and PR publication.
+Keep closure of 85 and work on 86 in one PR from `86-screen-registry` to `master`.
+The owner also requested an ASD-STE100 review of the complete `README.md` and the other documents relevant to this PR.
+Keep the wording changes in a separate documentation commit. Do not change sampler behavior during that review.
+The earlier callback maximum-budget and slow-core issues remain open.
+
 ## Open questions
 
-None that block this proposal. Physical-controller availability and listening results remain owner checks, not assumed facts.
+None that block closure. Physical-controller and listening checks remain unverified where the owner reported no individual result.
