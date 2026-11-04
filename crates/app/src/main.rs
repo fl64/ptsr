@@ -7879,7 +7879,7 @@ mod tests {
                             app.copy_in_hand = (hand == 3).then(|| (4, app.pads.snapshot(4)));
                             app.ask = (hand == 4).then(|| super::Ask::Plan { lines: Vec::new() });
                             app.publish_midi(&shared);
-                            let focus = shared.focus();
+                            let focus = shared.focus().unwrap();
                             assert_eq!(focus.bank, bank);
                             assert_eq!(focus.screen as u8, code);
                             assert_eq!(focus.mode.edit, edit);

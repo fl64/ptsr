@@ -14,7 +14,7 @@ Use the existing `86-screen-registry` branch. Keep accepted closure of 85 separa
 
 ## 3. Explicit invalid-state correction
 
-- [ ] 3.1 Remove the default-Pads substitution in shared MIDI state reads. Preserve atomic ordering and process tracked releases independently of invalid state. Reject new actions without creating numbered work. Log one error per observed invalid period outside the callback. Add all four invalid-state scenario tests through real dispatch with fault injection. Cover unknown codes, invalid banks, reserved bits, release variants, disconnect, queue retries, project epochs, pending acknowledgements and recovery. Run `task check` before a separate MIDI-scope commit.
+- [x] 3.1 Remove the default-Pads substitution in shared MIDI state reads. Preserve atomic ordering and process tracked releases independently of invalid state. Reject new actions without creating numbered work. Log one error per observed invalid period outside the callback. Add all four invalid-state scenario tests through real dispatch with fault injection. Cover unknown codes, invalid banks, reserved bits, release variants, disconnect, queue retries, project epochs, pending acknowledgements and recovery. Run `task check` before a separate MIDI-scope commit.
 
 ## 4. Verification and owner handover
 
