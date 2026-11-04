@@ -87,54 +87,24 @@ The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these
 - More than one controller can work at the same time.
 - To bind a control to an action, press `F10` on a screen (learn mode), or use the MIDI tab in `F12`.
 
-## Next work
+## Road to v1.0.0
 
-The [development plan](docs/plans/README.md) gives this order:
+One complete loop, from the keyboard and the SMC-PAD, with no clicks and no crashes:
 
-1. Keymap cleanup (83a).
-2. Input parity, refactors and visual controls (84–90).
-3. SMC-PAD and its command panel (91–94).
-4. Transport and patterns (95–101).
+**sample → chop → pads → pattern → resample → effects → export**
 
-The goal is every action without typed text from the SMC-PAD, with the same logical behavior as the keyboard.
-The remaining controller and pattern features are plans, not current capabilities.
-The [keymap plan](docs/plans/KEYMAP-CLEANUP.md) describes the implemented cleanup 83a:
+- **0.2 — Input:** status feedback, confirmation, button holds, relative encoders and complete SMC-PAD controls.
+- **0.3 — Sound:** callback budget, click-free changes, pitch quality, master safety and recording latency.
+- **0.4 — Patterns:** transport, recording, quantize, step editing, slots, note repeat and mute.
+- **0.5 — Complete the loop:** sample tempo, resampling in tempo, core effects, quick sample operations and offline WAV export.
+- **0.6 — Release:** project recovery, format compatibility, a four-hour soak, one release binary and a short manual.
 
-- Alt+R records the microphone. Ctrl+G normalizes.
-- H and Shift+H chop by hits. U/O change banks on Pads. J/L change values.
-- Tab changes the assignment order. Ctrl+C copies a pad.
+Release needs three finished owner tracks and completed keyboard, controller and listening checks.
+The callback timing issue and physical-controller checks remain open.
+Everything outside this minimum is **1.x**. These are plans, not current capabilities.
 
-The owner accepted 83a without completing its manual checks. Its archive is complete.
-The manual checks remain in `docs/LIVE-CHECKS.md`.
-
-The owner checked and accepted input parity 84.
-Its archive is `openspec/changes/archive/2026-11-03-84-input-parity/` on the same branch by owner request.
-Physical-controller checks remain unverified. Callback benchmark peaks above the 50% budget target remain unresolved.
-
-The owner accepted the benchmark report below (84a) on 2026-11-03.
-Its archive is `openspec/changes/archive/2026-11-03-84a-benchmark-report/` on the same approved branch.
-
-The owner accepted input modes 85 on 2026-11-03.
-Its archive is `openspec/changes/archive/2026-11-03-85-input-modes/`.
-Closure of 85 and work on 86 share `86-screen-registry` by owner request.
-Keyboard and MIDI share pad handling. Controller commands precede following target hits without delaying normal direct MIDI play.
-Mixed Chop holds and late direct notifications have separate repairs.
-Keys, profiles, saved data and the audio callback stay unchanged.
-Section 85 of `docs/LIVE-CHECKS.md` gives separate keyboard and controller checks, plus the three 85 WAV files.
-This is overall acceptance. Separate WAV listening remains unreported. Physical-controller checks remain unverified.
-Recorded MIDI tests do not replace physical checks. The callback timing issue stays open.
-
-The owner accepted the screen registry (86) on 2026-11-04.
-Its archive is `openspec/changes/archive/2026-11-04-86-screen-registry/`.
-Implementation is complete at `a186fbb`. Commit `e90543c` records offline verification.
-Existing keys, help, learned assignments and FX controls stay unchanged for valid input.
-Invalid shared MIDI state rejects new actions without losing original held-pad releases.
-Section 86 of `docs/LIVE-CHECKS.md` records the evidence and separate keyboard, controller and listening checks.
-This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
-The callback timing issue remains open. Change 87 is next, but it is not active.
-
-[Vision version 3](docs/VISION.md) also keeps longer-term ideas: modulation, parameter
-locks, slice motion and the launcher. They are not requirements for the current step.
+See [the V1 plan and release criteria](docs/plans/V1.md), [the backlog](docs/BACKLOG.md)
+and [owner checks](docs/LIVE-CHECKS.md).
 
 ## Development
 
