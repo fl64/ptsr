@@ -20,7 +20,7 @@ ptsr is a terminal sampler-groovebox for Linux. You control it from MIDI pads an
 
 The main difference from both: patterns and audio clips launch in parallel, like "blocks" in a clip launcher. The model is Session View in Ableton and Clip Launcher in Bitwig. On the SP-404, one pattern plays at a time. Here, any number of tracks play at the same time.
 
-The sound reference is the glitch ambient of Access To Arasaka: chopped beats, digital debris, stretched textures.
+The sound goals include chopped beats, digital debris and stretched textures.
 
 The instrument has two equal purposes:
 
@@ -332,6 +332,27 @@ The sound moves without hands on the knobs, and one hand moves many parameters a
 - **Snapshots and morph:** a snapshot keeps the values of the pads, the effects and the macros. There are 8 snapshot slots per project. A knob morphs smoothly between two snapshots; a pad jumps to a snapshot on the next beat. Snapshots never change samples, slices or patterns.
 - All modulation is smoothed. No change makes a click. The sequencer can record macro and morph moves as automation.
 
+## 16b. Sample workflows: tempo, breaks, bass and mix
+
+The owner needs these sample workflows in addition to the existing goals.
+The plan describes musical tasks, not specific genres.
+
+- **Tempo:** work at 170–180 BPM. Breaks such as Amen, Think and Apache, recorded at
+  130–160 BPM, need to fit the project tempo.
+- **Breaks:** chop by hits, rearrange slices, add quiet snare hits (ghost notes), rolls
+  and fills. Half-time sections keep the same project tempo.
+- **Bass:** play one bass sample as notes, with mono play and glide between notes.
+  Each step needs its own filter, pitch and start point. The resample loop is record,
+  process, record again, then chop.
+- **Mix:** a dense, loud mix needs kick and snare sidechain, a clean mono sub, master
+  compression and limiting, and a loudness meter.
+- **Movement:** filter LFOs and delays need tempo sync, including 1/8, 3/16 and triplets.
+
+The additions to changes 95–100 are in [plans/PATTERNS.md](plans/PATTERNS.md).
+[plans/SAMPLE-WORKFLOWS.md](plans/SAMPLE-WORKFLOWS.md) plans changes 102–108 after the pattern base.
+Time stretch without pitch change and the larger sound-design tools remain later work.
+These are plans, not current capabilities or requirements.
+
 ## 17. Interface and control
 
 You do all work without a mouse. The left hand is on the pads (1234/QWER/ASDF/ZXCV). The right hand is on navigation. Functions are on F-keys and Ctrl. There is no vim style. The mouse is an addition (clicks, drag of markers and clips). No function needs the mouse.
@@ -511,3 +532,7 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
 - **Patterns:** the sequencer is in the audio thread; time in ticks (960 per quarter); a pattern keeps the hits as played, and quantize applies at playback (it is non-destructive); a pattern uses absolute pads 0–127 (default); one pattern plays at a time until the launcher exists (default).
 - **New projects from the controller** get a date name; the owner can rename them from the keyboard.
 - **Modulation, parameter locks and slice motion** (sections 7, 12, 16a) come after the pattern sequencer. Parameter locks come first of them, because they fit the pattern model.
+- **Sample workflows** (section 16b): extend 95–100 with fast grids, half-time, fills and velocity ramps.
+  Changes 102–108 plan sample tempo, break patterns, locks, resampling, bass, mix and movement.
+  Resolve callback budget failures before 95. Describe tasks without specific genre names.
+  These plans do not authorize code.

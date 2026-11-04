@@ -3,8 +3,10 @@
 Each pending idea needs a separate small change (proposal → spec → code). The owner can change the order at any time.
 
 The next work follows [plans/README.md](plans/README.md): keymap cleanup (83a), input
-(84–90), SMC-PAD and its panel (91–94), then transport and patterns (95–101). This is an ordered plan, not a list
-of completed features. Version 3 of `docs/VISION.md` holds later ideas.
+(84–90), SMC-PAD and its panel (91–94), then transport and patterns (95–101).
+Project save safety 86b–86d comes before 87. Callback correction 94a is a gate before 95.
+Sample tempo, patterns and sound continue in 102–108 after the pattern base through 100a.
+This is an ordered plan, not a list of completed features. Version 3 of `docs/VISION.md` holds later ideas.
 
 Archived changes cover the pad envelope, the large slice view and the kitty waveform (`04b-chop-comfort`), auto-chop (`04d-auto-chop`), and cuts without pads and assign-just-heard (`04e-chop-keep`). The tempo grid remains for a later change. Archived changes also cover projects (`11-project-dir`), chop knobs and normalize (`17-chop-knobs-normalize`), edit mode (`21-edit-mode`), notices (`22-notices`), file loading with Enter (`23-files-enter`), a silent chop screen on open (`24-chop-hush`), recording on the strip (`25-record-strip`), microphone access on demand (`26-mic-on-demand`), and pad source display (`27-pad-source`). Rows stay in the table to keep their numbers valid.
 
@@ -16,12 +18,12 @@ Archived changes cover the pad envelope, the large slice view and the kitty wave
 | 4 | `06d` rest | `[colors]` in the config (migration) and the envelope gradient by loudness (quiet dim, loud accent) | bank colors themselves are done |
 | 5 | `editor home` | The editor works without a pad: open on an empty pad, open a file directly, record mic or output from inside it, then put the result on a pad | extends `09`; needs a talk about the flow |
 | 6 | `editor navigation` | A horizontal scrollbar shows the view position and slices when the wave does not fit; scroll left or right; finer cursor and edge adjustment | Partial: zoom and fine cursor and edge steps exist. Zoom makes the step finer; a held key speeds it up. A scrollbar with slices and fine adjustment with a held modifier remain open. |
-| 7 | `bpm & metronome` | Detect the BPM of a sample (aubio), show it; project BPM; a metronome | Planned: 95 covers project tempo and metronome. Sample BPM detection and the relation between sample and project tempo remain separate future work. Not implemented. |
+| 7 | `bpm & metronome` | Sample tempo and beat length, project tempo and a metronome | Planned: 95 covers project tempo and the metronome. [102](plans/SAMPLE-WORKFLOWS.md#change-102--102-sample-tempo) covers sample tempo, detection proposals, tempo-grid chopping and fit off / repitch. aubio is a candidate, not a final choice. Not implemented. |
 | 8 | `pad loop & pattern` | Loop mode per pad; play patterns like 1000/0100/1100 per pad or group | Planned: 96–100a cover patterns, with absolute pad addresses proposed for 96. Pad loop mode is separate future work. Not implemented. |
 | 9 | `mute groups` | Pads in one mute group cut each other | Done; `70-mute-groups` is archived. The TONE page sets a group from off or 1–8. |
-| 10 | `resample` | Bounce a pad (or a group) into a new standalone sample: the current sound with pitch/volume/effects printed in | which source (pad, group, whole bank) — to discuss |
+| 10 | `resample` | Record the current sound into a new sample with pitch, volume and effects | Planned: [105](plans/SAMPLE-WORKFLOWS.md#change-105--105-resample-in-tempo) records a pad, a pattern or the ptsr master for N bars to a new pad. Group and bank sources need a separate decision. Not implemented. |
 | 11 | `pad envelopes` | One envelope (volume?) per pad — set for one pad, a group, or all at once | which envelope (volume ADSR? filter?) — to discuss; large slice view is `04b` |
-| 12 | `chromatic mode` | Pads play chromatic steps of one sample? | owner marked with a question mark — needs a talk |
+| 12 | `chromatic mode` | Play notes of one sample in a scale, with mono play and glide | Planned: [106](plans/SAMPLE-WORKFLOWS.md#change-106--106-bass-play). Exact controls and note storage need a design and specs before code. Not implemented. |
 | 13 | `tabs on top` | Screens as real tabs drawn at the top of the window, not only F-keys | touches every screen |
 | 14 | `values on knobs` | Anything adjusted by ±/arrows can be MIDI-learned to a knob (with soft takeover) | `09` starts this for chop; generalize after |
 | 15 | `pad geometry` | Squarer pads (width ≈ 2× height, terminal cells are 1:2), adaptive to the window; compact pads on F6 | |

@@ -3,8 +3,12 @@
 Read `README.md` first. Key choices follow `KEYMAP-CLEANUP.md` (83a). This track needs
 the input work (84–90), the SMC profile and panel
 (91–92), the reach checks (93) and comfort (93a, including redo). Pad lights (94) are optional.
-Each change states its keyboard keys and its SMC-PAD path; the reach test of 93 covers them.
+The separate callback budget change before 95 is a prerequisite, not optional reporting work.
+Each change states its keyboard keys and its SMC-PAD path. The reach test of 93 covers them.
 The design sketches below are proposals, not existing Rust interfaces or saved file formats.
+
+The additions below support fast breaks, fills and detailed step control inside 95–100.
+[SAMPLE-WORKFLOWS.md](SAMPLE-WORKFLOWS.md) continues with sample tempo and sound work in 102–108.
 
 ## 1. Where we start
 
@@ -43,7 +47,7 @@ App side (`crates/app/src/pattern.rs`), saved in the project:
 ```rust
 pub struct PatternData {
     pub bars: u8,              // 1..=64
-    pub quantize: Grid,        // Off, 1/4, 1/8, 1/16, 1/32, 1/8T, 1/16T
+    pub quantize: Grid,        // Off, 1/4, 1/8, 1/16, 1/32, 1/8T, 1/16T, 1/32T
     pub strength: u8,          // 0..=100, steps of 10
     pub hits: Vec<Hit>,        // as played, not quantized; max 4096
 }
@@ -107,6 +111,32 @@ picks a pattern slot, no sound). `Record` is not a mode: pads sound and the engi
 
 ## 3. The changes
 
+### Before 95 — `94a-callback-budget`
+
+Goal: resolve the callback peaks above 50 % and slow-core CPU spikes before sequencer work.
+Dense rolls at 172 BPM add callback work. A report alone does not close this gate.
+This is a separate small change. It does not depend on optional pad lights (94).
+
+Spec deltas: `audio-engine`, for any explicit performance correction and its regression scenarios.
+Keep the existing 50 % target and real-time rules.
+
+Tasks:
+
+1. Reproduce the earlier peaks with wall and thread CPU measurements.
+   Record the workload, core classes and repeated runs. Define the supported test conditions in the design.
+2. Fix the measured cause in a small change. Do not hide a behavior change inside a refactor.
+   Do not replace the fix with an unapproved system scheduling or affinity change.
+3. Check 32 voices, 128 frames / 48 kHz and project-switch phases against the 50 % target.
+   Record maxima and exceedance counts, not only p99 or the command exit status.
+4. Add dense-pattern and roll workloads in 96 and 100, once those paths exist.
+   Keep the same target. Reopen the gate if a new path exceeds it.
+
+Tests: the original slow-core and peak cases, repeated callback measurements, no allocation
+and existing sound regressions. Do not claim closure from one favorable run.
+
+How to verify: review the repeated measurements and the unresolved limits before starting 95.
+If a sound path changes, render it and give the owner a listening comparison.
+
 ### Change 95 — `95-transport`
 
 Goal: tempo, play / stop, a metronome on the beats. This is row 7 of `docs/BACKLOG.md`, without
@@ -125,6 +155,9 @@ Engine:
 4. `TransportStop`: the clock stops and goes back to tick 0. One-shot tails ring on. From
    change 96, sequenced gate notes get their release. Panic is a separate action that also
    fades voices, preview and FX tails.
+5. Half-time is a transport setting for pattern playback at half speed.
+   Project BPM, the bar clock and the metronome stay unchanged.
+   Define phase changes and gate-release rules in 95. Apply the playback factor in 96.
 
 App:
 
@@ -138,6 +171,8 @@ App:
    pick other right-half keys.
 4. `metronome.toggle`: pick a right-half keyboard key in the design and check it for clashes.
 5. The title line shows `120.0 BPM  ▶ 3.2` while playing.
+6. Add half-time on/off with keyboard and controller paths. Save its state with the project.
+   Show `HALF` next to the transport state. The default is normal speed.
 
 SMC-PAD: PLAY tap on Pads is `transport.play_stop`; PLAY hold is `metronome.toggle` (the tap /
 hold of 89; the tap then acts on release, write it in the spec); bank 2 knob 7 is the tempo. The
@@ -153,7 +188,10 @@ Tests:
 2. Render: tempo 120 → 90 in the middle: no jump in position, the clicks follow the new tempo.
 3. Stop and play: the first click at frame 0 of the play.
 4. `realtime_no_alloc` covers the transport.
-5. Input: Space starts and stops; the SMC-PAD PLAY does the same (parity harness).
+5. Input: Space starts and stops. The SMC-PAD PLAY does the same (parity harness).
+6. Render metronome accents at 170, 172 and 180 BPM. Check the first beat of each bar.
+7. Half-time selection and restart preserve project BPM and metronome timing.
+   Pattern duration and release tests follow in 96.
 
 Render for the owner: `renders/95-transport.wav`.
 
@@ -208,7 +246,10 @@ Tests:
 3. Render: pattern replaced while playing (one hit added ahead of the playhead): no hit missed
    or doubled around the swap.
 4. Render: mute group pads in a pattern cut each other.
-5. Session round trip; the migration from version 3.
+5. Session round trip and the migration from version 3.
+6. Half-time doubles a pattern's duration without changing project BPM or metronome timing.
+   Check gate releases, loop boundaries and a rate change under the rules from 95.
+7. Benchmark dense patterns at 172 BPM against the callback gate before 95.
 
 Render for the owner: `renders/96-pattern-play.wav`.
 
@@ -230,6 +271,8 @@ Behavior:
 2. Overdub always: new hits add to the old.
 3. A pass is from record on to record off; one pass is one undo step (`Ctrl+Z`, panel Undo).
 4. The quantize and strength are settings of the pattern (§2.3), default 1/16 and 100 %.
+   Include 1/32, 1/16T and 1/32T grids for fast breaks and triplets.
+   `T` means triplet. Keep raw timing when the owner changes the grid.
 5. Gate pads: the release writes `len`.
 6. Erase: while erase is on and a pad is held, the hits of that pad that the playhead passes are
    removed. Keyboard: hold Backspace and the pad. The UI removes hits in the tick window between
@@ -240,7 +283,8 @@ Behavior:
 
 Engine: the `Recorded` queue; `lap` counting; `skip_lap` (§2.5); `CountIn`.
 
-App: merge recorded presses and releases; undo step type; erase by the transport tick.
+App: merge recorded presses and releases, add the undo step type and erase by the transport tick.
+Add the new quantize grids to keyboard selection and controller controls, with visible rate feedback.
 
 Keys: the new action `pattern.record`, keyboard `Ctrl+R` on every screen (reserved by 83a);
 remove the old microphone moved-key notice when this binding ships. Microphone hold stays
@@ -265,6 +309,8 @@ Tests:
 4. Erase removes only the held pad and only where the playhead passed.
 5. Count-in: one bar of clicks, then recording starts at tick 0.
 6. Parity: recording from keyboard pads and from SMC-PAD pads gives the same pattern.
+7. Render and record 1/32, 1/16T and 1/32T at 172 BPM, including hits near the loop boundary.
+   Check exact timing, no double hits and grid changes without loss of raw timing.
 
 Render for the owner: `renders/97-pattern-record.wav` (raw take, then the quantized loop).
 
@@ -289,14 +335,22 @@ Screen (register it in the screen registry of 86):
  [the pad grid as on F2; Ctrl+O hides it]
 ```
 
-- Rows: the pads with hits in this pattern, plus the selected pad. Columns: 16 steps of 1/16, one
-  bar per page. `█` a hit on the step (brighter = louder), `▪` a hit off the grid of the view
-  (quantize Off), `·` empty, the playhead column lit.
-- Step mode: the title shows `STEP` in the mark color, and the pad grid changes color. A pad hit
-  toggles the step with the pad's number on the current bar page for the **selected** pad row.
-  Adding a step plays the selected pad once (to hear it); removing is silent. Keyboard Shift
-  gives 127; the controller gives the hit velocity.
-- Keys (right half only): `Space` play / stop; `Enter` record toggle; `J` / `L` bar page;
+- Rows: the pads with hits in this pattern, plus the selected pad. The default view has
+  16 steps of 1/16, one bar per page. `█` means a hit, with brightness for velocity.
+  `▪` means an off-grid hit, `·` means empty, and the playhead column is lit.
+- Add a 1/16 ↔ 1/32 view switch on keyboard and controller.
+  Default proposal: 16 steps per page, with two pages per bar at 1/32.
+  The alternative is 32 steps per bar page. Ask the owner before 98.
+  Show the division and page span. Changing the view does not quantize stored hits.
+- Step mode: the title shows `STEP` in the mark color, and the pad grid changes color.
+  A pad hit toggles its step on the current page for the **selected** pad row.
+  Adding a step plays the selected pad once. Removing it is silent.
+  Keyboard Shift gives 127. An ordinary controller hit keeps its velocity.
+- Add quick Accent and Ghost choices for the next inserted step from either input.
+  Define the two velocities and control paths in the 98 design.
+  Use right-half commands or controller actions, not commands on plain or Shift pad-block keys.
+  Show the active choice. Shift on a pad still gives full hit velocity.
+- Keys (right half only): `Space` play / stop. `Enter` record toggle. `J` / `L` step page.
   `I` / `K` selected row; `U` step mode on / off; `Y` next quantize; `Alt+Y` next strength
   (candidate: check clashes; `Ctrl+Y` is reserved for global redo by 83a);
   `Backspace` held + pad: erase; `Ctrl+Backspace`: clear the selected pad's hits (question);
@@ -309,53 +363,94 @@ SMC-PAD:
 - Pattern context cells: c5 Step (latch), c6 Erase (latch: then a held pad erases), c7
   Quantize next, c8 Metronome, c9 Double length, c10 Clear pad (question), c11 Clear pattern
   (question), c12 Count-in on / off.
-- LEFT / RIGHT bar page; PLAY transport; RECORD record; knobs as in §2.3 of
-  `SMC-PAD-INTEGRATION.md`: tempo, swing (later), quantize, strength, length.
+- LEFT / RIGHT change the step page. PLAY controls transport. RECORD controls recording.
+  Knobs follow §2.3 of `SMC-PAD-INTEGRATION.md`: tempo, swing (later), quantize, strength, length.
 - Selected row from the controller: hit the pad while step mode is off (it sounds and selects).
 
 Visual: the `STEP` and `ERASE` badges, the step and erase pad glyphs, the grid tint
 (`VISUAL.md` §2.2); hints for both inputs.
 
-Tests: step toggles (parity harness), the selected row, page change, a render of a pattern made
-only in step mode, the reach test passes with the new actions.
+Tasks: add the view switch, division/page indicator and Accent/Ghost choices to step editing.
+Keep the new paths in the reach table and the help for both inputs.
+
+Tests: step toggles, the selected row and both page divisions through the parity harness.
+Check both halves of a 1/32 bar, Accent/Ghost velocity, Shift velocity and ordinary MIDI velocity.
+Render a pattern made only in step mode. The reach test includes the new actions.
+
+Planned render: `renders/98-pattern-screen.wav`, with accents, ghosts and a 1/32 fill.
+
+How to verify: make a one-bar beat through the keyboard, then through the controller.
+Switch the view to 1/32. Add ghost snares and accents on both pages.
+Listen to the render for the quiet hits and the fill.
 
 ### Change 99 — `99-pattern-slots`
 
-Goal: 16 pattern slots, a switch on the loop end, copy, clear.
+Goal: 16 pattern slots, musical switch boundaries, a one-pass fill, copy and clear.
+
+Spec deltas: future `patterns`, `projects`, `screen-layout`, `screen-help`, `keyboard`,
+`midi-learn` and `command-panel`.
 
 Behavior:
 
 1. Slots `A1`–`A16` (the letter leaves room for more banks later). One plays at a time.
 2. Slot pick: `P` on the Pattern screen or the panel cell → `Mode::SlotPick`; the pad grid shows
    the slots (empty, has hits, playing, queued); a pad hit picks the slot.
-3. While playing, a picked slot is queued and starts at the end of the current pattern; the queued
-   slot blinks. A setting changes this to "at the next bar".
-4. Copy: pick the source, panel Copy, pick the target (question if the target has hits).
-5. Clear a slot: question.
+3. While playing, a picked slot waits for the selected boundary. The queued slot blinks.
+   Keep loop-end and next-bar choices. Add boundaries of 4, 8 and 16 transport bars.
+   Default proposal: 8 bars. The setting uses the transport bar grid, not the pattern length.
+4. A fill slot plays once, then returns to the slot that played before it.
+   Define the return phase, cancellation and another queued selection in the 99 design.
+5. Copy: pick the source, panel Copy, pick the target. Ask if the target has hits.
+6. Clear a slot: ask first.
 
-Engine: `QueuePattern { pattern, at: End | Bar }` acts on the exact boundary frame.
+Tasks: add boundary selection and fill selection to keyboard and controller paths.
+Save the boundary setting and fill state needed for project restart under the 99 design.
+The engine switches on the exact boundary frame.
 
-Visual: the `SLOT` and `NEXT A2` badges, the slot pad glyphs, the blink of the queued slot.
+Visual: `SLOT`, `NEXT A2` and `FILL` badges, slot pad glyphs and the queued-slot blink.
+Show the selected boundary. Follow `VISUAL.md` for both inputs.
 
-Tests: render of a switch at the boundary: no hit lost or doubled at the seam; queue then cancel
-(pick the playing slot again); session round trip of 16 slots.
+Tests: render switches at 4, 8 and 16 bars, plus loop end and next bar.
+Check no lost or doubled hit at each seam. Test selection before, on and after a boundary.
+Check fill play once and return, cancellation and another queued selection.
+Keep the queue-cancel test and the session round trip of 16 slots.
+
+Planned render: `renders/99-pattern-slots.wav`, a main slot, one fill and the return.
+
+How to verify: select an 8-bar boundary and queue another slot from each input.
+Trigger a fill. Listen for its single pass and the return to the previous slot.
 
 ### Change 100 — `100-note-repeat`
 
 Goal: note repeat (roll) on the transport grid.
 
-Behavior: while repeat is on and a pad is held, the engine plays that pad at the repeat rate
-(1/8, 1/16, 1/32, 1/16T; a knob), on the transport grid, with the velocity of the first hit.
-While recording, the repeated hits are recorded. Keyboard: hold `N` on the Pattern screen.
-SMC-PAD: a Pattern panel cell as a latch, or a hold binding chosen in the design. Do not use the
-Note Repeat button of the device: its clock is not the ptsr clock.
+Behavior: while repeat is on and the owner holds a pad, the engine repeats it on the transport grid.
+Rates include 1/8, 1/16, 1/32, 1/16T and 1/32T, with a rate knob.
+The default velocity stays at the first hit's velocity.
+An optional velocity ramp gets louder or quieter over a set length.
+Define ramp length, endpoints and restart rules in the 100 design.
+While recording, the repeated hits and their velocities become pattern hits.
+Keyboard: hold `N` on the Pattern screen.
+SMC-PAD: use a Pattern panel cell or a hold binding chosen in the design.
+Do not use the device's Note Repeat button. Its clock is not the ptsr clock.
 
-Engine: `SetRepeat { rate: Option<Grid> }`; the engine knows which pads are held from
-`PadPress` / `PadRelease`.
+Spec deltas: future `patterns`, `pad-playback`, `screen-help`, `midi-learn` and `command-panel`.
 
-Visual: the `REPEAT 1/16` badge; the rate in the value pop-up.
+Tasks: add the rates and velocity ramp to the engine and both control paths.
+The engine already tracks held pads through press and release commands.
+Keep callback work bounded and free of allocation.
 
-Tests: render timing ±1 frame at all rates; recorded repeats are on the grid.
+Visual: `REPEAT 1/16`, the rate in the value pop-up and the ramp direction/state.
+
+Tests: render timing within one frame at all rates, including triplets at 172 BPM.
+Check rising, falling and fixed velocity, recording, release and a repeat-rate change.
+Benchmark dense rolls against the callback budget gate.
+
+Planned render: `renders/100-note-repeat.wav`, fixed, rising and falling rolls.
+
+How to verify: hold a roll from the keyboard, then the controller.
+Select each new rate and both ramp directions. Record a roll and play it again.
+Listen for even triplets and the intended change of velocity.
 
 ### Change 101 — `101-input-timestamps` (only if needed)
 
@@ -376,6 +471,9 @@ They are part of these changes.
 
 ## 5. Later, not planned here
 
-Swing (in `compile`), per-step parameters (velocity, pitch, probability, micro shift), ratchets,
-the launcher with several patterns at once, song mode, MIDI clock with the SP-404, time
-signatures other than 4/4.
+Change 104 covers parameter locks, including pitch, start point, filter and sends.
+See [SAMPLE-WORKFLOWS.md](SAMPLE-WORKFLOWS.md). Step velocity belongs to 98.
+These are not unassigned later work.
+
+Swing (in `compile`), per-step probability, micro shift, reverse and ratchets remain outside this track.
+The multi-pattern launcher, song mode, MIDI clock with the SP-404 and other time signatures also remain later work.
