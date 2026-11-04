@@ -624,7 +624,11 @@ Reset the X-Session map as described in section 82 when you finish these steps.
 ## 12 — The program is named ptsr
 
 Folder: `changes/archive/2026-11-01-12-rename-ptsr`
-Current update: `changes/86a-remove-legacy-migration`
+Current update: `changes/archive/2026-11-04-86a-remove-legacy-migration`
+
+The owner accepted 86a on 2026-11-04 and authorized archive and merge of PR #5.
+This is overall acceptance. Individual keyboard, controller and listening results remain unreported.
+The manual boxes below stay open.
 
 Startup no longer copies older program folders. Keep all owner folders on disk.
 The historical archive stays unchanged. The checks below replace its obsolete migration checks.
@@ -655,6 +659,15 @@ Automated file-loading tests do not replace these manual checks.
 - The new tests call the production settings, keymap and session loaders. They cover conflicting legacy files, current defaults, saved keys, MIDI bindings, pad state and unchanged source files. These tests do not start the sampler.
 
 All benchmark maximum summaries were within target in this run. Earlier maximum-budget and slow-core CPU issues remain open.
+
+**Archive verification (2026-11-04)**
+
+The archive keeps all five change artifacts. Both added requirements match the main spec, and both removed requirements are absent.
+Archive used `--skip-specs` because the delta was already fully applied. The main project spec stayed byte-identical.
+After archive, `task check` passed all 945 tests, including coverage of 678 main-spec scenarios. The release build passed.
+Strict validation reported `Totals: 15 passed, 0 failed (15 items)`. There are no active changes.
+All benchmark maximum summaries were within target in this run. Earlier timing issues remain open.
+Independent review of `59d437a` found no lost limits or changed behavior in the prose cleanup.
 
 ## 76 — Marks are the scope, and a pad can be reset
 
@@ -1385,6 +1398,7 @@ Totals: 15 passed, 0 failed (15 items)
 OpenSpec standard exit: 0
 ```
 
-Strict validation remains a merge blocker. This documentation edit does not split unrelated requirements or change their meaning.
+At that stage, strict validation remained a merge blocker.
+The later specification cleanup resolved these warnings without changing scenario text.
 Evidence: `target/86-new-cli-baseline.log` and the logs with prefix `target/86-pr-`.
 No new owner, listening or hardware result comes from these checks.

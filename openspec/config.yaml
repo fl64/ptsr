@@ -40,6 +40,12 @@ context: |
   Section 86 of docs/LIVE-CHECKS.md records evidence and separate keyboard, controller and listening checks.
   The callback timing issue remains open.
 
+  The owner accepted legacy folder migration removal (86a) on 2026-11-04.
+  Its archive is openspec/changes/archive/2026-11-04-86a-remove-legacy-migration.
+  Startup reads current ptsr files only. Old folders, XDG paths, saved formats and FX conversion stay unchanged.
+  This is overall acceptance, not individual keyboard, physical-controller or listening results.
+  The owner authorized archive and merge of the combined PR #5 for 85–86a.
+
   Change 87 is next, but it is not active.
   The order is input and visual changes (87–90), SMC-PAD and its command panel (91–94), then transport and patterns (95–101).
   Read docs/PROJECT.md and docs/plans/README.md before preparing the next change.

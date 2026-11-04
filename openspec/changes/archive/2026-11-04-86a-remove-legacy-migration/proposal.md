@@ -29,6 +29,11 @@ Existing `ptsr` files and XDG paths stay unchanged. This change adds no dependen
 The owner approved this separate change in the existing PR on `86-screen-registry`.
 The specification cleanup remains a separate commit.
 
+## Owner acceptance
+
+On 2026-11-04, the owner accepted 86a and authorized archive and merge of the combined PR #5.
+This is overall acceptance, not individual keyboard, controller or listening results.
+
 ## Out of scope
 
 Do not remove folders on disk, change saved formats, remove other compatibility rules or change sound.
