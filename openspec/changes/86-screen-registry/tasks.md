@@ -19,7 +19,7 @@ Use the existing `86-screen-registry` branch. Keep accepted closure of 85 separa
 ## 4. Verification and owner handover
 
 - [x] 4.1 Check that each of the nine delta scenarios has its named test. Run `openspec validate --all --strict --no-interactive`, `cargo test -p ptsr --test scenarios`, `task check` and `task build`. Retain the existing behavior assertions and inspect the full diff. Reuse automated checks for the three 85 renders. Record command output and benchmark exceedances without closing earlier timing problems. Include this evidence in the handover documentation commit.
-- [ ] 4.2 Update `README.md`, `docs/PROJECT.md`, `docs/plans/README.md`, `docs/LIVE-CHECKS.md` and `openspec/config.yaml` with actual 86 status. Include the separate keyboard, controller and listening checks from the proposal. Keep unreported owner checks open. Run STE lint on changed text and `task check` before the separate documentation commit.
+- [x] 4.2 Update `README.md`, `docs/PROJECT.md`, `docs/plans/README.md`, `docs/LIVE-CHECKS.md` and `openspec/config.yaml` with actual 86 status. Include the separate keyboard, controller and listening checks from the proposal. Keep unreported owner checks open. Run STE lint on changed text and `task check` before the separate documentation commit.
 
 This change adds no sound algorithm or new render. The existing references are `renders/85-input-modes.wav`, `renders/85-mixed-holds.wav` and `renders/85-late-midi.wav`.
 Do not claim listening or physical-controller verification from automated results.

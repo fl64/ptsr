@@ -8,7 +8,7 @@ deltas, tasks) and follows `AGENTS.md`: one change at a time, specs first, a tes
 scenario, atomic commits, `task check` green. A change normally has its own branch; the
 owner requested continuation in `plan/controller-first-patterns` for this work.
 
-## Current status (2026-11-03)
+## Current status (2026-11-04)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -42,7 +42,13 @@ owner requested continuation in `plan/controller-first-patterns` for this work.
   The three 85 WAV files and separate owner passes are in section 85 of
   `docs/LIVE-CHECKS.md`. This is overall acceptance, not individual listening results.
   Physical-controller checks remain unverified, and separate WAV listening remains unreported.
-  Change 86 is next. It is not active yet.
+- Change 86 is active in `openspec/changes/86-screen-registry/` on `86-screen-registry`.
+  Implementation is complete at `a186fbb`. Offline verification is recorded in `e90543c`.
+  The registry keeps existing screen identity, help, bindings and FX rules for valid input.
+  Invalid shared MIDI state has a separate, specified correction in `a186fbb`.
+  It rejects new actions without losing original releases or pending-input order.
+  Section 86 of `docs/LIVE-CHECKS.md` records evidence and separate keyboard, controller and listening checks.
+  Owner acceptance and archive remain pending. Earlier callback peaks and slow-core CPU spikes remain unresolved.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

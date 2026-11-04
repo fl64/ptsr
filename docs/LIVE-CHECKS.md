@@ -1172,3 +1172,132 @@ b80bdb052a43559e435bcd72c456323b84fb27b62df1b5cc54e68e5fdce08514  renders/85-lat
 
 No new WAV is necessary. The agent did not run the sampler live, hear sound or test physical MIDI hardware for 86.
 Keyboard, controller and listening results for 86 remain unreported. Automation does not mark those checks complete.
+
+### Documentation handover verification (2026-11-04)
+
+The documentation check passed strict OpenSpec validation, `task check` and `task build`.
+The validation and App test reported:
+
+```text
+Totals: 16 passed, 0 failed (16 items)
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.10s
+```
+
+The playback wall maximum was 20.46%, and its thread CPU maximum was 19.81%.
+The switch wall maximum was 9.08%, and its thread CPU maximum was 9.11%.
+All workload groups reported zero wall and CPU blocks above 50% in this run.
+This observation does not close the earlier timing issue. The three 85 WAV hashes still match the values above.
+Local logs use the prefix `target/86-step-4.2-`: `check.log`, `build.log`, `openspec.log` and `ste.log`.
+
+STE review used STE-flavored descriptions and Strict procedures. The lint found zero hard violations and four passive-voice suggestions.
+The suggestions concern `is recorded` in the status descriptions. The actor is irrelevant there, so that wording stays.
+The new owner procedures have no lint findings. This check does not establish full ASD dictionary compliance.
+
+### Prepare the owner checks
+
+Use a disposable project because these checks change pad and effect settings.
+Start the program from the repository folder with `task run`.
+Keep the existing keyboard and controller maps. Do not reset or replace saved assignments.
+The keys below are defaults. If your map replaces a key, use its existing replacement and record it.
+
+1. Open Files with `F6`.
+2. Select a sample at least 20 seconds long.
+3. Press `Enter` to take the file in hand.
+4. Hit an empty pad to load the file.
+5. Wait for loading to finish.
+6. Open Chop with `F3`.
+7. Press `Y` to make two slices from a fresh sample.
+8. Press `P` to open the assignment plan.
+9. Hit two empty pads to select the targets.
+10. Press `Enter` to apply the plan.
+
+For the release checks, use one linked slice as a long gate.
+On Pads, select that pad. Press `H` until its mode is gate (`⇥`).
+Set its release to 20 ms on ENV. Set both FX sends to zero.
+Use a terminal with the kitty keyboard protocol. A terminal without key releases cannot check keyboard gate release.
+For the FX sound check, use another loaded pad with a nonzero send to the selected block.
+
+For controller commands, use the X-Session Pro with its existing assignments.
+Its default command buttons are not pad controls.
+For pad holds, use a second device with notes 36–51 or existing GLOBAL pad bindings.
+Use keyboard commands where the controller has no assignment.
+Record unavailable devices, bindings and release forms instead of marking them complete.
+The incomplete SMC-PAD template is not a verified hardware profile.
+
+### Keyboard pass
+
+- [ ] Open Pads (`F2`), Chop (`F3`), FX (`F4`), Files (`F6`) and Settings (`F12`) in sequence.
+  Check the screen title after each key. Open `F1` on each screen.
+  Check that the full help names that screen's controls. Close help with `F1`.
+  Check the bottom help, including modifier hints and the current Settings tab.
+- [ ] On Pads, select the loaded pad. Press `Enter` to open edit.
+  Check pages with `Tab` and `Shift+Tab`. Select parameters with `I` and `K`.
+  Change a value with `J` and `L`. Check that the bank does not change.
+  Close edit with `Esc`.
+- [ ] Open the linked slice on Chop with `F3`. Press `Enter` to open slice edit.
+  Check that only the `BOUNDS` page is available. Close edit with `Esc`.
+- [ ] Open FX with `F4`. Select each block with `Tab` and `Shift+Tab`.
+  Select parameters with `I` and `K`. Change values with `J` and `L`.
+  Check that these controls need no separate edit mode.
+- [ ] Open `F10` on Pads, Files, Chop and FX in separate runs.
+  Check the corresponding group: `PADS`, `FILES`, `CHOP` or `FX`.
+  Close learn with `F10` without saving a binding.
+  Repeat with Pads edit and Chop edit open. Check `PADS · EDIT` and `CHOP · EDIT` respectively.
+  Check that FX has no separate edit group.
+- [ ] On Settings, press `F10`. Check that screen learn does not open.
+  Open the MIDI tab for its existing learning list. Do not save a test binding.
+- [ ] Open `F12` from Pads, Chop, Files and FX in separate runs.
+  Open the MIDI tab. Check that the list shows the corresponding screen group expanded.
+  Check the group order: `GLOBAL`, `PADS`, `PADS · EDIT`, `SETTINGS`, `FILES`, `CHOP`, `CHOP · EDIT`, `FX`.
+- [ ] (by ear) On Chop, hold the long linked gate's pad key.
+  Change bank with `PgDn`. Open FX with `F4`. Release the original key.
+  Check that only the original pad stops. The new bank must not select a different release target.
+- [ ] Restart the program. Check an existing custom key or explicit `none` entry if your map has one.
+  Check that its previous effect remains. Do not create or replace an owner assignment for this check.
+
+### Controller pass, when hardware is available
+
+Use the existing map. The physical names below describe the X-Session defaults from change 82.
+If your map replaces a default, use its existing assignment and record the difference.
+
+- [ ] Press left Headphone for Files and right Headphone for FX if your map retains those defaults.
+  Check that each opens its existing screen.
+- [ ] On Pads, press left Cue to open edit if that assignment is present.
+  Check the existing page buttons and numbered knobs 1–3.
+  Close edit with a Cue button that already has this role.
+- [ ] On FX, select both blocks with the existing page buttons.
+  Check the same numbered parameter knobs on each block, without another edit mode.
+  Check any saved FX assignment with its existing priority. Do not learn a replacement for this check.
+- [ ] Open `F12` from Pads, Chop, Files and FX in separate runs.
+  Use an existing controller assignment for entry if available. Otherwise, use `F12` on the keyboard.
+  Open the MIDI tab. Check the corresponding expanded group and the group order from the keyboard pass.
+- [ ] Test one saved screen assignment and one saved GLOBAL assignment.
+  Restart the program. Check that both retain their previous roles without learning again.
+- [ ] (by ear) On Chop, hold the long linked gate from a pad controller.
+  Change bank. Open FX. Release the original control.
+  Check that only the original pad stops. Repeat the sequence with a device disconnect instead of release.
+  Check that the original gate stops without a stuck note.
+- [ ] Repeat the release check with note-off, note-on zero and learned-button zero where the device supports them.
+  Record the available forms. A command-only device cannot check pad holds.
+
+Invalid internal state is an automated fault test. Do not change internal state or configuration to reproduce it by hand.
+
+### Listening pass
+
+These are the existing regression references, not new sound features.
+Section 85 gives the segment times and the command to regenerate the files.
+
+- [ ] (by ear) Listen to `renders/85-input-modes.wav` (2.064 s).
+  Check one onset per accepted hit, intentional silence for file targets and clean gate stops.
+  Check that equal-velocity keyboard, note and button hits sound the same.
+- [ ] (by ear) Listen to `renders/85-mixed-holds.wav` (3.584 s).
+  Check that each original hold ends on its own release. A rejected hit must not steal another hold.
+- [ ] (by ear) Listen to `renders/85-late-midi.wav` (about 1.451 s).
+  Check the normal Chop-entry fade without a second hit. Rejected segments must stay silent.
+
+During the live keyboard and controller passes, listen for missing releases, duplicate hits and changed FX response.
+No new WAV is necessary because the sound algorithm does not change.
+
+Owner result: not reported. Keyboard terminal and custom keys: not reported.
+Controller device, preset, assignments and physical release forms: unverified. Separate WAV listening: not reported.
+Acceptance and archive remain pending. Earlier callback peaks and slow-core CPU spikes remain open.
