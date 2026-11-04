@@ -6,7 +6,12 @@ Files screen and sample loading: folders and audio files next to the pad grid, b
 ## Requirements
 
 ### Requirement: Files screen
-The system SHALL provide a files screen (F6) with the pad grid of the current bank on the left (what each pad plays, missing files, loading progress) and the folders and audio files of the current folder on the right, with navigation into folders and up, controlled from the keyboard and a controller; holding the up or down key keeps moving the selection; the first start opens the samples root (default `~/ptsr/samples`); while a project is open the files screen starts in that project's `samples/` folder; while that folder holds no audio files and no folders yet (a new project), the files screen starts in the folder the owner browsed last. `Enter` on a file takes it in hand, and the next pad hit puts it on that pad (`Enter` again puts it on the selected pad); `Ctrl+Enter` loads it onto the selected pad right away and closes the files screen; `Enter` and `Ctrl+Enter` on a folder open the folder.
+Files (F6) SHALL show the current bank's pad grid left, with sounds, missing files and loading progress, and current-folder audio files and folders right.
+Keys and controllers SHALL navigate into folders and up.
+Held up/down SHALL repeat selection.
+`Enter` on a file SHALL take it in hand, then a pad hit SHALL place it.
+Another `Enter` SHALL use the selected pad.
+`Ctrl+Enter` SHALL load that pad immediately and close Files.
 
 #### Scenario: Enter takes the file, a hit places it
 - **WHEN** the owner presses `Enter` on a file and then hits pad W
@@ -19,6 +24,13 @@ The system SHALL provide a files screen (F6) with the pad grid of the current ba
 #### Scenario: See where the file goes
 - **WHEN** the owner takes a file in hand with `Enter` on the files screen
 - **THEN** the file line is highlighted as "in hand", the pad grid next to it is highlighted, and the help line says to hit a pad or press Esc
+
+### Requirement: Files starting folder and folder actions
+
+`Enter` and `Ctrl+Enter` on a folder SHALL open it.
+First start SHALL open the samples root, default `~/ptsr/samples`.
+With a project open, Files SHALL start in its `samples/` folder, unless that folder has no audio files or folders yet.
+In that case, Files SHALL start in the last browsed folder.
 
 #### Scenario: Into a folder and back
 - **WHEN** the owner selects a folder and presses → or Enter, then presses ←

@@ -21,17 +21,10 @@ The system SHALL show at the bottom of every screen help grouped by actions, wit
 - **THEN** every key of the help line is drawn as a cap with its own background, the text next to it is plain
 
 ### Requirement: Help line fits the terminal
-The system SHALL keep a band of 3 rows at the bottom of every screen for the help line,
-whatever the help says now: the screen above the band never moves when the help changes
-(an edit mode opens, the assign starts, a modifier is held). The help stands in columns:
-every group is a column of up to 3 rows of `key text`, the group name in colour left of
-its first row (a group shorter than the band puts its name on the free first row above
-its items), the columns split by `│`; a group of more than 3 items takes a second
-column under the same name, and a group never breaks between the columns of another
-group. The order is the same on every screen: the screen's own groups first, the main
-step of the screen first among them, then BANK, REC and the screens. When the columns do
-not fit the width, the last groups drop off whole, the screens first, then REC; F1 shows
-them all.
+Every screen SHALL reserve a fixed 3-row bottom help band without moving content above it when help changes.
+Groups SHALL appear in this order: screen groups with the main step first, then BANK, REC and screens.
+Groups that exceed the width SHALL disappear whole from the end: screens first, then REC.
+F1 SHALL show all groups.
 
 #### Scenario: Narrow terminal
 - **WHEN** the terminal supports the kitty protocol, it is 140 columns wide and the chop screen is open
@@ -40,6 +33,13 @@ them all.
 #### Scenario: One row on the pads screen
 - **WHEN** the terminal supports the kitty protocol, it is 140 columns wide and the pads screen is open
 - **THEN** the help has no key with a modifier; the name stays from the one-row help, the columns now take the rows their longest group needs
+
+### Requirement: Help group columns
+
+Each help group SHALL use a column of up to 3 `key text` rows, with its coloured name left of the first row.
+Shorter groups SHALL put the name on the free first row above their items.
+Columns SHALL be separated by `│`.
+Groups over 3 items SHALL continue in a second column under the same name, without another group's columns between.
 
 #### Scenario: Columns on the pads screen
 - **WHEN** the terminal is 140 columns wide and the pads screen is open
@@ -104,13 +104,12 @@ The system SHALL list the screen keys of the help line in ascending key order: h
 
 ### Requirement: Help for a held modifier
 
-The system SHALL, while a modifier is held, show only keys that work with that modifier
-on the open screen: Ctrl chords, Alt chords or Shift commands plus full-velocity pads.
-Each SHALL say what it does with J/L where applicable. Without a Shift command on that
-screen, Shift SHALL show only the full-velocity pad hint. The usual line SHALL return
-on release. With extended modifier events, the usual line SHALL show unmodified keys
-only; without them, it SHALL retain Ctrl/Alt combinations and show Shift+H on Chop.
-A text input SHALL keep typing priority and SHALL NOT switch to modifier help.
+Held-modifier help SHALL show only working Ctrl/Alt chords or Shift commands and full-velocity pads, naming J/L roles where applicable.
+Without Shift commands, Shift SHALL show only the pad hint.
+Release SHALL restore usual help.
+With modifier events, usual help SHALL show only plain keys.
+Without them, Ctrl/Alt combinations and Chop Shift+H SHALL remain.
+Text input SHALL keep typing priority without modifier help.
 
 #### Scenario: Hold Ctrl
 - **WHEN** Pads is open with default bindings and the owner holds Ctrl
@@ -240,14 +239,11 @@ is neither the marker nor the row.
 
 ### Requirement: Help follows the cleaned keymap
 
-The system SHALL derive help and recording hints from effective keys, including owner
-overrides. With default bindings, Pads help SHALL show J/L values, U/O banks and Ctrl+C
-copy; Chop help SHALL show H hits, Shift+H fewer hits, Ctrl+G normalize and Tab assign
-order while assigning. Recording help SHALL use Alt+R for microphone hold and Ctrl+T
-for output; without releases it SHALL say microphone toggle instead of hold. F1 SHALL
-show all controls when bottom groups do not fit. Help SHALL NOT advertise an unbound
-old chord as its former action. A pending copy SHALL show `COPY · hit a pad` and how
-to cancel, distinct from a swap, with no jump of the three-row help band.
+Help and recording hints SHALL use effective keys, including owner overrides.
+Default Pads help SHALL name J/L values, U/O banks and Ctrl+C copy.
+Default Chop help SHALL name H hits, Shift+H fewer hits, Ctrl+G normalize and Tab assign order while assigning.
+F1 SHALL show controls omitted from bottom help.
+Help SHALL NOT advertise unbound old chords as former actions.
 
 #### Scenario: Pads help names values and new bank keys
 - **WHEN** the owner opens F1 on Pads using default bindings
@@ -258,6 +254,12 @@ to cancel, distinct from a swap, with no jump of the three-row help band.
 - **THEN** it names H hits, Shift+H fewer hits and Ctrl+G normalize
 - **AND** while assigning it names Tab for order, without advertising the ignored hit commands
 
+### Requirement: Recording help follows effective keys
+
+Default recording help SHALL name Alt+R microphone hold and Ctrl+T output.
+Without key releases, it SHALL name microphone toggle instead of hold.
+Owner recording keys SHALL override defaults in help.
+
 #### Scenario: Microphone help follows release support
 - **WHEN** the owner views microphone help or records with the default key
 - **THEN** the key is Alt+R, with hold/release instructions when supported and toggle instructions otherwise
@@ -266,6 +268,10 @@ to cancel, distinct from a swap, with no jump of the three-row help band.
 - **WHEN** the owner explicitly maps Ctrl+R to microphone recording
 - **THEN** help names that effective key and does not claim it only shows a move notice
 
+### Requirement: Copy help stays distinct from swap
+
+A pending copy SHALL show `COPY · hit a pad` and cancellation instructions, distinct from swap, without moving the three-row help band.
+
 #### Scenario: Copy in hand is visible without a mode redesign
 - **WHEN** a copy is taken in hand on Pads in a small or large terminal
 - **THEN** `COPY · hit a pad` and cancel instructions are visible, no swap is implied
@@ -273,16 +279,9 @@ to cancel, distinct from a swap, with no jump of the three-row help band.
 
 ### Requirement: Screen help keeps its current controls and learning groups
 
-The system SHALL keep the existing bottom help and full help for Pads, Settings, Files, Chop and FX.
-Each screen SHALL retain its current action groups, effective keys, toggle states and modifier help.
-The registry SHALL NOT change group order, the three-row help band or the current width rules.
-
-Screen learn SHALL remain available on Pads, Files, Chop and FX, with their current screen groups.
-Pads edit SHALL retain PADS · EDIT. Chop edit SHALL retain CHOP · EDIT and its single bounds page.
-FX SHALL retain its FX group without another edit group.
-Settings SHALL retain its existing tab-specific help and MIDI learning list. F10 SHALL NOT open screen learn on Settings.
-The MIDI list SHALL keep its existing group names and order.
-Opening Settings from Pads, Files, Chop or FX SHALL keep the corresponding screen group open in that list.
+Pads, Settings, Files, Chop and FX SHALL keep their bottom/full help, action groups, effective keys, toggle states and modifier help.
+The registry SHALL preserve group order, the three-row band and width rules.
+Settings SHALL keep tab-specific help.
 
 #### Scenario: Each registered screen keeps its effective help
 - **WHEN** the owner opens each current screen with keys or equivalent MIDI actions and then opens full help
@@ -290,11 +289,24 @@ Opening Settings from Pads, Files, Chop or FX SHALL keep the corresponding scree
 - **AND** owner overrides, the three-row band, group order and narrow-terminal behavior remain unchanged
 - **AND** Settings help still follows its current tab and FX still names its block and parameter controls
 
+### Requirement: Screen learning group compatibility
+
+Screen learn SHALL keep the current Pads, Files, Chop and FX groups.
+Pads edit SHALL retain PADS · EDIT.
+Chop edit SHALL retain CHOP · EDIT with one bounds page.
+FX SHALL keep its FX group without another edit group.
+F10 SHALL NOT open screen learn on Settings.
+
 #### Scenario: Screen learning keeps its existing entry points
 - **WHEN** the owner opens screen learn through keyboard or raw MIDI actions on Pads, Files, Chop and FX in separate runs
 - **THEN** each screen uses its existing screen group, Pads edit uses PADS · EDIT and Chop edit uses CHOP · EDIT
 - **AND** FX has no separate edit group, Chop retains one bounds page and cancellation saves no pending binding
 - **AND** the same learn action on Settings does not open screen learn or add a new learning path
+
+### Requirement: MIDI list screen group compatibility
+
+Settings SHALL keep its existing MIDI learning list, group names and order.
+Opening Settings from Pads, Files, Chop or FX SHALL keep the corresponding screen group open.
 
 #### Scenario: MIDI list keeps screen groups and their order
 - **WHEN** the owner opens Settings from Pads, Files, Chop or FX through keyboard or raw MIDI actions in separate runs

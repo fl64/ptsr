@@ -18,25 +18,23 @@ The system SHALL accept MIDI from all connected devices at once and support conn
 
 ### Requirement: Controller pads without delay
 
-In normal performance, the system SHALL send a controller pad hit straight to the audio engine, not through the screen refresh.
-This direct route SHALL apply when no earlier controller command or UI-routed pad hit waits for the UI.
-The system SHALL use the original hit velocity 1–127.
-The existing UI-only routes for Chop, objects in hand and questions SHALL remain. The silent screen-learn route SHALL remain.
-The UI SHALL NOT sound an accepted direct hit again.
-It SHALL NOT retry a direct hit rejected by the audio queue as a new UI hit.
-
-While an earlier controller command or UI-routed hit waits for the UI, later controller pad hits SHALL wait for that work.
-They SHALL NOT sound with the old state.
-This exception SHALL end after the UI consumes the earlier work and publishes the resulting input state.
-Without such pending work, ordinary performance SHALL NOT depend on a screen refresh.
-A pending command SHALL NOT delay the existing direct release of a pad already accepted by the audio queue.
-It SHALL NOT stop sound processing.
+Without pending earlier controller commands or UI-routed hits, normal controller pad hits SHALL reach audio directly, independent of screen refresh.
+They SHALL keep velocity 1–127.
+Chop, held objects and questions SHALL keep their UI routes.
+Screen learn SHALL stay silent.
+The UI SHALL NOT repeat an accepted direct hit or retry an audio-queue-rejected direct hit as a new UI hit.
 
 #### Scenario: Hit from a controller
 - **WHEN** the owner hits a controller pad in normal performance while the screen is busy redrawing
 - **AND** no earlier controller command or UI-routed hit is pending
 - **THEN** the pad sounds in the nearest audio block, and the pads screen flashes and selects it
 - **AND** later UI handling adds no second hit
+
+### Requirement: Pending MIDI work delays later hits only
+
+Later controller pad hits SHALL wait for earlier controller commands or UI-routed hits, without sounding under old state.
+Direct performance SHALL resume after UI consumption and publication of the resulting input state.
+Pending commands SHALL NOT delay existing direct releases of audio-accepted pads or stop sound processing.
 
 #### Scenario: Direct MIDI resumes after pending input
 - **WHEN** the UI consumes all earlier controller commands and UI-routed pad hits
@@ -72,29 +70,31 @@ config alone gives the device its actions, and the profile only names its contro
   and other profile roles are added only if the device has not already been initialized
 
 ### Requirement: Soft takeover for absolute controls
-The system SHALL drive a parameter from an absolute knob or fader the way the knob
-response setting says, one setting for every absolute control of every device, kept in
-the user config; the device profiles do not choose it. The setting has three values:
-
-- `jump` (the default): the parameter goes to the control position at the first move;
-- `pickup`: the parameter does not change until the control position crosses its current
-  value, and the screen shows which way to move the control;
-- `scale`: the parameter moves from the first move, in the direction of the move, by the
-  share of its remaining room that the control covers of its own remaining travel, so the
-  two meet at the end stop and the control follows the value from then on.
-
-Every change glides, no click. The response starts over for a control when it drives a new
-target (another pad, another page).
+One user-config setting SHALL control all devices' absolute knobs and faders, not device profiles: `jump`, `pickup` or `scale`.
+Default `jump` SHALL set the parameter to the control position on its first move.
+Every change SHALL glide without a click.
+A new target (pad or page) SHALL restart that control's response.
 
 #### Scenario: Pad change
 - **WHEN** the response is `jump`, the owner selects a pad with volume −12 dB, the volume
   knob stands at 0 dB and the owner turns it one step
 - **THEN** the volume is at the knob position at once, no direction arrow is shown
 
+### Requirement: Pickup response
+
+With `pickup`, the parameter SHALL stay unchanged until the control crosses its current value.
+The screen SHALL show which direction to move the control.
+
 #### Scenario: Pickup in the settings
 - **WHEN** the response is `pickup`, the pad volume is −12 dB and the knob stands at 0 dB
 - **THEN** turning the knob does not change the volume until it passes −12 dB; the screen
   shows a direction arrow
+
+### Requirement: Scale response
+
+With `scale`, the parameter SHALL move from the first move in that direction.
+It SHALL cover the same share of its remaining range as the control covers of its remaining travel.
+Both SHALL meet at the end stop, after which the control SHALL follow the value.
 
 #### Scenario: Scale meets at the stop
 - **WHEN** the response is `scale`, a parameter is at 20 % and the knob stands at 60 %, and
@@ -131,21 +131,26 @@ near zero get most of the travel.
 - **THEN** it changes the volume of the selected pad, as the screen section of the profile says
 
 ### Requirement: Edit layer on device buttons
-The system SHALL let device buttons do what the edit keys do, so the whole edit loop runs
-from a controller without the keyboard: a screen button opens the edit (`pad.edit`,
-`chop.edit`, as `Enter`), and the `[edit]` layer of the profile, active while an edit mode
-is open, binds closing it (`ui.back`), the page turn (`edit.page_prev`, `edit.page_next`,
-as `Shift+Tab` `Tab`; the page knob `edit.page`) and the parameter pick (`edit.param_prev`, `edit.param_next`, as
-`↑` `↓`). The layer is the same on every screen and stands over the screen roles and the
-learned controls while the mode is open. The X-Session Pro profile uses left Cue
-(b7, note 58) to open and close pad edit, right Cue (b8, note 59) for slice edit,
-left backward / forward (b4 / b1, notes 46 / 43) for pages, and k1–k3 for page parameters.
-It has no default page knob; the owner can bind one in F12. Play keeps its preview role.
+Device buttons SHALL support the full edit loop without keys.
+Screen buttons SHALL open edit (`pad.edit`, `chop.edit`, as `Enter`).
+While edit is open, `[edit]` SHALL override screen and learned roles consistently across screens:
+- `ui.back`: close.
+- `edit.page_prev`, `edit.page_next`: pages, as `Shift+Tab`, `Tab`.
+- `edit.page`: page knob.
+- `edit.param_prev`, `edit.param_next`: parameters, as `↑`, `↓`.
 
 #### Scenario: Edit a pad from the controller only
 - **WHEN** a pad is selected and the owner presses left Cue, then left forward, turns knob 1 and presses left Cue
 - **THEN** the edit mode opens, the ENV page is shown, the attack follows the knob, and
   the edit mode closes
+
+### Requirement: X-Session edit controls
+
+The X-Session Pro SHALL use left Cue (b7, note 58) to open/close pad edit and right Cue (b8, note 59) for slice edit.
+Left backward/forward (b4/b1, notes 46/43) SHALL change pages, with k1–k3 for page parameters.
+No page knob SHALL be assigned by default.
+F12 SHALL allow one.
+Play SHALL keep its preview role.
 
 #### Scenario: Pages from the controller
 - **WHEN** the pad edit is open on TONE and the owner presses left forward twice and then left backward
@@ -157,17 +162,18 @@ It has no default page knob; the owner can bind one in F12. Play keeps its previ
 - **THEN** the previous slice is selected, as before the edit
 
 ### Requirement: Chopping from the X-Session Pro
-The system SHALL use physical controls for safe default chopping: either Play starts or
-stops preview, left Cue cuts, left backward / forward selects slices, and right Cue opens
-slice edit. Knobs 1 and 2 set slice bounds, knob 3 the cursor, knobs 4 and 5 the region,
-and right Mid / Low the threshold / zoom. Default buttons SHALL NOT delete cuts, apply
-layouts or confirm replacement. These actions SHALL remain available through keyboard
-commands and explicit MIDI learn. Existing learned commit controls SHALL keep their role:
-a commit starts the sequential plan, the next commit applies it and confirms overwrite.
+Default Chop controls SHALL use either Play for preview, left Cue for cuts, left backward/forward for slices and right Cue for slice edit.
+Knobs 1/2 SHALL set slice bounds, 3 cursor, 4/5 region, and right Mid/Low threshold/zoom.
+Default buttons SHALL NOT delete cuts, apply layouts or confirm replacement.
+Those actions SHALL remain available through keys and explicit MIDI learn.
 
 #### Scenario: X-Session Pro only
 - **WHEN** the owner has their hands only on the X-Session Pro
 - **THEN** they can start the sample, cut, select slices, and move the cursor and region; layout uses the keyboard or an explicitly learned control
+
+### Requirement: Learned Chop commit retains its role
+
+Existing learned commit controls SHALL start the sequential plan, then apply it and confirm overwrite on the next commit.
 
 #### Scenario: Lay out from the controller
 - **WHEN** a sample is cut into 8 slices, pad Q of bank 1 is selected and the owner presses a control explicitly learned as commit twice
@@ -211,38 +217,46 @@ at start, the config is saved without them, and the status says how many went.
 
 ### Requirement: X-Session physical default map
 
-The system SHALL ship the factory channel-1 map documented in the active change design.
-It SHALL keep numeric identifiers and document physical labels. Left Headphone SHALL
-open Files and right Headphone FX. Left backward / forward SHALL select pads on Pads,
-files on Files, slices on Chop, pages in edit and blocks on FX. Right backward / forward
-SHALL select banks. Left Cue SHALL open pad edit, hold a file on Files and cut on Chop.
-Right Cue SHALL go back, except that it opens Chop from Files and slice edit from Chop.
-Either Cue SHALL close an open edit. Either Play SHALL toggle preview on Files and Chop,
-including inside edit, and SHALL be unassigned elsewhere. Left Volume CC11 and Pitch CC12
-SHALL control selected pad volume and pitch; right Volume CC14 SHALL control master
-volume on all screens. Right Pitch CC15 and crossfader CC17 / CC20 SHALL stay unassigned.
-Cue SHALL use safe actions `pad.edit_only`, `chop.edit_only` and `browser.take_only`.
-They SHALL NOT apply a pending plan, place a held file or answer a confirmation.
-Existing keyboard and learned actions SHALL retain their behavior. FX SHALL inherit page
-controls and retain prior user page assignments, even without an initialization marker.
-Global control changes and clearing SHALL affect FX without stale screen copies.
-A released command button SHALL NOT run its action again. Profile initialization SHALL
-keep both default controls for a shared action, without replacing a pre-existing user
-assignment. Explicit MIDI learn SHALL keep its existing replacement behavior.
-Existing initialized maps
-SHALL stay unchanged until a confirmed Reset to profile; cancel SHALL keep them.
+The factory channel-1 map SHALL keep numeric IDs and documented physical labels.
+Left/right Headphone SHALL open Files/FX.
+Left backward/forward SHALL select Pads pads, Files files, Chop slices, edit pages or FX blocks.
+Right backward/forward SHALL select banks.
+Either Play SHALL toggle preview on Files/Chop, including edit, and remain unassigned elsewhere.
+Command releases SHALL NOT act.
 
 #### Scenario: X-Session physical navigation and preview
 - **WHEN** raw factory button messages arrive on Pads, Files, Chop, edit and FX
 - **THEN** navigation, Cue, Headphone and Play follow the physical default map, and releases do nothing
 
+### Requirement: X-Session physical faders
+
+Left Volume CC11 and Pitch CC12 SHALL control selected pad volume and pitch.
+Right Volume CC14 SHALL control master volume on all screens.
+Right Pitch CC15 and crossfader CC17/CC20 SHALL stay unassigned.
+
 #### Scenario: X-Session faders use physical roles
 - **WHEN** raw CC11, CC12 and CC14 messages arrive on each screen
 - **THEN** pad volume, pad pitch and master volume follow the controls; CC15, CC17 and CC20 do nothing
 
+### Requirement: X-Session safe Cue actions
+
+Left Cue SHALL open pad edit, hold a file on Files or cut on Chop.
+Right Cue SHALL go back, except Files→Chop and Chop→slice edit.
+Either Cue SHALL close open edit.
+Cue SHALL use `pad.edit_only`, `chop.edit_only` and `browser.take_only`, without applying plans, placing held files or answering confirmations.
+Existing keyboard and learned actions SHALL retain their behavior.
+
 #### Scenario: X-Session safe default buttons
 - **WHEN** every factory button is pressed in every screen and edit layer
 - **THEN** no default resolves to cut deletion, layout application or overwrite confirmation
+
+### Requirement: X-Session profile initialization
+
+FX SHALL inherit page controls, keep prior page assignments without an initialization marker, and reflect global changes/clearing without stale copies.
+Profile initialization SHALL keep both defaults for a shared action without replacing owner assignments.
+Explicit MIDI learn SHALL keep its replacement behavior.
+Initialized maps SHALL change only on confirmed Reset to profile.
+Cancellation SHALL keep them.
 
 #### Scenario: X-Session replacement preserves existing assignments
 - **WHEN** an initialized old map loads with the replacement profile, then reset is cancelled and later confirmed
@@ -250,26 +264,9 @@ SHALL stay unchanged until a confirmed Reset to profile; cancel SHALL keep them.
 
 ### Requirement: Controller pad parity on Chop
 
-On the Chop screen, the system SHALL handle a controller pad hit as the same keyboard
-pad hit in the current bank, using the existing listen or assign mode. Before slices
-are linked to pads, both inputs SHALL use the same slice page and selection. With
-linked slices, both SHALL play the actual pad and select its linked slice. The system
-SHALL preserve MIDI hit velocity when it plays that pad. During assignment, both inputs
-SHALL put the selected slice into the plan at the hit target and preview it, without
-applying the plan or bypassing an overwrite question. A question or screen learn SHALL
-keep pads silent and prevent plan changes as for the keyboard. Normal performance
-MIDI pad hits outside the UI modes SHALL keep their direct audio route; the UI SHALL
-NOT sound a hit a second time.
-
-A linked gate pad started by the Chop UI route SHALL receive one audio release for its
-original absolute pad when its original MIDI note or learned button is released, even
-after a bank/screen change, question or learn opens. Disconnect SHALL also release that
-pad. Release tracking SHALL keep device, channel, control and project epoch separate.
-A bare preview, assignment target or blocked hit SHALL NOT create a pad audio release.
-Original direct hits SHALL keep their existing release route without a duplicate UI
-release. Stale project events SHALL NOT hit or release pads in the new project.
-A queue-rejected UI hit SHALL NOT create a pad hold or remove an older accepted hold.
-The system SHALL retain an accepted UI hold's release until the audio queue accepts it.
+A linked gate pad started through the Chop UI SHALL receive one release for its original absolute pad on original-note/button release or disconnect.
+This SHALL hold after bank/screen changes, questions or learn.
+Tracking SHALL separate device, channel, control and project epoch.
 
 #### Scenario: Chop linked gate release reaches audio
 - **WHEN** a linked gate pad is hit on Chop from a raw MIDI note or learned pad button
@@ -282,22 +279,44 @@ The system SHALL retain an accepted UI hold's release until the audio queue acce
 - **THEN** only the original absolute pad receives its release and its held state clears
 - **AND** a question or screen learn does not block that release
 
+### Requirement: Chop silent MIDI hits have no release
+
+Bare previews, assignment targets and blocked hits SHALL NOT create pad audio releases.
+Normal performance MIDI hits outside UI modes SHALL keep the direct audio route without a second UI sound.
+
 #### Scenario: Chop silent hits have no pad release
 - **WHEN** a controller pad previews an unlinked slice, sets an assignment target or
   is blocked by a question or screen learn, then its control is released
 - **THEN** no pad audio release is sent for that silent or preview-only hit
 - **AND** an already held pad from another control keeps its original release route
 
+### Requirement: Chop direct releases and project identity
+
+Original direct hits SHALL keep their release route without duplicate UI releases.
+Stale project events SHALL NOT hit or release pads in a new project.
+
 #### Scenario: Chop release keeps direct route and epoch
 - **WHEN** direct and UI-routed MIDI hits are released after route or project changes
 - **THEN** accepted direct hits still receive one direct release, UI-started linked pads
   receive no duplicate release, and old-project events do not hit or release new-project pads
+
+### Requirement: Chop UI audio queue preserves holds
+
+A queue-rejected UI hit SHALL NOT create a pad hold or remove an older accepted hold.
+An accepted UI hold's release SHALL remain pending until the audio queue accepts it.
 
 #### Scenario: Chop rejected hits preserve accepted gate release
 - **WHEN** a UI-started gate pad is held, the UI audio queue fills, and retriggers from
   the same or another MIDI control are rejected before those controls release
 - **THEN** the rejected hits acquire no new hold, the accepted hold still has its original
   release, and that one release waits for queue space instead of being lost
+
+### Requirement: Chop MIDI and keyboard listen parity
+
+On Chop, controller and keyboard pad hits SHALL use the same current bank and existing listen or assign mode.
+Before links exist, both SHALL use the same slice page and selection.
+With links, both SHALL play the actual pad and select its linked slice.
+MIDI SHALL retain original hit velocity when playing that pad.
 
 #### Scenario: Chop parity before pad assignment
 - **WHEN** a chopped sample has no linked pads and the owner hits the same keyboard and
@@ -312,6 +331,11 @@ The system SHALL retain an accepted UI hold's release until the audio queue acce
 #### Scenario: Chop MIDI linked pad keeps velocity
 - **WHEN** the owner hits a linked pad on Chop from MIDI with low and high velocities
 - **THEN** each hit plays once with its original velocity and the low hit is quieter
+
+### Requirement: Chop MIDI and keyboard assignment parity
+
+In assignment, controller and keyboard pad hits SHALL plan the selected slice at the hit target and preview it without applying or bypassing overwrite questions.
+Questions and screen learn SHALL keep pads silent and prevent plan changes as for keys.
 
 #### Scenario: Chop parity in by-hand assignment
 - **WHEN** a by-hand plan is open and the owner hits the same targets in two banks from
@@ -329,13 +353,11 @@ The system SHALL retain an accepted UI hold's release until the audio queue acce
 
 ### Requirement: Held pad release through screen learn
 
-The system SHALL pass the release of a keyboard pad held before F10 through screen
-learn, as it does for an original MIDI note or learned pad button. It SHALL release
-only the original absolute pad, including after a bank or screen change before learn
-opens. New learn-mode hits and their releases SHALL NOT sound or release another
-control's held pad. An original release SHALL NOT change the learn pick or pending
-control, confirm a binding or leave learn. Existing binding and confirmation rules
-SHALL stay unchanged.
+A keyboard pad held before F10 SHALL release through screen learn as original MIDI notes and learned pad buttons do.
+Only its original absolute pad SHALL release, even after bank/screen changes before learn.
+New learn hits/releases SHALL NOT sound or release another control's hold.
+Original releases SHALL NOT change learn selection or pending control, bind or leave learn.
+Existing binding and confirmation SHALL stay unchanged.
 
 #### Scenario: Held pad release passes screen learn
 - **WHEN** a gate pad is held from the keyboard, a raw MIDI note or a learned pad button,
@@ -351,13 +373,11 @@ SHALL stay unchanged.
 
 ### Requirement: Silent MIDI copy targeting
 
-On Pads, the system SHALL route controller pad hits to the UI while a copy or its
-replacement question is open. It SHALL select the same single target in the current
-bank as a keyboard hit, without a direct audio hit or an extra UI sound. Empty targets,
-occupied targets, cancellation and confirmation SHALL follow the existing Copy a pad
-requirement. A new target hit SHALL NOT confirm replacement. A release of a pad held
-before copying SHALL still release the original pad after a bank or screen change.
-Normal performance hits outside these modes SHALL keep their direct audio route.
+On Pads, controller hits during copy or its replacement question SHALL use the UI.
+They SHALL select the keyboard's same single current-bank target, silently on both routes.
+Empty/occupied targets, cancellation and confirmation SHALL follow "Copy a pad".
+New target hits SHALL NOT confirm replacement.
+Normal performance outside these modes SHALL keep its direct route.
 
 #### Scenario: Copy parity from raw MIDI
 - **WHEN** a copy is in hand and the owner hits an empty target in another bank with
@@ -371,6 +391,10 @@ Normal performance hits outside these modes SHALL keep their direct audio route.
 - **THEN** the same target is selected and named in the question without sound or replacement
 - **AND** further pad hits stay silent and do not confirm; Esc keeps the copy in hand,
   and Enter after a new target hit replaces only the target named in that question
+
+### Requirement: Copy targeting keeps held releases
+
+A pad held before copying SHALL still release its original absolute pad after a bank or screen change.
 
 #### Scenario: Copy route preserves held MIDI releases
 - **WHEN** a MIDI gate pad is held before a copy is taken, the bank and screen change
@@ -400,13 +424,11 @@ same-source swap and loading refusal SHALL stay unchanged.
 
 ### Requirement: Silent MIDI pad hits under a question
 
-While a question is open, the system SHALL route new controller pad hits to the UI
-instead of the direct audio queue. As for keyboard hits, they SHALL NOT sound, select
-another pad, change marks or answer the question. Releases of pads held before the
-question SHALL still reach their original pad after a bank or screen change. Closing
-the question SHALL restore the normal direct MIDI pad route when no other UI-only
-pad mode remains. A file or copy still in hand SHALL keep its silent targeting route.
-This rule SHALL NOT change which commands confirm a question or silence normal marking.
+During questions, new controller pad hits SHALL use the UI, not direct audio.
+As for keys, they SHALL NOT sound, select pads, change marks or answer.
+Closing SHALL restore direct MIDI when no UI-only mode remains.
+A held file/copy SHALL keep silent targeting.
+Confirmation commands and normal marking sound SHALL stay unchanged.
 
 #### Scenario: Question pad silence from raw MIDI
 - **WHEN** the owner marks two loaded pads, opens their clear question and hits a pad
@@ -414,6 +436,10 @@ This rule SHALL NOT change which commands confirm a question or silence normal m
 - **THEN** neither audio route gets a new hit, the question and pad state stay unchanged,
   and Esc keeps the sounds and marks
 - **AND** a new hit after Esc uses the normal performance route once
+
+### Requirement: Questions keep held releases
+
+Pads held before a question SHALL still release their original pad after a bank or screen change.
 
 #### Scenario: Question route preserves held releases
 - **WHEN** a gate pad is held, the bank and screen change, a replacement question
@@ -423,13 +449,10 @@ This rule SHALL NOT change which commands confirm a question or silence normal m
 
 ### Requirement: Late direct MIDI notifications do not start Chop actions
 
-The system SHALL retain whether a MIDI pad hit used the UI route or its direct audio queue accepted or rejected it.
-If Chop opens before App receives a direct hit notification, that notification SHALL remain a report of the original direct hit.
-It SHALL NOT start another pad sound, preview a bare slice, select a Chop slice or change an assignment plan.
-The system SHALL NOT retry a rejected direct hit after queue space returns.
-It SHALL keep the original absolute pad and direct release route. The existing Chop-entry hush SHALL remain.
-Actual UI-routed Chop hits SHALL retain their current listen, preview, assignment and release behavior.
-Other text, picker, question, learn and hand priorities SHALL remain unchanged.
+The system SHALL retain each MIDI hit's UI route or direct-queue acceptance/rejection.
+After Chop opens, a late direct notification SHALL remain a report of the original hit.
+It SHALL NOT add pad sound, bare preview, slice selection or plan changes.
+The original absolute pad, direct release route and Chop-entry hush SHALL remain.
 
 #### Scenario: Late accepted direct MIDI notification does not restart Chop
 - **WHEN** a raw note or learned pad button starts a direct pad on Pads
@@ -440,6 +463,12 @@ Other text, picker, question, learn and hand priorities SHALL remain unchanged.
 - **AND** its original control retains the direct release of its original absolute pad, including after a bank change
 - **AND** no UI audio hold or duplicate release is added
 
+### Requirement: Late rejected MIDI hits stay rejected
+
+Rejected direct hits SHALL NOT retry after queue space returns.
+Actual UI-routed Chop hits SHALL keep listen, preview, assignment and release behavior.
+Text, picker, question, learn and hand priorities SHALL stay unchanged.
+
 #### Scenario: Late rejected direct MIDI notification stays silent on Chop
 - **WHEN** the actual MIDI audio queue rejects a raw-note or learned-button hit on Pads
 - **AND** space returns and Chop opens before the UI consumes the hit notification
@@ -449,14 +478,10 @@ Other text, picker, question, learn and hand priorities SHALL remain unchanged.
 
 ### Requirement: Keyboard and MIDI keep separate Chop release targets
 
-On Chop, the system SHALL keep a held keyboard pad's original absolute release target separate from MIDI pad holds.
-A later MIDI hit at the same pad position in another bank SHALL NOT replace that keyboard target.
-This rule SHALL apply whether the audio queue accepts or rejects the MIDI hit.
-A later keyboard hit SHALL NOT replace an accepted MIDI hold's release target.
-Each original release SHALL reach only its own original absolute pad.
-This rule SHALL apply after a bank or screen change, with a question open, or with F10 open.
-A rejected MIDI hit SHALL acquire no audio hold.
-The other Chop behavior, velocity, selection, marks and existing direct MIDI release rules SHALL remain unchanged.
+On Chop, keyboard and MIDI holds SHALL keep separate original absolute release targets.
+A later MIDI hit at the same position in another bank SHALL NOT replace the keyboard target, accepted or rejected.
+A later keyboard hit SHALL NOT replace an accepted MIDI target.
+Each original release SHALL reach only its own original pad, including after bank/screen changes and during questions or F10.
 
 #### Scenario: Chop MIDI hit keeps held keyboard release target
 - **WHEN** the keyboard holds a linked gate pad on Chop and the bank changes
@@ -464,6 +489,11 @@ The other Chop behavior, velocity, selection, marks and existing direct MIDI rel
 - **THEN** both pads sound once with their original velocities
 - **AND** releasing either original control stops only its own absolute pad while the other keeps sounding
 - **AND** both release orders work on Chop, after a screen change, with a question open and with F10 open
+
+### Requirement: Rejected MIDI hits acquire no Chop hold
+
+Rejected MIDI hits SHALL acquire no audio hold.
+Other Chop behavior, velocity, selection, marks and existing direct MIDI releases SHALL stay unchanged.
 
 #### Scenario: Chop rejected MIDI hit keeps held keyboard release target
 - **WHEN** the keyboard holds a gate pad on Chop and the bank changes
@@ -482,20 +512,10 @@ The other Chop behavior, velocity, selection, marks and existing direct MIDI rel
 
 ### Requirement: Controller commands precede following pad hits
 
-The system SHALL consume controller commands and following UI-routed pad hits in the order accepted by its MIDI dispatcher.
-A pad hit that waits for earlier input SHALL use the resulting bank and pad behavior when the UI reaches that hit.
-It SHALL keep the pad position resolved from its original control and its original velocity.
-The system SHALL NOT interpret it a second time through a changed profile.
-This ordering SHALL apply across connected controllers, not only within one device.
-
-A command that takes a file SHALL make a following pad hit a silent file target.
-This rule SHALL apply even when both arrive before the next UI update.
-Empty targets, replacement questions, cancellation and confirmation SHALL follow the existing file assignment rules.
-A pending hit SHALL NOT confirm replacement.
-If a command has no effect or is blocked, the following hit SHALL use the state that remains.
-That hit SHALL NOT be dropped or act twice.
-The keyboard SHALL keep its current command-then-pad behavior.
-Profile changes, text input, pickers and F12 learn SHALL keep their existing input boundaries.
+The UI SHALL consume controller commands and following UI-routed hits in MIDI-dispatcher acceptance order.
+Each waiting hit SHALL use the resulting bank and pad behavior, keeping its original resolved pad position and velocity.
+It SHALL NOT be reinterpreted through a changed profile.
+Keyboard command-then-pad behavior SHALL stay unchanged.
 
 #### Scenario: Take a file and hit a target in one update
 - **WHEN** Files has a selected file and the take-file command is followed by a pad hit without an intervening screen refresh
@@ -505,12 +525,23 @@ Profile changes, text input, pickers and F12 learn SHALL keep their existing inp
 - **AND** an empty target receives the file and an occupied target asks before replacement
 - **AND** Esc keeps the occupied pad and file in hand
 
+### Requirement: Blocked controller commands preserve following hits
+
+After a blocked or ineffective command, the next hit SHALL use the remaining state without being dropped or acting twice.
+Profile changes, text input, pickers and F12 learn SHALL keep their existing input boundaries.
+
 #### Scenario: Pending pad uses preceding commands in order
 - **WHEN** several controller commands are followed by a pad hit before a UI update
 - **AND** those commands include a bank change, a cancelled hand state or a command that has no effect
 - **THEN** the hit uses the bank and pad behavior left by those commands, as the same keyboard action sequence does
 - **AND** it keeps its original velocity without duplicate sound
 - **AND** a command that has no effect does not leave later performance hits waiting
+
+### Requirement: Pending file targets stay silent
+
+A take-file command SHALL make a following hit a silent file target, even before the next UI update.
+Empty targets, replacement questions, cancellation and confirmation SHALL follow existing file assignment rules.
+Pending hits SHALL NOT confirm replacement.
 
 #### Scenario: A target question blocks a following pending hit
 - **WHEN** taking a file is followed by hits on two occupied pads without an intervening screen refresh
@@ -520,6 +551,10 @@ Profile changes, text input, pickers and F12 learn SHALL keep their existing inp
 - **AND** the second hit stays silent, does not select another target and does not confirm or replace anything
 - **AND** Esc keeps the old sounds and the file in hand
 
+### Requirement: Pending MIDI order spans devices
+
+MIDI-dispatcher acceptance order SHALL apply across connected controllers, not only within one device.
+
 #### Scenario: Pending command order spans controllers
 - **WHEN** one controller's take-file command is accepted before another controller's pad hit and neither has reached the UI yet
 - **THEN** that hit is a silent target for the file, not a performance hit
@@ -527,23 +562,9 @@ Profile changes, text input, pickers and F12 learn SHALL keep their existing inp
 
 ### Requirement: Deferred MIDI hits keep their release identity
 
-For a hit that waits for the UI and then starts an actual pad sound, the system SHALL retain its original release identity.
-That identity SHALL include the device, channel, control and project.
-Its original release or device disconnect SHALL release only the absolute pad actually started.
-This rule SHALL apply even if the bank, screen, question or F10 state later changes.
-A release received before the UI handles the hit SHALL still follow that hit.
-It SHALL NOT leave a gate sounding. Each accepted hold SHALL keep its own release identity.
-An accepted deferred hit is a new UI hold. An older direct release of the same absolute pad SHALL NOT remove its release.
-This rule SHALL apply even when audio processes that older release before UI delivery.
-It does not repeat the older direct hold's release.
-Existing direct-first merging for non-deferred Chop hits SHALL stay unchanged. The hit SHALL keep its original velocity.
-
-A silent target, blocked hit, bare preview or audio-queue-rejected hit SHALL NOT acquire a pad audio hold.
-A rejected retrigger SHALL NOT remove an older accepted hold.
-As on Chop, an accepted UI hold's release SHALL wait for audio queue space.
-Old-project hits and releases SHALL NOT affect the new project.
-Discarding old pending events SHALL NOT leave later valid performance waiting forever.
-These rules SHALL preserve the existing Chop and direct MIDI release behavior.
+A deferred hit that starts a pad SHALL keep its original device, channel, control and project release identity and velocity.
+Its original release or disconnect SHALL release only the absolute pad started, despite later bank, screen, question or F10 changes.
+A release received before UI hit handling SHALL still follow that hit without leaving a gate sounding.
 
 #### Scenario: Deferred gate receives an early release or disconnect
 - **WHEN** a controller command is followed by a gate hit and its release before the UI consumes the sequence
@@ -554,11 +575,24 @@ These rules SHALL preserve the existing Chop and direct MIDI release behavior.
 - **AND** if an older direct hold of that same pad releases before UI delivery, the later deferred hit keeps its own UI release
 - **AND** no old hold is released twice
 
+### Requirement: Deferred holds stay independent of older direct holds
+
+Each accepted deferred hit SHALL create its own UI hold.
+An older direct release of the same pad SHALL NOT remove its release, even if audio processes that release before UI delivery.
+It SHALL NOT repeat the old hold's release.
+Direct-first merging for non-deferred Chop hits and existing Chop/direct MIDI releases SHALL stay unchanged.
+
 #### Scenario: Deferred release follows its actual pad across modes
 - **WHEN** a deferred MIDI hit starts a gate after a preceding bank change
 - **AND** the owner then changes bank or screen, opens a question or F10, and releases its control
 - **THEN** only the absolute pad actually started receives the release, as for the equivalent held keyboard pad
 - **AND** other devices, channels and controls keep their own holds and release routes
+
+### Requirement: Deferred silent hits and queue pressure
+
+Silent targets, blocked hits, bare previews and audio-queue-rejected hits SHALL NOT acquire pad audio holds.
+Rejected retriggers SHALL NOT remove older accepted holds.
+Accepted UI releases SHALL wait for audio queue space, as on Chop.
 
 #### Scenario: Deferred silent and rejected hits preserve accepted holds
 - **WHEN** an older accepted gate is held
@@ -566,6 +600,11 @@ These rules SHALL preserve the existing Chop and direct MIDI release behavior.
 - **THEN** those hits acquire no new pad audio hold and do not release the older hold
 - **AND** another control cannot acquire or release that older hold
 - **AND** a rejected retrigger keeps its older accepted hold, whose own release waits for queue space instead of being lost
+
+### Requirement: Deferred project identity
+
+Old-project hits and releases SHALL NOT affect a new project.
+Discarding stale pending events SHALL NOT leave later valid performance waiting forever.
 
 #### Scenario: Old deferred input cannot affect a new project
 - **WHEN** the project changes with controller commands, deferred hits and releases still waiting
@@ -576,12 +615,10 @@ These rules SHALL preserve the existing Chop and direct MIDI release behavior.
 
 ### Requirement: Screen bindings keep their existing identity
 
-The system SHALL keep the existing keyboard and MIDI binding identity for Pads, Settings, Files, Chop and FX.
-The section names SHALL remain `pads`, `settings`, `files`, `chop` and `fx`.
-Global bindings and edit bindings SHALL keep their current scope and priority.
-Owner key overrides, explicit `none` entries and learned MIDI assignments SHALL keep their current effects without a reset or format migration.
-Default screen keys SHALL remain F2 for Pads, F12 for Settings, F6 for Files, F3 for Chop and F4 for FX.
-Screen changes SHALL preserve the existing held-pad release rules, input ordering and audio routes.
+Keyboard/MIDI sections SHALL stay `pads`, `settings`, `files`, `chop`, `fx`, with global/edit scope and priority unchanged.
+Owner overrides, explicit `none` and learned MIDI assignments SHALL keep their effects without reset or migration.
+Defaults SHALL stay F2 Pads, F12 Settings, F6 Files, F3 Chop, F4 FX.
+Screen changes SHALL preserve held-pad releases, input order and audio routes.
 
 #### Scenario: Existing screen bindings survive the registry change
 - **WHEN** each current screen receives recorded keyboard events and equivalent raw MIDI messages through existing profiles and learned assignments
@@ -591,12 +628,12 @@ Screen changes SHALL preserve the existing held-pad release rules, input orderin
 
 ### Requirement: FX keeps inherited controls without another edit mode
 
-The system SHALL keep FX block, parameter and value controls available without a separate FX edit mode.
-Existing page controls SHALL keep their FX roles and priority, including earlier owner assignments.
-An explicit FX assignment SHALL keep its current priority over inherited controls.
-An existing empty FX assignment group SHALL remain empty instead of restoring inherited bindings.
-Global assignment changes and clearing SHALL keep their current effects on FX without stale copies.
-This change SHALL NOT add a new edit layer or change the default safe controller buttons.
+FX block, parameter and value controls SHALL need no separate edit mode.
+Page controls and earlier owner assignments SHALL keep FX roles and priority.
+Explicit FX assignments SHALL keep priority over inherited controls.
+Saved empty groups SHALL NOT restore inheritance.
+Global changes/clearing SHALL affect FX without stale copies.
+No new edit layer or changed safe default buttons SHALL be added.
 
 #### Scenario: FX controls keep their priority through the registry
 - **WHEN** FX receives its existing block, parameter and value commands from keys or raw MIDI in separate runs
@@ -606,19 +643,9 @@ This change SHALL NOT add a new edit layer or change the default safe controller
 
 ### Requirement: Invalid MIDI input state cannot select a fallback screen
 
-If shared MIDI input state contains an unknown screen code or another invalid encoding, the system SHALL reject new actions from that state.
-It SHALL NOT substitute Pads, another screen or an earlier valid state.
-New pad hits, command presses and parameter messages SHALL cause no sound, action or value change while that state remains invalid.
-The system SHALL record an error diagnostic outside the audio callback, without repeated logging for every message in one continuous invalid period.
-
-Releases and disconnects for existing holds SHALL still reach their original absolute pads through their original routes.
-Device, channel, control and project identities SHALL remain separate.
-Untracked releases SHALL NOT release a pad selected by a fallback screen or bank.
-Queued release retries SHALL continue under the existing audio queue rules.
-This error SHALL NOT stop audio processing, create new pad holds or falsely acknowledge queued UI work.
-
-After a valid state arrives, the system SHALL process new messages with that state and the existing pending-input ordering rules.
-It SHALL NOT replay rejected messages or wait forever because it rejected them.
+Unknown screen codes or other invalid shared MIDI encodings SHALL reject new pad hits, commands and parameter messages without sound, action or value changes.
+The system SHALL NOT substitute Pads, another screen or earlier valid state.
+It SHALL log one error outside audio processing per continuous invalid period, not per message.
 
 #### Scenario: Unknown MIDI screen rejects new input
 - **WHEN** an invalid shared screen code reaches MIDI dispatch before raw pad, command and parameter messages
@@ -630,11 +657,23 @@ It SHALL NOT replay rejected messages or wait forever because it rejected them.
 - **THEN** those messages have no sound or state effect and create no hold or new pending UI work
 - **AND** the system records the invalid-state diagnostic without substituting a screen or bank
 
+### Requirement: Invalid MIDI state keeps original releases
+
+Existing holds SHALL release/disconnect through original routes to original absolute pads, with device, channel, control and project separate.
+Untracked releases SHALL NOT release fallback-screen/bank pads.
+Queued retries SHALL follow existing audio queue rules.
+Invalid state SHALL NOT stop audio, create holds or falsely acknowledge queued UI work.
+
 #### Scenario: Invalid MIDI state preserves original releases
 - **WHEN** direct and UI-routed gate holds exist before shared state becomes invalid and their original controls release or disconnect
 - **THEN** each accepted hold keeps its original absolute release target and route, including when a full audio queue delays release
 - **AND** unrelated holds keep sounding, untracked releases cause no pad release and old-project releases do not affect a new project
 - **AND** note-off, note-on zero and learned-button release retain their existing meanings
+
+### Requirement: Valid MIDI input resumes without replay
+
+After valid state arrives, new messages SHALL use it and existing pending-input ordering.
+Rejected messages SHALL NOT replay or leave input waiting forever.
 
 #### Scenario: Valid MIDI state resumes without rejected input
 - **WHEN** the UI publishes valid state after dispatch rejected messages during an invalid period and then new raw MIDI input arrives
