@@ -1100,3 +1100,75 @@ This later decision replaces the earlier archive restriction. It does not report
 Keep the archive and status update separate from 86 specifications and code in the combined MR.
 Callback maximum-budget and slow-core issues remain open. Green p99 benchmark gates do not prove
 that every callback meets the 50% target. This change does not investigate that issue.
+
+## 86 — Screen registry and invalid MIDI state
+
+Folder: `changes/86-screen-registry` (`86-screen-registry` branch)
+
+Implementation is complete through `a186fbb`. Owner acceptance and archive remain pending.
+Closure of 85 stays separate in the same branch. Push and PR need a separate request.
+The registry keeps existing keys, help, learned assignments and FX controls for valid input.
+Invalid shared MIDI state rejects new actions without a fallback screen. Original releases still work.
+No audio callback, sound algorithm, profile or saved-data format changed.
+
+### Automated evidence (2026-11-04)
+
+The agent reviewed the full 86 diff from `a1e4829` through `a186fbb`.
+Existing behavior assertions remain. Focus-read assertions now check the `Result` representation.
+Implementation commits are `0cebfed` (registry), `719d90b` (bindings), `44eb4d6` (help and learning) and `a186fbb` (invalid MIDI state).
+
+All nine delta scenarios have tests with matching names in `crates/app/src/input_tests.rs`.
+The separate delta check reported `Delta coverage: 9/9 named tests.`
+The main-spec coverage test passed too. It does not inspect active deltas.
+Raw MIDI uses the production profiles, dispatcher and App. Only state corruption uses test-only injection.
+Tests cover unknown codes, invalid banks, reserved bits, original releases, full queues, project epochs and recovery with earlier UI work pending.
+
+Commands completed successfully:
+
+```sh
+openspec validate --all --strict --no-interactive
+cargo test -p ptsr --test scenarios
+cargo test -p ptsr input_tests::render_85 -- --nocapture
+task check
+task build
+```
+
+Strict validation reported `Totals: 16 passed, 0 failed (16 items)`.
+The main-spec check reported one passed test. The explicit render check reported three passed tests.
+`task check` passed formatting, Clippy, all workspace tests and the benchmark.
+Its input, App and TUI test summaries were:
+
+```text
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 670 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.36s
+test result: ok. 101 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+```
+
+The release build passed. Local logs are `target/86-step-4.1-check.log`,
+`target/86-step-4.1-build.log`, `target/86-step-4.1-renders.log` and `target/86-step-4.1-delta-coverage.log`.
+These ignored artifacts do not replace this record or owner checks.
+
+The recorded benchmark in `target/86-step-4.1-check.log` reported:
+
+```text
+32 voices with pitch, envelope, filter, drive and sends, reverb and delay, block 128 @ 48000 Hz, budget 2.667 ms: mean 7.83 %, p99 10.22 %, max 30.83 %
+  wall: mean 7.83 %, p99 10.22 %, max 30.83 %, samples 20000, >50 % 0
+  thread CPU: mean 7.84 %, p99 10.15 %, max 29.07 %, samples 20000, >50 % 0
+project switch: 200 switches, 22000 callbacks, mean 0.17 %, callback p99 7.04 %, switch peak p99 9.43 %, max 10.53 %
+```
+
+Playback and switch groups had zero wall/CPU blocks above 50% in this run.
+This is one observation, not a maximum-budget guarantee. Earlier callback peaks and slow-core CPU spikes remain unresolved.
+No scheduler or system setting changed. A green p99 gate does not close the timing issue.
+
+The three existing WAV checks passed finite-sample, clipping, silence and timing checks against timestamped waveform references.
+The regenerated files also matched their SHA-256 values from before this verification run:
+
+```text
+01fafeb65b32d3bceb00210eb40d4be904dc3ea4d7b029068f09eb07bcf3743f  renders/85-input-modes.wav
+22685916966160ee50774ee80245c3644ab6dae301f05137f15e74eea8d97bce  renders/85-mixed-holds.wav
+b80bdb052a43559e435bcd72c456323b84fb27b62df1b5cc54e68e5fdce08514  renders/85-late-midi.wav
+```
+
+No new WAV is necessary. The agent did not run the sampler live, hear sound or test physical MIDI hardware for 86.
+Keyboard, controller and listening results for 86 remain unreported. Automation does not mark those checks complete.
