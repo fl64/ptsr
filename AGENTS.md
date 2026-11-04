@@ -92,7 +92,10 @@ Rust stable. Sound: `jack` through PipeWire-JACK (fallback: `cpal`). MIDI: `midi
 
 ## License and dependencies
 
-- The project is under GPL-3.0. For each new dependency, check that its license is compatible.
+- The project is under GPL-3.0-or-later. For each new dependency, check that its license is compatible.
+- `cargo deny check licenses` checks every dependency in `task check`, including build and dev dependencies.
+- A new license in `deny.toml` needs the owner's approval. Do not add an exception to bypass this rule.
+- GPL-2.0-only is not compatible with the project's license. Do not add a dependency under GPL-2.0-only.
 - Do not add heavy dependencies without a reason. Name the reason in the proposal.
 
 ## What not to do
