@@ -6,7 +6,9 @@ A terminal sampler-groovebox for Linux. References: Roland SP-404 MK2 (live work
 
 ## Who it is for and how
 
-One owner, a musician. The owner works without a mouse: keyboard and MIDI controllers (now M-Audio X-Session Pro, later M-VAVE SMC-PAD), and the owner can use them at the same time. An AI agent writes the code. The owner does not read the code. The owner checks the specifications, the renders and the program by hand.
+One owner, a musician. The owner uses a keyboard and MIDI controllers without a mouse.
+The current controller is M-Audio X-Session Pro. M-VAVE SMC-PAD is planned.
+The owner can use the keyboard and controllers at the same time. An AI agent writes the code. The owner does not read the code. The owner checks the specifications, the renders and the program by hand.
 
 ## Current state and next goal
 
@@ -19,7 +21,7 @@ template. Transport and pattern sequencing are not implemented.
 The next goal: every action that does not need typed text can be done from the SMC-PAD.
 The keyboard stays the reference and keeps its controls. The work order is:
 
-0. Keymap cleanup (83a) is accepted and archived. J/L change values; U/O change banks.
+0. The owner accepted keymap cleanup (83a). Its archive is complete. J/L change values. U/O change banks.
    The owner accepted without completing the manual checks. The later recording,
    redo and panic chords stay reserved.
 1. Input parity and refactors, then visible modes and new input controls (84–90).
@@ -43,7 +45,7 @@ The owner accepted input modes 85 on 2026-11-03. It is archived in
 Shared pad handling, coherent MIDI state, ordered controller
 commands and safe deferred releases are implemented. Separate repairs keep keyboard/MIDI
 Chop holds independent and prevent late direct notifications from restarting Chop.
-Input dispatch is in its own module; the move changed no method body. Offline checks
+Input dispatch is in its own module. The move changed no method body. Offline checks
 and the three 85 renders are ready. This is overall acceptance, not individual listening results.
 Separate WAV listening remains unreported. Physical-controller behavior is still unverified.
 No keys, profiles, saved-data format
@@ -53,7 +55,7 @@ exceptions to the separate-branch rule. Closure of 85 and work on 86 now share
 `86-screen-registry` and one MR by owner request.
 The owner accepted the screen registry (86) on 2026-11-04.
 Its archive is `openspec/changes/archive/2026-11-04-86-screen-registry/`.
-Implementation is complete at `a186fbb`. Offline verification is recorded in `e90543c`.
+Implementation is complete at `a186fbb`. Commit `e90543c` records offline verification.
 The registry keeps existing controls, help, learned assignments and FX rules for valid input.
 Invalid shared MIDI state rejects new actions while preserving original releases and pending-input order.
 Section 86 of `docs/LIVE-CHECKS.md` records verification and separate keyboard, controller and listening checks.
