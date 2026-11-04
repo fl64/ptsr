@@ -2259,7 +2259,7 @@ impl Keymap {
             ("shift_velocity", &mut self.shift_velocity),
         ] {
             if let Some(n) = t
-                .get("pads")
+                .get(Screen::Pads.key())
                 .and_then(|p| p.get(key))
                 .and_then(|v| v.as_integer())
             {
@@ -2298,13 +2298,8 @@ impl Keymap {
         section("global", t.get("global"), &mut self.global);
         section("edit", t.get("edit"), &mut self.edit);
         let screens_t = t.get("screens");
-        for (screen, name) in [
-            (Screen::Pads, "pads"),
-            (Screen::Settings, "settings"),
-            (Screen::Files, "files"),
-            (Screen::Chop, "chop"),
-            (Screen::Fx, "fx"),
-        ] {
+        for screen in Screen::ALL {
+            let name = screen.key();
             let map = self.screens.entry(screen).or_default();
             section(name, screens_t.and_then(|s| s.get(name)), map);
         }
@@ -2824,6 +2819,43 @@ mod tests {
                     .any(|a| a.group == Group::Fx && a.name == name),
                 "{name}"
             );
+        }
+    }
+
+    #[test]
+    fn registry_sections_keep_keyboard_layers_on_every_screen() {
+        let mut text =
+            String::from("[global]\nH = \"bank.next\"\n[edit]\nH = \"edit.param_next\"\n");
+        for key in ["pads", "settings", "files", "chop", "fx"] {
+            text.push_str(&format!("[screens.{key}]\nH = \"help.toggle\"\n"));
+        }
+        let (mut map, warnings) = Keymap::from_toml(&text).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        for screen in Screen::ALL {
+            assert_eq!(
+                map.resolve_in(screen, false, &press('h')),
+                Some(Action::HelpToggle)
+            );
+            assert_eq!(
+                map.resolve_in(screen, true, &press('h')),
+                Some(Action::ParamNext)
+            );
+        }
+        for key in ["pads", "settings", "files", "chop", "fx"] {
+            assert!(
+                map.overlay(&format!("[screens.{key}]\nH = \"none\"\n"))
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        for screen in Screen::ALL {
+            for key in ['h', 'H', 'р', 'Р'] {
+                assert_eq!(map.resolve_in(screen, false, &press(key)), None);
+                assert_eq!(
+                    map.resolve_in(screen, true, &press(key)),
+                    Some(Action::ParamNext)
+                );
+            }
         }
     }
 
