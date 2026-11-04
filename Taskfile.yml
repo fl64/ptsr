@@ -32,10 +32,18 @@ tasks:
     desc: Format the code
     cmd: cargo fmt --all
 
+  licenses:
+    desc: Check dependency licenses with cargo-deny
+    preconditions:
+      - sh: command -v cargo-deny >/dev/null 2>&1
+        msg: 'cargo-deny is required. Install it with: cargo install cargo-deny --version 0.20.2 --locked'
+    cmd: cargo deny check licenses
+
   check:
-    desc: Everything before a commit - format, clippy, tests, benchmark
+    desc: Format, dependency licenses, Clippy, tests and benchmark before a commit
     cmds:
       - cargo fmt --all --check
+      - task: licenses
       - task: lint
       - task: test
       - task: bench
