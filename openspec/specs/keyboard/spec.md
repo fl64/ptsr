@@ -1,7 +1,7 @@
 # keyboard Specification
 
 ## Purpose
-TBD - created by archiving change 64-user-keymap. Update Purpose after archive.
+Define keyboard actions, owner key overrides and input priorities. Keep pad keys reserved for play, commands consistent across screens and keymap warnings visible.
 
 ## Requirements
 
@@ -25,15 +25,10 @@ other screens. The bottom help and F1 SHALL name the controls.
 - **THEN** the pad plays as it does on the pads screen
 
 ### Requirement: The owner's keymap
-The system SHALL build the shipped keymap into the program and read the owner's keys from
-`keymap.toml` in the user config folder (`~/.config/ptsr/`) over it, whatever
-folder the program starts in. A key bound in a section of the user file replaces the
-shipped binding of that key in that section; the action `none` takes a key away. A pad key
-bound to a command, alone or with Shift, is refused as in the shipped keymap and named on
-the status line; with `Ctrl` (`Ctrl+A`) it is a command key. The old
-action name `pad.scope_next` is read as `pad.mark_bank`, in the keymap and in the learned
-MIDI bindings. A file that cannot be read is named on the status line with its line, and
-the program runs with the shipped keys.
+The system SHALL embed shipped keys and overlay `keymap.toml` from the user config folder (`~/.config/ptsr/`), regardless of starting folder.
+Each owner entry SHALL replace that section's shipped binding, with `none` removing it.
+`pad.scope_next` SHALL mean `pad.mark_bank` in keymaps and learned MIDI bindings.
+An unreadable file SHALL be named with its line in status, with shipped keys used instead.
 
 #### Scenario: A key of my own
 - **WHEN** the user keymap has `"Ctrl+G" = "pad.mark_bank"` under `[screens.pads]`
@@ -55,39 +50,47 @@ the program runs with the shipped keys.
 - **WHEN** the program starts from the home folder and the user keymap binds `Ctrl+G`
 - **THEN** `Ctrl+G` works, and the shipped keys work as when started from the project folder
 
+### Requirement: Owner keymaps preserve pad keys
+
+As in the shipped keymap, owner commands on pad keys alone or with Shift SHALL be refused and named in status.
+A pad key with `Ctrl`, such as `Ctrl+A`, SHALL be a command key.
+
 #### Scenario: Pad keys stay pads
 - **WHEN** the user keymap binds `Q` to a command
 - **THEN** `Q` still plays its pad, and the status line says a pad key cannot be a command
 
 ### Requirement: Key meaning is consistent
 
-The system SHALL keep the shipped pad block (`1234 QWER ASDF ZXCV`) for pads, alone and
-with Shift. Ctrl/Alt chords SHALL mean the same action or action role on every screen
-where they are bound. A shipped-map test SHALL compare their action-name suffixes and
-allow only named exceptions with reasons. I/K and Up/Down SHALL move the screen's
-selection, row or zoom; Enter SHALL be its main action, Esc back, Backspace removal,
-M marking or cutting, and bound Tab/Shift+Tab the next/previous page or group. Where
-no previous-page action is bound, the existing Shift+Tab fallback SHALL stay. On Pads
-and FX, J/L and Left/Right SHALL change the selected parameter with edit open or closed.
-Alt+R SHALL record the microphone, Ctrl+T the output; Ctrl+R SHALL stay reserved for
-pattern recording until change 97. A bound Ctrl+D SHALL mean duplicate or double.
-The shipped map SHALL NOT use Ctrl+Shift+letter chords. New command chords SHALL work
-in English and Russian layouts, with and without the extended keyboard protocol, or
-state their replacement. Shift on a pad SHALL remain full velocity, not a command. An
-unbound Shift command chord SHALL keep acting as its plain key, in both input forms. An
-explicit `none` on the chord SHALL block that fallback and run nothing, also for the Tab
-fallback of `Shift+Tab`.
+The shipped pad block (`1234 QWER ASDF ZXCV`) SHALL remain pads, alone or with Shift.
+Shift on a pad SHALL give full velocity, not a command.
+Bound Ctrl/Alt chords SHALL have the same action or role across screens.
+A shipped-map test SHALL compare action-name suffixes and allow only named exceptions with reasons.
+The shipped map SHALL NOT use Ctrl+Shift+letter chords.
 
 #### Scenario: Shipped modified chords have one role
 - **WHEN** the shipped map is checked across screens and edit layers
 - **THEN** every Ctrl/Alt chord has the same action suffix or an allowed role with a reason
 - **AND** no Ctrl+Shift+letter command or plain/Shift pad-block command is present
 
+### Requirement: Command key roles across screens
+
+I/K and Up/Down SHALL move selection, row or zoom.
+Enter SHALL be the main action, Esc back, Backspace removal, M marking or cutting, and bound Tab/Shift+Tab next/previous page or group.
+On Pads and FX, J/L and Left/Right SHALL change the selected parameter with edit open or closed.
+A bound Ctrl+D SHALL mean duplicate or double.
+
 #### Scenario: Shift H is a distinct command in both input forms
 - **WHEN** Chop receives H and Shift+H as extended key events or legacy lowercase and
   uppercase characters in either keyboard layout
 - **THEN** H resolves to `chop.hits` and Shift+H to `chop.hits_back`
 - **AND** Shift+Tab, existing Ctrl/Alt chords and full-velocity pads keep their behavior
+
+### Requirement: Command layouts and Shift fallback
+
+New command chords SHALL work in English and Russian layouts, with and without the extended keyboard protocol, or state their replacement.
+An unbound Shift command chord SHALL act as its plain key in both input forms.
+Without a previous-page binding, Shift+Tab SHALL keep its existing Tab fallback.
+An explicit `none` SHALL block either fallback and run nothing.
 
 #### Scenario: An unbound Shift chord acts as its plain key
 - **WHEN** a Shift command chord is not bound on the screen and its plain key is
@@ -102,6 +105,11 @@ fallback of `Shift+Tab`.
 #### Scenario: Unbound Shift Tab keeps its fallback
 - **WHEN** a screen has a Tab action but no explicit Shift+Tab action
 - **THEN** Shift+Tab keeps its existing Tab fallback; no new navigation action is added
+
+### Requirement: Recording key roles
+
+Alt+R SHALL record the microphone and Ctrl+T the output.
+Ctrl+R SHALL stay reserved for pattern recording until change 97.
 
 #### Scenario: Ctrl C copies instead of quitting
 - **WHEN** Pads receives Ctrl+C in raw mode, with or without the extended keyboard protocol
@@ -122,16 +130,14 @@ bindings SHALL still be allowed to use reserved chords.
 
 ### Requirement: Moved key notices
 
-The system SHALL keep an App table for global Ctrl+R -> Alt+R (microphone), Chop
-Ctrl+N -> Ctrl+G (normalize), Chop Ctrl+Y -> H (hits), and Pads J/L -> U/O (banks).
-An old press SHALL show an Info flash naming the new key only if no applicable shipped
-binding or explicit owner entry consumes that chord. It SHALL NOT run the former
-action. A bound J/L SHALL change a value, not show a bank-move flash. An explicit owner
-entry, including `none`, SHALL win. Text input, questions and learn SHALL keep their
-input priority; moved-key flashes SHALL NOT replace their instructions. Notices SHALL
-use the current flash until the new notice model exists. The Ctrl+R table row SHALL
-leave when 97 binds pattern recording; the remaining table SHALL leave in the first
-change after version 0.2.
+The App SHALL keep these moved-key notices:
+- Global Ctrl+R -> Alt+R: microphone.
+- Chop Ctrl+N -> Ctrl+G: normalize.
+- Chop Ctrl+Y -> H: hits.
+- Pads J/L -> U/O: banks.
+Only an old press without an applicable shipped binding or explicit owner entry SHALL show an Info flash naming the new key.
+It SHALL NOT run the former action.
+Bound J/L SHALL change a value without a bank-move flash.
 
 #### Scenario: Old microphone key names its replacement
 - **WHEN** Ctrl+R is unbound and the owner presses it outside text, questions and learn
@@ -150,6 +156,14 @@ change after version 0.2.
 - **WHEN** Pads uses the default J/L bindings and the owner presses J or L
 - **THEN** the selected parameter changes and no moved-bank notice appears
 
+### Requirement: Moved-key notice priority and lifetime
+
+Explicit owner entries, including `none`, SHALL win over moved-key notices.
+Text, questions and learn SHALL keep priority without notices replacing their instructions.
+Notices SHALL use the current flash until the new notice model exists.
+The Ctrl+R row SHALL leave when 97 binds pattern recording.
+The remaining table SHALL leave in the first change after version 0.2.
+
 #### Scenario: Owner old key wins over the move notice
 - **WHEN** the owner maps Ctrl+R to `record.mic` and presses it
 - **THEN** microphone recording follows that binding and no moved-key notice appears
@@ -164,24 +178,19 @@ change after version 0.2.
 
 ### Requirement: Owner keymap shadow warnings
 
-At start, the system SHALL warn once per chord and screen when an owner keymap entry
-hides a new or changed shipped binding from this cleanup. This includes Alt+R,
-Chop Ctrl+G, H and Shift+H, and Pads U/O, Ctrl+C, J/L and Left/Right. A warning SHALL
-name `keymap.toml`, the chord, screen and hidden action, for example
-`keymap.toml: H on chop hides chop.hits`. The owner's action or explicit removal SHALL
-win and the file SHALL NOT be rewritten. An entry for the same action SHALL NOT warn.
-Multiple startup warnings SHALL be delivered individually, not silently overwritten.
-Keymap warnings SHALL use their own queue on the current notice line. A new key press
-SHALL dismiss only the warning that is visible, without consuming the key's normal
-action. Repeats, releases and modifier-only events SHALL NOT dismiss a warning. A warning
-hidden by text input, questions, learn or a higher-priority notice SHALL stay pending.
-Other startup notices, including the terminal warning, SHALL keep their current dismissal
-rules. Only a new or changed binding that is present in the shipped map SHALL produce a
-shadow warning; planned bindings SHALL NOT produce warnings before they ship.
+At start, owner entries hiding new or changed shipped cleanup bindings SHALL warn once per chord and screen.
+These include Alt+R, Chop Ctrl+G, H, Shift+H, and Pads U/O, Ctrl+C, J/L, Left/Right.
+Warnings SHALL name `keymap.toml`, chord, screen and hidden action, for example `keymap.toml: H on chop hides chop.hits`.
 
 #### Scenario: An owner key hides a new default
 - **WHEN** the owner maps H on Chop to another action
 - **THEN** startup warns once that H on Chop hides `chop.hits`, and H keeps the owner's action
+
+### Requirement: Shadow warnings preserve owner entries
+
+The owner's action or explicit removal SHALL win, without rewriting the file.
+An owner entry for the same action SHALL NOT warn.
+Multiple startup warnings SHALL be delivered individually, without silently overwriting each other.
 
 #### Scenario: Matching owner keys do not warn
 - **WHEN** the owner's Chop H binding is already `chop.hits`
@@ -192,6 +201,14 @@ shadow warning; planned bindings SHALL NOT produce warnings before they ship.
 - **THEN** each conflicting chord and screen is named once through startup notices
 - **AND** every owner entry stays effective and their file stays unchanged
 
+### Requirement: Keymap warning queue and dismissal
+
+Keymap warnings SHALL use their own queue on the current notice line.
+A new press SHALL dismiss only the visible warning without consuming its normal action.
+Repeats, releases and modifier-only events SHALL NOT dismiss warnings.
+Warnings hidden by text, questions, learn or higher-priority notices SHALL stay pending.
+Other startup notices, including terminal warnings, SHALL keep their dismissal rules.
+
 #### Scenario: Only a visible keymap warning is dismissed
 - **WHEN** several keymap warnings wait and the owner presses a key while one is visible
 - **THEN** only that warning leaves the queue and the key keeps its normal action
@@ -201,6 +218,11 @@ shadow warning; planned bindings SHALL NOT produce warnings before they ship.
 - **WHEN** a keymap warning is hidden by text input, a question, learn or a higher-priority notice
 - **THEN** keyboard events do not dismiss that warning
 - **AND** it is shown when the blocking state ends, without changing other startup notices
+
+### Requirement: Shadow warnings require shipped bindings
+
+Only new or changed bindings present in the shipped map SHALL cause shadow warnings.
+Planned bindings SHALL NOT warn before they ship.
 
 #### Scenario: Planned defaults do not produce shadow warnings
 - **WHEN** an owner entry uses a cleanup chord whose new shipped binding is not present yet

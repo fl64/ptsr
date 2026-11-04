@@ -6,7 +6,11 @@ Cutting a sample into slices on the chop screen (F3) and laying the slices out o
 ## Requirements
 
 ### Requirement: Chop screen
-The system SHALL open the chop screen for the sample of the selected pad and show the waveform with cut markers, the selected slice, the cursor and, while the sample plays, the playhead. The cursor is the owner's: only the owner moves it (the cursor keys, the snap, a slice pick), it is drawn as `!` above the wave and named in the slice line; playback starts from it and the edits at the cursor use it. The playhead is a thin line that runs while the sample plays and is gone when it stops; it never moves the cursor.
+Chop SHALL open the selected pad's sample and show its wave, cuts, selected slice and cursor.
+Only owner actions (cursor keys, snap, slice selection) SHALL move the cursor.
+It SHALL appear as `!` above the wave, with its time on the slice line.
+Playback and cursor edits SHALL use it.
+A thin playhead SHALL run while the sample plays and disappear when it stops, without moving the cursor.
 
 #### Scenario: Open from a pad
 - **WHEN** the selected pad has a sample and the owner presses F3
@@ -39,7 +43,9 @@ The system SHALL play the sample with a moving playhead and set a marker at the 
 - **THEN** a marker appears where the playhead is, the number of slices grows by one, and the cursor stays where it was
 
 ### Requirement: Slice editing
-The system SHALL let the owner move the cursor, move the start of the selected slice finely (a tap) or speeding up (a held key), delete the cut at its start and undo the last actions, without a mouse. `Backspace` and `Ctrl+Backspace` delete the start of the selected slice, `Alt+Backspace` its end — the bound a held `Ctrl` / `Alt` lights; a bound that is the region's edge is not deleted. A cursor exactly on a cut selects the slice to its right, so `Backspace` deletes the cut under the cursor; the slice under the cursor plays when the cursor stops on it and stays selected while the cursor moves inside it.
+The system SHALL support cursor movement, fine taps and accelerated holds to move the selected slice's start, cut deletion and undo without a mouse.
+A cursor exactly on a cut SHALL select the slice to its right.
+The slice under the cursor SHALL play when the cursor stops on it and stay selected while the cursor moves within it.
 
 #### Scenario: The cursor selects
 - **WHEN** the owner presses → and the cursor enters the next slice
@@ -63,6 +69,13 @@ The system SHALL let the owner move the cursor, move the start of the selected s
 #### Scenario: Trim the sample start
 - **WHEN** the first slice is selected and the owner moves its start to the right
 - **THEN** the sample starts later, the silence before the first hit is not played; the file does not change
+
+### Requirement: Delete a slice bound
+
+`Backspace` and `Ctrl+Backspace` SHALL delete the selected slice's start cut, and `Alt+Backspace` its end cut.
+These SHALL match the bounds lit by held `Ctrl` and `Alt`.
+A region edge SHALL NOT be deleted.
+When the cursor is exactly on a cut, `Backspace` SHALL delete that cut.
 
 #### Scenario: Undo a delete
 - **WHEN** the owner deletes the cut at the start of a slice and then presses undo
@@ -89,11 +102,21 @@ The system SHALL let a knob set the start and another knob the end of the select
 - **THEN** the cut does not jump; it starts to follow once the knob reaches its position, and the status says which way to turn
 
 ### Requirement: Listen mode
-The system SHALL, while the chop screen is in the listen mode, show the real pads of the current bank on the grid, as the pads screen does, and play them on a hit; a pad that plays a slice of this file says so (`slice 3`), the other pads are dimmed. The chop screen opens on the bank that holds slices of this file when the current bank holds none; the bank actions turn the banks. Slices on no pad are heard with the cursor (the arrows, the jump by cuts). Until a slice of this file lies on a pad, the grid is a keyboard of slices instead: key k plays and selects slice 16·b + k, where b is the bank picked with the bank actions, the row over the grid says `slices 1–16`, and every cell draws its slice's wave.
+In Chop listen mode, bank actions SHALL change banks.
+Until a slice of this file lies on a pad, the grid SHALL act as a slice keyboard.
+Key k SHALL play and select slice 16·b + k, where b is the selected bank.
+The row above SHALL name the slice range (`slices 1–16`), and each cell SHALL draw its slice's wave.
 
 #### Scenario: Before the layout
 - **WHEN** a sample is cut into 8 slices, none of them lies on a pad, and the owner hits the third pad key on the chop screen
 - **THEN** slice 3 plays and is selected, the grid names the cells `slice 1`…`slice 8`, and the row over it says `slices 1–8`
+
+### Requirement: Listen with assigned slices
+
+With slices of this file on pads, Chop listen SHALL show and play the current bank's real pads as Pads does.
+A pad holding a slice of this file SHALL name it (`slice 3`), and other pads SHALL be dimmed.
+If the current bank has none, Chop SHALL open on a bank holding them.
+Unassigned slices SHALL remain audible through cursor arrows and jumps by cuts.
 
 #### Scenario: Check a slice
 - **WHEN** slices 1–8 of a break lie on pads 1–8 of bank 2, bank 1 is shown, the owner opens the break on the chop screen from the files screen and hits the third pad key
@@ -311,7 +334,11 @@ The system SHALL let the owner set the start and the end of the playable region 
 - **THEN** the region is the whole sample again and undo restores the previous region
 
 ### Requirement: Cursor modes
-The system SHALL move the cursor with `J` `L` (and ← →) inside the region in one of three modes, switched in turn with the snap command `N` and shown in the help line: even steps, hit to hit, cut to cut; the chop screen opens in even steps. In even steps a tap moves the cursor by 1/128 of the visible window (never less than a frame) and a held key speeds up over 6 repeats to 1/32 of the window per repeat; the slice bounds step the same, so the cursor and the bounds move alike at any zoom. In hits mode it jumps to the start of the next or previous strong hit when that hit is on the screen, and moves in even steps while no strong hit lies ahead on the screen; a strong hit is one the hit threshold keeps (see "One rule for the hits"). In cuts mode it jumps to the next cut to the right, or to the end of the region when no cut lies ahead, and to the previous cut to the left, or to the start of the region; the slice under the cursor is selected, the page follows it and the slice plays. A finer step comes from zooming in: the step follows the view. The cut command cuts at the cursor also on pause.
+`J` `L` (← →) SHALL move the cursor within the region.
+In even steps, a tap SHALL move 1/128 of the visible window, at least one frame.
+Holding SHALL accelerate over 6 repeats to 1/32 of the window per repeat.
+Slice bounds SHALL use the same steps at every zoom.
+Zooming in SHALL give finer steps because steps follow the view.
 
 #### Scenario: Steps follow the view
 - **WHEN** the view shows the whole file and the owner presses →
@@ -321,6 +348,12 @@ The system SHALL move the cursor with `J` `L` (and ← →) inside the region in
 - **WHEN** the chop screen opens on a break of decaying hits and the owner presses → twelve times
 - **THEN** the cursor moves twelve even steps, a peak does not hold it back
 
+### Requirement: Cursor hit jumps
+
+In hits mode, the cursor SHALL jump to the next or previous strong hit's start when that hit is on screen.
+Without a strong hit ahead on screen, it SHALL move in even steps.
+A strong hit SHALL use the shared threshold in "One rule for the hits".
+
 #### Scenario: Hit to hit
 - **WHEN** hits mode is on and the owner presses → and then ←
 - **THEN** the cursor lands on the start of the next hit and then back on the start of the previous one
@@ -329,6 +362,12 @@ The system SHALL move the cursor with `J` `L` (and ← →) inside the region in
 - **WHEN** hits mode is on and no hit lies ahead of the cursor on the screen
 - **THEN** → moves the cursor in even steps until a hit comes into view, and then jumps to it
 
+### Requirement: Cursor cut jumps
+
+In cuts mode, the cursor SHALL jump right to the next cut, or the region end when none remains.
+It SHALL jump left to the previous cut, or the region start.
+The slice under the cursor SHALL be selected and play, and the page SHALL follow it.
+
 #### Scenario: Cut to cut
 - **WHEN** cuts mode is on, the cursor stands inside slice 2 of 4 and the owner presses `L` twice and then `J`
 - **THEN** the cursor lands on the start of slice 3, then of slice 4, then back on the start of slice 3, and each slice plays
@@ -336,6 +375,12 @@ The system SHALL move the cursor with `J` `L` (and ← →) inside the region in
 #### Scenario: To the ends
 - **WHEN** cuts mode is on, the cursor stands in the last slice and the owner presses `L`
 - **THEN** the cursor lands on the end of the region; in the first slice `J` lands on its start
+
+### Requirement: Cursor snap selection
+
+Chop SHALL open in even steps.
+`N` SHALL cycle even steps, hit to hit and cut to cut, with the mode visible in the help line.
+The cut command SHALL cut at the cursor also on pause.
 
 #### Scenario: N walks the three modes
 - **WHEN** the chop screen opens and the owner presses `N` three times
@@ -391,7 +436,11 @@ The system SHALL mark on the chop screen where the whole file lies: the bank row
 - **THEN** the bank row shows `◆` at bank 1; after `Ctrl+1` pad 1-1 says `◆ all` and is not dimmed
 
 ### Requirement: The chop wave is colored by frequency
-The system SHALL color the wave of the selected slice of the chop screen per column by the band that stands out against its own average over the file — the low red, the mid green, the high blue, the band most above its average taking most of the color — and SHALL draw the other slices of the region grey at the same brightness, so the color itself shows where the owner is; outside the region the wave is dim. The picture mode uses the same colors; the strips of the other screens and the pad waves are not colored.
+Chop SHALL colour each selected-slice wave column by the band most above its own file average: low red, mid green, high blue.
+That band SHALL contribute most of the colour.
+Other slices within the region SHALL be grey at the same brightness, and the wave outside SHALL be dim.
+Picture mode SHALL use the same colours.
+Other screens' strips and pad waves SHALL remain uncoloured.
 
 #### Scenario: Kick and hat by color
 - **WHEN** a break with a kick and a hat is open on the chop screen and the slice with them is selected
@@ -438,16 +487,11 @@ The system SHALL draw the waveforms with Braille characters by default and SHALL
 
 ### Requirement: Auto-chop by hits
 
-The system SHALL chop a sample at hit starts on H, with a threshold below the loudest
-hit. Each press SHALL step lower (-6, -12, -18, -24, -30 dB, then -6 again). Shift+H,
-`chop.hits_back`, SHALL step to the next higher value of that list, stopping at -6 dB
-without wrapping; before a hit threshold is set it SHALL start at -6 dB. A continuous
-knob value below -6 dB SHALL step to the next higher listed value. A knob value already
-at or above -6 dB SHALL stay on reverse, so reverse never adds quieter hits. Either
-command SHALL replace cuts with the same pad-link safeguards as equal parts and make
-one undo step when cuts or threshold change. A clamped reverse press SHALL change
-nothing and add no undo step. The knob `chop.threshold` SHALL still set the threshold
-continuously and recut at once. The status SHALL name the threshold and slice count.
+H SHALL cut at hit starts using a threshold below the loudest hit.
+Each press SHALL cycle -6, -12, -18, -24, -30 dB, then -6 again.
+`chop.threshold` SHALL set a continuous threshold and recut immediately.
+H and Shift+H SHALL replace cuts with equal-parts pad-link safeguards and make one undo step when cuts or threshold change.
+The status SHALL name threshold and slice count.
 
 #### Scenario: Break by hits
 - **WHEN** a break is on Chop and the owner presses H
@@ -460,6 +504,14 @@ continuously and recut at once. The status SHALL name the threshold and slice co
 #### Scenario: The threshold on a knob
 - **WHEN** the owner turns the knob bound to `chop.threshold`
 - **THEN** cuts are added or removed at once as the threshold moves
+
+### Requirement: Reverse hit threshold
+
+Shift+H (`chop.hits_back`) SHALL select the next higher listed threshold, stopping at -6 dB without wrapping.
+Before a threshold is set, it SHALL start at -6 dB.
+For a continuous value below -6 dB, it SHALL select the next higher listed value.
+A value at or above -6 dB SHALL stay unchanged, so reverse never adds quieter hits.
+A clamped press SHALL change nothing and add no undo step.
 
 #### Scenario: Reverse the hit threshold
 - **WHEN** the hit threshold is -18 dB and the owner presses Shift+H
@@ -497,14 +549,12 @@ The system SHALL name on the slice line of the chop screen the pads that hold th
 - **THEN** the slice line says "on 1-Q, 2-W"
 
 ### Requirement: Chop knobs
-The system SHALL let learned controller knobs move the chop cursor, zoom and region: the
-`chop.cursor_pos` knob puts the cursor inside the region, the `chop.zoom` knob sets the
-visible span between the region and the whole file on a log scale around the cursor, and
-the `chop.region_start_pos` / `chop.region_end_pos` knobs move the region edges, keeping
-the region at least 10 ms long; absolute knobs catch their value as the knob response
-says. The buttons `chop.cursor_left` / `chop.cursor_right` step the cursor as `J` `L` do.
-All are listed in the MIDI learn under CHOP. The X-Session Pro profile puts `chop.zoom` on
-k12.
+Learned Chop knobs SHALL use the configured response for absolute values:
+- `chop.cursor_pos`: cursor within the region.
+- `chop.zoom`: visible span from region to whole file, logarithmically around the cursor.
+- `chop.region_start_pos` / `chop.region_end_pos`: region edges, at least 10 ms apart.
+MIDI learn SHALL list these under CHOP.
+The X-Session Pro profile SHALL bind `chop.zoom` to k12.
 
 #### Scenario: Zoom knob
 - **WHEN** the owner turns the zoom knob
@@ -520,6 +570,11 @@ k12.
 #### Scenario: Cursor knob
 - **WHEN** the owner turns the learned cursor knob
 - **THEN** the cursor moves inside the region, the slice under it is selected
+
+### Requirement: Learned cursor buttons
+
+`chop.cursor_left` / `chop.cursor_right` SHALL step the cursor as `J` `L` do.
+MIDI learn SHALL list both under CHOP.
 
 #### Scenario: Cursor buttons
 - **WHEN** the owner presses the learned "cursor right" button
@@ -579,13 +634,9 @@ slice edit open neither `P` nor a device commit starts the assign: `Esc` comes f
 - **THEN** the assign does not start and the slice edit stays open
 
 ### Requirement: The assign mode ignores the rest
-The system SHALL, while the assign mode is on, ignore every chop-screen action except the
-pads, `Tab` (by hand / in order), `Enter` (apply), `Esc` (back), the slice pick — `J` `L`
-(← →) step to the previous and the next slice and play it, the cursor goes to its start
-as with the slice pick, the cuts stay — and the
-undo: the cursor, zoom, cuts, the bounds, play and its mode, the equal parts and the region do not act
-until the mode is left. An ignored key shows a hint in the status line: "assigning: Enter
-applies, Esc leaves".
+Assign SHALL ignore Chop actions except pads, `Tab` (by hand / in order), `Enter` (apply), `Esc` (back), slice selection and undo.
+`J` `L` (← →) SHALL select and play the previous or next slice and move the cursor to its start without changing cuts.
+Ignored keys SHALL show "assigning: Enter applies, Esc leaves" in the status line.
 
 #### Scenario: No stray cut during the assign
 - **WHEN** the assign mode is on and the owner presses `M`, `I` `K`, `Ctrl+J`,
@@ -644,12 +695,13 @@ right hand moves with; `Tab` switches in order / by hand in the assign mode.
 - **THEN** the sample is cut into the next count of equal parts
 
 ### Requirement: Play modes
-The system SHALL play on the chop screen in one of three modes, stepped with `O`: to the
-end (from the cursor to the end of the region, or of the sample when no region is set),
-to the cut (from the cursor to the end of the slice the cursor is in), the slice (the
-whole slice the cursor is in). A green bar right above the wave always shows what play
-will cover now; it follows the cursor and the cuts at once. The help line names the mode.
-The chop screen opens in "to the end"; the mode is not saved.
+`O` SHALL cycle Chop play modes:
+- "to the end": cursor to region end, or sample end without a region.
+- "to the cut": cursor to its slice's end.
+- "the slice": the whole slice under the cursor.
+A green bar directly above the wave SHALL always show the next play span and follow cursor and cuts immediately.
+Help SHALL name the mode.
+Chop SHALL open in "to the end" without saving the mode.
 
 #### Scenario: To the cut
 - **WHEN** the cursor stands in the middle of slice 3, the mode is "to the cut" and the
@@ -681,13 +733,12 @@ leaving the chop screen stops nothing.
 - **THEN** the slice of that pad plays, as in the listen mode
 
 ### Requirement: The cuts belong to the file
-The system SHALL show on the chop screen whose cuts these are and who plays them: the
-header names the file ("cuts of break.wav"), every slice shows the pads that play it, and
-opening the screen from a pad that plays a slice selects that slice. Pads that play `all`
-or `pad` stand under no slice. Opening the screen from a pad that plays the whole file
-starts a fresh chop of it (42): no cuts, the whole file; the older chop stays with its
-pads, they keep their slices and follow its cuts (45), and undo brings the older chop
-back on the screen.
+The Chop header SHALL name the file ("cuts of break.wav").
+Each slice SHALL show its pads, excluding `all` and `pad` sources.
+Opening from a slice pad SHALL select its slice.
+Opening from a whole-file pad SHALL start a fresh whole-file chop without cuts (42).
+The older chop SHALL stay with its pads, which keep their slices and follow its cuts (45).
+Undo SHALL restore that older chop on screen.
 
 #### Scenario: Open from a slice pad
 - **WHEN** slices 1–8 of a break lie on pads 5–12 and the owner presses F3 on pad 7
@@ -740,12 +791,13 @@ edit. Until a slice of this file lies on a pad, the same keys page the keyboard 
 - **THEN** the row over the grid says `slices 17–20` and the first pad key plays slice 17
 
 ### Requirement: Several chops of one file
-The system SHALL keep every chop of a file that a pad plays a slice of. A fresh chop of
-the file leaves the older chops and their pads as they are; F3 on a pad opens the chop its
-slice came from, and moving a cut there moves only that chop's pads. The newest chop is
-the one the files screen opens. A chop no pad plays a slice of is dropped once a newer
-chop of the file exists. The chop screen header names the chop when the file has more
-than one: `cuts of break.wav · chop 2 of 3`. The chops are saved with the project.
+The system SHALL keep each chop with a pad-linked slice.
+Fresh chops SHALL leave older chops and pads unchanged.
+F3 on a pad SHALL open its slice's chop, where cuts affect only that chop's pads.
+Files SHALL open the newest chop.
+An unlinked chop SHALL be dropped once a newer chop of that file exists.
+The header SHALL identify multiple chops: `cuts of break.wav · chop 2 of 3`.
+Chops SHALL be saved with the project.
 
 #### Scenario: Chop the same sample again
 - **WHEN** slices 1–8 of a break lie on pads 2-1…2-8, the owner opens the whole-file pad 1-1 with F3, cuts the break in 4 and lays them on pads 3-1…3-4
@@ -768,13 +820,10 @@ than one: `cuts of break.wav · chop 2 of 3`. The chops are saved with the proje
 - **THEN** the chop opens with the cuts at the starts and ends of those pads, and the pads say `slice N` again
 
 ### Requirement: Loop the play
-The system SHALL switch a loop on and off with `Alt+O` on the chop screen and show its
-state in the help line next to the play mode (`loop: on`). With the loop on, `Space`
-plays what the play mode picks (to the end, to the cut, the slice) from its start again
-each time it reaches its end, until `Space` stops it. A cut, a slice bound or a region
-edge moved while the loop plays is heard from the next turn on, the play does not stop.
-Every turn fades out and in at its seam, no click. With the loop off, `Space` plays once,
-as before. The switch starts off when the chop screen opens.
+`Alt+O` SHALL toggle Chop looping, with its state next to the play mode in help (`loop: on`).
+Chop SHALL open with looping off.
+With looping on, `Space` SHALL repeat the play-mode span (to the end, to the cut, the slice) from its start until `Space` stops it.
+With looping off, `Space` SHALL play once as before.
 
 #### Scenario: The slice over and over
 - **WHEN** the play mode is "slice", the loop is on, the cursor stands in slice 3 and the owner presses `Space` and waits three times the length of slice 3
@@ -783,6 +832,11 @@ as before. The switch starts off when the chop screen opens.
 #### Scenario: Space stops the loop
 - **WHEN** the loop plays and the owner presses `Space`
 - **THEN** the sound stops
+
+### Requirement: Loop edits and seams
+
+A cut, slice bound or region edge moved during looping SHALL affect the next turn without stopping playback.
+Each turn SHALL fade out and in at its seam without a click.
 
 #### Scenario: Move a bound while it loops
 - **WHEN** the loop plays slice 3 and the owner moves the end of slice 3 to the left
@@ -822,13 +876,11 @@ while the switch is on.
 
 ### Requirement: One rule for the hits
 
-The system SHALL use one hit threshold on Chop for cursor hits mode, cuts snapped to
-hits, hit marks and hit chopping. A hit counts when it is at most the threshold below
-the loudest hit of the region. The threshold SHALL stay -12 dB until H, Shift+H, a
-learned hit command or the threshold knob sets it, then use their value. In hits mode,
-each counted hit on screen SHALL be marked with `▾` at its start. These marks SHALL
-show where the cursor jumps and where hit chopping cuts at that threshold. Explicit
-owner keymaps for `chop.hits` SHALL use this same rule, including the former Ctrl+Y.
+Chop SHALL share one threshold for cursor hits, snapped cuts, hit marks and hit chopping.
+Hits SHALL count within that threshold below the region's loudest hit.
+The threshold SHALL stay -12 dB until H, Shift+H, a learned hit command or threshold knob sets it, then use that value.
+In hits mode, `▾` SHALL mark each counted on-screen hit's start: cursor stops and hit cuts.
+Owner `chop.hits` bindings, including former Ctrl+Y, SHALL use this rule.
 
 #### Scenario: The marks are the stops
 - **WHEN** hits mode is on and the screen shows four marks
@@ -873,15 +925,11 @@ threshold without claiming it replaced cuts.
 
 ### Requirement: The header shows play
 
-In listen and slice edit, the system SHALL give the LISTEN badge a fixed width of
-10 terminal cells including its outer spaces: ` LISTEN   ` at rest and ` LISTEN ▶ `
-while the Chop preview or a linked pad voice of the open chop plays. At rest, the
-badge SHALL use dim text without the blue background. During that playback, it SHALL
-use the existing blue background and show `▶`. The following header text SHALL NOT
-move between these states. A sounding position outside the waveform view SHALL still
-keep the badge lit. A pad of another sample or chop, an old-project voice and an effect
-tail alone SHALL NOT light this badge. The assign badge SHALL keep its existing text,
-size and colors. This indicator SHALL NOT change sound, transport or edit commands.
+In listen and slice edit, LISTEN SHALL occupy 10 terminal cells including outer spaces: ` LISTEN   ` at rest, ` LISTEN ▶ ` during matching playback.
+At rest it SHALL be dim without a blue background.
+During matching playback it SHALL show `▶` with the existing blue background.
+Following header text SHALL NOT move between states.
+The assign badge SHALL keep its text, size and colours.
 
 #### Scenario: The header shows play
 - **WHEN** the chop screen is open and the owner presses `Space`
@@ -892,6 +940,12 @@ size and colors. This indicator SHALL NOT change sound, transport or edit comman
 - **WHEN** Chop changes between silence and playback
 - **THEN** the LISTEN badge occupies the same 10 terminal cells and the file name and
   remaining header text stay in the same columns
+
+### Requirement: Chop listen badge follows matching playback
+
+Chop preview or a linked pad voice of the open chop SHALL light LISTEN, including positions outside the waveform view.
+Pads of another sample or chop, old-project voices and effect tails alone SHALL NOT light it.
+This indicator SHALL NOT change sound, transport or edit commands.
 
 #### Scenario: Chop listen badge lights only while playback runs
 - **WHEN** a Chop preview or linked slice pad starts and then ends or is released
@@ -935,20 +989,10 @@ assigning. Threshold commands SHALL stay ignored while assigning.
 
 ### Requirement: Pad playback line on Chop
 
-While Chop is open in listen or slice edit and a pad plays a slice of the open chop,
-the system SHALL show the existing thin green playback line at that voice's actual
-position in the sample. Keyboard pads, raw MIDI notes and explicitly learned pad
-buttons SHALL give the same display behavior. The position SHALL follow the real
-pad playback, including pitch and retrigger, and SHALL disappear when that voice ends.
-The line SHALL use the current waveform view in Braille and picture modes. It SHALL
-NOT show another sample's position or keep an old project's position.
-
-This addition SHALL change only playback position display. It SHALL NOT add another
-pad hit or preview, change the sound, move the owner's cursor as playback advances,
-or change the existing hit-driven slice selection. Space, M, transport, editing,
-preview and assignment behavior SHALL remain unchanged. In particular, the pad's
-new display position SHALL NOT replace the preview position used by those commands.
-A silent, blocked or queue-rejected hit SHALL NOT create a new playback line.
+In listen or slice edit, a pad playing a slice of the open chop SHALL show a thin green line at its actual sample position.
+Keyboard pads, raw MIDI notes and learned pad buttons SHALL give the same display.
+The line SHALL follow real playback, including pitch and retrigger, and disappear when the voice ends.
+It SHALL use the current wave view in Braille and picture modes.
 
 #### Scenario: Keyboard pad shows the Chop playback line
 - **WHEN** a linked slice is open on Chop in listen or slice edit, the owner hits its
@@ -971,6 +1015,13 @@ A silent, blocked or queue-rejected hit SHALL NOT create a new playback line.
 - **WHEN** a displayed pad voice reaches its end, finishes its gate release or is stopped
 - **THEN** that voice's green line disappears without starting or stopping another voice
 
+### Requirement: Chop pad line is display only
+
+The pad line SHALL change only playback position display.
+It SHALL NOT add hits or previews, change sound, move the cursor during playback or change hit-driven slice selection.
+Space, M, transport, editing, preview and assignment SHALL keep their existing behavior.
+The displayed pad position SHALL NOT replace the preview position used by those commands.
+
 #### Scenario: Chop pad line keeps transport and edits unchanged
 - **WHEN** a linked pad sounds on Chop, its new green line is visible and the owner
   moves the cursor, presses M or uses Space
@@ -978,6 +1029,11 @@ A silent, blocked or queue-rejected hit SHALL NOT create a new playback line.
   new pad position display
 - **AND** Space preview, bare slice previews and assignment previews keep their existing
   playback line behavior
+
+### Requirement: Chop pad line rejects unrelated input
+
+The pad line SHALL NOT show another sample's position or retain an old project's position.
+Silent, blocked or queue-rejected hits SHALL NOT create a new playback line.
 
 #### Scenario: Chop pad line rejects unrelated and silent hits
 - **WHEN** a pad plays another sample, the project changes, a question or learn blocks

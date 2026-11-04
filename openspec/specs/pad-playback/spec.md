@@ -7,13 +7,12 @@ Pads: 16 pads in 8 banks played from the keyboard, one-shot and gate modes, velo
 
 ### Requirement: Shared FX screen
 
-The system SHALL show both shared FX blocks on a separate screen and visibly identify
-the selected block. Each block SHALL show its effect type and the parameters of that
-type. The same three learned knobs SHALL control the type and two parameters of the
-selected block. Switching blocks SHALL NOT change either effect. Each device SHALL use
-its configured takeover mode for each block and control independently. Changes SHALL be
-smooth and saved in the project; existing projects and learned bindings SHALL retain
-their behavior. `Ctrl+Z` SHALL undo a shared effect change.
+A separate FX screen SHALL show both shared blocks, their types and parameters, and identify the selected block.
+The same three learned knobs SHALL control its type and two parameters.
+Block selection SHALL NOT change effects.
+Configured takeover SHALL be independent per device, block and control.
+Changes SHALL be smooth, project-saved and undoable with `Ctrl+Z`.
+Existing projects and learned bindings SHALL keep their behavior.
 
 #### Scenario: Select the next shared effect
 - **WHEN** FX 1 is selected and the owner presses Tab
@@ -181,8 +180,11 @@ The system SHALL play each pad at its own pitch from −24 to +24 semitones in s
 - **THEN** the highlighted parameter in the pad panel moves from volume to pitch, and `J` `L` in the edit mode now change the pitch
 
 ### Requirement: Change scope
-The system SHALL apply the pad changes to the change scope: the marked pads, or the selected pad when no pad is marked. The panel always names the scope on its second row, under the pad and its bank:
-`scope   pad Q` or `scope   17 marked`, the same word as the help line (68). Volume and pitch change relatively: every pad in the scope moves by the same step and the differences between them stay; a pad at a limit stays there and the pop-up says how many pads hit it. The mode is set to the next mode of the selected pad on every pad of the scope, with `H`. `Backspace` outside the edit takes the sound off the selected pad when no pad is marked; with marks it takes the sound off every marked pad with a sound, after a question in the question box: `Clear 3 pads?`, that their files on disk stay, and `Enter: clear · Esc: keep`. The clear of many pads is one undo step.
+Pad changes SHALL affect marked pads, otherwise the selected pad.
+The panel's second row under pad/bank SHALL always name `scope   pad Q` or `scope   17 marked`, as help does (68).
+Volume and pitch SHALL move all scope pads by the same relative step, preserving differences except at limits.
+Limited pads SHALL stay at their limit, and the popup SHALL count them.
+`H` SHALL set all scope pads to the selected pad's next mode.
 
 #### Scenario: A bank lower
 - **WHEN** all 16 pads of bank 2 are marked and the owner lowers the pitch twice
@@ -205,6 +207,12 @@ The system SHALL apply the pad changes to the change scope: the marked pads, or 
 - **WHEN** all 16 pads of bank 1 are marked and the owner presses `H`
 - **THEN** every pad of bank 1 gets the next mode of the selected pad
 
+### Requirement: Clearing the pad change scope
+
+Outside edit, `Backspace` SHALL clear only the selected pad without marks, or all marked pads with sound after confirmation.
+The question box SHALL name `Clear 3 pads?`, say files on disk stay, and offer `Enter: clear · Esc: keep`.
+A multi-pad clear SHALL make one undo step.
+
 #### Scenario: Clear stays on one pad
 - **WHEN** no pad is marked, all pads of the bank hold sounds, the edit is closed and the
   owner presses `Backspace`
@@ -221,7 +229,10 @@ The system SHALL apply the pad changes to the change scope: the marked pads, or 
 - **THEN** every pad keeps its sound and the marks stay
 
 ### Requirement: Marking pads
-The system SHALL turn marking on and off with `M`, the marker key; while it is on, a pad hit marks or unmarks the pad and the pad still sounds. `Ctrl+A` marks the 16 pads of the open bank and turns marking on; when all 16 are marked already, it unmarks them. Marks stay when the bank turns. While marking is on or pads are marked, the title line of the pads screen shows a yellow plate next to `F2 PADS`: `MARK · hit pads · 17 marked` while marking is on, `17 MARKED · Esc drops` while it is off. Marked pads become the scope instead of the selected pad. `Esc` drops all marks and turns marking off; in the pad edit the first `Esc` closes the edit and keeps the marks.
+`M` SHALL toggle marking.
+While on, pad hits SHALL toggle the pad's mark and still sound.
+`Ctrl+A` SHALL mark all 16 open-bank pads and enable marking, or unmark them if all are already marked.
+Marks SHALL survive bank changes and replace the selected pad as the change scope.
 
 #### Scenario: Three kicks quieter
 - **WHEN** the owner presses `M`, hits three pads, presses `M` and lowers the volume by 4 dB
@@ -230,6 +241,12 @@ The system SHALL turn marking on and off with `M`, the marker key; while it is o
 #### Scenario: Unmark
 - **WHEN** marking is on and the owner hits a marked pad again
 - **THEN** that pad is no longer marked
+
+### Requirement: Mark state and cancellation
+
+`Esc` SHALL drop all marks and disable marking.
+In pad edit, the first `Esc` SHALL close edit and keep marks.
+With marking on or marks present, a yellow plate beside `F2 PADS` SHALL say `MARK · hit pads · 17 marked` when on, otherwise `17 MARKED · Esc drops`.
 
 #### Scenario: Drop the marks
 - **WHEN** pads are marked, the edit is closed and the owner presses `Esc`
@@ -296,7 +313,11 @@ The system SHALL draw in every pad cell of the pads screen the wave of what the 
 - **THEN** nothing is drawn under the info panel
 
 ### Requirement: Pad envelope
-The system SHALL give each pad an envelope of three times in milliseconds: attack (fade-in at the start of the piece), decay (the last `decay` ms of the piece fade to silence, the piece still ends at the same place) and release (in gate mode the sound fades over it after the release). The envelope is the ENV page of the pad edit: `Tab` turns to it, and `I` `K` pick attack, decay or release. `J` `L` change the picked one in the edit mode (a tap 1 ms, a held key 5 ms per repeat) for the change scope; the changed value pops up. Every envelope change on a sounding pad is click-free.
+Each pad SHALL have three envelope times in milliseconds:
+- Attack: fade in at the piece's start.
+- Decay: fade the last `decay` ms to silence without moving the piece's end.
+- Release: fade after gate release for that duration.
+Changes on sounding pads SHALL be click-free.
 
 #### Scenario: Attack at the start
 - **WHEN** the owner raises the attack of a pad to 50 ms and hits it
@@ -310,6 +331,12 @@ The system SHALL give each pad an envelope of three times in milliseconds: attac
 - **WHEN** a gate pad with a release of 300 ms is released
 - **THEN** the sound fades out over 300 ms, without a click
 
+### Requirement: Pad envelope controls
+
+The envelope SHALL use the ENV page, reached with `Tab`.
+`I` `K` SHALL select attack, decay or release.
+In edit, `J` `L` SHALL change it for the scope by 1 ms per tap or 5 ms per held repeat, with a value popup.
+
 #### Scenario: The envelope follows the scope
 - **WHEN** all 16 pads of bank 2 are marked and the owner raises the release
 - **THEN** every pad of bank 2 gets the longer release and the panel names the scope
@@ -320,12 +347,14 @@ The system SHALL give each pad an envelope of three times in milliseconds: attac
 
 ### Requirement: Pad edit mode
 
-The system SHALL open edit for the selected pad with Enter on Pads; Enter or Esc SHALL
-close it. Pages and parameters SHALL follow editing, "Parameter pages". Tab and
-Shift+Tab SHALL turn pages forward and back. I/K and Up/Down SHALL pick the previous
-or next parameter with the page following the pick. Tab, I/K and J/L with their arrow
-forms SHALL work with edit open or closed; J/L and Left/Right SHALL change the selected
-parameter. U/O SHALL turn banks in both states, as "Keyboard bank controls" says.
+Enter on Pads SHALL edit the selected pad.
+Enter/Esc SHALL close edit.
+Pages SHALL follow editing, "Parameter pages".
+Tab/Shift+Tab SHALL change pages forward/back.
+I/K and Up/Down SHALL select previous/next parameters, with the page following.
+Tab, I/K, J/L and their arrow forms SHALL work with edit open or closed.
+J/L and Left/Right SHALL change values.
+U/O SHALL change banks in both states, per "Keyboard bank controls".
 
 #### Scenario: The page follows the picked parameter
 - **WHEN** the owner enters pad edit and presses K until decay is picked
@@ -344,27 +373,34 @@ parameter. U/O SHALL turn banks in both states, as "Keyboard bank controls" says
 - **THEN** the selected value changes as with J or L, without turning banks
 
 ### Requirement: Pad envelope over the wave
-The system SHALL, while the pad edit mode is open, draw in the strip above the grid the
-wave of the selected pad's piece, dimmed, and over it the pad's envelope as a bright
-line: the attack rises from zero at the start, the decay falls to zero at the end of the
-piece. The release acts only in gate mode, from the moment the key lets go: for a gate
-pad it is drawn apart from the wave, at the right edge after a gap, as a dotted fall from
-full to silence named "key up", its length to the scale of the piece; for a one-shot pad
-it is not drawn, and the panel shows the release dimmed with "(gate)": the value is kept
-and acts as soon as the pad is gate. The part of the picked parameter is drawn in its own
-colour; the line follows every change, the mode too, at once. This replaces the live output while the mode is open; `Esc`
-brings the live output back; the level meters stay.
+During pad edit, the strip SHALL show the selected piece's dim wave with a bright envelope line.
+Attack SHALL rise from zero at the start and decay fall to zero at the piece's end.
+The selected parameter's part SHALL use its own colour.
+The line SHALL follow parameter and mode changes immediately.
 
 #### Scenario: The attack is a slope
 - **WHEN** the pad edit mode is open and the owner raises the attack of the pad
 - **THEN** the line in the strip rises from zero over a longer part of the wave, and the
   attack part is drawn in the colour of the picked parameter
 
+### Requirement: Envelope release display follows pad mode
+
+Release SHALL act only after gate key release.
+For gate pads, it SHALL appear separately after a gap at the right edge: a dotted full-to-silent fall named "key up", scaled to the piece.
+One-shot pads SHALL hide that line and dim release with "(gate)" in the panel.
+The value SHALL remain stored and act as soon as the pad becomes gate.
+
 #### Scenario: The release follows the mode
 - **WHEN** the edit mode of a one-shot pad with a release of 250 ms is open and the owner
   presses `H`
 - **THEN** before: no release is drawn and the panel says "release 250 ms (gate)" dimmed;
   after: a dotted fall named "key up" stands at the right edge apart from the wave
+
+### Requirement: Pad edit strip replaces live output
+
+Pad edit SHALL replace live output in the strip while open.
+`Esc` SHALL restore live output.
+Level meters SHALL remain visible.
 
 #### Scenario: The live output comes back
 - **WHEN** the pad edit mode is open and the owner presses `Esc`
@@ -384,14 +420,10 @@ The system SHALL give every pad with a sample one source and name it in the pad 
 - **THEN** the pad panel says `break.wav · all`
 
 ### Requirement: Source page
-The system SHALL put a SOURCE page into the pad edit after TONE and ENV: the source, the
-start and the end, on knobs 1–3 and the value keys. The source steps all, slice 1…N, pad.
-Moving the start or the end of a pad that plays `all` or a slice makes it a `pad` pad with
-its current bounds first; the status says the pad no longer follows the cuts, and undo
-links it back. The pad panel shows the rows of all pages at once, so no row hides when
-the page changes; the page decides only what the knobs turn and carries their numbers. A
-window that is too short for every row folds the rows (see "The pad panel fits the
-window").
+Pad edit SHALL have SOURCE after TONE and ENV: source, start and end on knobs 1–3 and value keys.
+Source SHALL step through all, slice 1…N, pad.
+Moving start/end of an `all` or slice source SHALL first make it a `pad` source with its current bounds.
+Status SHALL say it no longer follows cuts, and undo SHALL restore the link.
 
 #### Scenario: Edit only this fragment
 - **WHEN** pad 7 plays slice 3 and the owner opens its edit, walks to SOURCE and moves the start right
@@ -404,6 +436,12 @@ window").
 #### Scenario: Pick another slice
 - **WHEN** a pad plays the whole break and the owner steps its source to `slice 2`
 - **THEN** the pad plays slice 2 and follows its cuts
+
+### Requirement: Pad page rows stay visible
+
+The pad panel SHALL show all page rows at once, without hiding rows on page changes.
+Pages SHALL select only knob targets and show knob numbers.
+Short windows SHALL fold rows per "The pad panel fits the window".
 
 #### Scenario: Every row in sight
 - **WHEN** the window is tall enough for every row, the edit of a pad is open on the ENV
@@ -419,13 +457,10 @@ The system SHALL keep the open bank in the session and open it again on the next
 - **THEN** the pads screen opens on bank 2
 
 ### Requirement: Pad filter
-The system SHALL give every pad a filter: the type (off, low-pass, high-pass, band), the
-cutoff from 20 Hz to 20 kHz and the resonance from 0 to 100 %. A new pad and a pad of an
-older project have the filter off; with the filter off the pad sounds exactly as without
-it. A change on a sounding pad is heard at once and glides, no click. The filter follows
-the change scope (the marked pads), as the volume and the pitch do, and is saved with the
-pad in the project. The cutoff steps by a semitone on a tap and by an octave on a held
-key; the resonance by 1 % and 10 %; a knob turns the cutoff along the octaves.
+Each pad SHALL have off/low-pass/high-pass/band filter types, 20 Hz–20 kHz cutoff and 0–100 % resonance.
+New pads and older-project pads SHALL default to off, sounding exactly as without a filter.
+Sounding-pad changes SHALL act immediately and glide without clicks.
+Filters SHALL follow the change scope like volume/pitch and be project-saved with the pad.
 
 #### Scenario: Behind a wall
 - **WHEN** a pad with a hi-hat has the low-pass at 1 kHz and is hit
@@ -443,6 +478,12 @@ key; the resonance by 1 % and 10 %; a knob turns the cutoff along the octaves.
 - **WHEN** a long pad in gate sounds with the low-pass at 200 Hz and the cutoff is turned up to 8 kHz in one step
 - **THEN** the sound opens up over a few milliseconds, no step between two neighbouring samples is larger than the sound's own
 
+### Requirement: Pad filter control steps
+
+Cutoff SHALL step by a semitone per tap and an octave per held repeat.
+Resonance SHALL step by 1 % and 10 % respectively.
+Knob cutoff SHALL follow octaves.
+
 #### Scenario: Saved and opened
 - **WHEN** pad W has the band filter at 2 kHz with 40 % resonance, the project is saved and opened again
 - **THEN** pad W has the band filter at 2 kHz with 40 % resonance and sounds as before
@@ -456,16 +497,12 @@ key; the resonance by 1 % and 10 %; a knob turns the cutoff along the octaves.
 - **THEN** the cutoff of W moves down an octave too
 
 ### Requirement: Filter curve on the strip
-The system SHALL, while the FILTER page of the pad edit is picked, draw in the strip above
-the grid the filter's response in place of the wave and the envelope: the frequency from
-20 Hz on the left to 20 kHz on the right along the octaves, with half an octave of room at
-each end, the level that passes upwards, the top rising with the resonance hump; the whole
-curve, the hump too, stays inside the strip at any cutoff and resonance;
-a caption names the type, the cutoff and the resonance, and a few frequencies stand under
-the curve. The cutoff and the resonance hump are where they sound; the curve follows every
-change at once. With the filter off the curve is a flat line at full level and the caption
-says `filter off`. On the other pages the strip shows the wave with the envelope, as
-before.
+FILTER edit SHALL replace wave/envelope with filter response.
+Frequency SHALL run 20 Hz left to 20 kHz right along octaves, with half an octave extra at each end.
+Passed level SHALL rise upwards, with the top rising for the resonance hump.
+The whole curve SHALL fit at any cutoff/resonance and place them where they sound.
+A caption SHALL name type, cutoff and reso, with frequencies below.
+Changes SHALL show immediately.
 
 #### Scenario: The cutoff moves on the curve
 - **WHEN** the FILTER page of a pad with the low-pass at 1.2 kHz is open and the owner turns the cutoff down an octave
@@ -478,6 +515,11 @@ before.
 #### Scenario: The hump stays on the screen
 - **WHEN** the low-pass is at 20 kHz with 100 % resonance, or at 20 Hz
 - **THEN** the top of the hump is inside the strip, not cut at its edge
+
+### Requirement: Filter strip off and page states
+
+With filter off, the curve SHALL be flat at full level with caption `filter off`.
+Other pages SHALL show the wave with its envelope as before.
 
 #### Scenario: Off is flat
 - **WHEN** the FILTER page of a pad with the filter off is open
@@ -518,22 +560,24 @@ The drive follows the change scope and is saved with the pad in the project.
   within 3 dB of the peak at 0 %; no clipping, no NaN
 
 ### Requirement: Shared effect slots
-The system SHALL have two effect slots, FX 1 and FX 2, shared by all pads of the project.
-Every pad sends a share of its sound after the drive to each slot, 0 to 100 %, 0 on a new
-pad and on a pad of an older project; the slot output is added to the pad's own sound.
-A slot holds one effect of the list: reverb (size, tone) or delay (time 10–2000 ms,
-feedback 0–90 %). A new project has a reverb in FX 1 and a delay in FX 2. A slot sounds on
-after the pads that fed it stop, until its tail dies out. Every parameter change glides,
-no click; a type change fades the old tail out and starts the new effect empty, and the
-slot keeps the parameters of every type, so a type turned back finds them as they were.
-The slots are saved in the project. The audio callback with 32 voices and both slots
-stays within 50 % of the buffer budget (128 samples at 48 kHz).
+Project pads SHALL share FX 1 and FX 2.
+Each pad SHALL send 0–100 % of its post-drive sound to each slot, with slot output added to its dry sound.
+New and older-project pads SHALL default to zero sends.
+Slots SHALL offer reverb (size, tone) or delay (10–2000 ms, feedback 0–90 %).
+New projects SHALL use reverb in FX 1 and delay in FX 2.
+Slots SHALL be project-saved.
 
 #### Scenario: The echo
 - **WHEN** a short pad sends 100 % to a delay with the time at 250 ms and the feedback at
   50 % and is hit once
 - **THEN** the render has an echo 250 ms after the hit, within 1 sample, and the next echo
   250 ms later about 6 dB quieter; no clipping, no NaN
+
+### Requirement: Shared effect tails and parameter changes
+
+Slots SHALL continue after their input pads stop until their tails end.
+Parameter changes SHALL glide without clicks.
+Type changes SHALL fade the old tail out and start the new effect empty, retaining each type's parameters for later return.
 
 #### Scenario: The tail outlives the pad
 - **WHEN** a one-shot pad of 100 ms sends 60 % to a reverb and is hit
@@ -567,20 +611,21 @@ stays within 50 % of the buffer budget (128 samples at 48 kHz).
 - **WHEN** a project saved before the effects existed is opened
 - **THEN** every pad has the drive and both sends at 0, FX 1 holds a reverb and FX 2 a delay
 
+### Requirement: Shared effects callback budget
+
+With 32 voices and both slots, the audio callback SHALL stay within 50 % of the buffer budget (128 samples at 48 kHz).
+
 #### Scenario: Marked pads together
 - **WHEN** pads Q and W are marked and the owner turns send 1 on Q to 30 %
 - **THEN** send 1 of W is 30 % too, and changes on the shared FX screen change no pad
 
 ### Requirement: Undo on the pads
 
-The system SHALL undo the last pad change with Ctrl+Z on Pads and Files, one step per
-press, back through 100 steps: pad parameters (volume, pitch, envelope, filter, drive,
-sends), mode, swap, copy, clear, reset, file assignment, source and shared effect slots.
-One copy placement SHALL restore the target's full previous state in one undo step
-without changing its source. A cancelled copy SHALL add no step. A knob turn or run of
-value keys on one parameter SHALL be one step on every pad touched. An undone pad
-SHALL sound as before. The status SHALL name what came back or say `nothing to undo`.
-Selection, banks, scope, pages and marks SHALL add no step. History SHALL last until exit.
+Ctrl+Z on Pads and Files SHALL undo one change per press through 100 steps:
+- Volume, pitch, envelope, filter, drive and sends.
+- Mode, swap, copy, clear, reset, file assignment, source and shared FX.
+A knob turn or value-key run on one parameter SHALL make one step for all touched pads.
+Restored pads SHALL sound as before.
 
 #### Scenario: Undo a knob turn
 - **WHEN** the owner turns volume of Q from 0 to -12 dB in one turn and presses Ctrl+Z
@@ -602,6 +647,12 @@ Selection, banks, scope, pages and marks SHALL add no step. History SHALL last u
 - **WHEN** the owner changes FX 2 from delay to reverb and presses Ctrl+Z
 - **THEN** FX 2 holds the delay again with its time and feedback
 
+### Requirement: Pad undo history and feedback
+
+Undo status SHALL name what returned or say `nothing to undo`.
+Selection, banks, scope, pages and marks SHALL add no step.
+History SHALL last until exit.
+
 #### Scenario: Nothing to undo
 - **WHEN** the program has just started and the owner presses Ctrl+Z on Pads
 - **THEN** nothing changes and the status says `nothing to undo`
@@ -614,6 +665,11 @@ Selection, banks, scope, pages and marks SHALL add no step. History SHALL last u
 #### Scenario: Undo links it back
 - **WHEN** pad 7 plays slice 3, the owner moves its start on SOURCE and presses Ctrl+Z
 - **THEN** pad 7 says `slice 3` and plays it again
+
+### Requirement: Pad copy undo restores only its target
+
+A copy placement SHALL restore the target's full previous state in one undo step without changing its source.
+Cancelled copies SHALL add no step.
 
 #### Scenario: Undo one pad copy
 - **WHEN** the owner copies Q onto occupied W after confirmation and presses Ctrl+Z
@@ -683,21 +739,20 @@ a project saved before mute groups opens with every group off. Swapping two pads
 - **THEN** every pad has the group off and every pad rings on as before
 
 ### Requirement: The pad panel fits the window
-The system SHALL fit the pad panel to the window, whatever its height and width. When the
-window is too short for every row, the blocks of the pages that are not open fold to their
-title line with `▸` (`─ SOURCE ▸ ──`), the lowest first, until the panel fits; a taller
-window unfolds them as far as the panel grows (it grows with the pad grid, not with the
-strip). When even the folded panel does not fit, the blocks scroll so that
-the picked parameter is in sight, and the first and the last row of the blocks say
-`▲ N more` and `▼ N more` where rows are out of sight. The pad rows on top (pad, scope,
-file, mode) stay in every case. When the panel is too narrow for the labels
-and the values, the labels shorten (`vol`, `pit`, `atk`…) and the frame title names only
-the open page and its place, `TONE 1/7`.
+The pad panel SHALL fit any window height and width.
+Short windows SHALL fold unopened page blocks to `▸` title lines (`─ SOURCE ▸ ──`), lowest first, until they fit.
+Taller windows SHALL unfold them as the panel grows with the grid, not the strip.
+Top pad, scope, file and mode rows SHALL always stay visible.
 
 #### Scenario: A shorter window folds the blocks
 - **WHEN** the window is 100×40, the edit of a pad with effects is open on TONE
 - **THEN** the TONE, ENV and FILTER rows are seen, SOURCE and FX show only their titles
   with `▸`, and the scope row is seen; on SOURCE the SOURCE rows are seen and FILTER folds
+
+### Requirement: Folded pad panel scrolls when necessary
+
+If folded blocks still do not fit, they SHALL scroll to keep the selected parameter visible.
+First/last block rows SHALL say `▲ N more` / `▼ N more` for hidden rows above/below.
 
 #### Scenario: A very short window scrolls
 - **WHEN** the window is 100×30 and the owner walks with `K` from volume to the end of the
@@ -705,6 +760,10 @@ the open page and its place, `TONE 1/7`.
 - **THEN** the picked parameter is in sight at every step, `▼ N more` stands at the
   bottom while rows are below, `▲ N more` at the top while rows are above, and the scope
   row is seen the whole time
+
+### Requirement: Narrow pad panel labels
+
+When labels and values do not fit, labels SHALL shorten (`vol`, `pit`, `atk`…) and the frame title SHALL name only the open page and its position (`TONE 1/7`).
 
 #### Scenario: A narrow window
 - **WHEN** the window is 70×40 and the edit is open on TONE
@@ -744,21 +803,23 @@ those pads in white, and the yellow marks again after.
 - **THEN** every bank in the bank row shows its fill, a dot for every pad with a sound
 
 ### Requirement: Reset a pad to clean
-The system SHALL reset with `Backspace` in the pad edit every pad of the change scope to a
-freshly loaded pad: volume 0 dB, one-shot, pitch 0, the envelope, the filter, the drive,
-the sends and the mute group at their defaults. The file and the source of the pad (the
-whole file, a slice or its own piece with its bounds) stay. An empty pad in the scope is
-skipped. It asks first in the question box, as the other questions do, naming the pads:
-`Reset pad Q to clean?` or `Reset 17 pads to clean?`, then what stays and
-`Enter: reset · Esc: keep`; `Enter` resets, `Esc` keeps, and other keys do nothing while
-it asks. A reset sounding pad changes without a click. The reset is one undo step. The
-help line of the pad edit names the key: `Bksp reset`.
+In pad edit, `Backspace` SHALL reset scope pads to freshly loaded defaults: volume 0 dB, one-shot, pitch 0, default envelope, filter, drive, sends and mute group.
+File and source (whole file, linked slice or own bounded piece) SHALL stay.
+Empty pads SHALL be skipped.
+Sounding pads SHALL reset without clicks.
+Reset SHALL make one undo step.
+Edit help SHALL name `Bksp reset`.
 
 #### Scenario: A pad back to clean
 - **WHEN** pad Q plays slice 3 with the pitch -5, the filter low-pass and the volume -6 dB,
   the owner opens the edit, presses `Backspace` and `Enter`
 - **THEN** pad Q plays slice 3 with the pitch 0, the filter off, the volume 0 dB, one-shot,
   and its top frame carries only `◻`
+
+### Requirement: Pad reset confirmation
+
+Reset SHALL ask in the question box, naming `Reset pad Q to clean?` or `Reset 17 pads to clean?`, then what stays and `Enter: reset · Esc: keep`.
+`Enter` SHALL reset, `Esc` SHALL keep, and other keys SHALL do nothing while it asks.
 
 #### Scenario: The question names the pads
 - **WHEN** 17 pads are marked, the owner opens the edit and presses `Backspace`
@@ -790,12 +851,10 @@ help line of the pad edit names the key: `Bksp reset`.
 - **THEN** only the selected pad is cleared, as before, and nothing asks
 
 ### Requirement: The mode line of a pad
-The system SHALL draw under the name of a pad its mode line: the mode as a glyph, `⇢`
-one-shot (press and it goes on to the end) or `⇥` gate (it plays until the release stops it), then the volume when it
-is not 0 dB, then `mute N` when the pad is in a mute group, then `✱` when it has more
-settings (editing, "The pad marks its settings"): `⇢ +1 mute 2`, `⇥ -6 ✱`, `⇢`; no
-separator, so `⇢ -24 mute 8 ✱` fits the 13 cells of the narrowest pad. The pad panel names the mode in words (`mode    one-shot`), and F1 names
-the two glyphs.
+Below the pad name, its mode line SHALL show `⇢` one-shot (play to end) or `⇥` gate (play until release).
+It SHALL append nonzero volume, active `mute N`, then `✱` for extra settings per editing, "The pad marks its settings".
+No separators SHALL appear, so `⇢ -24 mute 8 ✱` fits 13 cells.
+The panel SHALL name the mode in words (`mode    one-shot`), and F1 SHALL name both glyphs.
 
 #### Scenario: The mode as a glyph
 - **WHEN** pad Q is one-shot at +1 dB and pad W is gate at 0 dB
@@ -807,20 +866,10 @@ the two glyphs.
 
 ### Requirement: Name a pad
 
-The system SHALL open a name input for the selected pad on the pads screen with `Ctrl+N`.
-The input starts with the displayed name. The pad grid SHALL show the text as it is typed,
-including an empty line when the text is empty. A visible cursor SHALL mark the end of
-the input, including when the name is empty. This is a preview only: `Enter` saves the
-name, `Esc` cancels and restores the previous name, and an empty name on `Enter` restores
-the name from the sample file. The input SHALL fit within the pad frame at every pad
-width. When the text is too wide, the visible part SHALL follow the end of the input;
-the full name SHALL be kept. The input SHALL accept text in both
-keyboard layouts and SHALL NOT play pads while it is open. The system SHALL show the
-custom name in the pad grid and save it in the project or scratch session. Old sessions
-without a name SHALL open with the sample file name. Renaming SHALL NOT change the sound.
-A successfully replaced or cleared sound SHALL clear the custom name. A failed load
-SHALL keep the previous name. When pads are swapped, the name SHALL move with the sound.
-A pad settings reset SHALL keep its name. Undo SHALL restore the name with the pad state.
+`Ctrl+N` on Pads SHALL open name input for the selected pad, starting with its displayed name.
+The grid SHALL preview typed text immediately, including an empty line for empty input.
+Both keyboard layouts SHALL type without playing pads.
+Renaming SHALL NOT change sound.
 
 #### Scenario: Rename a pad
 - **WHEN** the owner selects a pad, presses `Ctrl+N`, types a name and presses `Enter`
@@ -830,6 +879,12 @@ A pad settings reset SHALL keep its name. Undo SHALL restore the name with the p
 - **WHEN** the owner types or deletes characters in the pad name line
 - **THEN** the pad shows the text immediately, before it is saved
 
+### Requirement: Pad name input fits the pad
+
+A visible cursor SHALL mark the input's end, including empty names.
+Input SHALL fit inside every pad width.
+For overwide text, the visible part SHALL follow the end while keeping the full name.
+
 #### Scenario: The pad name cursor
 - **WHEN** the name input is open, including when it is empty or wider than the pad
 - **THEN** a cursor shows at the end of the visible input inside the frame
@@ -838,6 +893,14 @@ A pad settings reset SHALL keep its name. Undo SHALL restore the name with the p
 #### Scenario: A long pad name while typing
 - **WHEN** the owner types a name wider than the pad, including wide characters
 - **THEN** the end of the text is visible inside the frame and the full name is kept
+
+### Requirement: Pad name confirmation and persistence
+
+`Enter` SHALL save the name.
+`Esc` SHALL cancel the preview and restore the previous name.
+An empty name on `Enter` SHALL restore the sample file name.
+Custom names SHALL appear in the grid and be saved in project or scratch session.
+Older sessions without names SHALL show sample file names.
 
 #### Scenario: Cancel the pad name
 - **WHEN** the owner edits a pad name and presses `Esc`
@@ -850,6 +913,14 @@ A pad settings reset SHALL keep its name. Undo SHALL restore the name with the p
 #### Scenario: Pad name after restart
 - **WHEN** the owner names a pad, saves the project and restarts
 - **THEN** the same name shows on that pad
+
+### Requirement: Pad names follow sound state changes
+
+Successful sound replacement or clearing SHALL clear the custom name.
+Failed loads SHALL keep the previous name.
+Swaps SHALL move names with sounds.
+Pad settings resets SHALL keep names.
+Undo SHALL restore the name with pad state.
 
 #### Scenario: Replace a named pad sound
 - **WHEN** a new sample replaces the sound of a named pad
@@ -916,21 +987,11 @@ bank keys nor arrows SHALL choose another pad position; a pad hit chooses it.
 
 ### Requirement: Pads playback badge
 
-On the Pads screen (F2), the system SHALL show a PLAY badge next to the screen title.
-It SHALL occupy 10 terminal cells including padding: ` PLAY     ` at rest and
-` PLAY ▶   ` while at least one real pad voice of the current ready project plays.
-Idle text SHALL be dim on the normal background; playback SHALL use the existing
-blue background and the play icon. Following title content SHALL keep its columns.
-The badge SHALL include all banks, not only the selected pad or visible bank, and
-SHALL work with pad edit open or closed, with the grid hidden or shown, and alongside
-the existing MARK plate without changing that plate's meaning or appearance.
-
-The badge SHALL follow actual audio playback, including a gate's release fade, not
-held keys, hit flashes or queued requests. Previews, an effect tail alone, rejected
-or blocked hits and old-project voices SHALL NOT light it. A project that is not ready
-or missing audio SHALL show idle. Keyboard pads, raw MIDI notes and learned pad buttons
-SHALL give the same result through their production routes. This visual addition
-SHALL NOT change sound, input routing, keys, transport, F3 or saved data.
+F2 SHALL show PLAY beside its title, 10 cells including padding: ` PLAY     ` idle, ` PLAY ▶   ` during actual ready-current-project pad playback.
+Idle SHALL be dim on normal background.
+Playback SHALL use the existing blue background and play icon.
+It SHALL follow actual voices including gate release fades, not held keys, flashes or queued requests.
+Keyboard, raw MIDI and learned buttons SHALL give the same result through production routes.
 
 #### Scenario: Pads PLAY badge follows keyboard and MIDI playback
 - **WHEN** a keyboard pad, raw MIDI note or learned pad button triggers a pad on F2
@@ -939,10 +1000,22 @@ SHALL NOT change sound, input routing, keys, transport, F3 or saved data.
   gate release fade finishes, then returns to dim without the icon
 - **AND** a queued hit alone or a held key after natural sound end does not keep it lit
 
+### Requirement: Pads PLAY badge scope and layout
+
+PLAY SHALL include every bank, regardless of selected pad or visible bank, with edit open/closed and grid hidden/shown.
+It SHALL coexist with MARK without changing its meaning or appearance.
+Following title content SHALL keep its columns.
+Sound, input routes, keys, transport, F3 and saved data SHALL stay unchanged.
+
 #### Scenario: Pads PLAY badge follows all sounding pads
 - **WHEN** several pad voices play, the selected pad or bank changes, or the owner
   returns to F2, opens pad edit or hides the grid while a pad still plays
 - **THEN** PLAY stays lit until the last pad voice ends, regardless of selection or bank
+
+### Requirement: Pads PLAY badge excludes other sound
+
+Previews, effect tails alone, rejected/blocked hits and old-project voices SHALL NOT light PLAY.
+An unready project or missing audio SHALL show idle.
 
 #### Scenario: Pads PLAY badge ignores silent requests and old projects
 - **WHEN** question or learn blocks a hit, its audio queue rejects it, the project is

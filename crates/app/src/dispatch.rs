@@ -171,12 +171,7 @@ impl App {
                 }
             }
             Action::HelpToggle => self.help_open = !self.help_open,
-            Action::LearnToggle
-                if matches!(
-                    self.screen,
-                    Screen::Pads | Screen::Chop | Screen::Files | Screen::Fx
-                ) =>
-            {
+            Action::LearnToggle if self.screen.rules().screen_learn => {
                 self.screen_learn = match self.screen_learn {
                     Some(_) => None,
                     None => Some(self.learn_open()),

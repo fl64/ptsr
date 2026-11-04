@@ -16,6 +16,138 @@ pub enum Screen {
     Fx,
 }
 
+/// Shared screen rules. Keyboard edit resolution keeps its caller's edit flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenRules {
+    /// The UI edit group, if the screen has an edit mode.
+    pub ui_edit_group: Option<Group>,
+    /// Whether F10 can open screen learn.
+    pub screen_learn: bool,
+    /// Whether MIDI resolution accepts a separate edit layer.
+    pub midi_edit_layer: bool,
+    /// Whether MIDI resolution inherits FX page controls.
+    pub fx_page_controls: bool,
+}
+
+struct ScreenInfo {
+    code: u32,
+    key: &'static str,
+    title: &'static str,
+    group: Group,
+    rules: ScreenRules,
+}
+
+impl Screen {
+    /// All input screens in code order, not help or display order.
+    pub const ALL: [Self; 5] = [
+        Self::Pads,
+        Self::Settings,
+        Self::Files,
+        Self::Chop,
+        Self::Fx,
+    ];
+
+    fn info(self) -> ScreenInfo {
+        match self {
+            Self::Pads => ScreenInfo {
+                code: 0,
+                key: "pads",
+                title: "PADS",
+                group: Group::Pads,
+                rules: ScreenRules {
+                    ui_edit_group: Some(Group::PadsEdit),
+                    screen_learn: true,
+                    midi_edit_layer: true,
+                    fx_page_controls: false,
+                },
+            },
+            Self::Settings => ScreenInfo {
+                code: 1,
+                key: "settings",
+                title: "SETTINGS",
+                group: Group::Settings,
+                rules: ScreenRules {
+                    ui_edit_group: None,
+                    screen_learn: false,
+                    midi_edit_layer: true,
+                    fx_page_controls: false,
+                },
+            },
+            Self::Files => ScreenInfo {
+                code: 2,
+                key: "files",
+                title: "FILES",
+                group: Group::Files,
+                rules: ScreenRules {
+                    ui_edit_group: None,
+                    screen_learn: true,
+                    midi_edit_layer: true,
+                    fx_page_controls: false,
+                },
+            },
+            Self::Chop => ScreenInfo {
+                code: 3,
+                key: "chop",
+                title: "CHOP",
+                group: Group::Chop,
+                rules: ScreenRules {
+                    ui_edit_group: Some(Group::ChopEdit),
+                    screen_learn: true,
+                    midi_edit_layer: true,
+                    fx_page_controls: false,
+                },
+            },
+            Self::Fx => ScreenInfo {
+                code: 4,
+                key: "fx",
+                title: "FX",
+                group: Group::Fx,
+                rules: ScreenRules {
+                    ui_edit_group: None,
+                    screen_learn: true,
+                    midi_edit_layer: false,
+                    fx_page_controls: true,
+                },
+            },
+        }
+    }
+
+    /// The screen code in a packed input snapshot.
+    pub fn code(self) -> u32 {
+        self.info().code
+    }
+
+    /// Decodes a screen code without a fallback screen.
+    pub fn from_code(code: u32) -> Option<Self> {
+        Self::ALL.into_iter().find(|screen| screen.code() == code)
+    }
+
+    /// The section name in keyboard and MIDI configuration.
+    pub fn key(self) -> &'static str {
+        self.info().key
+    }
+
+    /// Finds a screen by its exact section name.
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|screen| screen.key() == key)
+    }
+
+    /// The screen group title in the MIDI learn list.
+    pub fn title(self) -> &'static str {
+        self.info().title
+    }
+
+    /// The screen group, independent of the UI edit state.
+    pub fn group(self) -> Group {
+        self.info().group
+    }
+
+    /// The screen's shared input rules.
+    pub fn rules(self) -> ScreenRules {
+        self.info().rules
+    }
+}
+
 /// Independent input states. An overlay does not erase the state below it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mode {
@@ -91,7 +223,7 @@ impl Focus {
         // The spare bank bit lets unpack reject invalid banks instead of aliasing
         // bank 9 to bank 1. This is internal state, not a saved file format.
         (self.bank < 8)
-            .then(|| self.screen as u32 | ((self.bank as u32) << 3) | (self.mode.bits() << 7))
+            .then(|| self.screen.code() | ((self.bank as u32) << 3) | (self.mode.bits() << 7))
     }
 
     /// Unpacks a snapshot, rejecting unknown screens, banks and reserved bits.
@@ -99,14 +231,7 @@ impl Focus {
         if bits >> 17 != 0 {
             return None;
         }
-        let screen = match bits & 7 {
-            0 => Screen::Pads,
-            1 => Screen::Settings,
-            2 => Screen::Files,
-            3 => Screen::Chop,
-            4 => Screen::Fx,
-            _ => return None,
-        };
+        let screen = Screen::from_code(bits & 7)?;
         let bank = ((bits >> 3) & 15) as usize;
         (bank < 8).then(|| Self {
             screen,
@@ -138,6 +263,160 @@ pub fn route_pad(focus: Focus) -> PadRoute {
         PadRoute::Ui
     } else {
         PadRoute::Sound
+    }
+}
+
+#[cfg(test)]
+mod screen_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn registry_keeps_exact_screen_identity_and_scopes() {
+        let expected = [
+            (Screen::Pads, 0, "pads", "PADS", Group::Pads),
+            (Screen::Settings, 1, "settings", "SETTINGS", Group::Settings),
+            (Screen::Files, 2, "files", "FILES", Group::Files),
+            (Screen::Chop, 3, "chop", "CHOP", Group::Chop),
+            (Screen::Fx, 4, "fx", "FX", Group::Fx),
+        ];
+        assert_eq!(Screen::ALL, expected.map(|(screen, ..)| screen));
+        for (screen, code, key, title, group) in expected {
+            assert_eq!(screen.code(), code);
+            assert_eq!(Screen::from_code(code), Some(screen));
+            assert_eq!(screen.key(), key);
+            assert_eq!(Screen::from_key(key), Some(screen));
+            assert_eq!(screen.title(), title);
+            assert_eq!(screen.group(), group);
+            assert_eq!(group.key(), key);
+            assert_eq!(Group::from_key(key), Some(group));
+            assert_eq!(group.title(), title);
+            assert_eq!(group.scope(), midi::Scope::Screen(screen));
+        }
+        assert_eq!(
+            Screen::ALL
+                .map(Screen::code)
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .len(),
+            Screen::ALL.len()
+        );
+        assert_eq!(
+            Screen::ALL
+                .map(Screen::key)
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .len(),
+            Screen::ALL.len()
+        );
+    }
+
+    #[test]
+    fn registry_rejects_unknown_codes_and_section_names() {
+        for code in 5..=255 {
+            assert_eq!(Screen::from_code(code), None, "{code}");
+        }
+        for code in [256, 1 << 16, 1 << 31, u32::MAX] {
+            assert_eq!(Screen::from_code(code), None, "{code}");
+        }
+        for key in [
+            "",
+            "Pads",
+            "FX",
+            "global",
+            "edit",
+            "pads_edit",
+            "chop_edit",
+            "project_picker",
+            " pads",
+            "fx ",
+        ] {
+            assert_eq!(Screen::from_key(key), None, "{key}");
+        }
+    }
+
+    #[test]
+    fn registry_keeps_ui_and_midi_rules_separate() {
+        for (screen, ui_edit_group, screen_learn, midi_edit_layer, fx_page_controls) in [
+            (Screen::Pads, Some(Group::PadsEdit), true, true, false),
+            (Screen::Settings, None, false, true, false),
+            (Screen::Files, None, true, true, false),
+            (Screen::Chop, Some(Group::ChopEdit), true, true, false),
+            (Screen::Fx, None, true, false, true),
+        ] {
+            assert_eq!(
+                screen.rules(),
+                ScreenRules {
+                    ui_edit_group,
+                    screen_learn,
+                    midi_edit_layer,
+                    fx_page_controls,
+                },
+                "{screen:?}"
+            );
+            if let Some(group) = ui_edit_group {
+                assert_eq!(group.scope(), midi::Scope::Edit(screen));
+            }
+        }
+    }
+
+    #[test]
+    fn registry_keeps_all_group_names_order_and_scopes() {
+        let expected = [
+            (Group::Global, "global", "GLOBAL", midi::Scope::Global),
+            (
+                Group::Pads,
+                "pads",
+                "PADS",
+                midi::Scope::Screen(Screen::Pads),
+            ),
+            (
+                Group::PadsEdit,
+                "pads_edit",
+                "PADS · EDIT",
+                midi::Scope::Edit(Screen::Pads),
+            ),
+            (
+                Group::Settings,
+                "settings",
+                "SETTINGS",
+                midi::Scope::Screen(Screen::Settings),
+            ),
+            (
+                Group::Files,
+                "files",
+                "FILES",
+                midi::Scope::Screen(Screen::Files),
+            ),
+            (
+                Group::Chop,
+                "chop",
+                "CHOP",
+                midi::Scope::Screen(Screen::Chop),
+            ),
+            (
+                Group::ChopEdit,
+                "chop_edit",
+                "CHOP · EDIT",
+                midi::Scope::Edit(Screen::Chop),
+            ),
+            (Group::Fx, "fx", "FX", midi::Scope::Screen(Screen::Fx)),
+        ];
+        assert_eq!(Group::ALL, expected.map(|(group, ..)| group));
+        for (group, key, title, scope) in expected {
+            assert_eq!(group.key(), key);
+            assert_eq!(Group::from_key(key), Some(group));
+            assert_eq!(group.title(), title);
+            assert_eq!(group.scope(), scope);
+        }
+        assert_eq!(
+            Group::ALL
+                .map(Group::key)
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .len(),
+            Group::ALL.len()
+        );
     }
 }
 
@@ -633,13 +912,13 @@ impl Group {
     pub fn key(self) -> &'static str {
         match self {
             Group::Global => "global",
-            Group::Pads => "pads",
+            Group::Pads => Screen::Pads.key(),
             Group::PadsEdit => "pads_edit",
-            Group::Settings => "settings",
-            Group::Files => "files",
-            Group::Chop => "chop",
+            Group::Settings => Screen::Settings.key(),
+            Group::Files => Screen::Files.key(),
+            Group::Chop => Screen::Chop.key(),
             Group::ChopEdit => "chop_edit",
-            Group::Fx => "fx",
+            Group::Fx => Screen::Fx.key(),
         }
     }
 
@@ -647,13 +926,13 @@ impl Group {
     pub fn title(self) -> &'static str {
         match self {
             Group::Global => "GLOBAL",
-            Group::Pads => "PADS",
+            Group::Pads => Screen::Pads.title(),
             Group::PadsEdit => "PADS · EDIT",
-            Group::Settings => "SETTINGS",
-            Group::Files => "FILES",
-            Group::Chop => "CHOP",
+            Group::Settings => Screen::Settings.title(),
+            Group::Files => Screen::Files.title(),
+            Group::Chop => Screen::Chop.title(),
             Group::ChopEdit => "CHOP · EDIT",
-            Group::Fx => "FX",
+            Group::Fx => Screen::Fx.title(),
         }
     }
 
@@ -1980,7 +2259,7 @@ impl Keymap {
             ("shift_velocity", &mut self.shift_velocity),
         ] {
             if let Some(n) = t
-                .get("pads")
+                .get(Screen::Pads.key())
                 .and_then(|p| p.get(key))
                 .and_then(|v| v.as_integer())
             {
@@ -2019,13 +2298,8 @@ impl Keymap {
         section("global", t.get("global"), &mut self.global);
         section("edit", t.get("edit"), &mut self.edit);
         let screens_t = t.get("screens");
-        for (screen, name) in [
-            (Screen::Pads, "pads"),
-            (Screen::Settings, "settings"),
-            (Screen::Files, "files"),
-            (Screen::Chop, "chop"),
-            (Screen::Fx, "fx"),
-        ] {
+        for screen in Screen::ALL {
+            let name = screen.key();
             let map = self.screens.entry(screen).or_default();
             section(name, screens_t.and_then(|s| s.get(name)), map);
         }
@@ -2545,6 +2819,43 @@ mod tests {
                     .any(|a| a.group == Group::Fx && a.name == name),
                 "{name}"
             );
+        }
+    }
+
+    #[test]
+    fn registry_sections_keep_keyboard_layers_on_every_screen() {
+        let mut text =
+            String::from("[global]\nH = \"bank.next\"\n[edit]\nH = \"edit.param_next\"\n");
+        for key in ["pads", "settings", "files", "chop", "fx"] {
+            text.push_str(&format!("[screens.{key}]\nH = \"help.toggle\"\n"));
+        }
+        let (mut map, warnings) = Keymap::from_toml(&text).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        for screen in Screen::ALL {
+            assert_eq!(
+                map.resolve_in(screen, false, &press('h')),
+                Some(Action::HelpToggle)
+            );
+            assert_eq!(
+                map.resolve_in(screen, true, &press('h')),
+                Some(Action::ParamNext)
+            );
+        }
+        for key in ["pads", "settings", "files", "chop", "fx"] {
+            assert!(
+                map.overlay(&format!("[screens.{key}]\nH = \"none\"\n"))
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        for screen in Screen::ALL {
+            for key in ['h', 'H', 'р', 'Р'] {
+                assert_eq!(map.resolve_in(screen, false, &press(key)), None);
+                assert_eq!(
+                    map.resolve_in(screen, true, &press(key)),
+                    Some(Action::ParamNext)
+                );
+            }
         }
     }
 

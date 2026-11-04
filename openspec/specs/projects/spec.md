@@ -1,7 +1,7 @@
 # projects Specification
 
 ## Purpose
-TBD - created by archiving change 11-project-dir. Update Purpose after archive.
+Keep each project in its own folder with saved pads, chops and sample paths. Support project selection, persistent root folders and isolated sound when projects change.
 
 ## Requirements
 
@@ -83,22 +83,27 @@ The system SHALL mark in the project picker the project that is open now, and SH
 - **WHEN** "beat1" is open and the owner presses `Ctrl+P`
 - **THEN** the row of "beat1" says it is open, and the help line names the picker keys: select, open, type a name to create, close
 
-### Requirement: The program name and its folders
-The system SHALL use the name `ptsr` for the program file, the window title, the sound server client (`ptsr:out_l`, `ptsr:out_r`, `ptsr:in_l`, `ptsr:in_r`), the MIDI client and its folders: `~/.config/ptsr/` (config, keymap, MIDI bindings), `~/.local/share/ptsr/` (session) and `~/.local/state/ptsr/` (log). The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these folders as before.
+### Requirement: Current program files
 
-At start, the system SHALL copy the files of the old folder `arasaka-404` into the new folder `ptsr` for the config and the session, if the new folder does not exist and the old folder exists. The system does not delete or change the old folders. The status line says once that the settings moved, and from where.
+The system SHALL use `ptsr` for its executable, window title, MIDI client and sound client (`ptsr:out_l`, `ptsr:out_r`, `ptsr:in_l`, `ptsr:in_r`).
+Folders SHALL be `~/.config/ptsr/` for config, keymap and MIDI bindings, `~/.local/share/ptsr/` for session, and `~/.local/state/ptsr/` for log.
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` SHALL relocate them as before.
 
-#### Scenario: The settings move at the first start
-- **WHEN** `~/.config/arasaka-404/` holds `config.toml` and `keymap.toml`, `~/.local/share/arasaka-404/` holds `session.toml`, the `ptsr` folders do not exist and the owner starts ptsr
-- **THEN** ptsr starts with the same audio device, MIDI bindings, keys and pads as before, the files are in `~/.config/ptsr/` and `~/.local/share/ptsr/`, the old folders stay as they were, and the status line says `settings moved from ~/.config/arasaka-404`
+#### Scenario: Current ptsr files load
+- **WHEN** current `ptsr` settings, keys and session exist alongside conflicting `arasaka-404` files
+- **THEN** the current files load without importing or changing the old files
+- **AND** current sound-device settings, MIDI bindings, owner keys and session pad state remain available
 
-#### Scenario: The new folder wins
-- **WHEN** `~/.config/ptsr/` exists and `~/.config/arasaka-404/` exists too
-- **THEN** ptsr reads only `~/.config/ptsr/` and copies nothing
+### Requirement: Legacy program folders are not imported
 
-#### Scenario: A first start without old folders
-- **WHEN** no `arasaka-404` folder and no `ptsr` folder exists
-- **THEN** ptsr starts with the defaults, copies nothing and says nothing about a move
+Startup SHALL NOT inspect, copy, rename or remove `arasaka-404` config or session folders, or show a settings-moved notice.
+Absent current files SHALL use the existing default settings, shipped keys and empty scratch session.
+Current files and XDG paths SHALL keep their existing behavior.
+
+#### Scenario: Legacy folders stay unused without current files
+- **WHEN** only legacy `arasaka-404` settings, keys and session files exist
+- **THEN** current-file loaders use defaults, shipped keys and an empty session without creating current folders by copying legacy files
+- **AND** legacy files remain unchanged
 
 ### Requirement: Project sounds stay separate
 
