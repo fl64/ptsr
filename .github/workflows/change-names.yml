@@ -1,0 +1,36 @@
+name: Change names
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: change-names-${{github.event.pull_request.number}}
+  cancel-in-progress: true
+
+jobs:
+  names:
+    name: Change names
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the pull request commits
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{github.event.pull_request.head.sha}}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test the checker
+        run: python3 -B -m unittest discover -s scripts -p test_check_names.py -v
+      - name: Check the title and commit messages
+        env:
+          PR_TITLE: ${{github.event.pull_request.title}}
+          BASE_SHA: ${{github.event.pull_request.base.sha}}
+          HEAD_SHA: ${{github.event.pull_request.head.sha}}
+        run: |
+          python3 -B scripts/check_names.py --title "$PR_TITLE"
+          python3 -B scripts/check_names.py --range "$BASE_SHA..$HEAD_SHA"

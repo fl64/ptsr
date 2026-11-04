@@ -110,11 +110,54 @@ and [owner checks](docs/LIVE-CHECKS.md).
 
 - `AGENTS.md` gives the rules for the code: real time, tests, keys, the process.
 - The process is OpenSpec (`npm install -g @fission-ai/openspec`). First a change in `openspec/changes/`, then the code. `openspec list` shows the open changes.
-- `task check` runs format, dependency license, Clippy, test and audio benchmark checks. Commit only after they pass.
+- `task check` runs name, format, dependency license, Clippy, test and audio benchmark checks. Commit only after they pass.
   The test `crates/app/tests/scenarios.rs` fails if a spec scenario has no test.
 - The tests write WAV files to `renders/`. Listen to them.
 - `docs/LIVE-CHECKS.md` lists the checks by hand and by ear.
 - Each change goes in its own branch and a pull request to `master`.
+
+### Commit and pull request names
+
+Use one format for new commits and PR titles:
+
+```text
+fix(pads): keep original gate releases [85]
+ci(build): check change names [repo-format]
+```
+
+The format is `<type>(<scope>): <summary> [<change>]`. See `AGENTS.md` for types and scopes.
+Use an OpenSpec number or an approved range, such as `83a-85`.
+Repository-only work uses one stable `repo-<short-name>` identifier, not a release label.
+Write the summary in English. Start it with a lowercase ASCII letter or digit.
+Existing `master` history stays unchanged.
+
+Development checks need Python 3.10 or newer and Git 2.30 or newer. No Python packages are necessary.
+Enable the commit hook once in each clone:
+
+```sh
+task hooks:install
+```
+
+Fetch the base branch. Check the new branch commits. Then make a commit with a signoff:
+
+```sh
+git fetch origin master
+task check
+git commit --signoff -m 'ci(build): check change names [repo-format]'
+```
+
+`task names` runs only the checker tests and new-commit checks.
+The hook checks each proposed commit message. CI checks the PR title and all new commits.
+CI also runs after a title edit. Unknown scopes, old-format titles and missing signoffs fail.
+The protected `master` branch requires a PR and the `Change names` check.
+
+Merge by squash with the unchanged PR title and an exact-head guard.
+Keep the final commit's signoff. Do not override the title with `--subject` or API `commit_title`.
+GitHub adds the PR number to the final commit. Check its title after merge.
+
+The hook applies only to clones that enable it. CI cannot judge the quality of English.
+GitHub without Enterprise cannot enforce a manually edited final squash title.
+Administrators can change protection. The merge procedure remains necessary.
 
 ### Dependency license checks
 
