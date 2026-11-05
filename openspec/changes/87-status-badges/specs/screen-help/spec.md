@@ -71,6 +71,16 @@ The no-key-releases startup warning SHALL retain its existing first-keypress ack
 - **WHEN** controlled time reaches a Done, Info, Warn or manual save-success deadline
 - **THEN** the notice ends at three, three, six or five seconds respectively and the next notice or normal hint appears
 
+#### Scenario: Hidden notices retain their visible time
+- **WHEN** an editor prompt or a higher-priority state hides a timed notice
+- **THEN** its visible lifetime pauses until the notice line can show it again
+- **AND** new notices still enter history while that line is unavailable
+
+#### Scenario: A delayed update preserves the next notice lifetime
+- **WHEN** an update finds an expired notice with another notice pending
+- **THEN** the next notice starts its remaining visible lifetime at that update
+- **AND** time before that update does not expire a notice that never appeared
+
 #### Scenario: Owner acknowledgement keeps the original action
 - **WHEN** an Error is visible and the owner presses a keyboard key, pad or control
 - **THEN** that action acknowledges the Error and still follows its normal production route exactly once
@@ -98,6 +108,16 @@ Queue removal SHALL NOT remove an entry from the separate history.
 - **WHEN** a higher-level notice interrupts a timed notice and later ends
 - **THEN** the interrupted notice resumes with only its remaining visible time
 - **AND** an equal-level replacement does not replay the replaced notice
+
+#### Scenario: Queued notices retain priority and production order
+- **WHEN** a notice ends with several notices pending
+- **THEN** the highest pending level appears first, with older notices first within that level
+- **AND** interruption does not change a notice's original production order
+
+#### Scenario: Expired notices do not resume after interruption
+- **WHEN** a higher-level notice arrives exactly at or after the current timed notice's deadline
+- **THEN** the expired notice does not enter the pending queue or appear again
+- **AND** its history entry remains eligible for the latest 50 entries
 
 #### Scenario: Pending notice overflow remains bounded
 - **WHEN** more than 50 pending notices accumulate behind an active Error

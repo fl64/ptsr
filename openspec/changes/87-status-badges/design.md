@@ -139,6 +139,31 @@ Keep the existing hint as the fallback when no notice or higher-priority input p
 No notice changes save results, retries, project state or the persistent `Save failed` indicator.
 A later informational result may wait behind an error. It remains available in history.
 
+Step 4.1 adds the message model in `crates/app/src/notices.rs`, with controlled-time tests in `crates/app/tests/notices.rs`.
+The test target loads that source directly. The application does not use it until the producer migration in 4.2.
+This boundary avoids temporary message levels, guessed origins and changed save feedback during model preparation.
+Drawing, input dispatch and the existing one-slot messages stay unchanged in 4.1. No manual check is necessary for this step.
+
+Keep active and pending entries in production order, with a separate active index.
+Select the highest pending level, then the oldest entry at that level. Interruption does not change an entry's age.
+The active entry does not count toward the pending limit. History has its own limit and stores each production once, newest first.
+Equal text from two requests still creates two history entries. Reading, resuming and acknowledging entries do not create history.
+The model stores the actual device label supplied by its caller. It does not discover or infer devices.
+
+Advance the current timer before a new notice or acknowledgement. Do not queue an entry whose lifetime already ended.
+An editor prompt or higher-priority state pauses visible time without stopping production or history.
+After a delayed update, the next selected entry starts at that update. Do not charge it for time before it could appear.
+Acknowledgement removes only the visible Error. It does not remove a timed result or change the history.
+Input classification and unchanged keyboard/raw-MIDI action routing remain integration work in 4.2 and 4.3.
+
+Review boundaries for 4.1:
+
+- Exact deadlines and interrupted remaining time: closed for the model by `timed_notices_use_their_visible_lifetime` and `interrupted_notices_retain_remaining_time`.
+- Nested interruption, equal-level replacement and original production age: closed for the model by `queued_notices_retain_priority_and_production_order` and the level-pair matrix.
+- Fifty pending entries plus one active Error, with independent latest-50 history: closed for the model by `pending_notice_overflow_remains_bounded`.
+- Hidden notice time, delayed updates and repeated reads: closed for the model by visibility, delayed-update, acknowledgement and history tests.
+- Actual input acknowledgement, startup exceptions, save state and device routing: open for integration in 4.2 and 4.3.
+
 ### 5. Add F1 Messages without new global keys
 
 F1 opens the existing help first. A Messages page shows newest entries first, with level and origin.
@@ -201,7 +226,7 @@ Do not change engine code or add I/O to audio processing.
 | Pad states beside a corner mark | Keep key, name, bank, hit, selection and marked fill readable | Closed for pad-state step | `pad_corner_marks_keep_identity_and_state_styles` covers 13, 24 and 40 cell widths, Unicode names and slice 128 |
 | Assignment followed by bank change or cancellation | Numbers follow the actual plan. Pads stay unchanged. Slice audition remains | Closed for pad-state step | `assignment_numbers_appear_on_target_pads` checks by-hand and ordered plans through keyboard, MIDI notes and buttons |
 | Mode starts with the grid hidden | Keep the hidden layout. Assignment temporarily shows the grid | Closed for pad-state step | `learning_and_hidden_grids_keep_existing_sound_rules`, `yellow_grid_feedback_keeps_shared_geometry_and_hidden_layout` at 80×26 and 120×40 |
-| Queued and interrupted notices | Bounded storage and deterministic remaining time | Open: new coverage | Controlled-clock queue and overflow tests |
+| Queued and interrupted notices | Bounded storage and deterministic remaining time | Closed for the model. Application integration remains open | Seventeen controlled-time model tests cover deadlines, visibility, priority, overflow, history and explicit acknowledgement |
 | Disconnect and stale source event | No false connected-device label or stuck highlight | Open: new coverage | Production multi-device and reconnect sequences |
 | Short or hidden-grid screen | Keep save warning, controls and mode identity | Open: new coverage | 80×26 and hidden-grid fixtures |
 | Overlay expires without another press | Restore wave image and hint | Open: new coverage | Timer-driven graphics and buffer tests |
@@ -225,5 +250,5 @@ This approval implies no hardware result, listening result or callback maximum-b
 
 ## Open questions
 
-None for preparation, title badges or pad feedback. The owner approved each file plan before implementation.
+None for preparation, title badges, pad feedback or the step 4.1 model. The owner approved each file plan before implementation.
 Ask the owner before changing an approved choice.

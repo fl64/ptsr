@@ -88,10 +88,32 @@ Tab under open F1 help still needs task 4.4. Hardware, listening and unfinished-
 
 ## 4. Notices and F1 Messages
 
-- [ ] 4.1 Add level, origin, lifetime, bounded pending queue and latest-50 history. Test controlled-time priority, interruption, overflow and owner acknowledgement.
+The owner approved the five-file step 4.1 plan: a new notice model, its test target, this task list, design and screen-help delta.
+Implement the model first. The current message line and input routing stay unchanged until the integration steps below.
+The model tests load the future application source directly, without a second implementation or live devices.
+Cover exact deadlines, hidden visible time, interruption, production order, overflow, independent history and explicit Error acknowledgement.
+Run `task check`, `task build`, strict OpenSpec validation and English checks before the local signed-off commit.
+No owner action, listening render, publication or F1 navigation change is part of this step.
+
+- [x] 4.1 Add level, origin, lifetime, bounded pending queue and latest-50 history. Test controlled-time priority, interruption, overflow and owner acknowledgement.
 - [ ] 4.2 Classify each existing transient and startup message. Preserve editor prompts, fallback hints, no-key-releases acknowledgement and silent successful autosave.
 - [ ] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
 - [ ] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
+
+Model verification (4.1): `task check`, `task build` and `task openspec:check` pass.
+Seventeen new notice tests pass in both Debug and Release. They use controlled time without sleeps or live devices.
+The existing suites pass: 701 App, 80 input, 109 drawing and 18 benchmark-report tests. Main-spec scenario coverage also passes.
+The model covers all 16 level pairs, exact deadlines, nested interruptions, equal-level replacement and original production order.
+It pauses hidden notice time and gives the next entry its remaining lifetime after a delayed update.
+Overflow tests retain the active Error, bound pending entries at 50 and check the separate latest-50 history in exact order.
+Repeated reads, resumption, expiry and explicit acknowledgement add no history entries. Repeated requests still get separate entries.
+The model retains the supplied keyboard, device or system origin. A new instance has no previous history.
+Debug, Release model tests, the Release sampler and the executed callback benchmark use this worktree's source paths.
+The sampler build reuses unchanged Release code. The new model is not part of that executable yet.
+Application drawing, input dispatch, saving, engine, bindings, dependencies and existing tests stay unchanged.
+Production acknowledgement, message levels and source routing still need 4.2 and 4.3. F1 Messages and its controls still need 4.4.
+The owner has no manual check for 4.1. No new WAV, hardware result, publication or archive is part of this step.
+Tab under open F1 help remains an open exception for correction in 4.4.
 
 ## 5. Values and status
 
