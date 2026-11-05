@@ -15,7 +15,7 @@ Cyberpunk: an almost black background, three state accents, everything else mute
 | Cyan | `#33E1FF` | playing, selected, on |
 | Magenta | `#FF5FAE` | cut markers, waiting, recording, warnings |
 | White | `#F2F4F7` | hit flash, playhead |
-| Yellow | `#FFE03A`, dark fill `#3D3305` | PadMode title badges, marked pads, marks in the bank row |
+| Yellow | `#FFE03A`, dark fill `#3D3305` | PadMode badges, mode frames, corner marks, marked pads and bank marks |
 
 Use only these state accents. Bank tints and meters keep their separate meanings.
 Yellow identifies modes where pads do more than ordinary playback: placement, copying, swapping, assignment, marking and learning.
@@ -55,6 +55,23 @@ Combine overlapping file, copy and swap states in one badge. Keep the existing k
 When space is short, remove lower-priority optional badges before using compact labels.
 Compact marking and assignment retain their counts. Compact EDIT retains its page, such as `EDIT FILTER` or `EDIT BOUNDS`.
 Retain the filename and slice count on Chop. Badges do not move the strip, grid, bank row, right column or help band.
+
+## Pad mode feedback
+
+During marking, placement, copy, swap, assignment or learning, ordinary pad frames are yellow.
+Hit flashes, selection, marked fill and pads in hand keep their existing styles above this mode color.
+Idle key labels keep the bank tint. Retained marks alone do not make every frame yellow.
+The grid keeps its existing cells, rows and spacing.
+
+Corner marks sit at the top right of each cell. The key and pad name stay readable.
+`◎` identifies an available placement target. `!` identifies a replacement that already requires confirmation.
+Occupied swaps use `◎`, not a new question. Assignment shows the planned slice number, including numbers with three digits.
+Copy cancellation, loading and identical whole-file placement retain their existing rules.
+For overlapping operations, `!` means that at least one operation requires confirmation. It does not select the keyboard or MIDI priority.
+Screen learning keeps its control labels. Chop listen mode does not show pending placement targets.
+
+Hidden grids keep their pad line and title badge. Mode marks cannot open the grid.
+Assignment keeps its existing exception: it shows the grid until assignment ends.
 
 ## Keyboard
 

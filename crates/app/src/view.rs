@@ -4,12 +4,12 @@ use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Instant;
 
-use engine::PADS;
+use engine::{PADS, PADS_PER_BANK};
 use input::Screen;
 
 use super::{
     App, EFFECT_PARAMS, FLASH, HelpState, LIT_FOR, Lit, audio, chop, chop_view, file_name,
-    filter_curve, pads, tui_param,
+    filter_curve, pads, same_whole_sound, tui_param,
 };
 
 impl App {
@@ -106,6 +106,67 @@ impl App {
         badges
     }
 
+    /// Existing target rules, observed without applying a placement or changing focus.
+    pub(super) fn pad_feedback(&self) -> tui::PadFeedback {
+        use tui::PadCorner::{Available, Replace, Slice};
+
+        let mode = self.focus().mode;
+        let mut feedback = tui::PadFeedback {
+            outline: mode.marking
+                || mode.file_in_hand
+                || mode.copy_in_hand
+                || mode.swap_in_hand
+                || mode.screen_learn
+                || mode.midi_learn,
+            ..Default::default()
+        };
+        if mode.screen_learn {
+            return feedback;
+        }
+        if self.screen == Screen::Chop && self.chop.is_some() {
+            if let (Some(plan), Some(chop)) = (&self.plan, &self.chop) {
+                feedback.outline = true;
+                for (slice, abs) in plan.targets(chop.slices().len()) {
+                    if abs / PADS_PER_BANK == self.pads.bank {
+                        feedback.corners[abs % PADS_PER_BANK] = Some(Slice(slice as u16 + 1));
+                    }
+                }
+            }
+            return feedback;
+        }
+        for (pad, corner) in feedback.corners.iter_mut().enumerate() {
+            let abs = self.pads.bank * PADS_PER_BANK + pad;
+            if let Some(file) = &self.browser.in_hand
+                && !same_whole_sound(&self.pads, abs, file)
+            {
+                *corner = Some(if self.pads.file[abs].is_some() {
+                    Replace
+                } else {
+                    Available
+                });
+            }
+            if let Some((source, _)) = &self.copy_in_hand
+                && *source != abs
+                && self.pads.loading[abs].is_none()
+            {
+                if self.pads.sound[abs].is_some() {
+                    *corner = Some(Replace);
+                } else if corner.is_none() {
+                    *corner = Some(Available);
+                }
+            }
+            if let Some(source) = self.pad_in_hand
+                && source != abs
+                && self.pads.loading[source].is_none()
+                && self.pads.loading[abs].is_none()
+                && corner.is_none()
+            {
+                *corner = Some(Available);
+            }
+        }
+        feedback
+    }
+
     /// The project picker as drawn: the open project is marked (35).
     pub(super) fn picker_view(&self) -> Option<tui::ProjectPickerView> {
         let open = self.project.as_ref().map(|p| p.name.as_str());
@@ -134,6 +195,7 @@ impl App {
 
     /// The pad panel's marks: the edit frame with its page and knobs, the lit parameter.
     pub(super) fn mark_pads(&self, mut v: tui::Pads) -> tui::Pads {
+        v.feedback = self.pad_feedback();
         if let Some(audio) = &self.audio {
             use std::sync::atomic::Ordering::Acquire;
             let epoch = audio.project.epoch.load(Acquire);
@@ -172,6 +234,7 @@ impl App {
         held: Option<input::Modifier>,
     ) -> tui::Chop<'a> {
         v.edit = self.edit;
+        v.pads.feedback = self.pad_feedback();
         // the plan is checked on the grid: the assign mode shows it even with the pads hidden (32)
         v.pads.hidden = self.ui.hide_pads && self.plan.is_none();
         v.hot = match (held, self.lit_now()) {

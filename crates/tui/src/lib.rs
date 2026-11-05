@@ -359,7 +359,23 @@ const CURVE_BOTTOM_DB: f32 = -36.0;
 /// A row of the pad panel: the parameter, its label and its value (56).
 pub type PanelRow = (PadParam, &'static str, String);
 
+/// Existing placement result, not a new pad action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadCorner {
+    Available,
+    Replace,
+    Slice(u16),
+}
+
+/// Read-only feedback for the sixteen cells of the visible bank.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PadFeedback {
+    pub outline: bool,
+    pub corners: [Option<PadCorner>; 16],
+}
+
 pub struct Pads {
+    pub feedback: PadFeedback,
     /// Any real pad voice in the current ready project, across all banks; not hit flashes or FX tails.
     pub playing: bool,
     pub bank: usize,
@@ -993,7 +1009,15 @@ fn pad_grid(frame: &mut Frame, area: Rect, p: &Pads, waves: u16) {
         for (c, cell) in cells.iter().enumerate() {
             let i = r * 4 + c;
             if let Some(pad) = p.pads.get(i) {
-                pad_cell(frame, *cell, pad, i == p.selected, bank, waves);
+                pad_cell(
+                    frame,
+                    *cell,
+                    pad,
+                    i == p.selected,
+                    bank,
+                    waves,
+                    (p.feedback.outline, p.feedback.corners[i]),
+                );
             }
         }
     }
@@ -1749,7 +1773,15 @@ fn mode(gate: bool) -> &'static str {
     if gate { "gate" } else { "one-shot" }
 }
 
-fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: Color, waves: u16) {
+fn pad_cell(
+    frame: &mut Frame,
+    area: Rect,
+    pad: &PadView,
+    selected: bool,
+    bank: Color,
+    waves: u16,
+    (outline, corner): (bool, Option<PadCorner>),
+) {
     // The bank color owns the idle frame and key letter; state colors go above it.
     // A marked pad keeps its frame in every idle state, so the group stays visible.
     let (border, bg, fg) = match (pad.flash, pad.marked, selected) {
@@ -1757,18 +1789,37 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         (true, _, _) => (WHITE, WHITE, BG),
         (false, true, _) => (MARK, MARK_BG, BRIGHT),
         (false, false, true) => (CYAN, PANEL, TEXT),
+        (false, false, false) if outline => (MARK, PANEL, if pad.dim { DIM } else { TEXT }),
         // the chop screen: a pad with no slice of the open chop steps back (36)
         (false, false, false) if pad.dim => (BORDER, PANEL, DIM),
         (false, false, false) => (bank, PANEL, TEXT),
     };
     let key = Span::styled(
         pad.key.to_uppercase().to_string(),
-        Style::new().fg(if pad.flash { BG } else { border }),
+        Style::new().fg(if pad.flash {
+            BG
+        } else if outline && !pad.in_hand && !pad.marked && !selected {
+            bank
+        } else {
+            border
+        }),
     );
     let mut block = Block::bordered()
         .title(key)
         .border_style(Style::new().fg(border))
         .style(Style::new().bg(bg).fg(fg));
+    if let Some(corner) = corner {
+        let text = match corner {
+            PadCorner::Available => "◎".to_string(),
+            PadCorner::Replace => "!".to_string(),
+            PadCorner::Slice(n) => n.to_string(),
+        };
+        block = block.title_top(
+            Line::from(text)
+                .fg(if pad.flash { BG } else { MARK })
+                .right_aligned(),
+        );
+    }
     if pad.dashed {
         block = block.border_set(ratatui::symbols::border::Set {
             vertical_left: "┆",
@@ -2862,6 +2913,7 @@ mod tests {
             param: PadParam::Volume,
             // pads 1 and W of the current bank (2) hold a sound
             playing: false,
+            feedback: PadFeedback::default(),
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
             out_wave: Vec::new(),
@@ -3401,6 +3453,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             playing: false,
+            feedback: PadFeedback::default(),
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
             out_wave: Vec::new(),
@@ -4138,6 +4191,166 @@ mod tests {
                 .any(|(s, fg, _)| s == "─" && *fg == BANK_COLORS[2]),
             "the other pads keep the bank colour"
         );
+    }
+
+    /// Scenarios "Placement marks distinguish confirmation from swap" and "Assignment numbers appear on target pads".
+    #[test]
+    fn pad_corner_marks_keep_identity_and_state_styles() {
+        for width in [13, 24, 40] {
+            for corner in [
+                PadCorner::Available,
+                PadCorner::Replace,
+                PadCorner::Slice(128),
+            ] {
+                for state in ["idle", "selected", "hit", "marked", "hand"] {
+                    let mut pad = idle_pads().pads.remove(0);
+                    pad.name = "名字".into();
+                    pad.flash = state == "hit";
+                    pad.marked = state == "marked";
+                    pad.in_hand = state == "hand";
+                    let mut term = Terminal::new(TestBackend::new(width, 4)).unwrap();
+                    term.draw(|frame| {
+                        pad_cell(
+                            frame,
+                            frame.area(),
+                            &pad,
+                            state == "selected",
+                            BANK_COLORS[2],
+                            0,
+                            (true, Some(corner)),
+                        )
+                    })
+                    .unwrap();
+                    let cells = term.backend().buffer().content();
+                    let text = match corner {
+                        PadCorner::Available => "◎".to_string(),
+                        PadCorner::Replace => "!".to_string(),
+                        PadCorner::Slice(n) => n.to_string(),
+                    };
+                    let (fg, bg) = match state {
+                        "selected" => (CYAN, PANEL),
+                        "hit" => (WHITE, WHITE),
+                        "marked" => (MARK, MARK_BG),
+                        "hand" => (MAGENTA, PANEL),
+                        _ => (MARK, PANEL),
+                    };
+                    assert_eq!((cells[0].fg, cells[0].bg), (fg, bg), "{width}, {state}");
+                    assert_eq!(cells[1].symbol(), "1", "the key stays readable");
+                    assert_eq!(
+                        cells[1].fg,
+                        if state == "idle" {
+                            BANK_COLORS[2]
+                        } else if state == "hit" {
+                            BG
+                        } else {
+                            fg
+                        }
+                    );
+                    let start = width as usize - 1 - Line::from(text.as_str()).width();
+                    let label: String = cells[start..width as usize - 1]
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect();
+                    assert_eq!(label, text);
+                    assert_eq!(cells[width as usize - 1].symbol(), "┐");
+                    assert_eq!(cells[width as usize + 2].symbol(), "名");
+                    assert_eq!(cells[width as usize + 4].symbol(), "字");
+                }
+            }
+        }
+    }
+
+    /// Scenarios "Marking changes appearance without silencing pads" and "Hidden grids retain visible mode identity".
+    #[test]
+    fn yellow_grid_feedback_keeps_shared_geometry_and_hidden_layout() {
+        fn pads<'a>(screen: &'a mut Screen<'_>) -> &'a mut Pads {
+            match screen {
+                Screen::Pads(p) => p,
+                Screen::Files(f) => &mut f.pads,
+                Screen::Chop(c) => &mut c.pads,
+                _ => panic!("a grid screen is required"),
+            }
+        }
+        let wave = [0.1; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut screens = [
+                Screen::Pads(idle_pads()),
+                Screen::Files(Files {
+                    dir: "samples",
+                    entries: vec![],
+                    selected: 0,
+                    in_hand: None,
+                    error: None,
+                    pads: idle_pads(),
+                    filter: "",
+                    editing: false,
+                    preview: None,
+                    playhead: None,
+                }),
+                Screen::Chop(Box::new(chop_demo(&wave))),
+            ];
+            for screen in &mut screens {
+                let p = pads(screen);
+                p.pads[1].flash = true;
+                p.pads[2].marked = true;
+                p.pads[3].in_hand = true;
+                let before = draw_rows(screen, w, h);
+                let p = pads(screen);
+                p.feedback.outline = true;
+                p.feedback.corners[0] = Some(PadCorner::Available);
+                p.feedback.corners[1] = Some(PadCorner::Replace);
+                p.feedback.corners[2] = Some(PadCorner::Slice(128));
+                let after = draw_rows(screen, w, h);
+                assert!(
+                    after
+                        .iter()
+                        .flatten()
+                        .any(|(text, fg, _)| text == "◎" && *fg == MARK)
+                );
+                assert!(
+                    after
+                        .iter()
+                        .flatten()
+                        .any(|(text, fg, bg)| text == "─" && *fg == MARK && *bg == PANEL)
+                );
+                // The cell edges, strip, panel and bottom rows stay at their original coordinates.
+                for y in 0..h as usize {
+                    for x in 0..w as usize {
+                        if ["┌", "┐", "└", "┘", "│", "┆"].contains(&before[y][x].0.as_str())
+                        {
+                            assert_eq!(after[y][x].0, before[y][x].0, "{w}x{h}: {x},{y}");
+                        }
+                    }
+                }
+                for y in [
+                    0,
+                    1,
+                    h as usize - 4,
+                    h as usize - 3,
+                    h as usize - 2,
+                    h as usize - 1,
+                ] {
+                    assert_eq!(after[y], before[y], "shared row {y}");
+                }
+                pads(screen).feedback = PadFeedback::default();
+                assert_eq!(
+                    draw_rows(screen, w, h),
+                    before,
+                    "leaving the mode restores the cells"
+                );
+                pads(screen).hidden = true;
+                let hidden = draw_rows(screen, w, h);
+                pads(screen).feedback = PadFeedback {
+                    outline: true,
+                    corners: [Some(PadCorner::Replace); 16],
+                };
+                assert_eq!(
+                    draw_rows(screen, w, h),
+                    hidden,
+                    "mode marks cannot open a hidden grid"
+                );
+            }
+        }
     }
 
     /// 77 "The mode as a glyph" and "The group on the pad": `⇢ +1 mute 2` under the
@@ -5367,6 +5580,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         Chop {
             owners: Vec::new(),
@@ -5903,6 +6117,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         let help = Help {
             groups: &[],
@@ -6083,6 +6298,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         }
     }
 
@@ -6306,6 +6522,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         // quiet start, loud middle: the envelope must show the difference
         let wave: Vec<f32> = (0..1600).map(|i| if i < 800 { 0.1 } else { 1.0 }).collect();
@@ -6405,6 +6622,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         let wave: Vec<f32> = vec![0.5; 100];
         let c = Chop {
@@ -7043,6 +7261,7 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             playing: false,
+            feedback: PadFeedback::default(),
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
             out_wave: Vec::new(),

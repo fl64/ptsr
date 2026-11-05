@@ -7213,6 +7213,331 @@ fn badge_labels(drive: &Drive) -> Vec<String> {
     badges.into_iter().map(|badge| badge.normal).collect()
 }
 
+fn pad_feedback(drive: &Drive) -> tui::PadFeedback {
+    let before = (
+        drive.seen(),
+        drive.app.session_dirty,
+        drive.app.pending_audio.len(),
+        drive.app.sent.len(),
+    );
+    let feedback = drive.app.pad_feedback();
+    assert_eq!(
+        (
+            drive.seen(),
+            drive.app.session_dirty,
+            drive.app.pending_audio.len(),
+            drive.app.sent.len()
+        ),
+        before,
+        "drawing pad feedback cannot change state or send audio commands"
+    );
+    feedback
+}
+
+/// Scenario "Placement marks distinguish confirmation from swap".
+#[test]
+fn placement_marks_distinguish_confirmation_from_swap() {
+    use tui::PadCorner::{Available, Replace};
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for operation in ["file", "copy", "swap"] {
+            for target in [4, 5] {
+                let mut drive = Drive::new();
+                let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+                drive.load_pad(0, sound.clone(), "source");
+                drive.load_pad(4, sound, "target");
+                drive.bind_action(102, "pad.copy");
+                drive.bind_action(103, "pad.take");
+                drive.bind_action(104, "screen.pads");
+                let controls = if matches!(source, Source::Keyboard) {
+                    source
+                } else {
+                    Source::Button
+                };
+                match operation {
+                    "file" => {
+                        drive.ordered_file();
+                        drive.registry_command(controls, KeyCode::Enter, M::NONE, 82);
+                        drive.registry_command(controls, KeyCode::F(2), M::NONE, 104);
+                    }
+                    "copy" => {
+                        drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 102);
+                    }
+                    _ => {
+                        drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 103);
+                    }
+                }
+                let feedback = pad_feedback(&drive);
+                assert!(feedback.outline);
+                let asks = operation != "swap" && target == 4;
+                assert_eq!(
+                    feedback.corners[target],
+                    Some(if asks { Replace } else { Available })
+                );
+                let before = drive.seen().pads;
+                assert_silent_target(&drive.pad_press(source, target));
+                if asks {
+                    assert_eq!(drive.seen().pads, before);
+                    assert_eq!(
+                        matches!(drive.app.ask, Some(Ask::PutFile { .. })),
+                        operation == "file"
+                    );
+                    assert_eq!(
+                        matches!(drive.app.ask, Some(Ask::CopyPad { .. })),
+                        operation == "copy"
+                    );
+                } else {
+                    assert!(
+                        drive.app.ask.is_none(),
+                        "an available target adds no question"
+                    );
+                    if operation == "file" {
+                        let deadline = Instant::now() + Duration::from_secs(5);
+                        while drive.app.pads.loading[target].is_some() {
+                            let reply = drive
+                                .app
+                                .loader
+                                .as_ref()
+                                .unwrap()
+                                .1
+                                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                                .unwrap();
+                            drive.app.loader_reply(reply);
+                        }
+                        assert!(drive.app.pads.sound[target].is_some());
+                        assert!(drive.app.browser.in_hand.is_none());
+                    }
+                    assert!(
+                        drive.seen().pads != before,
+                        "{source:?}, {operation}, target {target}"
+                    );
+                }
+                drive.pad_release(source, target);
+            }
+        }
+    }
+}
+
+#[test]
+fn pad_corner_marks_respect_loading_cancellation_and_whole_file_identity() {
+    use tui::PadCorner::{Available, Replace};
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+        drive.load_pad(0, sound.clone(), "source");
+        drive.load_pad(4, sound, "target");
+        drive.bind_action(102, "pad.copy");
+        drive.bind_action(103, "pad.take");
+        drive.bind_action(104, "ui.back");
+        let controls = if matches!(source, Source::Keyboard) {
+            source
+        } else {
+            Source::Button
+        };
+        drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 102);
+        assert_eq!(
+            pad_feedback(&drive).corners[0],
+            None,
+            "the source cancels copying"
+        );
+        drive.app.pads.loading[4] = Some(33);
+        assert_eq!(pad_feedback(&drive).corners[4], None);
+        let before = drive.seen().pads;
+        assert_silent_target(&drive.pad_press(source, 4));
+        drive.pad_release(source, 4);
+        assert!(drive.app.copy_in_hand.is_some());
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.seen().pads, before);
+        drive.app.pads.loading[4] = None;
+        assert_eq!(pad_feedback(&drive).corners[4], Some(Replace));
+        drive.pad_press(source, 0);
+        drive.pad_release(source, 0);
+        assert!(drive.app.copy_in_hand.is_none());
+        assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+
+        drive.app.pads.selected = 0;
+        drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 103);
+        assert_eq!(pad_feedback(&drive).corners[4], Some(Available));
+        drive.app.pads.loading[0] = Some(1);
+        assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
+        drive.app.pads.loading[0] = None;
+        drive.app.pads.loading[4] = Some(2);
+        assert_eq!(pad_feedback(&drive).corners[4], None);
+        assert_silent_target(&drive.pad_press(source, 4));
+        drive.pad_release(source, 4);
+        assert!(
+            drive.app.pad_in_hand.is_none(),
+            "the existing refused swap drops its hand"
+        );
+        drive.app.pads.loading[4] = None;
+        drive.registry_command(controls, KeyCode::Esc, M::NONE, 104);
+
+        // Use the real browser hold route, with the same lexical file identity as pad 1.
+        drive.tap(KeyCode::F(6), M::NONE);
+        drive.app.browser.dir = PathBuf::new();
+        drive.app.browser.entries = vec![browser::Entry {
+            name: "source.wav".into(),
+            is_dir: false,
+            favorite: None,
+        }];
+        drive.app.browser.selected = 0;
+        drive.bind_action(82, "browser.hold");
+        drive.registry_command(controls, KeyCode::Enter, M::NONE, 82);
+        assert_eq!(pad_feedback(&drive).corners[0], None);
+        drive.app.pads.region[0] = Region {
+            start: 1,
+            end: 1024,
+        };
+        assert_eq!(
+            pad_feedback(&drive).corners[0],
+            Some(Replace),
+            "a slice is not the whole file"
+        );
+        drive.app.pads.loading[4] = Some(50);
+        assert_eq!(
+            pad_feedback(&drive).corners[4],
+            Some(Replace),
+            "file replacement still asks during loading"
+        );
+    }
+}
+
+/// Scenario "Marking changes appearance without silencing pads".
+#[test]
+fn marking_changes_appearance_without_silencing_pads() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+        drive.bind_action(102, "pad.mark_toggle");
+        drive.bind_action(103, "ui.back");
+        let controls = if matches!(source, Source::Keyboard) {
+            source
+        } else {
+            Source::Button
+        };
+        drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+        assert!(pad_feedback(&drive).outline);
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        assert!(drive.app.pads.marked.contains(&0));
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+        assert!(
+            !pad_feedback(&drive).outline,
+            "retained marks alone do not outline the grid"
+        );
+        assert_eq!(badge_labels(&drive), ["1 MARKED · Esc drops"]);
+        drive.registry_command(controls, KeyCode::Esc, M::NONE, 103);
+        assert!(drive.app.pads.marked.is_empty());
+        assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+    }
+}
+
+/// Scenario "Assignment numbers appear on target pads".
+#[test]
+fn assignment_numbers_appear_on_target_pads() {
+    use tui::PadCorner::Slice;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(102, "chop.assign");
+        drive.bind_action(103, "chop.assign_order");
+        drive.bind_action(104, "bank.next");
+        drive.bind_action(105, "ui.back");
+        let controls = if matches!(source, Source::Keyboard) {
+            source
+        } else {
+            Source::Button
+        };
+        let before = drive.seen().pads;
+        let chop = drive.app.chop.as_ref().unwrap();
+        let sound = chop.sound.clone();
+        let slices = chop.slices();
+        drive.registry_command(controls, KeyCode::Char('p'), M::NONE, 102);
+        assert!(pad_feedback(&drive).outline);
+        assert_slice_preview(&drive.pad_press(source, 5), &sound, slices[0]);
+        drive.pad_release(source, 5);
+        assert_eq!(pad_feedback(&drive).corners[5], Some(Slice(1)));
+        assert_slice_preview(&drive.pad_press(source, 6), &sound, slices[1]);
+        drive.pad_release(source, 6);
+        assert_eq!(pad_feedback(&drive).corners[6], Some(Slice(2)));
+        assert_eq!(drive.seen().pads, before, "a plan has not applied anything");
+        drive.registry_command(controls, KeyCode::PageDown, M::NONE, 104);
+        assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
+        drive.registry_command(controls, KeyCode::Tab, M::NONE, 103);
+        assert_slice_preview(&drive.pad_press(source, 14), &sound, slices[0]);
+        drive.pad_release(source, 14);
+        assert_eq!(
+            pad_feedback(&drive).corners[14..],
+            [Some(Slice(1)), Some(Slice(2))]
+        );
+        drive.registry_command(controls, KeyCode::PageDown, M::NONE, 104);
+        assert_eq!(
+            pad_feedback(&drive).corners[..2],
+            [Some(Slice(3)), Some(Slice(4))]
+        );
+        drive.registry_command(controls, KeyCode::Esc, M::NONE, 105);
+        assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+        assert_eq!(drive.seen().pads, before);
+    }
+}
+
+/// Scenarios "Learning and placement keep existing sound rules" and "Hidden grids retain visible mode identity".
+#[test]
+fn learning_and_hidden_grids_keep_existing_sound_rules() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(102, "ui.pads_toggle");
+        drive.bind_action(103, "chop.assign");
+        drive.bind_action(104, "ui.back");
+        drive.bind_action(105, "pad.copy");
+        drive.registry_command(source, KeyCode::Char('o'), M::CONTROL, 102);
+        assert!(drive.app.ui.hide_pads);
+        drive.registry_command(source, KeyCode::Char('p'), M::NONE, 103);
+        let view = drive.app.mark_chop(
+            drive.app.chop_display(drive.app.chop.as_ref().unwrap()),
+            None,
+        );
+        assert!(!view.pads.hidden && view.pads.feedback.outline);
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        let view = drive.app.mark_chop(
+            drive.app.chop_display(drive.app.chop.as_ref().unwrap()),
+            None,
+        );
+        assert!(view.pads.hidden && !view.pads.feedback.outline);
+        for (screen, key, cc) in [
+            (Screen::Pads, KeyCode::F(2), 90),
+            (Screen::Files, KeyCode::F(6), 92),
+            (Screen::Chop, KeyCode::F(3), 93),
+        ] {
+            drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+            if screen == Screen::Chop {
+                // F3 on Pads opens the selected sample; on Files it opens a browser entry.
+                drive.pad_press(source, 0);
+                drive.pad_release(source, 0);
+            }
+            drive.registry_command(source, key, M::NONE, cc);
+            assert_eq!(
+                drive.app.screen,
+                screen,
+                "{source:?}: selected pad {}, notice {:?}",
+                drive.app.pads.selected_abs(),
+                drive.app.notice()
+            );
+            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            assert!(pad_feedback(&drive).outline);
+            assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
+            assert_silent_target(&drive.pad_press(source, 4));
+            drive.pad_release(source, 4);
+            drive.tap(KeyCode::F(10), M::NONE);
+            assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+        }
+        drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+        drive.registry_command(source, KeyCode::Char('c'), M::CONTROL, 105);
+        let view = pads_view(&mut drive.app.pads, None, None, Vec::new(), None, 48_000);
+        let view = drive.app.mark_pads(view);
+        assert!(view.hidden && view.feedback.outline);
+        assert!(badge_labels(&drive)[0].contains("COPY"));
+    }
+}
+
 /// Scenario "Mode badges follow the active screen state".
 #[test]
 fn mode_badges_follow_keyboard_and_raw_midi() {
@@ -7367,6 +7692,15 @@ fn overlapping_placements_remain_visible_without_changing_priority() {
                     "{mask}: {labels:?}"
                 );
             }
+            assert_eq!(
+                pad_feedback(&drive).corners[4],
+                Some(if mask & 3 != 0 {
+                    tui::PadCorner::Replace
+                } else {
+                    tui::PadCorner::Available
+                }),
+                "all seven overlapping operations retain their target marks"
+            );
             let before = drive.seen().pads;
             assert_silent_target(&drive.pad_press(source, 4));
             drive.pad_release(source, 4);

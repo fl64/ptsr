@@ -101,6 +101,21 @@ Use `◎` for swap targets without implying a new question: occupied swaps remai
 Show planned slice numbers during assignment. Existing mark dots retain their positions.
 Never use color as the only distinction between copy, swap, file placement and learning.
 
+The owner approved the pad-feedback file plan before this step.
+Carry an immutable grid snapshot beside title badges: a mode-outline flag and one optional corner mark per visible pad.
+Draw corner marks at the top right of the existing cell frame. Keep the key, name and bank marks readable.
+Tint ordinary cell frames yellow during the mode. Keep existing hit, selected, marked and in-hand styles above that tint.
+Keep bank colors on idle key labels even when the mode changes their frame color. Retained marks alone do not enable the mode outline.
+Do not add another grid or reserve more rows. The drawing snapshot does not change input focus or saved state.
+
+Read target availability from the existing placement rules, not from a pad name.
+A copy source cancels copying, a loading copy target waits, and an identical whole-file placement changes nothing.
+Do not advertise these cases as replacement questions. Loading swap endpoints are not available targets.
+When pending operations overlap, show `!` if any applicable operation requires confirmation, otherwise `◎` for an available target.
+This mark does not select between the existing keyboard and MIDI priorities.
+On Chop, assignment numbers follow the actual plan and bank. Listen mode does not advertise pending file, copy or swap targets.
+Screen learning retains its existing control labels instead of advertising placement targets.
+
 ### 4. Centralize transient notices
 
 Use Done, Info, Warn and Error levels with Keyboard, Device or System origins.
@@ -182,6 +197,10 @@ Do not change engine code or add I/O to audio processing.
 | Error followed by release or background input | Error stays visible | Open: new coverage | Controlled keyboard/raw-MIDI sequences |
 | Simultaneous file, copy and swap | Show pending modes without changing source-specific priority | Closed for title step | `overlapping_placements_remain_visible_without_changing_priority` covers all seven combinations with keyboard and raw MIDI |
 | Occupied swap target | No invented replacement question | Closed for title step | The same production-input test checks direct swaps and remaining pending file placement |
+| Copy cancellation or loading, same-file placement, loading swap endpoints | Do not invent a target or confirmation | Closed for pad-state step | `pad_corner_marks_respect_loading_cancellation_and_whole_file_identity` checks snapshots and real input results |
+| Pad states beside a corner mark | Keep key, name, bank, hit, selection and marked fill readable | Closed for pad-state step | `pad_corner_marks_keep_identity_and_state_styles` covers 13, 24 and 40 cell widths, Unicode names and slice 128 |
+| Assignment followed by bank change or cancellation | Numbers follow the actual plan. Pads stay unchanged. Slice audition remains | Closed for pad-state step | `assignment_numbers_appear_on_target_pads` checks by-hand and ordered plans through keyboard, MIDI notes and buttons |
+| Mode starts with the grid hidden | Keep the hidden layout. Assignment temporarily shows the grid | Closed for pad-state step | `learning_and_hidden_grids_keep_existing_sound_rules`, `yellow_grid_feedback_keeps_shared_geometry_and_hidden_layout` at 80×26 and 120×40 |
 | Queued and interrupted notices | Bounded storage and deterministic remaining time | Open: new coverage | Controlled-clock queue and overflow tests |
 | Disconnect and stale source event | No false connected-device label or stuck highlight | Open: new coverage | Production multi-device and reconnect sequences |
 | Short or hidden-grid screen | Keep save warning, controls and mode identity | Open: new coverage | 80×26 and hidden-grid fixtures |
@@ -206,5 +225,5 @@ This approval implies no hardware result, listening result or callback maximum-b
 
 ## Open questions
 
-None for preparation or title badges. The owner approved the compact edit labels before implementation.
+None for preparation, title badges or pad feedback. The owner approved each file plan before implementation.
 Ask the owner before changing an approved choice.

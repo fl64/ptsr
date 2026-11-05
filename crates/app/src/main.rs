@@ -4399,6 +4399,7 @@ fn main() -> std::io::Result<()> {
                     error: app.browser.error.as_deref(),
                     pads: {
                         let mut v = tui::Pads {
+                            feedback: app.pad_feedback(),
                             hidden: app.ui.hide_pads,
                             ..pads_view(&mut app.pads, None, app.pad_in_hand, out, None, app.rate)
                         };
@@ -4918,6 +4919,7 @@ fn pads_view(
         })
         .collect();
     tui::Pads {
+        feedback: tui::PadFeedback::default(),
         playing: false,
         fx,
         bank: p.bank,
@@ -5361,6 +5363,7 @@ fn chop_view<'a>(
                 ],
                 None,
                 tui::Pads {
+                    feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: page,
                     pads,
@@ -5475,6 +5478,7 @@ fn chop_view<'a>(
                     playing: false,
                     bank: p.bank,
                     pads,
+                    feedback: tui::PadFeedback::default(),
                     // the pad of the selected slice, when it is in this bank
                     selected: (0..PADS_PER_BANK)
                         .find(|&i| {
@@ -5594,6 +5598,7 @@ fn chop_view<'a>(
                 side,
                 Some(marks),
                 tui::Pads {
+                    feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: p.bank,
                     pads,
