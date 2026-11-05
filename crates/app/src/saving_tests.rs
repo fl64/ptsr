@@ -1,4 +1,4 @@
-use super::{App, Project, SESSION_SAVE, session, tests::test_app};
+use super::{App, Instant, Notices, Project, SESSION_SAVE, session, tests::test_app};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -71,9 +71,12 @@ fn failed_autosave_retains_pending_work() {
         app.pads.pitch[1] = 7;
         app.dirty();
         std::fs::remove_file(tmp).unwrap();
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         app.autosave(now + std::time::Duration::from_secs(60));
-        assert!(app.flash.is_none(), "no automatic retry or repeated notice");
+        assert!(
+            app.notices.history().is_empty(),
+            "no automatic retry or repeated notice"
+        );
         assert_eq!(app.session_dirty, pending);
         assert_eq!(std::fs::read(path).unwrap(), saved);
         assert_eq!((app.pads.pitch[0], app.pads.pitch[1]), (3, 7));
@@ -100,10 +103,13 @@ fn manual_retry_restores_autosave() {
         assert_eq!((stored.pads["0"].pitch, stored.pads["1"].pitch), (3, 7));
         app.pads.pitch[1] = 9;
         app.dirty();
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         app.autosave(app.session_dirty.unwrap() + SESSION_SAVE + std::time::Duration::from_secs(1));
         assert!(app.session_dirty.is_none());
-        assert!(app.flash.is_none(), "successful autosave stays silent");
+        assert!(
+            app.notices.history().is_empty(),
+            "successful autosave stays silent"
+        );
         assert_eq!(
             session::load(&app.session_file()).unwrap().pads["1"].pitch,
             9
@@ -122,9 +128,9 @@ fn a_failed_save_does_not_retry_on_exit() {
     app.dirty();
     assert!(app.save_session().is_err());
     std::fs::remove_file(tmp).unwrap();
-    app.flash = None;
+    app.notices = Notices::new(Instant::now());
     app.save_on_exit();
-    assert!(app.flash.is_none());
+    assert!(app.notices.history().is_empty());
     assert!(app.session_dirty.is_some());
     assert_eq!(std::fs::read(app.session_file()).unwrap(), saved);
     app.save_session().unwrap();
@@ -154,10 +160,10 @@ fn damaged_or_newer_session_remains_protected() {
             app.dirty();
             let pending = app.session_dirty;
             for _ in 0..2 {
-                app.flash = None;
+                app.notices = Notices::new(Instant::now());
                 let error = app.save_session().unwrap_err();
                 assert!(error.contains(&reason));
-                assert_eq!(app.flash.as_ref().unwrap().0, error);
+                assert_eq!(app.notices.current().unwrap().text, error);
                 assert_eq!(app.session_read_error.as_ref(), Some(&reason));
                 assert_eq!(app.session_dirty, pending);
                 assert!(
@@ -185,9 +191,9 @@ fn saving_does_not_recreate_a_deleted_project() {
     app.dirty();
     let pending = app.session_dirty;
     for _ in 0..2 {
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         assert!(app.save_session().unwrap_err().contains("is gone"));
-        assert!(app.flash.is_some());
+        assert!(app.notices.current().is_some());
         assert!(!folder.exists());
         assert_eq!(app.session_dirty, pending);
     }

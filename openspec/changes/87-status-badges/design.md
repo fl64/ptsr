@@ -125,7 +125,9 @@ A frame does not generate another history entry for the same state.
 
 Done and Info last three seconds of visible time. Warn lasts six seconds.
 Manual save success keeps five seconds. Error waits for the next new owner action.
-The startup no-key-releases warning retains its existing first-keypress acknowledgement rule.
+General startup notices retain their existing first-key-event acknowledgement, including the no-key-releases warning.
+Keymap warnings retain their separate queue and require a new keyboard press after a frame shows the warning.
+These acknowledgement exceptions do not change notice history or effective bindings.
 A key press, pad press or control movement can acknowledge without consuming its normal action.
 A release, MIDI clock, background completion or redraw cannot acknowledge an error.
 
@@ -163,6 +165,33 @@ Review boundaries for 4.1:
 - Fifty pending entries plus one active Error, with independent latest-50 history: closed for the model by `pending_notice_overflow_remains_bounded`.
 - Hidden notice time, delayed updates and repeated reads: closed for the model by visibility, delayed-update, acknowledgement and history tests.
 - Actual input acknowledgement, startup exceptions, save state and device routing: open for integration in 4.2 and 4.3.
+
+The owner approved the 17-file migration plan for 4.2, including the startup acknowledgement exceptions above.
+The owner then approved `crates/input/src/midi.rs` as the eighteenth file for input classification.
+The inventory contains 79 one-slot producers: 53 in main, 25 in dispatch and one in saving.
+Classify each result at its producer. Split mixed success/error branches instead of classifying text.
+Keep recording, loading progress, input prompts, persistent save status and fallback hints outside transient lifetimes.
+Loading completion clears its own state, not an unrelated queued result.
+Record each startup production once. A project-read failure must not enter history twice through its old startup and flash paths.
+Record all profile-load errors, not only the first error that the old slot could retain.
+Keymap warnings enter history once when produced, while their own visible-warning acknowledgement remains unchanged.
+
+Carry each controller event's port in its UI envelope. Do not infer origin from the last debug message.
+Only the raw-message notification acknowledges owner input, once before its normal action. Later notifications do not acknowledge again.
+Distinguish CC button release from a knob movement to zero through the actual profile and effective binding.
+Keyboard repeat tracking runs before acknowledgement, including text and learning paths. Releases and modifier-only events do not acknowledge ordinary Errors.
+Source metadata does not change MIDI sequencing, direct audio attempts, project stamps, velocities or original release ownership.
+The shared input-status indicator, disconnection highlight and value popup remain later tasks.
+
+Migration review boundaries:
+
+- Mixed success/failure and delayed loading completion: closed by outcome, unrelated Error and old-project generation tests.
+- Startup duplication, keymap queues and first-key exceptions: closed by startup, history-only and repeated-frame tests.
+- Two devices, deferred actions and single acknowledgement: closed by raw-MIDI origin, deferred placement and shown-token tests.
+- Hidden text prompts and silent autosave: closed by real filter input and existing save-compatibility tests. Task 4.3 retains dedicated save-state regressions.
+- Levels and glyphs at both screen sizes: closed by drawing tests at 80×26 and 120×40.
+- Text, expiry, level and keymap visibility use one frame clock, including the exact deadline.
+- Load completion and project replacement clear only the matching ongoing loading state. Old-generation replies cannot reopen the previous Chop view.
 
 ### 5. Add F1 Messages without new global keys
 
@@ -219,14 +248,14 @@ Do not change engine code or add I/O to audio processing.
 | Boundary | Required result | Status for implementation | Evidence or planned test |
 | --- | --- | --- | --- |
 | Save refusal followed by other messages | `Save failed` stays until a successful save | Open: integration coverage | Existing save-state tests plus new priority tests |
-| Error followed by release or background input | Error stays visible | Open: new coverage | Controlled keyboard/raw-MIDI sequences |
+| Error followed by release or background input | Error stays visible | Closed for notice migration | Real keyboard/raw-MIDI releases, repeats, zero movement, background loading and identical replacement tests |
 | Simultaneous file, copy and swap | Show pending modes without changing source-specific priority | Closed for title step | `overlapping_placements_remain_visible_without_changing_priority` covers all seven combinations with keyboard and raw MIDI |
 | Occupied swap target | No invented replacement question | Closed for title step | The same production-input test checks direct swaps and remaining pending file placement |
 | Copy cancellation or loading, same-file placement, loading swap endpoints | Do not invent a target or confirmation | Closed for pad-state step | `pad_corner_marks_respect_loading_cancellation_and_whole_file_identity` checks snapshots and real input results |
 | Pad states beside a corner mark | Keep key, name, bank, hit, selection and marked fill readable | Closed for pad-state step | `pad_corner_marks_keep_identity_and_state_styles` covers 13, 24 and 40 cell widths, Unicode names and slice 128 |
 | Assignment followed by bank change or cancellation | Numbers follow the actual plan. Pads stay unchanged. Slice audition remains | Closed for pad-state step | `assignment_numbers_appear_on_target_pads` checks by-hand and ordered plans through keyboard, MIDI notes and buttons |
 | Mode starts with the grid hidden | Keep the hidden layout. Assignment temporarily shows the grid | Closed for pad-state step | `learning_and_hidden_grids_keep_existing_sound_rules`, `yellow_grid_feedback_keeps_shared_geometry_and_hidden_layout` at 80×26 and 120×40 |
-| Queued and interrupted notices | Bounded storage and deterministic remaining time | Closed for the model. Application integration remains open | Seventeen controlled-time model tests cover deadlines, visibility, priority, overflow, history and explicit acknowledgement |
+| Queued and interrupted notices | Bounded storage and deterministic remaining time | Closed for notice migration | Twenty-one controlled-time model tests plus production input, frame-clock and loading tests |
 | Disconnect and stale source event | No false connected-device label or stuck highlight | Open: new coverage | Production multi-device and reconnect sequences |
 | Short or hidden-grid screen | Keep save warning, controls and mode identity | Open: new coverage | 80×26 and hidden-grid fixtures |
 | Overlay expires without another press | Restore wave image and hint | Open: new coverage | Timer-driven graphics and buffer tests |
@@ -252,3 +281,25 @@ This approval implies no hardware result, listening result or callback maximum-b
 
 None for preparation, title badges, pad feedback or the step 4.1 model. The owner approved each file plan before implementation.
 Ask the owner before changing an approved choice.
+
+### Step 4.2 input classification scope
+
+The owner approved the eighteenth file, `crates/input/src/midi.rs`, before implementation.
+
+`Profile::is_knob` checks the profile's physical CC controls, not learned assignments.
+An unnamed CC learned as a command still passes that check as a knob.
+The existing resolution discards a non-pad command release. A knob at zero can also have no action on the current screen.
+Checking only the number zero or `is_knob` can therefore acknowledge an Error on a button release.
+
+Recommended: expose control classification from the same effective binding resolution that produces the action.
+Keep the existing action results and all callers' routing behavior unchanged.
+Test learned CC button press/release and continuous CC movement to zero, including repeated values and separate devices.
+Do not duplicate binding precedence in application code or resolve a synthetic press to classify an actual release.
+
+Decision: expose classification from the existing resolution, with the original action result unchanged.
+A declared physical control keeps its type. For unnamed CC controls, the effective learned command identifies a button and a parameter identifies a knob.
+An unassigned unnamed CC keeps the existing knob interpretation. This rule makes no claim about unmeasured hardware.
+
+Only an Error token captured by a shown frame can acknowledge that exact production.
+A replaced Error, including identical text, needs its own shown frame. Pending input cannot acknowledge a notice that never appeared.
+Keep token identity stable across queue removal and interruption. Controlled-time token tests and production keyboard/raw-MIDI tests close this boundary.

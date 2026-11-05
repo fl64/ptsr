@@ -144,8 +144,16 @@ impl Drive {
         assert!(drive.app.seeded.iter().any(|name| name == "X-Session Pro"));
         // A fixture with no user path reports that it cannot save the seeded map.
         // Neither input pass writes the owner's config or treats this as a user notice.
-        drive.app.flash = None;
+        drive.app.notices = Notices::new(Instant::now());
         drive
+    }
+
+    fn last_notice(&self) -> &Notice {
+        self.app
+            .notices
+            .history()
+            .front()
+            .expect("a produced notice")
     }
 
     fn midi(&self) -> &midi::Midi {
@@ -187,6 +195,323 @@ impl Drive {
             ui: std::mem::take(&mut self.app.sent),
         }
     }
+}
+
+/// Scenario "Startup acknowledgement retains its exceptions".
+#[test]
+fn startup_acknowledgement_retains_its_exceptions() {
+    let mut drive = Drive::new();
+    drive.app.add_keymap_warnings(vec![
+        "first keymap warning".into(),
+        "second keymap warning".into(),
+    ]);
+    drive
+        .app
+        .post_startup(Level::Warn, NO_RELEASES_NOTICE.into());
+    drive
+        .app
+        .post_startup(Level::Error, "protected startup".into());
+    drive.frame();
+    let history = drive.app.notices.history().clone();
+    drive.bytes(PAD_PORT, &[0x90, 36, 127]);
+    drive.bytes(PAD_PORT, &[0x80, 36, 0]);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("protected startup"));
+    assert_eq!(drive.app.notices.history(), &history);
+    drive.key(KeyCode::Null, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert!(!drive.app.notices.has_startup());
+    assert_eq!(
+        drive.app.frame_notice().as_deref(),
+        Some("first keymap warning")
+    );
+    for _ in 0..10 {
+        drive.app.frame_notice();
+    }
+    assert_eq!(drive.app.notices.history(), &history);
+    drive.key(KeyCode::Right, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert_eq!(drive.app.keymap_warnings.len(), 2);
+    let bank = drive.app.pads.bank;
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_ne!(
+        drive.app.pads.bank, bank,
+        "acknowledgement does not consume the action"
+    );
+    assert_eq!(drive.app.keymap_warnings.len(), 1);
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_eq!(
+        drive.app.keymap_warnings.len(),
+        1,
+        "an inferred repeat is not a new press"
+    );
+    assert_eq!(drive.app.notices.history(), &history);
+}
+
+/// Scenario "Device notices retain the actual event source".
+#[test]
+fn device_notices_retain_the_actual_event_source() {
+    use input::{Group, midi::Key};
+    let mut drive = Drive::registry_screen_checks();
+    drive.tap(KeyCode::F(2), M::NONE);
+    drive.bind_action(88, "pad.copy");
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        Group::Global,
+        Key::Note(60),
+        "pad.copy",
+    );
+    drive.app.sync_learned("X-Session Pro", Group::Global);
+    drive.midi().recorded_fence();
+    drive.app.pads.selected = 3; // Empty on both devices: both requests produce Warn.
+    drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+    drive.bytes(XS_PORT, &[0x90, 60, 127]);
+    drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+    drive.bytes(XS_PORT, &[0x80, 60, 0]);
+    let queued = drive.queued_events();
+    let before = drive.app.notices.history().len();
+    for event in queued {
+        let port = event.origin().map(str::to_owned);
+        let produces = matches!(event.event, midi::Event::Action(Action::PadCopy));
+        drive.app.midi_ui_event(event);
+        if produces {
+            assert_eq!(drive.last_notice().origin, Origin::Device(port.unwrap()));
+            assert_eq!(drive.last_notice().level, Level::Warn);
+        }
+    }
+    assert_eq!(drive.app.notices.history().len(), before + 2);
+    drive.tap(KeyCode::Char('c'), M::CONTROL);
+    assert_eq!(drive.last_notice().origin, Origin::Keyboard);
+    assert_eq!(drive.last_notice().level, Level::Warn);
+
+    drive.app.pads.selected = 0;
+    drive.tap(KeyCode::Char('c'), M::CONTROL);
+    assert_eq!(drive.last_notice().level, Level::Info);
+    drive.bind_action(87, "bank.next");
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        Group::Global,
+        Key::Note(60),
+        "pad.2",
+    );
+    drive.app.sync_learned("X-Session Pro", Group::Global);
+    drive.midi().recorded_fence();
+    drive.bytes(PAD_PORT, &[0xb0, 87, 127]);
+    drive.bytes(XS_PORT, &[0x90, 60, 127]);
+    let queued = drive.queued_events();
+    assert!(queued.iter().any(|event| matches!(
+        event.event,
+        midi::Event::PadHit {
+            sound: midi::PadSound::UiUnattempted { deferred: true },
+            ..
+        }
+    ) && event.origin() == Some(XS_PORT)));
+    for event in queued {
+        drive.app.midi_ui_event(event);
+    }
+    drive.frame();
+    assert_eq!(drive.app.pads.bank, 1);
+    assert!(drive.app.pads.file[17].is_some());
+    assert_eq!(drive.last_notice().text, "copy placed");
+    assert_eq!(drive.last_notice().level, Level::Done);
+    assert_eq!(drive.last_notice().origin, Origin::Device(XS_PORT.into()));
+    drive.bytes(XS_PORT, &[0x80, 60, 0]);
+    drive.frame();
+    drive.tap(KeyCode::F(3), M::NONE);
+    let before = drive.app.notices.history().len();
+    drive.bytes(XS_PORT, &[0xb0, 35, 80]);
+    drive.frame();
+    assert!(drive.app.notices.history().len() > before);
+    assert_eq!(drive.last_notice().origin, Origin::Device(XS_PORT.into()));
+    assert_eq!(drive.last_notice().level, Level::Info);
+}
+
+#[test]
+fn notice_errors_require_a_displayed_new_owner_input() {
+    let mut drive = Drive::new();
+    drive.bind_action(88, "bank.next");
+    drive
+        .app
+        .post_system_notice(Level::Error, ("same error".into(), Instant::now()));
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+    drive.bytes(PAD_PORT, &[0x80, 36, 0]);
+    drive.bytes(PAD_PORT, &[0xf8]);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("same error"));
+    drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+    drive.frame();
+    assert_eq!(drive.app.pads.bank, 1);
+    assert!(drive.app.notices.current().is_none());
+    drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+    drive.frame();
+
+    drive
+        .app
+        .post_system_notice(Level::Error, ("same error".into(), Instant::now()));
+    drive.frame();
+    drive
+        .app
+        .post_system_notice(Level::Error, ("same error".into(), Instant::now()));
+    drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+    drive.frame();
+    assert_eq!(drive.app.pads.bank, 2);
+    assert_eq!(
+        drive.app.notice().as_deref(),
+        Some("same error"),
+        "an identical replacement was not shown before input"
+    );
+
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert!(drive.app.notices.current().is_none());
+    drive
+        .app
+        .post_system_notice(Level::Error, ("repeat test".into(), Instant::now()));
+    drive.frame();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("repeat test"));
+    drive.bytes(XS_PORT, &[0xb0, 15, 0]);
+    drive.frame();
+    assert!(
+        drive.app.notices.current().is_none(),
+        "movement to zero is not a button release"
+    );
+
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    drive
+        .app
+        .post_system_notice(Level::Error, ("keyboard repeat".into(), Instant::now()));
+    drive.frame();
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("keyboard repeat"));
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("keyboard repeat"));
+    let bank = drive.app.pads.bank;
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_ne!(drive.app.pads.bank, bank);
+    assert!(drive.app.notices.current().is_none());
+}
+
+/// Scenario "Each produced result keeps its meaning".
+#[test]
+fn each_produced_result_keeps_its_meaning() {
+    let mut drive = Drive::new();
+    let path = PathBuf::from("/recorded/chop.wav");
+    drive.app.load_gen[CHOP] = 2;
+    drive.app.chop_loading = Some(path.clone());
+    drive
+        .app
+        .post_system_notice(Level::Error, ("unrelated error".into(), Instant::now()));
+    let history = drive.app.notices.history().clone();
+    for generation in [1, 2] {
+        drive.app.loader_reply(loader::Reply::Loaded {
+            pad: CHOP,
+            generation,
+            path: path.clone(),
+            sound: Arc::new(Sample::mono(vec![0.25; 1024])),
+        });
+        assert_eq!(drive.app.chop_loading.is_some(), generation == 1);
+        assert_eq!(drive.app.notices.history(), &history);
+        assert_eq!(drive.app.notice().as_deref(), Some("unrelated error"));
+    }
+    assert!(drive.app.chop.is_some());
+    drive
+        .app
+        .result_notice(Err("write refused".into()), "same success label".into());
+    assert_eq!(drive.last_notice().level, Level::Error);
+    drive.app.result_notice(Ok(()), "same success label".into());
+    assert_eq!(drive.last_notice().level, Level::Done);
+    assert_eq!(drive.app.notice().as_deref(), Some("write refused"));
+}
+
+#[test]
+fn notice_frame_uses_one_clock_for_expiry_text_and_level() {
+    let mut drive = Drive::new();
+    drive
+        .app
+        .add_keymap_warnings(vec!["waiting keymap warning".into()]);
+    drive
+        .app
+        .post_notice(Level::Info, ("timed result".into(), Instant::now()));
+    let deadline = drive.app.notices.deadline().unwrap();
+    assert_eq!(
+        drive
+            .app
+            .frame_notice_at(deadline - Duration::from_nanos(1))
+            .as_deref(),
+        Some("timed result")
+    );
+    assert_eq!(drive.app.frame_notice_level, Some(Level::Info));
+    assert!(!drive.app.keymap_warning_shown);
+    assert_eq!(
+        drive.app.frame_notice_at(deadline).as_deref(),
+        Some("waiting keymap warning")
+    );
+    assert_eq!(drive.app.frame_notice_level, Some(Level::Warn));
+    assert!(drive.app.keymap_warning_shown);
+    assert_eq!(drive.app.notices.history().len(), 2);
+}
+
+#[test]
+fn notice_loading_state_follows_the_project_generation() {
+    let mut drive = Drive::new();
+    let old = drive.app.load_gen[CHOP];
+    let path = PathBuf::from("/recorded/old-project.wav");
+    drive.app.chop_loading = Some(path.clone());
+    drive
+        .app
+        .post_system_notice(Level::Error, ("retained result".into(), Instant::now()));
+    let history = drive.app.notices.history().clone();
+    drive.app.apply_session(session::Session::default());
+    assert!(drive.app.chop_loading.is_none());
+    drive.app.loader_reply(loader::Reply::Loaded {
+        pad: CHOP,
+        generation: old,
+        path,
+        sound: Arc::new(Sample::mono(vec![0.25; 1024])),
+    });
+    assert!(
+        drive.app.chop.is_none(),
+        "the old project cannot restore its Chop view"
+    );
+    assert!(drive.app.chop_loading.is_none());
+    assert_eq!(drive.app.notice().as_deref(), Some("retained result"));
+    assert_eq!(drive.app.notices.history(), &history);
+}
+
+#[test]
+fn notice_errors_stay_pending_behind_real_text_input() {
+    let mut drive = Drive::new();
+    drive.tap(KeyCode::F(6), M::NONE);
+    drive.tap(KeyCode::Char('/'), M::NONE);
+    assert!(drive.app.browser.editing);
+    drive.app.loader_reply(loader::Reply::Failed {
+        pad: PREVIEW,
+        generation: drive.app.load_gen[PREVIEW],
+        path: PathBuf::from("/recorded/missing.wav"),
+        error: "read refused".into(),
+    });
+    drive.frame();
+    assert!(drive.app.notices.current().is_none());
+    assert_eq!(drive.last_notice().origin, Origin::System);
+    drive.tap(KeyCode::Char('a'), M::NONE);
+    assert!(drive.app.browser.filter.contains('a'));
+    assert!(drive.app.notices.current().is_none());
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.browser.editing);
+    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+    drive.tap(KeyCode::Right, M::NONE);
+    assert!(drive.app.notices.current().is_none());
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -240,7 +565,12 @@ impl Drive {
                 .ask
                 .as_ref()
                 .map_or_else(Vec::new, |ask| ask.lines().to_vec()),
-            notice: self.app.flash.as_ref().map(|(text, _)| text.clone()),
+            notice: self
+                .app
+                .notices
+                .history()
+                .front()
+                .map(|notice| notice.text.clone()),
             history: self
                 .app
                 .history
@@ -2143,7 +2473,7 @@ fn swap_cancellation_and_loading_refusal_parity_from_raw_midi() {
         assert!(drive.app.pad_in_hand.is_none());
         assert!(drive.app.history.is_empty());
         assert_eq!(
-            drive.app.flash.as_ref().unwrap().0,
+            drive.last_notice().text,
             "Wait until loading finishes, then swap."
         );
         assert_eq!(
@@ -6072,15 +6402,25 @@ fn keyboard_and_controller_save_feedback_agree() {
                 let pending = drive.app.session_dirty;
                 let before = drive.seen();
                 for _ in 0..2 {
-                    drive.app.flash = None;
+                    drive.app.notices = Notices::new(Instant::now());
                     drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 88);
-                    let (notice, at) = drive.app.flash.as_ref().unwrap().clone();
+                    let notice = drive.last_notice().text.clone();
+                    let at = Instant::now();
                     assert_eq!(notice == "Session saved", problem == "none");
-                    assert_eq!(
-                        drive.app.notice_at(at + FLASH - Duration::from_nanos(1)),
-                        Some(notice.clone())
-                    );
-                    assert_eq!(drive.app.notice_at(at + FLASH), None);
+                    if problem == "none" {
+                        let deadline = drive.app.notices.deadline().unwrap();
+                        assert_eq!(
+                            drive.app.notice_at(deadline - Duration::from_nanos(1)),
+                            Some(notice.clone())
+                        );
+                        assert_eq!(drive.app.notice_at(deadline), None);
+                    } else {
+                        assert_eq!(
+                            drive.app.notice_at(at + Duration::from_secs(60)),
+                            Some(notice.clone())
+                        );
+                        assert_eq!(drive.last_notice().level, Level::Error);
+                    }
                     assert_eq!(
                         drive.app.session_dirty,
                         if problem == "none" { None } else { pending }
@@ -6102,7 +6442,7 @@ fn keyboard_and_controller_save_feedback_agree() {
                     } else {
                         assert_eq!(session::load(&path).unwrap().master_db, drive.app.master_db);
                     }
-                    let result = (notice, bytes, drive.app.save_status());
+                    let result = (notice.clone(), bytes, drive.app.save_status());
                     if let Some(expected) = &expected {
                         assert_eq!(
                             &result, expected,
@@ -6111,22 +6451,24 @@ fn keyboard_and_controller_save_feedback_agree() {
                     } else {
                         expected = Some(result);
                     }
-                    drive.app.flash = Some(("another notice".into(), at));
-                    assert_eq!(drive.app.notice_at(at), Some("another notice".into()));
+                    drive
+                        .app
+                        .post_notice(Level::Info, ("another notice".into(), at));
+                    assert_eq!(drive.app.notice_at(at), Some(notice));
                 }
                 if problem == "write" {
                     std::fs::remove_file(&tmp).unwrap();
                     drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 88);
-                    assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                    assert_eq!(drive.last_notice().text, "Session saved");
                     assert_eq!(drive.app.save_status(), SaveStatus::Clean);
                     drive.registry_command(source, KeyCode::Char(']'), M::NONE, 89);
                     assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
-                    drive.app.flash = None;
+                    drive.app.notices = Notices::new(Instant::now());
                     drive.app.autosave(
                         drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
                     );
                     assert_eq!(drive.app.save_status(), SaveStatus::Clean);
-                    assert!(drive.app.flash.is_none());
+                    assert!(drive.app.notices.history().is_empty());
                     assert_eq!(session::load(&path).unwrap().master_db, drive.app.master_db);
                 }
             }
@@ -6312,7 +6654,7 @@ fn the_learned_save_button_survives_restart() {
                 assert_eq!(drive.app.screen, screen);
                 drive.tap(KeyCode::Char(']'), M::NONE);
                 drive.registry_command(source, KeyCode::Null, M::NONE, 88);
-                assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                assert_eq!(drive.last_notice().text, "Session saved");
                 assert_eq!(drive.app.save_status(), SaveStatus::Clean);
                 assert_eq!(
                     session::load(&session_path).unwrap().master_db,
@@ -6327,24 +6669,24 @@ fn the_learned_save_button_survives_restart() {
             let tmp = session_path.with_extension("toml.tmp");
             std::fs::write(&tmp, "occupied").unwrap();
             for _ in 0..2 {
-                drive.app.flash = None;
+                drive.app.notices = Notices::new(Instant::now());
                 drive.registry_command(source, KeyCode::Null, M::NONE, 88);
-                assert_ne!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                assert_ne!(drive.last_notice().text, "Session saved");
                 assert_eq!(drive.app.save_status(), SaveStatus::Failed);
                 assert_eq!(drive.app.session_dirty, pending_work);
                 assert_eq!(std::fs::read(&session_path).unwrap(), saved);
             }
             std::fs::remove_file(&tmp).unwrap();
             drive.registry_command(source, KeyCode::Null, M::NONE, 88);
-            assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+            assert_eq!(drive.last_notice().text, "Session saved");
             assert_eq!(drive.app.save_status(), SaveStatus::Clean);
             drive.tap(KeyCode::Char(']'), M::NONE);
-            drive.app.flash = None;
+            drive.app.notices = Notices::new(Instant::now());
             drive.app.autosave(
                 drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
             );
             assert_eq!(drive.app.save_status(), SaveStatus::Clean);
-            assert!(drive.app.flash.is_none());
+            assert!(drive.app.notices.history().is_empty());
             assert_eq!(
                 session::load(&session_path).unwrap().master_db,
                 drive.app.master_db
@@ -6547,7 +6889,7 @@ fn a_save_refusal_keeps_the_selected_target() {
                     let before = TransitionFiles::state(&drive);
                     let picker = TransitionFiles::picker(&drive);
                     for _ in 0..2 {
-                        drive.app.flash = None;
+                        drive.app.notices = Notices::new(Instant::now());
                         drive.tap(KeyCode::Enter, M::NONE);
                         assert_eq!(TransitionFiles::state(&drive), before);
                         assert_eq!(TransitionFiles::picker(&drive), picker);
@@ -6560,7 +6902,7 @@ fn a_save_refusal_keeps_the_selected_target() {
                             drive.app.project.as_ref().map(|p| p.name.as_str()),
                             project.then_some("A")
                         );
-                        let notice = &drive.app.flash.as_ref().unwrap().0;
+                        let notice = &drive.last_notice().text;
                         assert_ne!(notice, "Session saved");
                         assert!(!notice.starts_with("Project "));
                         assert!(drive.app.ask.is_none());
@@ -6629,17 +6971,9 @@ fn a_target_read_refusal_preserves_the_source() {
                 let cuts = drive.app.chop.as_ref().unwrap().saved();
                 let generations = drive.app.load_gen.clone();
                 for _ in 0..2 {
-                    drive.app.flash = None;
+                    drive.app.notices = Notices::new(Instant::now());
                     drive.tap(KeyCode::Enter, M::NONE);
-                    assert!(
-                        drive
-                            .app
-                            .flash
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .starts_with("Project not opened:")
-                    );
+                    assert!(drive.last_notice().text.starts_with("Project not opened:"));
                     assert_eq!(TransitionFiles::state(&drive), before);
                     assert_eq!(TransitionFiles::picker(&drive), picker);
                     assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
@@ -6796,7 +7130,7 @@ fn a_missing_source_folder_blocks_switching_until_restored() {
             let pending = drive.app.session_dirty;
             for _ in 0..2 {
                 drive.tap(KeyCode::Enter, M::NONE);
-                assert!(drive.app.flash.as_ref().unwrap().0.contains("is gone"));
+                assert!(drive.last_notice().text.contains("is gone"));
                 assert_eq!(TransitionFiles::state(&drive), before);
                 assert_eq!(TransitionFiles::picker(&drive), picker);
                 assert_eq!(drive.app.session_dirty, pending);
@@ -7022,7 +7356,7 @@ impl PortableProject {
 
     fn save(drive: &mut Drive, source: Source) {
         drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 89);
-        assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+        assert_eq!(drive.last_notice().text, "Session saved");
         assert!(drive.app.session_dirty.is_none());
     }
 

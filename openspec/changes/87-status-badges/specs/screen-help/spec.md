@@ -50,6 +50,17 @@ Text-input prompts, ongoing recording/loading state and persistent save status S
 - **THEN** its glyph, text and style identify the level without relying on color alone
 - **AND** the stored origin identifies the keyboard, actual device or system
 
+#### Scenario: Each produced result keeps its meaning
+- **WHEN** an existing operation succeeds, refuses the request or completes after a delay
+- **THEN** its notice level comes from that result, not from matching words in its text
+- **AND** loading completion removes only its own ongoing loading state, not an unrelated Error
+
+#### Scenario: Device notices retain the actual event source
+- **WHEN** two controllers alternate commands, deferred pad actions and parameter changes through their production profiles
+- **THEN** each resulting notice retains that event's actual device origin, without borrowing the other controller's identity
+- **AND** a keyboard result records Keyboard while startup, loader and connection events record System
+- **AND** source metadata does not change velocity, command order, epochs, releases or audio routing
+
 #### Scenario: Input prompts retain typing priority
 - **WHEN** a filter, name or picker text line is open while background notices arrive
 - **THEN** its prompt and cursor stay usable and pad keys still type without playing
@@ -65,7 +76,14 @@ Text-input prompts, ongoing recording/loading state and persistent save status S
 Done and Info SHALL last three seconds of visible time, Warn six seconds and manual save success five seconds.
 Error SHALL wait for the next new owner press or control movement, without consuming that action.
 Releases, MIDI clock, background events and redraws SHALL NOT acknowledge Error.
-The no-key-releases startup warning SHALL retain its existing first-keypress acknowledgement rule.
+Startup notices, including the no-key-releases warning, SHALL retain their existing keyboard acknowledgement rules.
+
+#### Scenario: Startup acknowledgement retains its exceptions
+- **WHEN** startup warnings or errors appear and keyboard or controller events arrive
+- **THEN** general startup notices retain their existing first-key-event acknowledgement
+- **AND** keymap warnings keep their separate queue and require a new keyboard press after the warning appeared
+- **AND** repeats, releases, modifiers and hidden warnings retain the existing keymap warning behavior
+- **AND** each startup result enters history once without changing the effective bindings or read protection
 
 #### Scenario: Timed notices use their visible lifetime
 - **WHEN** controlled time reaches a Done, Info, Warn or manual save-success deadline

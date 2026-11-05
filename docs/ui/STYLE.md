@@ -73,6 +73,23 @@ Screen learning keeps its control labels. Chop listen mode does not show pending
 Hidden grids keep their pad line and title badge. Mode marks cannot open the grid.
 Assignment keeps its existing exception: it shows the grid until assignment ends.
 
+## Notices
+
+The existing one-row notice line keeps its position above help. Each transient result has a level and a non-color cue.
+
+| Level | Cue | Style | Visible time |
+| --- | --- | --- | --- |
+| Info | `·` | Muted | 3 seconds |
+| Done | `✓` | Cyan | 3 seconds, or 5 for manual save success |
+| Warn | `!` | Magenta | 6 seconds |
+| Error | `✗` | Bold magenta | Until a new owner action acknowledges the result shown by a frame |
+
+Higher levels interrupt lower levels. Equal levels replace the active result. Pending results retain their remaining visible time.
+Editor prompts and ongoing recording keep their existing text and style. Hidden notices do not consume their lifetime.
+Startup notices keep their existing keyboard acknowledgement. Keymap warnings retain their separate visible-warning queue.
+History records each production once, including repeated requests. It does not record each frame or timer update.
+Persistent `Save failed`, loading progress and fallback hints are not transient results.
+
 ## Keyboard
 
 - Pads: `1 2 3 4 / Q W E R / A S D F / Z X C V`, always, on all screens, except when a text input line is open (`/` opens it, Enter or Esc closes it).

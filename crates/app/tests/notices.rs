@@ -1,5 +1,5 @@
-//! Step 4.1 checks the future application model without migrating message producers.
-//! Keyboard/raw-MIDI acknowledgement and drawing remain integration checks in 4.2–4.4.
+//! Controlled-time checks of the same source used by the application.
+//! Production input and drawing checks live in their application and TUI modules.
 
 #[path = "../src/notices.rs"]
 mod notices;
@@ -13,6 +13,93 @@ fn text(queue: &Notices) -> Option<&str> {
 
 fn push(queue: &mut Notices, level: Level, label: &str, now: Instant) {
     queue.push(Notice::new(level, Origin::System, label), now);
+}
+
+#[test]
+fn startup_notices_keep_their_keyboard_acknowledgement_exception() {
+    let now = Instant::now();
+    let mut queue = Notices::new(now);
+    queue.push(Notice::startup(Level::Warn, "first"), now);
+    queue.push(Notice::startup(Level::Warn, "second"), now);
+    assert_eq!(text(&queue), Some("first"));
+    queue.push(Notice::startup(Level::Error, "read protection"), now);
+    push(&mut queue, Level::Info, "pending", now);
+    queue.advance(now + Duration::from_secs(100));
+    queue.acknowledge(now + Duration::from_secs(100));
+    assert_eq!(text(&queue), Some("read protection"));
+    assert!(queue.error_token().is_none());
+    assert!(queue.has_startup());
+    queue.dismiss_startup(now + Duration::from_secs(100));
+    assert!(!queue.has_startup());
+    assert_eq!(text(&queue), Some("pending"));
+    assert_eq!(queue.history().len(), 4);
+    queue.advance(now + Duration::from_secs(103));
+    assert!(queue.current().is_none());
+}
+
+#[test]
+fn only_the_displayed_error_production_can_be_acknowledged() {
+    let now = Instant::now();
+    let mut queue = Notices::new(now);
+    push(&mut queue, Level::Error, "same error", now);
+    queue.acknowledge_shown(None, now);
+    assert_eq!(text(&queue), Some("same error"));
+    let old = queue.error_token();
+    push(&mut queue, Level::Error, "same error", now);
+    queue.acknowledge_shown(old.as_ref(), now);
+    assert_eq!(text(&queue), Some("same error"));
+    let displayed = queue.error_token();
+    for i in 0..55 {
+        push(&mut queue, Level::Info, &format!("info {i}"), now);
+    }
+    queue.set_visible(false, now);
+    queue.acknowledge_shown(displayed.as_ref(), now);
+    queue.set_visible(true, now);
+    assert_eq!(text(&queue), Some("same error"));
+    queue.acknowledge_shown(displayed.as_ref(), now);
+    assert_eq!(text(&queue), Some("info 5"));
+    queue.acknowledge_shown(displayed.as_ref(), now);
+    assert_eq!(text(&queue), Some("info 5"));
+}
+
+#[test]
+fn history_only_records_do_not_create_timed_or_pending_entries() {
+    let now = Instant::now();
+    let mut queue = Notices::new(now);
+    for i in 0..60 {
+        queue.record(Notice::new(
+            Level::Warn,
+            Origin::System,
+            format!("keymap {i}"),
+        ));
+    }
+    assert_eq!(queue.history().len(), 50);
+    assert_eq!(queue.history().front().unwrap().text, "keymap 59");
+    assert_eq!(queue.history().back().unwrap().text, "keymap 10");
+    for second in 0..100 {
+        queue.advance(now + Duration::from_secs(second));
+        assert!(queue.current().is_none());
+        assert_eq!(queue.pending_len(), 0);
+        assert_eq!(queue.history().len(), 50);
+    }
+}
+
+#[test]
+fn notice_peeks_keep_deadlines_and_history_unchanged() {
+    let now = Instant::now();
+    let mut queue = Notices::new(now);
+    queue.push(Notice::manual_save_success(Origin::Keyboard), now);
+    assert_eq!(queue.deadline(), Some(now + Duration::from_secs(5)));
+    assert_eq!(
+        queue
+            .current_at(now + Duration::from_secs(5) - Duration::from_nanos(1))
+            .unwrap()
+            .text,
+        "Session saved"
+    );
+    assert!(queue.current_at(now + Duration::from_secs(5)).is_none());
+    assert_eq!(text(&queue), Some("Session saved"));
+    assert_eq!(queue.history().len(), 1);
 }
 
 #[test]

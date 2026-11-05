@@ -1,9 +1,9 @@
 use super::{
     Action, App, Ask, CLICK_VELOCITY, Command, EFFECT_PARAMS, HeldPads, INPUT_LOG, Instant, Keymap,
-    Lit, MidiListRow, Move, NUDGE_FINE_MS, NUDGE_MS, PADS, PADS_PER_BANK, Param, PathPicker,
-    ProjectPicker, Rec, SETTINGS_ROWS, Screen, UiPadHold, action_info, assign_deaf, bank_key, chop,
-    config, event, group_jump, held_repeats, learn, midi, pad_env, pad_filter, pad_name, pads,
-    record_step,
+    Level, Lit, MidiListRow, Move, NUDGE_FINE_MS, NUDGE_MS, Notice, Origin, PADS, PADS_PER_BANK,
+    Param, PathPicker, ProjectPicker, Rec, SETTINGS_ROWS, Screen, UiPadHold, action_info,
+    assign_deaf, bank_key, chop, config, event, group_jump, held_repeats, learn, midi, pad_env,
+    pad_filter, pad_name, pads, record_step,
 };
 
 impl App {
@@ -69,8 +69,10 @@ impl App {
                 Action::SettingsLearn if matches!(&self.ask, Some(Ask::ResetProfile { .. })) => {
                     if let Some(Ask::ResetProfile { name, port, .. }) = self.ask.take() {
                         self.seed_device(&port, &name, true);
-                        self.flash =
-                            Some((format!("{name}: bindings from its profile"), Instant::now()));
+                        self.post_notice(
+                            Level::Done,
+                            (format!("{name}: bindings from its profile"), Instant::now()),
+                        );
                     }
                 }
                 Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit => {
@@ -149,10 +151,13 @@ impl App {
                 }
             }
             a if self.screen == Screen::Chop && self.plan.is_some() && assign_deaf(&a) => {
-                self.flash = Some((
-                    "assigning: Enter applies, Esc leaves".into(),
-                    Instant::now(),
-                ));
+                self.post_notice(
+                    Level::Info,
+                    (
+                        "assigning: Enter applies, Esc leaves".into(),
+                        Instant::now(),
+                    ),
+                );
             }
             Action::Click => self.send(Command::Click {
                 velocity: CLICK_VELOCITY,
@@ -160,7 +165,10 @@ impl App {
             Action::SessionSave => {
                 // the manual save speaks (22); an error flash from the save wins
                 if self.save_session().is_ok() {
-                    self.flash = Some(("Session saved".into(), Instant::now()));
+                    self.produce_notice(
+                        Notice::manual_save_success(self.notice_origin.clone()),
+                        Instant::now(),
+                    );
                 }
             }
             Action::RecordMic(_) | Action::RecordOutputToggle => {
@@ -183,10 +191,13 @@ impl App {
                 if self.pads.file[abs].is_some() {
                     self.pad_naming = Some((abs, pad_name(&self.pads, abs)));
                 } else {
-                    self.flash = Some((
-                        "pad is empty: put a sample on it first".into(),
-                        Instant::now(),
-                    ));
+                    self.post_notice(
+                        Level::Warn,
+                        (
+                            "pad is empty: put a sample on it first".into(),
+                            Instant::now(),
+                        ),
+                    );
                 }
             }
             Action::PadRename => {}
@@ -201,7 +212,7 @@ impl App {
                 };
                 if let Err(e) = result {
                     log::error!("{e}");
-                    self.flash = Some((e, Instant::now()));
+                    self.post_notice(Level::Error, (e, Instant::now()));
                 }
             }
             Action::ScreenPads => self.goto(Screen::Pads),
@@ -281,7 +292,10 @@ impl App {
                 let before = c.cut_ids().to_vec();
                 let placed = c.cut(playhead.unwrap_or(c.cursor));
                 if placed == chop::Cut::Refused {
-                    self.flash = Some(("too close to another cut".into(), Instant::now()));
+                    self.post_notice(
+                        Level::Warn,
+                        ("too close to another cut".into(), Instant::now()),
+                    );
                 } else {
                     // a cut inside a slice on pads keeps them on the left part, the slice
                     // that still starts at their cut (36): they get shorter, and say so
@@ -313,7 +327,7 @@ impl App {
                         (None, b) => b,
                     };
                     if let Some(t) = text {
-                        self.flash = Some((t, Instant::now()));
+                        self.post_notice(Level::Info, (t, Instant::now()));
                     }
                 }
             }
@@ -436,7 +450,9 @@ impl App {
                             c.select_slice(selected);
                         }
                     }
-                    None => self.flash = Some(("nothing to undo".into(), Instant::now())),
+                    None => {
+                        self.post_notice(Level::Info, ("nothing to undo".into(), Instant::now()))
+                    }
                 }
             }
             Action::MarkerSelect(step) if self.screen == Screen::Chop => {
@@ -465,7 +481,7 @@ impl App {
                         Action::ChopParts | Action::ChopEqualParts => {
                             c.next_parts();
                             if linked > 0 {
-                                self.flash = Some((
+                                self.post_notice(Level::Warn, (
                                     format!(
                                         "{linked} pads keep their old slices and no longer follow the cuts; Ctrl+Z links them again"
                                     ),
@@ -487,7 +503,10 @@ impl App {
                                     "; {linked} pads keep their old slices, Ctrl+Z links them again"
                                 ));
                             }
-                            self.flash = Some((text, Instant::now()));
+                            self.post_notice(
+                                if linked > 0 { Level::Warn } else { Level::Done },
+                                (text, Instant::now()),
+                            );
                         }
                         // 83a: Shift+H steps the threshold back; a clamped step is a no-op
                         // that still names the threshold, without claiming replaced cuts
@@ -507,14 +526,17 @@ impl App {
                                             "; {linked} pads keep their old slices, Ctrl+Z links them again"
                                         ));
                                     }
-                                    self.flash = Some((text, Instant::now()));
+                                    self.post_notice(
+                                        if linked > 0 { Level::Warn } else { Level::Done },
+                                        (text, Instant::now()),
+                                    );
                                 }
                                 None => {
                                     let db = c.threshold_db;
-                                    self.flash = Some((
-                                        format!("by hits stays at {db:.0} dB"),
-                                        Instant::now(),
-                                    ));
+                                    self.post_notice(
+                                        Level::Info,
+                                        (format!("by hits stays at {db:.0} dB"), Instant::now()),
+                                    );
                                 }
                             }
                         }
@@ -539,7 +561,10 @@ impl App {
                         Action::SliceEndDelete => c.delete_end(),
                         _ => {
                             if !c.undo() && !self.undo_fresh() {
-                                self.flash = Some(("nothing to undo".into(), Instant::now()));
+                                self.post_notice(
+                                    Level::Info,
+                                    ("nothing to undo".into(), Instant::now()),
+                                );
                             }
                         }
                     }
@@ -557,7 +582,7 @@ impl App {
             Action::Back if matches!(self.ask, Some(Ask::CopyPad { .. })) => self.ask = None,
             Action::Back if self.copy_in_hand.is_some() => {
                 self.copy_in_hand = None;
-                self.flash = Some(("copy dropped".into(), Instant::now()));
+                self.post_notice(Level::Info, ("copy dropped".into(), Instant::now()));
             }
             // Esc on the files screen drops a filter first (66)
             Action::Back if self.screen == Screen::Files && self.browser.clear_filter() => {}
@@ -752,14 +777,17 @@ impl App {
                 } else {
                     ""
                 };
-                self.flash = Some((
-                    if added {
-                        format!("★ {name}: favorite{whose}")
-                    } else {
-                        format!("{name}: no longer a favorite{whose}")
-                    },
-                    Instant::now(),
-                ));
+                self.post_notice(
+                    Level::Done,
+                    (
+                        if added {
+                            format!("★ {name}: favorite{whose}")
+                        } else {
+                            format!("{name}: no longer a favorite{whose}")
+                        },
+                        Instant::now(),
+                    ),
+                );
                 {
                     let section = config::BrowserConfig {
                         favorites: self.browser.favorites.clone(),
@@ -770,7 +798,7 @@ impl App {
                     };
                     if let Err(e) = result {
                         log::error!("{e}");
-                        self.flash = Some((e, Instant::now()));
+                        self.post_notice(Level::Error, (e, Instant::now()));
                     }
                 }
             }
@@ -819,12 +847,15 @@ impl App {
                 if let Some(n) = self.pads.limit_hits.take() {
                     let what = self.pads.param_name();
                     let pad = if n == 1 { "pad" } else { "pads" };
-                    self.flash = Some((format!("{what}: {n} {pad} at the limit"), Instant::now()));
+                    self.post_notice(
+                        Level::Warn,
+                        (format!("{what}: {n} {pad} at the limit"), Instant::now()),
+                    );
                 } else if value {
                     // the changed value pops up, so the ear and the eye agree
                     let value = self.pads.param_value();
                     let what = self.pads.param_name();
-                    self.flash = Some((format!("{what}: {value}"), Instant::now()));
+                    self.post_notice(Level::Info, (format!("{what}: {value}"), Instant::now()));
                 }
             }
         }
@@ -862,10 +893,19 @@ impl App {
     pub(super) fn midi_ui_event(&mut self, ev: midi::UiEvent) {
         let sequence = ev.sequence();
         let preview_ready = ev.preview_ready();
+        let origin = ev
+            .origin()
+            .map_or(Origin::System, |port| Origin::Device(port.into()));
+        let owner_input = ev.owner_input();
         if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
+            let old = std::mem::replace(&mut self.notice_origin, origin);
+            if owner_input {
+                self.acknowledge_notice();
+            }
             self.midi_preview_blocked = !preview_ready;
             self.midi_event(ev);
             self.midi_preview_blocked = false;
+            self.notice_origin = old;
         }
         if let Some(sequence) = sequence
             && let Some(midi) = &self.midi
@@ -996,12 +1036,15 @@ impl App {
         }
         match ev {
             midi::Event::Connected { port, profile } => {
-                self.flash = Some((format!("MIDI connected: {port} ({profile} profile)"), now));
+                self.post_system_notice(
+                    Level::Info,
+                    (format!("MIDI connected: {port} ({profile} profile)"), now),
+                );
                 self.seed_device(&port, &profile, false);
                 self.midi_devices.push((port, profile));
             }
             midi::Event::Disconnected { port } => {
-                self.flash = Some((format!("MIDI disconnected: {port}"), now));
+                self.post_system_notice(Level::Warn, (format!("MIDI disconnected: {port}"), now));
                 self.midi_devices.retain(|(p, _)| *p != port);
             }
             midi::Event::Message {
@@ -1210,7 +1253,10 @@ impl App {
                     }
                     Err(m) => {
                         let way = if m == Move::Up { "up ↑" } else { "down ↓" };
-                        self.flash = Some((format!("turn {control} {way} to the cut"), now));
+                        self.post_notice(
+                            Level::Info,
+                            (format!("turn {control} {way} to the cut"), now),
+                        );
                     }
                 }
             }
@@ -1261,7 +1307,7 @@ impl App {
                     }
                     Err(m) => {
                         let way = if m == Move::Up { "up ↑" } else { "down ↓" };
-                        self.flash = Some((format!("turn {control} {way}"), now));
+                        self.post_notice(Level::Info, (format!("turn {control} {way}"), now));
                     }
                 }
             }
@@ -1304,12 +1350,12 @@ impl App {
                             if changed > 0 {
                                 text.push_str(&format!("; {changed} pads changed; Ctrl+Z returns"));
                             }
-                            self.flash = Some((text, now));
+                            self.post_notice(Level::Info, (text, now));
                         }
                     }
                     Err(m) => {
                         let way = if m == Move::Up { "up ↑" } else { "down ↓" };
-                        self.flash = Some((format!("turn {control} {way}"), now));
+                        self.post_notice(Level::Info, (format!("turn {control} {way}"), now));
                     }
                 }
             }
@@ -1517,7 +1563,7 @@ impl App {
                             | Param::PadReso => self.pickup = Some((hint, now)),
                             // the master hint is needed on every screen, not only on the pads one
                             Param::MasterVolume => {
-                                self.flash = Some((format!("Master: {hint}"), now))
+                                self.post_notice(Level::Info, (format!("Master: {hint}"), now))
                             }
                             Param::SliceStart
                             | Param::SliceEnd
@@ -1548,6 +1594,21 @@ impl App {
         held: &mut HeldPads,
         mods: &mut input::HeldModifiers,
     ) -> bool {
+        let old = std::mem::replace(&mut self.notice_origin, Origin::Keyboard);
+        let quit = self.keyboard_event_inner(keymap, k, kitty, keys_down, held, mods);
+        self.notice_origin = old;
+        quit
+    }
+
+    fn keyboard_event_inner(
+        &mut self,
+        keymap: &Keymap,
+        k: &event::KeyEvent,
+        kitty: bool,
+        keys_down: &mut input::HeldKeys,
+        held: &mut HeldPads,
+        mods: &mut input::HeldModifiers,
+    ) -> bool {
         // Keep the old startup dismissal rule, but acknowledge a keymap warning only
         // after a frame showed it. A flash that expired between frames is not a read warning.
         let warning_shown = self.keymap_warning_shown;
@@ -1557,6 +1618,11 @@ impl App {
         // held-key accounting below; a Ghostty repeat after such a state change would then
         // count as a new press and dismiss a warning. Track held keys on every event.
         let tracked = if kitty { keys_down.repeat(k) } else { *k };
+        if tracked.kind == event::KeyEventKind::Press
+            && !matches!(tracked.code, event::KeyCode::Modifier(_))
+        {
+            self.acknowledge_notice();
+        }
         if self.pad_naming.is_some() && self.pad_name_key(k) {
             return false;
         }

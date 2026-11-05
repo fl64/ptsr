@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
-use input::midi::{Key, Msg, Param, Profile, Resolved, Scope};
+use input::midi::{Activity, Key, Msg, Param, Profile, Resolved, Scope};
 use input::{Action, Focus, Group, PadRoute, route_pad};
 use std::sync::atomic::Ordering::Acquire;
 
@@ -157,15 +157,22 @@ pub struct UiEvent {
     pub event: Event,
     stamp: Option<Stamp>,
     sequence: Option<u64>,
+    origin: Option<String>,
+    owner_input: bool,
 }
 
 struct UiSender {
     tx: Sender<UiEvent>,
     last_sent: u64,
+    origin: Option<String>,
 }
 
 impl UiSender {
     fn send(&mut self, event: Event, stamp: Option<Stamp>) {
+        self.send_input(event, stamp, false);
+    }
+
+    fn send_input(&mut self, event: Event, stamp: Option<Stamp>, owner_input: bool) {
         let sequence = matches!(
             &event,
             Event::Action(_)
@@ -181,6 +188,8 @@ impl UiSender {
                 event,
                 stamp,
                 sequence,
+                origin: self.origin.clone(),
+                owner_input,
             })
             .is_ok()
             && let Some(sequence) = sequence
@@ -197,7 +206,17 @@ impl UiEvent {
             event,
             stamp: Some(Stamp::capture(Some(project))),
             sequence: None,
+            origin: None,
+            owner_input: false,
         }
+    }
+
+    pub fn origin(&self) -> Option<&str> {
+        self.origin.as_deref()
+    }
+
+    pub fn owner_input(&self) -> bool {
+        self.owner_input
     }
 
     pub fn sequence(&self) -> Option<u64> {
@@ -463,7 +482,9 @@ fn dispatch(
     let mut ui = UiSender {
         tx,
         last_sent: shared.input().0,
+        origin: None,
     };
+    let mut positions: HashMap<(String, u8, Key), u8> = HashMap::new();
     let mut defaults: HashMap<String, Profile> = HashMap::new();
     let mut pressed = DirectHolds::new();
     let mut ui_pressed = UiHolds::new();
@@ -499,6 +520,12 @@ fn dispatch(
                 continue;
             }
         };
+        // Freeze the source of this raw event into every derived UI envelope.
+        // Later events from another port cannot relabel queued work.
+        ui.origin = match &raw {
+            Raw::Msg(port, ..) => Some(port.clone()),
+            _ => None,
+        };
         let (port, msg, stamp) = match raw {
             Raw::Connected(port) => {
                 let profile = profiles
@@ -509,6 +536,7 @@ fn dispatch(
                 continue;
             }
             Raw::Disconnected(port) => {
+                positions.retain(|(device, _, _), _| *device != port);
                 // a held gate pad would hang without its note off
                 pressed.retain(|(p, _, _), held| {
                     if *p == port {
@@ -599,13 +627,20 @@ fn dispatch(
             }),
         };
         let waiting = ui.last_sent != acknowledged;
-        let resolved = profile.resolve_in(focus.screen, focus.mode.edit, msg);
+        let (resolved, activity) = profile.resolve_input_in(focus.screen, focus.mode.edit, msg);
+        let owner_input = match (activity, msg) {
+            (Activity::Press, _) => true,
+            (Activity::Movement, Msg::Cc { ch, value, .. }) => {
+                positions.insert((port.clone(), ch, msg.key()), value) != Some(value)
+            }
+            _ => false,
+        };
         let meaning = match &resolved {
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
         };
-        ui.send(
+        ui.send_input(
             Event::Message {
                 port: port.clone(),
                 profile: profile.name.clone(),
@@ -613,6 +648,7 @@ fn dispatch(
                 meaning,
             },
             Some(stamp),
+            owner_input,
         );
         let channel = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
@@ -961,6 +997,7 @@ mod tests {
         let mut sender = UiSender {
             tx,
             last_sent: u64::MAX,
+            origin: None,
         };
         sender.send(Event::Action(Action::BankNext), None);
         let action = rx.recv().unwrap();
@@ -1002,7 +1039,11 @@ mod tests {
     #[test]
     fn direct_notifications_parameters_logs_and_releases_do_not_create_barriers() {
         let (tx, rx) = mpsc::channel();
-        let mut sender = UiSender { tx, last_sent: 9 };
+        let mut sender = UiSender {
+            tx,
+            last_sent: 9,
+            origin: None,
+        };
         let events = [
             Event::PadHit {
                 abs: 2,
@@ -1082,6 +1123,7 @@ mod tests {
         let mut sender = UiSender {
             tx,
             last_sent: u64::MAX,
+            origin: None,
         };
         sender.send(Event::Action(Action::BankNext), None);
         assert_eq!(sender.last_sent, u64::MAX);

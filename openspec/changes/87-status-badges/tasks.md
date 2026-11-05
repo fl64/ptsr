@@ -96,7 +96,15 @@ Run `task check`, `task build`, strict OpenSpec validation and English checks be
 No owner action, listening render, publication or F1 navigation change is part of this step.
 
 - [x] 4.1 Add level, origin, lifetime, bounded pending queue and latest-50 history. Test controlled-time priority, interruption, overflow and owner acknowledgement.
-- [ ] 4.2 Classify each existing transient and startup message. Preserve editor prompts, fallback hints, no-key-releases acknowledgement and silent successful autosave.
+- [x] 4.2 Classify each existing transient and startup message. Preserve editor prompts, fallback hints, no-key-releases acknowledgement and silent successful autosave.
+
+The owner approved the 17-file plan for 4.2: application main, views, dispatch, MIDI, saving and notices, plus their input/save/model tests and drawing.
+The remaining files are this task list, design, screen-help delta, OpenSpec context, project/plan status and the style guide.
+The owner then approved `crates/input/src/midi.rs` as the eighteenth file. Effective resolution supplies activity without changing the action result.
+Record levels at all 79 existing slot producers and keep ongoing state separate. Preserve startup acknowledgement exceptions before connecting the model.
+Extend production keyboard/raw-MIDI, controlled-time and drawing tests. Do not substitute a last-device guess or consume acknowledged input.
+Keep F1 navigation, value popups, the shared input indicator, sound, factory bindings and saved formats outside this step.
+
 - [ ] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
 - [ ] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
 
@@ -114,6 +122,29 @@ Application drawing, input dispatch, saving, engine, bindings, dependencies and 
 Production acknowledgement, message levels and source routing still need 4.2 and 4.3. F1 Messages and its controls still need 4.4.
 The owner has no manual check for 4.1. No new WAV, hardware result, publication or archive is part of this step.
 Tab under open F1 help remains an open exception for correction in 4.4.
+
+Migration verification (4.2): `task check`, `task build` and `task openspec:check` pass.
+The suites pass: 708 App, 81 input, 110 drawing, 21 notice-model and 18 benchmark-report tests. Main-spec scenario coverage also passes.
+All 21 model tests pass in Release. Debug tests, the Release sampler and the executed callback benchmark use this worktree's sources.
+The producer inventory contains 79 former one-slot writes. Their outcomes now supply levels directly, without text matching.
+Startup and keymap tests retain their distinct acknowledgement rules and one history record per production.
+Two real profile routes retain the producing port through alternating commands, parameter changes and deferred pad placement.
+Only the raw-message envelope acknowledges once. Derived actions retain normal routing, velocity and release ownership.
+Shown-token tests retain unseen and identical replacement Errors. Real filter input hides notices without blocking typing or losing the Error.
+Input tests distinguish learned button releases from continuous movement to zero. Repeated knob values do not acknowledge Errors.
+Loading tests preserve unrelated Errors and reject old-project replies. One frame clock keeps exact expiry, text, level and keymap visibility consistent.
+Drawing tests check all four cues at 80×26 and 120×40 without changing other rows.
+Existing save tests retain five-second manual success, silent successful autosave, refused bytes, read protection and retry behavior.
+Task 4.3 still needs its dedicated save-priority and persistent-status regression extension. F1 history and the Tab exception remain in 4.4.
+Automated verification opened no live audio or MIDI devices. Sound processing, factory bindings, dependencies and saved formats stay unchanged.
+No new WAV, hardware result, owner acceptance, publication or archive is part of this step.
+
+Owner checks for 4.2, not yet performed:
+
+- On Pads, select an empty pad and press Ctrl+C. Check the `!` warning. Wait six seconds without another action and check the normal hint.
+- Press Ctrl+S in a writable disposable session. Check cyan `✓ Session saved` for five seconds.
+- Repeat with existing learned copy and save controls, where available. Button releases must not dismiss an Error.
+  Physical-controller and listening results remain separate. No new WAV needs listening.
 
 ## 5. Values and status
 

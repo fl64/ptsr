@@ -8,11 +8,64 @@ use engine::{PADS, PADS_PER_BANK};
 use input::Screen;
 
 use super::{
-    App, EFFECT_PARAMS, FLASH, HelpState, LIT_FOR, Lit, audio, chop, chop_view, file_name,
-    filter_curve, pads, same_whole_sound, tui_param,
+    App, EFFECT_PARAMS, HelpState, LIT_FOR, Level, Lit, Notice, Origin, audio, chop, chop_view,
+    file_name, filter_curve, pads, same_whole_sound, tui_param,
 };
 
 impl App {
+    pub(super) fn produce_notice(&mut self, notice: Notice, at: Instant) {
+        log::debug!(
+            "notice {:?} {:?}: {}",
+            notice.level,
+            notice.origin,
+            notice.text
+        );
+        self.notices.push(notice, at);
+    }
+
+    pub(super) fn post_notice(&mut self, level: Level, (text, at): (String, Instant)) {
+        self.produce_notice(Notice::new(level, self.notice_origin.clone(), text), at);
+    }
+
+    pub(super) fn post_system_notice(&mut self, level: Level, (text, at): (String, Instant)) {
+        self.produce_notice(Notice::new(level, Origin::System, text), at);
+    }
+
+    pub(super) fn post_startup(&mut self, level: Level, text: String) {
+        self.produce_notice(Notice::startup(level, text), Instant::now());
+    }
+
+    pub(super) fn add_keymap_warnings(&mut self, warnings: Vec<String>) {
+        for text in warnings {
+            self.notices
+                .record(Notice::new(Level::Warn, Origin::System, text.clone()));
+            self.keymap_warnings.push_back(text);
+        }
+    }
+
+    pub(super) fn result_notice(&mut self, result: Result<(), String>, success: String) {
+        let (level, text) =
+            result.map_or_else(|error| (Level::Error, error), |_| (Level::Done, success));
+        self.post_notice(level, (text, Instant::now()));
+    }
+
+    fn notice_hidden(&self) -> bool {
+        self.key_notice_blocked()
+            || self.recording.is_some()
+            || self
+                .audio
+                .as_ref()
+                .is_some_and(|audio| audio.stopped.load(Relaxed))
+    }
+
+    pub(super) fn acknowledge_notice(&mut self) {
+        if !self.notice_hidden() {
+            self.notices
+                .acknowledge_shown(self.shown_error.as_ref(), Instant::now());
+        }
+        self.shown_error = None;
+    }
+
     /// Existing modes in title priority order. This snapshot never changes input focus.
     pub(super) fn title_badges(&self) -> Vec<tui::Badge> {
         self.title_badges_at(Instant::now())
@@ -368,6 +421,7 @@ impl App {
         view
     }
 
+    #[cfg(test)]
     pub(super) fn notice(&self) -> Option<String> {
         self.notice_at(Instant::now())
     }
@@ -394,10 +448,11 @@ impl App {
         if self.audio.as_ref().is_some_and(|a| a.stopped.load(Relaxed)) {
             return Some("Audio stopped: the sound server or device went away.".into());
         }
-        if let Some((msg, at)) = &self.flash
-            && now.saturating_duration_since(*at) < FLASH
-        {
-            return Some(msg.clone());
+        if let Some(notice) = self.notices.current_at(now) {
+            return Some(notice.text.clone());
+        }
+        if let Some(path) = &self.chop_loading {
+            return Some(format!("Loading {}…", file_name(path)));
         }
         if let Some(abs) = (0..PADS).find(|&p| self.pads.loading[p].is_some()) {
             let name = self.pads.file[abs]
@@ -415,22 +470,40 @@ impl App {
                 got.unwrap_or("none")
             ));
         }
-        self.startup.first().cloned().or_else(|| {
-            (!self.key_notice_blocked())
-                .then(|| self.keymap_warnings.front().cloned())
-                .flatten()
-        })
+        (!self.key_notice_blocked())
+            .then(|| self.keymap_warnings.front().cloned())
+            .flatten()
     }
 
     pub(super) fn frame_notice(&mut self) -> Option<String> {
+        self.frame_notice_at(Instant::now())
+    }
+
+    pub(super) fn frame_notice_at(&mut self, now: Instant) -> Option<String> {
+        self.notices.set_visible(!self.notice_hidden(), now);
         let notice = self
             .pad_naming
             .as_ref()
             .map(|(_, name)| format!("Name: {name}▏  Enter saves · Esc cancels"))
-            .or_else(|| self.notice());
+            .or_else(|| self.notice_at(now));
         self.keymap_warning_shown = !self.key_notice_blocked()
             && self.keymap_warnings.front().is_some()
             && notice.as_ref() == self.keymap_warnings.front();
+        self.frame_notice_level = if self.pad_naming.is_some() || self.recording.is_some() {
+            None
+        } else if self
+            .audio
+            .as_ref()
+            .is_some_and(|audio| audio.stopped.load(Relaxed))
+        {
+            Some(Level::Error)
+        } else {
+            self.notices
+                .current()
+                .map(|entry| entry.level)
+                .or_else(|| self.keymap_warning_shown.then_some(Level::Warn))
+        };
+        self.shown_error = self.notices.error_token();
         notice
     }
 

@@ -92,6 +92,27 @@ impl Badge {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum NoticeLevel {
+    Info,
+    Done,
+    Warn,
+    Error,
+}
+
+#[derive(Clone, Copy)]
+pub struct NoticeLine<'a> {
+    pub text: &'a str,
+    /// Ongoing states and prompts retain their existing style.
+    pub level: Option<NoticeLevel>,
+}
+
+impl<'a> NoticeLine<'a> {
+    pub fn plain(text: &'a str) -> Self {
+        Self { text, level: None }
+    }
+}
+
 /// Shared title and status snapshot.
 pub struct Status<'a> {
     pub badges: Vec<Badge>,
@@ -109,7 +130,7 @@ pub struct Status<'a> {
     /// Output meter levels in dB: bar, peak hold, per channel; with the latched clip light.
     pub meters: ([f32; 2], [f32; 2], bool),
     /// Message for the owner: why there is no audio, terminal warning.
-    pub notice: Option<&'a str>,
+    pub notice: Option<NoticeLine<'a>>,
     /// The terminal has no kitty protocol: no key releases, gate pads play as one-shot.
     pub no_releases: bool,
     /// The open project's name; `None` when no project is open.
@@ -598,9 +619,20 @@ fn draw_inner(
         _ => None,
     };
     match (s.notice, pickup, help.hint) {
-        (Some(n), _, _) | (None, Some(n), _) => {
-            frame.render_widget(Line::from(format!(" {n}")).fg(MAGENTA), notice)
+        (Some(n), _, _) => {
+            let (glyph, style) = match n.level {
+                Some(NoticeLevel::Done) => ("✓ ", Style::new().fg(CYAN)),
+                Some(NoticeLevel::Info) => ("· ", Style::new().fg(DIM)),
+                Some(NoticeLevel::Warn) => ("! ", Style::new().fg(MAGENTA)),
+                Some(NoticeLevel::Error) => ("✗ ", Style::new().fg(MAGENTA).bold()),
+                None => ("", Style::new().fg(MAGENTA)),
+            };
+            frame.render_widget(
+                Line::from(format!(" {glyph}{}", n.text)).style(style),
+                notice,
+            );
         }
+        (None, Some(n), _) => frame.render_widget(Line::from(format!(" {n}")).fg(MAGENTA), notice),
         (None, None, Some(h)) => frame.render_widget(Line::from(format!(" {h}")).fg(DIM), notice),
         _ => {}
     }
@@ -3828,9 +3860,47 @@ mod tests {
     }
 
     #[test]
+    fn every_notice_level_has_a_non_color_cue() {
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut status = status_at(128, 0);
+            let (_, help) = chop_status();
+            let screen = Screen::Pads(idle_pads());
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            term.draw(|frame| draw(frame, &status, &screen, &help))
+                .unwrap();
+            let baseline = term.backend().buffer().clone();
+            for (level, glyph, color, bold) in [
+                (NoticeLevel::Info, "·", DIM, false),
+                (NoticeLevel::Done, "✓", CYAN, false),
+                (NoticeLevel::Warn, "!", MAGENTA, false),
+                (NoticeLevel::Error, "✗", MAGENTA, true),
+            ] {
+                status.notice = Some(NoticeLine {
+                    text: "Recorded result",
+                    level: Some(level),
+                });
+                term.draw(|frame| draw(frame, &status, &screen, &help))
+                    .unwrap();
+                let buffer = term.backend().buffer();
+                let row = h - 4;
+                assert_eq!(buffer[(1, row)].symbol(), glyph);
+                assert_eq!(buffer[(1, row)].fg, color);
+                assert_eq!(buffer[(1, row)].modifier.contains(Modifier::BOLD), bold);
+                for y in 0..h {
+                    if y != row {
+                        for x in 0..w {
+                            assert_eq!(buffer[(x, y)], baseline[(x, y)]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn shared_fx_pickup_does_not_hide_a_notice() {
         let (mut status, help) = chop_status();
-        status.notice = Some("project saved");
+        status.notice = Some(NoticeLine::plain("project saved"));
         let mut f = shared_fx();
         f.pickup = Some("pickup: turn to 250 ms".into());
         let mut term = Terminal::new(TestBackend::new(40, 12)).unwrap();
@@ -6913,7 +6983,7 @@ mod tests {
                             };
                             let mut status = status_at(128, 0);
                             status.backend = backend;
-                            status.notice = notice;
+                            status.notice = notice.map(NoticeLine::plain);
                             status.recording = true;
                             status.project = Some("beat");
                             let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
