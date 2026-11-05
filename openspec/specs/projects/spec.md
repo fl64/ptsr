@@ -59,11 +59,20 @@ The system SHALL remember the last opened project and open it on the next start;
 - **THEN** the scratch session works and is saved as today, with no project dialog in the way
 
 ### Requirement: Deleted project folder
-The system SHALL keep working when the open project's folder disappears from disk: the pads are marked as "missing file" and the title drops the project name.
+
+The system SHALL keep working when the open project's folder disappears from disk.
+It SHALL mark pads with files inside that folder as "missing file" and drop the project name from the window title.
+It SHALL refuse saving without recreating the project folder.
+The refusal SHALL retain pending work and allow a manual retry if the folder becomes available again.
 
 #### Scenario: Folder deleted while open
 - **WHEN** the folder of the open project is deleted while the program runs
 - **THEN** the program keeps working, the pads are marked as "missing file", and the title shows no project name
+
+#### Scenario: Saving does not recreate a deleted project
+- **WHEN** the project folder disappears before or during a save
+- **THEN** saving fails without recreating the folder and pending work remains in memory
+- **AND** each manual save request reports the refusal
 
 ### Requirement: Roots in the settings
 The system SHALL offer two rows in the settings screen (F12): the projects root (default `~/ptsr/projects`) and the samples root (default `~/ptsr/samples`); each row opens a directory picker that walks the folders and picks with `Enter`; the choices survive a restart.
@@ -135,3 +144,15 @@ is ready, pad hits SHALL be silent and SHALL NOT play later.
 - **WHEN** the owner switches from a project with samples and slices to an empty project
   and then returns to the first project
 - **THEN** its pads play their own samples and slices with their saved settings
+
+### Requirement: Read protection survives manual save requests
+
+A session file that fails to load SHALL remain protected against saving.
+This protection SHALL apply to damaged files, unreadable files and files from a newer format version.
+Manual save requests SHALL report the protection reason without replacing the file.
+A write failure alone SHALL NOT establish read protection.
+
+#### Scenario: Damaged or newer session remains protected
+- **WHEN** startup cannot load a damaged or newer project or scratch session and the owner requests manual saves
+- **THEN** each request explains the refusal and the protected file remains byte for byte unchanged
+- **AND** edits do not clear the protection or pending work

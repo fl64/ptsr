@@ -1405,7 +1405,8 @@ No new owner, listening or hardware result comes from these checks.
 
 ## 86b — Save retry and learning from F12
 
-Implementation and automated checks are complete. Owner acceptance remains open.
+Implementation and automated checks are complete. The owner accepted 86b without the manual passes.
+Keyboard, physical-controller and listening results remain unverified. Their checkboxes below do not block archive.
 A failed write keeps pending work and pauses automatic saving, including saving on exit.
 A successful manual save clears the warning and permits autosave after the next edit.
 Read protection stays active for damaged, unreadable and newer session files.
@@ -1577,4 +1578,13 @@ The copied `renders/85-input-modes.wav` is an existing test sample, not a new 86
 - [ ] Report keyboard, physical-controller and listening results separately, including unavailable controls.
 
 No live sampler run or physical-controller result comes from the automated checks above.
-Archive 86b only after owner acceptance. Then activate 86c, followed by 86d. Change 87 remains outside this work.
+The owner authorized continuation without all manual passes. Keep their checkboxes unchecked, not passed.
+`openspec archive 86b-save-retry --yes` archived 86b as `2026-11-05-86b-save-retry`.
+The archive added three requirements and modified three requirements across four main specs.
+Strict validation initially rejected the length of the saving requirement. Its shorter text keeps the same rules and scenarios.
+After that text edit, strict validation reported `Totals: 15 passed, 0 failed (15 items)`.
+Main-spec scenario coverage and `task check` passed after archive.
+The archive run's steady maxima were 28.97% wall and 16.40% thread CPU, with no blocks above 50%.
+This run does not close earlier overruns. Evidence: `target/86b-archive-check.log` and `target/86b-archive-final-openspec.log`.
+Next: activate 86c, followed by 86d. Change 87 remains outside this work.
+Callback maximum-budget acceptance remains open.

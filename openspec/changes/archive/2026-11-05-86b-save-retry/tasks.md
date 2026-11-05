@@ -33,4 +33,4 @@
 - [x] 4.2 Run `task build`, `task check` and `task openspec:check`. Keep logs and report callback maxima separately from the exit result.
 - [x] 4.3 Add exact owner steps and verification results to `docs/LIVE-CHECKS.md`. State that sound processing stays unchanged and no new render is necessary.
 - [x] 4.4 Commit verification records after `task check` passes. Keep physical-controller and listening results open until the owner reports them.
-- [ ] 4.5 Obtain owner acceptance before archive. Use the OpenSpec archive command and check scenario coverage before activating 86c.
+- [x] 4.5 Obtain owner acceptance before archive. Use the OpenSpec archive command and check scenario coverage before activating 86c.

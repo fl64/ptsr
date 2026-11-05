@@ -17,10 +17,16 @@ The system SHALL let the owner take a file "in hand" on the files screen with `E
 - **THEN** no pad changes, and pad hits play again
 
 ### Requirement: Saving the session
-The system SHALL save pad samples, modes and volumes of all banks and the last browser folder on every change and on exit, and restore them on the next start; with a project open the session saves into that project's `project.toml` (sample paths inside the project folder relative to it), without a project — into the scratch session file as today.
+
+The system SHALL save all banks' pad samples, modes, volumes and the last browser folder, and restore them at startup.
+Changes SHALL save after editing and on exit.
+Projects SHALL use `project.toml` and relative internal paths. Scratch SHALL use its session file.
+Only successful replacement SHALL clear pending work.
+Write failure SHALL retain work and saved bytes, allow manual retry and pause automatic and exit saves.
+A successful manual save SHALL restore autosave for later edits.
 
 #### Scenario: Restart
-- **WHEN** the owner closes and opens the program again
+- **WHEN** the owner closes and opens the program again after successful saving
 - **THEN** all pads of all banks sound the same as before closing, and the files screen opens in the same folder
 
 #### Scenario: File is gone
@@ -30,6 +36,24 @@ The system SHALL save pad samples, modes and volumes of all banks and the last b
 #### Scenario: Saved into the project
 - **WHEN** a project is open and the session autosaves
 - **THEN** the `project.toml` of that project changes and the scratch session file stays untouched
+
+#### Scenario: Failed autosave retains pending work
+- **WHEN** an autosave fails after the owner changes a pad
+- **THEN** the pad change remains pending and the last saved file stays byte for byte unchanged
+- **AND** later edits retain all pending work without resuming automatic retries
+
+#### Scenario: Manual retry restores autosave
+- **WHEN** a write problem ends and the owner requests a manual save after a failed save
+- **THEN** the current work saves and the pending-change and write-failure states clear
+- **AND** a later edit saves through ordinary autosave
+
+#### Scenario: A failed save does not retry on exit
+- **WHEN** the owner exits while a write failure remains unresolved
+- **THEN** exit saving does not retry the write or report success
+
+#### Scenario: An occupied temporary path preserves the saved file
+- **WHEN** a save cannot safely create or write its temporary file
+- **THEN** the save fails without changing the last saved file or another file at the temporary path
 
 ### Requirement: Swapping pads
 The system SHALL let the owner take the selected pad "in hand" with Ctrl+X and swap it with the next pad that is hit; everything a pad has moves together: the sample and the part of it it plays, the mode, the volume, the pitch, the envelope, the filter, the drive and the sends. Esc cancels.

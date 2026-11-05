@@ -118,5 +118,6 @@ Hardware and power-loss behavior remain unverified.
 
 ## Open questions
 
-None for the save-learning amendment. The owner selected the F12 GLOBAL row and approved its implementation.
-Keyboard, physical-controller and listening acceptance remain separate from implementation approval.
+None for 86b. The owner accepted continuation without the keyboard, physical-controller or listening passes.
+These passes do not block archive, but their results remain unverified.
+Automated evidence does not establish hardware or listening results. Callback maximum-budget acceptance remains open.
