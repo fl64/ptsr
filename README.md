@@ -200,6 +200,33 @@ microseconds. The benchmark does not subtract overhead from workload times.
 A CPU clock error stops the command with an error, not invented zero CPU time.
 Earlier slow-core CPU spikes remain open. This report does not optimize the engine.
 
+#### Local overrun records
+
+`task bench` automatically saves a unique CSV in `target/bench-diagnostics/` and prints its path.
+The CSV records every measured block above the 50% wall or thread CPU target, including CPU-only overruns.
+It retains the phase, switch and block numbers, run-start time, monotonic offset and paired durations.
+It includes boundary CPU IDs and changes in thread context-switch and page-fault counters.
+Missing observations contain `NA` and a reason, not an invented zero.
+A run with no overruns still writes metadata and the CSV header.
+The file is flushed before the existing p99 exit checks, including a failing check.
+An output failure fails the command. A killed process can lose buffered rows.
+
+Boundary observations cover a larger interval than callback timing.
+Equal CPU IDs do not exclude a migration away and back.
+After each overrun, the benchmark attempts a `scaling_cur_freq` read for the after-CPU.
+The CSV includes that source and its read interval.
+This later policy value does not prove the frequency inside the callback or identify the cause of the delay.
+
+All new queries and output stay outside sound processing and its timing interval.
+The separate `instrumented empty calls` and `observation-envelope mean` reports expose observation overhead.
+These observations can affect subsequent execution. The benchmark does not subtract their overhead or change its workload and exit gates.
+No audio server, controller, new dependency or privileged tracing is necessary.
+
+Keep CSV files, raw logs, actual timing results and machine details local.
+Do not add them to Git, PR descriptions or repository documents.
+Repository tests use synthetic observations and an automated direct-versus-observed callback output comparison.
+This diagnostic does not close the callback maximum-budget gate. Sound processing stays unchanged, so no new listening render is necessary.
+
 ### OpenSpec agent setup
 
 Install the OpenSpec CLI once with `npm install -g @fission-ai/openspec`. Then use:

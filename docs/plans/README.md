@@ -6,7 +6,8 @@
 It selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
-The new quality, export and release changes reserve numbers 109–120. Callback work keeps 94a.
+The new quality, export and release changes reserve numbers 109–120. Callback correction keeps 94a.
+Independent report-only change 84b adds local overrun records before further product work.
 
 The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
@@ -26,7 +27,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-04)
+## Current status (2026-11-05)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -53,6 +54,10 @@ not permission to combine the new changes.
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
   were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
+- The owner requested report-only change 84b for automatic local overrun records.
+  It follows the 84a report, without changing sound processing, workload or exit gates.
+  Generic code, tests and instructions can enter Git. CSV files, actual results and machine details stay local.
+  This diagnostic does not close the callback maximum-budget gate or activate 87.
 - The owner accepted input modes 85 on 2026-11-03. It is archived in
   `openspec/changes/archive/2026-11-03-85-input-modes/`. Implementation and offline checks are complete.
   It shares

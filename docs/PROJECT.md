@@ -60,7 +60,11 @@ The registry keeps existing controls, help, learned assignments and FX rules for
 Invalid shared MIDI state rejects new actions while preserving original releases and pending-input order.
 Section 86 of `docs/LIVE-CHECKS.md` records verification and separate keyboard, controller and listening checks.
 This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
-The callback timing issue remains open. Change 87 is next, but it is not active.
+The callback timing issue remains open.
+The owner requested independent report-only change 84b before further product work.
+It adds automatic local overrun records without changing sound processing or exit gates.
+Only generic code, tests and instructions belong in Git. Actual observations and machine details stay local.
+Callback correction remains separate work in 94a. Change 87 is not active.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

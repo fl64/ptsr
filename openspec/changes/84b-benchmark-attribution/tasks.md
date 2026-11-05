@@ -11,7 +11,7 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Run the actual offline benchmark and inspect local CSV output without forcing system load.
-- [ ] 3.2 Record only generic commands and limitations in repository documentation. Keep actual results in ignored local files.
-- [ ] 3.3 Review edge cases, scenario references, OpenSpec and the final staged diff for machine data.
-- [ ] 3.4 Report local evidence and remaining attribution limits. Do not archive or publish without separate approval.
+- [x] 3.1 Run the actual offline benchmark and inspect local CSV output without forcing system load.
+- [x] 3.2 Record only generic commands and limitations in repository documentation. Keep actual results in ignored local files.
+- [x] 3.3 Review edge cases, scenario references, OpenSpec and the final staged diff for machine data.
+- [x] 3.4 Report local evidence and remaining attribution limits. Do not archive or publish without separate approval.
