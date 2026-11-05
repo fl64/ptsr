@@ -77,7 +77,7 @@ not permission to combine the new changes.
   It rejects new actions without losing original releases or pending-input order.
   Section 86 of `docs/LIVE-CHECKS.md` records evidence and separate keyboard, controller and listening checks.
   This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
-  Earlier callback peaks and slow-core CPU spikes remain unresolved. Change 87 is not active.
+  Earlier callback peaks and slow-core CPU spikes remain unresolved. That acceptance did not activate 87.
 - The owner accepted and archived legacy folder migration removal (86a) in merged PR #5.
   Archive: `openspec/changes/archive/2026-11-04-86a-remove-legacy-migration/`.
 - The owner accepted and archived save retry (86b), safe project transitions (86c) and portable chops (86d) without the manual passes.
@@ -85,9 +85,12 @@ not permission to combine the new changes.
   `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
   `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
   Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
-  The save-safety sequence is complete. The owner approved one PR for 84b and 86b–86d on `86b-save-retry`.
-  This is an explicit exception to separate change branches.
-  Change 87 is not active and needs a separate request.
+  The save-safety sequence is complete. 84b and 86b–86d merged in [PR #9](https://github.com/fl64/ptsr/pull/9) on 2026-11-05.
+  That combined PR was an explicit exception to separate change branches.
+- The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
+  The active change covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
+  Implementation waits for specification review. Sound, factory bindings and saved formats stay unchanged.
+  Generic controller confirmation remains in 88. Publication needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -319,7 +322,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | 0.6 | Release form | One binary in tar.gz on GitHub Releases, built for glibc 2.28 |
 | 0.6 | How many autosave versions | 10 |
 | 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | The owner chose A on 2026-11-03. The archived 83a proposal records the choice |
-| 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, `erase`, panel). Change `docs/ui/STYLE.md`? | Yes |
+| 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, `erase`, panel). Change `docs/ui/STYLE.md`? | The owner approved this meaning on 2026-11-05. Marking still sounds. |
 | 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |
 | 89 | How long is a "hold" for a button? | 300 ms, or at once when another control is used while the button is down |
 | 91 | Can the owner set the SMC-PAD encoders to relative mode in MidiSuite once? | Yes. Without it, the encoders stop at the ends of their range |

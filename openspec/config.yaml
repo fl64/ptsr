@@ -46,7 +46,13 @@ context: |
   This is overall acceptance, not individual keyboard, physical-controller or listening results.
   The owner authorized archive and merge of the combined PR #5 for 85–86a.
 
-  Change 87 is next, but it is not active.
+  Save safety 86b–86d and report-only diagnostics 84b merged in PR #9 on 2026-11-05. Their archives are complete.
+  The owner requested 87-status-badges and approved its specification step and local signed-off commits.
+  This active change covers visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
+  Implementation waits for specification review. Publication needs a separate request.
+  Yellow now identifies pad modes, not only marking. Marking still sounds.
+  Manual save success keeps five seconds. Persistent Save failed stays until saving succeeds.
+  Generic controller confirmation remains in 88. Sound, factory bindings and saved formats stay unchanged.
   The order is input and visual changes (87–90), SMC-PAD and its command panel (91–94), then transport and patterns (95–101).
   Read docs/PROJECT.md and docs/plans/README.md before preparing the next change.
   The goal is every non-text action from the SMC-PAD without losing keyboard controls.

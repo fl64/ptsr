@@ -71,8 +71,11 @@ Their archives are `openspec/changes/archive/2026-11-05-86b-save-retry/`,
 `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
 `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
 Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
-The save-safety sequence is complete. The owner approved one PR for 84b and 86b–86d on `86b-save-retry`.
-This is an explicit exception to separate change branches. Change 87 is not active and needs a separate request.
+The save-safety sequence is complete. 84b and 86b–86d merged in [PR #9](https://github.com/fl64/ptsr/pull/9) on 2026-11-05.
+That combined PR was an explicit exception to separate change branches.
+The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
+Its active change defines visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
+Implementation waits for the specification review. Publication needs a separate request.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

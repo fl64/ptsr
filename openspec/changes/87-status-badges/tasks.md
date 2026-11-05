@@ -1,0 +1,48 @@
+# Tasks
+
+Each implementation task includes its named scenario tests, a successful `task check` and a separate signed-off commit.
+Do not combine the preparation move with behavior changes.
+
+## 1. Specification
+
+- [x] 1.1 Record the approved scope, owner decisions, compatibility exceptions, risks, scenario deltas and current status. Check OpenSpec and English text.
+- [ ] 1.2 Review the defaults in design Open questions with the owner. Record decisions before the affected implementation step.
+
+## 2. Behavior-neutral preparation
+
+- [ ] 2.1 Read the full affected source and tests. Agree the implementation file plan. Move screen-data preparation into `crates/app/src/view.rs` without behavior changes.
+- [ ] 2.2 Prove unchanged screen identity, title positions, help, notices, save state and keyboard/raw-MIDI action results through existing production routes.
+
+## 3. Badges and pad states
+
+- [ ] 3.1 Add the shared badge composition and width rules for existing modes. Cover every badge and overlapping placement state.
+- [ ] 3.2 Add pad corner marks and yellow grid outlines. Preserve hit, selection, bank, hidden-grid and existing swap behavior.
+- [ ] 3.3 Retain the fixed PLAY slot and actual-current-project voice checks. Update `docs/ui/STYLE.md` with the approved yellow meaning.
+
+## 4. Notices and F1 Messages
+
+- [ ] 4.1 Add level, origin, lifetime, bounded pending queue and latest-50 history. Test controlled-time priority, interruption, overflow and owner acknowledgement.
+- [ ] 4.2 Classify each existing transient and startup message. Preserve editor prompts, fallback hints, no-key-releases acknowledgement and silent successful autosave.
+- [ ] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
+- [ ] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
+
+## 5. Values and status
+
+- [ ] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
+- [ ] 5.2 Carry actual input-source metadata through production routes. Test two devices, direct/deferred events, disconnection, stale events and reconnect.
+- [ ] 5.3 Add the shared recording/input/audio/project segments and narrow-width rules. Preserve save state, audio loss, nonzero xruns and no-key-releases warnings.
+- [ ] 5.4 Cache unchanged badge and status content. Prove timers, recording elapsed time, level meters and fallback hints still update.
+
+## 6. Questions and screen catalogue
+
+- [ ] 6.1 Show ASK and effective answer controls for each existing question. Test owner key overrides and actual connected bindings without adding `ui.confirm`.
+- [ ] 6.2 Protect text overlays from kitty images and restore images after dismissal or expiry. Test graphics on/off commands without real audio.
+- [ ] 6.3 Add the checked screen/mode matrix and `task screens`. Render ANSI files at 120×40 and 80×26. Fail tests for missing entries or clipped required content.
+- [ ] 6.4 Check every delta scenario against a named test. Run shared scenarios with keyboard and raw MIDI through actual profiles and dispatch.
+
+## 7. Handover and acceptance
+
+- [ ] 7.1 Update user stories, manual checks and applicable existing documentation. Name catalogue files and give separate keyboard and controller procedures.
+- [ ] 7.2 Run `task check`, `task build`, `task openspec:check` and `task screens` with verified source provenance. Keep raw diagnostic files local.
+- [ ] 7.3 Present the catalogue and manual kitty on/off checks to the owner. Keep hardware and listening results separate from overall acceptance.
+- [ ] 7.4 Archive only after owner acceptance and main-spec scenario coverage. Publication and merge need separate authorization.
