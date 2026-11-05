@@ -25,3 +25,31 @@ A failed save SHALL also retain its persistent status after the notice ends.
 - **WHEN** keyboard and raw MIDI runs request the same save through Ctrl+S and a learned `session.save` button
 - **THEN** both runs report the same success, write refusal or read-protection result
 - **AND** both runs retain the same pending work and last saved file after failure
+
+## ADDED Requirements
+
+### Requirement: Learn the save action from F12
+
+The F12 MIDI tab SHALL list `session.save` as `save session` under GLOBAL.
+The existing learning steps SHALL accept note and CC buttons, require Enter to save, and support Esc to cancel.
+After restart, the confirmed assignment SHALL use the same save action and feedback as Ctrl+S on every input screen.
+Learning SHALL NOT require a configuration edit or a new factory assignment.
+
+#### Scenario: The save action appears in GLOBAL
+- **WHEN** the owner opens the MIDI tab on F12 and opens GLOBAL
+- **THEN** the action list contains one `save session` row for a button
+
+#### Scenario: Save learning waits for confirmation
+- **WHEN** the owner starts learning `save session` and presses an unused note or CC button
+- **THEN** the row shows the pending assignment without changing the saved configuration
+- **AND** Esc cancels the pending assignment without saving the session
+
+#### Scenario: The learned save button survives restart
+- **WHEN** the owner confirms a pending `save session` button and restarts the program
+- **THEN** the saved GLOBAL assignment remains available without a configuration edit
+- **AND** the button saves the current session on Pads, Files, Chop, FX and Settings with `Session saved` feedback
+
+#### Scenario: The learned save button retries after write refusal
+- **WHEN** a save fails through the button learned from F12 and the owner removes the write problem
+- **THEN** pressing that button again saves the pending work and clears `Save failed`
+- **AND** the next edit can autosave silently

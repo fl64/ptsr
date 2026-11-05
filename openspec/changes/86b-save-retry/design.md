@@ -65,6 +65,19 @@ The shared status line shows `Unsaved` for pending work or `Save failed` after a
 Normal notices, recording progress and modal controls retain their places and behavior.
 Read protection explains that the file cannot be saved. A later write request cannot remove that protection.
 
+### Learn saving through the existing MIDI list
+
+The owner approved `save session` in GLOBAL on the F12 MIDI tab.
+The list uses `input::ACTIONS`, which has no `session.save` entry at the baseline.
+The action parser and learned configuration already accept that name.
+Add one button action to that list. Keep its name `session.save`, its label `save session` and its group GLOBAL.
+Use the existing pending-control confirmation, configuration writer and production dispatch.
+Test note and CC buttons through F12, confirmation, restart and a failed save followed by a successful retry.
+Do not inject the save assignment directly in those tests.
+
+Reject a separate learning path: the existing list already supports global button actions.
+Keys, factory assignments and saved formats stay unchanged.
+
 ### Keep the main module small
 
 Place new save coordination and its tests in dedicated modules.
@@ -85,6 +98,9 @@ Statuses describe planning coverage, not passing tests.
 | Temporary path is occupied or linked | Refuse safely and keep saved bytes | Open, support now | Filesystem test with an occupied path or link |
 | Another notice replaces the failure flash | Keep `Save failed` in the status line | Open, support now | Draw each screen at supported sizes |
 | Program exits while a failed save remains | Do not retry automatically or claim success | Open, support now | Exit-save decision test |
+| Learning receives a button before confirmation | Show the pending control without changing its saved assignment | Open, support now | Production F12 route with note and CC input |
+| Learning ends with Esc | Keep the previous assignments and saved configuration | Open, preserve behavior | Cancel and compare configuration bytes |
+| Save binding stored, then restart | Retain GLOBAL saving and the same retry feedback | Open, support now | Reload configuration into the production MIDI route |
 | Two processes save the same project, or power fails | No new guarantee | Outside this change | No acceptance claim |
 
 The inspected axes are source type, read protection, pending work, failure timing, retry order, input path and screen size.
@@ -101,5 +117,5 @@ Hardware and power-loss behavior remain unverified.
 
 ## Open questions
 
-None for 86b. The owner already approved its behavior in the project save-safety plan.
+None for the save-learning amendment. The owner selected the F12 GLOBAL row and approved its implementation.
 Keyboard, physical-controller and listening acceptance remain separate from implementation approval.

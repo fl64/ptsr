@@ -11,6 +11,7 @@ This protects the sample-to-project part of the v1 core loop.
 - Retain unsaved changes until the file replacement succeeds.
 - Separate a write failure from protection after a read error.
 - Report success or a refusal reason for every manual save.
+- Add `save session` to GLOBAL on the F12 MIDI tab. Use the existing learning and confirmation steps.
 - Pause automatic retries after a write failure. Resume autosave after a successful manual save.
 - Show a persistent `Unsaved` or `Save failed` status without a new input mode.
 - Keep the last saved file intact on failure. Do not recreate a removed project folder.
@@ -25,7 +26,7 @@ None.
 
 - `pad-assignment`: Retain changes after failed saves and permit manual retries.
 - `projects`: Protect unreadable files and refuse writes into removed project folders.
-- `screen-help`: Report the result of each manual save through either input path.
+- `screen-help`: Report each manual save result and let the owner learn its controller button from F12.
 - `screen-layout`: Show the persistent save state on every screen.
 
 ## Impact
@@ -48,7 +49,9 @@ Do not claim hardware, listening or callback-budget acceptance from offline test
 3. Press Ctrl+S twice. Verify a refusal reason each time and the persistent `Save failed` status.
 4. Run `chmod u+w /path/to/project`. Press Ctrl+S. Verify `Session saved` and no save-state warning.
 5. Change the volume again. Let autosave run. Reopen the project and verify the saved volume.
-6. Repeat the save actions with a learned controller button. Keep keyboard and controller results separate.
+6. Open F12 and select the MIDI tab. Open GLOBAL and select `save session`.
+7. Press Enter. Press an unused controller button. Press Enter to save its assignment.
+8. Restart the program. Repeat the save actions with that button. Keep keyboard and controller results separate.
 
 Automated tests control time and inject write refusals without a full disk or hardware.
 They compare the last saved bytes and verify read protection and a removed project folder.
