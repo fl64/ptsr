@@ -6,7 +6,7 @@ Do not combine the preparation move with behavior changes.
 ## 1. Specification
 
 - [x] 1.1 Record the approved scope, owner decisions, compatibility exceptions, risks, scenario deltas and current status. Check OpenSpec and English text.
-- [ ] 1.2 Review the defaults in design Open questions with the owner. Record decisions before the affected implementation step.
+- [x] 1.2 Review the defaults in design Open questions with the owner. Record decisions before the affected implementation step.
 
 ## 2. Behavior-neutral preparation
 

@@ -75,7 +75,9 @@ The save-safety sequence is complete. 84b and 86b–86d merged in [PR #9](https:
 That combined PR was an explicit exception to separate change branches.
 The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
 Its active change defines visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
-Implementation waits for the specification review. Publication needs a separate request.
+The owner approved the specification defaults and the first implementation file plan.
+Preparation starts with a behavior-neutral extraction of screen data. New visual behavior remains unimplemented.
+Publication needs a separate request.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

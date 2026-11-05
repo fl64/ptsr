@@ -89,7 +89,9 @@ not permission to combine the new changes.
   That combined PR was an explicit exception to separate change branches.
 - The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
   The active change covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
-  Implementation waits for specification review. Sound, factory bindings and saved formats stay unchanged.
+  The owner approved the specification defaults and the first implementation file plan.
+  Preparation starts with a behavior-neutral extraction of screen data. New visual behavior remains unimplemented.
+  Sound, factory bindings and saved formats stay unchanged.
   Generic controller confirmation remains in 88. Publication needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.

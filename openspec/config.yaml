@@ -49,7 +49,9 @@ context: |
   Save safety 86b–86d and report-only diagnostics 84b merged in PR #9 on 2026-11-05. Their archives are complete.
   The owner requested 87-status-badges and approved its specification step and local signed-off commits.
   This active change covers visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
-  Implementation waits for specification review. Publication needs a separate request.
+  The owner approved the specification defaults and the first implementation file plan.
+  Preparation starts with a behavior-neutral extraction of screen data. New visual behavior remains unimplemented.
+  Publication needs a separate request.
   Yellow now identifies pad modes, not only marking. Marking still sounds.
   Manual save success keeps five seconds. Persistent Save failed stays until saving succeeds.
   Generic controller confirmation remains in 88. Sound, factory bindings and saved formats stay unchanged.

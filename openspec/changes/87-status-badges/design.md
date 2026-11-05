@@ -4,9 +4,10 @@
 
 The owner approved the full visual scope on 2026-11-05, then approved this specification step and local signed-off commits.
 The base is merged save safety and diagnostic work at `a4789f4`.
-This step changes specifications and status documents only. It does not authorize publication or archive.
+The owner then approved the navigation and message defaults and the first implementation file plan.
+Keep specification decisions and the behavior-neutral preparation in separate commits. Publication and archive need separate authorization.
 
-Current evidence:
+Evidence at the base commit:
 
 - `crates/app/src/dispatch.rs:832` builds the shared input focus, including text, picker, question, learning and pending placement states.
 - `crates/app/src/dispatch.rs:911` preserves different keyboard and MIDI priority when pending placement modes overlap.
@@ -118,7 +119,7 @@ A later informational result may wait behind an error. It remains available in h
 
 F1 opens the existing help first. A Messages page shows newest entries first, with level and origin.
 It retains the latest 50 notices in memory only. Exiting or restarting clears the history.
-Use the default page controls listed under Open questions until the owner chooses another layout.
+Tab/Shift+Tab selects Help or Messages. Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help.
 History navigation does not edit pads, send sound commands or change session dirtiness.
 Keep existing pad releases and the effective help keys working.
 
@@ -170,23 +171,26 @@ Do not change engine code or add I/O to audio processing.
 | --- | --- | --- | --- |
 | Save refusal followed by other messages | `Save failed` stays until a successful save | Open: integration coverage | Existing save-state tests plus new priority tests |
 | Error followed by release or background input | Error stays visible | Open: new coverage | Controlled keyboard/raw-MIDI sequences |
-| Simultaneous file, copy and swap | Show pending modes without changing source-specific priority | Needs owner decision on badge | `modes_85_overlapping_hands_keep_source_specific_priority` |
+| Simultaneous file, copy and swap | Show pending modes without changing source-specific priority | Open: integration coverage | `modes_85_overlapping_hands_keep_source_specific_priority` |
 | Occupied swap target | No invented replacement question | Open: integration coverage | Recorded swap and question tests |
-| Queued and interrupted notices | Bounded storage and deterministic remaining time | Needs owner decision on defaults | Controlled-clock queue and overflow tests |
+| Queued and interrupted notices | Bounded storage and deterministic remaining time | Open: new coverage | Controlled-clock queue and overflow tests |
 | Disconnect and stale source event | No false connected-device label or stuck highlight | Open: new coverage | Production multi-device and reconnect sequences |
 | Short or hidden-grid screen | Keep save warning, controls and mode identity | Open: new coverage | 80×26 and hidden-grid fixtures |
 | Overlay expires without another press | Restore wave image and hint | Open: new coverage | Timer-driven graphics and buffer tests |
 | Source metadata travels with input | Audio routing and original releases stay unchanged | Open: integration coverage | Existing parity, pending-order and epoch tests |
 | UI caches unchanged content | Recording, levels and timers still advance | Open: new coverage | Controlled-time view tests |
 
+## Owner review decisions
+
+The owner approved these choices after the specification review:
+
+- F1 page controls: Tab/Shift+Tab selects Help or Messages. Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help.
+- Notice queue: equal levels replace. Interrupted notices retain remaining visible time. Overflow removes the oldest lowest-level pending notice.
+- Overlapping placements: one compound badge names all pending placement modes. Existing keyboard/MIDI differences stay unchanged.
+- Catalogue delivery: `task screens` produces local ANSI files. Do not commit a large generated catalogue before its implementation review.
+
+This approval implies no hardware result, listening result or callback maximum-budget acceptance.
+
 ## Open questions
 
-The owner approved the scope and yellow meaning, not each detailed navigation or timing choice below.
-These defaults are proposals for review before their implementation step.
-
-- F1 page controls: default Tab/Shift+Tab selects Help or Messages. Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help.
-- Notice queue: default equal levels replace, interrupted notices retain remaining visible time, and overflow removes the oldest lowest-level pending notice.
-- Overlapping placements: default one compound badge names all pending placement modes, preserving existing keyboard/MIDI differences.
-- Catalogue delivery: default local ANSI files from `task screens`, with no large generated catalogue committed until its implementation review.
-
-No hardware result, listening result or callback maximum-budget acceptance follows from these defaults.
+None for the preparation step. Ask the owner before changing an approved choice.
