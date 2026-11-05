@@ -39,13 +39,13 @@ Rejected: recording only the largest blocks, because a smaller CPU overrun can h
 
 | Case | Expected result | Status | Test |
 | --- | --- | --- | --- |
-| Only CPU crosses 50%, or equality | Include CPU-only overruns, exclude equality | Support now | Threshold and pairing test |
-| First block or later switch | Preserve phase and index without truncation | Support now | Multiple-phase records test |
-| Missing CPU, resource counters or frequency | Explicit missing field and reason, never invented zero | Support now | Injected observation failures |
-| Counters move backwards | Mark delta unavailable | Support now | Counter regression test |
-| p99 failure after measurement | Flush the CSV before the failure | Support now | Exit-path child test |
-| Output failure or name collision | Clear error or fresh exclusive name, no replacement | Support now | Output tests |
-| Migration away and back | Do not infer continuous CPU residence | Preserve limitation | CSV notes and endpoint tests |
+| Only CPU crosses 50%, or equality | Include CPU-only overruns, exclude equality | Closed in tests | `benchmark_retains_every_overrun_identity` |
+| First block or later switch | Preserve phase and index without truncation | Closed in tests | `benchmark_retains_every_overrun_identity` |
+| Missing CPU, resource counters or frequency | Explicit missing field and reason, never invented zero | Closed in tests | `benchmark_reports_unavailable_boundary_data`, `benchmark_labels_later_frequency_samples` |
+| Counters move backwards | Mark delta unavailable | Closed in tests | `benchmark_reports_unavailable_boundary_data` |
+| p99 failure after measurement | Flush the CSV before the failure | Closed in tests | `benchmark_saves_records_before_exit_checks` |
+| Output failure or name collision | Clear error or fresh exclusive name, no replacement | Closed in tests | `benchmark_refuses_an_output_failure`, `benchmark_saves_records_before_exit_checks` |
+| Migration away and back | Do not infer continuous CPU residence | Closed as a documented limitation | `benchmark_retains_every_overrun_identity` |
 | Process killed before output | Buffered rows can be lost | Out of scope | Documented limitation |
 
 ## Open questions

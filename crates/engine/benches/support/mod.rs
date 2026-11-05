@@ -1,3 +1,5 @@
+pub mod attribution;
+
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 

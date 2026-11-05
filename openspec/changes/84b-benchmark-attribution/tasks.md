@@ -4,10 +4,10 @@
 
 ## 2. Implementation
 
-- [ ] 2.1 Add benchmark-only boundary observations, frequency snapshots and local CSV output.
-- [ ] 2.2 Connect every existing measured workload phase and report observation overhead.
-- [ ] 2.3 Cover all delta scenarios with deterministic tests and a real callback output comparison.
-- [ ] 2.4 Run project checks and review the diff before committing generic code and tests.
+- [x] 2.1 Add benchmark-only boundary observations, frequency snapshots and local CSV output.
+- [x] 2.2 Connect every existing measured workload phase and report observation overhead.
+- [x] 2.3 Cover all delta scenarios with deterministic tests and a real callback output comparison.
+- [x] 2.4 Run project checks and review the diff before committing generic code and tests.
 
 ## 3. Verification
 
