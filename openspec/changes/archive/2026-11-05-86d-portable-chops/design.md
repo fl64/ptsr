@@ -81,6 +81,12 @@ Earlier callback overruns remain unresolved. Callback maximum-budget acceptance 
 Keep actual benchmark results and machine observations in ignored local files, not in repository records.
 Evidence: `target/86d-code-check.log`, `target/86d-portable-before-fix.log` and `target/86d-portable-after-fix.log`.
 
+## Owner acceptance
+
+The owner accepted 86d on 2026-11-05 with the recorded limits and authorized archive.
+Live keyboard, physical-controller and listening results remain unverified. Callback maximum-budget acceptance stays open.
+This acceptance does not authorize change 87, push or a PR.
+
 ## Open questions
 
-None within the agreed scope. Owner acceptance of 86c does not establish manual results for 86d.
+None within the agreed scope.

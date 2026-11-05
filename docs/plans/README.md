@@ -73,11 +73,13 @@ not permission to combine the new changes.
   Earlier callback peaks and slow-core CPU spikes remain unresolved. Change 87 is not active.
 - The owner accepted and archived legacy folder migration removal (86a) in merged PR #5.
   Archive: `openspec/changes/archive/2026-11-04-86a-remove-legacy-migration/`.
-- The owner accepted and archived save retry (86b) and safe project transitions (86c) without the manual passes.
-  Archives: `openspec/changes/archive/2026-11-05-86b-save-retry/` and
-  `openspec/changes/archive/2026-11-05-86c-safe-project-switch/`.
+- The owner accepted and archived save retry (86b), safe project transitions (86c) and portable chops (86d) without the manual passes.
+  Archives: `openspec/changes/archive/2026-11-05-86b-save-retry/`,
+  `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
+  `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
   Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
-  86b–86d share `86b-save-retry` and one planned PR by owner request. Portable chops (86d) come next, before 87.
+  The save-safety sequence is complete. 86b–86d share `86b-save-retry` and one planned PR by owner request.
+  Change 87 is not active and needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -172,7 +174,7 @@ Check external files and older projects. Render the restored slices with the nor
 
 How to verify: repeat the two-variant move with a disposable project from each input path.
 Open a pad from each variant and move a cut. Only that variant's linked pads follow it.
-Planned render: `renders/86d-portable-chops.wav`. Compare restored slices with their source regions.
+Local render: `renders/86d-portable-chops.wav`. Compare matching before/after slices as section 86d of `docs/LIVE-CHECKS.md` describes.
 
 ## Broader tracks and visual rules
 

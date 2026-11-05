@@ -1758,7 +1758,8 @@ Full older states retain unassigned cuts, cut IDs, epochs, next IDs and pad sett
 Projects without saved older states keep the existing pad-bound fallback.
 Already stale absolute keys stay unchanged. The program does not guess replacement samples.
 The saved format, keys, profiles and sound processing stay unchanged.
-Owner acceptance and the live checks below remain open. Acceptance of 86b or 86c does not establish these results.
+The owner accepted 86d on 2026-11-05 with the recorded limits and authorized archive.
+The live checks below remain unverified. Overall acceptance does not establish their results.
 
 ### Automated coverage and local evidence
 
@@ -1870,4 +1871,5 @@ Each before/after part plays the same three restored slice pads. Short silences 
 - [ ] In the disposable live run, listen to the assigned pads before and after the move. Check that no slice disappears or changes sound.
 - [ ] Report live keyboard, physical-controller and listening results separately. All remain unverified until the owner reports them.
 
-Owner acceptance is required before archive. Change 87 and callback-budget corrections remain outside 86d.
+Archive: `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
+Change 87 and callback-budget corrections remain outside 86d. Push and PR need separate authorization.
