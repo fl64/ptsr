@@ -1591,8 +1591,8 @@ Callback maximum-budget acceptance remains open.
 
 ## 86c — Keep work during project transitions
 
-The implementation and its tests are committed. Owner acceptance of 86c remains open.
-The owner waiver for 86b does not establish a live keyboard, physical-controller or listening result for 86c.
+The owner accepted 86c with its recorded limits and without the manual passes.
+Live keyboard, physical-controller and listening results remain unverified. Their checkboxes stay unchecked.
 Pending work now saves before another project opens or a new project starts. This includes scratch work.
 A refusal keeps the picker selection or typed name, source edits, undo and pending timestamp.
 Selecting the current project, including a folder alias, closes the picker without a save or reload.
@@ -1745,5 +1745,6 @@ No new render is necessary. Existing renders remain local:
 - [ ] In the disposable live run, play a pad before a refused transition. Check that refusal does not stop or replace its sound.
 - [ ] Report live keyboard, physical-controller and listening results separately. All remain unverified until the owner reports them.
 
-Owner acceptance remains open. Do not archive 86c or activate 86d before that decision.
+The owner authorized archive and continuation to 86d. Acceptance does not close the callback-budget issue.
+A separate agent investigates its cause. No cause or correction is established here.
 Change 87, a quit guard and callback-budget changes remain outside 86c.

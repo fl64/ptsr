@@ -26,7 +26,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-04)
+## Current status (2026-11-05)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -73,8 +73,11 @@ not permission to combine the new changes.
   Earlier callback peaks and slow-core CPU spikes remain unresolved. Change 87 is not active.
 - The owner accepted and archived legacy folder migration removal (86a) in merged PR #5.
   Archive: `openspec/changes/archive/2026-11-04-86a-remove-legacy-migration/`.
-- The plan puts project save safety 86b–86d before 87. These are code-review findings,
-  not newly reproduced manual failures. No implementation or active OpenSpec change exists yet.
+- The owner accepted and archived save retry (86b) and safe project transitions (86c) without the manual passes.
+  Archives: `openspec/changes/archive/2026-11-05-86b-save-retry/` and
+  `openspec/changes/archive/2026-11-05-86c-safe-project-switch/`.
+  Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
+  86b–86d share `86b-save-retry` and one planned PR by owner request. Portable chops (86d) come next, before 87.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

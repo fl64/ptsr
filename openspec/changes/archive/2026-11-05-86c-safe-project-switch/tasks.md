@@ -19,4 +19,4 @@
 - [x] 3.2 Run `task build`, `task check` and `task openspec:check`. Report benchmark maxima separately from exit results.
 - [x] 3.3 Record exact owner steps and results in `docs/LIVE-CHECKS.md`. Keep keyboard, controller and listening evidence separate.
 - [x] 3.4 Commit the verification records after `task check` passes.
-- [ ] 3.5 Obtain owner acceptance before archive and activation of 86d.
+- [x] 3.5 Obtain owner acceptance before archive and activation of 86d.

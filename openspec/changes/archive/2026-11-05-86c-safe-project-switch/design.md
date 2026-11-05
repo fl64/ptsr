@@ -85,7 +85,7 @@ Existing project-isolation renders continue to test actual sound and late-loader
 The axes are source type, pending work, protection, target identity, failure order, repeated requests and input route.
 The UI executes transitions synchronously. Background sample replies retain the existing generation checks.
 Rust tests name all 11 delta scenarios. The full check passed 688 App tests and 102 TUI tests.
-Hardware, live keyboard use and listening remain unverified. Owner acceptance of 86c is open.
+The owner accepted 86c without the manual passes. Hardware, live keyboard use and listening remain unverified.
 The steady callback maxima were 959.97% wall and 149.04% thread CPU, above the 50% target.
 The cause remains unknown. Callback maximum-budget acceptance stays open.
 Evidence: `target/86c-code-final-check.log`. No sound-processing code changed.
@@ -93,4 +93,4 @@ Evidence: `target/86c-code-final-check.log`. No sound-processing code changed.
 ## Open questions
 
 None within the agreed scope. Controller-only picker navigation remains outside 86c.
-The owner waived the manual passes of 86b, not proof of any hardware or listening result for later changes.
+The owner accepted 86c with the recorded limits. This does not establish a hardware or listening pass or close the callback issue.
