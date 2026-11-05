@@ -1202,6 +1202,12 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "session.save",
+        label: "save session",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
         name: "ui.pads_toggle",
         label: "hide / show the pads",
         group: Group::Global,

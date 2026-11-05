@@ -1402,3 +1402,475 @@ At that stage, strict validation remained a merge blocker.
 The later specification cleanup resolved these warnings without changing scenario text.
 Evidence: `target/86-new-cli-baseline.log` and the logs with prefix `target/86-pr-`.
 No new owner, listening or hardware result comes from these checks.
+
+## 86b — Save retry and learning from F12
+
+Implementation and automated checks are complete. The owner accepted 86b without the manual passes.
+Keyboard, physical-controller and listening results remain unverified. Their checkboxes below do not block archive.
+A failed write keeps pending work and pauses automatic saving, including saving on exit.
+A successful manual save clears the warning and permits autosave after the next edit.
+Read protection stays active for damaged, unreadable and newer session files.
+The F12 MIDI tab now lists `save session` under GLOBAL.
+Keys, factory assignments, saved formats and sound processing stay unchanged.
+
+### Recorded implementation checks
+
+`task check` exited 0 after the save-learning amendment. Its App, input and TUI suites reported:
+
+```text
+test result: ok. 681 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 44.97s
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.94s
+```
+
+Rust tests name all 21 active delta scenarios.
+This source check supplements execution. It does not prove owner or hardware acceptance.
+The tests cover scratch and projects, saved bytes, read protection, temporary-path collisions, missing folders and paused exit saving.
+Controlled-time tests cover notice expiry, replacement notices and resumed autosave.
+Screen tests cover 60×24, 100×26 and 252×60, with and without audio, including modal help.
+The new recorded-input test learns note and CC buttons through F12 instead of injecting the save assignment.
+It tests pending confirmation, Esc, configuration reload, five input screens, repeated refusals and a successful retry.
+
+`task build` passed and produced `target/release/ptsr`. `task openspec:check` reported:
+
+```text
+Totals: 16 passed, 0 failed (16 items)
+```
+
+The implementation benchmark passed its p99 exit checks but exceeded the wall maximum target:
+
+```text
+paired timing: steady playback
+  wall: mean 17.87 %, p99 24.85 %, max 91.71 %, samples 20000, >50 % 1
+  thread CPU: mean 17.88 %, p99 24.77 %, max 32.19 %, samples 20000, >50 % 0
+  maximum target (50 %): wall EXCEEDED; thread CPU WITHIN
+```
+
+Project-switch maxima were 27.13% wall and 27.16% thread CPU, with no blocks above 50%.
+An earlier 86b run reached 88.34% wall and 88.39% thread CPU, with one block above 50% for each clock.
+The cause remains unknown. These results do not close the maximum-budget or slow-core issue.
+Local evidence: `target/86b-learn-code-final-check.log`, `target/86b-owner-build.log`, `target/86b-learn-code-openspec.log` and `target/86b-owner-scenarios.log`.
+The earlier overrun remains in `target/86b-step3-final-check.log`.
+The final handover `task check` also exited 0, with 681 App tests and 102 TUI tests passing.
+Its steady maxima were 55.54% wall and 35.12% thread CPU. One wall block exceeded 50%.
+Project-switch maxima were 15.13% wall and 15.15% thread CPU, with no blocks above 50%.
+Evidence: `target/86b-owner-final-check.log`. The maximum-budget acceptance remains open.
+The first save-learning test used the wrong project filename. The corrected fixture uses `project.toml` and passes.
+A subsequent check stopped on formatting. `task fmt` corrected that line before the successful full run.
+
+### Prepare an isolated owner run
+
+Owner procedure only: this run uses normal sound and reads connected MIDI devices.
+The agent must not run these commands. Agent live runs require the sound isolation in `AGENTS.md`.
+These temporary folders protect existing projects, scratch work and controller assignments.
+Keep this shell open. Run these commands from the repository folder after `task build` and `task check`:
+
+```sh
+check_root="$(mktemp -d "$PWD/target/86b-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data" "$check_root/state" "$check_root/projects" "$check_root/samples"
+cp renders/85-input-modes.wav "$check_root/samples/check.wav"
+printf '[paths]\nprojects = "%s/projects"\nsamples = "%s/samples"\n' "$check_root" "$check_root" > "$check_root/config/ptsr/config.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_save_check() {
+  env XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_save_check
+```
+
+In a second terminal, set `check_root` to the exact printed folder before using the commands below.
+Do not use an existing project folder for these refusal tests.
+Do not quit or switch projects with pending work. This change adds no quit guard or safe project-switch guard.
+Those transitions belong to 86c. The loss risk on exit still exists.
+
+### Keyboard pass
+
+- [ ] Start in scratch. Open Files with `F6`, select `check.wav` and press `Enter`.
+  Hit pad `1` to load it. Wait for loading to finish.
+  Press `Ctrl+S` twice. Each press must show `Session saved` for five seconds.
+- [ ] Set `session_file="$check_root/data/ptsr/session.toml"` in the second terminal.
+  Copy its saved bytes and occupy only its temporary path:
+
+  ```sh
+  cp "$session_file" "$check_root/last-saved.toml"
+  mkdir "$session_file.tmp"
+  ```
+
+  On Pads, press `]` to change master volume. Check `Unsaved`, then `Save failed` after the idle save.
+  Press `Ctrl+S` twice. Each request must show a current refusal. Wait more than five seconds.
+  Check that `Save failed` remains after the notice ends. Compare the saved bytes:
+
+  ```sh
+  cmp "$session_file" "$check_root/last-saved.toml"
+  ```
+
+  No output and exit 0 mean the bytes match.
+- [ ] Open Pads, Files, Chop, FX and Settings in separate passes. Return to Pads before opening Chop.
+  Keep a loaded pad selected for Chop. Check `Save failed` at 60×24 and at a larger terminal size.
+  Open and close `F1`. Check that help and notices retain their places.
+  On Pads, select an empty pad and press `F3`. Its refusal notice must not remove `Save failed`.
+- [ ] Remove only the test directory with `rmdir "$session_file.tmp"`. Wait two seconds without a manual save.
+  Run the same `cmp` command. The saved bytes must still match because automatic retries remain paused.
+  Press `Ctrl+S`. Check `Session saved` and no warning. Press `]` again.
+  After two idle seconds, check that `Unsaved` clears without a success notice.
+  Quit with `Ctrl+Q`, run `run_save_check` again and check the saved master volume.
+- [ ] Save scratch before the project pass. Press `Ctrl+P`, type `retry` and press `Enter` to create the disposable project.
+  Load `check.wav` again. Save it. Set `session_file="$check_root/projects/retry/project.toml"` in the second terminal.
+  Repeat the temporary-path refusal, byte comparison, manual retry and later autosave checks above.
+- [ ] With the disposable project clean, rename its folder in the second terminal:
+
+  ```sh
+  mv "$check_root/projects/retry" "$check_root/projects/retry-away"
+  ```
+
+  Press `]`, then `Ctrl+S` twice. Each request must refuse. Check that the old folder does not reappear.
+  The window title must drop the project name. Restore the same folder:
+
+  ```sh
+  mv "$check_root/projects/retry-away" "$check_root/projects/retry"
+  ```
+
+  Press `Ctrl+S`. Check that the retry succeeds before closing the program.
+
+### Controller pass, when hardware is available
+
+Use the isolated configuration above. Record the device, preset and whether its button sends Note or CC messages.
+Choose an unused button. Do not replace an existing performance control to test saving.
+
+- [ ] Open `F12`. Use `Tab` to select MIDI. Select GLOBAL with the arrows and press `Enter` to open it.
+  Select `save session`. Press `Enter`, then the unused controller button.
+  Check the pending assignment on that row. Press `Esc` and check that no assignment changes.
+- [ ] Repeat learning. Press `Enter` on the pending assignment to save it. Save all session work before exit.
+  Restart with `run_save_check`. Check that the row retains the assignment.
+- [ ] Press the learned button on Pads, Files, Chop, FX and Settings. Check `Session saved` on each screen.
+  Return to Pads before opening Chop and keep a loaded pad selected.
+- [ ] Repeat the keyboard pass's temporary-path refusal and retry with the learned button instead of `Ctrl+S`.
+  Check each repeated refusal, the persistent warning, successful retry and silent autosave after the next edit.
+  Keep keyboard and controller results separate. Repeat with the other message form only if the hardware supports it.
+
+### Read-protection pass
+
+Use only the disposable `retry` project. Save and close it before each file edit.
+Keep a known good copy outside the project folder:
+
+```sh
+cp "$check_root/projects/retry/project.toml" "$check_root/good-project.toml"
+printf 'version = [\n' > "$check_root/projects/retry/project.toml"
+```
+
+In the original shell, start the program with `run_save_check` after each file edit below.
+
+- [ ] Press `Ctrl+S` twice. Each request must explain the read refusal, not show `Session saved`.
+  Close the program. Check that the damaged file still contains exactly the text from the command.
+- [ ] Replace that disposable file with `printf 'version = 99\n' > "$check_root/projects/retry/project.toml"`.
+  Start again. Repeat the refusal and unchanged-file checks. A manual retry must not remove read protection.
+- [ ] Close the program. Restore it with `cp "$check_root/good-project.toml" "$check_root/projects/retry/project.toml"`.
+  Start again and check that ordinary saving works. Do not change a protected file while that session remains open.
+
+Isolated automated tests also cover unreadable files and protected scratch sessions. The agent did not run these cases live.
+
+### Listening and acceptance
+
+No new render is necessary: sound processing stays unchanged.
+The copied `renders/85-input-modes.wav` is an existing test sample, not a new 86b sound feature.
+
+- [ ] (by ear) Play the same loaded pad before a refusal and after successful retry. Check for new clicks or changed playback.
+- [ ] (by ear) After restart, play the saved pad. Check the retained settings against the values before exit.
+- [ ] Report keyboard, physical-controller and listening results separately, including unavailable controls.
+
+No live sampler run or physical-controller result comes from the automated checks above.
+The owner authorized continuation without all manual passes. Keep their checkboxes unchecked, not passed.
+`openspec archive 86b-save-retry --yes` archived 86b as `2026-11-05-86b-save-retry`.
+The archive added three requirements and modified three requirements across four main specs.
+Strict validation initially rejected the length of the saving requirement. Its shorter text keeps the same rules and scenarios.
+After that text edit, strict validation reported `Totals: 15 passed, 0 failed (15 items)`.
+Main-spec scenario coverage and `task check` passed after archive.
+The archive run's steady maxima were 28.97% wall and 16.40% thread CPU, with no blocks above 50%.
+This run does not close earlier overruns. Evidence: `target/86b-archive-check.log` and `target/86b-archive-final-openspec.log`.
+Next: activate 86c, followed by 86d. Change 87 remains outside this work.
+Callback maximum-budget acceptance remains open.
+
+## 86c — Keep work during project transitions
+
+The owner accepted 86c with its recorded limits and without the manual passes.
+Live keyboard, physical-controller and listening results remain unverified. Their checkboxes stay unchecked.
+Pending work now saves before another project opens or a new project starts. This includes scratch work.
+A refusal keeps the picker selection or typed name, source edits, undo and pending timestamp.
+Selecting the current project, including a folder alias, closes the picker without a save or reload.
+A target read refusal keeps the current project and the last-project setting unchanged.
+A target creation refusal after source saving keeps that source open with its work safely saved.
+No new keys, file formats, profiles or sound-processing rules enter this change. There is still no quit guard.
+
+### Recorded automated checks
+
+Seven new recorded-input tests use production keyboard input and raw MIDI through the profile and dispatcher.
+They cover named projects and scratch, open and create, repeated refusals, restored folders and retry.
+Target faults include damaged, newer, unreadable and missing sessions. An occupied directory provides the unreadable fixture.
+The same-folder check includes a symbolic link, retained undo, loader generations, sound identity and an unchanged audio epoch.
+Picker arrows, typed names and Enter remain keyboard operations. These tests do not prove controller-only navigation.
+Rust tests name all 11 delta scenarios. The existing late-loader and project-isolation tests also passed.
+
+`task check` exited 0. Selected suite results:
+
+```text
+test result: ok. 688 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 68.08s
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.83s
+```
+
+`task build` passed and produced `target/release/ptsr`. `task openspec:check` reported:
+
+```text
+Totals: 16 passed, 0 failed (16 items)
+```
+
+The callback benchmark exceeded the maximum target despite the successful command exit:
+
+```text
+paired timing: steady playback
+  wall: mean 17.20 %, p99 38.24 %, max 959.97 %, samples 20000, >50 % 104
+  thread CPU: mean 16.58 %, p99 37.13 %, max 149.04 %, samples 20000, >50 % 10
+  maximum target (50 %): wall EXCEEDED; thread CPU EXCEEDED
+```
+
+Project-switch maxima were 15.14% wall and 15.16% thread CPU, with no blocks above 50%.
+The cause of the steady overruns remains unknown. No sound-processing code changed.
+Callback maximum-budget acceptance stays open. Do not treat the exit code as maximum-budget acceptance.
+The full check runs tests in parallel and can occupy several CPU cores. It does not start the live sampler.
+
+Before the code edit, a specification check failed in `tests::loading_a_long_file_during_play` with `the loader did not answer`.
+The isolated test then passed in 1.01 seconds. A full repeat passed 681 App tests in 99.78 seconds.
+This repeat does not establish the cause of the earlier timeout.
+The first code check stopped on Clippy's ``this `if` statement can be collapsed``.
+The corrected condition passed the full check without an exception.
+Startup protection fixtures now use the startup load path. The browser fixture switches away before reopening the original project.
+Neither fixture depends on the removed interactive empty-session fallback or same-folder reload.
+
+Local evidence: `target/86c-code-final-check.log`, `target/86c-final-build.log` and `target/86c-final-openspec.log`.
+Timeout evidence: `target/86c-spec-check.log`, `target/86c-long-load-probe.log` and `target/86c-spec-repro-check.log`.
+The earlier Clippy result remains in `target/86c-code-check.log`.
+
+### Prepare a disposable owner run
+
+Owner procedure only: this run uses normal sound and reads connected MIDI devices.
+The agent did not run it. Agent live runs require the sound isolation in `AGENTS.md`.
+Run these commands from the repository folder. Keep this terminal open.
+
+```sh
+check_root="$(mktemp -d "$PWD/target/86c-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data/ptsr" "$check_root/state" "$check_root/samples"
+cp renders/85-input-modes.wav "$check_root/samples/check.wav"
+printf '[paths]\nprojects = "%s/projects"\nsamples = "%s/samples"\n' "$check_root" "$check_root" > "$check_root/config/ptsr/config.toml"
+printf 'version = 3\nbrowser_dir = "%s/samples"\n' "$check_root" > "$check_root/data/ptsr/session.toml"
+for project in A B; do
+  mkdir -p "$check_root/projects/$project/samples"
+  printf 'version = 3\nbrowser_dir = "%s/samples"\n' "$check_root" > "$check_root/projects/$project/project.toml"
+done
+printf 'Owner check folder: %s\n' "$check_root"
+run_transition_check() {
+  env XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_transition_check
+```
+
+In a second terminal, set `check_root` to the exact printed folder.
+Use only these disposable folders for file changes. Do not quit with pending work.
+
+### Keyboard pass
+
+- [ ] Start in scratch. Press `F6`. Select `check.wav` and press `Enter`. Hit pad `1` to load it.
+  Wait for loading. Press `H` on Pads to change its mode.
+  Immediately press `Ctrl+P`. Select `B` with the arrows. Press `Enter`.
+  Check that `B` opens and the scratch file changes before the transition.
+  Count this as an immediate-switch pass only if the work remained unsaved before Enter.
+- [ ] Use `Ctrl+P` to open `A`. Load `check.wav` onto pad `1` through Files.
+  On Pads, press `H`. Press `F3`. Move the cursor away from both ends with `Right`.
+  Press `M` to place a cut. Press `P`. Hit pad `2`. Press `Enter` to apply the slice assignment.
+  Press `F2`. Open `B` through the picker. Open `A` again.
+  Check the retained pad mode. Select the assigned pad and press `F3`. Check the saved cut.
+- [ ] With `A` open, occupy its temporary path from the second terminal:
+
+  ```sh
+  mkdir "$check_root/projects/A/project.toml.tmp"
+  cp "$check_root/projects/A/project.toml" "$check_root/source-saved.toml"
+  ```
+
+  On Pads, press `]`. Wait for `Save failed`.
+  Open the picker. Select `B`. Press `Enter` twice.
+  Check that each refusal keeps `A`, the same selection and the pending edits. The picker must remain open.
+  Press `Esc`. Open the picker again. Type `C`. Press `Enter` twice.
+  Check that the name stays `C` and no `C` folder appears. Check the saved source bytes:
+
+  ```sh
+  cmp "$check_root/projects/A/project.toml" "$check_root/source-saved.toml"
+  test ! -e "$check_root/projects/C"
+  rmdir "$check_root/projects/A/project.toml.tmp"
+  ```
+
+  Both checks must exit 0. Press `Enter` again. Check that saving succeeds and `C` opens.
+- [ ] Open `A` again. Occupy its temporary path. Change the master volume. Wait for `Save failed`.
+  Open the picker and select `A`. Press `Enter`.
+  Check that the picker closes without removing the pending edits or warning.
+  Press `Ctrl+Z`. Check that it reverses the last edit.
+  Remove the temporary directory. Press `Ctrl+S` before continuing.
+- [ ] With `A` open, preserve the target bytes and replace only the disposable `B` session:
+
+  ```sh
+  cp "$check_root/projects/B/project.toml" "$check_root/target-saved.toml"
+  printf 'version = 99\n' > "$check_root/projects/B/project.toml"
+  ```
+
+  Open the picker. Select `B`. Press `Enter` twice.
+  Check the target-read refusal. Check that `A` remains open and the selection stays on `B`.
+  Restore the target with the command below. Press `Enter` again. Check that `B` opens.
+
+  ```sh
+  cp "$check_root/target-saved.toml" "$check_root/projects/B/project.toml"
+  ```
+
+### Physical-controller pass
+
+- [ ] On F12, open the MIDI tab. Learn a button for GLOBAL `project picker`. Press Enter to save its assignment.
+  Learn separate buttons for Pads `pad mode` and Chop `cut at the cursor`.
+  Use those buttons for the edits and picker entry in the keyboard pass above.
+  Keep picker arrows, typed names and Enter on the keyboard. Controller-only picker navigation is not part of 86c.
+- [ ] Repeat a source-save refusal and a successful retry. Check that the learned picker button opens the same retained work.
+  Report unavailable controls instead of marking their checks passed.
+
+### Listening and acceptance
+
+No new render is necessary. Existing renders remain local:
+
+- [ ] Listen to `renders/79-project-switch.wav`. Check that the old project stops and its sound returns when reopened.
+- [ ] Listen to `renders/11-switch-nothing-leaks.wav`. Check that the previous project leaves no sound in the next one.
+- [ ] In the disposable live run, play a pad before a refused transition. Check that refusal does not stop or replace its sound.
+- [ ] Report live keyboard, physical-controller and listening results separately. All remain unverified until the owner reports them.
+
+The owner authorized archive and continuation to 86d. Acceptance does not close the callback-budget issue.
+A separate agent investigates its cause. No cause or correction is established here.
+Change 87, a quit guard and callback-budget changes remain outside 86c.
+
+
+## 86d — Keep every chop variant after a project move
+
+Project saving now converts older variant keys with the same path rules as pads and current chops.
+Internal sample paths move with the project. External absolute paths stay unchanged. The program does not copy samples.
+Full older states retain unassigned cuts, cut IDs, epochs, next IDs and pad settings.
+Projects without saved older states keep the existing pad-bound fallback.
+Already stale absolute keys stay unchanged. The program does not guess replacement samples.
+The saved format, keys, profiles and sound processing stay unchanged.
+The owner accepted 86d on 2026-11-05 with the recorded limits and authorized archive.
+The live checks below remain unverified. Overall acceptance does not establish their results.
+
+### Automated coverage and local evidence
+
+The tests use real WAV files and the production project, save and input routes.
+Keyboard and raw MIDI runs cover three variants of one sample, including two older states with unassigned cuts.
+They cover internal and external paths, whole-folder relocation, a second save/open and isolated bound edits.
+They compare complete states and pad settings. External sample bytes stay unchanged and no copy appears in the project.
+Compatibility tests cover absent older states and stale absolute keys without a format change.
+Rust tests name all eight delta scenarios.
+
+The relocation regression fails at the older-variant stored key without the correction.
+With the correction, matching slice renders agree sample for sample before and after the move.
+Automatic checks cover finite samples, clipping, leading/trailing silence and hit onset within one sample.
+The offline fixture advances real callbacks until the project-ready marker. It uses no sleep or live sound device.
+
+Commands: `task check`, `task build` and `task openspec:check`.
+Keep build directories separate between worktrees. Check that both portable-chop tests run in the App suite.
+A Debug package rebuild does not refresh the Release callback benchmark. Check both profiles when replacing shared artifacts.
+Local evidence stays under `target/`, including `86d-code-check.log`, `86d-clean-check.log` and `86d-clean-build.log`.
+Keep raw CSV files, detailed machine logs and identifying local paths outside Git.
+The owner permits anonymized verification summaries in documents and commit history.
+A successful command does not close the callback maximum-budget issue. No performance correction enters 86d.
+Recorded input tests do not establish live keyboard, physical-controller or listening results.
+
+### Prepare a disposable owner run
+
+Owner procedure only: this run uses normal sound and reads connected MIDI devices.
+The agent did not run it. Agent live runs require the sound isolation in `AGENTS.md`.
+Run these commands from the repository folder. Keep this terminal open.
+
+```sh
+check_root="$(mktemp -d "$PWD/target/86d-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data/ptsr" "$check_root/state" "$check_root/samples" "$check_root/projects/Before/samples"
+cp renders/85-input-modes.wav "$check_root/projects/Before/samples/check.wav"
+cp renders/85-input-modes.wav "$check_root/samples/external.wav"
+cp "$check_root/samples/external.wav" "$check_root/external-before.wav"
+printf 'version = 3\n' > "$check_root/projects/Before/project.toml"
+printf '[paths]\nprojects = "%s/projects"\nsamples = "%s/samples"\n' "$check_root" "$check_root" > "$check_root/config/ptsr/config.toml"
+printf 'version = 3\nbrowser_dir = "%s/samples"\n' "$check_root" > "$check_root/data/ptsr/session.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_portable_check() {
+  env XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_portable_check
+```
+
+Use only these disposable folders. Do not quit with pending work.
+
+### Keyboard pass
+
+- [ ] Press `Ctrl+P`. Select `Before` with the arrows. Press `Enter`.
+  Press `F6`. Select `check.wav`. Press `Enter`. Hit pad `1` to load the whole file. Wait for loading.
+- [ ] Press `F3`. Press `Y` twice for four slices. Press `P`. Hit pad `2`. Press `Enter` to apply only that assignment.
+  Press `Y` once for eight slices. Press `P`. Hit pad `3`. Press `Enter`.
+  Press `Y` once for sixteen slices. Press `P`. Hit pad `4`. Press `Enter`.
+  Do not assign the remaining slices. These cuts must survive even though no pad uses them.
+- [ ] Press `F2`. Hit pad `2`, then press `F3`. Check the four-slice variant with all three interior cuts.
+  Repeat with pad `3` for eight slices and pad `4` for sixteen slices.
+  Press `F2` before selecting each pad. Record their visible bounds.
+- [ ] Press `F6`. From `Before/samples`, press `Left` three times to reach the printed check folder.
+  Press `/`. Type `samples`. Press `Enter` to close text input. Press `Right` to enter that folder.
+  Select `external.wav`. Press `Enter`. Hit pad `Q` to load this external file. Wait for loading.
+  Press `Ctrl+S`. Check `Session saved`. Press `Ctrl+Q` to quit.
+- [ ] In the same shell, move the whole project folder and restart:
+
+  ```sh
+  mv "$check_root/projects/Before" "$check_root/projects/After"
+  run_portable_check
+  ```
+
+  Press `Ctrl+P`. Select `After`. Press `Enter`.
+  Repeat the pad `2` / `3` / `4` F3 checks. Every cut must remain, not only the assigned slice bounds.
+  Press `F2`. Play pad `Q`. Check that the external sample still loads and sounds.
+- [ ] Press `Ctrl+S`. Quit with `Ctrl+Q`. Run `run_portable_check` again.
+  Check the three variants again. Press `F2`. Hit pad `2` and press `F3`.
+  Press `Ctrl+L` once to move its slice start right.
+  Check that only this variant's linked pad changes. Pad `3` and pad `4` must keep their bounds and cuts.
+  Press `Ctrl+S` before quitting.
+- [ ] After quitting, check the external sample bytes:
+
+  ```sh
+  cmp "$check_root/samples/external.wav" "$check_root/external-before.wav"
+  ```
+
+  The command must exit 0.
+
+### Physical-controller pass
+
+- [ ] In the disposable run, open F12 and its MIDI tab.
+  Learn separate buttons for GLOBAL `chop screen`, `save session` and `project picker`, and CHOP `slice start right`.
+  Press Enter to save each assignment.
+  Repeat the move/open/save and bound-edit checks with controller pads and these buttons.
+  Keep picker navigation, typed names, sample lookup and folder moves on the keyboard or shell.
+  This procedure does not claim controller-only project navigation.
+- [ ] Report unavailable controls instead of marking their checks passed. Do not change the factory profile for this procedure.
+
+### Listening pass and acceptance
+
+The new local render is `renders/86d-portable-chops.wav`, stereo at 48 kHz, 9.216 seconds.
+Each before/after part plays the same three restored slice pads. Short silences separate the hits.
+
+| Time in seconds | Input and sample path | Comparison |
+| --- | --- | --- |
+| 0.000–1.152 / 1.152–2.304 | Keyboard, internal file | Before / after move |
+| 2.304–3.456 / 3.456–4.608 | Keyboard, external file | Before / after move |
+| 4.608–5.760 / 5.760–6.912 | Controller, internal file | Before / after move |
+| 6.912–8.064 / 8.064–9.216 | Controller, external file | Before / after move |
+
+- [ ] Listen to the render. Check each matching before/after part for the same tone, pitch, level and duration.
+- [ ] In the disposable live run, listen to the assigned pads before and after the move. Check that no slice disappears or changes sound.
+- [ ] Report live keyboard, physical-controller and listening results separately. All remain unverified until the owner reports them.
+
+Archive: `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
+Change 87 and callback-budget corrections remain outside 86d. Push and PR need separate authorization.

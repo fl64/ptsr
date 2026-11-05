@@ -12,7 +12,8 @@ use std::time::Instant;
 
 use engine::rt::{Command, ProjectCommand, ProjectMessage, ProjectState, Realtime, Stats};
 use engine::{Engine, MAX_VOICES};
-use support::{Report, Timing, gates_exceeded, measure};
+use support::attribution::Trace;
+use support::{Report, Timing, measure};
 
 const SR: u32 = 48_000;
 const BLOCK: usize = 128;
@@ -79,6 +80,21 @@ fn main() -> io::Result<()> {
         &mut io::stdout().lock(),
     )?;
 
+    let mut trace = Trace::new(budget)?;
+    let mut observed_empty = Vec::with_capacity(OVERHEAD_CALLS);
+    let start = Instant::now();
+    for block in 0..OVERHEAD_CALLS {
+        observed_empty.push(trace.measure("observation overhead", 0, block, || {
+            std::hint::black_box(())
+        })?);
+    }
+    let observed_envelope_mean = start.elapsed().as_secs_f64() / OVERHEAD_CALLS as f64;
+    support::attribution::write_overhead(
+        &Report::new(&observed_empty, budget)?,
+        observed_envelope_mean,
+        &mut io::stdout().lock(),
+    )?;
+
     // The sound is longer than the run, so every voice plays to the end.
     let sound = (0..BLOCK * BLOCKS * 2 + 1)
         .map(|i| (i as f32 * 0.01).sin() * 0.01)
@@ -94,7 +110,7 @@ fn main() -> io::Result<()> {
     let (mut l, mut r) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
 
     let samples = (0..BLOCKS)
-        .map(|_| measure(|| rt.process(&mut l, &mut r)))
+        .map(|block| trace.measure("steady playback", 0, block, || rt.process(&mut l, &mut r)))
         .collect::<io::Result<Vec<_>>>()?;
     let report = Report::new(&samples, budget)?;
 
@@ -110,15 +126,19 @@ fn main() -> io::Result<()> {
         pct(max)
     );
     report.write("steady playback", &mut io::stdout().lock())?;
-    let switch_p99 = bench_switch(budget)?;
-    if gates_exceeded(pct(p99), switch_p99) {
+    let switch_p99 = bench_switch(budget, &mut trace)?;
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/bench-diagnostics");
+    let (path, exceeded) = trace.finish(&directory, pct(p99), switch_p99)?;
+    println!("Local callback trace: {}", path.display());
+    if exceeded {
         eprintln!("EXCEEDED: steady callback p99 or switch peak p99 is over 50 % of the budget");
         std::process::exit(1);
     }
     Ok(())
 }
 
-fn bench_switch(budget: f64) -> io::Result<f64> {
+fn bench_switch(budget: f64, trace: &mut Trace) -> io::Result<f64> {
     const SWITCHES: u64 = 200;
     let sound = Arc::new(engine::Sample::mono(
         (0..SR as usize * 4)
@@ -177,7 +197,12 @@ fn bench_switch(budget: f64) -> io::Result<f64> {
         let mut peak: f64 = 0.0;
         let mut blocks = 0;
         while state.ready.load(Acquire) != epoch {
-            let sample = measure(|| rt.process(&mut l, &mut r))?;
+            let phase = match blocks {
+                0 => "first fade block",
+                1 => "second fade block",
+                _ => "clearing and restore",
+            };
+            let sample = trace.measure(phase, epoch, blocks, || rt.process(&mut l, &mut r))?;
             times.push(sample.wall);
             samples.push(sample);
             phase_times[blocks.min(2)].push(sample);

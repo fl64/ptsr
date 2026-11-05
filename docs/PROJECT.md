@@ -60,7 +60,19 @@ The registry keeps existing controls, help, learned assignments and FX rules for
 Invalid shared MIDI state rejects new actions while preserving original releases and pending-input order.
 Section 86 of `docs/LIVE-CHECKS.md` records verification and separate keyboard, controller and listening checks.
 This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
-The callback timing issue remains open. Change 87 is next, but it is not active.
+The callback timing issue remains open. Report-only change 84b adds automatic local overrun records.
+The owner accepted and archived 84b on 2026-11-05.
+Archive: `openspec/changes/archive/2026-11-05-84b-benchmark-attribution/`.
+It does not change sound processing or exit gates. Callback correction remains separate work in 94a.
+Raw CSV files, detailed machine logs and identifying local paths stay local.
+The owner permits anonymized verification summaries in documents and commit history.
+The owner accepted save retry (86b), safe project transitions (86c) and portable chops (86d) without the manual passes.
+Their archives are `openspec/changes/archive/2026-11-05-86b-save-retry/`,
+`openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
+`openspec/changes/archive/2026-11-05-86d-portable-chops/`.
+Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
+The save-safety sequence is complete. The owner approved one PR for 84b and 86b–86d on `86b-save-retry`.
+This is an explicit exception to separate change branches. Change 87 is not active and needs a separate request.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

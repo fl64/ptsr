@@ -48,8 +48,27 @@ pub const BANK_COLORS: [Color; BANKS] = [
     Color::Rgb(0xD0, 0x8C, 0xC4), // 8 orchid
 ];
 
+/// Session state, independent of temporary notices.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveStatus {
+    Clean,
+    Unsaved,
+    Failed,
+}
+
+impl SaveStatus {
+    fn spans(self) -> Vec<Span<'static>> {
+        match self {
+            Self::Clean => Vec::new(),
+            Self::Unsaved => vec![" Unsaved ·".fg(AMBER).bg(BG)],
+            Self::Failed => vec![" Save failed ·".fg(MAGENTA).bg(BG).bold()],
+        }
+    }
+}
+
 /// State snapshot for the status line.
 pub struct Status<'a> {
+    pub save: SaveStatus,
     /// Audio backend (`jack`, `cpal`); `None` means no audio.
     pub backend: Option<&'a str>,
     /// A recording is running right now.
@@ -520,11 +539,17 @@ fn draw_inner(
     .areas(frame.area());
 
     match help.learn {
-        Some(lines) => frame.render_widget(
-            Line::from(lines.first().cloned().unwrap_or_default())
-                .style(Style::new().fg(BG).bg(MAGENTA).bold()),
-            top,
-        ),
+        Some(lines) => {
+            let mut spans = s.save.spans();
+            spans.push(Span::styled(
+                lines.first().cloned().unwrap_or_default(),
+                Style::new().fg(BG).bg(MAGENTA).bold(),
+            ));
+            frame.render_widget(
+                Line::from(spans).style(Style::new().fg(BG).bg(MAGENTA).bold()),
+                top,
+            );
+        }
         None => frame.render_widget(status_line(s), top),
     }
     let pickup = match screen {
@@ -2591,7 +2616,7 @@ const NO_RELEASES: &str = " · no key releases: gate pads play one-shot";
 
 fn status_line(s: &Status) -> Line<'static> {
     let Some(backend) = s.backend else {
-        let mut line = vec![];
+        let mut line = s.save.spans();
         if s.recording {
             line.push(" ● rec ".fg(MAGENTA).bold());
         }
@@ -2611,7 +2636,7 @@ fn status_line(s: &Status) -> Line<'static> {
         s.buffer_size.to_string()
     };
     let xruns = Span::from(format!("xruns {}", s.xruns));
-    let mut spans = vec![];
+    let mut spans = s.save.spans();
     if s.recording {
         spans.push(" ● rec ".fg(MAGENTA).bold());
     }
@@ -2708,6 +2733,7 @@ mod tests {
             slot: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,
@@ -2906,6 +2932,7 @@ mod tests {
     #[test]
     fn the_status_line_names_the_open_project() {
         let status = |backend, project| Status {
+            save: SaveStatus::Clean,
             backend,
             recording: false,
             buffer_size: 128,
@@ -2939,6 +2966,7 @@ mod tests {
     #[test]
     fn plain_words_for_no_key_releases() {
         let status = |no_releases| Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,
@@ -3258,6 +3286,7 @@ mod tests {
             playhead: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 256,
@@ -4181,6 +4210,7 @@ mod tests {
                 learn: None,
             };
             let status = Status {
+                save: SaveStatus::Clean,
                 backend: None,
                 recording: false,
                 buffer_size: 128,
@@ -4962,6 +4992,7 @@ mod tests {
             ..chop_demo(&wave)
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,
@@ -5247,6 +5278,7 @@ mod tests {
         let wave: Vec<f32> = (0..4000).map(|i| (i % 1000) as f32 / 1000.0).collect();
         let c = chop_demo(&wave);
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,
@@ -5401,6 +5433,7 @@ mod tests {
             "Enter: replace · Esc: keep".into(),
         ];
         let status = Status {
+            save: SaveStatus::Clean,
             backend: None,
             recording: false,
             buffer_size: 0,
@@ -5646,6 +5679,7 @@ mod tests {
         h: u16,
     ) -> Vec<Vec<(String, Color, Color)>> {
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording,
             buffer_size: 128,
@@ -5845,6 +5879,7 @@ mod tests {
             playhead: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,
@@ -5955,6 +5990,7 @@ mod tests {
             hot: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: None,
             recording: false,
             buffer_size: 0,
@@ -5998,8 +6034,106 @@ mod tests {
         assert!(words.contains("start 0.000 s · length"), "{words}");
     }
 
+    /// Scenarios "Pending work has a visible save state" and
+    /// "A save failure stays visible after its notice".
+    #[test]
+    fn a_save_failure_stays_visible_after_its_notice() {
+        let wave = [0.1; 400];
+        let screens = [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(&wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+            Screen::ProjectPicker(ProjectPickerView {
+                entries: vec!["beat".into()],
+                selected: 0,
+                naming: Some("new".into()),
+            }),
+        ];
+        let groups = [HelpGroup {
+            name: "CHECK",
+            items: vec![("F1".into(), "help".into())],
+        }];
+        let learn = ["LEARN · select an action".into(), "Esc: cancel".into()];
+        let full = [("F1".into(), "close help".into())];
+        let question = ["Keep the current pads?".into(), "Esc: cancel".into()];
+        for (w, h) in [(60, 24), (100, 26), (252, 60)] {
+            for backend in [None, Some("jack")] {
+                for screen in &screens {
+                    for notice in [None, Some("write refused"), Some("another notice")] {
+                        for mode in 0..4 {
+                            let help = Help {
+                                groups: &groups,
+                                hint: Some("normal hint"),
+                                full: (mode == 1).then_some(full.as_slice()),
+                                question: (mode == 2).then_some(question.as_slice()),
+                                learn: (mode == 3).then_some(learn.as_slice()),
+                            };
+                            let mut status = status_at(128, 0);
+                            status.backend = backend;
+                            status.notice = notice;
+                            status.recording = true;
+                            status.project = Some("beat");
+                            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                            term.draw(|f| draw(f, &status, screen, &help)).unwrap();
+                            let baseline = term.backend().buffer().clone();
+                            for save in [
+                                SaveStatus::Unsaved,
+                                SaveStatus::Failed,
+                                SaveStatus::Clean,
+                                SaveStatus::Unsaved,
+                            ] {
+                                status.save = save;
+                                term.draw(|f| draw(f, &status, screen, &help)).unwrap();
+                                let buffer = term.backend().buffer();
+                                let top = buffer.content()[..w as usize]
+                                    .iter()
+                                    .map(|c| c.symbol())
+                                    .collect::<String>();
+                                assert_eq!(
+                                    top.contains("Unsaved"),
+                                    save == SaveStatus::Unsaved,
+                                    "{w}x{h}: {top}"
+                                );
+                                assert_eq!(
+                                    top.contains("Save failed"),
+                                    save == SaveStatus::Failed,
+                                    "{w}x{h}: {top}"
+                                );
+                                assert_eq!(
+                                    &buffer.content()[w as usize..],
+                                    &baseline.content()[w as usize..],
+                                    "body, notices and help do not move"
+                                );
+                                if mode == 3 {
+                                    assert!(top.contains("LEARN · select an action"));
+                                    assert_eq!(buffer[(w - 1, 0)].bg, MAGENTA);
+                                } else {
+                                    assert!(top.contains("rec"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn status_at(buffer_size: u32, xruns: u64) -> Status<'static> {
         Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size,
@@ -6078,6 +6212,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: None,
             recording: false,
             buffer_size: 0,
@@ -6170,6 +6305,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: None,
             recording: false,
             buffer_size: 0,
@@ -6242,6 +6378,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
             buffer_size: 1024,
@@ -6304,6 +6441,7 @@ mod tests {
 
     fn settings_text(st: Settings) -> String {
         let status = Status {
+            save: SaveStatus::Clean,
             backend: None,
             recording: false,
             buffer_size: 0,
@@ -6351,6 +6489,7 @@ mod tests {
     /// The project picker (11) as the screen body shows it, as the tests read it back.
     fn project_picker_text(p: ProjectPickerView) -> String {
         let status = Status {
+            save: SaveStatus::Clean,
             backend: None,
             recording: false,
             buffer_size: 0,
@@ -6624,6 +6763,7 @@ mod tests {
     fn chop_status() -> (Status<'static>, Help<'static>) {
         (
             Status {
+                save: SaveStatus::Clean,
                 backend: Some("jack"),
                 recording: false,
                 buffer_size: 128,

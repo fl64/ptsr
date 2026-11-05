@@ -159,7 +159,7 @@ impl App {
             }),
             Action::SessionSave => {
                 // the manual save speaks (22); an error flash from the save wins
-                if self.save_session() {
+                if self.save_session().is_ok() {
                     self.flash = Some(("Session saved".into(), Instant::now()));
                 }
             }
