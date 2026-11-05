@@ -6,11 +6,11 @@
 
 ## 2. Correct the path boundary
 
-- [ ] 2.1 Add project fixtures with several older variants, unassigned cuts and internal/external samples. Test production load/save and keyboard/raw-MIDI routes.
-- [ ] 2.2 Apply existing stored/resolved path conversion to every `kept` key without changing variant states or formats.
-- [ ] 2.3 Test the second save/open after relocation, isolated bound edits, absent `kept` and stale absolute keys.
-- [ ] 2.4 Render restored slices before and after relocation. Check equality, finite samples, clipping, silence and timing, and write the owner WAV.
-- [ ] 2.5 Review the diff and run `task check`. Commit code and tests only after it passes.
+- [x] 2.1 Add project fixtures with several older variants, unassigned cuts and internal/external samples. Test production load/save and keyboard/raw-MIDI routes.
+- [x] 2.2 Apply existing stored/resolved path conversion to every `kept` key without changing variant states or formats.
+- [x] 2.3 Test the second save/open after relocation, isolated bound edits, absent `kept` and stale absolute keys.
+- [x] 2.4 Render restored slices before and after relocation. Check equality, finite samples, clipping, silence and timing, and write the owner WAV.
+- [x] 2.5 Review the diff and run `task check`. Commit code and tests only after it passes.
 
 ## 3. Check and hand over
 

@@ -6834,6 +6834,374 @@ fn clean_protected_scratch_can_leave_without_a_write() {
     }
 }
 
+struct PortableProject {
+    root: PathBuf,
+    file: PathBuf,
+    internal: bool,
+    states: Vec<session::ChopState>,
+    pads: std::collections::BTreeMap<String, session::PadState>,
+}
+
+impl PortableProject {
+    fn new(internal: bool) -> Self {
+        use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/86d-portable")
+            .join(format!(
+                "{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Relaxed)
+            ));
+        for name in ["A", "B"] {
+            std::fs::create_dir_all(root.join(name).join("samples")).unwrap();
+        }
+        let file = if internal {
+            root.join("A/samples/tone.wav")
+        } else {
+            root.join("tone.wav")
+        };
+        let wave: Vec<_> = (0..48_000)
+            .map(|i| 0.12 + 0.07 * (i as f32 * 0.03).sin())
+            .collect();
+        engine::offline::write_wav(&file, RENDER_RATE, &wave, &wave).unwrap();
+        let states: Vec<_> = [
+            (3, vec![0.125, 0.375, 0.625, 0.875], vec![4, 8, 12, 16]),
+            (7, vec![0.2, 0.4, 0.6, 0.8], vec![5, 9, 13, 17]),
+            (11, vec![0.25, 0.5, 0.75], vec![6, 10, 14]),
+        ]
+        .into_iter()
+        .map(|(epoch, cuts, ids)| session::ChopState {
+            start: 0.0,
+            end: 1.0,
+            cuts,
+            ids,
+            epoch,
+            next_id: 99,
+        })
+        .collect();
+        let pads = [
+            (0.125, 0.375, 4, 3, 2, -6, 3),
+            (0.2, 0.4, 5, 7, 2, -3, -5),
+            (0.5, 0.75, 10, 11, 3, 0, 7),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (start, end, link, epoch, slice, volume_db, pitch))| {
+            (
+                i.to_string(),
+                session::PadState {
+                    file: Some(file.clone()),
+                    name: Some(format!("variant {}", i + 1)),
+                    start: Some(start),
+                    end: Some(end),
+                    link: Some(link),
+                    epoch: Some(epoch),
+                    slice: Some(slice),
+                    gate: false,
+                    volume_db,
+                    pitch,
+                    release_ms: 10,
+                    filter: "low-pass".into(),
+                    cutoff_hz: Some(2_000.0),
+                    reso: 10,
+                    drive: 15,
+                    ..Default::default()
+                },
+            )
+        })
+        .collect();
+        let sess = session::Session {
+            browser_dir: Some(root.join("A/samples")),
+            pads,
+            chops: [(file.to_string_lossy().into_owned(), states[2].clone())].into(),
+            kept: [(file.to_string_lossy().into_owned(), states[..2].to_vec())].into(),
+            ..Default::default()
+        };
+        session::save_project(&root.join("A/project.toml"), &sess).unwrap();
+        session::save_project(&root.join("B/project.toml"), &session::Session::default()).unwrap();
+        Self {
+            root,
+            file,
+            internal,
+            states,
+            pads: sess.pads,
+        }
+    }
+
+    fn drive(&self, source: Source) -> Drive {
+        let mut drive = Drive::offline();
+        for (cc, action) in [
+            (88, "project.pick"),
+            (89, "session.save"),
+            (90, "screen.chop"),
+            (91, "slice.start_right"),
+        ] {
+            drive.bind_action(cc, action);
+        }
+        drive.app.paths.projects = self.root.clone();
+        drive.app.session_path = self.root.join("scratch.toml");
+        drive.app.user_path = Some(self.root.join("config.toml"));
+        drive.app.session_read_error = None;
+        Self::open(&mut drive, source, "A");
+        drive
+    }
+
+    fn open(drive: &mut Drive, source: Source, name: &str) {
+        TransitionFiles::pick(drive, source, name, false);
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.project_picker.is_none());
+        assert_eq!(drive.app.project.as_ref().unwrap().name, name);
+        while drive.app.pads.loading.iter().any(Option::is_some) {
+            let reply = drive
+                .app
+                .loader
+                .as_ref()
+                .unwrap()
+                .1
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            drive.app.loader_reply(reply);
+            drive.app.flush_audio();
+            drive.render_blocks(1);
+        }
+        let epoch = drive
+            .project
+            .epoch
+            .load(std::sync::atomic::Ordering::Acquire);
+        // The production switch clears FX buffers in bounded steps. As in the
+        // realtime switch tests, advance callbacks until the actual ready marker.
+        for _ in 0..300 {
+            drive.app.flush_audio();
+            drive.render_blocks(1);
+            if drive.app.pending_audio.is_empty()
+                && drive
+                    .project
+                    .ready
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    == epoch
+            {
+                break;
+            }
+        }
+        assert!(drive.app.pending_audio.is_empty());
+        assert_eq!(
+            drive
+                .project
+                .ready
+                .load(std::sync::atomic::Ordering::Acquire),
+            epoch
+        );
+        drive.frame();
+        drive.render_blocks(32);
+    }
+
+    fn f3(drive: &mut Drive, source: Source, pad: usize) {
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.pad_press(source, pad);
+        drive.pad_release(source, pad);
+        drive.registry_command(source, KeyCode::F(3), M::NONE, 90);
+        assert_eq!(drive.app.screen, Screen::Chop);
+    }
+
+    fn check_variants(&self, drive: &mut Drive, source: Source, file: &Path) {
+        for (pad, expected) in self.states.iter().enumerate() {
+            Self::f3(drive, source, pad);
+            let chop = drive.app.chop.as_ref().unwrap();
+            assert_eq!(chop.file, file);
+            assert_eq!(chop.saved().to_state(RENDER_RATE), *expected);
+            drive.render_blocks(32);
+        }
+        let pads = drive.app.pads.to_session(None, RENDER_RATE).pads;
+        for (key, expected) in &self.pads {
+            let mut expected = expected.clone();
+            expected.file = Some(file.to_path_buf());
+            assert_eq!(pads[key], expected);
+        }
+    }
+
+    fn save(drive: &mut Drive, source: Source) {
+        drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 89);
+        assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+        assert!(drive.app.session_dirty.is_none());
+    }
+
+    fn check_stored(&self, name: &str) {
+        let sess = session::load_existing(&self.root.join(name).join("project.toml")).unwrap();
+        let stored = if self.internal {
+            Path::new("samples/tone.wav")
+        } else {
+            &self.file
+        };
+        let key = stored.to_string_lossy();
+        assert_eq!(sess.version, 3);
+        assert_eq!(sess.chops.len(), 1);
+        assert_eq!(sess.kept.len(), 1);
+        assert_eq!(sess.chops[key.as_ref()], self.states[2]);
+        assert_eq!(sess.kept[key.as_ref()], self.states[..2]);
+        assert!(
+            sess.pads
+                .values()
+                .all(|pad| pad.file.as_deref() == Some(stored))
+        );
+        assert_eq!(
+            std::fs::read_dir(self.root.join(name).join("samples"))
+                .unwrap()
+                .count(),
+            usize::from(self.internal)
+        );
+    }
+
+    fn render(drive: &mut Drive, source: Source) -> Stereo {
+        use engine::checks::{first_loud, first_non_finite, peak};
+        let mut all = (Vec::new(), Vec::new());
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.render_blocks(32);
+        for pad in 0..3 {
+            let mut wave = drive.render_blocks(16);
+            drive.pad_press(source, pad);
+            append_stereo(&mut wave, drive.render_blocks(128));
+            drive.pad_release(source, pad);
+            for channel in [&wave.0, &wave.1] {
+                assert_eq!(first_non_finite(channel), None);
+                assert!(peak(channel) < 1.0);
+                assert_eq!(peak(&channel[..2048]), 0.0);
+                let onset = first_loud(channel, 2048..2176, 1e-6).unwrap();
+                assert!(
+                    onset.abs_diff(2048) <= 1,
+                    "{source:?}, pad {pad}, onset {onset}"
+                );
+                assert!(peak(&channel[2048..]) > 0.01);
+                assert_eq!(peak(&channel[channel.len() - 1024..]), 0.0);
+            }
+            append_stereo(&mut all, wave);
+        }
+        all
+    }
+}
+
+impl Drop for PortableProject {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.root).unwrap();
+    }
+}
+
+/// Scenario "Internal variant paths move with the project".
+/// Scenario "External variant paths remain absolute".
+/// Scenario "Save and reopen after project relocation".
+/// Scenario "Moving keeps unassigned cuts of older chops".
+/// Scenario "Editing a moved chop changes only its linked pads".
+/// Scenario "Moved slices keep their sound".
+#[test]
+fn portable_chops_keep_all_variants_and_sound() {
+    let mut all = (Vec::new(), Vec::new());
+    for source in [Source::Keyboard, Source::Button] {
+        for internal in [true, false] {
+            let files = PortableProject::new(internal);
+            let bytes = std::fs::read(&files.file).unwrap();
+            let mut drive = files.drive(source);
+            files.check_variants(&mut drive, source, &files.file);
+            let before = PortableProject::render(&mut drive, source);
+            PortableProject::save(&mut drive, source);
+            files.check_stored("A");
+            std::fs::rename(files.root.join("A"), files.root.join("Moved")).unwrap();
+            let moved_file = if internal {
+                files.root.join("Moved/samples/tone.wav")
+            } else {
+                files.file.clone()
+            };
+            assert!(!files.root.join("A").exists());
+            PortableProject::open(&mut drive, source, "Moved");
+            files.check_variants(&mut drive, source, &moved_file);
+            let after = PortableProject::render(&mut drive, source);
+            assert_eq!(after, before, "{source:?}, internal {internal}");
+            assert_eq!(std::fs::read(&moved_file).unwrap(), bytes);
+            append_stereo(&mut all, before);
+            append_stereo(&mut all, after);
+            PortableProject::save(&mut drive, source);
+            files.check_stored("Moved");
+            PortableProject::open(&mut drive, source, "B");
+            PortableProject::open(&mut drive, source, "Moved");
+            files.check_variants(&mut drive, source, &moved_file);
+            PortableProject::f3(&mut drive, source, 0);
+            let other_pads = [drive.app.pads.snapshot(1), drive.app.pads.snapshot(2)];
+            let original = drive.app.pads.region[0];
+            drive.registry_command(source, KeyCode::Char('l'), M::CONTROL, 91);
+            assert_ne!(drive.app.pads.region[0], original);
+            assert_eq!(
+                [drive.app.pads.snapshot(1), drive.app.pads.snapshot(2)],
+                other_pads
+            );
+            let edited = drive.app.chop.as_ref().unwrap().saved();
+            for pad in [1, 2] {
+                PortableProject::f3(&mut drive, source, pad);
+                assert_eq!(
+                    drive
+                        .app
+                        .chop
+                        .as_ref()
+                        .unwrap()
+                        .saved()
+                        .to_state(RENDER_RATE),
+                    files.states[pad]
+                );
+            }
+            PortableProject::f3(&mut drive, source, 0);
+            assert_eq!(drive.app.chop.as_ref().unwrap().saved(), edited);
+        }
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/86d-portable-chops.wav");
+    engine::offline::write_wav(&path, RENDER_RATE, &all.0, &all.1).unwrap();
+    println!(
+        "86d render: {} frames, before/after sample-identical, finite/no-clip/silence/onset +/-1 checked",
+        all.0.len()
+    );
+}
+
+/// Scenario "Missing kept variants use the existing fallback".
+/// Scenario "Stale absolute variant paths are not guessed".
+#[test]
+fn portable_chops_keep_old_project_compatibility() {
+    for source in [Source::Keyboard, Source::Button] {
+        for stale in [false, true] {
+            let files = PortableProject::new(true);
+            let path = files.root.join("A/project.toml");
+            let mut sess = session::load_existing(&path).unwrap();
+            sess.kept.clear();
+            let absent = files.root.join("already-gone/tone.wav");
+            if stale {
+                sess.kept.insert(
+                    absent.to_string_lossy().into_owned(),
+                    files.states[..2].to_vec(),
+                );
+            }
+            session::save_project(&path, &sess).unwrap();
+            let mut drive = files.drive(source);
+            if stale {
+                assert!(
+                    drive
+                        .app
+                        .pending_older
+                        .iter()
+                        .all(|(file, _)| file == &absent)
+                );
+                assert_eq!(drive.app.pending_older.len(), 2);
+            } else {
+                assert!(drive.app.pending_older.is_empty());
+            }
+            PortableProject::f3(&mut drive, source, 0);
+            let saved = drive.app.chop.as_ref().unwrap().saved();
+            assert_eq!(saved.epoch, 3);
+            let cuts: Vec<_> = saved.cuts.iter().map(|(_, at)| *at).collect();
+            assert_eq!(cuts, [6000, 18000]);
+            assert_eq!(drive.app.pads.link[0], Some((4, 3)));
+            assert_eq!(drive.app.pads.pitch[0], 3);
+            assert_eq!(drive.app.pads.volume_db[0], -6);
+            assert_eq!(session::load_existing(&path).unwrap().version, 3);
+        }
+    }
+}
+
 fn pads_play_badge(drive: &mut Drive) -> bool {
     use ratatui::{Terminal, backend::TestBackend};
     let app = &mut drive.app;

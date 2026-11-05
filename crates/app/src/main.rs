@@ -274,17 +274,20 @@ fn with_stored_paths(mut sess: session::Session, folder: &Path) -> session::Sess
     sess.browser_dir = sess
         .browser_dir
         .map(|dir| session::to_stored_path(folder, &dir));
+    let stored_key = |file: &str| {
+        session::to_stored_path(folder, Path::new(file))
+            .to_string_lossy()
+            .into_owned()
+    };
     sess.chops = sess
         .chops
         .into_iter()
-        .map(|(file, st)| {
-            (
-                session::to_stored_path(folder, Path::new(&file))
-                    .to_string_lossy()
-                    .into_owned(),
-                st,
-            )
-        })
+        .map(|(file, st)| (stored_key(&file), st))
+        .collect();
+    sess.kept = sess
+        .kept
+        .into_iter()
+        .map(|(file, states)| (stored_key(&file), states))
         .collect();
     sess
 }
@@ -303,17 +306,20 @@ fn with_resolved_paths(mut sess: session::Session, project: Option<&Path>) -> se
     sess.browser_dir = sess
         .browser_dir
         .map(|dir| session::from_stored_path(folder, &dir));
+    let resolved_key = |file: &str| {
+        session::from_stored_path(folder, Path::new(file))
+            .to_string_lossy()
+            .into_owned()
+    };
     sess.chops = sess
         .chops
         .into_iter()
-        .map(|(file, st)| {
-            (
-                session::from_stored_path(folder, Path::new(&file))
-                    .to_string_lossy()
-                    .into_owned(),
-                st,
-            )
-        })
+        .map(|(file, st)| (resolved_key(&file), st))
+        .collect();
+    sess.kept = sess
+        .kept
+        .into_iter()
+        .map(|(file, states)| (resolved_key(&file), states))
         .collect();
     sess
 }
