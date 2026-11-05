@@ -22,10 +22,10 @@
 ## 3a. Learn saving from F12
 
 - [x] 3a.1 Add the approved learning requirements and review the English text. Commit the amendment after `task check` passes.
-- [ ] 3a.2 Add `session.save` as the button row `save session` in GLOBAL. Keep existing keys, factory assignments and formats.
-- [ ] 3a.3 Test F12 navigation, pending confirmation and cancellation with raw note and CC buttons. Do not inject the save assignment.
-- [ ] 3a.4 Reload the saved configuration. Test saving on each input screen, write refusal, manual retry and resumed autosave.
-- [ ] 3a.5 Run the project checks and commit the row with its tests after `task check` passes.
+- [x] 3a.2 Add `session.save` as the button row `save session` in GLOBAL. Keep existing keys, factory assignments and formats.
+- [x] 3a.3 Test F12 navigation, pending confirmation and cancellation with raw note and CC buttons. Do not inject the save assignment.
+- [x] 3a.4 Reload the saved configuration. Test saving on each input screen, write refusal, manual retry and resumed autosave.
+- [x] 3a.5 Run the project checks and commit the row with its tests after `task check` passes.
 
 ## 4. Check and hand over
 

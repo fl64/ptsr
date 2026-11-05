@@ -6134,6 +6134,226 @@ fn keyboard_and_controller_save_feedback_agree() {
     }
 }
 
+/// Scenario "The save action appears in GLOBAL".
+/// Scenario "Save learning waits for confirmation".
+/// Scenario "The learned save button survives restart".
+/// Scenario "The learned save button retries after write refusal".
+#[test]
+fn the_learned_save_button_survives_restart() {
+    use input::{Group, midi::Key};
+    use tui::SaveStatus;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../target/86b-learn-save-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let _cleanup = Cleanup(root.clone());
+    for source in [Source::Notes, Source::Button] {
+        for project in [false, true] {
+            let dir = root.join(format!("{source:?}-{project}"));
+            std::fs::create_dir(&dir).unwrap();
+            let config_path = dir.join("config.toml");
+            let session_path = dir.join(if project {
+                "project.toml"
+            } else {
+                "session.toml"
+            });
+            std::fs::write(&config_path, "").unwrap();
+            session::save(&session_path, &session::Session::default()).unwrap();
+            let key = match source {
+                Source::Notes => Key::Note(88),
+                Source::Button => Key::Cc(88),
+                Source::Keyboard => unreachable!(),
+            };
+            let configure_session = |drive: &mut Drive| {
+                drive.app.session_path = session_path.clone();
+                drive.app.session_read_error = None;
+                if project {
+                    drive.app.project = Some(Project {
+                        name: "learn save".into(),
+                        folder: dir.clone(),
+                    });
+                }
+            };
+            let expected_bindings = {
+                let mut drive = Drive::with_saved_bindings(false, Some(&config_path));
+                configure_session(&mut drive);
+                drive.tap(KeyCode::Char(']'), M::NONE);
+                let pending_work = drive.app.session_dirty;
+                drive.tap(KeyCode::F(12), M::NONE);
+                for _ in 0..2 {
+                    drive.tap(KeyCode::Tab, M::NONE);
+                }
+                assert_eq!(drive.app.settings_tab, 2);
+                let global = drive
+                    .app
+                    .midi_list()
+                    .iter()
+                    .position(|row| {
+                        matches!(
+                            row,
+                            MidiListRow::Group {
+                                group: Group::Global
+                            }
+                        )
+                    })
+                    .unwrap();
+                for _ in 0..global {
+                    drive.tap(KeyCode::Down, M::NONE);
+                }
+                assert_eq!(drive.app.midi_row, global);
+                drive.tap(KeyCode::Enter, M::NONE);
+                assert!(drive.app.midi_open.contains(&Group::Global));
+                let rows = drive.app.midi_list();
+                let saves: Vec<_> = rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(at, row)| match row {
+                        MidiListRow::Action { info } if info.name == "session.save" => {
+                            assert_eq!(info.group, Group::Global);
+                            assert_eq!(info.label, "save session");
+                            assert!(!info.knob);
+                            Some(at)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(saves.len(), 1);
+                for _ in global..saves[0] {
+                    drive.tap(KeyCode::Down, M::NONE);
+                }
+                assert_eq!(drive.app.midi_row, saves[0]);
+                assert_eq!(
+                    drive
+                        .app
+                        .midi_screen()
+                        .iter()
+                        .filter(|row| matches!(row,
+                            tui::MidiRow::Action { label, .. } if label == "save session"
+                        ))
+                        .count(),
+                    1
+                );
+                for confirm in [false, true] {
+                    let old_bindings = drive.app.learned.clone();
+                    let config_bytes = std::fs::read(&config_path).unwrap();
+                    let session_bytes = std::fs::read(&session_path).unwrap();
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    let learning = drive.app.learning.as_ref().unwrap();
+                    assert_eq!(learning.info.name, "session.save");
+                    assert!(learning.pending.is_none());
+                    drive.bytes(
+                        PAD_PORT,
+                        &match source {
+                            Source::Notes => [0x80, 88, 0],
+                            Source::Button => [0xb0, 88, 0],
+                            Source::Keyboard => unreachable!(),
+                        },
+                    );
+                    drive.frame();
+                    assert!(drive.app.learning.as_ref().unwrap().pending.is_none());
+                    let frame = drive.registry_command(source, KeyCode::Null, M::NONE, 88);
+                    assert!(frame.commands().is_empty());
+                    assert_eq!(
+                        drive.app.learning.as_ref().unwrap().pending,
+                        Some(("Recorded pads".into(), key))
+                    );
+                    assert!(drive.app.midi_screen().iter().any(|row| matches!(row,
+                        tui::MidiRow::Action { label, who, .. }
+                            if label == "save session" && who.contains('→')
+                    )));
+                    assert_eq!(drive.app.learned, old_bindings);
+                    assert_eq!(std::fs::read(&config_path).unwrap(), config_bytes);
+                    assert_eq!(std::fs::read(&session_path).unwrap(), session_bytes);
+                    assert_eq!(drive.app.session_dirty, pending_work);
+                    drive.tap(
+                        if confirm {
+                            KeyCode::Enter
+                        } else {
+                            KeyCode::Esc
+                        },
+                        M::NONE,
+                    );
+                    assert!(drive.app.learning.is_none());
+                    if confirm {
+                        assert_eq!(
+                            drive.app.learned["Recorded pads"]["global"][&key.to_string()],
+                            "session.save"
+                        );
+                        assert_eq!(
+                            config::load_from(&config_path).config.midi,
+                            drive.app.learned
+                        );
+                    } else {
+                        assert_eq!(drive.app.learned, old_bindings);
+                        assert_eq!(std::fs::read(&config_path).unwrap(), config_bytes);
+                    }
+                    assert_eq!(std::fs::read(&session_path).unwrap(), session_bytes);
+                    assert_eq!(drive.app.session_dirty, pending_work);
+                }
+                drive.app.learned.clone()
+            };
+            let mut drive = Drive::with_saved_bindings(false, Some(&config_path));
+            configure_session(&mut drive);
+            assert_eq!(drive.app.learned, expected_bindings);
+            let config_bytes = std::fs::read(&config_path).unwrap();
+            drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "learn-save");
+            drive.app.browser.dir = dir.clone();
+            for (screen, code, _) in REGISTRY_SCREEN_COMMANDS {
+                drive.tap(KeyCode::F(2), M::NONE);
+                drive.tap(code, M::NONE);
+                assert_eq!(drive.app.screen, screen);
+                drive.tap(KeyCode::Char(']'), M::NONE);
+                drive.registry_command(source, KeyCode::Null, M::NONE, 88);
+                assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                assert_eq!(
+                    session::load(&session_path).unwrap().master_db,
+                    drive.app.master_db
+                );
+                assert_eq!(drive.app.screen, screen);
+            }
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.tap(KeyCode::Char(']'), M::NONE);
+            let pending_work = drive.app.session_dirty;
+            let saved = std::fs::read(&session_path).unwrap();
+            let tmp = session_path.with_extension("toml.tmp");
+            std::fs::write(&tmp, "occupied").unwrap();
+            for _ in 0..2 {
+                drive.app.flash = None;
+                drive.registry_command(source, KeyCode::Null, M::NONE, 88);
+                assert_ne!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                assert_eq!(drive.app.save_status(), SaveStatus::Failed);
+                assert_eq!(drive.app.session_dirty, pending_work);
+                assert_eq!(std::fs::read(&session_path).unwrap(), saved);
+            }
+            std::fs::remove_file(&tmp).unwrap();
+            drive.registry_command(source, KeyCode::Null, M::NONE, 88);
+            assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+            assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+            drive.tap(KeyCode::Char(']'), M::NONE);
+            drive.app.flash = None;
+            drive.app.autosave(
+                drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
+            );
+            assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+            assert!(drive.app.flash.is_none());
+            assert_eq!(
+                session::load(&session_path).unwrap().master_db,
+                drive.app.master_db
+            );
+            assert_eq!(std::fs::read(&config_path).unwrap(), config_bytes);
+        }
+    }
+}
+
 fn pads_play_badge(drive: &mut Drive) -> bool {
     use ratatui::{Terminal, backend::TestBackend};
     let app = &mut drive.app;
