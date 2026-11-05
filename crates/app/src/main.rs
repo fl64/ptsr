@@ -4101,7 +4101,12 @@ impl App {
     }
 
     fn notice(&self) -> Option<String> {
+        self.notice_at(Instant::now())
+    }
+
+    fn notice_at(&self, now: Instant) -> Option<String> {
         if let Some((source, at)) = &self.recording {
+            let elapsed = now.saturating_duration_since(*at);
             return Some(format!(
                 "Recording {} {}.{:01} s… {}",
                 if *source == audio::SOURCE_MIC {
@@ -4109,8 +4114,8 @@ impl App {
                 } else {
                     "the output"
                 },
-                at.elapsed().as_secs(),
-                at.elapsed().subsec_millis() / 100,
+                elapsed.as_secs(),
+                elapsed.subsec_millis() / 100,
                 if *source == audio::SOURCE_MIC {
                     "release Alt+R to stop"
                 } else {
@@ -4122,7 +4127,7 @@ impl App {
             return Some("Audio stopped: the sound server or device went away.".into());
         }
         if let Some((msg, at)) = &self.flash
-            && at.elapsed() < FLASH
+            && now.saturating_duration_since(*at) < FLASH
         {
             return Some(msg.clone());
         }
@@ -4594,6 +4599,7 @@ fn main() -> std::io::Result<()> {
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let status = tui::Status {
+            save: app.save_status(),
             backend: app.audio_alive().map(|a| a.backend),
             recording: app.recording.is_some(),
             buffer_size,
@@ -19705,6 +19711,7 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         let view = super::chop_view(c, app.plan.as_ref(), None, 48_000, &app.pads);
         let status = tui::Status {
+            save: app.save_status(),
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,
@@ -20203,6 +20210,7 @@ Enter = "browser.hold"
         let view = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let view = app.mark_pads(view);
         let status = tui::Status {
+            save: app.save_status(),
             backend: Some("jack"),
             recording: false,
             buffer_size: 128,

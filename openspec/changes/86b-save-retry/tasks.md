@@ -14,10 +14,10 @@
 
 ## 3. Show each save result
 
-- [ ] 3.1 Route keyboard and learned raw MIDI save requests through production dispatch. Test matching success, refusal and read-protection feedback.
-- [ ] 3.2 Add the persistent status indicator and screen tests at small and large supported sizes. Keep notices, help, controls and layout unchanged.
-- [ ] 3.3 Test expired and replaced notices, successful retry and the next edit. Use controlled time, not sleeps.
-- [ ] 3.4 Run the project checks and commit this step with its tests after `task check` passes.
+- [x] 3.1 Route keyboard and learned raw MIDI save requests through production dispatch. Test matching success, refusal and read-protection feedback.
+- [x] 3.2 Add the persistent status indicator and screen tests at small and large supported sizes. Keep notices, help, controls and layout unchanged.
+- [x] 3.3 Test expired and replaced notices, successful retry and the next edit. Use controlled time, not sleeps.
+- [x] 3.4 Run the project checks and commit this step with its tests after `task check` passes.
 
 ## 4. Check and hand over
 

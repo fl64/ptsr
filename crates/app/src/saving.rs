@@ -14,6 +14,16 @@ impl App {
         )
     }
 
+    pub(super) fn save_status(&self) -> tui::SaveStatus {
+        if self.session_write_failed {
+            tui::SaveStatus::Failed
+        } else if self.session_dirty.is_some() {
+            tui::SaveStatus::Unsaved
+        } else {
+            tui::SaveStatus::Clean
+        }
+    }
+
     fn automatic_save_allowed(&self) -> bool {
         self.session_read_error.is_none()
             && !self.session_write_failed

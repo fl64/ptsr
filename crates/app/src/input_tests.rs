@@ -6014,12 +6014,133 @@ fn copy_route_preserves_held_midi_releases() {
     }
 }
 
+/// Scenario "Keyboard and controller save feedback agree".
+/// Scenario "Repeated manual refusals each explain the reason".
+/// Scenario "Successful retry clears the save warning".
+#[test]
+fn keyboard_and_controller_save_feedback_agree() {
+    use tui::SaveStatus;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../target/86b-input-saves-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let _cleanup = Cleanup(root.clone());
+    for project in [false, true] {
+        for problem in ["none", "write", "damaged", "newer"] {
+            let path = root.join("project.toml");
+            let mut expected = None;
+            for source in [Source::Keyboard, Source::Button] {
+                let mut drive = Drive::new();
+                drive.bind_action(88, "session.save");
+                drive.bind_action(89, "master.volume_up");
+                drive.app.session_path = path.clone();
+                drive.app.session_read_error = None;
+                if project {
+                    drive.app.project = Some(Project {
+                        name: "test".into(),
+                        folder: root.clone(),
+                    });
+                }
+                session::save(&path, &session::Session::default()).unwrap();
+                if matches!(problem, "damaged" | "newer") {
+                    std::fs::write(
+                        &path,
+                        if problem == "damaged" {
+                            "version = [\n"
+                        } else {
+                            "version = 99\n"
+                        },
+                    )
+                    .unwrap();
+                    drive.app.session_read_error = Some(session::load(&path).unwrap_err());
+                }
+                let tmp = path.with_extension("toml.tmp");
+                if problem == "write" {
+                    std::fs::write(&tmp, "occupied").unwrap();
+                }
+                let saved = std::fs::read(&path).unwrap();
+                assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                drive.registry_command(source, KeyCode::Char(']'), M::NONE, 89);
+                assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
+                let pending = drive.app.session_dirty;
+                let before = drive.seen();
+                for _ in 0..2 {
+                    drive.app.flash = None;
+                    drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 88);
+                    let (notice, at) = drive.app.flash.as_ref().unwrap().clone();
+                    assert_eq!(notice == "Session saved", problem == "none");
+                    assert_eq!(
+                        drive.app.notice_at(at + FLASH - Duration::from_nanos(1)),
+                        Some(notice.clone())
+                    );
+                    assert_eq!(drive.app.notice_at(at + FLASH), None);
+                    assert_eq!(
+                        drive.app.session_dirty,
+                        if problem == "none" { None } else { pending }
+                    );
+                    assert_eq!(drive.app.session_write_failed, problem == "write");
+                    assert_eq!(
+                        drive.app.save_status(),
+                        match problem {
+                            "none" => SaveStatus::Clean,
+                            "write" => SaveStatus::Failed,
+                            _ => SaveStatus::Unsaved,
+                        }
+                    );
+                    assert_eq!(drive.app.screen, before.screen);
+                    assert_eq!(drive.app.history.len(), before.history.len());
+                    let bytes = std::fs::read(&path).unwrap();
+                    if problem != "none" {
+                        assert_eq!(bytes, saved);
+                    } else {
+                        assert_eq!(session::load(&path).unwrap().master_db, drive.app.master_db);
+                    }
+                    let result = (notice, bytes, drive.app.save_status());
+                    if let Some(expected) = &expected {
+                        assert_eq!(
+                            &result, expected,
+                            "{source:?}, {problem}, project {project}"
+                        );
+                    } else {
+                        expected = Some(result);
+                    }
+                    drive.app.flash = Some(("another notice".into(), at));
+                    assert_eq!(drive.app.notice_at(at), Some("another notice".into()));
+                }
+                if problem == "write" {
+                    std::fs::remove_file(&tmp).unwrap();
+                    drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 88);
+                    assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                    assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                    drive.registry_command(source, KeyCode::Char(']'), M::NONE, 89);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
+                    drive.app.flash = None;
+                    drive.app.autosave(
+                        drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
+                    );
+                    assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                    assert!(drive.app.flash.is_none());
+                    assert_eq!(session::load(&path).unwrap().master_db, drive.app.master_db);
+                }
+            }
+        }
+    }
+}
+
 fn pads_play_badge(drive: &mut Drive) -> bool {
     use ratatui::{Terminal, backend::TestBackend};
     let app = &mut drive.app;
     let view = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
     let screen = tui::Screen::Pads(app.mark_pads(view));
     let status = tui::Status {
+        save: app.save_status(),
         backend: None,
         recording: false,
         buffer_size: 128,
