@@ -212,15 +212,41 @@ fn chops_from_slices(s: &mut Session) {
 }
 
 pub fn save(path: &Path, session: &Session) -> Result<(), String> {
+    save_to(path, session, true)
+}
+
+/// Project folders must exist. Do not recreate one that disappears during saving.
+pub fn save_project(path: &Path, session: &Session) -> Result<(), String> {
+    save_to(path, session, false)
+}
+
+fn save_to(path: &Path, session: &Session, create_parent: bool) -> Result<(), String> {
+    use std::io::Write;
+
     let text = toml::to_string(session).map_err(|e| e.to_string())?;
     let err = |e: std::io::Error| format!("{}: {e}", path.display());
-    if let Some(dir) = path.parent() {
+    if create_parent && let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(err)?;
     }
-    // via a temp file: if writing fails, the old session stays intact
     let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, text).map_err(err)?;
-    std::fs::rename(&tmp, path).map_err(err)
+    // Exclusive creation refuses occupied paths, including symbolic and hard links.
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(err)?;
+    let result = file.write_all(text.as_bytes()).and_then(|()| file.flush());
+    drop(file);
+    let result = result.and_then(|()| replace_session(&tmp, path));
+    if result.is_err() {
+        // Creation succeeded, so only this attempt's temporary file is removed.
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.map_err(err)
+}
+
+fn replace_session(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    std::fs::rename(tmp, path)
 }
 
 /// (11) The path as stored in a project's `project.toml`: inside the project folder it
@@ -332,6 +358,28 @@ mod tests {
         std::fs::write(&path, "version = [\n").unwrap();
         assert!(load(&path).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn project_parent_disappears_before_replacement() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../target/save-parent-{}", std::process::id()));
+        let parent = root.join("project");
+        std::fs::create_dir_all(&parent).unwrap();
+        let path = parent.join("project.toml");
+        save_project(&path, &Session::default()).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        let tmp = path.with_extension("toml.tmp");
+        std::fs::write(&tmp, "version = 3\nmaster_db = -6\n").unwrap();
+        // The write has completed. The parent moves before the replacement step.
+        let moved = root.join("moved");
+        std::fs::rename(&parent, &moved).unwrap();
+        assert!(replace_session(&tmp, &path).is_err());
+        assert!(!parent.exists());
+        assert_eq!(std::fs::read(moved.join("project.toml")).unwrap(), saved);
+        assert!(save_project(&path, &Session::default()).is_err());
+        assert!(!parent.exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

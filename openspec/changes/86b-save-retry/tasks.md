@@ -6,11 +6,11 @@
 
 ## 2. Retain work and permit a retry
 
-- [ ] 2.1 Add named regression tests for write refusal, repeated requests, successful retry and later autosave. Use controlled time and isolated files.
-- [ ] 2.2 Separate read protection, pending changes and write failure. Return an explicit save result. Keep new coordination outside `main.rs`.
-- [ ] 2.3 Preserve the last saved bytes through safe temporary-file replacement. Refuse a removed project parent without recreating it. Keep scratch-folder creation.
-- [ ] 2.4 Test damaged and newer files, occupied temporary paths, the removed-folder case and paused exit saving. Keep the existing save scenarios covered.
-- [ ] 2.5 Run the project checks and commit this step with its tests after `task check` passes.
+- [x] 2.1 Add named regression tests for write refusal, repeated requests, successful retry and later autosave. Use controlled time and isolated files.
+- [x] 2.2 Separate read protection, pending changes and write failure. Return an explicit save result. Keep new coordination outside `main.rs`.
+- [x] 2.3 Preserve the last saved bytes through safe temporary-file replacement. Refuse a removed project parent without recreating it. Keep scratch-folder creation.
+- [x] 2.4 Test damaged and newer files, occupied temporary paths, the removed-folder case and paused exit saving. Keep the existing save scenarios covered.
+- [x] 2.5 Run the project checks and commit this step with its tests after `task check` passes.
 
 ## 3. Show each save result
 

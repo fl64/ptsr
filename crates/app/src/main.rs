@@ -8,11 +8,14 @@ mod loader;
 mod meters;
 mod midi;
 mod pads;
+mod saving;
 mod session;
 mod wav;
 
 #[cfg(test)]
 mod input_tests;
+#[cfg(test)]
+mod saving_tests;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -446,8 +449,10 @@ struct App {
     /// The config's `[project]` section (11): the last opened name, written when a
     /// project opens.
     project_cfg: config::ProjectConfig,
-    /// `false` when the session file could not be read: it is then left alone.
-    session_ok: bool,
+    /// A load refusal protects the source file from all save requests.
+    session_read_error: Option<String>,
+    /// A write refusal pauses automatic saving until a manual save succeeds.
+    session_write_failed: bool,
     /// Something changed since this moment and is not saved yet.
     session_dirty: Option<Instant>,
     /// The chop screen state; kept after leaving the screen, so coming back to the same pad
@@ -669,6 +674,7 @@ impl App {
         self.restoring_project = true;
         self.finish_project_restore();
         self.session_dirty = None;
+        self.session_write_failed = false;
     }
 
     fn finish_project_restore(&mut self) {
@@ -775,7 +781,7 @@ impl App {
             }
         };
         // a readable session may be saved back, a broken one is left alone (as at start)
-        self.session_ok = notice.is_none();
+        self.session_read_error = notice.clone();
         let sess = with_resolved_paths(sess, Some(&folder));
         let name = file_name(&folder);
         self.project = Some(Project {
@@ -808,7 +814,7 @@ impl App {
             .and_then(|()| std::fs::create_dir_all(folder.join("samples")))
             .map_err(|e| format!("{}: {e}", folder.display()))
             .and_then(|()| {
-                session::save(&folder.join("project.toml"), &session::Session::default())
+                session::save_project(&folder.join("project.toml"), &session::Session::default())
             });
         if let Err(e) = result {
             log::error!("{e}");
@@ -2162,112 +2168,6 @@ impl App {
         self.plan = None;
         self.goto(Screen::Pads);
         self.dirty();
-    }
-
-    fn dirty(&mut self) {
-        self.session_dirty.get_or_insert_with(Instant::now);
-    }
-
-    /// Where the session is written now (11): with a project open — its `project.toml`,
-    /// otherwise the scratch file.
-    fn session_file(&self) -> PathBuf {
-        self.project.as_ref().map_or_else(
-            || self.session_path.clone(),
-            |p| p.folder.join("project.toml"),
-        )
-    }
-
-    /// Saves the session now; `true` when the file was written. The autosave calls it
-    /// the same way and stays silent (22); the manual save says "Session saved".
-    fn save_session(&mut self) -> bool {
-        self.session_dirty = None;
-        if !self.session_ok {
-            return false;
-        }
-        // the project folder vanished under the program (11): writing would only
-        // resurrect the empty folder, so the save is refused; the pads whose files lived
-        // in it are marked missing, the sound in memory keeps playing
-        let gone = self
-            .project
-            .as_ref()
-            .map(|p| p.folder.clone())
-            .filter(|f| !f.is_dir());
-        if let Some(folder) = gone {
-            log::warn!("{} is gone; the session is not saved", folder.display());
-            self.session_ok = false;
-            for abs in 0..PADS {
-                if self.pads.file[abs]
-                    .as_ref()
-                    .is_some_and(|f| f.starts_with(&folder))
-                {
-                    self.pads.missing[abs] = true;
-                }
-            }
-            self.flash = Some((
-                format!(
-                    "{} is gone; the session is not saved",
-                    tilde(&folder.display().to_string())
-                ),
-                Instant::now(),
-            ));
-            return false;
-        }
-        let mut s = self
-            .pads
-            .to_session(Some(self.browser.dir.clone()), self.rate);
-        s.master_db = self.master_db;
-        let open = self
-            .chop
-            .iter()
-            .chain(self.chops.values())
-            .chain(self.older.iter());
-        for c in open {
-            let key = c.file.to_string_lossy().into_owned();
-            if self.is_newest(c) {
-                s.chops.insert(key, c.saved().to_state(self.rate));
-            } else if self.linked_to(&c.file, c.epoch) {
-                // an older chop lives while a pad plays one of its slices (45)
-                s.kept
-                    .entry(key)
-                    .or_default()
-                    .push(c.saved().to_state(self.rate));
-            }
-            // a pad linked to a deleted cut is saved with the cut that starts its slice now
-            for p in s.pads.values_mut() {
-                if p.file.as_ref() == Some(&c.file)
-                    && p.epoch == Some(c.epoch)
-                    && let Some(id) = p.link
-                {
-                    p.link = Some(c.start_id(c.slice_of(id)));
-                }
-            }
-        }
-        for (file, saved) in &self.pending_chops {
-            s.chops
-                .entry(file.to_string_lossy().into_owned())
-                .or_insert_with(|| saved.to_state(self.rate));
-        }
-        for (file, saved) in &self.pending_older {
-            if self.linked_to(file, saved.epoch) {
-                s.kept
-                    .entry(file.to_string_lossy().into_owned())
-                    .or_default()
-                    .push(saved.to_state(self.rate));
-            }
-        }
-        // with a project open the session goes into its `project.toml`, paths inside
-        // the folder stored relative (11); the scratch file stays untouched
-        if let Some(p) = &self.project {
-            s = with_stored_paths(s, &p.folder);
-        }
-        if let Err(e) = session::save(&self.session_file(), &s) {
-            log::error!("{e}");
-            // a failed save is not retried: like a file the start could not read (11)
-            self.session_ok = false;
-            self.flash = Some((e, Instant::now()));
-            return false;
-        }
-        true
     }
 
     fn load_pad(&mut self, abs: usize, path: PathBuf, region: Region) {
@@ -4493,7 +4393,8 @@ fn main() -> std::io::Result<()> {
         session_path: session::path(),
         project: start_project,
         project_cfg: loaded.config.project,
-        session_ok: session_notice.is_none(),
+        session_read_error: session_notice.clone(),
+        session_write_failed: false,
         session_dirty: None,
         chop: None,
         chops: Default::default(),
@@ -4649,13 +4550,7 @@ fn main() -> std::io::Result<()> {
         for r in replies {
             app.loader_reply(r);
         }
-        // a knob turn changes the volume many times a second: save once things settle
-        if app
-            .session_dirty
-            .is_some_and(|t| t.elapsed() > SESSION_SAVE)
-        {
-            app.save_session();
-        }
+        app.autosave(Instant::now());
         // the cap ends the recording in the audio thread: the status names it, the file goes in hand
         if app.recording.is_some()
             && app
@@ -4907,9 +4802,7 @@ fn main() -> std::io::Result<()> {
         }
     };
 
-    if app.session_dirty.is_some() {
-        app.save_session();
-    }
+    app.save_on_exit();
     if kitty {
         let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
     }
@@ -7736,7 +7629,8 @@ mod tests {
             session_path: "session.toml".into(),
             project: None,
             project_cfg: config::ProjectConfig::default(),
-            session_ok: false,
+            session_read_error: Some("test session is protected".into()),
+            session_write_failed: false,
             session_dirty: None,
             chop: None,
             chops: Default::default(),
@@ -9128,7 +9022,7 @@ Enter = "browser.hold"
         let mut app = test_app();
         let file = tmp_dir("save").join("session.toml");
         app.session_path = file.clone();
-        app.session_ok = true;
+        app.session_read_error = None;
         app.dirty();
         let ctrl_s = ratatui::crossterm::event::KeyEvent::new(
             ratatui::crossterm::event::KeyCode::Char('s'),
@@ -9147,9 +9041,9 @@ Enter = "browser.hold"
         let mut app = test_app();
         let file = tmp_dir("autosave").join("session.toml");
         app.session_path = file.clone();
-        app.session_ok = true;
+        app.session_read_error = None;
         app.dirty();
-        app.save_session();
+        app.save_session().unwrap();
         assert_eq!(flash(&app), "", "no message after the autosave");
         assert!(file.exists());
         std::fs::remove_dir_all(file.parent().unwrap()).ok();
@@ -9171,9 +9065,9 @@ Enter = "browser.hold"
             folder: pj.clone(),
         });
         app.session_path = scratch.join("session.toml");
-        app.session_ok = true;
+        app.session_read_error = None;
         app.pads.file[4] = Some(pj.join("samples/a.wav"));
-        assert!(app.save_session());
+        app.save_session().unwrap();
         let toml = std::fs::read_to_string(pj.join("project.toml")).unwrap();
         assert!(toml.contains("samples/a.wav"), "stored relative: {toml}");
         assert!(
@@ -9201,9 +9095,9 @@ Enter = "browser.hold"
             folder: pj.clone(),
         });
         app.session_path = tmp.join("scratch/session.toml");
-        app.session_ok = true;
+        app.session_read_error = None;
         app.pads.file[4] = Some(pj.join("samples/a.wav"));
-        assert!(app.save_session());
+        app.save_session().unwrap();
         let sess = super::with_resolved_paths(
             super::session::load(&pj.join("project.toml")).unwrap(),
             Some(pj.as_path()),
@@ -9233,9 +9127,9 @@ Enter = "browser.hold"
             folder: pj.clone(),
         });
         app.session_path = tmp.join("scratch/session.toml");
-        app.session_ok = true;
+        app.session_read_error = None;
         app.pads.file[4] = Some(outside.join("amen.wav"));
-        assert!(app.save_session());
+        app.save_session().unwrap();
         let toml = std::fs::read_to_string(pj.join("project.toml")).unwrap();
         assert!(
             toml.contains(outside.join("amen.wav").to_string_lossy().as_ref()),
@@ -9416,7 +9310,7 @@ Enter = "browser.hold"
         app.apply(Action::ProjectPick);
         assert!(app.project_picker_key(&key(KeyCode::Enter)));
         wait_for(&mut app, |a| a.pads.loading[0].is_none());
-        assert!(app.session_ok);
+        assert!(app.session_read_error.is_none());
         // a pad outside the project folder keeps its file through the deletion
         let outside_dir = tmp_dir("proj-gone-outside");
         std::fs::create_dir_all(&outside_dir).unwrap();
@@ -9426,12 +9320,16 @@ Enter = "browser.hold"
 
         std::fs::remove_dir_all(&pj).unwrap();
         app.dirty();
-        assert!(!app.save_session(), "the save fails without the folder");
+        assert!(
+            app.save_session().is_err(),
+            "the save fails without the folder"
+        );
         assert!(!pj.exists(), "the save does not resurrect the folder");
         assert!(app.pads.missing[0], "the pad inside the folder is missing");
         assert!(!app.pads.missing[1], "the pad outside keeps its file");
         assert_eq!(app.window_title(), "ptsr", "the title drops the name");
-        assert!(!app.session_ok);
+        assert!(app.session_write_failed);
+        assert!(app.session_dirty.is_some());
         std::fs::remove_dir_all(&root).ok();
         std::fs::remove_dir_all(&outside_dir).ok();
     }
@@ -16175,14 +16073,14 @@ Enter = "browser.hold"
         let dir = tmp_dir("fx-reload");
         std::fs::create_dir_all(&dir).unwrap();
         app.session_path = dir.join("project.toml");
-        app.session_ok = true;
-        assert!(app.save_session());
+        app.session_read_error = None;
+        app.save_session().unwrap();
         let mut restored = test_app();
         restored.apply_session(super::session::load(&app.session_path).unwrap());
         assert_eq!(restored.pads.fx, first);
         fx_key(&mut app, K::Char('z'), M::CONTROL);
         assert_eq!(app.pads.fx, original);
-        assert!(app.save_session());
+        app.save_session().unwrap();
         restored.apply_session(super::session::load(&app.session_path).unwrap());
         assert_eq!(restored.pads.fx, original);
         assert!(
@@ -17752,7 +17650,7 @@ Enter = "browser.hold"
         let sound = std::sync::Arc::new(engine::Sample::mono(wave));
         let mut app = test_app();
         app.session_path = dir.join("session.toml");
-        app.session_ok = true;
+        app.session_read_error = None;
         let mut c = super::chop::Chop::new(path.clone(), sound.clone(), 48_000);
         for _ in 0..3 {
             c.next_parts();
@@ -17793,7 +17691,7 @@ Enter = "browser.hold"
         chop_key(&mut app, KeyCode::Char('y'), M::NONE);
         chop_key(&mut app, KeyCode::Char('y'), M::NONE);
         lay_out(&mut app, 32);
-        assert!(app.save_session());
+        app.save_session().unwrap();
         let text = std::fs::read_to_string(dir.join("session.toml")).unwrap();
         assert!(text.contains("[[kept."), "the older chop is saved: {text}");
         let mut back = reopen(&dir.join("session.toml"));
@@ -19499,14 +19397,14 @@ Enter = "browser.hold"
         let mut app = test_app();
         let file = tmp_dir("chopped").join("session.toml");
         app.session_path = file.clone();
-        app.session_ok = true;
+        app.session_read_error = None;
         app.screen = Screen::Chop;
         app.chop = Some(chop_with_parts(0));
         app.chop.as_mut().unwrap().set_cursor(30_000);
         assert!(app.session_dirty.is_none());
         chop_key(&mut app, KeyCode::Char('m'), M::NONE);
         assert!(app.session_dirty.is_some(), "the cut marks the session");
-        app.save_session();
+        app.save_session().unwrap();
         let s = super::session::load(&file).unwrap();
         let cuts: Vec<usize> = s.chops.values().map(|c| c.cuts.len()).collect();
         assert_eq!(cuts, [1], "the cut is kept with no pad on it");
