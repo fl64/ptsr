@@ -1588,3 +1588,162 @@ The archive run's steady maxima were 28.97% wall and 16.40% thread CPU, with no 
 This run does not close earlier overruns. Evidence: `target/86b-archive-check.log` and `target/86b-archive-final-openspec.log`.
 Next: activate 86c, followed by 86d. Change 87 remains outside this work.
 Callback maximum-budget acceptance remains open.
+
+## 86c — Keep work during project transitions
+
+The implementation and its tests are committed. Owner acceptance of 86c remains open.
+The owner waiver for 86b does not establish a live keyboard, physical-controller or listening result for 86c.
+Pending work now saves before another project opens or a new project starts. This includes scratch work.
+A refusal keeps the picker selection or typed name, source edits, undo and pending timestamp.
+Selecting the current project, including a folder alias, closes the picker without a save or reload.
+A target read refusal keeps the current project and the last-project setting unchanged.
+A target creation refusal after source saving keeps that source open with its work safely saved.
+No new keys, file formats, profiles or sound-processing rules enter this change. There is still no quit guard.
+
+### Recorded automated checks
+
+Seven new recorded-input tests use production keyboard input and raw MIDI through the profile and dispatcher.
+They cover named projects and scratch, open and create, repeated refusals, restored folders and retry.
+Target faults include damaged, newer, unreadable and missing sessions. An occupied directory provides the unreadable fixture.
+The same-folder check includes a symbolic link, retained undo, loader generations, sound identity and an unchanged audio epoch.
+Picker arrows, typed names and Enter remain keyboard operations. These tests do not prove controller-only navigation.
+Rust tests name all 11 delta scenarios. The existing late-loader and project-isolation tests also passed.
+
+`task check` exited 0. Selected suite results:
+
+```text
+test result: ok. 688 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 68.08s
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.83s
+```
+
+`task build` passed and produced `target/release/ptsr`. `task openspec:check` reported:
+
+```text
+Totals: 16 passed, 0 failed (16 items)
+```
+
+The callback benchmark exceeded the maximum target despite the successful command exit:
+
+```text
+paired timing: steady playback
+  wall: mean 17.20 %, p99 38.24 %, max 959.97 %, samples 20000, >50 % 104
+  thread CPU: mean 16.58 %, p99 37.13 %, max 149.04 %, samples 20000, >50 % 10
+  maximum target (50 %): wall EXCEEDED; thread CPU EXCEEDED
+```
+
+Project-switch maxima were 15.14% wall and 15.16% thread CPU, with no blocks above 50%.
+The cause of the steady overruns remains unknown. No sound-processing code changed.
+Callback maximum-budget acceptance stays open. Do not treat the exit code as maximum-budget acceptance.
+The full check runs tests in parallel and can occupy several CPU cores. It does not start the live sampler.
+
+Before the code edit, a specification check failed in `tests::loading_a_long_file_during_play` with `the loader did not answer`.
+The isolated test then passed in 1.01 seconds. A full repeat passed 681 App tests in 99.78 seconds.
+This repeat does not establish the cause of the earlier timeout.
+The first code check stopped on Clippy's ``this `if` statement can be collapsed``.
+The corrected condition passed the full check without an exception.
+Startup protection fixtures now use the startup load path. The browser fixture switches away before reopening the original project.
+Neither fixture depends on the removed interactive empty-session fallback or same-folder reload.
+
+Local evidence: `target/86c-code-final-check.log`, `target/86c-final-build.log` and `target/86c-final-openspec.log`.
+Timeout evidence: `target/86c-spec-check.log`, `target/86c-long-load-probe.log` and `target/86c-spec-repro-check.log`.
+The earlier Clippy result remains in `target/86c-code-check.log`.
+
+### Prepare a disposable owner run
+
+Owner procedure only: this run uses normal sound and reads connected MIDI devices.
+The agent did not run it. Agent live runs require the sound isolation in `AGENTS.md`.
+Run these commands from the repository folder. Keep this terminal open.
+
+```sh
+check_root="$(mktemp -d "$PWD/target/86c-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data/ptsr" "$check_root/state" "$check_root/samples"
+cp renders/85-input-modes.wav "$check_root/samples/check.wav"
+printf '[paths]\nprojects = "%s/projects"\nsamples = "%s/samples"\n' "$check_root" "$check_root" > "$check_root/config/ptsr/config.toml"
+printf 'version = 3\nbrowser_dir = "%s/samples"\n' "$check_root" > "$check_root/data/ptsr/session.toml"
+for project in A B; do
+  mkdir -p "$check_root/projects/$project/samples"
+  printf 'version = 3\nbrowser_dir = "%s/samples"\n' "$check_root" > "$check_root/projects/$project/project.toml"
+done
+printf 'Owner check folder: %s\n' "$check_root"
+run_transition_check() {
+  env XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_transition_check
+```
+
+In a second terminal, set `check_root` to the exact printed folder.
+Use only these disposable folders for file changes. Do not quit with pending work.
+
+### Keyboard pass
+
+- [ ] Start in scratch. Press `F6`. Select `check.wav` and press `Enter`. Hit pad `1` to load it.
+  Wait for loading. Press `H` on Pads to change its mode.
+  Immediately press `Ctrl+P`. Select `B` with the arrows. Press `Enter`.
+  Check that `B` opens and the scratch file changes before the transition.
+  Count this as an immediate-switch pass only if the work remained unsaved before Enter.
+- [ ] Use `Ctrl+P` to open `A`. Load `check.wav` onto pad `1` through Files.
+  On Pads, press `H`. Press `F3`. Move the cursor away from both ends with `Right`.
+  Press `M` to place a cut. Press `P`. Hit pad `2`. Press `Enter` to apply the slice assignment.
+  Press `F2`. Open `B` through the picker. Open `A` again.
+  Check the retained pad mode. Select the assigned pad and press `F3`. Check the saved cut.
+- [ ] With `A` open, occupy its temporary path from the second terminal:
+
+  ```sh
+  mkdir "$check_root/projects/A/project.toml.tmp"
+  cp "$check_root/projects/A/project.toml" "$check_root/source-saved.toml"
+  ```
+
+  On Pads, press `]`. Wait for `Save failed`.
+  Open the picker. Select `B`. Press `Enter` twice.
+  Check that each refusal keeps `A`, the same selection and the pending edits. The picker must remain open.
+  Press `Esc`. Open the picker again. Type `C`. Press `Enter` twice.
+  Check that the name stays `C` and no `C` folder appears. Check the saved source bytes:
+
+  ```sh
+  cmp "$check_root/projects/A/project.toml" "$check_root/source-saved.toml"
+  test ! -e "$check_root/projects/C"
+  rmdir "$check_root/projects/A/project.toml.tmp"
+  ```
+
+  Both checks must exit 0. Press `Enter` again. Check that saving succeeds and `C` opens.
+- [ ] Open `A` again. Occupy its temporary path. Change the master volume. Wait for `Save failed`.
+  Open the picker and select `A`. Press `Enter`.
+  Check that the picker closes without removing the pending edits or warning.
+  Press `Ctrl+Z`. Check that it reverses the last edit.
+  Remove the temporary directory. Press `Ctrl+S` before continuing.
+- [ ] With `A` open, preserve the target bytes and replace only the disposable `B` session:
+
+  ```sh
+  cp "$check_root/projects/B/project.toml" "$check_root/target-saved.toml"
+  printf 'version = 99\n' > "$check_root/projects/B/project.toml"
+  ```
+
+  Open the picker. Select `B`. Press `Enter` twice.
+  Check the target-read refusal. Check that `A` remains open and the selection stays on `B`.
+  Restore the target with the command below. Press `Enter` again. Check that `B` opens.
+
+  ```sh
+  cp "$check_root/target-saved.toml" "$check_root/projects/B/project.toml"
+  ```
+
+### Physical-controller pass
+
+- [ ] On F12, open the MIDI tab. Learn a button for GLOBAL `project picker`. Press Enter to save its assignment.
+  Learn separate buttons for Pads `pad mode` and Chop `cut at the cursor`.
+  Use those buttons for the edits and picker entry in the keyboard pass above.
+  Keep picker arrows, typed names and Enter on the keyboard. Controller-only picker navigation is not part of 86c.
+- [ ] Repeat a source-save refusal and a successful retry. Check that the learned picker button opens the same retained work.
+  Report unavailable controls instead of marking their checks passed.
+
+### Listening and acceptance
+
+No new render is necessary. Existing renders remain local:
+
+- [ ] Listen to `renders/79-project-switch.wav`. Check that the old project stops and its sound returns when reopened.
+- [ ] Listen to `renders/11-switch-nothing-leaks.wav`. Check that the previous project leaves no sound in the next one.
+- [ ] In the disposable live run, play a pad before a refused transition. Check that refusal does not stop or replace its sound.
+- [ ] Report live keyboard, physical-controller and listening results separately. All remain unverified until the owner reports them.
+
+Owner acceptance remains open. Do not archive 86c or activate 86d before that decision.
+Change 87, a quit guard and callback-budget changes remain outside 86c.

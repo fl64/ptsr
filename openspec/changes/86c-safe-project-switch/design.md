@@ -70,20 +70,25 @@ Existing project-isolation renders continue to test actual sound and late-loader
 
 | Case | Required result | Status | Check |
 | --- | --- | --- | --- |
-| Edit then open before autosave | Save the source before replacement | Open, support now | Recorded keyboard and MIDI edit sequences |
-| Dirty scratch then open or create | Save scratch, not only named projects | Open, support now | Saved-byte reload |
-| Source write refusal, repeated Enter | Keep work, undo, selection and typed name | Open, support now | Occupied temporary path and repeated requests |
-| Protected source with pending work | Refuse transition without changing either session | Open, preserve protection | Protected source fixture |
-| Clean protected scratch | Leave without writing its file | Open, support now | Byte comparison |
-| Same folder with pending work or an occupied temporary path | Close without a save or reload | Open, support now | State, epoch and file comparisons, including an alias |
-| Damaged, newer, unreadable or missing target | Keep source and last-project setting | Open, support now | Target faults before source saving |
-| New target creation fails after source saving | Keep source and typed name. Retain the saved source work | Open, support now | Occupied target path |
-| Late loader reply after a successful switch | Preserve existing project sound isolation | Preserve existing behavior | Existing loader and render tests |
+| Edit then open before autosave | Save the source before replacement | Closed in automated tests | `project_edits_survive_an_immediate_switch` |
+| Dirty scratch then open or create | Save scratch, not only named projects | Closed in automated tests | `project_edits_survive_an_immediate_switch`, saved-file reload |
+| Source write refusal, repeated Enter | Keep work, undo, selection and typed name | Closed in automated tests | `a_save_refusal_keeps_the_selected_target` |
+| Protected source with pending work | Refuse transition without changing either session | Closed in automated tests | `a_save_refusal_keeps_the_selected_target` |
+| Clean protected scratch | Leave without writing its file | Closed in automated tests | `clean_protected_scratch_can_leave_without_a_write` |
+| Same folder with pending work or an occupied temporary path | Close without a save or reload | Closed in automated tests | `selecting_the_current_project_keeps_pending_work`, including an alias |
+| Damaged, newer, unreadable or missing target | Keep source and last-project setting | Closed in automated tests | `a_target_read_refusal_preserves_the_source` |
+| New target creation fails after source saving | Keep source and typed name. Retain the saved source work | Closed in automated tests | `a_target_creation_refusal_retains_saved_source_work` |
+| Source folder moves before a transition | Refuse without recreating it. Permit retry after restoration | Closed in automated tests | `a_missing_source_folder_blocks_switching_until_restored` |
+| Late loader reply after a successful switch | Preserve existing project sound isolation | Closed in automated tests | Existing loader and project-isolation render tests |
 | Power loss or concurrent project writers | No new guarantee | Outside this change | No acceptance claim |
 
 The axes are source type, pending work, protection, target identity, failure order, repeated requests and input route.
 The UI executes transitions synchronously. Background sample replies retain the existing generation checks.
-Hardware and listening remain unverified. Callback maximum-budget acceptance stays open.
+Rust tests name all 11 delta scenarios. The full check passed 688 App tests and 102 TUI tests.
+Hardware, live keyboard use and listening remain unverified. Owner acceptance of 86c is open.
+The steady callback maxima were 959.97% wall and 149.04% thread CPU, above the 50% target.
+The cause remains unknown. Callback maximum-budget acceptance stays open.
+Evidence: `target/86c-code-final-check.log`. No sound-processing code changed.
 
 ## Open questions
 
