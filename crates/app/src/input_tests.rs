@@ -7946,6 +7946,143 @@ fn pads_play_badge_follows_all_sounding_pads() {
     }
 }
 
+/// Scenarios "Pads PLAY badge follows all sounding pads" and "Pads PLAY badge ignores silent requests and old projects".
+#[test]
+fn pads_play_badge_keeps_voice_identity_beside_pad_feedback() {
+    use std::sync::atomic::Ordering::Acquire;
+
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for mode in ["normal", "mark", "copy", "swap", "file", "learn"] {
+            for hidden in [false, true] {
+                for switch in [false, true] {
+                    let mut drive = Drive::offline();
+                    drive.parity_pad(0, false);
+                    drive.app.pads.gate[18] = false;
+                    let snap = drive.app.pads.snapshot(18);
+                    for command in drive.app.pads.put_back(18, &snap) {
+                        drive.app.send(command);
+                    }
+                    for (cc, action) in [
+                        (102, "pad.mark_toggle"),
+                        (103, "pad.copy"),
+                        (104, "pad.take"),
+                        (105, "bank.next"),
+                        (106, "ui.pads_toggle"),
+                        (107, "learn.toggle"),
+                        (108, "pad.edit"),
+                        (109, "screen.pads"),
+                    ] {
+                        drive.bind_action(cc, action);
+                    }
+                    let controls = if matches!(source, Source::Keyboard) {
+                        source
+                    } else {
+                        Source::Button
+                    };
+                    drive.registry_command(controls, KeyCode::F(2), M::NONE, 109);
+                    drive.render_blocks(4);
+                    assert!(!pads_play_badge(&mut drive));
+                    // Offline MIDI writes directly to the callback queue. The rendered hit
+                    // below proves acceptance without capturing or replaying that route.
+                    drive.velocity_hit(source, 127);
+                    assert!(!pads_play_badge(&mut drive), "a queued hit is not a voice");
+                    let hit = drive.render_blocks(1);
+                    assert!(engine::checks::peak(&hit.0) > 0.01);
+                    drive.pad_release(source, 2);
+                    assert!(pads_play_badge(&mut drive));
+                    if hidden {
+                        drive.registry_command(controls, KeyCode::Enter, M::NONE, 108);
+                        assert!(drive.app.edit);
+                    }
+                    match mode {
+                        "mark" => {
+                            drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+                        }
+                        "copy" => {
+                            drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 103);
+                        }
+                        "swap" => {
+                            drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 104);
+                        }
+                        "file" => {
+                            drive.ordered_file();
+                            drive.registry_command(controls, KeyCode::Enter, M::NONE, 82);
+                            drive.registry_command(controls, KeyCode::F(2), M::NONE, 109);
+                        }
+                        _ => {}
+                    }
+                    drive.registry_command(controls, KeyCode::PageDown, M::NONE, 105);
+                    if hidden {
+                        drive.registry_command(controls, KeyCode::Char('o'), M::CONTROL, 106);
+                    }
+                    if mode == "learn" {
+                        drive.registry_command(controls, KeyCode::F(10), M::NONE, 107);
+                    }
+                    assert_ne!(drive.app.pads.bank, 1, "the voice stays on another bank");
+                    assert_eq!(drive.app.ui.hide_pads, hidden);
+                    let feedback = pad_feedback(&drive);
+                    assert_eq!(feedback.outline, mode != "normal");
+                    if matches!(mode, "copy" | "swap" | "file") {
+                        assert_eq!(feedback.corners[0], Some(tui::PadCorner::Available));
+                    }
+                    assert!(
+                        pads_play_badge(&mut drive),
+                        "{source:?}, {mode}, hidden {hidden}"
+                    );
+                    if switch {
+                        let old_epoch = drive.project.epoch.load(Acquire);
+                        drive.app.apply_session(session::Session::default());
+                        // The old snapshot still reports a voice before the next callback.
+                        assert!(
+                            drive
+                                .app
+                                .audio
+                                .as_ref()
+                                .unwrap()
+                                .stats
+                                .pads_playing(old_epoch)
+                        );
+                        drive.frame();
+                        if !pad_feedback(&drive).outline {
+                            drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+                        }
+                        assert!(pad_feedback(&drive).outline);
+                        assert!(
+                            !pads_play_badge(&mut drive),
+                            "a mode cannot expose an old-project voice"
+                        );
+                        let new_epoch = drive.project.epoch.load(Acquire);
+                        for _ in 0..256 {
+                            drive.app.flush_audio();
+                            drive.render_blocks(1);
+                            assert!(!pads_play_badge(&mut drive));
+                            if drive.project.ready.load(Acquire) == new_epoch
+                                && drive.app.pending_audio.is_empty()
+                            {
+                                break;
+                            }
+                        }
+                        assert_eq!(drive.project.ready.load(Acquire), new_epoch);
+                        assert!(drive.app.pending_audio.is_empty());
+                    } else {
+                        let end = drive.render_blocks(400);
+                        assert!(
+                            !pads_play_badge(&mut drive),
+                            "the last voice ended, not the mode"
+                        );
+                        assert_eq!(pad_feedback(&drive), feedback);
+                        for channel in [&end.0, &end.1] {
+                            assert_eq!(engine::checks::first_non_finite(channel), None);
+                            assert!(engine::checks::peak(channel) < 1.0);
+                            assert_eq!(engine::checks::peak(&channel[49_000..]), 0.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Scenario "Pads PLAY badge ignores silent requests and old projects".
 #[test]
 fn pads_play_badge_ignores_silent_requests_and_old_projects() {

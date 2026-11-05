@@ -4071,6 +4071,174 @@ mod tests {
         }
     }
 
+    /// Scenarios "Playback slots remain stable beside modes" and "Pads PLAY badge has fixed width".
+    #[test]
+    fn playback_slots_stay_fixed_with_pad_corner_feedback() {
+        let wave = [0.1; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for graphics in [false, true] {
+                for chop in [false, true] {
+                    for hidden in [false, true] {
+                        for edit in [false, true] {
+                            for (name, normal, compact, corner) in [
+                                ("MARK", "MARK · hit pads · 1 marked", "MARK 1", None),
+                                (
+                                    "IN HAND",
+                                    "IN HAND · hit a pad",
+                                    "IN HAND",
+                                    Some(PadCorner::Available),
+                                ),
+                                ("COPY", "COPY · hit a pad", "COPY", Some(PadCorner::Replace)),
+                                (
+                                    "SWAP",
+                                    "SWAP · hit a pad",
+                                    "SWAP",
+                                    Some(PadCorner::Available),
+                                ),
+                                ("LEARN", "LEARN", "LEARN", None),
+                                (
+                                    "ASSIGN",
+                                    "ASSIGN · 128/128 placed",
+                                    "ASSIGN 128/128",
+                                    Some(PadCorner::Slice(1)),
+                                ),
+                            ] {
+                                if !chop && name == "ASSIGN" {
+                                    continue;
+                                }
+                                let mut first: Option<Vec<ratatui::buffer::Cell>> = None;
+                                let mut first_images = None;
+                                for playing in [false, true, false] {
+                                    let mut p = idle_pads();
+                                    p.playing = playing;
+                                    p.hidden = hidden && name != "ASSIGN";
+                                    p.edit = edit.then_some("TONE");
+                                    p.feedback.outline = true;
+                                    p.feedback.corners[0] = if chop && name != "ASSIGN" {
+                                        None
+                                    } else {
+                                        corner
+                                    };
+                                    p.pads[0].name = "名字-sample".into();
+                                    p.pads[1].flash = true;
+                                    p.pads[2].in_hand = name == "SWAP";
+                                    p.pads[5].marked = name == "MARK";
+                                    if name == "MARK" {
+                                        p.bank_marks[0] = 1 << 5;
+                                    }
+                                    if name == "LEARN" {
+                                        p.pads[0].note = Some("CC 80".into());
+                                    }
+                                    if name == "ASSIGN" {
+                                        p.feedback.corners[15] = Some(PadCorner::Slice(128));
+                                    }
+                                    let screen = if chop {
+                                        let mut view = chop_demo(&wave);
+                                        view.pads = p;
+                                        view.edit = edit;
+                                        view.mode = if name == "ASSIGN" {
+                                            if playing {
+                                                "ASSIGN · BY HAND ▶"
+                                            } else {
+                                                "ASSIGN · BY HAND"
+                                            }
+                                        } else if playing {
+                                            "LISTEN ▶"
+                                        } else {
+                                            "LISTEN"
+                                        }
+                                        .into();
+                                        if name == "ASSIGN" {
+                                            view.bounds =
+                                                (0..=128).map(|n| n as f32 / 128.0).collect();
+                                        }
+                                        Screen::Chop(Box::new(view))
+                                    } else {
+                                        Screen::Pads(p)
+                                    };
+                                    let (mut status, help) = chop_status();
+                                    status.badges =
+                                        vec![Badge::new(BadgeKind::PadMode, normal, compact)];
+                                    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                                    let mut images = Vec::new();
+                                    term.draw(|frame| {
+                                        if graphics {
+                                            draw_gfx(frame, &status, &screen, &help, &mut images);
+                                        } else {
+                                            draw(frame, &status, &screen, &help);
+                                        }
+                                    })
+                                    .unwrap();
+                                    let cells = term.backend().buffer().content();
+                                    let row = &cells[w as usize..2 * w as usize];
+                                    let needle = if chop { "LISTEN" } else { "PLAY" };
+                                    let at = row
+                                        .windows(needle.len())
+                                        .position(|cells| {
+                                            cells
+                                                .iter()
+                                                .map(|cell| cell.symbol())
+                                                .collect::<String>()
+                                                == needle
+                                        })
+                                        .unwrap();
+                                    let slot = at - 1..at + 9;
+                                    // Assignment audition keeps the existing idle LISTEN slot.
+                                    let active = playing && name != "ASSIGN";
+                                    let expected = match (chop, active) {
+                                        (true, true) => " LISTEN ▶ ",
+                                        (true, false) => " LISTEN   ",
+                                        (false, true) => " PLAY ▶   ",
+                                        (false, false) => " PLAY     ",
+                                    };
+                                    assert_eq!(
+                                        row[slot.clone()]
+                                            .iter()
+                                            .map(|cell| cell.symbol())
+                                            .collect::<String>(),
+                                        expected
+                                    );
+                                    for cell in &row[slot.clone()] {
+                                        assert_eq!(
+                                            (cell.fg, cell.bg),
+                                            if active { (BG, CYAN) } else { (DIM, BG) }
+                                        );
+                                    }
+                                    let text: String =
+                                        row.iter().map(|cell| cell.symbol()).collect();
+                                    assert!(text.contains(name), "{w}x{h}: {text}");
+                                    if let Some(before) = &first {
+                                        for (index, (old, new)) in
+                                            before.iter().zip(cells).enumerate()
+                                        {
+                                            if index / w as usize != 1
+                                                || !slot.contains(&(index % w as usize))
+                                            {
+                                                assert_eq!(
+                                                    old, new,
+                                                    "{w}x{h}: {name}, graphics {graphics}, hidden {hidden}, edit {edit}, cell {index}"
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        first = Some(cells.to_vec());
+                                    }
+                                    let areas: Vec<_> =
+                                        images.iter().map(|image| image.area).collect();
+                                    if let Some(before) = &first_images {
+                                        assert_eq!(&areas, before);
+                                    } else {
+                                        first_images = Some(areas);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn settings_title_badges_stay_visible_while_midi_rows_scroll() {
         let entries: Vec<_> = (0..40)

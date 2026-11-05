@@ -23,7 +23,19 @@ This move adds no behavior or new scenario. The visual scenarios below still nee
 
 - [x] 3.1 Add the shared badge composition and width rules for existing modes. Cover every badge and overlapping placement state.
 - [x] 3.2 Add pad corner marks and yellow grid outlines. Preserve hit, selection, bank, hidden-grid and existing swap behavior.
-- [ ] 3.3 Retain the fixed PLAY slot and actual-current-project voice checks. Update `docs/ui/STYLE.md` with the approved yellow meaning.
+- [x] 3.3 Retain the fixed PLAY slot and actual-current-project voice checks. Update `docs/ui/STYLE.md` with the approved yellow meaning.
+
+The owner approved the step 3.3 file plan: extend application input tests and drawing tests, then record verification here.
+Production code, sound processing, input routing and the style guide stay unchanged in this step.
+The style guide already records the approved yellow meaning from steps 3.1 and 3.2.
+
+Playback review boundaries for 3.3:
+
+- Active modes beside a voice on another bank: closed by combined production-input coverage.
+- A mode remains after the last voice ends: closed by callback output and unchanged feedback checks.
+- Fixed playback cells beside corners, numbers and mode frames: closed by drawing coverage at both supported sizes and graphics settings.
+- Old-project snapshots: closed by an actual old voice snapshot before the next callback and by transition checks with mode feedback.
+- Silent requests, previews and effect tails: existing production-path regression tests pass without changes.
 
 Title verification (3.1): `task check` and `task build` pass with this worktree's Debug and Release sources.
 The suites pass: 695 App, 80 input, 106 drawing and 18 benchmark-report tests. Main-spec scenario coverage also passes.
@@ -59,6 +71,20 @@ Use the keyboard for commands without a controller binding.
 - Enable marking with M. Play pads and check the yellow frames, audible hits, white flashes and marked fill. Use Esc to cancel.
 - On Chop, start with pads visible. Hide pads with Ctrl+O. Start assignment with P. Place two targets and check their slice numbers and existing slice audition.
   Cancel with Esc. Check that the hidden layout returns. No new WAV needs listening.
+
+Playback verification (3.3): `task check`, `task build` and `task openspec:check` pass.
+The suites pass: 701 App, 80 input, 109 drawing and 18 benchmark-report tests. Main-spec scenario coverage also passes.
+The new App test covers 72 combinations of keyboard, MIDI notes, learned buttons, modes, hidden grids and voice completion or project transitions.
+It observes actual offline callback output and voice snapshots. Direct MIDI stays on the real callback queue, without capture or replay.
+A queued hit does not light PLAY. A voice on another bank keeps it active, but a pending mode alone does not.
+The transition test retains a real old voice snapshot before the next callback. PLAY still excludes that snapshot.
+The new drawing matrix covers 80×26 and 120×40, both graphics settings, edit, hidden grids, marks, placement, learning and assignment numbers.
+PLAY and LISTEN retain their ten-cell slots, styles and following columns.
+Changing only playback state keeps other fixture cells and image rectangles unchanged.
+Assignment audition retains its existing idle LISTEN slot. The earlier preview and effect-tail tests stay unchanged and pass.
+Debug tests, the Release build and the executed callback benchmark use this worktree's sources.
+Production code and the approved style guide stay byte-identical. No new sound feature, WAV or live device check is part of this step.
+Tab under open F1 help still needs task 4.4. Hardware, listening and unfinished-feature acceptance remain separate.
 
 ## 4. Notices and F1 Messages
 
