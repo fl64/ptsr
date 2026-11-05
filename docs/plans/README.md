@@ -6,7 +6,8 @@
 It selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
-The new quality, export and release changes reserve numbers 109–120. Callback work keeps 94a.
+The new quality, export and release changes reserve numbers 109–120. Callback correction keeps 94a.
+Independent report-only change 84b adds local overrun records before further product work.
 
 The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
@@ -53,6 +54,11 @@ not permission to combine the new changes.
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
   were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
+- The owner requested report-only change 84b for automatic local overrun records.
+  It follows the 84a report, without changing sound processing, workload or exit gates.
+  Generic code, tests, instructions and anonymized verification summaries can enter Git.
+  Raw CSV files, detailed machine logs and identifying local paths stay local.
+  This diagnostic does not close the callback maximum-budget gate or activate 87.
 - The owner accepted input modes 85 on 2026-11-03. It is archived in
   `openspec/changes/archive/2026-11-03-85-input-modes/`. Implementation and offline checks are complete.
   It shares
@@ -78,7 +84,8 @@ not permission to combine the new changes.
   `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
   `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
   Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
-  The save-safety sequence is complete. 86b–86d share `86b-save-retry` and one planned PR by owner request.
+  The save-safety sequence is complete. The owner approved one PR for 84b and 86b–86d on `86b-save-retry`.
+  This is an explicit exception to separate change branches.
   Change 87 is not active and needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
