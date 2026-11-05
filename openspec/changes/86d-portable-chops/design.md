@@ -61,20 +61,25 @@ This is a storage correction, not a new DSP algorithm or a callback-budget corre
 
 | Case | Required result | Status | Check |
 | --- | --- | --- | --- |
-| Several older variants under one key | Convert the key and retain every state | Open, support now | At least two older states plus the newest |
-| Extra cut with no assigned pad | Preserve the saved cut, not only reconstructed pad bounds | Open, support now | Compare complete saved states after F3 |
-| Save after relocation, then reopen again | Keep all paths local to the new folder and all states intact | Open, support now | Production save/load round trip |
-| External sample | Keep absolute paths and sample bytes unchanged | Open, preserve existing behavior | Path and byte comparisons |
-| Bound edit in an older variant | Change only its linked pads | Open, preserve existing behavior | Keyboard/raw-MIDI edit and state comparison |
-| Old project without `kept` | Keep the existing pad-bound fallback | Open, preserve existing behavior | Production project open and F3 |
-| Already stale absolute key | Do not guess a replacement path | Open, preserve existing behavior | Inspect loaded pending state before fallback |
+| Several older variants under one key | Convert the key and retain every state | Closed in automated tests | `portable_chops_keep_all_variants_and_sound`, two older states plus the newest |
+| Extra cut with no assigned pad | Preserve the saved cut, not only reconstructed pad bounds | Closed in automated tests | Full-state comparison after F3 in `portable_chops_keep_all_variants_and_sound` |
+| Save after relocation, then reopen again | Keep all paths local to the new folder and all states intact | Closed in automated tests | Second production save/open in `portable_chops_keep_all_variants_and_sound` |
+| External sample | Keep absolute paths and sample bytes unchanged | Closed in automated tests | Path, byte and no-copy checks in `portable_chops_keep_all_variants_and_sound` |
+| Bound edit in an older variant | Change only its linked pads | Closed in automated tests | Keyboard/raw-MIDI edits in `portable_chops_keep_all_variants_and_sound` |
+| Old project without `kept` | Keep the existing pad-bound fallback | Closed in automated tests | `portable_chops_keep_old_project_compatibility` |
+| Already stale absolute key | Do not guess a replacement path | Closed in automated tests | Pending-state and fallback checks in `portable_chops_keep_old_project_compatibility` |
 | Relative paths in scratch | Do not add project resolution | Preserve existing behavior | Existing helper boundary and scratch checks |
 | Late sample replies during project open | Keep generation and sound isolation checks | Preserve existing behavior | Existing project-loader tests |
 
 The axes are path location, variant age/count, assigned cuts, move/save order, old data and input route.
 No concurrent writers or new crash-durability guarantee enter this change.
+Rust tests name all eight delta scenarios. The full check passed 690 App tests and 102 TUI tests.
+The 442,368-frame render compares matching before/after slices and checks finite values, clipping, silence and onset within one sample.
+The regression failed at the older-variant stored key before the helper correction and passed after it.
 Hardware, live keyboard use and listening remain unverified until the owner reports them.
-Callback maximum-budget acceptance remains open and has a separate investigation.
+Earlier callback overruns remain unresolved. Callback maximum-budget acceptance stays open.
+Keep actual benchmark results and machine observations in ignored local files, not in repository records.
+Evidence: `target/86d-code-check.log`, `target/86d-portable-before-fix.log` and `target/86d-portable-after-fix.log`.
 
 ## Open questions
 

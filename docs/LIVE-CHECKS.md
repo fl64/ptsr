@@ -1748,3 +1748,126 @@ No new render is necessary. Existing renders remain local:
 The owner authorized archive and continuation to 86d. Acceptance does not close the callback-budget issue.
 A separate agent investigates its cause. No cause or correction is established here.
 Change 87, a quit guard and callback-budget changes remain outside 86c.
+
+
+## 86d — Keep every chop variant after a project move
+
+Project saving now converts older variant keys with the same path rules as pads and current chops.
+Internal sample paths move with the project. External absolute paths stay unchanged. The program does not copy samples.
+Full older states retain unassigned cuts, cut IDs, epochs, next IDs and pad settings.
+Projects without saved older states keep the existing pad-bound fallback.
+Already stale absolute keys stay unchanged. The program does not guess replacement samples.
+The saved format, keys, profiles and sound processing stay unchanged.
+Owner acceptance and the live checks below remain open. Acceptance of 86b or 86c does not establish these results.
+
+### Automated coverage and local evidence
+
+The tests use real WAV files and the production project, save and input routes.
+Keyboard and raw MIDI runs cover three variants of one sample, including two older states with unassigned cuts.
+They cover internal and external paths, whole-folder relocation, a second save/open and isolated bound edits.
+They compare complete states and pad settings. External sample bytes stay unchanged and no copy appears in the project.
+Compatibility tests cover absent older states and stale absolute keys without a format change.
+Rust tests name all eight delta scenarios.
+
+The relocation regression fails at the older-variant stored key without the correction.
+With the correction, matching slice renders agree sample for sample before and after the move.
+Automatic checks cover finite samples, clipping, leading/trailing silence and hit onset within one sample.
+The offline fixture advances real callbacks until the project-ready marker. It uses no sleep or live sound device.
+
+Commands: `task check`, `task build` and `task openspec:check`.
+Keep build directories separate between worktrees. Check that both portable-chop tests run in the App suite.
+A Debug package rebuild does not refresh the Release callback benchmark. Check both profiles when replacing shared artifacts.
+Local evidence stays under `target/`, including `86d-code-check.log`, `86d-clean-check.log` and `86d-clean-build.log`.
+Keep actual benchmark measurements, raw logs and machine details outside Git.
+A successful command does not close the callback maximum-budget issue. No performance correction enters 86d.
+Recorded input tests do not establish live keyboard, physical-controller or listening results.
+
+### Prepare a disposable owner run
+
+Owner procedure only: this run uses normal sound and reads connected MIDI devices.
+The agent did not run it. Agent live runs require the sound isolation in `AGENTS.md`.
+Run these commands from the repository folder. Keep this terminal open.
+
+```sh
+check_root="$(mktemp -d "$PWD/target/86d-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data/ptsr" "$check_root/state" "$check_root/samples" "$check_root/projects/Before/samples"
+cp renders/85-input-modes.wav "$check_root/projects/Before/samples/check.wav"
+cp renders/85-input-modes.wav "$check_root/samples/external.wav"
+cp "$check_root/samples/external.wav" "$check_root/external-before.wav"
+printf 'version = 3\n' > "$check_root/projects/Before/project.toml"
+printf '[paths]\nprojects = "%s/projects"\nsamples = "%s/samples"\n' "$check_root" "$check_root" > "$check_root/config/ptsr/config.toml"
+printf 'version = 3\nbrowser_dir = "%s/samples"\n' "$check_root" > "$check_root/data/ptsr/session.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_portable_check() {
+  env XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_portable_check
+```
+
+Use only these disposable folders. Do not quit with pending work.
+
+### Keyboard pass
+
+- [ ] Press `Ctrl+P`. Select `Before` with the arrows. Press `Enter`.
+  Press `F6`. Select `check.wav`. Press `Enter`. Hit pad `1` to load the whole file. Wait for loading.
+- [ ] Press `F3`. Press `Y` twice for four slices. Press `P`. Hit pad `2`. Press `Enter` to apply only that assignment.
+  Press `Y` once for eight slices. Press `P`. Hit pad `3`. Press `Enter`.
+  Press `Y` once for sixteen slices. Press `P`. Hit pad `4`. Press `Enter`.
+  Do not assign the remaining slices. These cuts must survive even though no pad uses them.
+- [ ] Press `F2`. Hit pad `2`, then press `F3`. Check the four-slice variant with all three interior cuts.
+  Repeat with pad `3` for eight slices and pad `4` for sixteen slices.
+  Press `F2` before selecting each pad. Record their visible bounds.
+- [ ] Press `F6`. From `Before/samples`, press `Left` three times to reach the printed check folder.
+  Press `/`. Type `samples`. Press `Enter` to close text input. Press `Right` to enter that folder.
+  Select `external.wav`. Press `Enter`. Hit pad `Q` to load this external file. Wait for loading.
+  Press `Ctrl+S`. Check `Session saved`. Press `Ctrl+Q` to quit.
+- [ ] In the same shell, move the whole project folder and restart:
+
+  ```sh
+  mv "$check_root/projects/Before" "$check_root/projects/After"
+  run_portable_check
+  ```
+
+  Press `Ctrl+P`. Select `After`. Press `Enter`.
+  Repeat the pad `2` / `3` / `4` F3 checks. Every cut must remain, not only the assigned slice bounds.
+  Press `F2`. Play pad `Q`. Check that the external sample still loads and sounds.
+- [ ] Press `Ctrl+S`. Quit with `Ctrl+Q`. Run `run_portable_check` again.
+  Check the three variants again. Press `F2`. Hit pad `2` and press `F3`.
+  Press `Ctrl+L` once to move its slice start right.
+  Check that only this variant's linked pad changes. Pad `3` and pad `4` must keep their bounds and cuts.
+  Press `Ctrl+S` before quitting.
+- [ ] After quitting, check the external sample bytes:
+
+  ```sh
+  cmp "$check_root/samples/external.wav" "$check_root/external-before.wav"
+  ```
+
+  The command must exit 0.
+
+### Physical-controller pass
+
+- [ ] In the disposable run, open F12 and its MIDI tab.
+  Learn separate buttons for GLOBAL `chop screen`, `save session` and `project picker`, and CHOP `slice start right`.
+  Press Enter to save each assignment.
+  Repeat the move/open/save and bound-edit checks with controller pads and these buttons.
+  Keep picker navigation, typed names, sample lookup and folder moves on the keyboard or shell.
+  This procedure does not claim controller-only project navigation.
+- [ ] Report unavailable controls instead of marking their checks passed. Do not change the factory profile for this procedure.
+
+### Listening pass and acceptance
+
+The new local render is `renders/86d-portable-chops.wav`, stereo at 48 kHz, 9.216 seconds.
+Each before/after part plays the same three restored slice pads. Short silences separate the hits.
+
+| Time in seconds | Input and sample path | Comparison |
+| --- | --- | --- |
+| 0.000–1.152 / 1.152–2.304 | Keyboard, internal file | Before / after move |
+| 2.304–3.456 / 3.456–4.608 | Keyboard, external file | Before / after move |
+| 4.608–5.760 / 5.760–6.912 | Controller, internal file | Before / after move |
+| 6.912–8.064 / 8.064–9.216 | Controller, external file | Before / after move |
+
+- [ ] Listen to the render. Check each matching before/after part for the same tone, pitch, level and duration.
+- [ ] In the disposable live run, listen to the assigned pads before and after the move. Check that no slice disappears or changes sound.
+- [ ] Report live keyboard, physical-controller and listening results separately. All remain unverified until the owner reports them.
+
+Owner acceptance is required before archive. Change 87 and callback-budget corrections remain outside 86d.
