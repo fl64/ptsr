@@ -31,7 +31,11 @@ New tests cover keyboard/raw-MIDI mode changes, all seven placement combinations
 Drawing tests cover 80×26 and 120×40, compact labels, long Unicode filenames, chop variant identity, fixed playback columns and a scrolled Settings list.
 The style guide now defines yellow PadMode titles. Task 3.3 keeps its final pad-state regression check after 3.2.
 Pad corners, yellow target outlines, notice history, F1 Messages, value popups and the catalogue remain unimplemented.
-No live program, hardware or listening check ran. Sound processing stays unchanged, so this step adds no sound render.
+Automated verification used no live audio or MIDI devices. Sound processing stays unchanged, so this step adds no sound render.
+
+The owner accepted the title step except Tab under open F1 help on Pads.
+Tab still changes the underlying pad parameter page. This exception stays open under task 4.4.
+This acceptance does not cover unfinished features or establish separate hardware and listening results.
 
 ## 4. Notices and F1 Messages
 
