@@ -51,8 +51,10 @@ context: |
   This active change covers visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
   The owner approved the specification defaults and the first implementation file plan.
   The behavior-neutral preparation is complete: 12 screen snapshot methods are in crates/app/src/view.rs.
-  Existing checks and the Release build pass. New visual behavior remains unimplemented.
-  Publication needs a separate request.
+  Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
+  Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
+  Offline checks and the Release build pass. Pad corners, notice history, F1 Messages, value popups and the catalogue remain unimplemented.
+  Manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
   Yellow now identifies pad modes, not only marking. Marking still sounds.
   Manual save success keeps five seconds. Persistent Save failed stays until saving succeeds.
   Generic controller confirmation remains in 88. Sound, factory bindings and saved formats stay unchanged.

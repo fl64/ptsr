@@ -13,6 +13,99 @@ use super::{
 };
 
 impl App {
+    /// Existing modes in title priority order. This snapshot never changes input focus.
+    pub(super) fn title_badges(&self) -> Vec<tui::Badge> {
+        self.title_badges_at(Instant::now())
+    }
+
+    pub(super) fn title_badges_at(&self, now: Instant) -> Vec<tui::Badge> {
+        use tui::{
+            Badge,
+            BadgeKind::{Attention, On, PadMode},
+        };
+
+        let mode = self.focus().mode;
+        let mut pad_modes = Vec::new();
+        if mode.screen_learn || mode.midi_learn {
+            pad_modes.push(Badge::new(PadMode, "LEARN", "LEARN"));
+        }
+        if self.screen == Screen::Chop
+            && let (Some(plan), Some(chop)) = (&self.plan, &self.chop)
+        {
+            let total = chop.slices().len();
+            let placed = plan
+                .targets(total)
+                .into_iter()
+                .map(|(slice, _)| slice)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("ASSIGN · {placed}/{total} placed"),
+                format!("ASSIGN {placed}/{total}"),
+            ));
+        }
+        let placements: Vec<_> = [
+            (mode.file_in_hand, "IN HAND"),
+            (mode.copy_in_hand, "COPY"),
+            (mode.swap_in_hand, "SWAP"),
+        ]
+        .into_iter()
+        .filter_map(|(active, name)| active.then_some(name))
+        .collect();
+        if !placements.is_empty() {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("{} · hit a pad", placements.join(" + ")),
+                placements.join("/"),
+            ));
+        }
+        let count = self.pads.marked.len();
+        if mode.marking {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("MARK · hit pads · {count} marked"),
+                format!("MARK {count}"),
+            ));
+        } else if count > 0 {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("{count} MARKED · Esc drops"),
+                format!("{count} MARKED"),
+            ));
+        }
+        let mut badges = Vec::new();
+        let mut pad_modes = pad_modes.into_iter();
+        badges.extend(pad_modes.next());
+        if mode.question {
+            badges.push(Badge::new(Attention, "ASK", "ASK"));
+        }
+        if let Some((_, start)) = self.recording {
+            let seconds = now.saturating_duration_since(start).as_secs();
+            badges.push(Badge::new(Attention, format!("● REC {seconds}s"), "REC"));
+        }
+        badges.extend(pad_modes);
+        if mode.edit {
+            let page = self.help_state().page;
+            badges.push(Badge::new(
+                On,
+                format!("EDIT · {page}"),
+                format!("EDIT {page}"),
+            ));
+        }
+        if self.screen == Screen::Chop
+            && let Some(chop) = &self.chop
+        {
+            if chop.looping {
+                badges.push(Badge::new(On, "LOOP", "LOOP"));
+            }
+            if chop.as_pad {
+                badges.push(Badge::new(On, "AS PAD", "AS PAD"));
+            }
+        }
+        badges
+    }
+
     /// The project picker as drawn: the open project is marked (35).
     pub(super) fn picker_view(&self) -> Option<tui::ProjectPickerView> {
         let open = self.project.as_ref().map(|p| p.name.as_str());

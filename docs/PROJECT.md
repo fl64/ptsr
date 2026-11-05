@@ -77,8 +77,10 @@ The owner requested `87-status-badges` on 2026-11-05 and approved its specificat
 Its active change defines visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
 The owner approved the specification defaults and the first implementation file plan.
 The behavior-neutral preparation is complete: 12 screen snapshot methods are in `crates/app/src/view.rs`.
-Existing checks and the Release build pass. New visual behavior remains unimplemented.
-Publication needs a separate request.
+Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
+Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
+Offline checks and the Release build pass. Pad corners, notice history, F1 Messages, value popups and the catalogue remain unimplemented.
+Manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

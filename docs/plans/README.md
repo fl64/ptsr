@@ -91,7 +91,10 @@ not permission to combine the new changes.
   The active change covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
   The owner approved the specification defaults and the first implementation file plan.
   The behavior-neutral preparation is complete: 12 screen snapshot methods are in `crates/app/src/view.rs`.
-  Existing checks and the Release build pass. New visual behavior remains unimplemented.
+  Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
+  Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
+  Offline checks and the Release build pass. Pad corners, notice history, F1 Messages, value popups and the catalogue remain unimplemented.
+  Manual keyboard, physical-controller and listening checks remain unverified.
   Sound, factory bindings and saved formats stay unchanged.
   Generic controller confirmation remains in 88. Publication needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material

@@ -4332,6 +4332,7 @@ fn main() -> std::io::Result<()> {
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let status = tui::Status {
+            badges: app.title_badges(),
             save: app.save_status(),
             backend: app.audio_alive().map(|a| a.backend),
             recording: app.recording.is_some(),
@@ -4927,7 +4928,6 @@ fn pads_view(
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
         bank_marks: bank_marks(p),
-        mark_plate: mark_plate(p),
         out_wave,
         splash,
         big: big_view(p, rate),
@@ -5015,16 +5015,6 @@ fn bank_fill(p: &pads::Pads) -> [u16; tui::BANKS] {
         }
     }
     fill
-}
-
-/// The plate on the title line of the pads screen (76): marking is on, or pads stay marked.
-fn mark_plate(p: &pads::Pads) -> Option<String> {
-    let n = p.marked.len();
-    if p.marking {
-        Some(format!("MARK · hit pads · {n} marked"))
-    } else {
-        (n > 0).then(|| format!("{n} MARKED · Esc drops"))
-    }
 }
 
 /// Per bank, a bitmask of its marked pads (76).
@@ -5384,7 +5374,6 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
                     bank_marks: [0; tui::BANKS],
-                    mark_plate: None,
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -5498,7 +5487,6 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
-                    mark_plate: mark_plate(p),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -5620,7 +5608,6 @@ fn chop_view<'a>(
                     learn: Vec::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
-                    mark_plate: mark_plate(p),
                     edit: None,
                     pages: Vec::new(),
                     knobs: Vec::new(),
@@ -17056,7 +17043,12 @@ Enter = "browser.hold"
     #[test]
     fn the_mark_plate() {
         let mut app = undo_app();
-        let plate = |app: &mut super::App| panel_now(app).mark_plate;
+        let plate = |app: &mut super::App| {
+            app.title_badges()
+                .into_iter()
+                .find(|badge| badge.normal.contains("MARK"))
+                .map(|badge| badge.normal)
+        };
         assert_eq!(plate(&mut app), None);
         app.apply(Action::PadMarkToggle);
         for pad in [0, 1, 2] {
@@ -19446,6 +19438,7 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         let view = super::chop_view(c, app.plan.as_ref(), None, 48_000, &app.pads);
         let status = tui::Status {
+            badges: app.title_badges(),
             save: app.save_status(),
             backend: Some("jack"),
             recording: false,
@@ -19945,6 +19938,7 @@ Enter = "browser.hold"
         let view = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let view = app.mark_pads(view);
         let status = tui::Status {
+            badges: app.title_badges(),
             save: app.save_status(),
             backend: Some("jack"),
             recording: false,

@@ -66,8 +66,35 @@ impl SaveStatus {
     }
 }
 
-/// State snapshot for the status line.
+/// Semantic meaning of an optional title badge, independent of its label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BadgeKind {
+    PadMode,
+    On,
+    Attention,
+}
+
+/// Existing mode with full and compact labels, in application priority order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Badge {
+    pub kind: BadgeKind,
+    pub normal: String,
+    pub compact: String,
+}
+
+impl Badge {
+    pub fn new(kind: BadgeKind, normal: impl Into<String>, compact: impl Into<String>) -> Self {
+        Self {
+            kind,
+            normal: normal.into(),
+            compact: compact.into(),
+        }
+    }
+}
+
+/// Shared title and status snapshot.
 pub struct Status<'a> {
+    pub badges: Vec<Badge>,
     pub save: SaveStatus,
     /// Audio backend (`jack`, `cpal`); `None` means no audio.
     pub backend: Option<&'a str>,
@@ -346,8 +373,6 @@ pub struct Pads {
     pub bank_fill: [u16; BANKS],
     /// Per bank, its marked pads (76); a bank with marks shows them in the bank row.
     pub bank_marks: [u16; BANKS],
-    /// The mark plate on the title line (76): marking is on or pads stay marked.
-    pub mark_plate: Option<String>,
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
     /// The splash at start (73): while it is `Some`, the strip shows it instead of the
@@ -566,12 +591,12 @@ fn draw_inner(
     match screen {
         // the project picker (11) is modal: it takes the body instead of the screen,
         // the help line below stays as on any screen
-        Screen::ProjectPicker(p) => frame.render_widget(project_picker(p), body),
+        Screen::ProjectPicker(p) => frame.render_widget(project_picker(p, s, body.width), body),
         Screen::Pads(p) => pads(frame, body, p, s),
-        Screen::Fx(f) => fx(frame, body, f),
-        Screen::Settings(st) => frame.render_widget(settings(st, body.height), body),
-        Screen::Files(f) => files(frame, body, f),
-        Screen::Chop(c) => chop(frame, body, c, images),
+        Screen::Fx(f) => fx(frame, body, f, s),
+        Screen::Settings(st) => settings(frame, body, st, s),
+        Screen::Files(f) => files(frame, body, f, s),
+        Screen::Chop(c) => chop(frame, body, c, s, images),
     }
     match help.learn {
         Some(lines) => {
@@ -997,6 +1022,72 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
     Line::from(spans)
 }
 
+/// Keep fixed slots first. Drop lower priorities before compacting the last badge.
+fn title<'a>(mut fixed: Vec<Span<'a>>, badges: &[Badge], width: u16, reserve: usize) -> Line<'a> {
+    let available =
+        (width as usize).saturating_sub(fixed.iter().map(Span::width).sum::<usize>() + reserve);
+    let mut count = badges.len().min(3);
+    let normal_width = |n: usize| {
+        badges[..n]
+            .iter()
+            .map(|b| Line::from(b.normal.as_str()).width() + 3)
+            .sum::<usize>()
+    };
+    while count > 1 && normal_width(count) > available {
+        count -= 1;
+    }
+    let compact = normal_width(count) > available;
+    let used = badges[..count]
+        .iter()
+        .map(|b| {
+            Line::from(if compact {
+                b.compact.as_str()
+            } else {
+                b.normal.as_str()
+            })
+            .width()
+                + 3
+        })
+        .sum::<usize>();
+    if used <= available {
+        for b in &badges[..count] {
+            let color = match b.kind {
+                BadgeKind::PadMode => MARK,
+                BadgeKind::On => CYAN,
+                BadgeKind::Attention => MAGENTA,
+            };
+            let text = if compact { &b.compact } else { &b.normal };
+            fixed.push(" ".into());
+            fixed.push(Span::styled(
+                format!(" {text} "),
+                Style::new().fg(BG).bg(color).bold(),
+            ));
+        }
+    }
+    Line::from(fixed)
+}
+
+/// Shorten title details in display cells, not UTF-8 bytes.
+fn title_detail(text: &str, width: usize) -> String {
+    if Line::from(text).width() <= width {
+        return text.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    for ch in text.chars() {
+        let mut next = out.clone();
+        next.push(ch);
+        if Line::from(next.as_str()).width() + 1 > width {
+            break;
+        }
+        out = next;
+    }
+    out.push('…');
+    out
+}
+
 fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
     let (badge, badge_style) = if p.playing {
@@ -1004,19 +1095,19 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     } else {
         (" PLAY     ", Style::new().fg(DIM).bg(BG))
     };
-    let mut title = vec![
-        Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT)),
-        " ".into(),
-        Span::styled(badge, badge_style),
-    ];
-    if let Some(plate) = &p.mark_plate {
-        title.push(" ".into());
-        title.push(Span::styled(
-            format!(" {plate} "),
-            Style::new().fg(BG).bg(MARK).bold(),
-        ));
-    }
-    frame.render_widget(Line::from(title), f.title);
+    frame.render_widget(
+        title(
+            vec![
+                Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT)),
+                " ".into(),
+                Span::styled(badge, badge_style),
+            ],
+            &s.badges,
+            f.title.width,
+            0,
+        ),
+        f.title,
+    );
     if p.hidden {
         frame.render_widget(pad_line(p, Vec::new(), true), f.bank);
     } else {
@@ -1751,14 +1842,16 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
 
 /// The project picker of Ctrl+P (11), drawn over the whole body in place of the screen
 /// (as [`PathPickerView`] takes the rows of the Paths tab in place of theirs).
-fn fx(frame: &mut Frame, area: Rect, f: &Fx) {
-    let [title, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
-    frame.render_widget(
-        Line::from(" F4 FX · shared project effects")
-            .fg(CYAN)
-            .bold(),
-        title,
+fn fx(frame: &mut Frame, area: Rect, f: &Fx, s: &Status) {
+    let [header, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+    let mut heading = title(
+        vec![Span::styled(" F4 FX ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        header.width,
+        24,
     );
+    heading.spans.push("· shared project effects".fg(DIM));
+    frame.render_widget(heading, header);
     let label_width = f
         .blocks
         .iter()
@@ -1867,11 +1960,13 @@ fn fx(frame: &mut Frame, area: Rect, f: &Fx) {
     }
 }
 
-fn project_picker(p: &ProjectPickerView) -> Paragraph<'static> {
-    let mut lines = vec![Line::from(Span::styled(
-        " PROJECTS ",
-        Style::new().fg(BG).bg(TEXT),
-    ))];
+fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> Paragraph<'static> {
+    let mut lines = vec![title(
+        vec![Span::styled(" PROJECTS ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        width,
+        0,
+    )];
     if p.entries.is_empty() {
         lines.push("no projects yet — type a name".fg(DIM).into());
     }
@@ -1900,7 +1995,47 @@ fn project_picker(p: &ProjectPickerView) -> Paragraph<'static> {
     Paragraph::new(lines)
 }
 
-fn settings(st: &Settings, height: u16) -> Paragraph<'static> {
+fn settings(frame: &mut Frame, area: Rect, st: &Settings, s: &Status) {
+    let [header, _, body] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    let tab = |i: usize, name: &str| {
+        if st.tab == i {
+            Span::styled(format!("[{name}]"), Style::new().fg(CYAN).bold())
+        } else {
+            format!(" {name} ").fg(DIM)
+        }
+    };
+    let names = ["Audio", "Input", "MIDI", "Paths"];
+    let mut heading = title(
+        vec![Span::styled(" F12 SETTINGS ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        header.width,
+        11,
+    );
+    let mut tabs = vec![Span::raw("   ")];
+    for (i, name) in names.iter().enumerate() {
+        if i > 0 {
+            tabs.push(" ".into());
+        }
+        tabs.push(tab(i, name));
+    }
+    let room = (header.width as usize).saturating_sub(heading.width());
+    if tabs.iter().map(Span::width).sum::<usize>() > room {
+        tabs = vec![
+            "   ".into(),
+            tab(st.tab, names.get(st.tab).copied().unwrap_or("Settings")),
+        ];
+    }
+    heading.spans.extend(tabs);
+    frame.render_widget(heading, header);
+    frame.render_widget(settings_body(st, body.height), body);
+}
+
+fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
     let label = |row: usize, name: &str| {
         let text = format!(" {name:<8}");
         if st.row == row {
@@ -1917,27 +2052,7 @@ fn settings(st: &Settings, height: u16) -> Paragraph<'static> {
         spans
     };
 
-    let tab = |i: usize, name: &str| {
-        if st.tab == i {
-            Span::styled(format!("[{name}]"), Style::new().fg(CYAN).bold())
-        } else {
-            format!(" {name} ").fg(DIM)
-        }
-    };
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(" F12 SETTINGS ", Style::new().fg(BG).bg(TEXT)),
-            "   ".into(),
-            tab(0, "Audio"),
-            " ".into(),
-            tab(1, "Input"),
-            " ".into(),
-            tab(2, "MIDI"),
-            " ".into(),
-            tab(3, "Paths"),
-        ]),
-        Line::default(),
-    ];
+    let mut lines = Vec::new();
     if st.tab == 3 {
         if let Some(p) = &st.picker {
             lines.push(Line::from(Span::styled(
@@ -2098,7 +2213,7 @@ fn settings(st: &Settings, height: u16) -> Paragraph<'static> {
     Paragraph::new(lines)
 }
 
-fn files(frame: &mut Frame, area: Rect, f: &Files) {
+fn files(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     let pf = pad_frame(area, f.pads.hidden);
     // the title carries what the screen says: the file in hand or the error (31)
     let note = match (f.in_hand, f.error) {
@@ -2109,13 +2224,15 @@ fn files(frame: &mut Frame, area: Rect, f: &Files) {
         (None, Some(e)) => format!("   {e}").fg(MAGENTA),
         (None, None) => "".into(),
     };
-    frame.render_widget(
-        Line::from(vec![
-            Span::styled(" F6 FILES ", Style::new().fg(BG).bg(TEXT)),
-            note,
-        ]),
-        pf.title,
+    let reserve = note.width().min(20);
+    let mut heading = title(
+        vec![Span::styled(" F6 FILES ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        pf.title.width,
+        reserve,
     );
+    heading.spans.push(note);
+    frame.render_widget(heading, pf.title);
     // the wave of the selected file over the whole strip, its length on the first row
     if let Some((secs, wave)) = f.preview {
         // the file the wave is of, next to its length (66)
@@ -2277,7 +2394,13 @@ fn dot_peaks(wave: &[f32], dots: usize, top: f32) -> Vec<f32> {
         .collect()
 }
 
-fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<WaveImage>>) {
+fn chop(
+    frame: &mut Frame,
+    area: Rect,
+    c: &Chop,
+    s: &Status,
+    mut images: Option<&mut Vec<WaveImage>>,
+) {
     let pf = pad_frame(area, c.pads.hidden);
     let header = pf.title;
     // the marks over the wave are the top two rows of the strip (31)
@@ -2288,35 +2411,59 @@ fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<Wav
     ])
     .areas(pf.strip);
     let slices = c.bounds.len().saturating_sub(1);
-    let badge = if matches!(c.mode.as_str(), "LISTEN" | "LISTEN ▶") {
-        format!(" {:<8} ", c.mode)
+    let playing = c.mode == "LISTEN ▶";
+    let badge = if playing {
+        " LISTEN ▶ "
     } else {
-        format!(" {} ", c.mode)
+        " LISTEN   "
     };
-    let badge_style = if c.mode == "LISTEN" {
-        Style::new().fg(DIM).bg(BG)
-    } else {
+    let badge_style = if playing {
         Style::new().fg(BG).bg(CYAN)
+    } else {
+        Style::new().fg(DIM).bg(BG)
     };
-    frame.render_widget(
-        Line::from(vec![
-            Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
-            " ".into(),
-            Span::styled(badge, badge_style),
-            format!("   cuts of {}", c.file).into(),
-            match c.which {
-                Some((i, n)) => format!(" · chop {i} of {n}").into(),
-                None => "".into(),
-            },
-            format!(
-                "   {:.2} s · {slices} slice{}",
-                c.seconds,
-                if slices == 1 { "" } else { "s" }
-            )
-            .fg(DIM),
-        ]),
-        header,
+    let slice_count = format!(" · {slices} slice{}", if slices == 1 { "" } else { "s" });
+    let variant = c
+        .which
+        .map_or_else(String::new, |(i, n)| format!(" · chop {i} of {n}"));
+    let suffix_width = Line::from(format!("{variant}{slice_count}")).width();
+    let fixed = vec![
+        Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
+        " ".into(),
+        Span::styled(badge, badge_style),
+    ];
+    let fixed_width = fixed.iter().map(Span::width).sum::<usize>();
+    let mode_width = s
+        .badges
+        .first()
+        .map_or(0, |b| Line::from(b.compact.as_str()).width() + 3);
+    // Keep the variant and count. Reduce the filename budget before hiding the active mode.
+    let file_reserve = (header.width as usize)
+        .saturating_sub(fixed_width + mode_width + suffix_width + 3)
+        .min(12);
+    let mut heading = title(
+        fixed,
+        &s.badges,
+        header.width,
+        suffix_width + 3 + file_reserve,
     );
+    let details = Line::from(vec![
+        format!("   cuts of {}", c.file).into(),
+        variant.clone().into(),
+        format!("   {:.2} s{slice_count}", c.seconds).fg(DIM),
+    ]);
+    let room = (header.width as usize).saturating_sub(heading.width());
+    if details.width() <= room {
+        heading.spans.extend(details.spans);
+    } else {
+        let file_width = room.saturating_sub(suffix_width + 3);
+        heading
+            .spans
+            .push(format!("   {}", title_detail(c.file, file_width)).into());
+        heading.spans.push(variant.into());
+        heading.spans.push(slice_count.fg(DIM));
+    }
+    frame.render_widget(heading, header);
     let width = wave.width as usize;
     let col = |at: f32| ((at * width as f32) as usize).min(width.saturating_sub(1));
     let (first, last) = (
@@ -2717,7 +2864,6 @@ mod tests {
             playing: false,
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -2733,6 +2879,7 @@ mod tests {
             slot: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -2932,6 +3079,7 @@ mod tests {
     #[test]
     fn the_status_line_names_the_open_project() {
         let status = |backend, project| Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend,
             recording: false,
@@ -2966,6 +3114,7 @@ mod tests {
     #[test]
     fn plain_words_for_no_key_releases() {
         let status = |no_releases| Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -3254,7 +3403,6 @@ mod tests {
             playing: false,
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -3286,6 +3434,7 @@ mod tests {
             playhead: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -3403,7 +3552,17 @@ mod tests {
 
     /// A screen drawn at `w`×`h` as text rows and as (symbol, fg, bg) cells.
     fn draw_rows(screen: &Screen, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
-        let (status, help) = chop_status();
+        draw_badge_rows(screen, w, h, Vec::new())
+    }
+
+    fn draw_badge_rows(
+        screen: &Screen,
+        w: u16,
+        h: u16,
+        badges: Vec<Badge>,
+    ) -> Vec<Vec<(String, Color, Color)>> {
+        let (mut status, help) = chop_status();
+        status.badges = badges;
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
         term.draw(|fr| draw(fr, &status, screen, &help)).unwrap();
         term.backend()
@@ -3652,6 +3811,249 @@ mod tests {
         }
     }
 
+    /// Scenarios "Mode badges follow the active screen state" and "Badges retain identity without color".
+    #[test]
+    fn mode_badges_follow_the_active_screen_state() {
+        let wave = [0.1; 400];
+        for (w, h) in [(120, 40), (80, 26)] {
+            let screens = [
+                Screen::Pads(idle_pads()),
+                Screen::Fx(shared_fx()),
+                Screen::Files(Files {
+                    dir: "samples",
+                    entries: vec![],
+                    selected: 0,
+                    in_hand: None,
+                    error: None,
+                    pads: idle_pads(),
+                    filter: "",
+                    editing: false,
+                    preview: None,
+                    playhead: None,
+                }),
+                Screen::Chop(Box::new(chop_demo(&wave))),
+                Screen::Settings(settings_view(0, 0)),
+                Screen::ProjectPicker(ProjectPickerView {
+                    entries: vec!["beat".into()],
+                    selected: 0,
+                    naming: None,
+                }),
+            ];
+            for screen in &screens {
+                let before = draw_rows(screen, w, h);
+                for (kind, normal, compact, color) in [
+                    (BadgeKind::PadMode, "COPY · hit a pad", "COPY", MARK),
+                    (BadgeKind::On, "EDIT · FILTER", "EDIT FILTER", CYAN),
+                    (BadgeKind::Attention, "ASK", "ASK", MAGENTA),
+                    (BadgeKind::Attention, "● REC 12s", "REC", MAGENTA),
+                ] {
+                    let after =
+                        draw_badge_rows(screen, w, h, vec![Badge::new(kind, normal, compact)]);
+                    assert!(
+                        row_text(&after, 1).contains(normal),
+                        "{w}: {}",
+                        row_text(&after, 1)
+                    );
+                    let text: String = after[1]
+                        .iter()
+                        .filter(|(_, _, bg)| *bg == color)
+                        .map(|(symbol, _, _)| symbol.as_str())
+                        .collect();
+                    assert_eq!(text.trim(), normal);
+                    for y in 0..h as usize {
+                        if y != 1 {
+                            assert_eq!(after[y], before[y], "{w}x{h}, row {y}");
+                        }
+                    }
+                    assert_eq!(
+                        draw_rows(screen, w, h),
+                        before,
+                        "leaving the mode removes only its badge"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Scenario "Narrow titles retain the pad mode".
+    #[test]
+    fn narrow_titles_retain_the_pad_mode() {
+        let wave = [0.1; 400];
+        let file = "名字-long-break-name-".repeat(12);
+        for (w, h, which) in [
+            (80, 26, (2, 3)),
+            (120, 40, (2, 3)),
+            (80, 26, (128, 129)),
+            (120, 40, (128, 129)),
+        ] {
+            let mut view = chop_demo(&wave);
+            view.file = &file;
+            view.which = Some(which);
+            view.bounds = (0..=128).map(|n| n as f32 / 128.0).collect();
+            let badges = vec![
+                Badge::new(
+                    BadgeKind::PadMode,
+                    "IN HAND + COPY + SWAP · hit a pad",
+                    "IN HAND/COPY/SWAP",
+                ),
+                Badge::new(BadgeKind::Attention, "ASK", "ASK"),
+                Badge::new(BadgeKind::Attention, "● REC 123s", "REC"),
+                Badge::new(BadgeKind::On, "EDIT · BOUNDS", "EDIT BOUNDS"),
+            ];
+            let rows = draw_badge_rows(&Screen::Chop(Box::new(view)), w, h, badges);
+            let text = row_text(&rows, 1);
+            for label in ["F3 CHOP", "LISTEN", "IN HAND", "COPY", "SWAP", "128 slices"] {
+                assert!(text.contains(label), "{w}: {label}: {text}");
+            }
+            assert!(
+                text.contains(&format!("chop {} of {}", which.0, which.1)),
+                "{text}"
+            );
+            let name_column = rows[1]
+                .iter()
+                .position(|cell| cell.0 == "名")
+                .expect("the filename starts with a wide glyph");
+            assert_eq!(
+                rows[1][name_column + 2].0,
+                "字",
+                "wide glyphs keep their two-cell spacing"
+            );
+            assert_eq!(rows[1].len(), w as usize);
+            assert!(
+                !text.contains("EDIT"),
+                "the fourth optional badge cannot appear"
+            );
+            if w == 80 {
+                assert!(text.contains("IN HAND/COPY/SWAP"), "{text}");
+                assert!(!text.contains("ASK") && !text.contains("REC"));
+            } else {
+                assert!(text.contains("ASK"), "{text}");
+                assert_eq!(text.contains("REC 123s"), which == (2, 3), "{text}");
+            }
+        }
+        for (normal, compact) in [
+            ("MARK · hit pads · 128 marked", "MARK 128"),
+            ("128 MARKED · Esc drops", "128 MARKED"),
+            ("ASSIGN · 128/128 placed", "ASSIGN 128/128"),
+            ("EDIT · FILTER", "EDIT FILTER"),
+            ("EDIT · BOUNDS", "EDIT BOUNDS"),
+            ("EDIT · FX 2", "EDIT FX 2"),
+        ] {
+            let badge = Badge::new(BadgeKind::PadMode, normal, compact);
+            let width = (Line::from(compact).width() + 3) as u16;
+            let line = title(vec![], &[badge], width, 0);
+            assert_eq!(
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+                    .trim(),
+                compact
+            );
+            assert!(line.width() <= width as usize);
+        }
+    }
+
+    /// Scenario "Playback slots remain stable beside modes".
+    #[test]
+    fn playback_slots_remain_stable_beside_modes() {
+        let wave = [0.1; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for graphics in [false, true] {
+                let mut first_column = None;
+                for playing in [false, true, false] {
+                    let mut view = chop_demo(&wave);
+                    view.mode = if playing { "LISTEN ▶" } else { "LISTEN" }.into();
+                    let (mut status, help) = chop_status();
+                    status.badges = vec![Badge::new(BadgeKind::On, "EDIT · BOUNDS", "EDIT BOUNDS")];
+                    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                    let mut images = Vec::new();
+                    term.draw(|frame| {
+                        let screen = Screen::Chop(Box::new(view));
+                        if graphics {
+                            draw_gfx(frame, &status, &screen, &help, &mut images);
+                        } else {
+                            draw(frame, &status, &screen, &help);
+                        }
+                    })
+                    .unwrap();
+                    let row = &term.backend().buffer().content()[w as usize..2 * w as usize];
+                    let text: String = row.iter().map(|c| c.symbol()).collect();
+                    assert_eq!(
+                        row[10..20].iter().map(|c| c.symbol()).collect::<String>(),
+                        if playing {
+                            " LISTEN ▶ "
+                        } else {
+                            " LISTEN   "
+                        }
+                    );
+                    for cell in &row[10..20] {
+                        assert_eq!(
+                            (cell.fg, cell.bg),
+                            if playing { (BG, CYAN) } else { (DIM, BG) }
+                        );
+                    }
+                    let column = row
+                        .windows(4)
+                        .position(|r| r.iter().map(|c| c.symbol()).collect::<String>() == "EDIT")
+                        .unwrap();
+                    if let Some(before) = first_column {
+                        assert_eq!(column, before);
+                    }
+                    first_column = Some(column);
+                    assert!(text.contains("break_lofi.wav") && text.contains("4 slices"));
+                    assert_eq!(images.len(), usize::from(graphics));
+                    if graphics {
+                        assert_eq!(
+                            images[0].area,
+                            Rect {
+                                y: frame_at(w, h).strip.y + 2,
+                                height: frame_at(w, h).strip.height - 2,
+                                ..frame_at(w, h).strip
+                            }
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn settings_title_badges_stay_visible_while_midi_rows_scroll() {
+        let entries: Vec<_> = (0..40)
+            .map(|n| MidiRow::Action {
+                label: format!("action{n:02}"),
+                who: "none".into(),
+                taken: false,
+                stays: Vec::new(),
+            })
+            .collect();
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut st = settings_view(2, 0);
+            st.midi_rows = &entries;
+            st.midi_row = 39;
+            let rows = draw_badge_rows(
+                &Screen::Settings(st),
+                w,
+                h,
+                vec![Badge::new(BadgeKind::PadMode, "LEARN", "LEARN")],
+            );
+            let header = row_text(&rows, 1);
+            assert!(
+                header.contains("F12 SETTINGS")
+                    && header.contains("LEARN")
+                    && header.contains("[MIDI]"),
+                "{header}"
+            );
+            assert!(rows[3..h as usize - 4].iter().any(|row| {
+                row.iter()
+                    .map(|c| c.0.as_str())
+                    .collect::<String>()
+                    .contains("action39")
+            }));
+        }
+    }
+
     fn hidden_pads() -> Pads {
         Pads {
             hidden: true,
@@ -3776,10 +4178,23 @@ mod tests {
                             p.playing = playing;
                             p.hidden = hidden;
                             p.edit = edit.then_some("TONE");
-                            if marked {
-                                p.mark_plate = Some("MARK · hit pads · 3 marked".into());
-                            }
-                            let rows = render_pads_at(p, width, height);
+                            let badges = if marked {
+                                vec![Badge::new(
+                                    BadgeKind::PadMode,
+                                    "MARK · hit pads · 3 marked",
+                                    "MARK 3",
+                                )]
+                            } else {
+                                Vec::new()
+                            };
+                            let rows = render_pads_snapshot(
+                                p,
+                                ([-60.0; 2], [-60.0; 2], false),
+                                false,
+                                width,
+                                height,
+                                badges,
+                            );
                             let y = (0..rows.len())
                                 .find(|&y| row_text(&rows, y).contains("F2 PADS"))
                                 .unwrap();
@@ -3852,9 +4267,16 @@ mod tests {
     /// 76 "The mark plate": the plate stands on the title line, black on yellow.
     #[test]
     fn the_mark_plate_is_yellow_on_the_title_line() {
-        let mut p = idle_pads();
-        p.mark_plate = Some("MARK · hit pads · 3 marked".into());
-        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let rows = draw_badge_rows(
+            &Screen::Pads(idle_pads()),
+            100,
+            30,
+            vec![Badge::new(
+                BadgeKind::PadMode,
+                "MARK · hit pads · 3 marked",
+                "MARK 3",
+            )],
+        );
         let y = (0..rows.len())
             .find(|&y| row_text(&rows, y).contains("F2 PADS"))
             .expect("the title line");
@@ -4210,6 +4632,7 @@ mod tests {
                 learn: None,
             };
             let status = Status {
+                badges: Vec::new(),
                 save: SaveStatus::Clean,
                 backend: None,
                 recording: false,
@@ -4930,7 +5353,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4992,6 +5414,7 @@ mod tests {
             ..chop_demo(&wave)
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -5197,6 +5620,12 @@ mod tests {
         }
         let mut view = chop_demo(&wave);
         view.mode = "ASSIGN · by hand".into();
+        let mut status = status;
+        status.badges = vec![Badge::new(
+            BadgeKind::PadMode,
+            "ASSIGN · 1/4 placed",
+            "ASSIGN 1/4",
+        )];
         term.draw(|frame| draw(frame, &status, &Screen::Chop(Box::new(view)), &help))
             .unwrap();
         let header = term
@@ -5212,13 +5641,16 @@ mod tests {
             })
             .unwrap();
         let text = header.iter().map(|cell| cell.symbol()).collect::<String>();
-        assert!(text.contains(" ASSIGN · by hand    cuts of"));
+        assert!(
+            text.contains(" LISTEN     ASSIGN · 1/4 placed    cuts of"),
+            "{text}"
+        );
         let start = text.find(" ASSIGN").unwrap();
-        for cell in &header[start..start + " ASSIGN · by hand ".chars().count()] {
+        for cell in &header[start..start + " ASSIGN · 1/4 placed ".chars().count()] {
             assert_eq!(
                 (cell.fg, cell.bg),
-                (BG, CYAN),
-                "assign badge stays unchanged"
+                (BG, MARK),
+                "assignment is a separate PadMode badge"
             );
         }
     }
@@ -5278,6 +5710,7 @@ mod tests {
         let wave: Vec<f32> = (0..4000).map(|i| (i % 1000) as f32 / 1000.0).collect();
         let c = chop_demo(&wave);
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -5433,6 +5866,7 @@ mod tests {
             "Enter: replace · Esc: keep".into(),
         ];
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -5455,7 +5889,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5636,7 +6069,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5678,7 +6110,19 @@ mod tests {
         w: u16,
         h: u16,
     ) -> Vec<Vec<(String, Color, Color)>> {
+        render_pads_snapshot(p, meters, recording, w, h, Vec::new())
+    }
+
+    fn render_pads_snapshot(
+        p: Pads,
+        meters: ([f32; 2], [f32; 2], bool),
+        recording: bool,
+        w: u16,
+        h: u16,
+        badges: Vec<Badge>,
+    ) -> Vec<Vec<(String, Color, Color)>> {
         let status = Status {
+            badges,
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording,
@@ -5848,7 +6292,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5879,6 +6322,7 @@ mod tests {
             playhead: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -5947,7 +6391,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5990,6 +6433,7 @@ mod tests {
             hot: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6133,6 +6577,7 @@ mod tests {
 
     fn status_at(buffer_size: u32, xruns: u64) -> Status<'static> {
         Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -6212,6 +6657,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6305,6 +6751,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6378,6 +6825,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -6441,6 +6889,7 @@ mod tests {
 
     fn settings_text(st: Settings) -> String {
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6489,6 +6938,7 @@ mod tests {
     /// The project picker (11) as the screen body shows it, as the tests read it back.
     fn project_picker_text(p: ProjectPickerView) -> String {
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6595,7 +7045,6 @@ mod tests {
             playing: false,
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -6763,6 +7212,7 @@ mod tests {
     fn chop_status() -> (Status<'static>, Help<'static>) {
         (
             Status {
+                badges: Vec::new(),
                 save: SaveStatus::Clean,
                 backend: Some("jack"),
                 recording: false,

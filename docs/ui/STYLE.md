@@ -1,6 +1,6 @@
 # UI style (draft)
 
-Cyberpunk: an almost black background, two neon accents with a meaning, everything else muted. The screen sketches in `docs/ui/` are a mood guideline, not pixel-exact. A terminal has one font size, no rounded corners and no semi-transparency.
+Cyberpunk: an almost black background, three state accents, everything else muted. The screen sketches in `docs/ui/` are a mood guideline, not pixel-exact. A terminal has one font size, no rounded corners and no semi-transparency.
 
 ## Colors
 
@@ -15,9 +15,11 @@ Cyberpunk: an almost black background, two neon accents with a meaning, everythi
 | Cyan | `#33E1FF` | playing, selected, on |
 | Magenta | `#FF5FAE` | cut markers, waiting, recording, warnings |
 | White | `#F2F4F7` | hit flash, playhead |
-| Yellow | `#FFE03A` on `#3D3305` | marked pads, the marks in the bank row |
+| Yellow | `#FFE03A`, dark fill `#3D3305` | PadMode title badges, marked pads, marks in the bank row |
 
-No other accents. If you want to highlight something with a third color, the screen has too much on it.
+Use only these state accents. Bank tints and meters keep their separate meanings.
+Yellow identifies modes where pads do more than ordinary playback: placement, copying, swapping, assignment, marking and learning.
+Marking still sounds. A title badge uses dark text on its accent background. Marked pads retain their dark yellow fill.
 
 The exception is the bank colors. Each of the 8 banks has its own muted tint. This tint colors the bank number and fill in the bank row, the pad frames and the key letters of the open bank (the open bank is bold in brackets). It shows membership, not state: the selected pad stays cyan, the pad in hand stays magenta, a marked pad is yellow, a hit is a white flash. Assign mode on the chop screen colors the bank row in its own way: the planned bank is magenta, an occupied bank is bright text, an empty bank is muted.
 
@@ -35,13 +37,24 @@ The exception is the bank colors. Each of the 8 banks has its own muted tint. Th
 ## Rules
 
 - The screen shows only what is necessary now. Details are in F1 or in pop-up values.
-- The color shows the state at one look: cyan means sounds/selected, magenta means waits/cuts/attention.
+- Cyan means playback, selection or On. Magenta means attention, cuts or recording. Yellow means PadMode.
+- Mode badges always name their state. Color alone does not distinguish copy, swap, assignment or learning.
 - The screen name is an inverse badge at the top left (`F3 CHOP`).
 - The help at the bottom: groups (`LISTEN`, `CUT`, `ENV`, …) → key button (light text on the gray frame color `#2A303A`) → action. The help shows a toggle state only if the screen does not show it anywhere else (the pad mode and pad volume are already in the pad panel).
 - With no modifier held, the help shows only keys without modifiers. With Ctrl held: only the Ctrl combinations of the screen. With Shift held: only "pads at full velocity". In a terminal without the kitty protocol, the Ctrl combinations stay in the usual line.
 - In the sketches `docs/ui/*.md`, a key in brackets `[F1]` means such a button.
 - The hint line for the next step changes with the situation.
 - UI texts are in English and short. Russian labels in the sketches `docs/ui/*.md` give the meaning, not the final text.
+
+## Title badges
+
+Each screen uses the same optional badge composition beside its fixed screen identity.
+F2 PLAY and F3 LISTEN keep their ten-cell slots and existing active and idle styles.
+Show at most three optional badges. An active PadMode comes first, then ASK, recording and ordinary On states.
+Combine overlapping file, copy and swap states in one badge. Keep the existing keyboard and MIDI priorities.
+When space is short, remove lower-priority optional badges before using compact labels.
+Compact marking and assignment retain their counts. Compact EDIT retains its page, such as `EDIT FILTER` or `EDIT BOUNDS`.
+Retain the filename and slice count on Chop. Badges do not move the strip, grid, bank row, right column or help band.
 
 ## Keyboard
 

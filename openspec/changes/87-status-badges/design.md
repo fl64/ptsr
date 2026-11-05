@@ -67,7 +67,7 @@ Retain recording in the status line even when a title badge does not fit.
 | Copy pending | `COPY · hit a pad` | `COPY` |
 | Swap pending | `SWAP · hit a pad` | `SWAP` |
 | Chop assignment | `ASSIGN · N/T placed` | `ASSIGN N/T` |
-| Pad or slice edit | `EDIT · <page>` | `EDIT` |
+| Pad or slice edit | `EDIT · <page>` | `EDIT <page>` |
 | Screen or MIDI learning | `LEARN` | `LEARN` |
 | Existing question | `ASK` | `ASK` |
 | Microphone or output recording | `● REC <elapsed>` | `REC` |
@@ -79,6 +79,15 @@ The pad target marks do not promise which source-specific route will take priori
 Text entry and questions keep their current input precedence.
 At narrow widths, remove lower-priority optional badges before shortening the remaining labels.
 Keep the screen identity and an active pad-mode label visible at supported sizes.
+
+The title step adds `BadgeKind` and `Badge` snapshots in the drawing crate.
+Each badge carries its semantic kind, normal text and compact text. `Status` carries the shared badge list from the application.
+The application reads existing focus flags without changing them. It combines pending file, copy and swap labels in one badge.
+The renderer selects at most three optional badges and reserves space for screen-specific title details.
+Remove the separate `Pads.mark_plate` field after its callers use the shared list. Keep its mark counts and yellow style.
+Draw badges inside each title, not over a completed screen. Keep title rectangles and playback columns unchanged.
+Keep the Settings title outside its MIDI scroll area. A scrolled list then shows two fewer rows, but its selection stays visible.
+Pad corners, notice history, F1 page controls and value overlays remain separate steps.
 
 ### 3. Add marks without changing pad actions
 
@@ -171,14 +180,17 @@ Do not change engine code or add I/O to audio processing.
 | --- | --- | --- | --- |
 | Save refusal followed by other messages | `Save failed` stays until a successful save | Open: integration coverage | Existing save-state tests plus new priority tests |
 | Error followed by release or background input | Error stays visible | Open: new coverage | Controlled keyboard/raw-MIDI sequences |
-| Simultaneous file, copy and swap | Show pending modes without changing source-specific priority | Open: integration coverage | `modes_85_overlapping_hands_keep_source_specific_priority` |
-| Occupied swap target | No invented replacement question | Open: integration coverage | Recorded swap and question tests |
+| Simultaneous file, copy and swap | Show pending modes without changing source-specific priority | Closed for title step | `overlapping_placements_remain_visible_without_changing_priority` covers all seven combinations with keyboard and raw MIDI |
+| Occupied swap target | No invented replacement question | Closed for title step | The same production-input test checks direct swaps and remaining pending file placement |
 | Queued and interrupted notices | Bounded storage and deterministic remaining time | Open: new coverage | Controlled-clock queue and overflow tests |
 | Disconnect and stale source event | No false connected-device label or stuck highlight | Open: new coverage | Production multi-device and reconnect sequences |
 | Short or hidden-grid screen | Keep save warning, controls and mode identity | Open: new coverage | 80×26 and hidden-grid fixtures |
 | Overlay expires without another press | Restore wave image and hint | Open: new coverage | Timer-driven graphics and buffer tests |
 | Source metadata travels with input | Audio routing and original releases stay unchanged | Open: integration coverage | Existing parity, pending-order and epoch tests |
 | UI caches unchanged content | Recording, levels and timers still advance | Open: new coverage | Controlled-time view tests |
+| Long Unicode filename, variants and 128 slices | Keep screen, PadMode, variant and slice count inside the title | Closed for title step | `narrow_titles_retain_the_pad_mode` at 80×26 and 120×40, including `chop 128 of 129` |
+| MIDI list scrolls in Settings | Keep LEARN, selected tab and selected row visible | Closed for title step | `settings_title_badges_stay_visible_while_midi_rows_scroll` |
+| Playback changes beside mode badges | Keep ten-cell slots, styles and following columns | Closed for title step | `playback_slots_remain_stable_beside_modes`, existing current-voice and stale-project tests |
 
 ## Owner review decisions
 
@@ -188,9 +200,11 @@ The owner approved these choices after the specification review:
 - Notice queue: equal levels replace. Interrupted notices retain remaining visible time. Overflow removes the oldest lowest-level pending notice.
 - Overlapping placements: one compound badge names all pending placement modes. Existing keyboard/MIDI differences stay unchanged.
 - Catalogue delivery: `task screens` produces local ANSI files. Do not commit a large generated catalogue before its implementation review.
+- Compact edit badges retain their page at 80 columns: `EDIT BOUNDS`, `EDIT FX 2` or `EDIT FILTER`, not only `EDIT`.
 
 This approval implies no hardware result, listening result or callback maximum-budget acceptance.
 
 ## Open questions
 
-None for the preparation step. Ask the owner before changing an approved choice.
+None for preparation or title badges. The owner approved the compact edit labels before implementation.
+Ask the owner before changing an approved choice.

@@ -21,9 +21,17 @@ This move adds no behavior or new scenario. The visual scenarios below still nee
 
 ## 3. Badges and pad states
 
-- [ ] 3.1 Add the shared badge composition and width rules for existing modes. Cover every badge and overlapping placement state.
+- [x] 3.1 Add the shared badge composition and width rules for existing modes. Cover every badge and overlapping placement state.
 - [ ] 3.2 Add pad corner marks and yellow grid outlines. Preserve hit, selection, bank, hidden-grid and existing swap behavior.
 - [ ] 3.3 Retain the fixed PLAY slot and actual-current-project voice checks. Update `docs/ui/STYLE.md` with the approved yellow meaning.
+
+Title verification (3.1): `task check` and `task build` pass with this worktree's Debug and Release sources.
+The suites pass: 695 App, 80 input, 106 drawing and 18 benchmark-report tests. Main-spec scenario coverage also passes.
+New tests cover keyboard/raw-MIDI mode changes, all seven placement combinations, F12 learning and controlled recording elapsed time.
+Drawing tests cover 80×26 and 120×40, compact labels, long Unicode filenames, chop variant identity, fixed playback columns and a scrolled Settings list.
+The style guide now defines yellow PadMode titles. Task 3.3 keeps its final pad-state regression check after 3.2.
+Pad corners, yellow target outlines, notice history, F1 Messages, value popups and the catalogue remain unimplemented.
+No live program, hardware or listening check ran. Sound processing stays unchanged, so this step adds no sound render.
 
 ## 4. Notices and F1 Messages
 
