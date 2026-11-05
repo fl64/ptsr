@@ -13,7 +13,11 @@ Do not combine the preparation move with behavior changes.
 The move covers 12 application snapshot methods. Frame assembly, input routing and shared drawing helpers stay in place.
 
 - [x] 2.1 Read the full affected source and tests. Agree the implementation file plan. Move screen-data preparation into `crates/app/src/view.rs` without behavior changes.
-- [ ] 2.2 Prove unchanged screen identity, title positions, help, notices, save state and keyboard/raw-MIDI action results through existing production routes.
+- [x] 2.2 Prove unchanged screen identity, title positions, help, notices, save state and keyboard/raw-MIDI action results through existing production routes.
+
+Preparation verification: all 12 method bodies and existing call sites stay byte-identical. Existing tests keep their assertions.
+`task check`, `task build` and strict OpenSpec validation pass. Debug tests and Release artifacts use this worktree's sources.
+This move adds no behavior or new scenario. The visual scenarios below still need implementation and tests.
 
 ## 3. Badges and pad states
 

@@ -90,7 +90,8 @@ not permission to combine the new changes.
 - The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
   The active change covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
   The owner approved the specification defaults and the first implementation file plan.
-  Preparation starts with a behavior-neutral extraction of screen data. New visual behavior remains unimplemented.
+  The behavior-neutral preparation is complete: 12 screen snapshot methods are in `crates/app/src/view.rs`.
+  Existing checks and the Release build pass. New visual behavior remains unimplemented.
   Sound, factory bindings and saved formats stay unchanged.
   Generic controller confirmation remains in 88. Publication needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
