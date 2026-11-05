@@ -1779,7 +1779,8 @@ Commands: `task check`, `task build` and `task openspec:check`.
 Keep build directories separate between worktrees. Check that both portable-chop tests run in the App suite.
 A Debug package rebuild does not refresh the Release callback benchmark. Check both profiles when replacing shared artifacts.
 Local evidence stays under `target/`, including `86d-code-check.log`, `86d-clean-check.log` and `86d-clean-build.log`.
-Keep actual benchmark measurements, raw logs and machine details outside Git.
+Keep raw CSV files, detailed machine logs and identifying local paths outside Git.
+The owner permits anonymized verification summaries in documents and commit history.
 A successful command does not close the callback maximum-budget issue. No performance correction enters 86d.
 Recorded input tests do not establish live keyboard, physical-controller or listening results.
 

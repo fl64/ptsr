@@ -61,6 +61,8 @@ Invalid shared MIDI state rejects new actions while preserving original releases
 Section 86 of `docs/LIVE-CHECKS.md` records verification and separate keyboard, controller and listening checks.
 This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
 The callback timing issue remains open. Report-only change 84b adds automatic local overrun records.
+The owner accepted and archived 84b on 2026-11-05.
+Archive: `openspec/changes/archive/2026-11-05-84b-benchmark-attribution/`.
 It does not change sound processing or exit gates. Callback correction remains separate work in 94a.
 Raw CSV files, detailed machine logs and identifying local paths stay local.
 The owner permits anonymized verification summaries in documents and commit history.

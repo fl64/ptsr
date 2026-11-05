@@ -35,10 +35,10 @@ The report SHALL NOT claim that this later policy observation proves the frequen
 
 ### Requirement: Benchmark local CSV output
 
-The benchmark SHALL save one uniquely named local CSV under `target/bench-diagnostics/` without replacing an existing file.
-It SHALL write a header, Unix run-start time, observation limitations and all buffered overrun rows before applying the existing p99 exit gates.
-Output failure SHALL fail the command with a clear error.
-Raw CSV files, detailed machine logs and identifying local paths SHALL NOT enter repository artifacts.
+The benchmark SHALL save one unique CSV in `target/bench-diagnostics/` without replacing files.
+It SHALL flush a header, Unix run-start time, observation limits and every overrun row before the existing p99 checks.
+Output failure SHALL fail the command clearly.
+Raw CSV, detailed machine logs and identifying local paths SHALL stay outside repository artifacts.
 Anonymized verification summaries MAY remain in documents and commit history.
 
 #### Scenario: Benchmark saves records before exit checks

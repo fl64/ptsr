@@ -54,7 +54,8 @@ not permission to combine the new changes.
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
   were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
-- The owner requested report-only change 84b for automatic local overrun records.
+- The owner accepted and archived report-only change 84b for automatic local overrun records.
+  Archive: `openspec/changes/archive/2026-11-05-84b-benchmark-attribution/`.
   It follows the 84a report, without changing sound processing, workload or exit gates.
   Generic code, tests, instructions and anonymized verification summaries can enter Git.
   Raw CSV files, detailed machine logs and identifying local paths stay local.
