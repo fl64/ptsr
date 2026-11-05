@@ -86,21 +86,22 @@ Do not move unrelated project or input logic as part of this step.
 
 ## Edge cases
 
-Statuses describe planning coverage, not passing tests.
+Statuses describe automated coverage, not owner acceptance.
+The tests use isolated files, controlled time and the production input routes.
 
 | Case | Required result | Status | Check |
 | --- | --- | --- | --- |
-| Autosave fails, then another edit occurs | Keep both edits and pause automatic retries | Open, support now | Controlled-time test and saved-byte comparison |
-| Two manual retries fail | Report each refusal and retain work | Open, support now | Keyboard and production MIDI dispatch |
-| Manual retry succeeds, then another edit occurs | Clear failure and resume ordinary autosave | Open, support now | Controlled-time test and reload |
-| Startup reads damaged or newer data | Refuse all saves without replacing that file | Open, preserve behavior | Compare bytes before and after each request |
-| Project folder disappears before or during save | Refuse without recreating its directory | Open, support now | Isolated filesystem fixture |
-| Temporary path is occupied or linked | Refuse safely and keep saved bytes | Open, support now | Filesystem test with an occupied path or link |
-| Another notice replaces the failure flash | Keep `Save failed` in the status line | Open, support now | Draw each screen at supported sizes |
-| Program exits while a failed save remains | Do not retry automatically or claim success | Open, support now | Exit-save decision test |
-| Learning receives a button before confirmation | Show the pending control without changing its saved assignment | Open, support now | Production F12 route with note and CC input |
-| Learning ends with Esc | Keep the previous assignments and saved configuration | Open, preserve behavior | Cancel and compare configuration bytes |
-| Save binding stored, then restart | Retain GLOBAL saving and the same retry feedback | Open, support now | Reload configuration into the production MIDI route |
+| Autosave fails, then another edit occurs | Keep both edits and pause automatic retries | Closed, automated | `failed_autosave_retains_pending_work` |
+| Two manual retries fail | Report each refusal and retain work | Closed, automated | `keyboard_and_controller_save_feedback_agree` |
+| Manual retry succeeds, then another edit occurs | Clear failure and resume ordinary autosave | Closed, automated | `manual_retry_restores_autosave` |
+| Startup reads damaged, unreadable or newer data | Refuse all saves without replacing that file | Closed, automated | `damaged_or_newer_session_remains_protected`, `an_unreadable_session_stays_protected` |
+| Project folder disappears before or during save | Refuse without recreating its directory | Closed, automated | `saving_does_not_recreate_a_deleted_project`, `project_parent_disappears_before_replacement` |
+| Temporary path is occupied or linked | Refuse safely and keep saved bytes | Closed, automated | `an_occupied_temporary_path_preserves_the_saved_file`, `replacement_refusal_removes_only_its_temporary_file` |
+| Another notice replaces the failure flash | Keep `Save failed` in the status line | Closed, automated | `a_save_failure_stays_visible_after_its_notice` |
+| Program exits while a failed save remains | Do not retry automatically or claim success | Closed, automated | `a_failed_save_does_not_retry_on_exit` |
+| Learning receives a button before confirmation | Show the pending control without changing its saved assignment | Closed, automated | `the_learned_save_button_survives_restart` |
+| Learning ends with Esc | Keep the previous assignments and saved configuration | Closed, automated | `the_learned_save_button_survives_restart` |
+| Save binding stored, then restart | Retain GLOBAL saving and the same retry feedback | Closed, automated | `the_learned_save_button_survives_restart` |
 | Two processes save the same project, or power fails | No new guarantee | Outside this change | No acceptance claim |
 
 The inspected axes are source type, read protection, pending work, failure timing, retry order, input path and screen size.

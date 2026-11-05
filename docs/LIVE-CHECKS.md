@@ -1402,3 +1402,179 @@ At that stage, strict validation remained a merge blocker.
 The later specification cleanup resolved these warnings without changing scenario text.
 Evidence: `target/86-new-cli-baseline.log` and the logs with prefix `target/86-pr-`.
 No new owner, listening or hardware result comes from these checks.
+
+## 86b — Save retry and learning from F12
+
+Implementation and automated checks are complete. Owner acceptance remains open.
+A failed write keeps pending work and pauses automatic saving, including saving on exit.
+A successful manual save clears the warning and permits autosave after the next edit.
+Read protection stays active for damaged, unreadable and newer session files.
+The F12 MIDI tab now lists `save session` under GLOBAL.
+Keys, factory assignments, saved formats and sound processing stay unchanged.
+
+### Recorded implementation checks
+
+`task check` exited 0 after the save-learning amendment. Its App, input and TUI suites reported:
+
+```text
+test result: ok. 681 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 44.97s
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.94s
+```
+
+Rust tests name all 21 active delta scenarios.
+This source check supplements execution. It does not prove owner or hardware acceptance.
+The tests cover scratch and projects, saved bytes, read protection, temporary-path collisions, missing folders and paused exit saving.
+Controlled-time tests cover notice expiry, replacement notices and resumed autosave.
+Screen tests cover 60×24, 100×26 and 252×60, with and without audio, including modal help.
+The new recorded-input test learns note and CC buttons through F12 instead of injecting the save assignment.
+It tests pending confirmation, Esc, configuration reload, five input screens, repeated refusals and a successful retry.
+
+`task build` passed and produced `target/release/ptsr`. `task openspec:check` reported:
+
+```text
+Totals: 16 passed, 0 failed (16 items)
+```
+
+The implementation benchmark passed its p99 exit checks but exceeded the wall maximum target:
+
+```text
+paired timing: steady playback
+  wall: mean 17.87 %, p99 24.85 %, max 91.71 %, samples 20000, >50 % 1
+  thread CPU: mean 17.88 %, p99 24.77 %, max 32.19 %, samples 20000, >50 % 0
+  maximum target (50 %): wall EXCEEDED; thread CPU WITHIN
+```
+
+Project-switch maxima were 27.13% wall and 27.16% thread CPU, with no blocks above 50%.
+An earlier 86b run reached 88.34% wall and 88.39% thread CPU, with one block above 50% for each clock.
+The cause remains unknown. These results do not close the maximum-budget or slow-core issue.
+Local evidence: `target/86b-learn-code-final-check.log`, `target/86b-owner-build.log`, `target/86b-learn-code-openspec.log` and `target/86b-owner-scenarios.log`.
+The earlier overrun remains in `target/86b-step3-final-check.log`.
+The final handover `task check` also exited 0, with 681 App tests and 102 TUI tests passing.
+Its steady maxima were 55.54% wall and 35.12% thread CPU. One wall block exceeded 50%.
+Project-switch maxima were 15.13% wall and 15.15% thread CPU, with no blocks above 50%.
+Evidence: `target/86b-owner-final-check.log`. The maximum-budget acceptance remains open.
+The first save-learning test used the wrong project filename. The corrected fixture uses `project.toml` and passes.
+A subsequent check stopped on formatting. `task fmt` corrected that line before the successful full run.
+
+### Prepare an isolated owner run
+
+Owner procedure only: this run uses normal sound and reads connected MIDI devices.
+The agent must not run these commands. Agent live runs require the sound isolation in `AGENTS.md`.
+These temporary folders protect existing projects, scratch work and controller assignments.
+Keep this shell open. Run these commands from the repository folder after `task build` and `task check`:
+
+```sh
+check_root="$(mktemp -d "$PWD/target/86b-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data" "$check_root/state" "$check_root/projects" "$check_root/samples"
+cp renders/85-input-modes.wav "$check_root/samples/check.wav"
+printf '[paths]\nprojects = "%s/projects"\nsamples = "%s/samples"\n' "$check_root" "$check_root" > "$check_root/config/ptsr/config.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_save_check() {
+  env XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_save_check
+```
+
+In a second terminal, set `check_root` to the exact printed folder before using the commands below.
+Do not use an existing project folder for these refusal tests.
+Do not quit or switch projects with pending work. This change adds no quit guard or safe project-switch guard.
+Those transitions belong to 86c. The loss risk on exit still exists.
+
+### Keyboard pass
+
+- [ ] Start in scratch. Open Files with `F6`, select `check.wav` and press `Enter`.
+  Hit pad `1` to load it. Wait for loading to finish.
+  Press `Ctrl+S` twice. Each press must show `Session saved` for five seconds.
+- [ ] Set `session_file="$check_root/data/ptsr/session.toml"` in the second terminal.
+  Copy its saved bytes and occupy only its temporary path:
+
+  ```sh
+  cp "$session_file" "$check_root/last-saved.toml"
+  mkdir "$session_file.tmp"
+  ```
+
+  On Pads, press `]` to change master volume. Check `Unsaved`, then `Save failed` after the idle save.
+  Press `Ctrl+S` twice. Each request must show a current refusal. Wait more than five seconds.
+  Check that `Save failed` remains after the notice ends. Compare the saved bytes:
+
+  ```sh
+  cmp "$session_file" "$check_root/last-saved.toml"
+  ```
+
+  No output and exit 0 mean the bytes match.
+- [ ] Open Pads, Files, Chop, FX and Settings in separate passes. Return to Pads before opening Chop.
+  Keep a loaded pad selected for Chop. Check `Save failed` at 60×24 and at a larger terminal size.
+  Open and close `F1`. Check that help and notices retain their places.
+  On Pads, select an empty pad and press `F3`. Its refusal notice must not remove `Save failed`.
+- [ ] Remove only the test directory with `rmdir "$session_file.tmp"`. Wait two seconds without a manual save.
+  Run the same `cmp` command. The saved bytes must still match because automatic retries remain paused.
+  Press `Ctrl+S`. Check `Session saved` and no warning. Press `]` again.
+  After two idle seconds, check that `Unsaved` clears without a success notice.
+  Quit with `Ctrl+Q`, run `run_save_check` again and check the saved master volume.
+- [ ] Save scratch before the project pass. Press `Ctrl+P`, type `retry` and press `Enter` to create the disposable project.
+  Load `check.wav` again. Save it. Set `session_file="$check_root/projects/retry/project.toml"` in the second terminal.
+  Repeat the temporary-path refusal, byte comparison, manual retry and later autosave checks above.
+- [ ] With the disposable project clean, rename its folder in the second terminal:
+
+  ```sh
+  mv "$check_root/projects/retry" "$check_root/projects/retry-away"
+  ```
+
+  Press `]`, then `Ctrl+S` twice. Each request must refuse. Check that the old folder does not reappear.
+  The window title must drop the project name. Restore the same folder:
+
+  ```sh
+  mv "$check_root/projects/retry-away" "$check_root/projects/retry"
+  ```
+
+  Press `Ctrl+S`. Check that the retry succeeds before closing the program.
+
+### Controller pass, when hardware is available
+
+Use the isolated configuration above. Record the device, preset and whether its button sends Note or CC messages.
+Choose an unused button. Do not replace an existing performance control to test saving.
+
+- [ ] Open `F12`. Use `Tab` to select MIDI. Select GLOBAL with the arrows and press `Enter` to open it.
+  Select `save session`. Press `Enter`, then the unused controller button.
+  Check the pending assignment on that row. Press `Esc` and check that no assignment changes.
+- [ ] Repeat learning. Press `Enter` on the pending assignment to save it. Save all session work before exit.
+  Restart with `run_save_check`. Check that the row retains the assignment.
+- [ ] Press the learned button on Pads, Files, Chop, FX and Settings. Check `Session saved` on each screen.
+  Return to Pads before opening Chop and keep a loaded pad selected.
+- [ ] Repeat the keyboard pass's temporary-path refusal and retry with the learned button instead of `Ctrl+S`.
+  Check each repeated refusal, the persistent warning, successful retry and silent autosave after the next edit.
+  Keep keyboard and controller results separate. Repeat with the other message form only if the hardware supports it.
+
+### Read-protection pass
+
+Use only the disposable `retry` project. Save and close it before each file edit.
+Keep a known good copy outside the project folder:
+
+```sh
+cp "$check_root/projects/retry/project.toml" "$check_root/good-project.toml"
+printf 'version = [\n' > "$check_root/projects/retry/project.toml"
+```
+
+In the original shell, start the program with `run_save_check` after each file edit below.
+
+- [ ] Press `Ctrl+S` twice. Each request must explain the read refusal, not show `Session saved`.
+  Close the program. Check that the damaged file still contains exactly the text from the command.
+- [ ] Replace that disposable file with `printf 'version = 99\n' > "$check_root/projects/retry/project.toml"`.
+  Start again. Repeat the refusal and unchanged-file checks. A manual retry must not remove read protection.
+- [ ] Close the program. Restore it with `cp "$check_root/good-project.toml" "$check_root/projects/retry/project.toml"`.
+  Start again and check that ordinary saving works. Do not change a protected file while that session remains open.
+
+Isolated automated tests also cover unreadable files and protected scratch sessions. The agent did not run these cases live.
+
+### Listening and acceptance
+
+No new render is necessary: sound processing stays unchanged.
+The copied `renders/85-input-modes.wav` is an existing test sample, not a new 86b sound feature.
+
+- [ ] (by ear) Play the same loaded pad before a refusal and after successful retry. Check for new clicks or changed playback.
+- [ ] (by ear) After restart, play the saved pad. Check the retained settings against the values before exit.
+- [ ] Report keyboard, physical-controller and listening results separately, including unavailable controls.
+
+No live sampler run or physical-controller result comes from the automated checks above.
+Archive 86b only after owner acceptance. Then activate 86c, followed by 86d. Change 87 remains outside this work.
