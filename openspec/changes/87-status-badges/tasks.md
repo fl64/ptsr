@@ -46,6 +46,10 @@ Two new drawing tests cover state colors, bank keys, Unicode names, slice 128, u
 The style guide records the corner marks and frame priority. Task 3.3 retains its separate final playback regression check.
 Automated verification opened no live audio or MIDI devices. This drawing-only step adds no sound render or hardware acceptance.
 
+The owner accepted step 3.2 and requested the next step.
+This acceptance does not establish separate controller or listening results and does not cover unfinished features.
+Tab under open F1 help remains an open exception under task 4.4.
+
 Owner checks for 3.2: use the keyboard first. Repeat with existing learned controller actions where available.
 Use the keyboard for commands without a controller binding.
 
