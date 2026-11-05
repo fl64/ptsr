@@ -6,7 +6,8 @@
 It selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
-The new quality, export and release changes reserve numbers 109–120. Callback work keeps 94a.
+The new quality, export and release changes reserve numbers 109–120. Callback correction keeps 94a.
+Independent report-only change 84b adds local overrun records before further product work.
 
 The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
@@ -26,7 +27,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-04)
+## Current status (2026-11-05)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -53,6 +54,12 @@ not permission to combine the new changes.
   estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
   workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
   were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
+- The owner accepted and archived report-only change 84b for automatic local overrun records.
+  Archive: `openspec/changes/archive/2026-11-05-84b-benchmark-attribution/`.
+  It follows the 84a report, without changing sound processing, workload or exit gates.
+  Generic code, tests, instructions and anonymized verification summaries can enter Git.
+  Raw CSV files, detailed machine logs and identifying local paths stay local.
+  This diagnostic does not close the callback maximum-budget gate or activate 87.
 - The owner accepted input modes 85 on 2026-11-03. It is archived in
   `openspec/changes/archive/2026-11-03-85-input-modes/`. Implementation and offline checks are complete.
   It shares
@@ -73,8 +80,14 @@ not permission to combine the new changes.
   Earlier callback peaks and slow-core CPU spikes remain unresolved. Change 87 is not active.
 - The owner accepted and archived legacy folder migration removal (86a) in merged PR #5.
   Archive: `openspec/changes/archive/2026-11-04-86a-remove-legacy-migration/`.
-- The plan puts project save safety 86b–86d before 87. These are code-review findings,
-  not newly reproduced manual failures. No implementation or active OpenSpec change exists yet.
+- The owner accepted and archived save retry (86b), safe project transitions (86c) and portable chops (86d) without the manual passes.
+  Archives: `openspec/changes/archive/2026-11-05-86b-save-retry/`,
+  `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
+  `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
+  Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
+  The save-safety sequence is complete. The owner approved one PR for 84b and 86b–86d on `86b-save-retry`.
+  This is an explicit exception to separate change branches.
+  Change 87 is not active and needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -169,7 +182,7 @@ Check external files and older projects. Render the restored slices with the nor
 
 How to verify: repeat the two-variant move with a disposable project from each input path.
 Open a pad from each variant and move a cut. Only that variant's linked pads follow it.
-Planned render: `renders/86d-portable-chops.wav`. Compare restored slices with their source regions.
+Local render: `renders/86d-portable-chops.wav`. Compare matching before/after slices as section 86d of `docs/LIVE-CHECKS.md` describes.
 
 ## Broader tracks and visual rules
 

@@ -59,11 +59,20 @@ The system SHALL remember the last opened project and open it on the next start;
 - **THEN** the scratch session works and is saved as today, with no project dialog in the way
 
 ### Requirement: Deleted project folder
-The system SHALL keep working when the open project's folder disappears from disk: the pads are marked as "missing file" and the title drops the project name.
+
+The system SHALL keep working when the open project's folder disappears from disk.
+It SHALL mark pads with files inside that folder as "missing file" and drop the project name from the window title.
+It SHALL refuse saving without recreating the project folder.
+The refusal SHALL retain pending work and allow a manual retry if the folder becomes available again.
 
 #### Scenario: Folder deleted while open
 - **WHEN** the folder of the open project is deleted while the program runs
 - **THEN** the program keeps working, the pads are marked as "missing file", and the title shows no project name
+
+#### Scenario: Saving does not recreate a deleted project
+- **WHEN** the project folder disappears before or during a save
+- **THEN** saving fails without recreating the folder and pending work remains in memory
+- **AND** each manual save request reports the refusal
 
 ### Requirement: Roots in the settings
 The system SHALL offer two rows in the settings screen (F12): the projects root (default `~/ptsr/projects`) and the samples root (default `~/ptsr/samples`); each row opens a directory picker that walks the folders and picks with `Enter`; the choices survive a restart.
@@ -135,3 +144,101 @@ is ready, pad hits SHALL be silent and SHALL NOT play later.
 - **WHEN** the owner switches from a project with samples and slices to an empty project
   and then returns to the first project
 - **THEN** its pads play their own samples and slices with their saved settings
+
+### Requirement: Read protection survives manual save requests
+
+A session file that fails to load SHALL remain protected against saving.
+This protection SHALL apply to damaged files, unreadable files and files from a newer format version.
+Manual save requests SHALL report the protection reason without replacing the file.
+A write failure alone SHALL NOT establish read protection.
+
+#### Scenario: Damaged or newer session remains protected
+- **WHEN** startup cannot load a damaged or newer project or scratch session and the owner requests manual saves
+- **THEN** each request explains the refusal and the protected file remains byte for byte unchanged
+- **AND** edits do not clear the protection or pending work
+
+### Requirement: Save before project transitions
+
+Opening another project or creating a new project SHALL save pending source work before replacing the current session.
+Source work SHALL include scratch and named projects.
+A save refusal SHALL keep pads, chops, undo, pending work, picker selection and the typed name.
+New target folders and files SHALL NOT be created before a required source save succeeds.
+Existing keys, startup read protection and sound isolation SHALL stay unchanged.
+
+#### Scenario: Project edits survive an immediate switch
+- **WHEN** the owner changes a project and selects another project before autosave
+- **THEN** the source saves before the target replaces it
+- **AND** returning to the source restores the saved pad and chop changes
+
+#### Scenario: A save refusal keeps the selected target
+- **WHEN** the owner selects another project while pending source work cannot save
+- **THEN** each Enter reports refusal and retains the current pads, chops, undo and pending timestamp
+- **AND** the picker stays open with the same selection and the target stays unchanged
+
+#### Scenario: A save refusal keeps the new project name
+- **WHEN** the owner enters a new project name while pending source work cannot save
+- **THEN** each Enter retains the typed name and current work without creating that target
+- **AND** after the write problem ends, Enter saves the source and creates the target
+
+### Requirement: Selecting the current project does not reload
+
+Selecting the current project's folder SHALL close the picker without reading, saving or reloading the session.
+Pending work, undo, loader generations and current sound state SHALL stay unchanged.
+Equivalent canonical folder paths SHALL count as the same folder when both paths exist.
+
+#### Scenario: Selecting the current project keeps pending work
+- **WHEN** the owner selects the open project, including a folder alias, while changes are pending
+- **THEN** the picker closes without losing the changes or undo history
+- **AND** no session save, loader reset or audio epoch change occurs
+
+### Requirement: Validate a target before replacing the current project
+
+An existing target SHALL pass session reading and validation before source saving or state replacement.
+A damaged, newer, unreadable or missing target session SHALL keep the source project, save flags and last-project setting unchanged.
+A target-creation refusal after source saving SHALL keep the source and picker open, with that source work safely saved.
+
+#### Scenario: A target read refusal preserves the source
+- **WHEN** the owner selects a target whose session is damaged, newer, unreadable or missing
+- **THEN** the current session, pending work, undo, picker selection and last-project setting stay unchanged
+- **AND** the refusal does not write either session or replace the source read-protection reason
+
+#### Scenario: A target creation refusal retains saved source work
+- **WHEN** source saving succeeds but the new target cannot be created
+- **THEN** the source and its undo remain available and its pending flag reflects the successful save
+- **AND** the picker keeps the typed name for a later retry
+
+### Requirement: Project paths include every saved chop
+
+Project path conversion SHALL include pads, the current chops and every saved older chop variant.
+Paths inside the project SHALL store relative to its folder and resolve against its current folder on load.
+External absolute paths SHALL stay unchanged. No sample SHALL be copied.
+The saved format and scratch path behavior SHALL stay unchanged.
+
+#### Scenario: Internal variant paths move with the project
+- **WHEN** a project with several saved variants of an internal sample is saved, moved as a whole folder and opened from its new location
+- **THEN** pads, newest chops and every older variant use the sample in the new folder
+- **AND** saving stores their internal paths relative to that folder
+
+#### Scenario: External variant paths remain absolute
+- **WHEN** a project with several variants of an external sample is saved, moved and reopened
+- **THEN** all saved variant keys and pad paths keep the same external absolute path
+- **AND** the external file stays byte for byte unchanged and no sample copy appears in the project
+
+#### Scenario: Save and reopen after project relocation
+- **WHEN** the moved project is saved and opened again
+- **THEN** all saved variants remain available with their full state and correct sample paths
+
+### Requirement: Portable chop compatibility
+
+Projects without saved older variants SHALL keep the existing pad-bound fallback.
+Stale absolute paths from an earlier move SHALL NOT be replaced by guessed paths.
+This change SHALL NOT migrate the saved format or search for replacement samples.
+
+#### Scenario: Missing kept variants use the existing fallback
+- **WHEN** an old project has a linked pad but no saved variant for its epoch and the owner opens that pad with F3
+- **THEN** the existing fallback rebuilds the chop from its pad bounds without a format migration
+
+#### Scenario: Stale absolute variant paths are not guessed
+- **WHEN** a project already contains an older variant key that names an absent old absolute location
+- **THEN** loading leaves that key unchanged instead of mapping it to a same-named sample in the new folder
+- **AND** the existing fallback remains available for pads whose saved variant cannot be found
