@@ -146,12 +146,9 @@ fn damaged_or_newer_session_remains_protected() {
             let path = app.session_file();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, bytes).unwrap();
-            if project {
-                app.user_path = Some(files.0.join("config.toml"));
-                app.open_project(path.parent().unwrap().to_path_buf());
-            } else {
-                app.session_read_error = Some(session::load(&path).unwrap_err());
-            }
+            // Startup protects a failed load. Interactive opening now refuses it
+            // without replacing the current session, so it cannot model startup.
+            app.session_read_error = Some(session::load(&path).unwrap_err());
             let reason = app.session_read_error.clone().unwrap();
             app.pads.pitch[0] = 3;
             app.dirty();

@@ -148,9 +148,20 @@ pub fn path() -> PathBuf {
 
 /// No file gives an empty session; a broken or newer file is an error and is not overwritten.
 pub fn load(path: &Path) -> Result<Session, String> {
+    load_from(path, true)
+}
+
+/// Interactive project selection must not turn an absent target into empty state.
+pub fn load_existing(path: &Path) -> Result<Session, String> {
+    load_from(path, false)
+}
+
+fn load_from(path: &Path, missing_is_empty: bool) -> Result<Session, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Session::default()),
+        Err(e) if missing_is_empty && e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Session::default());
+        }
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     let s: Session =
@@ -276,6 +287,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ptsr-session-{}", std::process::id()));
         let path = dir.join("session.toml");
         assert_eq!(load(&path).unwrap(), Session::default());
+        assert!(load_existing(&path).is_err());
 
         let mut s = Session {
             browser_dir: Some("/music/breaks".into()),
@@ -319,6 +331,7 @@ mod tests {
         );
         save(&path, &s).unwrap();
         assert_eq!(load(&path).unwrap(), s);
+        assert_eq!(load_existing(&path).unwrap(), s);
 
         // version 2 from 04a: three slices of one break, one whole file
         std::fs::write(
@@ -327,6 +340,7 @@ mod tests {
         )
         .unwrap();
         let v2 = load(&path).unwrap();
+        assert_eq!(load_existing(&path).unwrap(), v2);
         let chop = &v2.chops["/b.wav"];
         assert_eq!((chop.start, chop.end), (0.0, 2.0));
         assert_eq!(
@@ -355,8 +369,10 @@ mod tests {
 
         std::fs::write(&path, "version = 99\n").unwrap();
         assert!(load(&path).unwrap_err().contains("newer"));
+        assert!(load_existing(&path).unwrap_err().contains("newer"));
         std::fs::write(&path, "version = [\n").unwrap();
         assert!(load(&path).is_err());
+        assert!(load_existing(&path).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

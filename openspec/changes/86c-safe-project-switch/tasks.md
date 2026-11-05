@@ -6,12 +6,12 @@
 
 ## 2. Guard opening and creation
 
-- [ ] 2.1 Add recorded-input tests for pending source saving, scratch, save refusal and retained picker state. Use production keyboard and raw MIDI routes.
-- [ ] 2.2 Check an existing target before saving the source. Reject missing files on interactive open without changing startup loading.
-- [ ] 2.3 Save pending source work before open or create. Preserve picker selection and typed name on refusal.
-- [ ] 2.4 Avoid reloading the current folder, including an alias. Check state, loader generations, audio epoch and saved bytes.
-- [ ] 2.5 Test read protection, target read faults, creation refusal and retries. Adapt startup and same-folder fixtures without weakening their intended checks.
-- [ ] 2.6 Run `task check`, inspect the diff and commit code with its tests.
+- [x] 2.1 Add recorded-input tests for pending source saving, scratch, save refusal and retained picker state. Use production keyboard and raw MIDI routes.
+- [x] 2.2 Check an existing target before saving the source. Reject missing files on interactive open without changing startup loading.
+- [x] 2.3 Save pending source work before open or create. Preserve picker selection and typed name on refusal.
+- [x] 2.4 Avoid reloading the current folder, including an alias. Check state, loader generations, audio epoch and saved bytes.
+- [x] 2.5 Test read protection, target read faults, creation refusal and retries. Adapt startup and same-folder fixtures without weakening their intended checks.
+- [x] 2.6 Run `task check`, inspect the diff and commit code with its tests.
 
 ## 3. Check and hand over
 

@@ -769,46 +769,60 @@ impl App {
         self.path_picker = Some(picker);
     }
 
-    /// (11) Opens a project: its `project.toml` read back becomes the whole app state; a
-    /// file that cannot be read leaves the empty session and says so, as the start does
-    /// with a broken session file.
-    fn open_project(&mut self, folder: PathBuf) {
-        let (sess, notice) = match session::load(&folder.join("project.toml")) {
-            Ok(s) => (s, None),
+    fn save_before_project_transition(&mut self) -> bool {
+        self.session_dirty.is_none() || self.save_session().is_ok()
+    }
+
+    /// Validate the target before saving or replacing current work. Startup keeps its
+    /// separate empty-session fallback for an absent session file.
+    fn open_project(&mut self, folder: PathBuf) -> bool {
+        let same = self.project.as_ref().is_some_and(|p| {
+            p.folder == folder
+                || std::fs::canonicalize(&p.folder)
+                    .ok()
+                    .zip(std::fs::canonicalize(&folder).ok())
+                    .is_some_and(|(current, target)| current == target)
+        });
+        if same {
+            return true;
+        }
+        let sess = match session::load_existing(&folder.join("project.toml")) {
+            Ok(s) => s,
             Err(e) => {
                 log::error!("{e}");
-                (session::Session::default(), Some(e))
+                self.flash = Some((format!("Project not opened: {e}"), Instant::now()));
+                return false;
             }
         };
-        // a readable session may be saved back, a broken one is left alone (as at start)
-        self.session_read_error = notice.clone();
+        if !self.save_before_project_transition() {
+            return false;
+        }
+        self.session_read_error = None;
         let sess = with_resolved_paths(sess, Some(&folder));
         let name = file_name(&folder);
         self.project = Some(Project {
             name: name.clone(),
-            folder: folder.clone(),
+            folder,
         });
         self.apply_session(sess);
-        self.flash = Some((
-            notice.unwrap_or_else(|| format!("Project {name}")),
-            Instant::now(),
-        ));
-        // the last opened name goes into the config; the next start reopens it (11)
+        self.flash = Some((format!("Project {name}"), Instant::now()));
         self.project_cfg.last = Some(name);
         self.save_project_cfg();
+        true
     }
 
-    /// (11) Makes a project folder in the projects root and opens it: `project.toml` with
-    /// an empty session and an empty `samples/`. A name that is already a project just
-    /// opens; an empty name does nothing.
-    fn create_project(&mut self, name: String) {
+    /// Save pending source work before creating any target files. Existing project
+    /// names use the same guarded open path; refusals keep the picker name available.
+    fn create_project(&mut self, name: String) -> bool {
         if name.trim().is_empty() {
-            return;
+            return false;
         }
         let folder = self.paths.projects.join(&name);
         if folder.join("project.toml").is_file() {
-            self.open_project(folder);
-            return;
+            return self.open_project(folder);
+        }
+        if !self.save_before_project_transition() {
+            return false;
         }
         let result = std::fs::create_dir_all(&folder)
             .and_then(|()| std::fs::create_dir_all(folder.join("samples")))
@@ -819,9 +833,9 @@ impl App {
         if let Err(e) = result {
             log::error!("{e}");
             self.flash = Some((e, Instant::now()));
-            return;
+            return false;
         }
-        self.open_project(folder);
+        self.open_project(folder)
     }
 
     fn send(&mut self, cmd: Command) {
@@ -996,9 +1010,9 @@ impl App {
             match k.code {
                 KeyCode::Esc => picker.naming = None,
                 KeyCode::Enter => {
-                    let name = std::mem::take(name);
-                    self.create_project(name);
-                    return true; // the project is open, the picker is gone
+                    if self.create_project(name.clone()) {
+                        return true;
+                    }
                 }
                 KeyCode::Backspace => {
                     name.pop();
@@ -1019,9 +1033,10 @@ impl App {
                 picker.selected = (picker.selected + 1).min(picker.entries.len().saturating_sub(1));
             }
             KeyCode::Enter => {
-                if let Some(name) = picker.entries.get(picker.selected).cloned() {
-                    self.open_project(self.paths.projects.join(name));
-                    return true; // the project is open, the picker is gone
+                if let Some(name) = picker.entries.get(picker.selected).cloned()
+                    && self.open_project(self.paths.projects.join(name))
+                {
+                    return true;
                 }
             }
             KeyCode::Esc => return true, // closed, nothing happens
@@ -10252,7 +10267,9 @@ Enter = "browser.hold"
         // with a recording in it, the project's samples/ comes first
         let samples = root.join("projects/beat2/samples");
         std::fs::write(samples.join("rec.wav"), b"").unwrap();
-        app.create_project("beat2".into());
+        // Reopen from another project: selecting the current one no longer reloads.
+        assert!(app.create_project("away".into()));
+        assert!(app.create_project("beat2".into()));
         assert_eq!(app.browser.dir, samples);
         std::fs::remove_dir_all(&root).ok();
     }

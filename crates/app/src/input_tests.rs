@@ -6354,6 +6354,486 @@ fn the_learned_save_button_survives_restart() {
     }
 }
 
+struct TransitionFiles(PathBuf);
+
+impl TransitionFiles {
+    fn new() -> Self {
+        use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/86c-transitions")
+            .join(format!(
+                "{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Relaxed)
+            ));
+        for name in ["A", "B"] {
+            let folder = root.join(name);
+            std::fs::create_dir_all(folder.join("samples")).unwrap();
+            session::save_project(&folder.join("project.toml"), &session::Session::default())
+                .unwrap();
+        }
+        let wave = vec![0.25; 4096];
+        engine::offline::write_wav(&root.join("tone.wav"), 48_000, &wave, &wave).unwrap();
+        Self(root)
+    }
+
+    fn drive(&self, project: bool) -> Drive {
+        let mut drive = Drive::new();
+        drive.bind_action(88, "project.pick");
+        drive.bind_action(89, "pad.mode_next");
+        drive.bind_action(90, "chop.cut");
+        let file = self.0.join("tone.wav");
+        let sound = Arc::new(Sample::mono(vec![0.25; 4096]));
+        drive.load_pad(0, sound.clone(), "tone");
+        drive.app.pads.file[0] = Some(file.clone());
+        drive.app.chop = Some(chop::Chop::new(file, sound, 48_000));
+        drive.app.paths.projects = self.0.clone();
+        drive.app.browser = browser::Browser::new(Some(self.0.clone()));
+        drive.app.preview_on = false;
+        drive.app.session_path = self.0.join("scratch/session.toml");
+        drive.app.session_read_error = None;
+        if project {
+            drive.app.project = Some(Project {
+                name: "A".into(),
+                folder: self.0.join("A"),
+            });
+            drive.app.project_cfg.last = Some("A".into());
+        }
+        drive.app.save_session().unwrap();
+        let config_path = self.0.join("config.toml");
+        config::save_section(&config_path, "project", &drive.app.project_cfg).unwrap();
+        drive.app.user_path = Some(config_path);
+        drive.frame();
+        drive
+    }
+
+    fn edit(drive: &mut Drive, source: Source) {
+        drive.registry_command(source, KeyCode::Char('h'), M::NONE, 89);
+        drive.tap(KeyCode::F(3), M::NONE);
+        assert_eq!(drive.app.screen, Screen::Chop);
+        for _ in 0..16 {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        drive.registry_command(source, KeyCode::Char('m'), M::NONE, 90);
+        assert_eq!(drive.app.chop.as_ref().unwrap().saved().cuts.len(), 1);
+        drive.tap(KeyCode::F(2), M::NONE);
+        assert!(drive.app.session_dirty.is_some());
+        assert!(!drive.app.history.is_empty());
+    }
+
+    fn pick(drive: &mut Drive, source: Source, name: &str, create: bool) {
+        drive.registry_command(source, KeyCode::Char('p'), M::CONTROL, 88);
+        assert!(drive.app.project_picker.is_some());
+        // The current project picker has keyboard selection and confirmation only.
+        // MIDI still enters through the production action and dispatch above.
+        if create {
+            for c in name.chars() {
+                drive.tap(KeyCode::Char(c), M::NONE);
+            }
+        } else {
+            let at = drive
+                .app
+                .project_picker
+                .as_ref()
+                .unwrap()
+                .entries
+                .iter()
+                .position(|entry| entry == name)
+                .unwrap();
+            for _ in 0..at {
+                drive.tap(KeyCode::Down, M::NONE);
+            }
+        }
+    }
+
+    fn picker(drive: &Drive) -> (Vec<String>, usize, Option<String>) {
+        let picker = drive.app.project_picker.as_ref().unwrap();
+        (
+            picker.entries.clone(),
+            picker.selected,
+            picker.naming.clone(),
+        )
+    }
+
+    fn state(drive: &Drive) -> Seen {
+        let mut seen = drive.seen();
+        seen.notice = None;
+        seen
+    }
+}
+
+impl Drop for TransitionFiles {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).unwrap();
+    }
+}
+
+/// Scenario "Project edits survive an immediate switch".
+/// Scenario "Scratch edits save before opening or creating a project".
+/// Scenario "Keyboard and MIDI project entry share transition safety".
+#[test]
+fn project_edits_survive_an_immediate_switch() {
+    for source in [Source::Keyboard, Source::Button] {
+        for project in [false, true] {
+            for create in [false, true] {
+                let files = TransitionFiles::new();
+                let mut drive = files.drive(project);
+                TransitionFiles::edit(&mut drive, source);
+                let source_file = drive.app.session_file();
+                let expected_gate = drive.app.pads.gate[0];
+                let expected_chop = drive.app.chop.as_ref().unwrap().saved();
+                let target = if create { "C" } else { "B" };
+                TransitionFiles::pick(&mut drive, source, target, create);
+                drive.tap(KeyCode::Enter, M::NONE);
+                assert!(drive.app.project_picker.is_none());
+                assert_eq!(drive.app.project.as_ref().unwrap().name, target);
+                assert!(drive.app.session_dirty.is_none());
+                assert!(drive.app.history.is_empty());
+                let saved = session::load_existing(&source_file).unwrap();
+                assert_eq!(saved.pads["0"].gate, expected_gate);
+                assert_eq!(
+                    saved.chops.values().next().unwrap(),
+                    &expected_chop.to_state(drive.app.rate)
+                );
+                if project {
+                    TransitionFiles::pick(&mut drive, source, "A", false);
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    assert_eq!(drive.app.project.as_ref().unwrap().name, "A");
+                    assert_eq!(drive.app.pads.gate[0], expected_gate);
+                    assert_eq!(
+                        drive.app.pending_chops[&files.0.join("tone.wav")],
+                        expected_chop
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "A save refusal keeps the selected target".
+/// Scenario "A save refusal keeps the new project name".
+/// Scenario "Pending protected work blocks a transition".
+/// Scenario "A refused transition explains its reason".
+#[test]
+fn a_save_refusal_keeps_the_selected_target() {
+    for source in [Source::Keyboard, Source::Button] {
+        for project in [false, true] {
+            for create in [false, true] {
+                for protected in [false, true] {
+                    let files = TransitionFiles::new();
+                    let mut drive = files.drive(project);
+                    TransitionFiles::edit(&mut drive, source);
+                    let source_file = drive.app.session_file();
+                    let tmp = source_file.with_extension("toml.tmp");
+                    if protected {
+                        std::fs::write(&source_file, "version = 99\n").unwrap();
+                        drive.app.session_read_error =
+                            Some(session::load(&source_file).unwrap_err());
+                    } else {
+                        std::fs::create_dir(&tmp).unwrap();
+                    }
+                    let reason = drive.app.session_read_error.clone();
+                    let bytes = std::fs::read(&source_file).unwrap();
+                    let config_bytes =
+                        std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap();
+                    let target_bytes = std::fs::read(files.0.join("B/project.toml")).unwrap();
+                    let pending = drive.app.session_dirty;
+                    let expected_gate = drive.app.pads.gate[0];
+                    let generations = drive.app.load_gen.clone();
+                    let cuts = drive.app.chop.as_ref().unwrap().saved();
+                    let target = if create { "C" } else { "B" };
+                    TransitionFiles::pick(&mut drive, source, target, create);
+                    let before = TransitionFiles::state(&drive);
+                    let picker = TransitionFiles::picker(&drive);
+                    for _ in 0..2 {
+                        drive.app.flash = None;
+                        drive.tap(KeyCode::Enter, M::NONE);
+                        assert_eq!(TransitionFiles::state(&drive), before);
+                        assert_eq!(TransitionFiles::picker(&drive), picker);
+                        assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
+                        assert_eq!(drive.app.load_gen, generations);
+                        assert_eq!(drive.app.session_dirty, pending);
+                        assert_eq!(drive.app.session_read_error, reason);
+                        assert_eq!(drive.app.session_write_failed, !protected);
+                        assert_eq!(
+                            drive.app.project.as_ref().map(|p| p.name.as_str()),
+                            project.then_some("A")
+                        );
+                        let notice = &drive.app.flash.as_ref().unwrap().0;
+                        assert_ne!(notice, "Session saved");
+                        assert!(!notice.starts_with("Project "));
+                        assert!(drive.app.ask.is_none());
+                        assert_eq!(std::fs::read(&source_file).unwrap(), bytes);
+                        assert_eq!(
+                            std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap(),
+                            config_bytes
+                        );
+                        assert_eq!(
+                            std::fs::read(files.0.join("B/project.toml")).unwrap(),
+                            target_bytes
+                        );
+                        assert!(!files.0.join("C").exists());
+                    }
+                    if !protected {
+                        std::fs::remove_dir(&tmp).unwrap();
+                        drive.tap(KeyCode::Enter, M::NONE);
+                        assert!(drive.app.project_picker.is_none());
+                        assert_eq!(drive.app.project.as_ref().unwrap().name, target);
+                        let saved = session::load_existing(&source_file).unwrap();
+                        assert_eq!(saved.pads["0"].gate, expected_gate);
+                        assert_eq!(
+                            saved.chops.values().next().unwrap(),
+                            &cuts.to_state(drive.app.rate)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "A target read refusal preserves the source".
+#[test]
+fn a_target_read_refusal_preserves_the_source() {
+    for source in [Source::Keyboard, Source::Button] {
+        for project in [false, true] {
+            for fault in ["damaged", "newer", "unreadable", "missing"] {
+                let files = TransitionFiles::new();
+                let mut drive = files.drive(project);
+                TransitionFiles::edit(&mut drive, source);
+                TransitionFiles::pick(&mut drive, source, "B", false);
+                let path = files.0.join("B/project.toml");
+                match fault {
+                    "damaged" => std::fs::write(&path, "version = [\n").unwrap(),
+                    "newer" => std::fs::write(&path, "version = 99\n").unwrap(),
+                    _ => {
+                        std::fs::remove_file(&path).unwrap();
+                        if fault == "unreadable" {
+                            std::fs::create_dir(&path).unwrap();
+                            std::fs::write(path.join("keep"), "unrelated").unwrap();
+                        }
+                    }
+                }
+                let target_bytes = std::fs::read(&path).ok();
+                // A target refusal must happen before a source write attempt.
+                let source_file = drive.app.session_file();
+                std::fs::create_dir(source_file.with_extension("toml.tmp")).unwrap();
+                drive.app.session_read_error = Some("source remains protected".into());
+                let reason = drive.app.session_read_error.clone();
+                let bytes = std::fs::read(&source_file).unwrap();
+                let config_bytes = std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap();
+                let pending = drive.app.session_dirty;
+                let before = TransitionFiles::state(&drive);
+                let picker = TransitionFiles::picker(&drive);
+                let cuts = drive.app.chop.as_ref().unwrap().saved();
+                let generations = drive.app.load_gen.clone();
+                for _ in 0..2 {
+                    drive.app.flash = None;
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    assert!(
+                        drive
+                            .app
+                            .flash
+                            .as_ref()
+                            .unwrap()
+                            .0
+                            .starts_with("Project not opened:")
+                    );
+                    assert_eq!(TransitionFiles::state(&drive), before);
+                    assert_eq!(TransitionFiles::picker(&drive), picker);
+                    assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
+                    assert_eq!(drive.app.load_gen, generations);
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.session_read_error, reason);
+                    assert!(!drive.app.session_write_failed);
+                    assert_eq!(
+                        drive.app.project_cfg.last.as_deref(),
+                        project.then_some("A")
+                    );
+                    assert_eq!(std::fs::read(&source_file).unwrap(), bytes);
+                    assert_eq!(
+                        std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap(),
+                        config_bytes
+                    );
+                    assert_eq!(std::fs::read(&path).ok(), target_bytes);
+                    assert_eq!(path.exists(), fault != "missing");
+                    if fault == "unreadable" {
+                        assert_eq!(
+                            std::fs::read_to_string(path.join("keep")).unwrap(),
+                            "unrelated"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Selecting the current project keeps pending work".
+#[test]
+fn selecting_the_current_project_keeps_pending_work() {
+    use std::os::unix::fs::symlink;
+    use std::sync::atomic::Ordering::Acquire;
+    for source in [Source::Keyboard, Source::Button] {
+        for alias in [false, true] {
+            let files = TransitionFiles::new();
+            let mut drive = files.drive(true);
+            TransitionFiles::edit(&mut drive, source);
+            let path = drive.app.session_file();
+            std::fs::create_dir(path.with_extension("toml.tmp")).unwrap();
+            drive.tap(KeyCode::Char('s'), M::CONTROL);
+            assert!(drive.app.session_write_failed);
+            std::fs::write(&path, "version = [\n").unwrap();
+            let (audio, _rt) = audio::offline(48_000);
+            let epoch = audio.project.epoch.load(Acquire);
+            drive.app.audio = Some(audio);
+            let target = if alias {
+                symlink(files.0.join("A"), files.0.join("alias")).unwrap();
+                "alias"
+            } else {
+                "A"
+            };
+            TransitionFiles::pick(&mut drive, source, target, false);
+            let before = TransitionFiles::state(&drive);
+            let pending = drive.app.session_dirty;
+            let generations = drive.app.load_gen.clone();
+            let cuts = drive.app.chop.as_ref().unwrap().saved();
+            let sound = drive.app.pads.sound[0].as_ref().unwrap().clone();
+            let config_bytes = std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap();
+            let frame = drive.tap(KeyCode::Enter, M::NONE);
+            assert!(frame.commands().is_empty());
+            assert!(drive.app.project_picker.is_none());
+            assert_eq!(TransitionFiles::state(&drive), before);
+            assert_eq!(drive.app.session_dirty, pending);
+            assert!(drive.app.session_write_failed);
+            assert_eq!(drive.app.load_gen, generations);
+            assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
+            assert!(Arc::ptr_eq(
+                drive.app.pads.sound[0].as_ref().unwrap(),
+                &sound
+            ));
+            assert_eq!(
+                drive
+                    .app
+                    .audio
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .epoch
+                    .load(Acquire),
+                epoch
+            );
+            assert_eq!(drive.app.project.as_ref().unwrap().name, "A");
+            assert_eq!(std::fs::read(&path).unwrap(), b"version = [\n");
+            assert_eq!(
+                std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap(),
+                config_bytes
+            );
+        }
+    }
+}
+
+/// Scenario "A target creation refusal retains saved source work".
+#[test]
+fn a_target_creation_refusal_retains_saved_source_work() {
+    for source in [Source::Keyboard, Source::Button] {
+        for project in [false, true] {
+            let files = TransitionFiles::new();
+            let mut drive = files.drive(project);
+            TransitionFiles::edit(&mut drive, source);
+            let path = drive.app.session_file();
+            std::fs::write(files.0.join("C"), "occupied").unwrap();
+            TransitionFiles::pick(&mut drive, source, "C", true);
+            let before = TransitionFiles::state(&drive);
+            let picker = TransitionFiles::picker(&drive);
+            let expected_gate = drive.app.pads.gate[0];
+            let config_bytes = std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap();
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert_eq!(TransitionFiles::state(&drive), before);
+            assert_eq!(TransitionFiles::picker(&drive), picker);
+            assert!(drive.app.session_dirty.is_none());
+            assert!(!drive.app.session_write_failed);
+            assert_eq!(
+                drive.app.project_cfg.last.as_deref(),
+                project.then_some("A")
+            );
+            assert_eq!(
+                session::load_existing(&path).unwrap().pads["0"].gate,
+                expected_gate
+            );
+            assert_eq!(
+                std::fs::read_to_string(files.0.join("C")).unwrap(),
+                "occupied"
+            );
+            assert_eq!(
+                std::fs::read(drive.app.user_path.as_ref().unwrap()).unwrap(),
+                config_bytes
+            );
+            std::fs::remove_file(files.0.join("C")).unwrap();
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(drive.app.project_picker.is_none());
+            assert_eq!(drive.app.project.as_ref().unwrap().name, "C");
+        }
+    }
+}
+
+#[test]
+fn a_missing_source_folder_blocks_switching_until_restored() {
+    for source in [Source::Keyboard, Source::Button] {
+        for create in [false, true] {
+            let files = TransitionFiles::new();
+            let mut drive = files.drive(true);
+            TransitionFiles::edit(&mut drive, source);
+            let folder = files.0.join("A");
+            let moved = files.0.join("moved");
+            std::fs::rename(&folder, &moved).unwrap();
+            let saved = std::fs::read(moved.join("project.toml")).unwrap();
+            let target = if create { "C" } else { "B" };
+            TransitionFiles::pick(&mut drive, source, target, create);
+            let before = TransitionFiles::state(&drive);
+            let picker = TransitionFiles::picker(&drive);
+            let pending = drive.app.session_dirty;
+            for _ in 0..2 {
+                drive.tap(KeyCode::Enter, M::NONE);
+                assert!(drive.app.flash.as_ref().unwrap().0.contains("is gone"));
+                assert_eq!(TransitionFiles::state(&drive), before);
+                assert_eq!(TransitionFiles::picker(&drive), picker);
+                assert_eq!(drive.app.session_dirty, pending);
+                assert!(drive.app.session_write_failed);
+                assert!(!folder.exists());
+                assert!(!files.0.join("C").exists());
+                assert_eq!(std::fs::read(moved.join("project.toml")).unwrap(), saved);
+            }
+            std::fs::rename(&moved, &folder).unwrap();
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(drive.app.project_picker.is_none());
+            assert_eq!(drive.app.project.as_ref().unwrap().name, target);
+            assert!(drive.app.session_dirty.is_none());
+            assert!(!drive.app.session_write_failed);
+        }
+    }
+}
+
+/// Scenario "Clean protected scratch can leave without a write".
+#[test]
+fn clean_protected_scratch_can_leave_without_a_write() {
+    for source in [Source::Keyboard, Source::Button] {
+        let files = TransitionFiles::new();
+        let mut drive = files.drive(false);
+        let path = drive.app.session_file();
+        std::fs::write(&path, "version = 99\n").unwrap();
+        drive.app.session_read_error = Some(session::load(&path).unwrap_err());
+        assert!(drive.app.session_dirty.is_none());
+        TransitionFiles::pick(&mut drive, source, "B", false);
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.project_picker.is_none());
+        assert_eq!(drive.app.project.as_ref().unwrap().name, "B");
+        assert!(drive.app.session_read_error.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), b"version = 99\n");
+    }
+}
+
 fn pads_play_badge(drive: &mut Drive) -> bool {
     use ratatui::{Terminal, backend::TestBackend};
     let app = &mut drive.app;
