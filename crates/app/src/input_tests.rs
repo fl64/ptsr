@@ -7,6 +7,481 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers as
 const PAD_PORT: &str = "Recorded pads MIDI 1";
 const XS_PORT: &str = "USB X-Session MIDI 1";
 
+fn input_device(drive: &Drive, port: &str) -> input_sources::Source {
+    input_sources::Source::Device {
+        port: port.into(),
+        connection: drive.midi().recorded_connection(port).unwrap(),
+    }
+}
+
+/// Scenario "Status follows keyboard and connected inputs" (source data; drawing is step 5.3).
+#[test]
+fn status_follows_keyboard_and_connected_inputs() {
+    for (_, key, _) in REGISTRY_SCREEN_COMMANDS {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(88, "master.volume_up");
+        drive.tap(key, M::NONE);
+        let pads = drive.seen().pads;
+        let keyboard = drive.tap(KeyCode::Char(']'), M::NONE);
+        assert!(matches!(
+            keyboard.ui.as_slice(),
+            [Command::SetMasterGain { .. }]
+        ));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_sources::Source::Keyboard)
+        );
+        drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+        drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+        let button = drive.frame();
+        assert!(matches!(
+            button.ui.as_slice(),
+            [Command::SetMasterGain { .. }]
+        ));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_device(&drive, PAD_PORT))
+        );
+        let knob = value_knob(&mut drive, "master.volume", 100);
+        assert!(matches!(
+            knob.ui.as_slice(),
+            [Command::SetMasterGain { .. }]
+        ));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_device(&drive, XS_PORT))
+        );
+        assert_eq!(
+            drive
+                .app
+                .input_sources
+                .connected()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
+            [PAD_PORT, XS_PORT]
+        );
+        assert_eq!(drive.seen().pads, pads);
+    }
+}
+
+/// Scenario "Input highlights retain original receipt time".
+#[test]
+fn input_highlights_retain_original_receipt_time() {
+    for deferred in [false, true] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.load_pad(16, Arc::new(Sample::mono(vec![0.2; 4096])), "deferred");
+        drive.bind_action(88, "bank.next");
+        learn::assign(
+            &mut drive.app.learned,
+            "X-Session Pro",
+            input::Group::Global,
+            input::midi::Key::Note(60),
+            "pad.1",
+        );
+        drive
+            .app
+            .sync_learned("X-Session Pro", input::Group::Global);
+        drive.midi().recorded_fence();
+        let at = Instant::now();
+        if deferred {
+            drive
+                .midi()
+                .recorded_bytes_at(PAD_PORT, &[0xb0, 88, 127], &drive.project, at);
+        }
+        drive
+            .midi()
+            .recorded_bytes_at(XS_PORT, &[0x90, 60, 81], &drive.project, at);
+        let queued = drive.queued_events();
+        let hit = queued
+            .iter()
+            .find(|event| matches!(event.event, midi::Event::PadHit { .. }))
+            .unwrap();
+        assert_eq!(hit.source().unwrap().at, at);
+        assert_eq!(hit.origin(), Some(XS_PORT));
+        assert!(
+            matches!(
+                hit.event,
+                midi::Event::PadHit {
+                    sound: midi::PadSound::UiUnattempted { deferred: true },
+                    ..
+                }
+            ) == deferred
+        );
+        let keyboard = drive.tap(KeyCode::Char(']'), M::NONE);
+        let newer = drive.app.input_sources.latest.clone();
+        if !deferred {
+            assert!(
+                matches!(keyboard.direct.as_slice(), [ProjectCommand { command: ProjectMessage::Command(Command::PadPress { pad: 0, velocity }), .. }] if *velocity == 81.0 / 127.0)
+            );
+        }
+        for event in queued {
+            drive.app.midi_ui_event(event);
+        }
+        assert_eq!(drive.app.input_sources.latest, newer);
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_sources::Source::Keyboard)
+        );
+        let applied = drive.frame();
+        if deferred {
+            assert!(applied.ui.iter().any(|command| matches!(command, Command::PadPress { pad: 16, velocity } if *velocity == 81.0 / 127.0)));
+        } else {
+            assert!(
+                !applied
+                    .ui
+                    .iter()
+                    .any(|command| matches!(command, Command::PadPress { .. }))
+            );
+        }
+        drive.bytes(XS_PORT, &[0x80, 60, 0]);
+        let release = drive.frame();
+        let pad = if deferred { 16 } else { 0 };
+        assert!(release.commands().iter().any(
+            |command| matches!(command, Command::PadRelease { pad: actual } if *actual == pad)
+        ));
+        assert_eq!(drive.app.input_sources.latest, newer);
+        let deadline = newer.unwrap().1 + LIT_FOR;
+        drive
+            .app
+            .input_sources
+            .advance(deadline - Duration::from_nanos(1));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_sources::Source::Keyboard)
+        );
+        drive.app.input_sources.advance(deadline);
+        assert_eq!(drive.app.input_sources.active, None);
+    }
+}
+
+/// Scenario "Disconnect cannot leave a false active device".
+#[test]
+fn disconnect_cannot_leave_a_false_active_device() {
+    let mut drive = Drive::new();
+    drive.bytes(PAD_PORT, &[0x90, 36, 74]);
+    let queued = drive.queued_events();
+    let old = drive.midi().recorded_connection(PAD_PORT).unwrap();
+    drive.midi().recorded_disconnect(PAD_PORT);
+    let disconnected = drive.queued_events();
+    for event in disconnected {
+        drive.app.midi_ui_event(event);
+    }
+    for event in queued {
+        drive.app.midi_ui_event(event);
+    }
+    assert!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .all(|(name, _)| name != PAD_PORT)
+    );
+    assert_eq!(drive.app.input_sources.active, None);
+    drive.midi().recorded_connect(PAD_PORT);
+    drive.frame();
+    let new = drive.midi().recorded_connection(PAD_PORT).unwrap();
+    assert_ne!(new, old);
+    assert_eq!(drive.app.input_sources.active, None);
+    drive.bytes(PAD_PORT, &[0x90, 37, 63]);
+    drive.frame();
+    let current = drive.app.input_sources.latest.clone();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, PAD_PORT))
+    );
+    // Deliver an old callback after the new connection. Routing is deliberately not gated.
+    drive.midi().recorded_bytes_from(
+        PAD_PORT,
+        &[0x90, 38, 92],
+        &drive.project,
+        Some(input_sources::Stamp {
+            connection: old,
+            at: Instant::now(),
+        }),
+    );
+    let late = drive.frame();
+    assert!(late.commands().iter().any(|command| matches!(command, Command::PadPress { pad: 2, velocity } if *velocity == 92.0 / 127.0)));
+    assert_eq!(drive.app.input_sources.latest, current);
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, PAD_PORT))
+    );
+    assert_eq!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .find(|(name, _)| *name == PAD_PORT)
+            .unwrap()
+            .1,
+        new
+    );
+}
+
+/// Scenario "First input can precede the connection notice".
+#[test]
+fn first_input_can_precede_the_connection_notice() {
+    for expired in [false, true] {
+        let mut drive = Drive::new();
+        const PORT: &str = "New recorded device 音";
+        drive.midi().recorded_connect(PORT);
+        let connected = drive.queued_events();
+        let at = Instant::now()
+            - if expired {
+                Duration::from_secs(2)
+            } else {
+                Duration::ZERO
+            };
+        drive
+            .midi()
+            .recorded_bytes_at(PORT, &[0x90, 36, 80], &drive.project, at);
+        let message = drive.queued_events();
+        for event in message {
+            drive.app.midi_ui_event(event);
+        }
+        assert!(
+            drive
+                .app
+                .input_sources
+                .connected()
+                .all(|(name, _)| name != PORT)
+        );
+        assert_eq!(drive.app.input_sources.active, None);
+        for event in connected {
+            assert_eq!(
+                event.origin(),
+                None,
+                "connection notices retain system origin"
+            );
+            drive.app.midi_ui_event(event);
+        }
+        assert!(
+            drive
+                .app
+                .input_sources
+                .connected()
+                .any(|(name, _)| name == PORT)
+        );
+        assert_eq!(
+            drive.app.input_sources.active,
+            (!expired).then(|| input_device(&drive, PORT))
+        );
+        assert_eq!(drive.app.input_sources.latest.as_ref().unwrap().1, at);
+    }
+}
+
+/// Scenario "Missing source metadata stays unknown".
+#[test]
+fn missing_source_metadata_stays_unknown() {
+    let mut drive = Drive::new();
+    drive.bind_action(88, "master.volume_up");
+    drive
+        .midi()
+        .recorded_bytes_from(PAD_PORT, &[0xb0, 88, 127], &drive.project, None);
+    let applied = drive.frame();
+    assert!(matches!(
+        applied.ui.as_slice(),
+        [Command::SetMasterGain { .. }]
+    ));
+    assert_eq!(drive.app.input_sources.active, None);
+    assert_eq!(drive.app.input_sources.latest, None);
+    drive.midi().recorded_bytes_from(
+        "Unknown callback port",
+        &[0x90, 36, 70],
+        &drive.project,
+        None,
+    );
+    let unknown = drive.frame();
+    assert!(unknown.commands().iter().any(|command| matches!(command, Command::PadPress { pad: 0, velocity } if *velocity == 70.0 / 127.0)));
+    assert_eq!(drive.app.input_sources.latest, None);
+    assert!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .all(|(name, _)| name != "Unknown callback port")
+    );
+    let connected: Vec<_> = drive
+        .app
+        .input_sources
+        .connected()
+        .map(|(name, id)| (name.to_owned(), id))
+        .collect();
+    drive.app.midi_ui_event(midi::UiEvent::stamped(
+        midi::Event::Action(Action::MasterVolume(1)),
+        &drive.project,
+    ));
+    assert_eq!(drive.app.master_db, 2);
+    assert_eq!(drive.app.input_sources.active, None);
+    assert_eq!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .map(|(name, id)| (name.to_owned(), id))
+            .collect::<Vec<_>>(),
+        connected
+    );
+}
+
+#[test]
+fn source_activity_keeps_classification_deadlines_and_project_lifetime() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let pressed = drive.pad_press(source, 0);
+        assert!(pressed.commands().iter().any(
+            |command| matches!(command, Command::PadPress { pad: 0, velocity } if *velocity == 1.0)
+        ));
+        let original = drive.app.input_sources.latest.clone();
+        let expected = if matches!(source, Source::Keyboard) {
+            input_sources::Source::Keyboard
+        } else {
+            input_device(&drive, PAD_PORT)
+        };
+        assert_eq!(drive.app.input_sources.active, Some(expected.clone()));
+        if matches!(source, Source::Keyboard) {
+            drive.key(KeyCode::Char('1'), M::SHIFT, KeyEventKind::Repeat);
+            drive.key(KeyCode::Char('1'), M::SHIFT, KeyEventKind::Press);
+            drive.key(
+                KeyCode::Modifier(event::ModifierKeyCode::LeftShift),
+                M::SHIFT,
+                KeyEventKind::Press,
+            );
+            drive.frame();
+            assert_eq!(drive.app.input_sources.latest, original);
+        }
+        let released = drive.pad_release(source, 0);
+        assert!(
+            released
+                .commands()
+                .iter()
+                .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
+        );
+        assert_eq!(drive.app.input_sources.latest, original);
+        drive.app.apply_session(session::Session::default());
+        assert_eq!(drive.app.input_sources.latest, original);
+        assert_eq!(drive.app.input_sources.connected().count(), 2);
+        let deadline = original.unwrap().1 + LIT_FOR;
+        drive
+            .app
+            .input_sources
+            .advance(deadline - Duration::from_nanos(1));
+        assert_eq!(drive.app.input_sources.active, Some(expected));
+        drive.app.input_sources.advance(deadline);
+        assert_eq!(drive.app.input_sources.active, None);
+    }
+    let restarted = tests::test_app();
+    assert_eq!(restarted.input_sources.active, None);
+    assert_eq!(restarted.input_sources.connected().count(), 0);
+}
+
+#[test]
+fn source_activity_uses_real_knob_movement_not_equal_values() {
+    let mut drive = Drive::new();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    let first = drive.app.input_sources.latest.clone();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert_eq!(drive.app.input_sources.latest, first);
+    drive.bytes(XS_PORT, &[0xb0, 15, 0]);
+    drive.frame();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, XS_PORT))
+    );
+    assert!(drive.app.input_sources.latest.as_ref().unwrap().1 > first.unwrap().1);
+    let at = drive.app.input_sources.latest.as_ref().unwrap().1;
+    drive.app.input_sources.advance(at + LIT_FOR);
+    assert_eq!(drive.app.input_sources.active, None);
+}
+
+#[test]
+fn source_knob_comparison_does_not_inherit_an_old_connection() {
+    let mut drive = Drive::new();
+    let old = drive.midi().recorded_connection(XS_PORT).unwrap();
+    drive.midi().recorded_disconnect(XS_PORT);
+    drive.frame();
+    drive.midi().recorded_connect(XS_PORT);
+    drive.frame();
+    drive.midi().recorded_bytes_from(
+        XS_PORT,
+        &[0xb0, 15, 64],
+        &drive.project,
+        Some(input_sources::Stamp {
+            connection: old,
+            at: Instant::now(),
+        }),
+    );
+    drive.frame();
+    assert_eq!(drive.app.input_sources.active, None);
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, XS_PORT))
+    );
+}
+
+#[test]
+fn source_knob_comparison_rejects_older_values_per_channel_and_control() {
+    let mut drive = Drive::new();
+    let at = Instant::now();
+    for (value, age) in [(10, 30), (20, 20), (10, 30), (20, 10)] {
+        drive.midi().recorded_bytes_at(
+            PAD_PORT,
+            &[0xb0, 100, value],
+            &drive.project,
+            at - Duration::from_nanos(age),
+        );
+        drive.frame();
+    }
+    assert_eq!(
+        drive.app.input_sources.latest.as_ref().unwrap().1,
+        at - Duration::from_nanos(20)
+    );
+    for bytes in [[0xb1, 100, 20], [0xb0, 101, 20]] {
+        drive.bytes(PAD_PORT, &bytes);
+        drive.frame();
+        assert!(drive.app.input_sources.latest.as_ref().unwrap().1 > at);
+    }
+}
+
+#[test]
+fn source_metadata_survives_the_project_filter_without_acknowledging() {
+    use std::sync::atomic::Ordering::Release;
+    let mut drive = Drive::offline();
+    drive
+        .app
+        .post_system_notice(Level::Error, ("A shown error".into(), Instant::now()));
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0x90, 36, 80]);
+    let queued = drive.queued_events();
+    let at = queued
+        .iter()
+        .find(|event| event.owner_input())
+        .unwrap()
+        .source()
+        .unwrap()
+        .at;
+    drive.project.epoch.store(1, Release);
+    drive.project.ready.store(1, Release);
+    let before = drive.seen();
+    for event in queued {
+        drive.app.midi_ui_event(event);
+    }
+    assert_eq!(drive.seen(), before, "old-project bodies remain discarded");
+    assert_eq!(drive.app.notice().as_deref(), Some("A shown error"));
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, PAD_PORT))
+    );
+    assert_eq!(drive.app.input_sources.latest.as_ref().unwrap().1, at);
+    drive.app.input_sources.advance(at + LIT_FOR);
+    assert_eq!(drive.app.input_sources.active, None);
+}
+
 fn value_drive() -> Drive {
     let mut drive = Drive::new();
     drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "value");
@@ -813,6 +1288,7 @@ impl Drive {
             self.app.midi_ui_event(event);
         }
         self.app.publish_midi(&self.shared);
+        self.app.input_sources.advance(Instant::now());
         self.app.frame_notice();
         Frame {
             direct,

@@ -299,6 +299,49 @@ Drop project, audio detail and then input detail when space is short.
 Preserve recording, persistent save warnings, audio-loss warnings, nonzero xruns and the no-key-releases marker.
 No transport or layer placeholder appears.
 
+Step 5.2 prepares source state in `crates/app/src/input_sources.rs`. The visible segments remain step 5.3.
+The owner approved eleven files, including this module, main, dispatch, MIDI, input tests and the six status/artifact files.
+Existing MIDI envelopes carry an origin and owner-input classification, but no connection identity or receipt time.
+The scanner calls `connect` before it sends Connected. The first callback can therefore precede that notification.
+
+Give each attempted connection a process-local, monotonically increasing identity before opening it.
+Keep the identity in the callback, disconnect notification and every derived UI envelope.
+Capture monotonic receipt time before parsing callback bytes. Keep existing project stamps separate from source metadata.
+These timestamps serve feedback only. They do not schedule sound or activate the future input-timing change 101.
+Use the same receipt helper for recorded bytes. Do not create another production action route.
+Do not wrap exhausted identity counters. Missing identities leave source status unknown without changing routing.
+
+Keep only the latest connection state for each observed port: pending, connected or disconnected.
+Retain disconnected generations to reject old activity and delayed connection notifications.
+Input before Connected stays pending. Matching Connected can expose that input only while its original deadline remains valid.
+A reconnect never inherits activity from an earlier identity. A stale source stamp cannot change the current connection state.
+A newer original timestamp wins over delayed delivery. Equal timestamps retain delivery order.
+Project replacement keeps device state and original deadlines. Application restart starts without previous source state.
+
+Reuse physical activity from the same effective binding resolution: new non-modifier keyboard presses, MIDI presses and continuous movement.
+For source feedback, compare continuous values within their connection, channel and control. Retain each control's original receipt time.
+Old connection activity and out-of-order control values cannot seed or replace the current comparison.
+Keep the existing notice-acknowledgement comparison unchanged. Source feedback has its own connection lifetime, not another binding resolver.
+Do not highlight releases, inferred keyboard repeats or equal knob values. Derived MIDI events retain metadata but do not renew activity.
+Read source metadata before the existing project filter. Source state does not control that filter, acknowledgements or action dispatch.
+Advance source deadlines on each UI frame, including frames with no input. No saved format, binding, dependency or sound change belongs here.
+
+Using only the last port name cannot distinguish a reconnect from queued old work.
+Using UI delivery time would extend old activity and could replace a newer keyboard highlight.
+Do not replace existing event channels or gate sound commands on the new source model.
+
+Step 5.2 review boundaries after implementation:
+- Two devices and keyboard: closed by `status_follows_keyboard_and_connected_inputs` on all five screens. Drawing remains in 5.3.
+- Direct/deferred work, original velocities, release owners and exact deadlines: closed by `input_highlights_retain_original_receipt_time`.
+- Disconnect, old activity and reconnect under the same name: closed by `disconnect_cannot_leave_a_false_active_device` and generation model tests.
+- First callback before Connected, including expiry before Connected: closed by `first_input_can_precede_the_connection_notice`.
+- Missing metadata: closed by `missing_source_metadata_stays_unknown`, including an unknown callback port and unchanged actions.
+- Repeated values, zero movement, keyboard repeats, modifier-only input and releases: closed by production classification and lifetime tests.
+- Old connections and out-of-order values: closed by two failing-then-passing `source_knob_comparison` regressions with separate channels and controls.
+- Project replacement, restart and old-project payloads: closed by source lifetime and project-filter tests. Acknowledgements remain unchanged.
+- Connection counter exhaustion: closed by `connection_ids_never_wrap_or_reuse_an_exhausted_counter`.
+- Live controller checks and visible compact labels: open, outside step 5.2 verification.
+
 ### 7. Show only real answers
 
 Keep each question's existing action, text, target and keyboard answers.

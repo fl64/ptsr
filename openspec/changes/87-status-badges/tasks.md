@@ -259,7 +259,7 @@ Run `task check`, `task build`, `task openspec:check` and English checks before 
 Shared input metadata, status caching, kitty commands, deferred copy names and callback correction remain outside this step.
 
 - [x] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
-- [ ] 5.2 Carry actual input-source metadata through production routes. Test two devices, direct/deferred events, disconnection, stale events and reconnect.
+- [x] 5.2 Carry actual input-source metadata through production routes. Test two devices, direct/deferred events, disconnection, stale events and reconnect.
 - [ ] 5.3 Add the shared recording/input/audio/project segments and narrow-width rules. Preserve save state, audio loss, nonzero xruns and no-key-releases warnings.
 - [ ] 5.4 Cache unchanged badge and status content. Prove timers, recording elapsed time, level meters and fallback hints still update.
 
@@ -290,6 +290,31 @@ Step 5.1 owner procedure (pending):
 7. On Files and Settings, press `]`. Check the Master volume panel.
 8. Repeat applicable value changes with existing controller knobs. With pickup active, check that waiting does not show an unapplied value.
 9. Check the existing pad sound while you change values. No new WAV accompanies this drawing step.
+
+Step 5.2 approved scope:
+- Application files: `main.rs`, `dispatch.rs`, `midi.rs`, `input_tests.rs` and new `input_sources.rs` in `crates/app/src/`.
+- Artifacts: design, this task list, the screen-layout delta, `docs/PROJECT.md`, `docs/plans/README.md` and `openspec/config.yaml`.
+- Add original receipt times and fresh connection identities without changing commands, project stamps, acknowledgement or release ownership.
+- Test production keyboard and recorded MIDI, two devices, delayed notifications, first input before Connected, stale generations and missing metadata.
+- Test exact deadlines without sleeps. Keep source state across project replacement, not application restart.
+- Run `task check`, `task build`, strict OpenSpec and English checks. Make one local signed-off commit.
+- Visible status segments, compact labels, caching, kitty commands, physical devices and callback correction remain outside this step.
+
+Step 5.2 verification:
+- Ten new production-route tests and three source-model tests cover identities, activity and lifetimes. Source checks use all five screens.
+- Reordered envelopes cover direct/deferred work, two devices, original velocities, release ownership, disconnect, reconnect and first input before Connected.
+- Exact deadlines use recorded receipt times without sleeps. Releases, repeats, equal values and old deliveries do not renew them.
+- Two knob regressions failed before the changes. The model now compares values within their connection, channel, control and receipt order.
+- Missing metadata stays unknown without blocking existing actions. Project replacement keeps source state. A new application starts without it.
+- Old-project payloads remain discarded without acknowledging the shown Error. Source metadata still retains the actual device and receipt time.
+- `task check`: exits 0, including 744 App, 81 input, 117 drawing and 21 notice-model tests.
+- `task build`: exits 0. Current-worktree application sources compile in Release.
+- `task openspec:check`: passes, 16 items and 0 failures. Identity, lifetime and continuous values have separate requirements.
+- English review uses STE-flavored descriptions. Revised text has no new lint findings. Earlier full-file advice stays unchanged.
+- Final diff contains only the eleven approved files. Logs remain local under `target/87-source-*`.
+- No live audio or MIDI device opened. Sound processing, saved formats, dependencies, bindings and deferred copy names stay unchanged. No new WAV.
+- The visible status row remains in 5.3. Keyboard and controller visual acceptance follows that step, not this metadata-only step.
+- Earlier callback maximum-budget failures remain unresolved. A later passing measurement does not close that gate.
 
 ## 6. Questions and screen catalogue
 

@@ -90,7 +90,11 @@ F1 navigation retains parameter pages and banks behind help. Existing pad routes
 Help and Messages share the owner-accepted stable frame.
 Applied values now use a shared one-second popup with object labels and numeric range bars.
 Pickup, refusals, scope-limit messages and editor priority retain their behavior.
-Shared input status, question controls, kitty overlay protection and the catalogue remain unfinished.
+Input-source state now keeps connection identities and original receipt times across production routes.
+Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
+Project changes keep source identities and deadlines.
+Source feedback does not change actions, acknowledgements, velocities or release ownership.
+Shared status drawing, question controls, kitty overlay protection and the catalogue remain unfinished.
 Other manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 

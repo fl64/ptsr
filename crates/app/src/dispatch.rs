@@ -893,6 +893,7 @@ impl App {
     }
 
     pub(super) fn midi_ui_event(&mut self, ev: midi::UiEvent) {
+        self.input_sources.observe(&ev, Instant::now());
         let sequence = ev.sequence();
         let preview_ready = ev.preview_ready();
         let origin = ev
@@ -1625,6 +1626,7 @@ impl App {
         if tracked.kind == event::KeyEventKind::Press
             && !matches!(tracked.code, event::KeyCode::Modifier(_))
         {
+            self.input_sources.keyboard(Instant::now());
             self.acknowledge_notice();
         }
         if self.pad_naming.is_some() && self.pad_name_key(k) {

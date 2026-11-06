@@ -104,7 +104,11 @@ not permission to combine the new changes.
   Help and Messages share the owner-accepted stable frame.
   Applied values now use a shared one-second popup with object labels and numeric range bars.
   Pickup, refusals, scope-limit messages and editor priority retain their behavior.
-  Shared input status, question controls, kitty overlay protection and the catalogue remain unfinished.
+  Input-source state now keeps connection identities and original receipt times across production routes.
+  Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
+  Project changes keep source identities and deadlines.
+  Source feedback does not change actions, acknowledgements, velocities or release ownership.
+  Shared status drawing, question controls, kitty overlay protection and the catalogue remain unfinished.
   Other manual keyboard, physical-controller and listening checks remain unverified.
   Sound, factory bindings and saved formats stay unchanged.
   Generic controller confirmation remains in 88. Publication needs a separate request.

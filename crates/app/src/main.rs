@@ -4,6 +4,7 @@ mod chop;
 mod config;
 mod dispatch;
 mod help;
+mod input_sources;
 mod learn;
 mod loader;
 mod meters;
@@ -401,6 +402,7 @@ struct App {
     help_open: bool,
     help_overlay: help::State,
     value_popup: Option<values::Shown>,
+    input_sources: input_sources::State,
     pads: pads::Pads,
     /// Output meters for the pads screen: bars, peak hold, the latching overload light.
     meters: meters::Meters,
@@ -4186,6 +4188,7 @@ fn main() -> std::io::Result<()> {
         help_open: false,
         help_overlay: help::State::default(),
         value_popup: None,
+        input_sources: input_sources::State::default(),
         pads: pads::Pads::default(),
         meters: meters::Meters::default(),
         settings_tab: 0,
@@ -4428,6 +4431,7 @@ fn main() -> std::io::Result<()> {
             let _ = execute!(std::io::stdout(), SetTitle(title.as_str()));
         }
 
+        app.input_sources.advance(Instant::now());
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let status = tui::Status {
@@ -7452,6 +7456,7 @@ mod tests {
             help_open: false,
             help_overlay: help::State::default(),
             value_popup: None,
+            input_sources: input_sources::State::default(),
             pads: pads::Pads::default(),
             meters: meters::Meters::default(),
             settings_tab: 0,

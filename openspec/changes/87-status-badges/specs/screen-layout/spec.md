@@ -132,6 +132,50 @@ No transport or layer indicator SHALL appear before its corresponding feature ex
 - **THEN** the input list does not show that old connection as connected or active
 - **AND** a reconnect gets a current connection identity without inheriting a stale highlight
 
+### Requirement: Input source identity
+
+Source metadata SHALL retain the actual port, connection identity and original receipt time through direct and deferred MIDI routes.
+A new connection SHALL have a new identity. Missing metadata SHALL NOT establish a connection or guess a source.
+These rules SHALL NOT change action dispatch, notice acknowledgement, project epochs, velocities or release ownership.
+
+#### Scenario: First input can precede the connection notice
+- **WHEN** a connection produces input before its connected notification reaches the source model
+- **THEN** that input stays pending until the matching connection notification arrives
+- **AND** only its original, unexpired deadline can highlight the newly listed connection
+
+#### Scenario: Missing source metadata stays unknown
+- **WHEN** a routed event has no connection or origin metadata
+- **THEN** it cannot establish a connected-device entry or highlight an inferred device
+- **AND** its existing action, sound and release behavior stays unchanged
+
+### Requirement: Input source highlight lifetime
+
+Only a new keyboard press or MIDI owner input SHALL start the one-second highlight.
+Releases, keyboard repeats, equal knob values and derived notifications SHALL NOT restart it.
+Queued delivery SHALL NOT extend the deadline or replace a source with an older input.
+Project replacement SHALL NOT rename input sources or restart their deadlines.
+
+#### Scenario: Input highlights retain original receipt time
+- **WHEN** direct or deferred MIDI notifications arrive after another source produced newer input
+- **THEN** the source highlight still follows the newest original input and expires one second after receipt
+- **AND** releases, repeats and derived notifications do not extend that deadline
+
+### Requirement: Input source continuous values
+
+Continuous values SHALL compare within their own connection, channel and control.
+Old connections and older control values SHALL NOT replace the current comparison.
+The first value in a new connection SHALL count as movement, even if an old connection sent the same value.
+
+#### Scenario: Source knob comparison does not inherit an old connection
+- **WHEN** a late old connection sends the same knob value before the current connection's first value
+- **THEN** only the current connection's value starts its highlight
+- **AND** the old event does not seed its comparison
+
+#### Scenario: Source knob comparison rejects older values per channel and control
+- **WHEN** an older control value arrives after a newer value and the owner repeats the newer value
+- **THEN** neither delivery restarts the highlight
+- **AND** equal values on different channels or controls remain independent
+
 ### Requirement: Status width priorities
 
 At supported widths, the status SHALL omit project first, then audio detail, then input detail.
