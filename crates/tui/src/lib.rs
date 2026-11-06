@@ -2837,6 +2837,56 @@ fn dot_peaks(wave: &[f32], dots: usize, top: f32) -> Vec<f32> {
         .collect()
 }
 
+// Paragraph can put a wide grapheme in its last single cell. Pre-wrap only wide side text.
+fn side_rows(text: &str, width: u16) -> Vec<String> {
+    let width = usize::from(width);
+    if width == 0 {
+        return Vec::new();
+    }
+    if !Span::raw(text)
+        .styled_graphemes(Style::default())
+        .any(|g| Span::raw(g.symbol).width() > 1)
+    {
+        return vec![text.into()];
+    }
+    let mut rows = Vec::new();
+    let mut line = String::new();
+    let mut gap = String::new();
+    let mut used = 0;
+    for token in text.split_inclusive(char::is_whitespace) {
+        let word = token.trim_end_matches(char::is_whitespace);
+        if !word.is_empty() {
+            if !line.is_empty()
+                && used + Span::raw(gap.as_str()).width() + Span::raw(word).width() > width
+            {
+                rows.push(std::mem::take(&mut line));
+                used = 0;
+                gap.clear();
+            }
+            for part in [gap.as_str(), word] {
+                for grapheme in Span::raw(part).styled_graphemes(Style::default()) {
+                    let cells = Span::raw(grapheme.symbol).width();
+                    if cells > width {
+                        continue;
+                    }
+                    if used + cells > width {
+                        rows.push(std::mem::take(&mut line));
+                        used = 0;
+                    }
+                    line.push_str(grapheme.symbol);
+                    used += cells;
+                }
+            }
+            gap.clear();
+        }
+        gap.push_str(&token[word.len()..]);
+    }
+    if !line.is_empty() {
+        rows.push(line);
+    }
+    rows
+}
+
 fn chop(
     frame: &mut Frame,
     area: Rect,
@@ -3134,9 +3184,10 @@ fn chop(
     }
     slice_line.push(format!(" {}", c.info).fg(CYAN));
     let lines: Vec<Line> = std::iter::once(Line::from(slice_line))
-        .chain(c.side.iter().enumerate().map(|(i, l)| {
-            let line = Line::from(l.clone());
-            if i == 0 { line.fg(CYAN) } else { line.fg(DIM) }
+        .chain(c.side.iter().enumerate().flat_map(|(i, line)| {
+            side_rows(line, pf.side.width)
+                .into_iter()
+                .map(move |line| Line::from(line).fg(if i == 0 { CYAN } else { DIM }))
         }))
         .collect();
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), pf.side);
@@ -3348,6 +3399,37 @@ fn key(k: &str) -> Span<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assignment_sidebar_keeps_graphemes_and_ascii_wrapping() {
+        let ascii = "  overwrites  bank 1: pad 1 kick, pad 2 snare";
+        assert_eq!(side_rows(ascii, 23), vec![ascii]);
+        assert_eq!(side_rows("音  e\u{301}", 23), vec!["音  e\u{301}"]);
+        assert!(side_rows("音", 0).is_empty());
+        let texts = [
+            "  overwrites bank 1: pad 1 kick, pad 2 snare, pad 3 音 e\u{301} sample".into(),
+            "音e\u{301}".repeat(128),
+        ];
+        for text in texts {
+            for width in [2, 23, 40] {
+                let rows = side_rows(&text, width);
+                for row in &rows {
+                    assert!(
+                        Span::raw(row.as_str()).width() <= usize::from(width),
+                        "{width}: {row:?}"
+                    );
+                    assert!(!row.starts_with('\u{301}'), "a grapheme was split: {row:?}");
+                }
+                let retained: String = rows
+                    .concat()
+                    .chars()
+                    .filter(|ch| !ch.is_whitespace())
+                    .collect();
+                let original: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+                assert_eq!(retained, original, "a target character was lost");
+            }
+        }
+    }
     use ratatui::style::Modifier;
     use ratatui::{Terminal, backend::TestBackend};
 

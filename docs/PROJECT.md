@@ -100,7 +100,9 @@ Screen learning uses the fixed three-row help band and keeps the status visible.
 Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
 Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.
 Text overlays now remove intersecting kitty pictures before text output and restore the current wave afterward. Unoccluded pictures stay unchanged.
-The catalogue remains unfinished. Real kitty composition still needs a manual check.
+`task screens` now checks the screen/mode matrix and writes deterministic ANSI files at both supported sizes.
+The files stay local under `renders/screens/`. Real kitty composition still needs a manual check.
+Active-delta coverage and final handover remain unfinished.
 Other manual keyboard, physical-controller and listening checks remain unverified.
 The owner authorized completion and PR publication of 87, but not merge or archive.
 Activate only one change at a time. Publication of other changes needs a separate request.

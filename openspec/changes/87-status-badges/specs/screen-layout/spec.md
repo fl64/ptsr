@@ -217,6 +217,17 @@ This optimization SHALL NOT change audio-thread work or input ordering.
 - **THEN** elapsed time and levels advance, expired feedback ends and the UI reuses unchanged static content
 - **AND** current playback indicators still follow real voices
 
+### Requirement: Assignment target text bounds
+
+At supported terminal sizes, the assignment sidebar SHALL wrap target names by terminal-cell width.
+A wide grapheme SHALL move to the next row if the remaining row has too few cells. A long word SHALL split only between graphemes.
+This formatting SHALL NOT change assignment targets, confirmations or input routing.
+
+#### Scenario: Long assignment target names stay in the sidebar
+- **WHEN** an assignment target name contains wide or combining graphemes near the sidebar's right edge
+- **THEN** every visible grapheme fits inside its row at 80 by 26 and 120 by 40
+- **AND** the target order, pad names and assignment actions stay unchanged
+
 ### Requirement: Offline screen catalogue
 
 The system SHALL provide `task screens` for deterministic ANSI screen files under `renders/screens/` at 120×40 and 80×26.

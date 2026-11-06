@@ -20,6 +20,10 @@ tasks:
     desc: Tests; renders go to renders/
     cmd: cargo test --workspace
 
+  screens:
+    desc: Generate and check the offline ANSI screen catalogue
+    cmd: cargo test -p ptsr --bin ptsr screens::tests -- --nocapture
+
   bench:
     desc: Audio callback benchmark (32 voices, buffer 128, 48 kHz)
     cmd: cargo bench -p engine

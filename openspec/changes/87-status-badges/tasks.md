@@ -373,7 +373,19 @@ Step 6.2 verification:
 - These checks do not prove real kitty composition. Physical-controller/listening acceptance and earlier callback maximum-budget failures remain open.
 - No sound, scheduling, binding, dependency or saved-format change. No new WAV. Deferred 87a stays unchanged.
 
-- [ ] 6.3 Add the checked screen/mode matrix and `task screens`. Render ANSI files at 120×40 and 80×26. Fail tests for missing entries or clipped required content.
+- [x] 6.3 Add the checked screen/mode matrix and `task screens`. Render ANSI files at 120×40 and 80×26. Fail tests for missing entries or clipped required content.
+
+Step 6.3 verification:
+- `task screens` passes four tests and writes 306 local ANSI files. Every matrix entry produces identical bytes on repeated renders at 120x40 and 80x26.
+- An independent required-name matrix checks missing, duplicate and unsupported entries. The screen registry, learning rules and current pad pages supply its applicable cases.
+- Fixtures cover all six question types, edit pages, placement, marks, learning, recording, messages, values, safety warnings, pickers, Unicode and 128 actual slices.
+- The first run found a wide target-name grapheme outside the last terminal cell. The named regression failed before the sidebar correction and passes afterward.
+- Wide sidebar text now keeps whole words where possible and splits long words only between graphemes. Ordinary ASCII wrapping, target data and input routing stay unchanged.
+- The final `task check` exits 0: 762 App, 81 input, 126 drawing and 21 notice-model tests pass. The current-source Release build passes in 21.02 s.
+- Strict OpenSpec passes all 16 items. Revised English passes the style lint. Raw logs and the ignored catalogue stay local.
+- No live audio or MIDI device opened. Sound, bindings, saved formats and dependencies stay unchanged. No new WAV. Deferred 87a stays unchanged.
+- Real kitty, hardware and listening checks remain unverified. Earlier callback maximum-budget failures remain unresolved.
+
 - [ ] 6.4 Check every delta scenario against a named test. Run shared scenarios with keyboard and raw MIDI through actual profiles and dispatch.
 
 ## 7. Handover and acceptance

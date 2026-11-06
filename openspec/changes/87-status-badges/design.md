@@ -458,6 +458,28 @@ Step 6.2 review boundaries after implementation:
 - A question can also miss the picture after resize. Tests retain that unobstructed image instead of requiring its removal.
 - Real kitty composition and physical controls: open, outside command and buffer tests.
 
+Step 6.3 runs the catalogue as an ordinary, named App test through `task screens`.
+Keep its module test-only. Do not add a sampler CLI mode or run normal startup, which opens real devices and creates user roots.
+Use deterministic in-memory App fixtures, production view builders and the shared drawing path. Fixture labels describe offline examples, not measured hardware.
+The checked matrix combines every registered screen, both sizes and each applicable fixture mode. Check missing, duplicate and unsupported entries explicitly.
+Write ANSI with the production terminal backend into memory, using a fixed viewport that makes no terminal query.
+Check the same frame buffer for screen identity, required mode/safety text and fixed bottom rows before writing under `renders/screens/`.
+Keep generated files local and ignored. Normal tests also run the catalogue test, so coverage cannot silently depend on a separate command.
+Do not add dependencies, write project/configuration files or claim kitty composition from ANSI.
+
+The first catalogue run exposed a real boundary failure in the existing assignment sidebar.
+At 80 by 26, `chop-assign-order` placed the two-cell `音` at column 79, row 13. The next terminal cell is outside the frame.
+The current Paragraph word wrapper does not include the incoming wide grapheme in one overflow check.
+Pre-wrap only sidebar strings with wide graphemes, using whole words and cell-bounded grapheme splits for long words. Keep ordinary ASCII wrapping unchanged.
+Add `Long assignment target names stay in the sidebar` before this formatting correction. Do not weaken the catalogue's cell-boundary check or change the target names to hide the failure.
+
+Step 6.3 review boundaries before implementation:
+- New registered screen or missing mode/size: require a failing matrix validation test that names the missing entry.
+- Long Unicode labels, 128 slices and both sizes: require required-content and cell-boundary checks.
+- Repeated generation: require identical bytes from identical fixture state.
+- F1, questions, learning and value panels: require their real drawing paths and retained safety/help rows.
+- Audio/MIDI hardware, kitty composition and listening: open, outside this text catalogue.
+
 ## Risks / Trade-offs
 
 | Boundary | Required result | Status for implementation | Evidence or planned test |

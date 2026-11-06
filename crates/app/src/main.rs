@@ -22,6 +22,8 @@ mod wav;
 mod input_tests;
 #[cfg(test)]
 mod saving_tests;
+#[cfg(test)]
+mod screens;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
