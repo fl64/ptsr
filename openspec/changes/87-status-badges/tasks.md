@@ -236,14 +236,16 @@ Step 4.5 evidence:
 - The callback benchmark command exits 0. Maximum-budget acceptance remains open. Measurements, CSV files and logs stay local under `target/`.
 - No live audio or MIDI device opened. Sound processing stays unchanged. This step needs no new WAV.
 
-Step 4.5 owner procedure (pending):
+Step 4.5 owner procedure:
 1. With wave pictures off, open F1 at 80x26.
 2. Alternate Tab and Shift+Tab. Check that the frame, page labels and shared hints do not move.
 3. Repeat at 120x40. Resize with each page open. Check that both pages follow the terminal size.
 4. Open Messages. Check Up/Down and PageUp/PageDown. Close with Esc. Check that the selected parameter and bank stay unchanged.
 5. Repeat on Pads, Chop, Files, FX and Settings.
 
-Manual acceptance remains pending. Physical-controller, kitty and listening results remain separate, as in the step 4.4 procedure.
+The owner accepted the stable Help/Messages window at commit `1e7a9b2`.
+This acceptance covers the shared frame, not separate physical-controller, kitty or listening results.
+It does not cover unfinished features or the callback maximum-budget gate.
 
 ## 5. Values and status
 
