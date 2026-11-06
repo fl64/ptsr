@@ -163,6 +163,9 @@ Production code, sound processing, bindings, dependencies and saved formats stay
 The callback benchmark command passes, but its maximum-budget acceptance remains open. Raw results stay local.
 F1 Messages and the Tab exception remain in 4.4. Hardware, kitty and listening checks remain unverified.
 
+The owner accepted step 4.3 at commit `1682a20`.
+This acceptance does not establish separate hardware, kitty or listening results and does not cover unfinished features or the callback maximum-budget gate.
+
 ## 5. Values and status
 
 - [ ] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
