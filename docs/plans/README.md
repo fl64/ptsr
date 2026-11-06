@@ -101,8 +101,11 @@ not permission to combine the new changes.
   A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
   Offline notice and save-priority regressions pass. The owner accepted step 4.3.
   F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
-  Value popups, shared input status, question controls and the catalogue remain unfinished.
-  Manual keyboard, physical-controller and listening checks remain unverified.
+  Help and Messages share the owner-accepted stable frame.
+  Applied values now use a shared one-second popup with object labels and numeric range bars.
+  Pickup, refusals, scope-limit messages and editor priority retain their behavior.
+  Shared input status, question controls, kitty overlay protection and the catalogue remain unfinished.
+  Other manual keyboard, physical-controller and listening checks remain unverified.
   Sound, factory bindings and saved formats stay unchanged.
   Generic controller confirmation remains in 88. Publication needs a separate request.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material

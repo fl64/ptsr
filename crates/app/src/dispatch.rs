@@ -9,6 +9,7 @@ use super::{
 impl App {
     /// Runs an action; returns `true` to quit.
     pub(super) fn apply(&mut self, action: Action) -> bool {
+        let value_before = self.value_before_action(action);
         let was = self.screen;
         let cuts = self.chop.as_ref().map(|c| c.saved());
         self.note_done(action);
@@ -52,6 +53,7 @@ impl App {
         if was != Screen::Files && self.screen == Screen::Files {
             self.preview_selection();
         }
+        self.value_after(value_before, Instant::now());
         quit
     }
 
@@ -1005,6 +1007,7 @@ impl App {
     }
 
     pub(super) fn midi_event(&mut self, ev: midi::Event) {
+        let value_before = self.value_before_midi(&ev);
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
         // a button runs its action through `apply`, which keeps the step itself
@@ -1021,6 +1024,7 @@ impl App {
         }
         self.cuts_changed(cuts);
         self.follow_loop();
+        self.value_after(value_before, Instant::now());
     }
 
     fn midi_event_inner(&mut self, ev: midi::Event) {

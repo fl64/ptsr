@@ -249,10 +249,47 @@ It does not cover unfinished features or the callback maximum-budget gate.
 
 ## 5. Values and status
 
-- [ ] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
+The owner approved the twelve-file plan for step 5.1 before implementation.
+Application files: main, dispatch, views, input tests and new `crates/app/src/values.rs`.
+Drawing uses `crates/tui/src/lib.rs`. Artifacts are design, this task list, the screen-layout delta, project/plan status and OpenSpec context.
+Observe existing setters through production keyboard and raw-MIDI routes. Add no parallel setter or new sound command.
+Test applied values, exact elapsed-time deadlines, equal repeats, pickup, refusal, partial scope limits and stable object identity.
+Test editor precedence, both supported sizes, Unicode and restoration without another action.
+Run `task check`, `task build`, `task openspec:check` and English checks before the signed-off commit.
+Shared input metadata, status caching, kitty commands, deferred copy names and callback correction remain outside this step.
+
+- [x] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
 - [ ] 5.2 Carry actual input-source metadata through production routes. Test two devices, direct/deferred events, disconnection, stale events and reconnect.
 - [ ] 5.3 Add the shared recording/input/audio/project segments and narrow-width rules. Preserve save state, audio loss, nonzero xruns and no-key-releases warnings.
 - [ ] 5.4 Cache unchanged badge and status content. Prove timers, recording elapsed time, level meters and fallback hints still update.
+
+Step 5.1 verification:
+- Applied values use one bounded panel below the title. Numeric values have range bars. Categorical choices retain their words.
+- Twelve new production-input tests cover all five screens, pad parameters, shared FX, Chop, Settings, pickup, refusal, scopes and editor priority.
+- A separate formatting test checks buffer choices and actual routed output labels without claiming a live sound-server result.
+- Exact-deadline tests retain the original timestamp on equal values or limits. Later actual changes restart the deadline.
+- The UI frame releases expired sample snapshots. Expiry restores the underlying text without another input.
+- Drawing tests cover 80x26, 120x40, Unicode, tiny terminals, range endpoints and unchanged cells outside the popup.
+- `task check`: exits 0, including 731 App, 81 input, 117 drawing and 21 notice-model tests.
+- `task build`: exits 0. Current-worktree application sources compile in Release.
+- `task openspec:check`: passes, 16 items and 0 failures. Long requirement text now has separate identity, deadline and priority requirements.
+- English review uses STE-flavored descriptions and a Strict owner procedure. Revised text has no new lint findings.
+- Existing full-file advice stays unchanged. The plans retain their earlier `verify`/`check` lexical finding.
+- Earlier callback maximum-budget failures remain unresolved. A later passing measurement does not close that gate.
+- Logs and diagnostics stay local under `target/87-value-*`. No live audio or MIDI device opened.
+- Sound processing, input bindings, saved formats, dependencies and deferred copy names stay unchanged. This step adds no WAV.
+- Kitty image protection remains in 6.2. Hardware, listening and owner acceptance of 5.1 remain open.
+
+Step 5.1 owner procedure (pending):
+1. Select Braille for `Wave` in F12 Audio. Restart the program if wave pictures remain active.
+2. Open a disposable session or project. On Pads, select a loaded pad. Press Right once.
+3. Check the upper-right panel: pad bank/key, volume, applied dB and range bar. Wait without input.
+4. Check that the panel ends after one second. The existing bottom notice can remain longer.
+5. Open Chop with F3. Move the cursor with J/L. Change slice bounds with Ctrl+J/L or Alt+J/L.
+6. Open FX with F4. Change a value with J/L. Check the shared FX slot label.
+7. On Files and Settings, press `]`. Check the Master volume panel.
+8. Repeat applicable value changes with existing controller knobs. With pickup active, check that waiting does not show an unapplied value.
+9. Check the existing pad sound while you change values. No new WAV accompanies this drawing step.
 
 ## 6. Questions and screen catalogue
 

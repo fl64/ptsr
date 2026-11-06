@@ -82,6 +82,38 @@ Local highlights and limited-pad counts SHALL remain. Pickup waiting or refusal 
 - **THEN** no refused value appears as applied
 - **AND** applied scope changes retain the existing count of limited pads
 
+### Requirement: Value popup deadlines
+
+Only an actual value change SHALL start or restart the one-second deadline.
+The deadline SHALL use elapsed time, including time behind a higher-priority overlay.
+
+#### Scenario: Value deadlines follow actual changes
+- **WHEN** repeated equal values or a limit prevent another change after an applied change
+- **THEN** the original popup expires exactly one second after that applied change
+- **AND** a later actual change starts a new one-second deadline
+
+### Requirement: Value popup object identity
+
+Object labels SHALL identify the original pad and bank, slice, shared FX slot, master or Settings choice.
+A pad-scope popup SHALL name one actual pad value, not imply that all marked pads have that value.
+Buffer choices SHALL identify the configured request. Wave choices SHALL state that they apply on the next start.
+The popup SHALL disappear if its recorded value or object changes, or a project replaces the current session.
+
+#### Scenario: Value snapshots retain their original object
+- **WHEN** the owner selects another pad or screen while a popup remains active
+- **THEN** the popup still names the original object and its applied value
+- **AND** undo, object replacement or project replacement cannot leave an obsolete value visible
+
+### Requirement: Value popup priority
+
+Help, text entry, pickers, questions and learning SHALL hide the popup without changing their input routes.
+Existing notices and local highlights SHALL retain their behavior.
+
+#### Scenario: Editor prompts take priority over values
+- **WHEN** Help, text entry, a picker, a question or learning covers an active value popup
+- **THEN** the popup does not cover that interface
+- **AND** closing that interface after the value deadline does not restore the expired popup
+
 ### Requirement: Shared status segments
 
 The status SHALL show persistent save state, recording, input, audio and project in that order.

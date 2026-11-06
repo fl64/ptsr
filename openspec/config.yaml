@@ -61,8 +61,11 @@ context: |
   A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
   Offline notice and save-priority regressions pass. The owner accepted step 4.3.
   F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
-  Value popups, shared input status, question controls and the catalogue remain unfinished.
-  Manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
+  Help and Messages share the owner-accepted stable frame.
+  Applied values now use a shared one-second popup with object labels and numeric range bars.
+  Pickup, refusals, scope-limit messages and editor priority retain their behavior.
+  Shared input status, question controls, kitty overlay protection and the catalogue remain unfinished.
+  Other manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
   Yellow now identifies pad modes, not only marking. Marking still sounds.
   Manual save success keeps five seconds. Persistent Save failed stays until saving succeeds.
   Generic controller confirmation remains in 88. Sound, factory bindings and saved formats stay unchanged.

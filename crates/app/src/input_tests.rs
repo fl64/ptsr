@@ -7,6 +7,630 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers as
 const PAD_PORT: &str = "Recorded pads MIDI 1";
 const XS_PORT: &str = "USB X-Session MIDI 1";
 
+fn value_drive() -> Drive {
+    let mut drive = Drive::new();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "value");
+    drive
+}
+
+fn value_knob(drive: &mut Drive, action: &str, value: u8) -> Frame {
+    assert!(input::midi::is_param_action(action), "{action}");
+    let group = if drive.app.screen == Screen::Fx && action.starts_with("edit.param_") {
+        input::Group::Fx
+    } else {
+        input::Group::Global
+    };
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        group,
+        input::midi::Key::Cc(100),
+        action,
+    );
+    drive.app.sync_learned("X-Session Pro", group);
+    drive.bytes(XS_PORT, &[0xb0, 100, value]);
+    drive.frame()
+}
+
+fn shown_value(drive: &Drive) -> tui::Value {
+    drive
+        .app
+        .current_value_at(drive.app.value_popup.as_ref().expect("an applied value").at)
+        .expect("a current value")
+        .clone()
+}
+
+/// Scenario "Values appear on every screen".
+#[test]
+fn values_appear_on_every_screen() {
+    for (screen, key) in [
+        (Screen::Pads, 2),
+        (Screen::Files, 6),
+        (Screen::Chop, 3),
+        (Screen::Fx, 4),
+        (Screen::Settings, 12),
+    ] {
+        let mut drive = value_drive();
+        drive.tap(KeyCode::F(key), M::NONE);
+        assert_eq!(drive.app.screen, screen);
+        let keyboard = drive.tap(KeyCode::Char(']'), M::NONE);
+        assert_eq!(keyboard.ui.len(), 1);
+        assert!(matches!(keyboard.ui[0], Command::SetMasterGain { .. }));
+        assert_eq!(shown_value(&drive).object, "Master");
+        assert_eq!(shown_value(&drive).formatted, "+1 dB");
+        let raw = value_knob(&mut drive, "master.volume", 100);
+        assert_eq!(raw.ui.len(), 1);
+        assert!(raw.direct.is_empty());
+        assert!(matches!(raw.ui[0], Command::SetMasterGain { .. }));
+        let value = shown_value(&drive);
+        assert_eq!(value.parameter, "volume");
+        assert_eq!(value.formatted, format!("{:+} dB", drive.app.master_db));
+        assert!(value.position.is_some_and(|p| (0.0..=1.0).contains(&p)));
+        let at = drive.app.value_popup.as_ref().unwrap().at;
+        let before = drive.seen();
+        assert!(
+            drive
+                .app
+                .current_value_at(at + LIT_FOR - Duration::from_nanos(1))
+                .is_some()
+        );
+        assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+        assert_eq!(drive.seen(), before);
+        assert!(drive.frame().commands().is_empty());
+    }
+}
+
+#[test]
+fn value_popup_covers_pad_parameters_through_real_controls() {
+    use pads::Param as P;
+    for (p, action) in [
+        (P::Volume, "pad.volume"),
+        (P::Pitch, "pad.pitch"),
+        (P::Group, "edit.param_3"),
+        (P::Attack, "pad.attack"),
+        (P::Decay, "pad.decay"),
+        (P::Release, "pad.release"),
+        (P::Filter, "pad.filter"),
+        (P::Cutoff, "pad.cutoff"),
+        (P::Reso, "pad.reso"),
+        (P::Source, "edit.param_1"),
+        (P::Start, "pad.start"),
+        (P::End, "pad.end"),
+        (P::Drive, "edit.param_1"),
+        (P::Send1, "edit.param_2"),
+        (P::Send2, "edit.param_3"),
+    ] {
+        for raw in [false, true] {
+            let mut drive = value_drive();
+            drive.tap(KeyCode::Enter, M::NONE);
+            drive.app.pads.param = p;
+            let frame = if raw {
+                value_knob(&mut drive, action, if p == P::Source { 127 } else { 64 })
+            } else {
+                drive.tap(
+                    if p == P::End {
+                        KeyCode::Left
+                    } else {
+                        KeyCode::Right
+                    },
+                    M::NONE,
+                )
+            };
+            assert!(!frame.ui.is_empty(), "{p:?}, raw {raw}");
+            assert!(frame.direct.is_empty());
+            assert!(
+                !frame
+                    .ui
+                    .iter()
+                    .any(|c| matches!(c, Command::PadPress { .. } | Command::Preview { .. }))
+            );
+            let value = shown_value(&drive);
+            assert_eq!(value.object, "pad 1-1");
+            assert_eq!(value.parameter, drive.app.pads.name(p), "{p:?}, raw {raw}");
+            assert_eq!(value.position.is_none(), matches!(p, P::Filter | P::Source));
+            if matches!(p, P::Source | P::Start | P::End) {
+                assert!(!value.formatted.is_empty());
+            } else {
+                assert_eq!(value.formatted, drive.app.pads.param_value());
+                assert!(matches!(drive.app.lit_now(), Some(Lit::Pad(actual)) if actual == p));
+            }
+        }
+    }
+}
+
+#[test]
+fn value_popup_names_shared_fx_slots_not_selected_pads() {
+    for slot in 0..2 {
+        for row in 0..3 {
+            for raw in [false, true] {
+                let mut drive = value_drive();
+                drive.tap(KeyCode::F(4), M::NONE);
+                drive.app.fx_slot = slot;
+                drive.app.fx_param = row;
+                let type_at_upper_limit = slot == 1 && row == 0;
+                let frame = if raw {
+                    value_knob(
+                        &mut drive,
+                        ["edit.param_1", "edit.param_2", "edit.param_3"][row],
+                        if type_at_upper_limit { 0 } else { 100 },
+                    )
+                } else {
+                    drive.tap(
+                        if type_at_upper_limit {
+                            KeyCode::Left
+                        } else {
+                            KeyCode::Right
+                        },
+                        M::NONE,
+                    )
+                };
+                assert_eq!(
+                    frame.ui.len(),
+                    1,
+                    "slot {slot}, row {row}, raw {raw}: {:?}",
+                    drive.app.input_log
+                );
+                assert!(
+                    matches!(frame.ui[0], Command::SetFx { slot: actual, .. } if actual == slot)
+                );
+                let value = shown_value(&drive);
+                let p = drive.app.fx_selected_param();
+                assert_eq!(value.object, format!("FX {}", slot + 1));
+                assert_eq!(value.parameter, drive.app.pads.name(p));
+                assert_eq!(value.formatted, drive.app.pads.fx_text(0, p));
+                assert_eq!(value.position.is_some(), row > 0);
+                drive.app.pads.bank = 7;
+                drive.app.pads.selected = 15;
+                assert_eq!(shown_value(&drive), value);
+            }
+        }
+    }
+}
+
+#[test]
+fn value_popup_covers_chop_controls_without_changing_their_results() {
+    for (name, key, mods, knob) in [
+        ("start", KeyCode::Right, M::CONTROL, "slice.start"),
+        ("end", KeyCode::Left, M::ALT, "slice.end"),
+        ("cursor", KeyCode::Right, M::NONE, "chop.cursor_pos"),
+        ("view", KeyCode::Up, M::NONE, "chop.zoom"),
+        (
+            "region start",
+            KeyCode::Char(','),
+            M::NONE,
+            "chop.region_start_pos",
+        ),
+        (
+            "region end",
+            KeyCode::Char('.'),
+            M::NONE,
+            "chop.region_end_pos",
+        ),
+        ("threshold", KeyCode::Char('h'), M::NONE, "chop.threshold"),
+    ] {
+        for raw in [false, true] {
+            let mut drive = value_drive();
+            drive.tap(KeyCode::F(3), M::NONE);
+            drive.app.chop.as_mut().unwrap().cursor = 24_000;
+            drive.frame();
+            if raw {
+                value_knob(&mut drive, knob, 64);
+            } else {
+                drive.tap(key, mods);
+            }
+            let value = shown_value(&drive);
+            assert_eq!(value.parameter, name, "{name}, raw {raw}");
+            assert!(value.position.is_some_and(|p| (0.0..=1.0).contains(&p)));
+            assert!(!value.formatted.is_empty());
+            if matches!(name, "start" | "end") {
+                assert_eq!(value.object, "slice 1");
+            }
+        }
+    }
+    let mut drive = value_drive();
+    drive.tap(KeyCode::F(3), M::NONE);
+    drive.tap(KeyCode::Char('y'), M::NONE);
+    assert_eq!(shown_value(&drive).parameter, "equal parts");
+    assert_eq!(shown_value(&drive).formatted, "2");
+    drive.app.chop.as_mut().unwrap().cursor = 12_000;
+    drive.tap(KeyCode::Char(','), M::NONE);
+    drive.tap(KeyCode::Char(','), M::CONTROL);
+    assert_eq!(shown_value(&drive).parameter, "region");
+    assert_eq!(shown_value(&drive).formatted, "0.000..1.000 s");
+    drive.tap(KeyCode::Char('g'), M::CONTROL);
+    assert_eq!(shown_value(&drive).object, "pad 1-1");
+    assert_eq!(shown_value(&drive).parameter, "volume");
+}
+
+/// Scenario "Refused and limited values remain truthful".
+#[test]
+fn refused_and_limited_values_remain_truthful() {
+    let mut drive = value_drive();
+    drive.app.takeover.response = input::midi::Response::Pickup;
+    value_knob(&mut drive, "pad.volume", 0);
+    assert!(drive.app.value_popup.is_none());
+    assert_eq!(drive.app.pads.volume_db[0], 0);
+    assert!(drive.app.pickup.is_some());
+    value_knob(&mut drive, "pad.volume", 127);
+    assert_eq!(shown_value(&drive).formatted, "+6 dB");
+    drive.app.pads.marked.extend([0, 1]);
+    drive.app.value_popup = None;
+    let frame = drive.tap(KeyCode::Right, M::NONE);
+    assert_eq!(frame.ui.len(), 1);
+    assert!(matches!(frame.ui[0], Command::SetPadGain { pad: 1, .. }));
+    assert_eq!(drive.app.pads.volume_db[0], 6);
+    assert_eq!(drive.app.pads.volume_db[1], 1);
+    let value = shown_value(&drive);
+    assert_eq!(
+        (value.object.as_str(), value.formatted.as_str()),
+        ("pad 1-2", "+1 dB")
+    );
+    assert!(drive.last_notice().text.contains("1 pad at the limit"));
+    assert_eq!(drive.last_notice().level, Level::Warn);
+    drive.app.pads.volume_db[1] = 6;
+    drive.app.value_popup = None;
+    assert!(drive.tap(KeyCode::Right, M::NONE).ui.is_empty());
+    assert!(drive.app.value_popup.is_none());
+    assert!(drive.last_notice().text.contains("2 pads at the limit"));
+
+    let mut refused = Drive::offline();
+    refused.tap(KeyCode::F(12), M::NONE);
+    refused.app.settings_row = 2;
+    refused.app.cfg.buffer_size = 128;
+    refused.tap(KeyCode::Right, M::NONE);
+    assert_eq!(refused.app.cfg.buffer_size, 128);
+    assert!(refused.app.value_popup.is_none());
+    assert_eq!(
+        refused.last_notice().text,
+        "offline audio has no buffer size"
+    );
+    assert_eq!(refused.last_notice().level, Level::Error);
+}
+
+/// Scenario "Value deadlines follow actual changes".
+#[test]
+fn value_deadlines_follow_actual_changes() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        if raw {
+            value_knob(&mut drive, "pad.volume", 127);
+        } else {
+            drive.app.pads.volume_db[0] = 5;
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        let at = Instant::now() - Duration::from_millis(600);
+        drive.app.value_popup.as_mut().unwrap().at = at;
+        let seen = drive.seen();
+        let equal = if raw {
+            value_knob(&mut drive, "pad.volume", 127)
+        } else {
+            drive.tap(KeyCode::Right, M::NONE)
+        };
+        assert!(equal.ui.is_empty());
+        assert_eq!(drive.app.value_popup.as_ref().unwrap().at, at);
+        assert!(drive.tap(KeyCode::Right, M::NONE).ui.is_empty());
+        assert_eq!(drive.app.value_popup.as_ref().unwrap().at, at);
+        assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+        assert_eq!(drive.app.pads.volume_db[0], 6);
+        assert_eq!(drive.app.history.len(), seen.history.len());
+        if raw {
+            value_knob(&mut drive, "pad.volume", 64);
+        } else {
+            drive.tap(KeyCode::Left, M::NONE);
+        }
+        let later = drive.app.value_popup.as_ref().unwrap().at;
+        assert!(later > at);
+        assert!(
+            drive
+                .app
+                .current_value_at(later + LIT_FOR - Duration::from_nanos(1))
+                .is_some()
+        );
+        assert!(drive.app.current_value_at(later + LIT_FOR).is_none());
+    }
+}
+
+/// Scenario "Value snapshots retain their original object".
+#[test]
+fn value_snapshots_retain_their_original_object() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        let source = if raw {
+            Source::Button
+        } else {
+            Source::Keyboard
+        };
+        if raw {
+            value_knob(&mut drive, "pad.volume", 100);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        let original = shown_value(&drive);
+        drive.bind_action(103, "edit.undo");
+        drive.bind_action(104, "bank.next");
+        drive.bind_action(105, "screen.files");
+        drive.registry_command(source, KeyCode::Char('o'), M::NONE, 104);
+        drive.app.pads.param = pads::Param::Pitch;
+        drive.registry_command(source, KeyCode::F(6), M::NONE, 105);
+        assert_eq!(shown_value(&drive), original);
+        drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 103);
+        assert!(drive.app.current_value_at(Instant::now()).is_none());
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.app.pads.bank = 0;
+        drive.app.pads.param = pads::Param::Volume;
+        if raw {
+            value_knob(&mut drive, "pad.volume", 64);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        drive.app.pads.sound[0] = Some(Arc::new(Sample::mono(vec![0.2; 48_000])));
+        assert!(drive.app.current_value_at(Instant::now()).is_none());
+        if raw {
+            value_knob(&mut drive, "pad.volume", 32);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        assert!(drive.app.current_value_at(Instant::now()).is_some());
+        drive.app.apply_session(session::Session::default());
+        assert!(drive.app.value_popup.is_none());
+    }
+}
+
+/// Scenario "Editor prompts take priority over values".
+#[test]
+fn editor_prompts_take_priority_over_values() {
+    for raw in [false, true] {
+        for overlay in 0..9 {
+            let mut drive = value_drive();
+            if raw {
+                value_knob(&mut drive, "master.volume", 100);
+            } else {
+                drive.tap(KeyCode::Char(']'), M::NONE);
+            }
+            let at = drive.app.value_popup.as_ref().unwrap().at;
+            match overlay {
+                0 => {
+                    drive.tap(KeyCode::F(1), M::NONE);
+                }
+                1 => {
+                    drive.tap(KeyCode::F(6), M::NONE);
+                    drive.tap(KeyCode::Char('/'), M::NONE);
+                    assert!(drive.app.browser.editing);
+                }
+                2 => {
+                    drive.tap(KeyCode::Char('n'), M::CONTROL);
+                    assert!(drive.app.pad_naming.is_some());
+                }
+                3 => {
+                    drive.tap(KeyCode::Char('p'), M::CONTROL);
+                    assert!(drive.app.project_picker.is_some());
+                }
+                4 => {
+                    drive.tap(KeyCode::F(10), M::NONE);
+                    assert!(drive.app.screen_learn.is_some());
+                }
+                5 => {
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    drive.tap(KeyCode::Backspace, M::NONE);
+                    assert!(drive.app.ask.is_some());
+                }
+                6 => {
+                    drive.app.path_picker =
+                        Some(PathPicker::open(0, Path::new("target/87-value-picker")));
+                }
+                7 => {
+                    drive.app.learning = Some(learn::Learning::new(action_info("pad.copy")));
+                }
+                _ => {
+                    drive.tap(KeyCode::F(12), M::NONE);
+                    drive.app.settings_tab = 2;
+                    drive.app.midi_row = drive
+                        .app
+                        .midi_list()
+                        .iter()
+                        .position(|row| {
+                            matches!(
+                                row,
+                                MidiListRow::Group {
+                                    group: input::Group::Global,
+                                    ..
+                                }
+                            )
+                        })
+                        .unwrap();
+                    drive.tap(KeyCode::Right, M::NONE);
+                    drive.app.midi_row = drive
+                        .app
+                        .midi_list()
+                        .iter()
+                        .position(|row| matches!(row, MidiListRow::Set { .. }))
+                        .unwrap();
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    assert!(drive.app.midi_run.is_some());
+                }
+            }
+            assert!(
+                drive
+                    .app
+                    .current_value_at(at + Duration::from_millis(1))
+                    .is_none(),
+                "overlay {overlay}"
+            );
+            let before = drive.seen();
+            assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+            assert_eq!(drive.seen(), before);
+            drive.app.help_open = false;
+            drive.app.browser.editing = false;
+            drive.app.pad_naming = None;
+            drive.app.project_picker = None;
+            drive.app.path_picker = None;
+            drive.app.screen_learn = None;
+            drive.app.learning = None;
+            drive.app.midi_run = None;
+            drive.app.ask = None;
+            assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+            assert_eq!(drive.app.value_popup.as_ref().unwrap().at, at);
+        }
+    }
+}
+
+#[test]
+fn value_popup_labels_settings_choices_without_claiming_server_changes() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        drive.bind_action(101, "settings.value_next");
+        drive.tap(KeyCode::F(12), M::NONE);
+        drive.app.settings_row = 3;
+        let before = drive.app.ui.graphics;
+        if raw {
+            drive.bytes(PAD_PORT, &[0xb0, 101, 127]);
+            drive.bytes(PAD_PORT, &[0xb0, 101, 0]);
+            drive.frame();
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        assert_ne!(drive.app.ui.graphics, before);
+        let value = shown_value(&drive);
+        assert_eq!(value.object, "Settings");
+        assert_eq!(value.parameter, "wave");
+        assert!(value.formatted.contains("next start"));
+        assert!(value.position.is_none());
+        drive.app.settings_tab = 2;
+        drive.app.midi_row = drive
+            .app
+            .midi_list()
+            .iter()
+            .position(|row| matches!(row, MidiListRow::Response))
+            .unwrap();
+        if raw {
+            drive.bytes(PAD_PORT, &[0xb0, 101, 127]);
+            drive.bytes(PAD_PORT, &[0xb0, 101, 0]);
+            drive.frame();
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        assert_eq!(shown_value(&drive).parameter, "knob response");
+        assert_eq!(
+            shown_value(&drive).formatted,
+            drive.app.takeover.response.name()
+        );
+    }
+}
+
+#[test]
+fn value_popup_expiry_releases_sample_snapshots_on_the_ui_frame() {
+    let mut drive = value_drive();
+    drive.tap(KeyCode::Right, M::NONE);
+    let sample = drive.app.pads.sound[0].as_ref().unwrap().clone();
+    let at = drive.app.value_popup.as_ref().unwrap().at;
+    let owners = Arc::strong_count(&sample);
+    drive
+        .app
+        .frame_notice_at(at + LIT_FOR - Duration::from_nanos(1));
+    assert!(drive.app.value_popup.is_some());
+    assert_eq!(Arc::strong_count(&sample), owners);
+    drive.app.frame_notice_at(at + LIT_FOR);
+    assert!(drive.app.value_popup.is_none());
+    assert_eq!(Arc::strong_count(&sample), owners - 1);
+}
+
+#[test]
+fn value_popup_expiry_restores_text_without_another_input() {
+    use ratatui::{Terminal, backend::TestBackend};
+    for (width, height) in [(80, 26), (120, 40)] {
+        let mut drive = value_drive();
+        drive.tap(KeyCode::Char(']'), M::NONE);
+        let app = &mut drive.app;
+        let at = app.value_popup.as_ref().unwrap().at;
+        let p = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+        let screen = tui::Screen::Pads(app.mark_pads(p));
+        let status = tui::Status {
+            badges: app.title_badges(),
+            save: app.save_status(),
+            backend: None,
+            recording: false,
+            buffer_size: 128,
+            sample_rate: 48_000,
+            load_peak: 0.0,
+            xruns: 0,
+            master_db: app.master_db,
+            meters: ([-60.0; 2], [-60.0; 2], false),
+            notice: None,
+            no_releases: false,
+            project: None,
+        };
+        let help = tui::Help {
+            groups: &[],
+            hint: None,
+            full: None,
+            question: None,
+            learn: None,
+        };
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|f| tui::draw(f, &status, &screen, &help))
+            .unwrap();
+        let baseline = term.backend().buffer().clone();
+        for elapsed in [
+            Duration::ZERO,
+            LIT_FOR - Duration::from_nanos(1),
+            LIT_FOR,
+            LIT_FOR + Duration::from_secs(3),
+        ] {
+            term.draw(|f| {
+                tui::draw(f, &status, &screen, &help);
+                if let Some(value) = app.current_value_at(at + elapsed) {
+                    tui::value_popup(f, value);
+                }
+            })
+            .unwrap();
+            assert_eq!(term.backend().buffer() == &baseline, elapsed >= LIT_FOR);
+        }
+        assert!(drive.frame().commands().is_empty());
+    }
+}
+
+#[test]
+fn value_popup_keeps_categorical_values_and_scoped_button_limits() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        let source = if raw {
+            Source::Button
+        } else {
+            Source::Keyboard
+        };
+        for (screen, key, action, name) in [
+            (Screen::Pads, KeyCode::Char('h'), "pad.mode_next", "mode"),
+            (Screen::Chop, KeyCode::Char('n'), "chop.snap_toggle", "snap"),
+            (Screen::Chop, KeyCode::Char('o'), "chop.play_mode", "play"),
+        ] {
+            if screen == Screen::Chop && drive.app.screen != screen {
+                drive.tap(KeyCode::F(3), M::NONE);
+            }
+            drive.bind_action(102, action);
+            drive.registry_command(source, key, M::NONE, 102);
+            assert_eq!(shown_value(&drive).parameter, name);
+            assert!(shown_value(&drive).position.is_none());
+        }
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.app.pads.marked.extend([0, 1]);
+        drive.app.pads.volume_db[0] = 6;
+        drive.app.pads.volume_db[1] = 0;
+        drive.bind_action(102, "edit.value_inc");
+        let frame = drive.registry_command(source, KeyCode::Right, M::NONE, 102);
+        assert_eq!(frame.ui.len(), 1);
+        assert!(matches!(frame.ui[0], Command::SetPadGain { pad: 1, .. }));
+        assert_eq!(shown_value(&drive).object, "pad 1-2");
+        assert_eq!(shown_value(&drive).formatted, "+1 dB");
+        assert!(drive.last_notice().text.contains("1 pad at the limit"));
+        drive.app.pads.selected = 7;
+        drive.app.pads.volume_db[7] = 2;
+        drive.registry_command(source, KeyCode::Right, M::NONE, 102);
+        assert_eq!(shown_value(&drive).object, "pad 1-2");
+        assert_eq!(shown_value(&drive).formatted, "+2 dB");
+        assert_eq!(drive.app.pads.volume_db[7], 2);
+    }
+}
+
 struct Frame {
     direct: Vec<ProjectCommand>,
     ui: Vec<Command>,

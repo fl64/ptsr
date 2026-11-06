@@ -13,6 +13,17 @@ use super::{
 };
 
 impl App {
+    pub(super) fn current_value_at(&self, now: Instant) -> Option<&tui::Value> {
+        let shown = self.value_popup.as_ref()?;
+        if now.saturating_duration_since(shown.at) >= LIT_FOR
+            || self.key_notice_blocked()
+            || self.midi_run.is_some()
+        {
+            return None;
+        }
+        shown.current(self)
+    }
+
     pub(super) fn message_history(&self) -> Vec<tui::Message<'_>> {
         self.notices
             .history()
@@ -516,6 +527,14 @@ impl App {
     }
 
     pub(super) fn frame_notice_at(&mut self, now: Instant) -> Option<String> {
+        if self
+            .value_popup
+            .as_ref()
+            .is_some_and(|value| now.saturating_duration_since(value.at) >= LIT_FOR)
+        {
+            // Release sample snapshots on the UI thread, even without another input.
+            self.value_popup = None;
+        }
         self.notices.set_visible(!self.notice_hidden(), now);
         let notice = self
             .pad_naming

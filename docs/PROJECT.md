@@ -87,8 +87,11 @@ Each result keeps its keyboard, actual device or system origin. Startup acknowle
 A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
 Offline notice and save-priority regressions pass. The owner accepted step 4.3.
 F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
-Value popups, shared input status, question controls and the catalogue remain unfinished.
-Manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
+Help and Messages share the owner-accepted stable frame.
+Applied values now use a shared one-second popup with object labels and numeric range bars.
+Pickup, refusals, scope-limit messages and editor priority retain their behavior.
+Shared input status, question controls, kitty overlay protection and the catalogue remain unfinished.
+Other manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
 Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

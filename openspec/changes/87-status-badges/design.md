@@ -264,6 +264,33 @@ Do not add a wave strip or move settings or FX rows just to show a value.
 Keep local parameter highlights and existing limited-pad counts.
 Do not move the strip or cover a text-input cursor or question.
 
+Step 5.1 observes values before and after the existing keyboard-action and MIDI-parameter dispatch.
+Compare actual state, including marked pads, rather than a requested knob position or a formatted string.
+This preserves pickup, refusal, scope limits, undo and sound commands without another parameter setter.
+Store the resulting object identity and value with the deadline. Selection alone does not rename the stored object.
+Read the stored target again before showing its value. Undo or object replacement hides a result that no longer matches.
+Session replacement clears the popup. Equal values and refused changes do not extend its deadline.
+The one-second deadline includes hidden time. Existing notice timers keep their separate visible-time rules.
+The UI frame removes expired snapshots, including their sample references, without waiting for another input.
+
+Draw a bounded text panel below the title, at the right edge, without moving the existing layout.
+Use a second row for numeric ranges. Categorical values have no range bar.
+Pad labels include bank and key. Shared FX labels name the project slot, not the selected pad.
+Buffer feedback names the buffer choice, not an unconfirmed server size. Wave feedback includes `next start`.
+Keep notices, local highlights and scope-limit counts. Hide the panel during Help, editors, pickers, questions and learning.
+Do not add source-status caching or kitty command handling in this step. Those remain tasks 5.2, 5.4 and 6.2.
+
+Step 5.1 review boundaries after implementation:
+- Applied versus requested values: closed by `values_appear_on_every_screen` and the pad, Chop, FX and Settings tests through production controls.
+- Pickup and refusal: closed by `refused_and_limited_values_remain_truthful`, including an offline audio refusal.
+- Equal repeats and exact deadlines: closed by `value_deadlines_follow_actual_changes` without sleeps.
+- A selected pad at its limit or outside the marked scope: closed by keyboard and learned-button scope tests.
+- Selection, screen changes, undo, sample replacement and project replacement: closed by `value_snapshots_retain_their_original_object`.
+- Help, text, pickers, questions and learning: closed by `editor_prompts_take_priority_over_values` across nine states.
+- Both supported sizes, Unicode and tiny terminals: closed by drawing buffer comparisons and bounded range tests.
+- Expiry without input: closed by `value_popup_expiry_restores_text_without_another_input` and the sample-reference release test.
+- Live kitty image composition, physical controls and listening: open, outside step 5.1 verification.
+
 Status order is persistent save warning, recording, input, audio, project.
 Input lists KB and actual connected devices. Highlight the source of a new input for one second.
 Carry source metadata through existing UI routes without changing audio routing, epochs, velocity, release ownership or acknowledgements.

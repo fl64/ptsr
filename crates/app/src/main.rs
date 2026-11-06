@@ -12,6 +12,7 @@ mod notices;
 mod pads;
 mod saving;
 mod session;
+mod values;
 mod view;
 mod wav;
 
@@ -399,6 +400,7 @@ struct App {
     settings_row: usize,
     help_open: bool,
     help_overlay: help::State,
+    value_popup: Option<values::Shown>,
     pads: pads::Pads,
     /// Output meters for the pads screen: bars, peak hold, the latching overload light.
     meters: meters::Meters,
@@ -590,6 +592,7 @@ impl App {
     /// pads, the chops. The start and the project open/switch both come here; everything
     /// of the previous state is dropped — nothing leaks between projects.
     fn apply_session(&mut self, sess: session::Session) {
+        self.value_popup = None;
         self.pending_audio.clear();
         self.audio_held.fill(None);
         self.midi_ui_held.clear();
@@ -4182,6 +4185,7 @@ fn main() -> std::io::Result<()> {
         settings_row: 0,
         help_open: false,
         help_overlay: help::State::default(),
+        value_popup: None,
         pads: pads::Pads::default(),
         meters: meters::Meters::default(),
         settings_tab: 0,
@@ -4606,12 +4610,18 @@ fn main() -> std::io::Result<()> {
             question: app.ask.as_ref().map(|a| a.lines()),
             learn: learn_lines.as_deref(),
         };
+        let value = app.current_value_at(Instant::now());
         let mut want = Vec::new();
-        let drawn = if graphics {
-            term.draw(|f| tui::draw_gfx(f, &status, &screen, &help, &mut want))
-        } else {
-            term.draw(|f| tui::draw(f, &status, &screen, &help))
-        };
+        let drawn = term.draw(|f| {
+            if graphics {
+                tui::draw_gfx(f, &status, &screen, &help, &mut want);
+            } else {
+                tui::draw(f, &status, &screen, &help);
+            }
+            if let Some(value) = value {
+                tui::value_popup(f, value);
+            }
+        });
         if let Err(e) = drawn {
             break Err(e);
         }
@@ -7441,6 +7451,7 @@ mod tests {
             settings_row: 0,
             help_open: false,
             help_overlay: help::State::default(),
+            value_popup: None,
             pads: pads::Pads::default(),
             meters: meters::Meters::default(),
             settings_tab: 0,

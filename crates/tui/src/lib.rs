@@ -520,6 +520,58 @@ pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
     draw_inner(frame, s, screen, help, None);
 }
 
+/// An applied parameter result. Numeric positions use the parameter's existing range.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Value {
+    pub object: String,
+    pub parameter: String,
+    pub formatted: String,
+    pub position: Option<f32>,
+}
+
+fn value_area(area: Rect, numeric: bool) -> Rect {
+    let width = area.width.min(52);
+    Rect::new(
+        area.right().saturating_sub(width),
+        area.y.saturating_add(2),
+        width,
+        area.height
+            .saturating_sub(HELP_ROWS + 3)
+            .min(if numeric { 2 } else { 1 }),
+    )
+}
+
+/// Draw after the screen. The caller hides values while a higher-priority editor is open.
+pub fn value_popup(frame: &mut Frame, value: &Value) {
+    let area = value_area(frame.area(), value.position.is_some());
+    if area.width < 3 || area.height == 0 {
+        return;
+    }
+    frame.render_widget(Block::new().bg(PANEL).fg(TEXT), area);
+    let text = Line::from(value.formatted.as_str()).fg(CYAN).bold();
+    let width = text.width().min((area.width / 2) as usize) as u16;
+    let right = Rect::new(area.right() - width - 1, area.y, width, 1);
+    let left = Rect::new(area.x + 1, area.y, area.width.saturating_sub(width + 3), 1);
+    frame.render_widget(
+        Line::from(format!("{} · {}", value.parameter, value.object)).fg(TEXT),
+        left,
+    );
+    frame.render_widget(text, right);
+    if area.height > 1
+        && let Some(position) = value.position.filter(|p| p.is_finite())
+    {
+        let width = area.width.saturating_sub(2) as usize;
+        let filled = (position.clamp(0.0, 1.0) * width as f32).round() as usize;
+        frame.render_widget(
+            Line::from(vec![
+                "█".repeat(filled).fg(CYAN),
+                "─".repeat(width - filled).fg(DIM),
+            ]),
+            Rect::new(area.x + 1, area.y + 1, width as u16, 1),
+        );
+    }
+}
+
 /// The logo of the splash (73), byte-exact: 4 lines of 10 characters, trailing spaces
 /// kept.
 #[rustfmt::skip]
@@ -6499,6 +6551,125 @@ mod tests {
             .collect();
         assert!(text.contains("the next pad hit swaps them"), "{text}");
         assert!(text.contains(" Ctrl+X "));
+    }
+
+    /// Scenario "Values appear on every screen".
+    #[test]
+    fn value_popup_keeps_geometry_and_restores_content() {
+        let wave = [0.1; 400];
+        let screens = [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(&wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+        ];
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let (mut status, help) = chop_status();
+            status.save = SaveStatus::Failed;
+            status.notice = Some(NoticeLine {
+                text: "A refusal stays visible",
+                level: Some(NoticeLevel::Error),
+            });
+            for screen in &screens {
+                term.draw(|f| draw(f, &status, screen, &help)).unwrap();
+                let baseline = term.backend().buffer().clone();
+                for position in [None, Some(-0.5), Some(0.0), Some(0.5), Some(1.0), Some(2.0)] {
+                    let value = Value {
+                        object: "pad 2-Q".into(),
+                        parameter: "cutoff".into(),
+                        formatted: "1.2 kHz".into(),
+                        position,
+                    };
+                    term.draw(|f| {
+                        draw(f, &status, screen, &help);
+                        value_popup(f, &value);
+                    })
+                    .unwrap();
+                    let buffer = term.backend().buffer();
+                    let area = value_area(buffer.area, position.is_some());
+                    for y in 0..h {
+                        for x in 0..w {
+                            if !area.contains((x, y).into()) {
+                                assert_eq!(buffer[(x, y)], baseline[(x, y)], "{w}x{h}, ({x}, {y})");
+                            }
+                        }
+                    }
+                    let line: String = (area.x..area.right())
+                        .map(|x| buffer[(x, area.y)].symbol())
+                        .collect();
+                    assert!(
+                        line.contains("cutoff")
+                            && line.contains("pad 2-Q")
+                            && line.contains("1.2 kHz"),
+                        "{line}"
+                    );
+                    if let Some(position) = position {
+                        let filled = (area.x..area.right())
+                            .filter(|&x| buffer[(x, area.y + 1)].symbol() == "█")
+                            .count();
+                        assert_eq!(
+                            filled,
+                            (position.clamp(0.0, 1.0) * (area.width - 2) as f32).round() as usize
+                        );
+                    }
+                    term.draw(|f| draw(f, &status, screen, &help)).unwrap();
+                    assert_eq!(term.backend().buffer(), &baseline);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn value_popup_bounds_unicode_and_small_terminals() {
+        for (w, h) in [(0, 0), (1, 1), (2, 6), (3, 8), (8, 10), (80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            for position in [None, Some(0.5), Some(f32::NAN), Some(f32::INFINITY)] {
+                let value = Value {
+                    object: "Settings".into(),
+                    parameter: "output".into(),
+                    formatted: "猫e\u{301}音".repeat(40),
+                    position,
+                };
+                term.draw(|f| {
+                    f.render_widget(Block::new().bg(BG).fg(TEXT), f.area());
+                    value_popup(f, &value);
+                })
+                .unwrap();
+                let buffer = term.backend().buffer();
+                let area = value_area(buffer.area, position.is_some());
+                for y in 0..h {
+                    for x in 0..w {
+                        if !area.contains((x, y).into()) {
+                            assert_eq!(buffer[(x, y)].bg, BG);
+                        }
+                    }
+                }
+                if w >= 80 {
+                    let line: String = (0..w).map(|x| buffer[(x, area.y)].symbol()).collect();
+                    assert!(
+                        line.contains("output")
+                            && line.contains("Settings")
+                            && line.contains('猫')
+                            && line.contains("e\u{301}")
+                            && line.contains('音'),
+                        "{line}"
+                    );
+                }
+            }
+        }
     }
 
     fn draw_f1(
