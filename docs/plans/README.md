@@ -94,11 +94,14 @@ not permission to combine the new changes.
   Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
   Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
   Pad corners now show placement targets, existing replacement questions and planned slice numbers. Yellow mode frames retain pad state and bank identity.
-  Runtime notices now share levels, visible-time lifetimes, priority and latest-50 history. F1 does not show that history yet.
+  Runtime notices share levels, visible-time lifetimes, priority and latest-50 history.
+  F1 opens Help first. Tab/Shift+Tab selects Messages, with levels, origins and wrapped text.
+  Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help without changing the work through those local controls.
   Each result keeps its keyboard, actual device or system origin. Startup acknowledgement and silent successful autosave stay unchanged.
   A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
-  Offline notice checks and the Release build pass. Dedicated save-priority regressions remain in 4.3.
-  F1 Messages, value popups and the catalogue remain unimplemented. Tab under open F1 help still needs correction in 4.4.
+  Offline notice and save-priority regressions pass. The owner accepted step 4.3.
+  F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
+  Value popups, shared input status, question controls and the catalogue remain unfinished.
   Manual keyboard, physical-controller and listening checks remain unverified.
   Sound, factory bindings and saved formats stay unchanged.
   Generic controller confirmation remains in 88. Publication needs a separate request.

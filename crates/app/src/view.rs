@@ -13,6 +13,42 @@ use super::{
 };
 
 impl App {
+    pub(super) fn message_history(&self) -> Vec<tui::Message<'_>> {
+        self.notices
+            .history()
+            .iter()
+            .map(|entry| tui::Message {
+                level: match entry.level {
+                    Level::Info => tui::NoticeLevel::Info,
+                    Level::Done => tui::NoticeLevel::Done,
+                    Level::Warn => tui::NoticeLevel::Warn,
+                    Level::Error => tui::NoticeLevel::Error,
+                },
+                origin: match &entry.origin {
+                    Origin::Keyboard => "Keyboard",
+                    Origin::Device(port) => port.as_str(),
+                    Origin::System => "System",
+                },
+                text: &entry.text,
+            })
+            .collect()
+    }
+
+    pub(super) fn full_help_view<'a>(
+        &self,
+        keys: &'a [(String, String)],
+        entries: &'a [tui::Message<'a>],
+    ) -> Option<tui::FullHelp<'a>> {
+        self.help_open.then_some(if self.help_overlay.messages {
+            tui::FullHelp::Messages {
+                entries,
+                scroll: self.help_overlay.scroll,
+            }
+        } else {
+            tui::FullHelp::Keys(keys)
+        })
+    }
+
     pub(super) fn produce_notice(&mut self, notice: Notice, at: Instant) {
         log::debug!(
             "notice {:?} {:?}: {}",

@@ -116,8 +116,6 @@ impl Notices {
         Some(&entry.notice)
     }
 
-    // The history reader becomes a runtime consumer with the F1 page in 4.4.
-    #[cfg(test)]
     pub(super) fn history(&self) -> &VecDeque<Notice> {
         &self.history
     }

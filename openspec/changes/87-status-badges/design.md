@@ -226,15 +226,16 @@ Navigation, redraw and expiry add no history entry and change no saved work or s
 Existing non-local actions can still change the underlying screen. Closing help does not undo those actions.
 The later graphics-overlay task 6.2 retains its separate kitty image checks.
 
-Review boundaries before implementation:
+Review boundaries for 4.4:
 
-- Tab on an open pad edit: open, keyboard dispatch and the owner's report establish the defect. Add a regression before the fix.
-- History at 0, 50 and 51 entries, long Unicode text and actual origins: open, add view and drawing tests.
-- Arrival while scrolled, terminal resize and repeated keys: open, test clamping and input boundaries.
-- Pad held across opening, page changes and closing: preserve the existing route with keyboard and raw MIDI tests.
-- Dirty work, project identity, undo and sound commands: open, compare state before and after local navigation.
-- Text, question, picker and learning priority: preserve the current production routes.
-- Real kitty composition, physical hardware and listening: outside step 4.4 verification.
+- Tab on an open pad edit: closed by the failing-then-passing `f1_navigation_stays_inside_the_overlay` regression and the five-screen navigation test.
+- History at 0, 50 and 51 entries and actual origins: closed by `f1_retains_recent_results_in_order` and the App/drawing history tests.
+- Long Unicode text and origin labels: closed by `long_message_text_remains_readable` at both supported sizes.
+- Arrival while scrolled, terminal resize and repeated keys: closed by `f1_history_handles_empty_and_changing_content`, including an Error under help.
+- Pad held across opening, page changes and closing: closed by `pad_releases_survive_f1_navigation` through keyboard, raw MIDI notes and learned buttons.
+- Dirty work, project identity, undo and sound commands: closed by the history and navigation state comparisons with existing pad/undo work.
+- Text, question, picker and learning priority: closed by `f1_controls_retain_input_priority_and_bindings` and `f1_keeps_settings_picker_and_learning_priority`.
+- Real kitty composition, physical hardware and listening: outside step 4.4 verification. Manual acceptance remains open.
 
 ### 6. Keep value and status feedback independent
 

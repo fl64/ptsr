@@ -514,6 +514,575 @@ fn notice_errors_stay_pending_behind_real_text_input() {
     assert!(drive.app.notices.current().is_none());
 }
 
+/// Scenario "F1 navigation stays inside the overlay".
+#[test]
+fn f1_navigation_stays_inside_the_overlay() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let key = if matches!(source, Source::Notes) {
+            input::midi::Key::Note(95)
+        } else {
+            input::midi::Key::Cc(95)
+        };
+        learn::assign(
+            &mut drive.app.learned,
+            "Recorded pads",
+            input::Group::Global,
+            key,
+            "help.toggle",
+        );
+        drive
+            .app
+            .sync_learned("Recorded pads", input::Group::Global);
+        drive.app.edit = true;
+        drive.frame();
+        let opened = drive.registry_command(source, KeyCode::F(1), M::NONE, 95);
+        assert!(drive.app.help_open);
+        assert!(opened.commands().is_empty());
+        let before = drive.seen();
+        let dirty = drive.app.session_dirty;
+        for (code, mods) in [
+            (KeyCode::Tab, M::NONE),
+            (KeyCode::Down, M::NONE),
+            (KeyCode::PageDown, M::NONE),
+            (KeyCode::PageUp, M::NONE),
+            (KeyCode::Up, M::NONE),
+            (KeyCode::BackTab, M::SHIFT),
+        ] {
+            let frame = drive.tap(code, mods);
+            assert!(frame.commands().is_empty(), "{source:?}: {code:?}");
+            assert_eq!(drive.seen(), before, "{source:?}: {code:?}");
+            assert_eq!(drive.app.session_dirty, dirty);
+            assert!(drive.app.help_open);
+        }
+        let closed = drive.tap(KeyCode::Esc, M::NONE);
+        assert!(!drive.app.help_open);
+        assert!(closed.commands().is_empty());
+        assert_eq!(drive.seen(), before);
+        drive.tap(KeyCode::Tab, M::NONE);
+        assert_ne!(drive.app.pads.param, before.param, "Tab works outside help");
+    }
+}
+
+/// Scenario "F1 navigation stays inside the overlay" on every registered screen.
+#[test]
+fn f1_navigation_keeps_every_underlying_screen() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            for (width, height) in [(80, 26), (120, 40)] {
+                let mut drive = Drive::registry_screen_checks();
+                drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+                if screen != Screen::Pads {
+                    drive.registry_command(source, key, M::NONE, number);
+                }
+                assert_eq!(drive.app.screen, screen);
+                for index in 0..50 {
+                    drive.app.post_system_notice(
+                        Level::Info,
+                        (format!("history {index}"), Instant::now()),
+                    );
+                }
+                drive.registry_command(source, KeyCode::F(1), M::NONE, 95);
+                drive.app.resize_help(width, height);
+                let before = drive.seen();
+                let dirty = drive.app.session_dirty;
+                let selections = (
+                    drive.app.fx_slot,
+                    drive.app.fx_param,
+                    drive.app.settings_row,
+                    drive.app.settings_tab,
+                    drive.app.browser.selected,
+                    drive.app.slice_end,
+                );
+                for (code, mods) in [
+                    (KeyCode::Tab, M::NONE),
+                    (KeyCode::Down, M::NONE),
+                    (KeyCode::PageDown, M::NONE),
+                    (KeyCode::PageUp, M::NONE),
+                    (KeyCode::Up, M::NONE),
+                    (KeyCode::BackTab, M::SHIFT),
+                    (KeyCode::Esc, M::NONE),
+                ] {
+                    assert!(
+                        drive.tap(code, mods).commands().is_empty(),
+                        "{source:?} {screen:?}: {code:?}"
+                    );
+                    assert_eq!(drive.seen(), before, "{source:?} {screen:?}: {code:?}");
+                    assert_eq!(drive.app.session_dirty, dirty);
+                    assert_eq!(
+                        (
+                            drive.app.fx_slot,
+                            drive.app.fx_param,
+                            drive.app.settings_row,
+                            drive.app.settings_tab,
+                            drive.app.browser.selected,
+                            drive.app.slice_end
+                        ),
+                        selections
+                    );
+                }
+                assert!(!drive.app.help_open);
+            }
+        }
+    }
+}
+
+fn f1_message_screen(drive: &mut Drive, width: u16, height: u16) -> Vec<String> {
+    use ratatui::{Terminal, backend::TestBackend};
+    drive.app.resize_help(width, height);
+    let app = &mut drive.app;
+    let pads = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+    let screen = tui::Screen::Pads(app.mark_pads(pads));
+    let status = tui::Status {
+        badges: app.title_badges(),
+        save: app.save_status(),
+        backend: None,
+        recording: false,
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: app.master_db,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: app.project.as_ref().map(|project| project.name.as_str()),
+    };
+    let keys = full_help(&drive.keymap, app.screen, true);
+    let entries = app.message_history();
+    let help = tui::Help {
+        groups: &[],
+        hint: None,
+        full: app.full_help_view(&keys, &entries),
+        question: None,
+        learn: None,
+    };
+    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+    term.draw(|frame| tui::draw(frame, &status, &screen, &help))
+        .unwrap();
+    term.backend()
+        .buffer()
+        .content()
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect()
+}
+
+/// Scenarios "F1 retains recent results in order" and "F1 history does not persist or edit work".
+#[test]
+fn f1_retains_recent_results_in_order() {
+    use input::{Group, midi::Key};
+    let mut drive = Drive::new();
+    drive.bind_action(88, "pad.copy");
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        Group::Global,
+        Key::Note(60),
+        "pad.copy",
+    );
+    drive.app.sync_learned("X-Session Pro", Group::Global);
+    drive.frame();
+    drive.load_pad(1, Arc::new(Sample::mono(vec![0.2; 4096])), "existing work");
+    drive.tap(KeyCode::Right, M::NONE);
+    assert!(!drive.app.history.is_empty());
+    drive.app.notices = Notices::new(Instant::now());
+    let mut expected = Vec::new();
+    for index in 0..56 {
+        let origin = match index % 4 {
+            0 => {
+                drive.tap(KeyCode::Char('c'), M::CONTROL);
+                Origin::Keyboard
+            }
+            1 => {
+                drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+                drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+                drive.frame();
+                Origin::Device(PAD_PORT.into())
+            }
+            2 => {
+                drive.bytes(XS_PORT, &[0x90, 60, 127]);
+                drive.bytes(XS_PORT, &[0x80, 60, 0]);
+                drive.frame();
+                Origin::Device(XS_PORT.into())
+            }
+            _ => {
+                drive.app.post_system_notice(
+                    Level::Info,
+                    (format!("system result {index:02}"), Instant::now()),
+                );
+                drive.frame();
+                Origin::System
+            }
+        };
+        assert_eq!(drive.last_notice().origin, origin);
+        expected.push(drive.last_notice().clone());
+    }
+    let expected: Vec<_> = expected.into_iter().rev().take(50).collect();
+    assert_eq!(
+        drive
+            .app
+            .notices
+            .history()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        expected
+    );
+    drive.app.session_dirty = Some(Instant::now());
+    drive.app.project = Some(Project {
+        name: "history project".into(),
+        folder: "target/87-history-project".into(),
+    });
+    let before = drive.seen();
+    let dirty = drive.app.session_dirty;
+    let project = (
+        drive.app.project.as_ref().unwrap().name.clone(),
+        drive.app.project.as_ref().unwrap().folder.clone(),
+    );
+    drive.tap(KeyCode::F(1), M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Tab, M::NONE);
+    let entries = drive.app.message_history();
+    assert_eq!(entries.len(), 50);
+    for (entry, stored) in entries.iter().zip(&expected) {
+        assert_eq!(entry.text, stored.text);
+        assert_eq!(
+            entry.origin,
+            match &stored.origin {
+                Origin::Keyboard => "Keyboard",
+                Origin::Device(port) => port,
+                Origin::System => "System",
+            }
+        );
+        assert_eq!(
+            entry.level,
+            if stored.level == Level::Warn {
+                tui::NoticeLevel::Warn
+            } else {
+                tui::NoticeLevel::Info
+            }
+        );
+    }
+    for (width, height) in [(80, 26), (120, 40)] {
+        let rows = f1_message_screen(&mut drive, width, height);
+        assert!(rows[1].contains("[MESSAGES]"));
+        assert!(rows[3].contains("system result 55"));
+        let mut visible = rows.join("\n");
+        for _ in 0..10 {
+            let frame = drive.tap(KeyCode::PageDown, M::NONE);
+            assert!(frame.commands().is_empty());
+            visible.push_str(&f1_message_screen(&mut drive, width, height).join("\n"));
+        }
+        for name in ["Keyboard", PAD_PORT, XS_PORT, "System"] {
+            assert!(visible.contains(name));
+        }
+        for index in (7..56).step_by(4) {
+            assert!(visible.contains(&format!("system result {index:02}")));
+        }
+        for _ in 0..10 {
+            drive.tap(KeyCode::PageUp, M::NONE);
+        }
+    }
+    let history = drive.app.notices.history().clone();
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.help_open);
+    assert_eq!(drive.seen(), before);
+    assert_eq!(drive.app.session_dirty, dirty);
+    assert_eq!(
+        (
+            drive.app.project.as_ref().unwrap().name.clone(),
+            drive.app.project.as_ref().unwrap().folder.clone()
+        ),
+        project
+    );
+    assert_eq!(drive.app.notices.history(), &history);
+    let restart = tests::test_app();
+    assert!(restart.message_history().is_empty());
+}
+
+/// Scenario "F1 history handles empty and changing content".
+#[test]
+fn f1_history_handles_empty_and_changing_content() {
+    let mut drive = Drive::new();
+    drive.tap(KeyCode::F(1), M::NONE);
+    let keys = f1_message_screen(&mut drive, 80, 26).join("\n");
+    assert!(keys.contains("[HELP]"));
+    drive.tap(KeyCode::BackTab, M::SHIFT);
+    assert!(drive.app.help_overlay.messages);
+    assert!(
+        f1_message_screen(&mut drive, 80, 26)
+            .join("\n")
+            .contains("No messages yet")
+    );
+    for code in [
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+    ] {
+        assert!(drive.tap(code, M::NONE).commands().is_empty());
+        assert_eq!(drive.app.help_overlay.scroll, 0);
+    }
+    for index in 0..51 {
+        drive
+            .app
+            .post_system_notice(Level::Info, (format!("result {index:02}"), Instant::now()));
+    }
+    f1_message_screen(&mut drive, 80, 26);
+    drive.key(KeyCode::Down, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_eq!(drive.app.help_overlay.scroll, 1);
+    drive.key(KeyCode::Down, M::NONE, KeyEventKind::Repeat);
+    drive.frame();
+    assert_eq!(drive.app.help_overlay.scroll, 2);
+    drive.key(KeyCode::Down, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert_eq!(drive.app.help_overlay.scroll, 2);
+    drive.tap(KeyCode::PageDown, M::NONE);
+    assert_eq!(
+        drive.app.help_overlay.scroll,
+        2 + tui::messages_page_height(26)
+    );
+    let at = drive.app.help_overlay.scroll;
+    for code in [KeyCode::Tab, KeyCode::Tab] {
+        drive.key(code, M::NONE, KeyEventKind::Press);
+        drive.frame();
+        let page = drive.app.help_overlay.messages;
+        drive.key(code, M::NONE, KeyEventKind::Repeat);
+        drive.frame();
+        assert_eq!(drive.app.help_overlay.messages, page);
+        drive.key(code, M::NONE, KeyEventKind::Release);
+        drive.frame();
+        assert_eq!(drive.app.help_overlay.scroll, at);
+    }
+    drive.app.post_system_notice(
+        Level::Done,
+        ("arrived while scrolled".into(), Instant::now()),
+    );
+    f1_message_screen(&mut drive, 80, 26);
+    assert_eq!(drive.app.help_overlay.scroll, at);
+    assert_eq!(
+        drive.app.message_history()[0].text,
+        "arrived while scrolled"
+    );
+    for _ in 0..20 {
+        drive.tap(KeyCode::PageDown, M::NONE);
+    }
+    let bottom = drive.app.help_overlay.scroll;
+    drive.tap(KeyCode::Down, M::NONE);
+    assert_eq!(drive.app.help_overlay.scroll, bottom);
+    f1_message_screen(&mut drive, 120, 40);
+    assert!(drive.app.help_overlay.scroll < bottom);
+    assert_eq!(
+        drive.app.help_overlay.scroll,
+        tui::message_lines(&drive.app.message_history(), 118).len() - tui::messages_page_height(40)
+    );
+    drive.app.post_system_notice(
+        Level::Error,
+        ("background error under help".into(), Instant::now()),
+    );
+    drive.frame();
+    assert!(
+        drive.app.notices.current().is_none(),
+        "help hides the live notice"
+    );
+    let history = drive.app.notices.history().clone();
+    drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert!(!drive.app.help_open);
+    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+    drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Repeat);
+    drive.frame();
+    assert!(!drive.app.help_open);
+    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+    drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Release);
+    drive.tap(KeyCode::F(1), M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    assert_eq!(drive.app.help_overlay.scroll, 0);
+    assert_eq!(drive.app.notices.history(), &history);
+    drive.tap(KeyCode::Tab, M::NONE);
+    for _ in 0..20 {
+        drive.tap(KeyCode::PageUp, M::NONE);
+    }
+    assert_eq!(drive.app.help_overlay.scroll, 0);
+}
+
+/// Scenario "F1 controls retain input priority and bindings".
+#[test]
+fn f1_controls_retain_input_priority_and_bindings() {
+    let mut drive = Drive::new();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.1; 4096])), "name");
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Char('n'), M::CONTROL);
+    assert!(drive.app.pad_naming.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.key(KeyCode::Char('q'), M::NONE, KeyEventKind::Press);
+    assert!(drive.frame().commands().is_empty());
+    assert!(drive.app.pad_naming.as_ref().unwrap().1.ends_with('q'));
+    drive.key(KeyCode::Char('q'), M::NONE, KeyEventKind::Release);
+    // The existing keyboard route forwards releases even when typing consumed the press.
+    assert_only_release(&drive.frame(), 4);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.pad_naming.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Char('p'), M::CONTROL);
+    assert!(drive.app.project_picker.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.project_picker.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::F(6), M::NONE);
+    drive.tap(KeyCode::Char('/'), M::NONE);
+    assert!(drive.app.browser.editing);
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.browser.editing && drive.app.help_open);
+    drive.tap(KeyCode::F(2), M::NONE);
+    drive.tap(KeyCode::F(10), M::NONE);
+    assert!(drive.app.screen_learn.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.screen_learn.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Char('a'), M::CONTROL);
+    drive.tap(KeyCode::Backspace, M::NONE);
+    assert!(drive.app.ask.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.ask.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.help_open);
+    assert!(
+        drive
+            .keymap
+            .overlay("[global]\nF9 = \"help.toggle\"\nF1 = \"none\"\n")
+            .unwrap()
+            .is_empty()
+    );
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(drive.app.help_open);
+    drive.tap(KeyCode::Tab, M::NONE);
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(!drive.app.help_open);
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+}
+
+/// Scenario "F1 controls retain input priority and bindings" for settings pickers and MIDI learning.
+#[test]
+fn f1_keeps_settings_picker_and_learning_priority() {
+    let mut drive = Drive::new();
+    drive.tap(KeyCode::F(12), M::NONE);
+    for _ in 0..3 {
+        drive.tap(KeyCode::Tab, M::NONE);
+    }
+    drive.app.paths.projects = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.path_picker.is_some());
+    // The picker already owns F1. Open help before the picker instead.
+    drive.tap(KeyCode::Esc, M::NONE);
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.path_picker.is_some() && drive.app.help_open);
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.path_picker.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.help_open);
+    for _ in 0..3 {
+        drive.tap(KeyCode::Tab, M::NONE);
+    }
+    assert_eq!(drive.app.settings_tab, 2);
+    let group = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                MidiListRow::Group {
+                    group: input::Group::Global
+                }
+            )
+        })
+        .unwrap();
+    for _ in 0..group {
+        drive.tap(KeyCode::Down, M::NONE);
+    }
+    drive.tap(KeyCode::Right, M::NONE);
+    let action = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| matches!(row, MidiListRow::Action { .. }))
+        .unwrap();
+    for _ in group..action {
+        drive.tap(KeyCode::Down, M::NONE);
+    }
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.learning.is_some());
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.learning.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Esc, M::NONE);
+    let set = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| matches!(row, MidiListRow::Set { .. }))
+        .unwrap();
+    for _ in 0..action.abs_diff(set) {
+        drive.tap(
+            if set > action {
+                KeyCode::Down
+            } else {
+                KeyCode::Up
+            },
+            M::NONE,
+        );
+    }
+    assert!(matches!(
+        drive.app.midi_list()[drive.app.midi_row],
+        MidiListRow::Set { .. }
+    ));
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.midi_run.is_some());
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.midi_run.is_none() && drive.app.help_open);
+}
+
+/// Scenario "Pad releases survive F1 navigation".
+#[test]
+fn pad_releases_survive_f1_navigation() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.1; 4096])), "gate");
+        drive.frame();
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        drive.tap(KeyCode::F(1), M::NONE);
+        drive.tap(KeyCode::Tab, M::NONE);
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        assert!(!drive.app.pads.held[0]);
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        drive.tap(KeyCode::BackTab, M::SHIFT);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        assert!(!drive.app.pads.held[0]);
+        let repeated = drive.pad_release(source, 0);
+        if matches!(source, Source::Keyboard) {
+            // HeldPads forwards each physical release, also outside help.
+            assert_only_release(&repeated, 0);
+        } else {
+            assert!(repeated.commands().is_empty());
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Source {
     Keyboard,

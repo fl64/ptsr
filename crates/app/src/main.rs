@@ -3,6 +3,7 @@ mod browser;
 mod chop;
 mod config;
 mod dispatch;
+mod help;
 mod learn;
 mod loader;
 mod meters;
@@ -397,6 +398,7 @@ struct App {
     fx_param: usize,
     settings_row: usize,
     help_open: bool,
+    help_overlay: help::State,
     pads: pads::Pads,
     /// Output meters for the pads screen: bars, peak hold, the latching overload light.
     meters: meters::Meters,
@@ -4179,6 +4181,7 @@ fn main() -> std::io::Result<()> {
         fx_param: 0,
         settings_row: 0,
         help_open: false,
+        help_overlay: help::State::default(),
         pads: pads::Pads::default(),
         meters: meters::Meters::default(),
         settings_tab: 0,
@@ -4410,6 +4413,11 @@ fn main() -> std::io::Result<()> {
             app.input_level = a.stats.take_input_peak().max(app.input_level * 0.8);
             app.meters.update(a.stats.take_output(), Instant::now());
         }
+        let size = match term.size() {
+            Ok(size) => size,
+            Err(error) => break Err(error),
+        };
+        app.resize_help(size.width, size.height);
         let fresh = app.window_title();
         if fresh != title {
             title = fresh;
@@ -4587,11 +4595,14 @@ fn main() -> std::io::Result<()> {
             }
             rows
         });
+        let messages = app.message_history();
         let learn_lines = app.learn_lines();
         let help = tui::Help {
             groups: &groups,
             hint: hint_for(&app),
-            full: full.as_deref(),
+            full: full
+                .as_deref()
+                .and_then(|rows| app.full_help_view(rows, &messages)),
             question: app.ask.as_ref().map(|a| a.lines()),
             learn: learn_lines.as_deref(),
         };
@@ -7429,6 +7440,7 @@ mod tests {
             fx_param: 0,
             settings_row: 0,
             help_open: false,
+            help_overlay: help::State::default(),
             pads: pads::Pads::default(),
             meters: meters::Meters::default(),
             settings_tab: 0,

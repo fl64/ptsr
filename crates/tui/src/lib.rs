@@ -92,7 +92,7 @@ impl Badge {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoticeLevel {
     Info,
     Done,
@@ -487,12 +487,28 @@ pub struct HelpGroup {
     pub items: Vec<(String, String)>,
 }
 
+/// One result from the current process history, with its actual event source.
+pub struct Message<'a> {
+    pub level: NoticeLevel,
+    pub origin: &'a str,
+    pub text: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub enum FullHelp<'a> {
+    Keys(&'a [(String, String)]),
+    Messages {
+        entries: &'a [Message<'a>],
+        scroll: usize,
+    },
+}
+
 pub struct Help<'a> {
     pub groups: &'a [HelpGroup],
     /// Next-step hint shown when there is no notice.
     pub hint: Option<&'a str>,
-    /// Full help (F1): (keys, description); `None` when closed.
-    pub full: Option<&'a [(String, String)]>,
+    /// Full help or message history (F1); `None` when closed.
+    pub full: Option<FullHelp<'a>>,
     /// A question that waits for Enter or Esc (overwrite pads?), line by line.
     pub question: Option<&'a [String]>,
     /// The learn mode in words (52): the first line takes the top of the screen, the rest
@@ -657,8 +673,12 @@ fn draw_inner(
         }
         None => frame.render_widget(Paragraph::new(help_rows), help_area),
     }
-    if let Some(full) = help.full {
-        full_help(frame, body, full);
+    match help.full {
+        Some(FullHelp::Keys(rows)) => full_help(frame, body, rows),
+        Some(FullHelp::Messages { entries, scroll }) => {
+            message_history(frame, body, entries, scroll);
+        }
+        None => {}
     }
     if let Some(q) = help.question {
         question(frame, body, q);
@@ -862,11 +882,86 @@ fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
     frame.render_widget(
         Paragraph::new(lines).block(
             Block::bordered()
-                .title(" HELP · F1 closes ")
+                .title(" [HELP] Messages · Tab page · F1/Esc close ")
                 .border_style(Style::new().fg(CYAN))
                 .bg(PANEL),
         ),
         area,
+    );
+}
+
+/// Visible message rows after status, notice, compact help and frame borders.
+pub fn messages_page_height(terminal_height: u16) -> usize {
+    terminal_height.saturating_sub(HELP_ROWS + 4) as usize
+}
+
+/// The same wrapped rows determine drawing and the application's scroll bounds.
+pub fn message_lines(entries: &[Message<'_>], width: u16) -> Vec<Line<'static>> {
+    fn append(rows: &mut Vec<Line<'static>>, text: &str, width: usize, style: Style) {
+        for part in text.split('\n') {
+            let span = Span::raw(part);
+            let mut line = String::new();
+            let mut used = 0;
+            for grapheme in span.styled_graphemes(style) {
+                let cells = Span::raw(grapheme.symbol).width();
+                if used + cells > width && !line.is_empty() {
+                    rows.push(Line::from(std::mem::take(&mut line)).style(style));
+                    used = 0;
+                }
+                if cells <= width {
+                    line.push_str(grapheme.symbol);
+                    used += cells;
+                }
+            }
+            rows.push(Line::from(line).style(style));
+        }
+    }
+
+    let mut rows = Vec::new();
+    if width == 0 {
+        return rows;
+    }
+    if entries.is_empty() {
+        append(
+            &mut rows,
+            "No messages yet",
+            width as usize,
+            Style::new().fg(DIM),
+        );
+    }
+    for entry in entries {
+        let (glyph, label, style) = match entry.level {
+            NoticeLevel::Info => ("·", "Info", Style::new().fg(DIM)),
+            NoticeLevel::Done => ("✓", "Done", Style::new().fg(CYAN)),
+            NoticeLevel::Warn => ("!", "Warn", Style::new().fg(MAGENTA)),
+            NoticeLevel::Error => ("✗", "Error", Style::new().fg(MAGENTA).bold()),
+        };
+        append(
+            &mut rows,
+            &format!("{glyph} {label} · {}", entry.origin),
+            width as usize,
+            style,
+        );
+        append(&mut rows, entry.text, width as usize, style);
+        rows.push(Line::default());
+    }
+    rows
+}
+
+fn message_history(frame: &mut Frame, area: Rect, entries: &[Message<'_>], scroll: usize) {
+    let block = Block::bordered()
+        .title(format!(" Help [MESSAGES] · {} / 50 ", entries.len()))
+        .title_bottom(" ↑↓ scroll · PgUp/PgDn page · Tab page · F1/Esc close ")
+        .border_style(Style::new().fg(CYAN))
+        .bg(PANEL);
+    let inner = block.inner(area);
+    let lines = message_lines(entries, inner.width);
+    let start = scroll.min(lines.len().saturating_sub(inner.height as usize));
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    frame.render_widget(
+        Paragraph::new(lines.into_iter().skip(start).collect::<Vec<_>>()),
+        inner,
     );
 }
 
@@ -6402,6 +6497,136 @@ mod tests {
         assert!(text.contains(" Ctrl+X "));
     }
 
+    /// Scenarios "Long message text remains readable" and "F1 retains recent results in order".
+    #[test]
+    fn long_message_text_remains_readable() {
+        let origin = "MIDI 控制 e\u{301} ".repeat(24);
+        let text = "Result 世界 e\u{301} 👩‍🔬 ".repeat(60);
+        for (width, height) in [(80, 26), (120, 40)] {
+            let entries = [Message {
+                level: NoticeLevel::Error,
+                origin: &origin,
+                text: &text,
+            }];
+            let lines = message_lines(&entries, width - 2);
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.width() <= (width - 2) as usize)
+            );
+            let joined = lines.iter().map(ToString::to_string).collect::<String>();
+            assert_eq!(joined, format!("✗ Error · {origin}{text}"));
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.style.fg == Some(MAGENTA) || line.width() == 0)
+            );
+            let page = messages_page_height(height);
+            let mut visible = String::new();
+            for scroll in 0..=lines.len().saturating_sub(page) {
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| {
+                    let body = Rect::new(0, 1, width, height - 5);
+                    message_history(frame, body, &entries, scroll);
+                })
+                .unwrap();
+                let rows: Vec<String> = term
+                    .backend()
+                    .buffer()
+                    .content()
+                    .chunks(width as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                assert!(rows[1].contains("[MESSAGES]"));
+                assert!(rows[height as usize - 5].contains("F1/Esc close"));
+                // Cell positions, not UTF-8 indices: wide glyphs occupy a second cell.
+                let buffer = term.backend().buffer();
+                for y in 2..height - 5 {
+                    assert_eq!(buffer[(0, y)].symbol(), "│");
+                    assert_eq!(buffer[(width - 1, y)].symbol(), "│");
+                }
+                visible.push_str(&rows[2..height as usize - 5].join(""));
+            }
+            assert!(visible.contains("Result"));
+            assert!(visible.contains("MIDI"));
+        }
+        for (level, glyph, color) in [
+            (NoticeLevel::Info, "· Info", DIM),
+            (NoticeLevel::Done, "✓ Done", CYAN),
+            (NoticeLevel::Warn, "! Warn", MAGENTA),
+            (NoticeLevel::Error, "✗ Error", MAGENTA),
+        ] {
+            let entries = [Message {
+                level,
+                origin: "Keyboard",
+                text: "result",
+            }];
+            let rows = message_lines(&entries, 78);
+            assert!(rows[0].to_string().starts_with(glyph));
+            assert_eq!(rows[0].style.fg, Some(color));
+            assert_eq!(
+                rows[0]
+                    .style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD),
+                level == NoticeLevel::Error
+            );
+        }
+    }
+
+    /// Scenarios "F1 history handles empty and changing content" and "F1 navigation stays inside the overlay".
+    #[test]
+    fn f1_history_handles_empty_and_changing_content() {
+        let texts: Vec<_> = (0..50).rev().map(|i| format!("result {i:02}")).collect();
+        let entries: Vec<_> = texts
+            .iter()
+            .map(|text| Message {
+                level: NoticeLevel::Done,
+                origin: "System",
+                text,
+            })
+            .collect();
+        for (width, height) in [(80, 26), (120, 40), (12, 9), (2, 2), (1, 1)] {
+            for messages in [&[][..], entries.as_slice()] {
+                for scroll in [0, 3, usize::MAX] {
+                    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                    term.draw(|frame| message_history(frame, frame.area(), messages, scroll))
+                        .unwrap();
+                }
+            }
+        }
+        for (width, height) in [(80, 26), (120, 40)] {
+            let lines = message_lines(&entries, width - 2);
+            let page = messages_page_height(height);
+            let mut seen = String::new();
+            for scroll in (0..lines.len()).step_by(page) {
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| {
+                    message_history(frame, Rect::new(0, 1, width, height - 5), &entries, scroll)
+                })
+                .unwrap();
+                let rows: Vec<String> = term
+                    .backend()
+                    .buffer()
+                    .content()
+                    .chunks(width as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                assert!(rows[1].contains("50 / 50"));
+                if scroll == 0 {
+                    assert!(rows[3].contains("result 49"));
+                    assert!(!rows.join("\n").contains("result 00"));
+                }
+                seen.push_str(&rows.join("\n"));
+            }
+            for text in &texts {
+                assert!(seen.contains(text), "{text} at {width}x{height}");
+            }
+            let empty = message_lines(&[], width - 2);
+            assert_eq!(empty[0].to_string(), "No messages yet");
+        }
+    }
+
     #[test]
     fn keys_look_like_keys() {
         let groups = [HelpGroup {
@@ -6977,7 +7202,7 @@ mod tests {
                             let help = Help {
                                 groups: &groups,
                                 hint: Some("normal hint"),
-                                full: (mode == 1).then_some(full.as_slice()),
+                                full: (mode == 1).then_some(FullHelp::Keys(full.as_slice())),
                                 question: (mode == 2).then_some(question.as_slice()),
                                 learn: (mode == 3).then_some(learn.as_slice()),
                             };

@@ -178,7 +178,7 @@ impl App {
                     None => {}
                 }
             }
-            Action::HelpToggle => self.help_open = !self.help_open,
+            Action::HelpToggle => self.toggle_help(),
             Action::LearnToggle if self.screen.rules().screen_learn => {
                 self.screen_learn = match self.screen_learn {
                     Some(_) => None,
@@ -1652,6 +1652,9 @@ impl App {
             return false;
         }
         let k = tracked;
+        if self.help_key(&k) {
+            return false;
+        }
         if warning_shown
             && k.kind == event::KeyEventKind::Press
             && !matches!(k.code, event::KeyCode::Modifier(_))

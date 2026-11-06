@@ -106,7 +106,7 @@ Extend production keyboard/raw-MIDI, controlled-time and drawing tests. Do not s
 Keep F1 navigation, value popups, the shared input indicator, sound, factory bindings and saved formats outside this step.
 
 - [x] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
-- [ ] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
+- [x] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
 
 The owner approved thirteen files for step 4.4:
 application main, dispatch, views, notices, input tests and a new `crates/app/src/help.rs`, plus the drawing crate.
@@ -182,6 +182,38 @@ F1 Messages and the Tab exception remain in 4.4. Hardware, kitty and listening c
 
 The owner accepted step 4.3 at commit `1682a20`.
 This acceptance does not establish separate hardware, kitty or listening results and does not cover unfinished features or the callback maximum-budget gate.
+
+F1 verification (4.4):
+- F1 opens Help. Tab/Shift+Tab selects Help or Messages. Messages shows the latest 50 process-local results, newest first, with levels and actual origins.
+- Up/Down scrolls one wrapped row. PageUp/PageDown scrolls one visible page. Resizing clamps the offset. New results keep the row offset.
+- Tab no longer changes the parameter or page behind help. F1/Esc closes help without leaving the existing edit layer.
+- Existing text, picker, question and learn input retains priority. Keyboard, raw MIDI note and learned-button pad presses and releases keep their routes.
+- No saved format, new binding, dependency, sound code or deferred copy-name behavior changed. This drawing/input step needs no new audio render.
+
+Step 4.4 evidence:
+- The new navigation regression first failed: Tab changed Volume to Attack under open F1 help. It passes with local help navigation.
+- Seven new App tests cover all five screens, both terminal sizes, 50/51 results, source labels, arrivals, resize, repeat/release input and reopen reset.
+- The tests also cover existing nonempty pad/undo state, pending work, project identity, input priority and an Error that arrives under help.
+- Two new drawing tests cover wrapping, levels, empty history, full scroll reach and tiny terminals.
+- `task check`: passes, including 718 App tests, 81 input tests, 112 drawing tests and 21 notice-model tests.
+- `task build`: passes. The Release compiler used this worktree. No live audio or MIDI device opened.
+- `task openspec:check`: passes, 16 changes and specifications, 0 failures.
+- English review: STE-flavored for descriptions and Strict for the manual procedure. Revised text has no lint violations.
+- Full status-document lint retains one existing lexical finding: the plans heading uses `verify`, with `check` elsewhere. That unrelated heading stays unchanged.
+- Local commands and logs are in `target/87-f1-*`. Callback diagnostics stay local.
+- A successful callback run does not resolve earlier maximum-budget failures. That acceptance gate remains open.
+
+Step 4.4 owner procedure (pending):
+Switch off wave pictures in F12 (`Wave`) for this procedure. Kitty image composition remains in task 6.2.
+
+1. Open a disposable scratch session or project. Save with Ctrl+S. Note the selected pad and parameter.
+2. Press F1, then Tab. Check `Session saved`, its Done level and Keyboard origin in Messages.
+3. Switch pages with Tab and Shift+Tab. Scroll Messages with Up/Down and PageUp/PageDown. Resize to 80x26 and 120x40.
+4. Close with Esc. Check that the selected parameter, bank and pending work did not change through help navigation.
+5. In a terminal with key releases, hold a gate pad. Open help. Release the pad. Close help. Press and release the pad again.
+6. Repeat step 5 with the controller. Listen for both pad stops. Physical-controller and listening results remain pending. No new WAV accompanies step 4.4.
+
+Step 4.4 closes the automated F1/Tab defect, not the owner's separate manual acceptance.
 
 ## 5. Values and status
 
