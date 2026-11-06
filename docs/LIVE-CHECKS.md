@@ -17,6 +17,7 @@ How to use this file:
 Notes:
 
 - Section 84a is offline. Do not start the sampler for that section; use its benchmark command.
+- Section 87 separates its offline catalogue from owner-only device checks. Do not start the sampler to view the catalogue.
 - "(by ear)" marks a step that checks the sound. Use your headphones for these steps.
 - Some steps use the WAV files in `renders/`. The command `task test` writes them.
 - The pad keys are `1 2 3 4 / Q W E R / A S D F / Z X C V`. A pad number counts these
@@ -294,8 +295,9 @@ Folder: `changes/archive/2026-11-01-52-learn-by-keys`
 
 Use the X-Session Pro. The "save" question is now the pending control and `Enter` (57).
 
-- [ ] On `F2`, press `F10`. Make sure that the top line tells that the mode is on and
-  what to do. Press pad key `Q`. Make sure that pad `Q` is lit and no sound plays.
+- [ ] On `F2`, press `F10`. Check the learning block for the mode and next step.
+  From 87, this block uses the bottom three rows. The top status stays visible.
+  Press pad key `Q`. Check that pad `Q` is lit without a new sound.
 - [ ] Press `H`. Make sure that "pad mode" is selected and no pad mode changes. On `F3`,
   press `F10` and `M`. Make sure that "cut" is selected and no cut occurs.
 - [ ] Press `PgDn`. Make sure that the bank switch is selected. Press `I` and `K`. Make
@@ -318,7 +320,7 @@ superseded by 57.
 - [ ] (by ear) Bind controller pads to all 16 pads in this way. Press `F10` to leave.
   Make sure that each controller pad plays its pad.
 - [ ] Press `F10` and `PgDn`. Turn a knob. Make sure that nothing is pending. Make sure
-  that the top line tells that a button is necessary, and why.
+  that the learning block explains why a button is necessary.
 - [ ] Select a parameter. Turn a knob and press `Enter` while you turn it. Make sure that
   the knob does not go to the next element.
 
@@ -453,23 +455,19 @@ Folder: `changes/archive/2026-11-01-57-learn-confirm`
 Use the X-Session Pro. If `F10` does nothing in your terminal, write the name of the
 terminal.
 
-- [ ] On `F2`, press `F10` and pad key `Q`. Make sure that the label of pad `Q` and the
-  top line show its control, or `none`.
-- [ ] Hit a different controller pad. Make sure that the new control shows next to the
-  old one in the pending colour, for example `pad 5 → pad 6`. Press `Enter`. Make sure
-  that the new control plays pad `Q` and pad `W` is selected.
-- [ ] Press `I` or `K` to select the pitch. Turn a knob, then a different knob. Make sure
-  that the row shows only the last knob as pending. Press `Esc`. Make sure that the old
-  control stays.
-- [ ] Turn a knob that already turns a different parameter. Make sure that the other row
-  is lit in the "taken" colour and the top line warns you. Press `Esc`.
-- [ ] Press `F10` to leave. Open the pad edit on FILTER and press `L` on the cutoff. In 5
-  seconds, press `F10`. Make sure that the top line shows `cutoff · PADS · EDIT · FILTER`.
-  Turn k5 and press `Enter`. Make sure that k5 turns the cutoff only while the edit is
-  open.
-- [ ] Select the cutoff and press `Backspace`. Make sure that `k5 → none` shows as
-  pending. Press `Enter`. Press a button. Make sure that the top line tells that the
-  cutoff needs a knob or a fader.
+- [ ] On `F2`, press `F10` and pad key `Q`. Check its label and the learning block for its control or `none`.
+  From 87, the learning block uses the bottom three rows. The top status stays visible.
+- [ ] Hit a different controller pad. Check the pending control beside the old control, such as `pad 5 → pad 6`.
+  Press `Enter`. Check that the new control plays pad `Q` and selects pad `W`.
+- [ ] Select pitch with `I` or `K`. Turn a knob. Turn a different knob.
+  Check that only the last knob is pending. Press `Esc`. Check that the old control remains.
+- [ ] Turn a knob assigned elsewhere on the same layer. Check the losing row and the warning in the learning block.
+  Press `Esc`. Check that no assignment changed.
+- [ ] Press `F10`. Open pad edit on FILTER. Change cutoff with `L`.
+  Press `F10` within five seconds. Check `cutoff · PADS · EDIT · FILTER` in the learning context.
+  Turn k5. Press `Enter`. Check that k5 changes cutoff only inside edit.
+- [ ] Select cutoff. Press `Backspace`. Check the pending `k5 → none` detail.
+  Press `Enter`. Press a button. Check the explanation that cutoff needs a knob or fader.
 
 ## 60 — Ctrl+X swaps the pads whole, with every setting
 
@@ -1874,3 +1872,158 @@ Each before/after part plays the same three restored slice pads. Short silences 
 
 Archive: `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
 Change 87 and callback-budget corrections remain outside 86d. Push and PR need separate authorization.
+
+## 87: Visual feedback and screen catalogue
+
+Folder: `changes/87-status-badges`
+
+Implementation and offline catalogue checks exist. Overall manual acceptance remains open.
+Earlier scoped acceptances do not complete the unchecked procedures below.
+Callback maximum-budget failures remain open. A successful p99 exit does not close that limit.
+Do not merge or archive from this checklist.
+
+### Offline catalogue
+
+Run from the repository root:
+
+```sh
+task screens
+```
+
+The command checks coverage and repeatable bytes. It writes 306 ANSI files under ignored `renders/screens/`.
+It does not start the sampler, open devices, send kitty pictures or write projects and settings.
+Each case has 80x26 and 120x40 versions. Use a terminal at least as large as the selected version.
+View one file at a time:
+
+```sh
+cat renders/screens/pads-placements-80x26.ansi
+```
+
+| File in `renders/screens/` | Inspect |
+| --- | --- |
+| `pads-placements-80x26.ansi` | Combined file, copy and swap state, target roles and safety |
+| `pads-edit-filter-80x26.ansi` | EDIT page, parameter names and shared frame |
+| `pads-learn-80x26.ansi` | Persistent top status and fixed learning band |
+| `pads-input-device-80x26.ansi` | Connected source labels and activity cue |
+| `pads-messages-80x26.ansi` | Stable F1 frame, levels, origins and long history text |
+| `chop-assign-order-80x26.ansi` | Whole Unicode target names inside the sidebar |
+| `chop-128-slices-80x26.ansi` | Actual 128-slice fixture and bounded text |
+| `fx-value-80x26.ansi` | Named master value and range panel on FX |
+| `settings-question-profile-80x26.ansi` | Reset question and working keyboard answers |
+| `settings-safety-80x26.ansi` | Save, sound, recording, xruns and release warnings together |
+| `files-text-80x26.ansi` | Explicit text entry without a shifted frame |
+
+- [ ] Inspect these files at both sizes. Replace `80x26` with `120x40` for the larger versions.
+  Check whole graphemes, aligned frames, readable safety text and unchanged panel positions.
+- [ ] Keep offline evidence separate. Fixture ports, meters and messages are synthetic data, not device observations.
+  ANSI text does not prove kitty composition or sound.
+
+### Prepare an isolated owner run
+
+**Owner only.** The next command opens live audio and MIDI when the program starts.
+An agent must not run it. Use your normal safe listening setup.
+The command keeps this session's settings, state, samples and projects inside a new `target/` directory.
+It does not copy or change your saved MIDI bindings.
+
+```sh
+task build
+check_root="$(mktemp -d "$PWD/target/87-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data" "$check_root/state" \
+  "$check_root/samples" "$check_root/projects"
+cp renders/86d-portable-chops.wav "$check_root/samples/check.wav"
+printf '[paths]\nsamples = "%s"\nprojects = "%s"\n[audio]\nbuffer_size = 1024\n' \
+  "$check_root/samples" "$check_root/projects" > "$check_root/config/ptsr/config.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_status_check() {
+  XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" \
+    XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_status_check
+```
+
+Use the same shell for later calls to `run_status_check`.
+Press `Ctrl+P`. Type `87-screen`. Press `Enter`. Wait for the project to open.
+Open F6. Select `check.wav` in the configured samples root. Press `Enter`. Hit pad `1`. Wait for loading.
+Return to F2. Hit pad `1`. Press `Ctrl+C`. Hit pad `2` to place the copy. Press `Esc`.
+For held-gate checks, copy a continuous sample at least 20 seconds long into this isolated samples folder.
+Load that sample onto pad `3`. Do not use a short hit to claim a sustained release check.
+If a device or release form is unavailable, record that limit instead of a pass.
+
+### Keyboard checks
+
+- [ ] Use `F2`, `F3`, `F4`, `F6` and `F12`. Check the same top status on all five screens.
+  Inspect 120x40 and 80x26. Check alignment after each resize.
+- [ ] On Pads, select pad `1`. Press `Ctrl+C`. Check COPY and the distinct empty and occupied target marks.
+  Press `2`. Check ASK, target identity, safety and the shown keyboard answers. Cancel with the shown key.
+  Press `Esc` again to drop the retained copy. Press `Ctrl+X`. Check SWAP and occupied-target `◎`.
+  Hit pad `2`. Check a silent swap without a replacement question. Press `Ctrl+Z` to restore both pads.
+- [ ] Press `M`. Check MARK and the marked-pad count. Hit loaded pad `1`.
+  Check that marking still sounds. Press `Esc` to end marking.
+- [ ] Open `F1`. Switch Help and Messages with `Tab` and `Shift+Tab`.
+  Scroll Messages with `Up`, `Down`, `PageUp` and `PageDown`. Check a fixed frame and footer.
+  Close help. Check that these navigation keys did not change the selected parameter underneath.
+- [ ] Press `Ctrl+S`. Check the success cue and five visible seconds.
+  Open F1 before it expires. Wait. Close F1. Check that hidden time did not consume its remaining visible time.
+  Open Messages. Check one result with the original level and origin, not a duplicate on each frame.
+- [ ] On Pads, change a value with `L`. Check the original pad, parameter, applied value and range.
+  Change banks during its one-second lifetime. Check that the panel does not adopt the new pad's name.
+  Open F1 after another value change. Wait two seconds. Close F1. Check that the expired panel stays absent.
+- [ ] Check a numeric FX value and master volume. Check a categorical Settings choice.
+  Check `next start` for Wave. Do not treat a configured buffer choice as a measured server buffer.
+  Repeat an unchanged or limited value. Check that it does not renew the panel.
+- [ ] Open `F10` on Pads, Chop, Files and FX. Check the bottom learning context, details and working controls.
+  Check visible save and audio status above it. Check no false parameter-walk hint on Files.
+  Cancel a pending or clear operation with the shown key. Check that no assignment changed.
+- [ ] Open a pad name, file filter and project name. Type pad-block letters in each line.
+  Check text entry without new keyboard pad sounds. Close each line with its normal Enter or Esc action.
+  To repeat save-error checks, use section 86b with its own isolated preparation.
+- [ ] Start an available recording with its existing keys. Check elapsed seconds during learning and F1 navigation.
+  Stop it with the same recording action. Cancel the resulting placement if not needed.
+  If recording is unavailable, check its refusal instead of inventing a running REC state.
+
+### Controller checks
+
+Use a connected controller's real profile and existing assignments. Do not install a new factory map for this check.
+Record device name, preset and whether release uses NoteOff, zero-velocity NoteOn or a button release.
+The default X-Session command buttons are not pad controls. A command-only device cannot complete the pad-hold check.
+
+- [ ] Hit a pad or button. Check the activity cue on that source for one second. Turn an assigned knob.
+  Check applied values and continuous-movement activity. Repeat its unchanged value. Check no false renewal.
+- [ ] If two devices are available, alternate them. Check distinct source identities.
+  Disconnect and reconnect one device. Check that the fresh connection does not inherit old activity.
+  Report the two-device case as untested if only one device is available.
+- [ ] Open keyboard text entry. Hit an existing controller pad. Check its normal MIDI route without typed characters.
+  Do not expect controller pads to impersonate keyboard text. Check that releases still reach the held voice.
+- [ ] Open an existing question. Use only controller answers shown for its actual bindings.
+  Check the intended answer exactly once. Check that missing or disconnected bindings are absent from the answer row.
+  If the profile has no answer binding, check keyboard fallback and report controller confirmation as unavailable.
+- [ ] Enter learning. Check its target, pending change, refusal reason and actual bind or keep controls.
+  Check that a clear request shows its current confirmation, not an earlier refusal.
+  Cancel it. Check that old assignments still work.
+
+### Kitty and graphics-off checks
+
+These checks need the real terminal. Offline command-order tests cannot complete them.
+
+- [ ] On F12 Audio, select Wave `picture`. Save with `Ctrl+S`. Quit with `Ctrl+Q`.
+  Run `run_status_check` in a kitty-capable terminal. Load the source and open F1 over its waveform.
+  Switch pages. Close F1. Check readable overlay text, then the current wave without stale overlays.
+- [ ] Open a picker, question and value panel where applicable. Resize while each is open.
+  Check the text it actually covers. Do not claim image removal for a panel that does not intersect the wave.
+  Close each overlay. Check current data and positions without old-size pictures or lost nonintersecting waves.
+- [ ] Select Wave `Braille` on F12 Audio. Save with `Ctrl+S`. Quit with `Ctrl+Q`.
+  Run `run_status_check`. Repeat the overlay checks. Check readable Braille and text without kitty pictures.
+
+### Listening and release checks
+
+No new sound feature or WAV is part of 87. Generated ANSI files are not audio renders.
+Use `renders/86d-portable-chops.wav` as the existing short sample if needed. It is not new listening evidence for 87.
+
+- [ ] Play the continuous sample as a gate with a short release and no effect sends.
+  Hold its keyboard key. Open and navigate F1. Release the key. Check prompt silence without a stuck voice.
+  Repeat with the real controller release. Record keyboard and controller results separately.
+- [ ] Play a known sample while changing values and navigating the UI. Check unchanged timing and no new clicks.
+  Do not infer the callback maximum-budget result from this listening check.
+
+Record each result with size, terminal, graphics mode and input source.
+Leave unavailable hardware, kitty composition and listening cases unchecked.

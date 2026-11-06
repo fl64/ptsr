@@ -103,7 +103,8 @@ Text overlays now remove intersecting kitty pictures before text output and rest
 `task screens` now checks the screen/mode matrix and writes deterministic ANSI files at both supported sizes.
 The files stay local under `renders/screens/`. Real kitty composition still needs a manual check.
 Active-delta coverage now checks test declarations and their attached scenario descriptions.
-Final documentation and manual acceptance remain unfinished.
+Documentation now links catalogue files and separate keyboard, controller, graphics and listening procedures.
+Overall manual acceptance remains open.
 Other manual keyboard, physical-controller and listening checks remain unverified.
 The owner authorized completion and PR publication of 87, but not merge or archive.
 Activate only one change at a time. Publication of other changes needs a separate request.

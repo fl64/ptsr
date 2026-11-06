@@ -402,7 +402,20 @@ Step 6.4 verification:
 
 ## 7. Handover and acceptance
 
-- [ ] 7.1 Update user stories, manual checks and applicable existing documentation. Name catalogue files and give separate keyboard and controller procedures.
+- [x] 7.1 Update user stories, manual checks and applicable existing documentation. Name catalogue files and give separate keyboard and controller procedures.
+
+Step 7.1 verification:
+- User stories describe modes, notices, F1 Messages, applied values, input activity, question answers and the fixed learning band.
+- Live checks section 87 names eleven catalogue cases at both sizes. It separates offline files from isolated owner-only keyboard, controller, kitty/Braille and listening procedures.
+- The style guide records status priorities, elapsed-value deadlines, truthful answers, picture ordering and catalogue maintenance. Current-status documents retain unverified acceptance.
+- Text and link checks pass. All 22 selected ANSI files exist. Three owner shell blocks pass syntax checks without execution. The owner TOML keeps string paths and a 1024-frame requested buffer.
+- Revised English has no lint findings. Descriptions use STE-flavored review. Procedures use Strict review. This does not prove dictionary compliance.
+- A full User Stories lint remains unsuccessful with the same 30 findings, including 15 hard findings, as the unchanged baseline. No unrelated prose rewrite or disabled rule hides them.
+- `task check` exits 0 with 762 App and 126 drawing tests. The benchmark reports two steady wall blocks above 50%, with wall maximum 79.97% and CPU maximum 43.32%.
+- This step changes documentation only. No sampler start, device, physical input or listening result comes from it. Manual acceptance and callback maximum-budget failures remain open.
 - [ ] 7.2 Run `task check`, `task build`, `task openspec:check` and `task screens` with verified source provenance. Keep raw diagnostic files local.
 - [ ] 7.3 Present the catalogue and manual kitty on/off checks to the owner. Keep hardware and listening results separate from overall acceptance.
-- [ ] 7.4 Archive only after owner acceptance and main-spec scenario coverage. Publication and merge need separate authorization.
+- [ ] 7.4 Archive only after owner acceptance and main-spec scenario coverage. Merge and archive need separate owner authorization.
+- [ ] 7.5 Publish the verified branch and open its PR to master. Keep the PR in draft while manual acceptance and callback-budget limits remain open.
+
+The owner authorized completion through PR publication. This does not authorize merge, archive, deferred 87a or callback correction.

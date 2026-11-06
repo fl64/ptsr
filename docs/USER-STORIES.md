@@ -12,7 +12,7 @@ goal and steps. First read the sections "Terms" and "Two hands".
   the slices on the pads.
 - Cursor: the white line on the wave and the `!` above it. Only you move the cursor.
 - Playhead: the thin green line. It moves while the sound plays.
-- Screens: `F2` pads, `F3` chop, `F6` files, `F12` settings.
+- Screens: `F2` pads, `F3` chop, `F4` FX, `F6` files, `F12` settings.
 - `Esc` goes back one step.
 - `F1` shows the help for the screen that is open.
 
@@ -34,6 +34,34 @@ Notes:
    width is not sufficient, the program removes the screens group first. `F1` shows it.
 6. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` page the banks on all screens with pads: on the
    pads, in edit mode, on the chop screen, in the files.
+
+## Read modes and operation results
+
+`[87]` These steps use the default keys. Use the replacement shown if you changed a key.
+Separate manual checks are in [Live checks, section 87](LIVE-CHECKS.md#87-visual-feedback-and-screen-catalogue).
+
+1. On Pads, select a loaded pad. Press `Ctrl+C`. The yellow `COPY` badge identifies the pending operation.
+   Empty targets show `◎`. Occupied targets show `!` because replacement needs confirmation.
+   Press `Esc` to cancel. Swap uses `SWAP` and `◎` without another replacement question.
+2. Open an existing replacement or clear question. Read `ASK`, its target and the shown answer controls.
+   Controller answers appear only for connected bindings that can answer this question. Use the keyboard if no controller answer appears.
+3. Read transient results above the help band. Info uses `·`, success uses `✓`, a warning uses `!`, and an error uses `✗`.
+   Info and success last three visible seconds. Warnings last six. Manual save success lasts five.
+   A new action acknowledges a shown Error without losing that action. Releases and repeated knob values do not acknowledge it.
+4. Change a pad value with `L` or an existing knob. The upper-right panel names the original object, parameter and applied value.
+   Numeric values have a range bar. The panel lasts one elapsed second. Pickup waiting, refusals and unchanged values do not renew it.
+   Editors can hide it, but its clock continues. Settings choices describe configuration, not an unconfirmed sound-server result.
+5. Read the top status on every screen. `KB` and connected MIDI inputs identify the sources.
+   An arrow marks a new keyboard press or actual controller activity for one second. Compact `M1`, `M2` labels distinguish connected devices.
+   Recording shows elapsed seconds. Narrow windows retain save and sound warnings before optional project, audio and input details.
+   `Save failed` remains until a manual save succeeds. Dismissing its notice does not permit automatic retries.
+6. Press `F1`. Help opens first. Press `Tab` for Messages. The latest 50 results show their levels and origins, newest first.
+   `Tab` and `Shift+Tab` switch pages. `Up` and `Down` scroll Messages. `PageUp` and `PageDown` scroll one page.
+   `F1` or `Esc` closes help. Local navigation does not change the parameter behind it. History ends when the process closes.
+
+Yellow means that pads do more than normal playback. Marking still sounds. Existing MIDI routes stay unchanged during keyboard text entry.
+The local ANSI examples are in `renders/screens/`. Run `task screens` to generate and check them without opening sound or MIDI devices.
+These examples do not prove real kitty composition, controller operation or listening results.
 
 ## Read pad playback
 
@@ -89,7 +117,7 @@ Notes:
 ## Name a pad
 
 1. `[80]` Hit a pad with a sample. Press `Ctrl+N` and edit its name. Press `Enter` to
-   save it or `Esc` to keep the old name. Pads do not play while the line is open.
+   save it or `Esc` to keep the old name. Keyboard pad keys type instead of playing while the line is open.
 2. `[80]` Clear the line and press `Enter` to show the file name again. The name stays
    in the project after restart. A new sound gets its file name; a failed load keeps the
    previous name. Swapping pads moves the name with the sound.
@@ -737,14 +765,13 @@ controller operation or owner listening. Use the separate passes and render map 
 
 ## Bind the controller directly on the screen
 
-1. `[47]` `[57]` On the pads, chop or files screen, press `F10`. The top line becomes
-   magenta. It tells you in words what to do and where the binding goes: `PADS` or
-   `PADS · EDIT · FILTER`.
-2. `[52]` Select the item to bind with its own key. A pad key selects a pad (the pad does
-   not sound). A command key selects a command (`M` on the chop screen selects "cut", and
-   no cut occurs). `PgUp` `PgDn` select the banks. `I` `K` select the pad parameters
-   (volume, pitch, attack, decay, filter, cutoff, resonance, start, end). The selected
-   item has a highlight. Next to it is its control or `none`.
+1. `[47]` `[57]` On Pads, Chop, Files or FX, press `F10`.
+   `[87]` The fixed bottom help band shows learning context, details and working controls. The top status remains visible.
+   Context names the target layer and page, such as `PADS · EDIT · FILTER`.
+2. `[52]` Select an item with its own key. A pad key selects a pad without a new sound.
+   A command key selects its command without applying it. For example, `M` on Chop selects `cut`.
+   On Pads, Chop or FX, use `I` and `K` to select parameters. Files has no parameter walk.
+   The selected item stays lit. Its label shows its control or `none`.
 3. `[57]` The second procedure: first do the action, then press `F10`. For example, open
    the pad edit, go to the cutoff and press `L`. Then press `F10` in less than 5 seconds.
    The mode opens directly on the cutoff: `cutoff · PADS · EDIT · FILTER`. If you press
@@ -755,15 +782,13 @@ controller operation or owner listening. Use the separate passes and render map 
 5. `[57]` `Enter` binds. With the first procedure, the selection goes to the next pad,
    parameter or command. Thus you learn pads 1–16 in sequence. With the second procedure,
    the mode closes. `Esc` keeps the old binding.
-6. `[57]` If the control already has a binding on this layer, that item has the mark
-   `✗ leaves`. The line gives a warning. `Enter` moves the control. If the control has a
-   binding on a different layer, the line only shows `cc 28 on PADS: pad
-   volume`. An example is the volume on the pads screen while you learn the cutoff in
-   edit mode. The control stays on the other layer. In edit mode it changes the cutoff.
-7. `[57]` A parameter needs a knob. A command needs a button. If the control is
-   incorrect, the line explains:
-   `it has a value to turn, a button only presses` (for a parameter),
-   `it acts once per press, a knob would repeat it on every tick` (for a command).
+6. `[57]` A control assigned elsewhere on the same layer marks its losing item with `✗ leaves`.
+   The learning block warns about that change. `Enter` moves the control. `Esc` keeps the current assignment.
+   Other-layer assignments remain. The block shows that information without a conflict warning.
+   A knob can control volume outside edit and cutoff inside edit.
+7. `[57]` A parameter needs a knob or fader. A command needs a button or pad.
+   `[87]` A refused parameter control shows `Use a knob or fader. A button cannot change this value.`
+   A refused command control shows `Use a button or pad. A knob repeats this action.`
 8. `[57]` `Backspace` shows `cc 28 → none`. `Enter` removes the binding. `Esc` keeps it.
    `F10` closes the mode.
 9. `[57]` The binding goes into the layer where you made it. If edit mode was open, the
@@ -777,6 +802,7 @@ controller operation or owner listening. Use the separate passes and render map 
    hand" immediately: hit a pad.
 2. Press `Ctrl+T`. The program records its own sound. Press `Ctrl+T` again. The recording
    stops.
+3. `[87]` The title and top status show elapsed recording seconds. These indicators remain visible during screen learning.
 
 ## Session
 

@@ -90,6 +90,47 @@ Startup notices keep their existing keyboard acknowledgement. Keymap warnings re
 History records each production once, including repeated requests. It does not record each frame or timer update.
 Persistent `Save failed`, loading progress and fallback hints are not transient results.
 
+## Shared status and learning
+
+Keep the top status visible on every screen, including during screen learning.
+Show recording seconds, KB, connected input labels, audio and the project when space permits.
+An arrow identifies the active input. Cyan emphasis supplements it. Its one-second deadline starts at original receipt, not delayed delivery.
+Compact input labels distinguish actual connected ports. A reconnect cannot inherit old activity.
+Remove optional project detail first, then audio detail, then input detail.
+Retain unsaved or failed-save state, recording, audio loss, nonzero xruns and the full no-key-releases warning at supported widths.
+Cached text must not freeze timers, meters, recording seconds, playback or hints.
+
+Screen learning uses the existing three-row help band, not the top status.
+Use yellow for context, magenta or muted text for detail, and cyan for working controls.
+Shorten labels before losing next-step controls. Do not show unavailable keys or a parameter walk on Files.
+
+## Applied-value panel
+
+Place the bounded panel below the title at the upper right. Name the original object, parameter and applied value.
+Numeric values have a range bar. Categorical choices keep words. Configuration choices must not imply an unconfirmed live-server result.
+The panel lasts one elapsed second. Higher-priority editors can hide it without pausing that clock.
+Unchanged values, limits, pickup waiting and refusals do not renew it. This differs from notice time, which counts visibility.
+
+## Questions and pictures
+
+Questions retain ASK, the target summary, safety text and effective keyboard answers.
+Show controller answers only for connected bindings that really answer the current question.
+Keep keyboard answers before controller rows. Count omitted rows instead of losing safety text or answers.
+Drawing must not replace the stored target used for a second confirmation check.
+
+Remove intersecting kitty images before drawing text overlays. Restore current wave data when an overlay ends.
+Keep nonintersecting images unchanged. Graphics-off mode uses readable Braille and text without picture commands.
+Real terminal composition needs a separate manual check.
+
+## Offline catalogue
+
+`task screens` checks the registered screens and applicable modes at 120x40 and 80x26.
+It writes deterministic `<screen>-<mode>-<width>x<height>.ansi` files under ignored `renders/screens/`.
+A separate required-name matrix catches missing modes or sizes. Required labels and cell boundaries have drawing assertions.
+New screens or modes need their applicable fixtures. Long Unicode labels and 128-slice Chop remain in the matrix.
+These are offline text fixtures, not hardware, listening or kitty-composition acceptance.
+See [Live checks, section 87](../LIVE-CHECKS.md#87-visual-feedback-and-screen-catalogue) for selected files and separate owner procedures.
+
 ## Keyboard
 
 - Pads: `1 2 3 4 / Q W E R / A S D F / Z X C V`, always, on all screens, except when a text input line is open (`/` opens it, Enter or Esc closes it).
