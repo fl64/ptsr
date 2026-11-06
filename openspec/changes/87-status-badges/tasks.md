@@ -414,7 +414,11 @@ Step 7.1 verification:
 - `task check` exits 0 with 762 App and 126 drawing tests. The benchmark reports two steady wall blocks above 50%, with wall maximum 79.97% and CPU maximum 43.32%.
 - This step changes documentation only. No sampler start, device, physical input or listening result comes from it. Manual acceptance and callback maximum-budget failures remain open.
 - [x] 7.2 Run `task check`, `task build`, `task openspec:check` and `task screens` with verified source provenance. Keep raw diagnostic files local.
-- [ ] 7.3 Present the catalogue and manual kitty on/off checks to the owner. Keep hardware and listening results separate from overall acceptance.
+- [x] 7.3 Present the catalogue and manual kitty on/off checks to the owner. Keep hardware and listening results separate from overall acceptance.
+
+The owner received learning, Messages and Unicode assignment filenames, both sizes, and the offline view command.
+Separate procedures cover picture/Braille overlays and held-gate release through keyboard and controller.
+Presentation is not manual acceptance. Real devices, terminal composition and listening remain unverified.
 
 Final check evidence (7.2):
 - All four commands exit 0. The suites retain 762 App, 81 input, 126 drawing, 21 notice-model and three scenario-audit tests. Strict OpenSpec passes 16 items.
