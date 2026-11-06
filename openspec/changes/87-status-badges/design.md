@@ -378,6 +378,26 @@ Step 5.3 review boundaries after implementation:
 - Physical controls, real kitty composition and listening: open, outside automated verification.
 - Callback maximum budget: open. This check reports wall max 96.25%, thread CPU max 46.40%, and one wall sample above 50%.
 
+Step 5.4 caches formatted content on the UI thread only.
+A value-based badge key covers screen, input mode, assignment counts, marks, edit page, recording seconds and Chop toggles.
+The badge formatter stays single-source. The legacy Status vector copies cached labels instead of formatting them again.
+Cache connected input labels by actual connection identities and active source. Shared immutable arrays avoid copying port labels on every frame.
+The status-row key covers width, save state, recording seconds, source labels/activity, backend, format, displayed CPU, xruns, master and project.
+Meters, notices, value panels, playback slots and fallback hints stay outside this cache and draw from the current frame.
+A new process starts empty caches. Project, screen, connection and terminal-size changes compare their current inputs, with no delayed invalidation event.
+Do not cache the whole screen or add a cache to audio processing.
+
+Step 5.4 review boundaries after implementation:
+- Identical frames: closed by formatter counts and shared-array identity in cache tests. This is not an allocation-free UI claim.
+- Recording seconds: closed through real keyboard/raw-MIDI recording starts and controlled elapsed time, including repeated frames within one second.
+- Source highlight deadlines and reconnect identity: closed by `feedback_cache_tracks_source_identity_and_activity`, including project replacement.
+- Notice/value expiry: closed by `unchanged_views_do_not_freeze_timed_feedback` through real keyboard and raw-MIDI setters, without another action.
+- Meters, playback slots and fallback hints: closed by cached drawing tests at both sizes. Existing real-voice and effect-tail regressions remain active.
+- Screen, edit mode and page: closed by `badge_cache_tracks_real_screen_mode_and_page_changes` through keyboard and raw MIDI.
+- Status width and fields: closed by `cached_status_rebuilds_only_for_its_visible_inputs`. Displayed CPU rounding includes the half-value boundary.
+- The first badge test used F3 after Files, which opens a file instead of the selected pad. Independent starting fixtures preserve that production route.
+- Callback maximum budget and physical-device acceptance: open, outside this optimization.
+
 ### 7. Show only real answers
 
 Keep each question's existing action, text, target and keyboard answers.

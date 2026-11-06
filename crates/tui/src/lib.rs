@@ -1,5 +1,7 @@
 //! Screens. They only draw a state snapshot and never touch the engine.
 
+use std::sync::Arc;
+
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
@@ -124,7 +126,7 @@ pub struct InputSource {
 /// Dynamic feedback from the application, independent of legacy screen snapshots.
 #[derive(Default)]
 pub struct Feedback {
-    pub inputs: Vec<InputSource>,
+    pub inputs: Arc<[InputSource]>,
     pub recording_seconds: Option<u64>,
 }
 
@@ -135,6 +137,85 @@ pub struct Learning {
     pub detail: String,
     pub controls: String,
     pub warning: bool,
+}
+
+struct StatusKey {
+    width: u16,
+    save: SaveStatus,
+    backend: Option<String>,
+    recording: bool,
+    seconds: Option<u64>,
+    inputs: Arc<[InputSource]>,
+    buffer_size: u32,
+    sample_rate: u32,
+    cpu: u32,
+    xruns: u64,
+    master_db: i8,
+    no_releases: bool,
+    project: Option<String>,
+}
+
+impl StatusKey {
+    fn matches(&self, status: &Status, feedback: &Feedback, width: u16) -> bool {
+        self.width == width
+            && self.save == status.save
+            && self.backend.as_deref() == status.backend
+            && self.recording == status.recording
+            && self.seconds == feedback.recording_seconds
+            && self.inputs == feedback.inputs
+            && self.buffer_size == status.buffer_size
+            && self.sample_rate == status.sample_rate
+            && self.cpu == status.load_peak.round_ties_even().to_bits()
+            && self.xruns == status.xruns
+            && self.master_db == status.master_db
+            && self.no_releases == status.no_releases
+            && self.project.as_deref() == status.project
+    }
+
+    fn new(status: &Status, feedback: &Feedback, width: u16) -> Self {
+        Self {
+            width,
+            save: status.save,
+            backend: status.backend.map(str::to_owned),
+            recording: status.recording,
+            seconds: feedback.recording_seconds,
+            inputs: Arc::clone(&feedback.inputs),
+            buffer_size: status.buffer_size,
+            sample_rate: status.sample_rate,
+            cpu: status.load_peak.round_ties_even().to_bits(),
+            xruns: status.xruns,
+            master_db: status.master_db,
+            no_releases: status.no_releases,
+            project: status.project.map(str::to_owned),
+        }
+    }
+}
+
+/// Only the formatted status row. Live meters, notices and screen indicators are never cached.
+#[derive(Default)]
+pub struct TextCache {
+    key: Option<StatusKey>,
+    line: Line<'static>,
+    #[cfg(test)]
+    builds: usize,
+}
+
+impl TextCache {
+    fn row(&mut self, status: &Status, feedback: &Feedback, width: u16) -> &Line<'static> {
+        if self
+            .key
+            .as_ref()
+            .is_none_or(|key| !key.matches(status, feedback, width))
+        {
+            self.line = status_line_at(status, feedback, width);
+            self.key = Some(StatusKey::new(status, feedback, width));
+            #[cfg(test)]
+            {
+                self.builds += 1;
+            }
+        }
+        &self.line
+    }
 }
 
 /// Shared title and status snapshot.
@@ -540,7 +621,7 @@ pub struct Help<'a> {
 }
 
 pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
-    draw_inner(frame, s, screen, help, &Feedback::default(), None);
+    draw_inner(frame, s, screen, help, &Feedback::default(), None, None);
 }
 
 /// An applied parameter result. Numeric positions use the parameter's existing range.
@@ -671,7 +752,15 @@ pub fn draw_gfx(
     help: &Help,
     images: &mut Vec<WaveImage>,
 ) {
-    draw_inner(frame, s, screen, help, &Feedback::default(), Some(images));
+    draw_inner(
+        frame,
+        s,
+        screen,
+        help,
+        &Feedback::default(),
+        None,
+        Some(images),
+    );
 }
 
 /// The production screen and its shared feedback, with optional wave images.
@@ -683,7 +772,20 @@ pub fn draw_feedback(
     feedback: &Feedback,
     images: Option<&mut Vec<WaveImage>>,
 ) {
-    draw_inner(frame, s, screen, help, feedback, images);
+    draw_inner(frame, s, screen, help, feedback, None, images);
+}
+
+/// The production frame with reusable text, but current live screen and timer snapshots.
+pub fn draw_cached(
+    frame: &mut Frame,
+    s: &Status,
+    screen: &Screen,
+    help: &Help,
+    feedback: &Feedback,
+    cache: &mut TextCache,
+    images: Option<&mut Vec<WaveImage>>,
+) {
+    draw_inner(frame, s, screen, help, feedback, Some(cache), images);
 }
 
 fn draw_inner(
@@ -692,6 +794,7 @@ fn draw_inner(
     screen: &Screen,
     help: &Help,
     feedback: &Feedback,
+    cache: Option<&mut TextCache>,
     images: Option<&mut Vec<WaveImage>>,
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
@@ -704,7 +807,10 @@ fn draw_inner(
     ])
     .areas(frame.area());
 
-    frame.render_widget(status_line_at(s, feedback, top.width), top);
+    match cache {
+        Some(cache) => frame.render_widget(cache.row(s, feedback, top.width), top),
+        None => frame.render_widget(status_line_at(s, feedback, top.width), top),
+    }
     let pickup = match screen {
         Screen::Fx(f) => f.pickup.as_deref(),
         _ => None,
@@ -7732,6 +7838,146 @@ mod tests {
         }
     }
 
+    #[test]
+    fn cached_status_rebuilds_only_for_its_visible_inputs() {
+        let mut cache = TextCache::default();
+        let mut status = status_at(128, 0);
+        let mut feedback = Feedback::default();
+        for cpu in [0.0, 0.2, 0.5] {
+            status.load_peak = cpu;
+            assert_eq!(
+                cache.row(&status, &feedback, 120),
+                &status_line_at(&status, &feedback, 120)
+            );
+            assert_eq!(cache.builds, 1);
+        }
+        status.load_peak = 0.6;
+        assert_eq!(
+            cache.row(&status, &feedback, 120),
+            &status_line_at(&status, &feedback, 120)
+        );
+        assert_eq!(cache.builds, 2);
+        status.load_peak = 1.4;
+        cache.row(&status, &feedback, 120);
+        assert_eq!(cache.builds, 2);
+        status.meters = ([-1.0; 2], [0.0; 2], true);
+        status.notice = Some(NoticeLine::plain("another frame's notice"));
+        status
+            .badges
+            .push(Badge::new(BadgeKind::Attention, "ASK", "ASK"));
+        cache.row(&status, &feedback, 120);
+        assert_eq!(
+            cache.builds, 2,
+            "live screen data is not a status-row input"
+        );
+        let mut width = 120;
+        for change in 0..13 {
+            match change {
+                0 => width = 80,
+                1 => status.save = SaveStatus::Failed,
+                2 => status.project = Some("different project"),
+                3 => status.master_db = -5,
+                4 => status.buffer_size = 256,
+                5 => status.sample_rate = 96_000,
+                6 => status.xruns = 8,
+                7 => status.recording = true,
+                8 => feedback.recording_seconds = Some(0),
+                9 => feedback.recording_seconds = Some(1),
+                10 => {
+                    feedback.inputs = vec![InputSource {
+                        normal: "KB".into(),
+                        compact: "KB".into(),
+                        active: true,
+                    }]
+                    .into()
+                }
+                11 => status.no_releases = true,
+                _ => status.backend = None,
+            }
+            assert_eq!(
+                cache.row(&status, &feedback, width),
+                &status_line_at(&status, &feedback, width),
+                "change {change}"
+            );
+            assert_eq!(cache.builds, change + 3);
+        }
+    }
+
+    /// Scenario "Unchanged views do not freeze timed feedback": cache only the status text.
+    #[test]
+    fn unchanged_views_do_not_freeze_timed_feedback() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let mut cache = TextCache::default();
+            let mut status = status_at(128, 0);
+            let feedback = Feedback::default();
+            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+            let mut quiet_meter = Vec::new();
+            for phase in 0..3 {
+                let mut pads = idle_pads();
+                pads.playing = phase == 1;
+                status.meters = if phase == 1 {
+                    ([-1.0; 2], [0.0; 2], true)
+                } else {
+                    ([-60.0; 2], [-60.0; 2], false)
+                };
+                status.notice = (phase == 1).then_some(NoticeLine::plain("an active notice"));
+                let help = Help {
+                    groups: &[],
+                    hint: Some(if phase == 0 {
+                        "first fallback"
+                    } else {
+                        "restored fallback"
+                    }),
+                    full: None,
+                    question: None,
+                    learn: None,
+                };
+                term.draw(|frame| {
+                    draw_cached(
+                        frame,
+                        &status,
+                        &Screen::Pads(pads),
+                        &help,
+                        &feedback,
+                        &mut cache,
+                        None,
+                    )
+                })
+                .unwrap();
+                let buffer = term.backend().buffer();
+                let row = |y| {
+                    (0..width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                };
+                assert_eq!(row(1).contains("PLAY ▶"), phase == 1, "{}", row(1));
+                assert!(row(height - 4).contains(match phase {
+                    0 => "first fallback",
+                    1 => "an active notice",
+                    _ => "restored fallback",
+                }));
+                let side = frame_at(width, height).side;
+                let meter: Vec<_> = (side.y..side.y + METER_ROWS)
+                    .flat_map(|y| (side.x..side.right()).map(move |x| buffer[(x, y)].clone()))
+                    .collect();
+                if phase == 0 {
+                    quiet_meter = meter;
+                } else if phase == 1 {
+                    assert_ne!(
+                        meter, quiet_meter,
+                        "live meters must change with an unchanged status row"
+                    );
+                } else {
+                    assert_eq!(meter, quiet_meter);
+                }
+                assert_eq!(
+                    cache.builds, 1,
+                    "notices, hints, meters and playback do not reconstruct static status text"
+                );
+            }
+        }
+    }
+
     fn status_screens(wave: &[f32]) -> [Screen<'_>; 6] {
         [
             Screen::Pads(idle_pads()),
@@ -7780,7 +8026,8 @@ mod tests {
                     compact: "M2".into(),
                     active: true,
                 },
-            ],
+            ]
+            .into(),
             recording_seconds: Some(12),
         }
     }

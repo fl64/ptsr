@@ -261,7 +261,7 @@ Shared input metadata, status caching, kitty commands, deferred copy names and c
 - [x] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
 - [x] 5.2 Carry actual input-source metadata through production routes. Test two devices, direct/deferred events, disconnection, stale events and reconnect.
 - [x] 5.3 Add the shared recording/input/audio/project segments and narrow-width rules. Preserve save state, audio loss, nonzero xruns and no-key-releases warnings.
-- [ ] 5.4 Cache unchanged badge and status content. Prove timers, recording elapsed time, level meters and fallback hints still update.
+- [x] 5.4 Cache unchanged badge and status content. Prove timers, recording elapsed time, level meters and fallback hints still update.
 
 Step 5.1 verification:
 - Applied values use one bounded panel below the title. Numeric values have range bars. Categorical choices retain their words.
@@ -337,6 +337,17 @@ Step 5.3 verification:
 - The final run reports wall max 38.73% and CPU max 38.40%. It does not close the earlier callback maximum-budget gate.
 - No live audio or MIDI device opened. Sound, bindings, saved formats, dependencies and deferred 87a stay unchanged. No new WAV.
 - Owner visual, physical-controller and listening acceptance remains unverified. The owner authorized publication, but not merge or archive.
+
+Step 5.4 verification:
+- The final `task check` exits 0: 750 App, 81 input, 122 drawing and 21 notice-model tests pass.
+- The current-source Release build passes in 30.94 s. Strict OpenSpec passes all 16 items.
+- Badge formatter counts do not increase on identical frames. Real keyboard/raw-MIDI screen, mode, page and recording inputs refresh the necessary labels.
+- Input labels share one immutable array until connection identity or activity changes. Reconnect and project-replacement tests retain correct source lifetime.
+- Status-row tests cover every cached field, both sizes and CPU rounding. Notice, meter, playback and hint updates do not reconstruct static status text.
+- Controlled-time tests expire value popups, input highlights and notices without another action. Recording seconds advance through the same production cache.
+- The initial screen test incorrectly used F3 from Files as a pad-screen shortcut. Its corrected independent fixtures pass without a production-route change.
+- No live audio or MIDI device opened. Sound, input ordering, bindings, saved formats, dependencies and deferred 87a stay unchanged. No new WAV.
+- This reuses text. It does not remove all UI allocations or close the earlier callback maximum-budget failures.
 
 ## 6. Questions and screen catalogue
 

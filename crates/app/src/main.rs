@@ -4336,6 +4336,8 @@ fn main() -> std::io::Result<()> {
     // Braille unless the owner switched the picture on (04b): only then ask the terminal
     let graphics = app.ui.graphics && graphics_support();
     let mut shown = tui::Shown::default();
+    let mut frame_text = view::FrameText::default();
+    let mut status_text = tui::TextCache::default();
     // the startup notices live on the app: the first key event of the session clears them
     for notice in [loaded.error, session_notice, keymap_notice]
         .into_iter()
@@ -4433,8 +4435,9 @@ fn main() -> std::io::Result<()> {
         app.input_sources.advance(Instant::now());
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
+        let text_at = Instant::now();
         let status = tui::Status {
-            badges: app.title_badges(),
+            badges: frame_text.badges_at(&app, text_at).to_vec(),
             save: app.save_status(),
             backend: app.audio_alive().map(|a| a.backend),
             recording: app.recording.is_some(),
@@ -4604,7 +4607,7 @@ fn main() -> std::io::Result<()> {
         });
         let messages = app.message_history();
         let learn_lines = app.learning_view(&keymap);
-        let feedback = app.status_feedback_at(Instant::now());
+        let feedback = frame_text.feedback_at(&app, text_at);
         let help = tui::Help {
             groups: &groups,
             hint: hint_for(&app),
@@ -4617,12 +4620,13 @@ fn main() -> std::io::Result<()> {
         let value = app.current_value_at(Instant::now());
         let mut want = Vec::new();
         let drawn = term.draw(|f| {
-            tui::draw_feedback(
+            tui::draw_cached(
                 f,
                 &status,
                 &screen,
                 &help,
                 &feedback,
+                &mut status_text,
                 graphics.then_some(&mut want),
             );
             if let Some(value) = value {

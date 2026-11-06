@@ -111,7 +111,8 @@ not permission to combine the new changes.
   Shared status now shows recording seconds, KB and connected inputs, audio and project details with width priorities.
   Active inputs have an arrow and cyan emphasis. M1, M2 and later labels distinguish connected ports.
   Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
-  Text caching, question controls, kitty overlay protection and the catalogue remain unfinished.
+  Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
+  Question controls, kitty overlay protection and the catalogue remain unfinished.
   Other manual keyboard, physical-controller and listening checks remain unverified.
   Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
   The owner authorized completion and PR publication of 87, but not merge or archive.

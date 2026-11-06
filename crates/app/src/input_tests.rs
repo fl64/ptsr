@@ -48,6 +48,155 @@ fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant
         .collect()
 }
 
+#[test]
+fn feedback_cache_tracks_source_identity_and_activity() {
+    let mut drive = Drive::new();
+    let mut text = view::FrameText::default();
+    let at = Instant::now();
+    let first = text.feedback_at(&drive.app, at).inputs;
+    let again = text
+        .feedback_at(&drive.app, at + Duration::from_millis(20))
+        .inputs;
+    assert!(Arc::ptr_eq(&first, &again));
+    assert_eq!(text.builds().1, 1);
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    let receipt = drive.app.input_sources.latest.as_ref().unwrap().1;
+    let active = text.feedback_at(&drive.app, receipt).inputs;
+    assert!(!Arc::ptr_eq(&first, &active));
+    assert!(
+        active
+            .iter()
+            .any(|input| input.compact == "M2" && input.active)
+    );
+    assert!(Arc::ptr_eq(
+        &active,
+        &text.feedback_at(&drive.app, receipt).inputs
+    ));
+    drive.app.input_sources.advance(receipt + LIT_FOR);
+    let expired = text.feedback_at(&drive.app, receipt + LIT_FOR).inputs;
+    assert!(expired.iter().all(|input| !input.active));
+    assert!(!Arc::ptr_eq(&active, &expired));
+    drive.app.apply_session(session::Session::default());
+    assert!(Arc::ptr_eq(
+        &expired,
+        &text.feedback_at(&drive.app, receipt + LIT_FOR).inputs
+    ));
+    drive.midi().recorded_disconnect(XS_PORT);
+    drive.frame();
+    let removed = text.feedback_at(&drive.app, Instant::now()).inputs;
+    assert_eq!(removed.len(), 2);
+    drive.midi().recorded_connect(XS_PORT);
+    drive.frame();
+    let connected = text.feedback_at(&drive.app, Instant::now()).inputs;
+    assert_eq!(connected.len(), 3);
+    assert!(connected.iter().all(|input| !input.active));
+    assert!(
+        !Arc::ptr_eq(&expired, &connected),
+        "equal names do not reuse old connection data"
+    );
+    assert_eq!(text.builds().1, 5);
+}
+
+#[test]
+fn badge_cache_tracks_real_screen_mode_and_page_changes() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            // F3 on Files opens its file. Each screen starts from the same pad fixture.
+            let mut drive = Drive::registry_screen_checks();
+            drive.bind_action(111, "edit.page_next");
+            let mut text = view::FrameText::default();
+            text.badges_at(&drive.app, Instant::now());
+            drive.registry_command(source, key, M::NONE, number);
+            assert_eq!(drive.app.screen, screen);
+            let now = Instant::now();
+            assert_eq!(
+                text.badges_at(&drive.app, now),
+                drive.app.title_badges_at(now)
+            );
+            let builds = text.builds().0;
+            text.badges_at(&drive.app, now);
+            assert_eq!(text.builds().0, builds);
+            if matches!(screen, Screen::Pads | Screen::Chop) {
+                drive.registry_command(
+                    source,
+                    KeyCode::Enter,
+                    M::NONE,
+                    if screen == Screen::Pads { 97 } else { 98 },
+                );
+                let now = Instant::now();
+                assert_eq!(
+                    text.badges_at(&drive.app, now),
+                    drive.app.title_badges_at(now)
+                );
+                assert!(text.builds().0 > builds);
+                if screen == Screen::Pads {
+                    let page = drive.app.help_state().page;
+                    drive.registry_command(source, KeyCode::Tab, M::NONE, 111);
+                    assert_ne!(drive.app.help_state().page, page);
+                    let now = Instant::now();
+                    assert_eq!(
+                        text.badges_at(&drive.app, now),
+                        drive.app.title_badges_at(now)
+                    );
+                    assert!(
+                        text.badges_at(&drive.app, now)
+                            .iter()
+                            .any(|badge| badge.normal.contains(drive.app.help_state().page))
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Unchanged views do not freeze timed feedback" through real keyboard and MIDI setters.
+#[test]
+fn unchanged_views_do_not_freeze_timed_feedback() {
+    for midi in [false, true] {
+        let mut drive = value_drive();
+        if midi {
+            value_knob(&mut drive, "pad.volume", 100);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        let at = drive.app.value_popup.as_ref().unwrap().at;
+        drive.app.notices = Notices::new(at);
+        drive
+            .app
+            .post_system_notice(Level::Info, ("cache timer".into(), at));
+        assert_eq!(
+            drive.app.frame_notice_at(at).as_deref(),
+            Some("cache timer")
+        );
+        let mut text = view::FrameText::default();
+        let expected = drive.app.title_badges_at(at);
+        for now in [
+            at,
+            at + LIT_FOR - Duration::from_nanos(1),
+            at + LIT_FOR,
+            at + Duration::from_secs(3),
+        ] {
+            drive.app.input_sources.advance(now);
+            let notice = drive.app.frame_notice_at(now);
+            assert_eq!(notice.is_some(), now < at + Duration::from_secs(3));
+            assert_eq!(
+                drive.app.current_value_at(now).is_some(),
+                now < at + LIT_FOR
+            );
+            assert_eq!(text.badges_at(&drive.app, now), expected);
+            text.feedback_at(&drive.app, now);
+            assert_eq!(
+                text.builds().0,
+                1,
+                "timers do not reconstruct unchanged badge text"
+            );
+        }
+        assert!(drive.app.value_popup.is_none());
+        assert!(drive.app.input_sources.active.is_none());
+    }
+}
+
 fn input_device(drive: &Drive, port: &str) -> input_sources::Source {
     input_sources::Source::Device {
         port: port.into(),
@@ -10289,6 +10438,7 @@ fn recording_badges_follow_real_input_and_controlled_elapsed_time() {
             .app
             .recording
             .expect("the production route started recording");
+        let mut text = view::FrameText::default();
         for seconds in [0, 1, 12, 123] {
             let badges = drive
                 .app
@@ -10297,6 +10447,17 @@ fn recording_badges_follow_real_input_and_controlled_elapsed_time() {
             assert_eq!(badges[0].normal, format!("● REC {seconds}s"));
             assert_eq!(badges[0].compact, "REC");
             let now = start + Duration::from_secs(seconds);
+            assert_eq!(text.badges_at(&drive.app, now), badges);
+            let builds = text.builds().0;
+            assert_eq!(
+                text.badges_at(&drive.app, now + Duration::from_nanos(1)),
+                badges
+            );
+            assert_eq!(text.builds().0, builds);
+            assert_eq!(
+                text.feedback_at(&drive.app, now).recording_seconds,
+                Some(seconds)
+            );
             assert_eq!(
                 drive.app.status_feedback_at(now).recording_seconds,
                 Some(seconds)

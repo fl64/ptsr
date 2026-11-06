@@ -1,6 +1,7 @@
 //! Screen data prepared from application state.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Instant;
 
@@ -12,10 +13,165 @@ use super::{
     file_name, filter_curve, pads, same_whole_sound, tui_param,
 };
 
+#[derive(PartialEq, Eq)]
+struct BadgeKey {
+    screen: Screen,
+    mode: input::Mode,
+    assignment: Option<(usize, usize)>,
+    marked: usize,
+    page: &'static str,
+    seconds: Option<u64>,
+    looping: bool,
+    as_pad: bool,
+}
+
+impl BadgeKey {
+    fn format(&self) -> Vec<tui::Badge> {
+        use tui::{
+            Badge,
+            BadgeKind::{Attention, On, PadMode},
+        };
+        let mode = self.mode;
+        let mut pad_modes = Vec::new();
+        if mode.screen_learn || mode.midi_learn {
+            pad_modes.push(Badge::new(PadMode, "LEARN", "LEARN"));
+        }
+        if let Some((placed, total)) = self.assignment {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("ASSIGN · {placed}/{total} placed"),
+                format!("ASSIGN {placed}/{total}"),
+            ));
+        }
+        let placements: Vec<_> = [
+            (mode.file_in_hand, "IN HAND"),
+            (mode.copy_in_hand, "COPY"),
+            (mode.swap_in_hand, "SWAP"),
+        ]
+        .into_iter()
+        .filter_map(|(active, name)| active.then_some(name))
+        .collect();
+        if !placements.is_empty() {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("{} · hit a pad", placements.join(" + ")),
+                placements.join("/"),
+            ));
+        }
+        let count = self.marked;
+        if mode.marking {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("MARK · hit pads · {count} marked"),
+                format!("MARK {count}"),
+            ));
+        } else if count > 0 {
+            pad_modes.push(Badge::new(
+                PadMode,
+                format!("{count} MARKED · Esc drops"),
+                format!("{count} MARKED"),
+            ));
+        }
+        let mut badges = Vec::new();
+        let mut pad_modes = pad_modes.into_iter();
+        badges.extend(pad_modes.next());
+        if mode.question {
+            badges.push(Badge::new(Attention, "ASK", "ASK"));
+        }
+        if let Some(seconds) = self.seconds {
+            badges.push(Badge::new(Attention, format!("● REC {seconds}s"), "REC"));
+        }
+        badges.extend(pad_modes);
+        if mode.edit {
+            badges.push(Badge::new(
+                On,
+                format!("EDIT · {}", self.page),
+                format!("EDIT {}", self.page),
+            ));
+        }
+        if self.looping {
+            badges.push(Badge::new(On, "LOOP", "LOOP"));
+        }
+        if self.as_pad {
+            badges.push(Badge::new(On, "AS PAD", "AS PAD"));
+        }
+        badges
+    }
+}
+
+struct SourceKey {
+    active: Option<super::input_sources::Source>,
+    connections: Vec<(String, super::input_sources::Connection)>,
+}
+
+/// Current formatted labels only. Timers and live screen state remain outside this cache.
+#[derive(Default)]
+pub(super) struct FrameText {
+    badge_key: Option<BadgeKey>,
+    badges: Vec<tui::Badge>,
+    source_key: Option<SourceKey>,
+    inputs: Arc<[tui::InputSource]>,
+    #[cfg(test)]
+    badge_builds: usize,
+    #[cfg(test)]
+    source_builds: usize,
+}
+
+impl FrameText {
+    pub(super) fn badges_at(&mut self, app: &App, now: Instant) -> &[tui::Badge] {
+        let key = app.badge_key_at(now);
+        if self.badge_key.as_ref() != Some(&key) {
+            self.badges = key.format();
+            self.badge_key = Some(key);
+            #[cfg(test)]
+            {
+                self.badge_builds += 1;
+            }
+        }
+        &self.badges
+    }
+
+    pub(super) fn feedback_at(&mut self, app: &App, now: Instant) -> tui::Feedback {
+        let source = &app.input_sources;
+        let unchanged = self.source_key.as_ref().is_some_and(|key| {
+            key.active == source.active
+                && source.connected().eq(key
+                    .connections
+                    .iter()
+                    .map(|(name, id)| (name.as_str(), *id)))
+        });
+        if !unchanged {
+            self.inputs = app.status_feedback_at(now).inputs;
+            self.source_key = Some(SourceKey {
+                active: source.active.clone(),
+                connections: source
+                    .connected()
+                    .map(|(name, id)| (name.to_owned(), id))
+                    .collect(),
+            });
+            #[cfg(test)]
+            {
+                self.source_builds += 1;
+            }
+        }
+        tui::Feedback {
+            inputs: Arc::clone(&self.inputs),
+            recording_seconds: app
+                .recording
+                .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn builds(&self) -> (usize, usize) {
+        (self.badge_builds, self.source_builds)
+    }
+}
+
 impl App {
     pub(super) fn status_feedback_at(&self, now: Instant) -> tui::Feedback {
         tui::Feedback {
-            inputs: self.input_sources.snapshot(),
+            inputs: self.input_sources.snapshot().into(),
             recording_seconds: self
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
@@ -211,97 +367,45 @@ impl App {
         self.shown_error = None;
     }
 
-    /// Existing modes in title priority order. This snapshot never changes input focus.
+    fn badge_key_at(&self, now: Instant) -> BadgeKey {
+        let assignment = match (self.screen, &self.plan, &self.chop) {
+            (Screen::Chop, Some(plan), Some(chop)) => {
+                let total = chop.slices().len();
+                let placed = plan
+                    .targets(total)
+                    .into_iter()
+                    .map(|(slice, _)| slice)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                Some((placed, total))
+            }
+            _ => None,
+        };
+        BadgeKey {
+            screen: self.screen,
+            mode: self.focus().mode,
+            assignment,
+            marked: self.pads.marked.len(),
+            page: self.help_state().page,
+            seconds: self
+                .recording
+                .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
+            looping: self.screen == Screen::Chop
+                && self.chop.as_ref().is_some_and(|chop| chop.looping),
+            as_pad: self.screen == Screen::Chop
+                && self.chop.as_ref().is_some_and(|chop| chop.as_pad),
+        }
+    }
+
+    /// The uncached reference uses the same formatter as the production cache.
+    #[cfg(test)]
     pub(super) fn title_badges(&self) -> Vec<tui::Badge> {
         self.title_badges_at(Instant::now())
     }
 
+    #[cfg(test)]
     pub(super) fn title_badges_at(&self, now: Instant) -> Vec<tui::Badge> {
-        use tui::{
-            Badge,
-            BadgeKind::{Attention, On, PadMode},
-        };
-
-        let mode = self.focus().mode;
-        let mut pad_modes = Vec::new();
-        if mode.screen_learn || mode.midi_learn {
-            pad_modes.push(Badge::new(PadMode, "LEARN", "LEARN"));
-        }
-        if self.screen == Screen::Chop
-            && let (Some(plan), Some(chop)) = (&self.plan, &self.chop)
-        {
-            let total = chop.slices().len();
-            let placed = plan
-                .targets(total)
-                .into_iter()
-                .map(|(slice, _)| slice)
-                .collect::<std::collections::BTreeSet<_>>()
-                .len();
-            pad_modes.push(Badge::new(
-                PadMode,
-                format!("ASSIGN · {placed}/{total} placed"),
-                format!("ASSIGN {placed}/{total}"),
-            ));
-        }
-        let placements: Vec<_> = [
-            (mode.file_in_hand, "IN HAND"),
-            (mode.copy_in_hand, "COPY"),
-            (mode.swap_in_hand, "SWAP"),
-        ]
-        .into_iter()
-        .filter_map(|(active, name)| active.then_some(name))
-        .collect();
-        if !placements.is_empty() {
-            pad_modes.push(Badge::new(
-                PadMode,
-                format!("{} · hit a pad", placements.join(" + ")),
-                placements.join("/"),
-            ));
-        }
-        let count = self.pads.marked.len();
-        if mode.marking {
-            pad_modes.push(Badge::new(
-                PadMode,
-                format!("MARK · hit pads · {count} marked"),
-                format!("MARK {count}"),
-            ));
-        } else if count > 0 {
-            pad_modes.push(Badge::new(
-                PadMode,
-                format!("{count} MARKED · Esc drops"),
-                format!("{count} MARKED"),
-            ));
-        }
-        let mut badges = Vec::new();
-        let mut pad_modes = pad_modes.into_iter();
-        badges.extend(pad_modes.next());
-        if mode.question {
-            badges.push(Badge::new(Attention, "ASK", "ASK"));
-        }
-        if let Some((_, start)) = self.recording {
-            let seconds = now.saturating_duration_since(start).as_secs();
-            badges.push(Badge::new(Attention, format!("● REC {seconds}s"), "REC"));
-        }
-        badges.extend(pad_modes);
-        if mode.edit {
-            let page = self.help_state().page;
-            badges.push(Badge::new(
-                On,
-                format!("EDIT · {page}"),
-                format!("EDIT {page}"),
-            ));
-        }
-        if self.screen == Screen::Chop
-            && let Some(chop) = &self.chop
-        {
-            if chop.looping {
-                badges.push(Badge::new(On, "LOOP", "LOOP"));
-            }
-            if chop.as_pad {
-                badges.push(Badge::new(On, "AS PAD", "AS PAD"));
-            }
-        }
-        badges
+        self.badge_key_at(now).format()
     }
 
     /// Existing target rules, observed without applying a placement or changing focus.
