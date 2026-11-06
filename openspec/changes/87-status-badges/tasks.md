@@ -413,8 +413,17 @@ Step 7.1 verification:
 - A full User Stories lint remains unsuccessful with the same 30 findings, including 15 hard findings, as the unchanged baseline. No unrelated prose rewrite or disabled rule hides them.
 - `task check` exits 0 with 762 App and 126 drawing tests. The benchmark reports two steady wall blocks above 50%, with wall maximum 79.97% and CPU maximum 43.32%.
 - This step changes documentation only. No sampler start, device, physical input or listening result comes from it. Manual acceptance and callback maximum-budget failures remain open.
-- [ ] 7.2 Run `task check`, `task build`, `task openspec:check` and `task screens` with verified source provenance. Keep raw diagnostic files local.
+- [x] 7.2 Run `task check`, `task build`, `task openspec:check` and `task screens` with verified source provenance. Keep raw diagnostic files local.
 - [ ] 7.3 Present the catalogue and manual kitty on/off checks to the owner. Keep hardware and listening results separate from overall acceptance.
+
+Final check evidence (7.2):
+- All four commands exit 0. The suites retain 762 App, 81 input, 126 drawing, 21 notice-model and three scenario-audit tests. Strict OpenSpec passes 16 items.
+- `task screens` passes four tests and writes 306 deterministic files at both sizes.
+- Current Debug, Release sampler and executed benchmark dependency records point to this worktree. They contain no deferred-worktree sources.
+- The full branch review preserves sound code, dependencies, factory maps and saved formats. Deferred 87a stays outside the branch. No new controller action enters 87.
+- The final benchmark reports steady wall maximum 49.06% and CPU maximum 48.60%. This run does not erase the earlier wall and CPU exceedances or establish their cause.
+- No live sampler, physical-controller, kitty-composition or listening result comes from these automated checks.
+- Overall manual acceptance remains open. The authorized PR stays in draft. Merge and archive remain unauthorized.
 - [ ] 7.4 Archive only after owner acceptance and main-spec scenario coverage. Merge and archive need separate owner authorization.
 - [ ] 7.5 Publish the verified branch and open its PR to master. Keep the PR in draft while manual acceptance and callback-budget limits remain open.
 
