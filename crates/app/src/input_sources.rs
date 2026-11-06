@@ -70,6 +70,26 @@ impl State {
         })
     }
 
+    pub(super) fn snapshot(&self) -> Vec<tui::InputSource> {
+        let mut inputs = vec![tui::InputSource {
+            normal: "KB".into(),
+            compact: "KB".into(),
+            active: self.active == Some(Source::Keyboard),
+        }];
+        inputs.extend(self.connected().enumerate().map(|(i, (port, connection))| {
+            let compact = format!("M{}", i + 1);
+            tui::InputSource {
+                normal: format!("{compact}:{port}"),
+                compact,
+                active: self.active.as_ref().is_some_and(|source| {
+                    matches!(source, Source::Device { port: active, connection: id }
+                        if active == port && *id == connection)
+                }),
+            }
+        }));
+        inputs
+    }
+
     fn transition(&mut self, port: &str, connection: Connection, phase: Phase) -> bool {
         if let Some(device) = self.devices.get_mut(port) {
             if connection < device.connection

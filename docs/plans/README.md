@@ -108,10 +108,13 @@ not permission to combine the new changes.
   Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
   Project changes keep source identities and deadlines.
   Source feedback does not change actions, acknowledgements, velocities or release ownership.
-  Shared status drawing, question controls, kitty overlay protection and the catalogue remain unfinished.
+  Shared status now shows recording seconds, KB and connected inputs, audio and project details with width priorities.
+  Active inputs have an arrow and cyan emphasis. M1, M2 and later labels distinguish connected ports.
+  Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
+  Text caching, question controls, kitty overlay protection and the catalogue remain unfinished.
   Other manual keyboard, physical-controller and listening checks remain unverified.
-  Sound, factory bindings and saved formats stay unchanged.
-  Generic controller confirmation remains in 88. Publication needs a separate request.
+  Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
+  The owner authorized completion and PR publication of 87, but not merge or archive.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

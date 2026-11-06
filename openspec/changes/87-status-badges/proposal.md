@@ -31,6 +31,7 @@ None. These changes extend existing screen capabilities.
 - `screen-layout`: title badges, a shared value popup, status segments, overlay safety and the screen catalogue.
 - `screen-help`: message levels, lifetime, queue, history and truthful question controls.
 - `pad-playback`: mode corner marks, yellow grid frames and compatibility with existing playback indicators.
+- `midi-learn`: a bounded learning block that keeps the shared status visible without changing learning actions.
 
 ## Impact
 

@@ -94,9 +94,14 @@ Input-source state now keeps connection identities and original receipt times ac
 Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
 Project changes keep source identities and deadlines.
 Source feedback does not change actions, acknowledgements, velocities or release ownership.
-Shared status drawing, question controls, kitty overlay protection and the catalogue remain unfinished.
-Other manual keyboard, physical-controller and listening checks remain unverified. Publication needs a separate request.
-Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
+Shared status now shows recording seconds, KB and connected inputs, audio and project details with width priorities.
+Active inputs have an arrow and cyan emphasis. M1, M2 and later labels distinguish connected ports.
+Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
+Text caching, question controls, kitty overlay protection and the catalogue remain unfinished.
+Other manual keyboard, physical-controller and listening checks remain unverified.
+The owner authorized completion and PR publication of 87, but not merge or archive.
+Activate only one change at a time. Publication of other changes needs a separate request.
+The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
 parameter locks, slice motion and PaulStretch. It and `docs/plans/` are guides, not

@@ -7,6 +7,47 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers as
 const PAD_PORT: &str = "Recorded pads MIDI 1";
 const XS_PORT: &str = "USB X-Session MIDI 1";
 
+fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant) -> Vec<String> {
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = &mut drive.app;
+    app.input_sources.advance(now);
+    let feedback = app.status_feedback_at(now);
+    let learning = app.learning_view(&drive.keymap);
+    let pads = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+    let screen = tui::Screen::Pads(app.mark_pads(pads));
+    let status = tui::Status {
+        badges: app.title_badges_at(now),
+        save: app.save_status(),
+        backend: app.audio_alive().map(|audio| audio.backend),
+        recording: app.recording.is_some(),
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: app.master_db,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: app.project.as_ref().map(|project| project.name.as_str()),
+    };
+    let help = tui::Help {
+        groups: &[],
+        hint: None,
+        full: None,
+        question: None,
+        learn: learning.as_ref(),
+    };
+    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+    term.draw(|frame| tui::draw_feedback(frame, &status, &screen, &help, &feedback, None))
+        .unwrap();
+    term.backend()
+        .buffer()
+        .content()
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect()
+}
+
 fn input_device(drive: &Drive, port: &str) -> input_sources::Source {
     input_sources::Source::Device {
         port: port.into(),
@@ -14,7 +55,7 @@ fn input_device(drive: &Drive, port: &str) -> input_sources::Source {
     }
 }
 
-/// Scenario "Status follows keyboard and connected inputs" (source data; drawing is step 5.3).
+/// Scenario "Status follows keyboard and connected inputs" through production input and shared drawing.
 #[test]
 fn status_follows_keyboard_and_connected_inputs() {
     for (_, key, _) in REGISTRY_SCREEN_COMMANDS {
@@ -31,6 +72,16 @@ fn status_follows_keyboard_and_connected_inputs() {
             drive.app.input_sources.active,
             Some(input_sources::Source::Keyboard)
         );
+        for (width, height) in [(80, 26), (120, 40)] {
+            let row = &shared_feedback_rows(&mut drive, width, height, Instant::now())[0];
+            assert!(
+                row.contains("▸KB") && row.contains("M1") && row.contains("M2"),
+                "{row}"
+            );
+            if width == 120 {
+                assert!(row.contains(PAD_PORT) && row.contains(XS_PORT), "{row}");
+            }
+        }
         drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
         drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
         let button = drive.frame();
@@ -42,6 +93,8 @@ fn status_follows_keyboard_and_connected_inputs() {
             drive.app.input_sources.active,
             Some(input_device(&drive, PAD_PORT))
         );
+        let row = &shared_feedback_rows(&mut drive, 80, 26, Instant::now())[0];
+        assert!(row.contains("▸M1") && !row.contains("▸KB"), "{row}");
         let knob = value_knob(&mut drive, "master.volume", 100);
         assert!(matches!(
             knob.ui.as_slice(),
@@ -60,8 +113,163 @@ fn status_follows_keyboard_and_connected_inputs() {
                 .collect::<Vec<_>>(),
             [PAD_PORT, XS_PORT]
         );
+        let row = &shared_feedback_rows(&mut drive, 80, 26, Instant::now())[0];
+        assert!(row.contains("▸M2") && !row.contains("▸M1"), "{row}");
         assert_eq!(drive.seen().pads, pads);
     }
+}
+
+#[test]
+fn source_labels_follow_identity_when_port_numbers_change() {
+    let mut drive = Drive::new();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    let at = drive.app.input_sources.latest.as_ref().unwrap().1;
+    assert!(shared_feedback_rows(&mut drive, 120, 40, at)[0].contains("▸M2:"));
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.frame();
+    let row = &shared_feedback_rows(&mut drive, 120, 40, at)[0];
+    assert!(
+        !row.contains(PAD_PORT) && row.contains(&format!("▸M1:{XS_PORT}")),
+        "{row}"
+    );
+    drive.midi().recorded_connect(PAD_PORT);
+    drive.frame();
+    let row = &shared_feedback_rows(&mut drive, 120, 40, at)[0];
+    assert!(
+        row.contains(&format!("M1:{PAD_PORT}")) && row.contains(&format!("▸M2:{XS_PORT}")),
+        "{row}"
+    );
+    let last = at + LIT_FOR - Duration::from_nanos(1);
+    assert!(shared_feedback_rows(&mut drive, 120, 40, last)[0].contains("▸M2:"));
+    assert!(!shared_feedback_rows(&mut drive, 120, 40, at + LIT_FOR)[0].contains('▸'));
+}
+
+/// Scenario "Learning keeps safety and next steps visible" through keyboard and raw MIDI.
+#[test]
+fn learning_keeps_safety_and_next_steps_visible() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            if screen == Screen::Settings {
+                continue;
+            }
+            let mut drive = Drive::registry_screen_checks();
+            drive.registry_command(source, key, M::NONE, number);
+            drive.app.session_write_failed = true;
+            drive
+                .app
+                .audio
+                .as_ref()
+                .unwrap()
+                .stopped
+                .store(true, Relaxed);
+            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            assert!(drive.app.screen_learn.is_some());
+            let picked = drive.tap(KeyCode::Char('q'), M::NONE);
+            assert!(picked.commands().is_empty(), "screen learn stays silent");
+            drive.bytes(PAD_PORT, &[0x90, 110, 100]);
+            drive.bytes(PAD_PORT, &[0x80, 110, 0]);
+            let pending = drive.frame();
+            assert!(pending.commands().is_empty());
+            let before = drive.app.learned.clone();
+            for (width, height) in [(80, 26), (120, 40)] {
+                let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
+                assert!(
+                    rows[0].contains("Save failed") && rows[0].contains("no audio"),
+                    "{}",
+                    rows[0]
+                );
+                assert!(!rows[0].contains("LEARN"));
+                assert!(
+                    rows[height as usize - 3].contains("LEARN")
+                        && rows[height as usize - 3].contains("pad Q"),
+                    "{}",
+                    rows[height as usize - 3]
+                );
+                assert!(
+                    rows[height as usize - 1].contains("Enter bind · Esc keep · F10 done"),
+                    "{}",
+                    rows[height as usize - 1]
+                );
+            }
+            assert_eq!(
+                drive.app.learned, before,
+                "drawing does not commit pending input"
+            );
+            drive.tap(KeyCode::Esc, M::NONE);
+            let view = drive.app.learning_view(&drive.keymap).unwrap();
+            assert!(!view.controls.contains("Enter bind"));
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert_eq!(
+                drive.app.learned, before,
+                "a canceled control stays unbound"
+            );
+            drive.tap(KeyCode::F(10), M::NONE);
+            assert!(drive.app.screen_learn.is_none());
+        }
+    }
+}
+
+#[test]
+fn learning_footer_follows_real_controls() {
+    let mut drive = Drive::registry_screen_checks();
+    drive.tap(KeyCode::F(2), M::NONE);
+    let warnings = drive.keymap.overlay(
+        "[global]\nF10 = \"none\"\nF9 = \"learn.toggle\"\n\
+         [edit]\nI = \"none\"\nUp = \"none\"\nK = \"none\"\nDown = \"none\"\nH = \"edit.param_prev\"\nL = \"edit.param_next\"\n"
+    ).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    drive.tap(KeyCode::F(9), M::NONE);
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        view.controls.contains("H L select") && view.controls.contains("Esc/F9 done"),
+        "{}",
+        view.controls
+    );
+    assert!(!view.controls.contains("F10") && !view.detail.contains("F10"));
+    drive.tap(KeyCode::Char('l'), M::NONE);
+    assert_eq!(drive.app.learn_picked().unwrap().0, "pad.volume");
+    drive.bytes(PAD_PORT, &[0x90, 110, 100]);
+    drive.bytes(PAD_PORT, &[0x80, 110, 0]);
+    drive.frame();
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        view.warning && view.detail.contains("knob or fader"),
+        "{}",
+        view.detail
+    );
+    assert!(view.controls.contains("Bksp clear"));
+    let saved = drive.app.learned.clone();
+    drive.tap(KeyCode::Backspace, M::NONE);
+    let clear = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        clear.controls.starts_with("Enter clear · Esc keep"),
+        "{}",
+        clear.controls
+    );
+    assert!(
+        !clear.warning && !clear.detail.contains("knob or fader"),
+        "{}",
+        clear.detail
+    );
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.screen_learn.as_ref().unwrap().clearing);
+    assert_eq!(drive.app.learned, saved);
+    drive.tap(KeyCode::F(10), M::NONE);
+    assert!(
+        drive.app.screen_learn.is_some(),
+        "an overridden key cannot be advertised as exit"
+    );
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(drive.app.screen_learn.is_none());
+    drive.tap(KeyCode::F(6), M::NONE);
+    drive.tap(KeyCode::F(9), M::NONE);
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        !view.controls.contains("select"),
+        "Files has no parameter walk: {}",
+        view.controls
+    );
 }
 
 /// Scenario "Input highlights retain original receipt time".
@@ -10088,6 +10296,15 @@ fn recording_badges_follow_real_input_and_controlled_elapsed_time() {
             assert_eq!(badges[0].kind, tui::BadgeKind::Attention);
             assert_eq!(badges[0].normal, format!("● REC {seconds}s"));
             assert_eq!(badges[0].compact, "REC");
+            let now = start + Duration::from_secs(seconds);
+            assert_eq!(
+                drive.app.status_feedback_at(now).recording_seconds,
+                Some(seconds)
+            );
+            for (width, height) in [(80, 26), (120, 40)] {
+                let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+                assert!(row.contains(&format!("rec {seconds}s")), "{row}");
+            }
         }
         if matches!(source, Source::Keyboard) {
             drive.key(KeyCode::Char('r'), M::ALT, KeyEventKind::Release);

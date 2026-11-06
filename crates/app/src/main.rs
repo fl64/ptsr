@@ -2984,8 +2984,7 @@ impl App {
         }
     }
 
-    /// The three lines of the learn mode in words (52): the top line of the screen, then
-    /// what to do next in the help band.
+    /// Learning messages and confirmation details before the fixed-band view arranges them.
     fn learn_lines(&self) -> Option<Vec<String>> {
         let l = self.screen_learn.as_ref()?;
         let profiles = self.live_profiles();
@@ -4604,7 +4603,8 @@ fn main() -> std::io::Result<()> {
             rows
         });
         let messages = app.message_history();
-        let learn_lines = app.learn_lines();
+        let learn_lines = app.learning_view(&keymap);
+        let feedback = app.status_feedback_at(Instant::now());
         let help = tui::Help {
             groups: &groups,
             hint: hint_for(&app),
@@ -4612,16 +4612,19 @@ fn main() -> std::io::Result<()> {
                 .as_deref()
                 .and_then(|rows| app.full_help_view(rows, &messages)),
             question: app.ask.as_ref().map(|a| a.lines()),
-            learn: learn_lines.as_deref(),
+            learn: learn_lines.as_ref(),
         };
         let value = app.current_value_at(Instant::now());
         let mut want = Vec::new();
         let drawn = term.draw(|f| {
-            if graphics {
-                tui::draw_gfx(f, &status, &screen, &help, &mut want);
-            } else {
-                tui::draw(f, &status, &screen, &help);
-            }
+            tui::draw_feedback(
+                f,
+                &status,
+                &screen,
+                &help,
+                &feedback,
+                graphics.then_some(&mut want),
+            );
             if let Some(value) = value {
                 tui::value_popup(f, value);
             }

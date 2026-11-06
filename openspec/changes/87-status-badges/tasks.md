@@ -260,7 +260,7 @@ Shared input metadata, status caching, kitty commands, deferred copy names and c
 
 - [x] 5.1 Add the shared one-second value popup, object labels and numeric range bars. Preserve local highlights and scope-limit counts.
 - [x] 5.2 Carry actual input-source metadata through production routes. Test two devices, direct/deferred events, disconnection, stale events and reconnect.
-- [ ] 5.3 Add the shared recording/input/audio/project segments and narrow-width rules. Preserve save state, audio loss, nonzero xruns and no-key-releases warnings.
+- [x] 5.3 Add the shared recording/input/audio/project segments and narrow-width rules. Preserve save state, audio loss, nonzero xruns and no-key-releases warnings.
 - [ ] 5.4 Cache unchanged badge and status content. Prove timers, recording elapsed time, level meters and fallback hints still update.
 
 Step 5.1 verification:
@@ -315,6 +315,28 @@ Step 5.2 verification:
 - No live audio or MIDI device opened. Sound processing, saved formats, dependencies, bindings and deferred copy names stay unchanged. No new WAV.
 - The visible status row remains in 5.3. Keyboard and controller visual acceptance follows that step, not this metadata-only step.
 - Earlier callback maximum-budget failures remain unresolved. A later passing measurement does not close that gate.
+
+Step 5.3 scope:
+- Keep the shared status visible during learning. Move learning context, detail and next steps into the fixed three-row help band.
+- Read actual source snapshots from 5.2. Add distinguishable full/compact labels and elapsed recording time.
+- Preserve safety indicators before optional project, audio and input details. Test Unicode, control characters, long labels and extreme counters.
+- Application changes stay in main, views, input sources and input tests. Drawing changes stay in the existing drawing crate.
+- Update the approved artifacts and the additional MIDI-learn delta before code. Keep sound, routing, bindings, formats and dependencies unchanged.
+- Run project checks, Release, strict OpenSpec and English checks before the local signed-off commit.
+
+Step 5.3 verification:
+- The final `task check` exits 0: 747 App, 81 input, 120 drawing and 21 notice-model tests pass.
+- The current-source Release build passes in 26.24 s. Strict OpenSpec passes all 16 items.
+- Tests combine failed saves, recording, no audio, nonzero xruns and the full no-key-releases phrase at both supported sizes, including extreme counters.
+- Real keyboard and recorded raw MIDI exercise source labels on all five application screens. Drawing tests cover the shared row on each screen.
+- Source labels follow connection identities when their compact numbers change. Highlights expire at their original deadline without another action.
+- Learning keeps its status and three-row band. Pending controls remain silent and unsaved until confirmation. Cancellation preserves assignments.
+- Effective learning hints follow owner key overrides. Files has no parameter-selection hint. A clear request replaces stale refusal feedback.
+- New descriptions use STE-flavored review. Revised text has no lint findings. The MIDI-learn delta retains one advisory in an unchanged scenario title.
+- An earlier run in this step reports wall max 96.25%, CPU max 46.40% and one wall sample above 50%.
+- The final run reports wall max 38.73% and CPU max 38.40%. It does not close the earlier callback maximum-budget gate.
+- No live audio or MIDI device opened. Sound, bindings, saved formats, dependencies and deferred 87a stay unchanged. No new WAV.
+- Owner visual, physical-controller and listening acceptance remains unverified. The owner authorized publication, but not merge or archive.
 
 ## 6. Questions and screen catalogue
 

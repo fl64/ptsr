@@ -13,6 +13,104 @@ use super::{
 };
 
 impl App {
+    pub(super) fn status_feedback_at(&self, now: Instant) -> tui::Feedback {
+        tui::Feedback {
+            inputs: self.input_sources.snapshot(),
+            recording_seconds: self
+                .recording
+                .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
+        }
+    }
+
+    pub(super) fn learning_view(&self, keymap: &input::Keymap) -> Option<tui::Learning> {
+        let old = self.learn_lines()?;
+        let learn = self.screen_learn.as_ref()?;
+        // A clear request can retain the previous refusal flag. Show the current confirmation.
+        let refused = learn.refused && learn.pending.is_none() && !learn.clearing;
+        let place = match learn.page {
+            Some(page) => format!("{} · {page}", learn.group.title()),
+            None => learn.group.title().into(),
+        };
+        let context = if let Some((name, label)) = &learn.picked {
+            let control = self
+                .learn_shown(&self.live_profiles(), name)
+                .unwrap_or_else(|| "none".into());
+            format!(
+                "LEARN · {label}{} · {place} · {control}",
+                if learn.once { " · last action" } else { "" }
+            )
+        } else {
+            format!("LEARN · {place} · select a pad or command")
+        };
+        let detail = if refused {
+            if self
+                .learn_picked()
+                .is_some_and(|(name, _)| super::action_info(name).knob)
+            {
+                "Use a knob or fader. A button cannot change this value.".into()
+            } else {
+                "Use a button or pad. A knob repeats this action.".into()
+            }
+        } else if learn.pending.is_some() || learn.clearing {
+            old.get(1).cloned().unwrap_or_default().trim().into()
+        } else if learn.picked.is_some() {
+            "Move a MIDI control to prepare its binding.".into()
+        } else {
+            "Pad and command keys select an action. MIDI does not play.".into()
+        };
+        let exit = keymap
+            .keys_for(self.screen, input::Action::LearnToggle)
+            .into_iter()
+            .find(|key| {
+                keymap.binding_for(self.screen, false, key)
+                    == Some(Some(input::Action::LearnToggle))
+            });
+        let leave = exit
+            .as_ref()
+            .map_or_else(String::new, |key| format!(" · {key} done"));
+        let done = exit.map_or_else(|| "Esc done".into(), |key| format!("Esc/{key} done"));
+        let controls = if learn.pending.is_some() {
+            format!("Enter bind · Esc keep{leave}")
+        } else if learn.clearing {
+            format!("Enter clear · Esc keep{leave}")
+        } else {
+            let mut parts = Vec::new();
+            if !self.learn_params().is_empty() {
+                let walk = [input::Action::ParamPrev, input::Action::ParamNext]
+                    .into_iter()
+                    .filter_map(|action| {
+                        keymap
+                            .edit_keys_for(action)
+                            .into_iter()
+                            .chain(keymap.keys_for(self.screen, action))
+                            .find(|key| {
+                                keymap.binding_for(self.screen, true, key) == Some(Some(action))
+                            })
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !walk.is_empty() {
+                    parts.push(format!("{walk} select"));
+                }
+            }
+            if self
+                .learn_picked()
+                .and_then(|(name, _)| self.learn_label(&self.live_profiles(), name))
+                .is_some()
+            {
+                parts.push("Bksp clear".into());
+            }
+            parts.push(done);
+            parts.join(" · ")
+        };
+        Some(tui::Learning {
+            context,
+            detail,
+            controls,
+            warning: refused || self.learn_taken().is_some(),
+        })
+    }
+
     pub(super) fn current_value_at(&self, now: Instant) -> Option<&tui::Value> {
         let shown = self.value_popup.as_ref()?;
         if now.saturating_duration_since(shown.at) >= LIT_FOR

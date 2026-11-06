@@ -117,6 +117,7 @@ Existing notices and local highlights SHALL retain their behavior.
 ### Requirement: Shared status segments
 
 The status SHALL show persistent save state, recording, input, audio and project in that order.
+Recording SHALL show elapsed seconds while this detail fits.
 It SHALL list KB and actual connected devices, with distinguishable compact labels.
 A new owner input SHALL highlight its actual source for one second.
 Missing origin data SHALL NOT become a guessed device.

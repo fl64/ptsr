@@ -342,6 +342,42 @@ Step 5.2 review boundaries after implementation:
 - Connection counter exhaustion: closed by `connection_ids_never_wrap_or_reuse_an_exhausted_counter`.
 - Live controller checks and visible compact labels: open, outside step 5.2 verification.
 
+Step 5.3 keeps the common status at the top on every screen, including screen learning.
+The owner chose this layout after review of the previous learning header, which replaced the status except for save state.
+The approved scope now also includes `specs/midi-learn/spec.md`. No learning action, binding or save rule changes.
+The owner authorized completion of 87 and publication of its branch and PR. Merge and archive remain unauthorized.
+
+Keep existing Status snapshots and draw entry points compatible. A separate feedback snapshot supplies sources and recording elapsed time.
+The production frame passes it through one shared draw entry point, with optional graphics collection.
+Build input labels from the connection model, never the last MIDI debug line.
+List KB first, then connected ports in name order. Prefix each port with M1, M2 and so on within that current list.
+Full labels retain the actual port. Compact labels retain distinct M numbers. An active source has a visible arrow and cyan emphasis.
+Label numbers can change when the connected list changes. Match highlights by connection identity, not the label number.
+Replace control characters in status labels with spaces. Keep complete original origins in message history.
+
+Try full content first. Remove project, then optional audio details, then shorten input names and finally input detail.
+Use compact spacing before dropping safety indicators. Preserve the full no-key-releases phrase.
+If extreme counters compete, retain a truthful nonzero-xrun marker and REC without its elapsed detail.
+No label can exceed the status row. Tiny unsupported widths can clip. Both supported sizes must retain the applicable safety indicators.
+Keep recording elapsed time and source expiry independent of notices. Do not change audio work or input routing.
+
+Learning uses the existing three-row help band: selected context, pending/refusal or layer detail, then next-step controls.
+Shorten long context and detail by grapheme width. Keep the next-step controls on their own row.
+The title retains its LEARN badge. The grid, notice and all screen rows keep their positions.
+The existing learning lines remain available to behavior tests. Drawing uses a structured snapshot from the same learning state.
+
+Step 5.3 review boundaries after implementation:
+- Long equal prefixes, Unicode and control characters: closed by `status_width_removes_project_then_audio_then_input` and `narrow_status_retains_safety_indicators`.
+- Source expiry, disconnect and reconnect: closed by `source_labels_follow_identity_when_port_numbers_change` and existing 5.2 connection tests.
+- Simultaneous recording, save refusal, audio loss, nonzero xruns and no key releases: closed at both supported widths, including maximum counters.
+- Pending learning, refusal, cancellation and saved assignments: closed by the production-input learning tests. Existing confirmation and clear tests remain unchanged.
+- Refusal versus other-layer colour: the former uses magenta. The latter stays dim. Bounded drawing and structured snapshots retain that distinction.
+- Effective learning keys and the Files exception without parameter selection: closed by `learning_footer_follows_real_controls`.
+- Clear after a refused control: the same test first exposed stale refusal text. The view now follows current confirmation priority without changing learning state.
+- Five screens, F1, questions and project picker: closed by drawing tests. Learning preserves all screen rows outside its help band.
+- Physical controls, real kitty composition and listening: open, outside automated verification.
+- Callback maximum budget: open. This check reports wall max 96.25%, thread CPU max 46.40%, and one wall sample above 50%.
+
 ### 7. Show only real answers
 
 Keep each question's existing action, text, target and keyboard answers.

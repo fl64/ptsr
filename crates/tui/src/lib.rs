@@ -60,8 +60,8 @@ impl SaveStatus {
     fn spans(self) -> Vec<Span<'static>> {
         match self {
             Self::Clean => Vec::new(),
-            Self::Unsaved => vec![" Unsaved ·".fg(AMBER).bg(BG)],
-            Self::Failed => vec![" Save failed ·".fg(MAGENTA).bg(BG).bold()],
+            Self::Unsaved => vec!["Unsaved".fg(AMBER).bg(BG)],
+            Self::Failed => vec!["Save failed".fg(MAGENTA).bg(BG).bold()],
         }
     }
 }
@@ -111,6 +111,30 @@ impl<'a> NoticeLine<'a> {
     pub fn plain(text: &'a str) -> Self {
         Self { text, level: None }
     }
+}
+
+/// One actual source, with a distinct compact label and original connection activity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputSource {
+    pub normal: String,
+    pub compact: String,
+    pub active: bool,
+}
+
+/// Dynamic feedback from the application, independent of legacy screen snapshots.
+#[derive(Default)]
+pub struct Feedback {
+    pub inputs: Vec<InputSource>,
+    pub recording_seconds: Option<u64>,
+}
+
+/// Learning context and working controls in the fixed help band.
+#[derive(Default)]
+pub struct Learning {
+    pub context: String,
+    pub detail: String,
+    pub controls: String,
+    pub warning: bool,
 }
 
 /// Shared title and status snapshot.
@@ -511,13 +535,12 @@ pub struct Help<'a> {
     pub full: Option<FullHelp<'a>>,
     /// A question that waits for Enter or Esc (overwrite pads?), line by line.
     pub question: Option<&'a [String]>,
-    /// The learn mode in words (52): the first line takes the top of the screen, the rest
-    /// the help band.
-    pub learn: Option<&'a [String]>,
+    /// Learning context, detail and working controls in the fixed help band.
+    pub learn: Option<&'a Learning>,
 }
 
 pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
-    draw_inner(frame, s, screen, help, None);
+    draw_inner(frame, s, screen, help, &Feedback::default(), None);
 }
 
 /// An applied parameter result. Numeric positions use the parameter's existing range.
@@ -648,7 +671,19 @@ pub fn draw_gfx(
     help: &Help,
     images: &mut Vec<WaveImage>,
 ) {
-    draw_inner(frame, s, screen, help, Some(images));
+    draw_inner(frame, s, screen, help, &Feedback::default(), Some(images));
+}
+
+/// The production screen and its shared feedback, with optional wave images.
+pub fn draw_feedback(
+    frame: &mut Frame,
+    s: &Status,
+    screen: &Screen,
+    help: &Help,
+    feedback: &Feedback,
+    images: Option<&mut Vec<WaveImage>>,
+) {
+    draw_inner(frame, s, screen, help, feedback, images);
 }
 
 fn draw_inner(
@@ -656,6 +691,7 @@ fn draw_inner(
     s: &Status,
     screen: &Screen,
     help: &Help,
+    feedback: &Feedback,
     images: Option<&mut Vec<WaveImage>>,
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
@@ -668,20 +704,7 @@ fn draw_inner(
     ])
     .areas(frame.area());
 
-    match help.learn {
-        Some(lines) => {
-            let mut spans = s.save.spans();
-            spans.push(Span::styled(
-                lines.first().cloned().unwrap_or_default(),
-                Style::new().fg(BG).bg(MAGENTA).bold(),
-            ));
-            frame.render_widget(
-                Line::from(spans).style(Style::new().fg(BG).bg(MAGENTA).bold()),
-                top,
-            );
-        }
-        None => frame.render_widget(status_line(s), top),
-    }
+    frame.render_widget(status_line_at(s, feedback, top.width), top);
     let pickup = match screen {
         Screen::Fx(f) => f.pickup.as_deref(),
         _ => None,
@@ -715,13 +738,17 @@ fn draw_inner(
         Screen::Chop(c) => chop(frame, body, c, s, images),
     }
     match help.learn {
-        Some(lines) => {
-            let rest: Vec<Line> = lines
-                .iter()
-                .skip(1)
-                .map(|l| Line::from(l.clone()))
-                .collect();
-            frame.render_widget(Paragraph::new(rest), help_area);
+        Some(learn) => {
+            frame.render_widget(Block::new().bg(PANEL), help_area);
+            let lines = [
+                Line::from(clip_label(&learn.context, help_area.width as usize))
+                    .fg(MARK)
+                    .bold(),
+                Line::from(clip_label(&learn.detail, help_area.width as usize))
+                    .fg(if learn.warning { MAGENTA } else { DIM }),
+                Line::from(clip_label(&learn.controls, help_area.width as usize)).fg(CYAN),
+            ];
+            frame.render_widget(Paragraph::new(lines.to_vec()), help_area);
         }
         None => frame.render_widget(Paragraph::new(help_rows), help_area),
     }
@@ -2993,51 +3020,141 @@ fn meter(level: f32) -> Span<'static> {
 }
 
 /// The status marker of a terminal without key releases, in the owner's words (68).
-const NO_RELEASES: &str = " · no key releases: gate pads play one-shot";
+const NO_RELEASES: &str = "no key releases: gate pads play one-shot";
 
-fn status_line(s: &Status) -> Line<'static> {
-    let Some(backend) = s.backend else {
-        let mut line = s.save.spans();
-        if s.recording {
-            line.push(" ● rec ".fg(MAGENTA).bold());
+/// Clip at grapheme boundaries within a terminal-cell budget. Labels cannot inject rows or controls.
+fn clip_label(text: &str, width: usize) -> String {
+    let text: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let span = Span::raw(text.as_str());
+    if span.width() <= width {
+        return text;
+    }
+    let mut clipped = String::new();
+    let mut used = 0;
+    for grapheme in span.styled_graphemes(Style::default()) {
+        let cells = Span::raw(grapheme.symbol).width();
+        if used + cells > width.saturating_sub(1) {
+            break;
         }
-        line.push(" ○ no audio".fg(MAGENTA));
-        if s.no_releases {
-            line.push(NO_RELEASES.fg(DIM));
+        clipped.push_str(grapheme.symbol);
+        used += cells;
+    }
+    if width > 0 {
+        clipped.push('…');
+    }
+    clipped
+}
+
+fn status_inputs(inputs: &[InputSource], stage: u8) -> Vec<Span<'static>> {
+    if stage >= 6 {
+        return Vec::new();
+    }
+    if inputs.is_empty() {
+        return vec!["KB".fg(DIM)];
+    }
+    let mut spans = Vec::new();
+    let mut omitted = 0;
+    for (i, input) in inputs.iter().enumerate() {
+        if stage == 5 && i > 0 && !input.active {
+            omitted += 1;
+            continue;
         }
-        if let Some(name) = s.project {
-            line.push(Span::from(format!(" · {name}")));
+        if !spans.is_empty() {
+            spans.push(" ".into());
         }
-        return Line::from(line);
-    };
-    let ms = s.buffer_size as f32 / s.sample_rate.max(1) as f32 * 1000.0;
-    let size = if s.buffer_size == 0 {
-        "auto".to_string()
-    } else {
-        s.buffer_size.to_string()
-    };
-    let xruns = Span::from(format!("xruns {}", s.xruns));
-    let mut spans = s.save.spans();
+        let label = match stage {
+            0..=2 => clip_label(&input.normal, usize::MAX),
+            3 => clip_label(&input.normal, 18),
+            _ => clip_label(&input.compact, usize::MAX),
+        };
+        let span = Span::raw(format!("{}{label}", if input.active { "▸" } else { "" }));
+        spans.push(if input.active {
+            span.fg(CYAN).bold()
+        } else {
+            span.fg(DIM)
+        });
+    }
+    if omitted > 0 {
+        spans.push(format!(" +{omitted}").fg(DIM));
+    }
+    spans
+}
+
+fn status_candidate(s: &Status, feedback: &Feedback, stage: u8) -> Line<'static> {
+    let full_audio = stage < 2;
+    let brief = stage >= 7;
+    let mut segments = Vec::new();
+    segments.push(s.save.spans());
     if s.recording {
-        spans.push(" ● rec ".fg(MAGENTA).bold());
+        let text = match feedback.recording_seconds {
+            Some(seconds) if !brief => format!("rec {seconds}s"),
+            _ => "rec".into(),
+        };
+        segments.push(vec![text.fg(MAGENTA).bold()]);
     }
-    spans.push(" ● ".fg(CYAN));
-    spans.push(Span::from(format!(
-        "{backend} {size} @ {} Hz · {ms:.1} ms · CPU {:.0} % · master {:+} dB · ",
-        s.sample_rate, s.load_peak, s.master_db
-    )));
-    spans.push(if s.xruns > 0 {
-        xruns.fg(MAGENTA).bold()
-    } else {
-        xruns
-    });
+    segments.push(status_inputs(&feedback.inputs, stage));
+    match s.backend {
+        None => segments.push(vec!["no audio".fg(MAGENTA).bold()]),
+        Some(backend) if full_audio => {
+            let ms = s.buffer_size as f32 / s.sample_rate.max(1) as f32 * 1000.0;
+            let size = if s.buffer_size == 0 {
+                "auto".into()
+            } else {
+                s.buffer_size.to_string()
+            };
+            segments.push(vec![Span::raw(format!(
+                "{backend} {size} @ {} Hz · {ms:.1} ms · CPU {:.0} % · master {:+} dB",
+                s.sample_rate, s.load_peak, s.master_db
+            ))]);
+        }
+        _ => {}
+    }
+    if s.xruns > 0 {
+        let text = if brief {
+            "xruns >0".into()
+        } else {
+            format!("xruns {}", s.xruns)
+        };
+        segments.push(vec![text.fg(MAGENTA).bold()]);
+    } else if full_audio {
+        segments.push(vec!["xruns 0".into()]);
+    }
     if s.no_releases {
-        spans.push(NO_RELEASES.fg(DIM));
+        segments.push(vec![NO_RELEASES.fg(DIM)]);
     }
-    if let Some(name) = s.project {
-        spans.push(Span::from(format!(" · {name}")));
+    if stage == 0
+        && let Some(project) = s.project
+    {
+        segments.push(vec![Span::raw(clip_label(project, usize::MAX))]);
+    }
+    let separator = if stage < 3 { " · " } else { " " };
+    let mut spans = Vec::new();
+    for segment in segments.into_iter().filter(|segment| !segment.is_empty()) {
+        if !spans.is_empty() {
+            spans.push(separator.fg(DIM));
+        }
+        spans.extend(segment);
     }
     Line::from(spans)
+}
+
+fn status_line_at(s: &Status, feedback: &Feedback, width: u16) -> Line<'static> {
+    for stage in 0..=7 {
+        let line = status_candidate(s, feedback, stage);
+        if line.width() <= width as usize {
+            return line;
+        }
+    }
+    // Only unsupported tiny terminals can truncate the minimum safety line.
+    status_candidate(s, feedback, 7)
+}
+
+#[cfg(test)]
+fn status_line(s: &Status) -> Line<'static> {
+    status_line_at(s, &Feedback::default(), u16::MAX)
 }
 
 /// A key cap: bright text on the border gray, so the key stands apart from what it does
@@ -7535,34 +7652,16 @@ mod tests {
     #[test]
     fn a_save_failure_stays_visible_after_its_notice() {
         let wave = [0.1; 400];
-        let screens = [
-            Screen::Pads(idle_pads()),
-            Screen::Files(Files {
-                dir: "~/Music",
-                entries: vec![("kick.wav", false, false)],
-                selected: 0,
-                in_hand: None,
-                error: None,
-                pads: idle_pads(),
-                filter: "",
-                editing: false,
-                preview: None,
-                playhead: None,
-            }),
-            Screen::Chop(Box::new(chop_demo(&wave))),
-            Screen::Fx(shared_fx()),
-            Screen::Settings(settings_view(0, 0)),
-            Screen::ProjectPicker(ProjectPickerView {
-                entries: vec!["beat".into()],
-                selected: 0,
-                naming: Some("new".into()),
-            }),
-        ];
+        let screens = status_screens(&wave);
         let groups = [HelpGroup {
             name: "CHECK",
             items: vec![("F1".into(), "help".into())],
         }];
-        let learn = ["LEARN · select an action".into(), "Esc: cancel".into()];
+        let learn = Learning {
+            context: "LEARN · select an action".into(),
+            controls: "Esc: cancel".into(),
+            ..Learning::default()
+        };
         let full = [("F1".into(), "close help".into())];
         let question = ["Keep the current pads?".into(), "Esc: cancel".into()];
         for (w, h) in [(60, 24), (100, 26), (252, 60)] {
@@ -7575,7 +7674,7 @@ mod tests {
                                 hint: Some("normal hint"),
                                 full: (mode == 1).then_some(FullHelp::Keys(full.as_slice())),
                                 question: (mode == 2).then_some(question.as_slice()),
-                                learn: (mode == 3).then_some(learn.as_slice()),
+                                learn: (mode == 3).then_some(&learn),
                             };
                             let mut status = status_at(128, 0);
                             status.backend = backend;
@@ -7613,12 +7712,246 @@ mod tests {
                                     &baseline.content()[w as usize..],
                                     "body, notices and help do not move"
                                 );
+                                assert!(top.contains("rec"));
+                                assert_eq!(buffer[(w - 1, 0)].bg, BG);
                                 if mode == 3 {
-                                    assert!(top.contains("LEARN · select an action"));
-                                    assert_eq!(buffer[(w - 1, 0)].bg, MAGENTA);
-                                } else {
-                                    assert!(top.contains("rec"));
+                                    let learning: String = (0..w)
+                                        .map(|x| buffer[(x, h - HELP_ROWS)].symbol())
+                                        .collect();
+                                    assert!(
+                                        learning.contains("LEARN · select an action"),
+                                        "{learning}"
+                                    );
+                                    assert!(!top.contains("LEARN"));
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn status_screens(wave: &[f32]) -> [Screen<'_>; 6] {
+        [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+            Screen::ProjectPicker(ProjectPickerView {
+                entries: vec!["beat".into()],
+                selected: 0,
+                naming: Some("new".into()),
+            }),
+        ]
+    }
+
+    fn status_text(line: Line<'_>) -> String {
+        line.spans.into_iter().map(|span| span.content).collect()
+    }
+
+    fn status_sources() -> Feedback {
+        Feedback {
+            inputs: vec![
+                InputSource {
+                    normal: "KB".into(),
+                    compact: "KB".into(),
+                    active: false,
+                },
+                InputSource {
+                    normal: format!("M1:{}\n\u{1b}音", "same long port ".repeat(8)),
+                    compact: "M1".into(),
+                    active: false,
+                },
+                InputSource {
+                    normal: format!("M2:{}e\u{301}", "same long port ".repeat(8)),
+                    compact: "M2".into(),
+                    active: true,
+                },
+            ],
+            recording_seconds: Some(12),
+        }
+    }
+
+    /// Scenario "Narrow status retains safety indicators".
+    #[test]
+    fn narrow_status_retains_safety_indicators() {
+        for width in [80, 120] {
+            for backend in [None, Some("jack")] {
+                for save in [SaveStatus::Unsaved, SaveStatus::Failed] {
+                    for xruns in [0, 3, u64::MAX] {
+                        for seconds in [12, u64::MAX] {
+                            let mut status = status_at(128, xruns);
+                            status.save = save;
+                            status.backend = backend;
+                            status.no_releases = true;
+                            status.recording = true;
+                            status.project = Some(
+                                "a project name far too long to keep ahead of safety indicators",
+                            );
+                            let mut feedback = status_sources();
+                            feedback.recording_seconds = Some(seconds);
+                            let original = feedback.inputs.clone();
+                            let line = status_line_at(&status, &feedback, width);
+                            assert!(
+                                line.width() <= width as usize,
+                                "{}",
+                                status_text(line.clone())
+                            );
+                            let text = status_text(line);
+                            assert!(
+                                text.contains(if save == SaveStatus::Failed {
+                                    "Save failed"
+                                } else {
+                                    "Unsaved"
+                                }),
+                                "{text}"
+                            );
+                            assert!(text.contains("rec"), "{text}");
+                            assert!(text.contains(NO_RELEASES), "{text}");
+                            assert_eq!(text.contains("no audio"), backend.is_none(), "{text}");
+                            if xruns > 0 {
+                                assert!(text.contains("xruns"), "{text}");
+                            }
+                            assert!(!text.contains(status.project.unwrap()), "{text}");
+                            assert!(!text.chars().any(char::is_control), "{text:?}");
+                            assert_eq!(
+                                feedback.inputs, original,
+                                "compaction does not rewrite history origins"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn status_width_removes_project_then_audio_then_input() {
+        let mut status = status_at(128, 3);
+        status.project = Some("session with a full name");
+        let feedback = status_sources();
+        let full = status_candidate(&status, &feedback, 0);
+        assert!(
+            status_text(status_line_at(&status, &feedback, full.width() as u16))
+                .contains(status.project.unwrap())
+        );
+        let audio = status_candidate(&status, &feedback, 1);
+        let text = status_text(status_line_at(&status, &feedback, audio.width() as u16));
+        assert!(!text.contains(status.project.unwrap()), "{text}");
+        assert!(text.contains("CPU"), "{text}");
+        assert!(text.contains("same long port"), "{text}");
+        let input = status_candidate(&status, &feedback, 2);
+        let text = status_text(status_line_at(&status, &feedback, input.width() as u16));
+        assert!(!text.contains("CPU"), "{text}");
+        assert!(text.contains("same long port"), "{text}");
+        let compact = status_candidate(&status, &feedback, 4);
+        let text = status_text(status_line_at(&status, &feedback, compact.width() as u16));
+        assert!(
+            text.contains("KB") && text.contains("M1") && text.contains("▸M2"),
+            "{text}"
+        );
+        assert!(!text.contains("same long port"), "{text}");
+        assert!(text.contains("xruns 3"), "{text}");
+        for width in 0..20 {
+            let label = clip_label("音e\u{301}🎚️\n\t\u{1b}name", width);
+            assert!(Span::raw(&label).width() <= width, "{width}: {label}");
+            assert!(!label.chars().any(char::is_control));
+            assert!(!label.starts_with('\u{301}'));
+        }
+    }
+
+    /// Scenario "Learning keeps safety and next steps visible".
+    #[test]
+    fn learning_keeps_safety_and_next_steps_visible() {
+        let wave = [0.1; 400];
+        for warning in [false, true] {
+            let learning = Learning {
+                context: format!("LEARN · 音{}", "very long parameter ".repeat(12)),
+                detail: "Another-layer control stays unchanged".into(),
+                controls: "Enter bind · Esc keep · F10 done".into(),
+                warning,
+            };
+            let keys = [("F1".into(), "close".into())];
+            let question = ["Keep work?".into(), "Esc cancel".into()];
+            let entries = [];
+            let feedback = status_sources();
+            for (width, height) in [(80, 26), (120, 40)] {
+                for backend in [None, Some("jack")] {
+                    for screen in status_screens(&wave) {
+                        let mut status = status_at(128, 3);
+                        status.save = SaveStatus::Failed;
+                        status.backend = backend;
+                        status.recording = true;
+                        status.no_releases = true;
+                        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                        let mut help = Help {
+                            groups: &[],
+                            hint: None,
+                            full: None,
+                            question: None,
+                            learn: None,
+                        };
+                        term.draw(|frame| {
+                            draw_feedback(frame, &status, &screen, &help, &feedback, None)
+                        })
+                        .unwrap();
+                        let baseline = term.backend().buffer().clone();
+                        for mode in 0..4 {
+                            help.learn = (mode == 0).then_some(&learning);
+                            help.full = match mode {
+                                1 => Some(FullHelp::Keys(&keys)),
+                                2 => Some(FullHelp::Messages {
+                                    entries: &entries,
+                                    scroll: 0,
+                                }),
+                                _ => None,
+                            };
+                            help.question = (mode == 3).then_some(question.as_slice());
+                            term.draw(|frame| {
+                                draw_feedback(frame, &status, &screen, &help, &feedback, None)
+                            })
+                            .unwrap();
+                            let buffer = term.backend().buffer();
+                            assert_eq!(
+                                &buffer.content()[..width as usize],
+                                &baseline.content()[..width as usize],
+                                "all overlays retain the same safety status"
+                            );
+                            let row = |y| {
+                                (0..width)
+                                    .map(|x| buffer[(x, y)].symbol())
+                                    .collect::<String>()
+                            };
+                            let top = row(0);
+                            for text in ["Save failed", "rec", "xruns 3", NO_RELEASES] {
+                                assert!(top.contains(text), "{width}x{height}: {top}");
+                            }
+                            if mode == 0 {
+                                assert!(row(height - 3).starts_with("LEARN"));
+                                assert!(row(height - 1).contains(&learning.controls));
+                                assert_eq!(
+                                    buffer[(0, height - 2)].fg,
+                                    if warning { MAGENTA } else { DIM }
+                                );
+                                let end = width as usize * (height - 4) as usize;
+                                assert_eq!(
+                                    &buffer.content()[width as usize..end],
+                                    &baseline.content()[width as usize..end],
+                                    "learning does not move or repaint screen rows"
+                                );
                             }
                         }
                     }
