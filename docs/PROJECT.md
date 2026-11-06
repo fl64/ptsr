@@ -107,6 +107,7 @@ Documentation now links catalogue files and separate keyboard, controller, graph
 Overall manual acceptance remains open.
 Other manual keyboard, physical-controller and listening checks remain unverified.
 The owner authorized completion and PR publication of 87, but not merge or archive.
+[PR #10](https://github.com/fl64/ptsr/pull/10) is open in draft. Manual acceptance and callback maximum-budget limits remain open.
 Activate only one change at a time. Publication of other changes needs a separate request.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 

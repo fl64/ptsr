@@ -429,6 +429,10 @@ Final check evidence (7.2):
 - No live sampler, physical-controller, kitty-composition or listening result comes from these automated checks.
 - Overall manual acceptance remains open. The authorized PR stays in draft. Merge and archive remain unauthorized.
 - [ ] 7.4 Archive only after owner acceptance and main-spec scenario coverage. Merge and archive need separate owner authorization.
-- [ ] 7.5 Publish the verified branch and open its PR to master. Keep the PR in draft while manual acceptance and callback-budget limits remain open.
+- [x] 7.5 Publish the verified branch and open its PR to master. Keep the PR in draft while manual acceptance and callback-budget limits remain open.
+
+[PR #10](https://github.com/fl64/ptsr/pull/10) targets master and stays in draft.
+The saved title, body and exact head match the local branch. The remote `Change names` check passes.
+Manual acceptance and callback maximum-budget failures remain open. No merge or archive occurs.
 
 The owner authorized completion through PR publication. This does not authorize merge, archive, deferred 87a or callback correction.

@@ -27,7 +27,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-05)
+## Current status (2026-11-06)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -122,6 +122,7 @@ not permission to combine the new changes.
   Other manual keyboard, physical-controller and listening checks remain unverified.
   Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
   The owner authorized completion and PR publication of 87, but not merge or archive.
+  [PR #10](https://github.com/fl64/ptsr/pull/10) is open in draft. Manual acceptance and callback maximum-budget limits remain open.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

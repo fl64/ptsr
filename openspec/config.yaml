@@ -81,6 +81,7 @@ context: |
   Overall manual acceptance remains open.
   Other manual keyboard, physical-controller and listening checks remain unverified.
   The owner authorized completion and PR publication of 87, but not merge or archive.
+  PR #10 is open in draft: https://github.com/fl64/ptsr/pull/10. Manual acceptance and callback maximum-budget limits remain open.
   Yellow now identifies pad modes, not only marking. Marking still sounds.
   Manual save success keeps five seconds. Persistent Save failed stays until saving succeeds.
   Generic controller confirmation remains in 88. Sound, factory bindings and saved formats stay unchanged.
