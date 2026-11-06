@@ -4392,7 +4392,7 @@ mod tests {
     }
 
     #[test]
-    fn every_notice_level_has_a_non_color_cue() {
+    fn notice_appearance_identifies_its_level() {
         for (w, h) in [(80, 26), (120, 40)] {
             let mut status = status_at(128, 0);
             let (_, help) = chop_status();

@@ -386,7 +386,19 @@ Step 6.3 verification:
 - No live audio or MIDI device opened. Sound, bindings, saved formats and dependencies stay unchanged. No new WAV. Deferred 87a stays unchanged.
 - Real kitty, hardware and listening checks remain unverified. Earlier callback maximum-budget failures remain unresolved.
 
-- [ ] 6.4 Check every delta scenario against a named test. Run shared scenarios with keyboard and raw MIDI through actual profiles and dispatch.
+- [x] 6.4 Check every delta scenario against a named test. Run shared scenarios with keyboard and raw MIDI through actual profiles and dispatch.
+
+Step 6.4 verification:
+- All 86 active scenarios now have a normalized test name or an exact scenario description attached to a test declaration.
+- The new audit rejects helper mentions and orphan descriptions. It keeps the existing main-spec coverage and stale-exemption checks.
+- Its first run reported five missing associations. Explicit names now connect existing appearance, startup and acknowledgement checks. Their assertions remain.
+- The input-prompt regression now covers names, filters and project text through nine keyboard, raw-note and learned-button runs.
+- Background loader errors stay hidden and enter history once. Keyboard pad keys type silently. Direct MIDI keeps its existing route and cannot type or acknowledge an unseen Error.
+- Closing input reveals the Error. The next value action acknowledges it and changes the value exactly once. Its normal Info result can appear afterward.
+- The final `task check` exits 0: 762 App, 81 input, 126 drawing and 21 notice-model tests pass. All three scenario-audit tests pass.
+- `task build` passes in 22.21 s. Strict OpenSpec passes all 16 items. `task screens` retains 306 files and repeatable bytes.
+- The final benchmark reports one steady block above 50%: wall maximum 58.55% and thread CPU maximum 58.60%. Its p99 exit checks pass. The cause remains unknown.
+- Production behavior, bindings, formats, dependencies, sound and deferred 87a stay unchanged. No live devices or new WAV. Manual acceptance and callback maximum-budget failures remain open.
 
 ## 7. Handover and acceptance
 

@@ -2298,7 +2298,7 @@ impl Drive {
 
 /// Scenario "Startup acknowledgement retains its exceptions".
 #[test]
-fn startup_acknowledgement_retains_its_exceptions() {
+fn startup_warnings_enter_history_once() {
     let mut drive = Drive::new();
     drive.app.add_keymap_warnings(vec![
         "first keymap warning".into(),
@@ -2429,8 +2429,9 @@ fn device_notices_retain_the_actual_event_source() {
     assert_eq!(drive.last_notice().level, Level::Info);
 }
 
+/// Scenario "Background and release events cannot dismiss errors".
 #[test]
-fn notice_errors_require_a_displayed_new_owner_input() {
+fn owner_acknowledgement_keeps_the_original_action() {
     let mut drive = Drive::new();
     drive.bind_action(88, "bank.next");
     drive
@@ -2589,28 +2590,120 @@ fn notice_loading_state_follows_the_project_generation() {
 }
 
 #[test]
-fn notice_errors_stay_pending_behind_real_text_input() {
-    let mut drive = Drive::new();
-    drive.tap(KeyCode::F(6), M::NONE);
-    drive.tap(KeyCode::Char('/'), M::NONE);
-    assert!(drive.app.browser.editing);
-    drive.app.loader_reply(loader::Reply::Failed {
-        pad: PREVIEW,
-        generation: drive.app.load_gen[PREVIEW],
-        path: PathBuf::from("/recorded/missing.wav"),
-        error: "read refused".into(),
-    });
-    drive.frame();
-    assert!(drive.app.notices.current().is_none());
-    assert_eq!(drive.last_notice().origin, Origin::System);
-    drive.tap(KeyCode::Char('a'), M::NONE);
-    assert!(drive.app.browser.filter.contains('a'));
-    assert!(drive.app.notices.current().is_none());
-    drive.tap(KeyCode::Esc, M::NONE);
-    assert!(!drive.app.browser.editing);
-    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
-    drive.tap(KeyCode::Right, M::NONE);
-    assert!(drive.app.notices.current().is_none());
+fn input_prompts_retain_typing_priority() {
+    for context in ["name", "filter", "project"] {
+        for source in [Source::Keyboard, Source::Notes, Source::Button] {
+            let mut drive = Drive::new();
+            drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+            match context {
+                "name" => {
+                    drive.tap(KeyCode::Char('n'), M::CONTROL);
+                }
+                "filter" => {
+                    drive.tap(KeyCode::F(6), M::NONE);
+                    drive.tap(KeyCode::Char('/'), M::NONE);
+                }
+                "project" => {
+                    drive.app.paths.projects = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../target/87-no-project-root");
+                    drive.tap(KeyCode::Char('p'), M::CONTROL);
+                    drive.tap(KeyCode::Char('q'), M::NONE);
+                }
+                _ => unreachable!(),
+            }
+            let text = |drive: &Drive| match context {
+                "name" => drive.app.pad_naming.as_ref().unwrap().1.clone(),
+                "filter" => drive.app.browser.filter.clone(),
+                "project" => drive
+                    .app
+                    .project_picker
+                    .as_ref()
+                    .unwrap()
+                    .naming
+                    .clone()
+                    .unwrap(),
+                _ => unreachable!(),
+            };
+            let before = text(&drive);
+            drive.app.loader_reply(loader::Reply::Failed {
+                pad: PREVIEW,
+                generation: drive.app.load_gen[PREVIEW],
+                path: PathBuf::from("/recorded/missing.wav"),
+                error: "read refused".into(),
+            });
+            drive.frame();
+            let error = drive.last_notice().text.clone();
+            assert!(drive.app.notices.current().is_none());
+            assert_eq!(drive.last_notice().origin, Origin::System);
+            let hit = drive.pad_press(source, 4);
+            if matches!(source, Source::Keyboard) {
+                if context == "filter" {
+                    assert!(matches!(
+                        hit.commands()[..],
+                        [Command::Preview {
+                            sound: None,
+                            region: Region::WHOLE
+                        }]
+                    ));
+                } else {
+                    assert!(hit.commands().is_empty(), "typing is silent");
+                }
+                assert_eq!(text(&drive), format!("{before}q"));
+            } else {
+                assert_full_hit(&hit, 4);
+                assert_eq!(
+                    text(&drive),
+                    before,
+                    "direct MIDI keeps its existing route, not a fake text path"
+                );
+            }
+            assert_only_release(&drive.pad_release(source, 4), 4);
+            assert!(
+                drive.app.notices.current().is_none(),
+                "the hidden Error was not acknowledged"
+            );
+            assert_eq!(
+                drive
+                    .app
+                    .notices
+                    .history()
+                    .iter()
+                    .filter(|notice| notice.text == error)
+                    .count(),
+                1
+            );
+            drive.tap(KeyCode::Esc, M::NONE);
+            if context == "project" {
+                drive.tap(KeyCode::Esc, M::NONE);
+            }
+            assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+            let selected = drive.app.pads.selected;
+            let volume = drive.app.pads.volume_db[selected];
+            drive.tap(KeyCode::Right, M::NONE);
+            assert_ne!(
+                drive
+                    .app
+                    .notices
+                    .current()
+                    .map(|notice| notice.text.as_str()),
+                Some(error.as_str()),
+                "{context} {source:?}: the shown Error must end"
+            );
+            if context == "filter" {
+                assert!(!drive.app.browser.editing);
+                assert!(drive.app.notices.current().is_none());
+            } else {
+                let result = drive.app.notices.current().unwrap();
+                assert_eq!(result.level, Level::Info);
+                assert_eq!(result.origin, Origin::Keyboard);
+                assert_eq!(
+                    drive.app.pads.volume_db[selected],
+                    volume + 1,
+                    "acknowledgement must not consume the value step"
+                );
+            }
+        }
+    }
 }
 
 /// Scenario "F1 navigation stays inside the overlay".

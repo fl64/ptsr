@@ -514,6 +514,17 @@ The owner approved these choices after the specification review:
 
 This approval implies no hardware result, listening result or callback maximum-budget acceptance.
 
+## Active-delta coverage audit
+
+The coverage check keeps the existing main-spec and `untested.md` checks.
+A separate check reads each active change, not archived or deferred changes. It requires a normalized test name or an exact scenario name in the description attached to a plain `#[test]` declaration.
+A mention in an unrelated helper body does not establish coverage. The check locates tests. Review of their assertions still establishes what they cover.
+The first audit found five missing associations. Existing notice, startup and acknowledgement tests cover four of them after explicit naming.
+The text-input regression now covers pad names, the file filter and project naming with keyboard, recorded MIDI notes and learned buttons.
+Keyboard pad keys type without a hit. Direct MIDI keeps its existing sound route and does not type text or acknowledge an unseen Error.
+Closing text reveals the retained Error. A new action acknowledges it without losing its normal result. A volume action can produce its own Info notice.
+No production input, sound or persistence code changes in this audit.
+
 ## Open questions
 
 None for preparation, title badges, pad feedback or the step 4.1 model. The owner approved each file plan before implementation.
