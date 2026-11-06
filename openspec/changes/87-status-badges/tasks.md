@@ -108,6 +108,23 @@ Keep F1 navigation, value popups, the shared input indicator, sound, factory bin
 - [x] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
 - [ ] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
 
+The owner approved thirteen files for step 4.4:
+application main, dispatch, views, notices, input tests and a new `crates/app/src/help.rs`, plus the drawing crate.
+The six artifact files are design, this task list, the screen-help delta, project status, plan status and OpenSpec context.
+Record the scrolling defaults before code. First add a production-keyboard regression for Tab behind open help.
+Preserve higher-priority input, learned help controls and existing keyboard/raw-MIDI pad routes.
+Test empty and latest-50 history, origins, wrapped Unicode, new results, resize, repeat and close/reopen behavior.
+Compare saved work, project identity, undo and sound commands across local navigation.
+Run `task check`, `task build`, `task openspec:check` and English checks before the implementation commit.
+Do not change sound, bindings, dependencies, saved formats, deferred copy names or the later kitty-overlay scope.
+
+Source verification before 4.4 found reused executables from the separate 87a worktree in the shared target directory.
+That first run does not establish this branch's results. The acceptance record commit contains no code change.
+After package cleanup, the current sources pass `task check`: 711 App, 81 input, 110 drawing and 21 notice-model tests.
+A separate Release cleanup and `task bench` compile and execute the current engine sources.
+These fresh results support the acceptance record without a history rewrite.
+Earlier callback maximum-budget failures remain unresolved. Raw build and benchmark evidence stays local.
+
 Model verification (4.1): `task check`, `task build` and `task openspec:check` pass.
 Seventeen new notice tests pass in both Debug and Release. They use controlled time without sleeps or live devices.
 The existing suites pass: 701 App, 80 input, 109 drawing and 18 benchmark-report tests. Main-spec scenario coverage also passes.
@@ -155,7 +172,7 @@ The save notice uses five visible seconds, including interruption and the exact 
 Repeated refusals retain separate history entries without resetting the queue. Background Info and Done results cannot replace the active Error.
 Acknowledgement and later notice expiry retain pending work, read protection and the persistent write-failure status.
 Restored write access does not resume automatic or exit saves. A successful manual retry permits later silent autosave.
-Repairing protected file bytes alone does not permit saving.
+Valid file bytes alone do not permit saving.
 Extended transition tests retain source work, target bytes, picker state and typed names through repeated refusals and background notices.
 Picker confirmation keeps its keyboard path, so transition refusal results correctly record Keyboard after either picker-entry source.
 Debug tests and Release artifacts use this worktree's sources. The Release build reuses unchanged application code.

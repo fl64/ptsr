@@ -147,7 +147,7 @@ Queue removal SHALL NOT remove an entry from the separate history.
 F1 SHALL open normal help first and provide a Messages page with the latest 50 notices, newest first, including level and origin.
 History SHALL be in memory only and empty after restart.
 Messages SHALL remain readable and scrollable at both supported catalogue sizes.
-Leaving help SHALL restore its prior screen without editing work, dirtying the session or issuing sound commands.
+Leaving help SHALL reveal the underlying screen without editing work, dirtying the session or issuing sound commands.
 
 #### Scenario: F1 retains recent results in order
 - **WHEN** more than 50 notices arrive and the owner opens F1 Messages
@@ -158,6 +158,23 @@ Leaving help SHALL restore its prior screen without editing work, dirtying the s
 - **WHEN** the owner reads and closes Messages, then restarts
 - **THEN** reading did not change pads, session dirtiness, project or audio commands
 - **AND** the new process starts with no previous-process history
+
+### Requirement: F1 history view lifecycle
+
+Each opening SHALL select Help and reset the Messages position. Closing help SHALL retain history.
+Redraws SHALL NOT add entries. Long text and origins SHALL remain readable through wrapping and scrolling.
+New results SHALL appear newest first while Messages is open.
+The view SHALL retain its screen-row offset and clamp it after content or terminal size changes.
+
+#### Scenario: F1 history handles empty and changing content
+- **WHEN** the owner opens an empty Messages page, receives new results while scrolled, or resizes the terminal
+- **THEN** the page shows an empty-state label or the current history without an invalid scroll position
+- **AND** closing and reopening help selects Help and resets the Messages position without removing entries
+
+#### Scenario: Long message text remains readable
+- **WHEN** a result or its origin contains long Unicode text at 80×26 or 120×40
+- **THEN** the message frame wraps its full text and origin inside its width
+- **AND** local scrolling permits reading every screen row without changing the underlying work
 
 ### Requirement: Local F1 page controls
 
@@ -171,6 +188,23 @@ This change SHALL NOT invent a factory controller binding for history navigation
 - **WHEN** the owner changes F1 pages or scrolls Messages at either supported size
 - **THEN** the visible page and history position change without moving parameters or banks behind help
 - **AND** F1/Esc closes help while ordinary controls outside help retain their roles
+
+### Requirement: F1 navigation boundaries
+
+Up/Down SHALL move one screen row. PageUp/PageDown SHALL move one visible page.
+Page selection SHALL retain the Messages position until help closes. Scrolling SHALL stop at the content boundaries.
+Repeated F1, Esc and page-selection presses SHALL NOT act again. Repeated scrolling MAY continue. Releases SHALL NOT navigate.
+Existing input priority and unrelated keyboard and MIDI actions SHALL retain their routes.
+
+#### Scenario: F1 controls retain input priority and bindings
+- **WHEN** the owner uses local help keys with text entry, a picker, a question or learning active
+- **THEN** the existing higher-priority input state retains those keys and its existing result
+- **AND** outside those states a learned help action or an effective keyboard help binding still opens and closes help
+
+#### Scenario: Pad releases survive F1 navigation
+- **WHEN** keyboard or raw MIDI holds a pad across opening help, changing its page and closing help
+- **THEN** the original release reaches its existing pad and no extra hit or release occurs
+- **AND** new pad presses under help retain their existing production route
 
 ### Requirement: Truthful question controls
 

@@ -201,6 +201,41 @@ Tab/Shift+Tab selects Help or Messages. Up/Down and PageUp/PageDown scroll Messa
 History navigation does not edit pads, send sound commands or change session dirtiness.
 Keep existing pad releases and the effective help keys working.
 
+The owner approved the thirteen-file plan for step 4.4 before implementation.
+Keep overlay state in `crates/app/src/help.rs`. Extend the drawing snapshot for Help and Messages.
+Read the existing notice history. Do not create another queue or infer an origin from text.
+
+Local keyboard controls act only when help receives input.
+Text entry, pickers, questions and learning retain their existing priority.
+Intercept these keys before the screen keymap. Do not suppress unrelated keyboard or MIDI actions.
+A learned `help.toggle` action still opens and closes help. This step adds no controller history navigation.
+A pad press or release retains its existing route, including a pad held before help opens.
+
+Each opening selects Help and resets the Messages position to the newest result.
+Tab and Shift+Tab switch pages. Switching pages retains the Messages position until help closes.
+Up and Down move one screen row on Messages. PageUp and PageDown move one visible page.
+Wrap long text and origin labels inside the message frame. Both supported sizes must permit reading every row.
+Consume navigation at its ends instead of forwarding it to a parameter, bank or list.
+Ignore repeated F1, Esc and page-selection presses. Repeated scroll keys can continue scrolling.
+Releases do not navigate or close help.
+
+New results enter the visible history in production order, newest first.
+Keep the current screen-row offset when results arrive. Clamp it after a resize or a change of content.
+Closing help does not clear history. Only a new application instance starts without previous-process entries.
+Navigation, redraw and expiry add no history entry and change no saved work or sound command.
+Existing non-local actions can still change the underlying screen. Closing help does not undo those actions.
+The later graphics-overlay task 6.2 retains its separate kitty image checks.
+
+Review boundaries before implementation:
+
+- Tab on an open pad edit: open, keyboard dispatch and the owner's report establish the defect. Add a regression before the fix.
+- History at 0, 50 and 51 entries, long Unicode text and actual origins: open, add view and drawing tests.
+- Arrival while scrolled, terminal resize and repeated keys: open, test clamping and input boundaries.
+- Pad held across opening, page changes and closing: preserve the existing route with keyboard and raw MIDI tests.
+- Dirty work, project identity, undo and sound commands: open, compare state before and after local navigation.
+- Text, question, picker and learning priority: preserve the current production routes.
+- Real kitty composition, physical hardware and listening: outside step 4.4 verification.
+
 ### 6. Keep value and status feedback independent
 
 Use the existing one-second value highlight period for the shared value popup.
@@ -303,3 +338,9 @@ An unassigned unnamed CC keeps the existing knob interpretation. This rule makes
 Only an Error token captured by a shown frame can acknowledge that exact production.
 A replaced Error, including identical text, needs its own shown frame. Pending input cannot acknowledge a notice that never appeared.
 Keep token identity stable across queue removal and interruption. Controlled-time token tests and production keyboard/raw-MIDI tests close this boundary.
+
+### Step 4.4 scrolling default
+
+Should a scrolled history keep the same message anchored when a new result arrives?
+Default: retain its screen-row offset and clamp it to the current content.
+New results remain live and newest first. Stable message anchoring is not part of this step.
