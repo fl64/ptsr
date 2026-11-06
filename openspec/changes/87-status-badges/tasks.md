@@ -362,7 +362,17 @@ Step 6.1 verification:
 - Strict OpenSpec passes all 16 items. Revised English passes the style lint. Physical-controller acceptance, kitty composition and earlier callback maximum-budget failures remain open.
 - No new action, binding, dependency, file format, sound behavior or WAV. Deferred 87a stays unchanged.
 
-- [ ] 6.2 Protect text overlays from kitty images and restore images after dismissal or expiry. Test graphics on/off commands without real audio.
+- [x] 6.2 Protect text overlays from kitty images and restore images after dismissal or expiry. Test graphics on/off commands without real audio.
+
+Step 6.2 verification:
+- `task check` exits 0: 758 App, 81 input, 125 drawing and 21 notice-model tests pass. The current-source Release build passes in 28.83 s.
+- Exact text rectangles drive pre-frame image removal and post-frame filtering. Current wave data restores after dismissal or controlled-time expiry. Unoccluded images stay unchanged.
+- Keyboard/raw-MIDI setters, questions, F1, both supported sizes, repeated resize, source-screen changes and pixel-cell changes pass command/buffer tests. Picker geometry shares the checked body layout.
+- Graphics-off fixtures send no picture commands. Empty rectangles and touching edges do not hide a picture.
+- Production-backend byte tests prove that write/flush failures stop text output. Pending removal commands remain available for best-effort exit cleanup.
+- These checks do not prove real kitty composition. Physical-controller/listening acceptance and earlier callback maximum-budget failures remain open.
+- No sound, scheduling, binding, dependency or saved-format change. No new WAV. Deferred 87a stays unchanged.
+
 - [ ] 6.3 Add the checked screen/mode matrix and `task screens`. Render ANSI files at 120×40 and 80×26. Fail tests for missing entries or clipped required content.
 - [ ] 6.4 Check every delta scenario against a named test. Run shared scenarios with keyboard and raw MIDI through actual profiles and dispatch.
 

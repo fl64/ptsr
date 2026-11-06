@@ -626,6 +626,36 @@ pub struct Help<'a> {
     pub learn: Option<&'a Learning>,
 }
 
+fn frame_areas(area: Rect) -> [Rect; 4] {
+    Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(HELP_ROWS),
+    ])
+    .areas(area)
+}
+
+/// Text areas that must be free of pictures before the terminal writes this frame.
+pub fn overlay_areas(area: Rect, screen: &Screen, help: &Help, value: Option<&Value>) -> Vec<Rect> {
+    let [_, body, _, _] = frame_areas(area);
+    let mut overlays = Vec::new();
+    if help.full.is_some() || matches!(screen, Screen::ProjectPicker(_)) {
+        overlays.push(body);
+    }
+    if let Some(question) = help.question {
+        overlays.push(question_area(body, question));
+    }
+    if let Some(value) = value {
+        let area = value_area(area, value.position.is_some());
+        if area.width >= 3 {
+            overlays.push(area);
+        }
+    }
+    overlays.retain(|area| area.width > 0 && area.height > 0);
+    overlays
+}
+
 pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
     draw_inner(frame, s, screen, help, &Feedback::default(), None, None);
 }
@@ -805,13 +835,7 @@ fn draw_inner(
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
     let help_rows = help_lines(help.groups, frame.area().width);
-    let [top, body, notice, help_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-        Constraint::Length(HELP_ROWS),
-    ])
-    .areas(frame.area());
+    let [top, body, notice, help_area] = frame_areas(frame.area());
 
     match cache {
         Some(cache) => frame.render_widget(cache.row(s, feedback, top.width), top),
@@ -6734,6 +6758,59 @@ mod tests {
             rows.iter().any(|r| r.contains("EDIT · BOUNDS")),
             "the slice line names the edit"
         );
+    }
+
+    #[test]
+    fn overlay_rectangles_follow_the_actual_text_layout() {
+        let q = Question {
+            body: vec!["Replace the selected pad?".into()],
+            answers: vec!["KB Enter: replace · Esc: keep".into()],
+        };
+        let value = Value {
+            object: "pad 1".into(),
+            parameter: "Volume".into(),
+            formatted: "0 dB".into(),
+            position: Some(0.5),
+        };
+        let mut help = Help {
+            groups: &[],
+            hint: None,
+            full: Some(FullHelp::Keys(&[])),
+            question: Some(&q),
+            learn: None,
+        };
+        let wave = [];
+        for (width, height) in [(80, 26), (120, 40)] {
+            let terminal = Rect::new(0, 0, width, height);
+            let [_, body, _, _] = frame_areas(terminal);
+            for screen in status_screens(&wave) {
+                let areas = overlay_areas(terminal, &screen, &help, Some(&value));
+                assert_eq!(
+                    areas,
+                    vec![body, question_area(body, &q), value_area(terminal, true)]
+                );
+                assert!(
+                    areas
+                        .iter()
+                        .all(|area| terminal.intersection(*area) == *area)
+                );
+            }
+            help.full = None;
+            help.question = None;
+            for screen in status_screens(&wave) {
+                let areas = overlay_areas(terminal, &screen, &help, None);
+                assert_eq!(
+                    areas,
+                    if matches!(screen, Screen::ProjectPicker(_)) {
+                        vec![body]
+                    } else {
+                        vec![]
+                    }
+                );
+            }
+            help.full = Some(FullHelp::Keys(&[]));
+            help.question = Some(&q);
+        }
     }
 
     #[test]

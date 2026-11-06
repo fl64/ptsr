@@ -440,6 +440,24 @@ Hide or remove an intersecting image before drawing an overlay. Restore it after
 Cache unchanged badge and status content without freezing meters, value expiry, notice expiry or recording elapsed time.
 Do not change engine code or add I/O to audio processing.
 
+Step 6.2 uses shared text-overlay rectangles from the same layout as drawing.
+Before the terminal writes text, remove shown images that intersect a value popup, question, F1 frame or project picker.
+Filter desired images against those rectangles after the text frame. Restore current wave data on the first unobstructed frame, without another input.
+A UI-thread graphics state clears old image placement on screen, terminal-cell area or pixel-cell size changes.
+Keep unchanged unobstructed images and the existing alternating-image update order. Graphics off sends no image commands.
+Stop drawing on a failed pre-frame graphics write. Do not claim successful composition after an I/O failure.
+
+Step 6.2 review boundaries after implementation:
+- Expiry without input: closed by controlled-time App feedback and graphics-command tests through keyboard/raw-MIDI setters.
+- Several overlays or partial overlap: closed by exact intersection tests, including touching edges and empty areas. An intersecting image cannot appear after the text frame.
+- Questions and F1 dismissal: closed by App buffer/command tests. Picker geometry uses the same checked body rectangle.
+- Resize, screen changes and pixel-cell changes: closed by state tests that remove old placement and restore current wave data.
+- Graphics off: closed by command and buffer tests. No image commands go out. Braille remains available.
+- Write/flush failures: closed with the production terminal backend, a fixed offline viewport and recorded bytes. `try_draw` prevents text output after either failure. Exit cleanup retains pending removal commands.
+- At both sizes in these fixtures, the value panel sits above the Chop picture. That picture must not blink. A separate covering-image fixture uses the actual popup rectangle and production expiry snapshots.
+- A question can also miss the picture after resize. Tests retain that unobstructed image instead of requiring its removal.
+- Real kitty composition and physical controls: open, outside command and buffer tests.
+
 ## Risks / Trade-offs
 
 | Boundary | Required result | Status for implementation | Evidence or planned test |

@@ -3,6 +3,7 @@ mod browser;
 mod chop;
 mod config;
 mod dispatch;
+mod graphics;
 mod help;
 mod input_sources;
 mod learn;
@@ -4335,7 +4336,7 @@ fn main() -> std::io::Result<()> {
     app.pads.track_keys = kitty;
     // Braille unless the owner switched the picture on (04b): only then ask the terminal
     let graphics = app.ui.graphics && graphics_support();
-    let mut shown = tui::Shown::default();
+    let mut shown = graphics::State::default();
     let mut frame_text = view::FrameText::default();
     let mut status_text = tui::TextCache::default();
     // the startup notices live on the app: the first key event of the session clears them
@@ -4619,8 +4620,20 @@ fn main() -> std::io::Result<()> {
             learn: learn_lines.as_ref(),
         };
         let value = app.current_value_at(Instant::now());
+        let cell_px = if graphics {
+            match terminal::window_size() {
+                Ok(s) if s.columns > 0 && s.rows > 0 => (s.width / s.columns, s.height / s.rows),
+                _ => (0, 0),
+            }
+        } else {
+            (0, 0)
+        };
         let mut want = Vec::new();
-        let drawn = term.draw(|f| {
+        let mut blockers = Vec::new();
+        let drawn = term.try_draw(|f| -> std::io::Result<()> {
+            blockers = tui::overlay_areas(f.area(), &screen, &help, value);
+            let commands = shown.before(graphics, app.screen, f.area(), cell_px, &blockers);
+            graphics::send(&mut std::io::stdout(), &commands)?;
             tui::draw_cached(
                 f,
                 &status,
@@ -4633,26 +4646,15 @@ fn main() -> std::io::Result<()> {
             if let Some(value) = value {
                 tui::value_popup(f, value);
             }
+            Ok(())
         });
         if let Err(e) = drawn {
             break Err(e);
         }
-        // the pictures go out after the frame: transmit what changed, place where it sits
-        if graphics {
-            let cell_px = match terminal::window_size() {
-                Ok(s) if s.columns > 0 && s.rows > 0 => (s.width / s.columns, s.height / s.rows),
-                _ => (0, 0),
-            };
-            let cmds = shown.update(&want, cell_px);
-            if !cmds.is_empty() {
-                let mut out = std::io::stdout();
-                let sent = out
-                    .write_all(cmds.concat().as_bytes())
-                    .and_then(|_| out.flush());
-                if let Err(e) = sent {
-                    break Err(e);
-                }
-            }
+        // Only unobstructed pictures go out after the successful text frame.
+        let commands = shown.after(&mut want, &blockers);
+        if let Err(e) = graphics::send(&mut std::io::stdout(), &commands) {
+            break Err(e);
         }
 
         match event::poll(FRAME) {

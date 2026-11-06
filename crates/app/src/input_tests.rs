@@ -49,6 +49,333 @@ fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant
         .collect()
 }
 
+struct ImageFrame {
+    rows: Vec<String>,
+    before: Vec<String>,
+    after: Vec<String>,
+    blockers: Vec<ratatui::layout::Rect>,
+    images: Vec<ratatui::layout::Rect>,
+    visible_images: Vec<ratatui::layout::Rect>,
+}
+
+fn image_frame_at(
+    drive: &mut Drive,
+    state: &mut graphics::State,
+    enabled: bool,
+    size: (u16, u16),
+    now: Instant,
+) -> ImageFrame {
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = &mut drive.app;
+    app.frame_notice_at(now);
+    app.input_sources.advance(now);
+    let value = app.current_value_at(now).cloned();
+    let question = app.question_view(&drive.keymap);
+    let feedback = app.status_feedback_at(now);
+    let mut view = app.chop_display(app.chop.as_ref().unwrap());
+    if view.slice_keys.is_none() {
+        bank_waves(&mut view.pads, &mut app.pads, app.rate);
+    }
+    view.which = app.which_chop();
+    app.learn_grid(&mut view.pads.pads);
+    let screen = tui::Screen::Chop(Box::new(app.mark_chop(view, None)));
+    let status = tui::Status {
+        badges: app.title_badges_at(now),
+        save: app.save_status(),
+        backend: Some("offline"),
+        recording: false,
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: app.master_db,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: None,
+    };
+    let keys = full_help(&drive.keymap, app.screen, true);
+    let messages = app.message_history();
+    let help = tui::Help {
+        groups: &[],
+        hint: hint_for(app),
+        full: app
+            .help_open
+            .then(|| app.full_help_view(&keys, &messages))
+            .flatten(),
+        question: question.as_ref(),
+        learn: None,
+    };
+    let mut term = Terminal::new(TestBackend::new(size.0, size.1)).unwrap();
+    let mut before = Vec::new();
+    let mut want = Vec::new();
+    let mut blockers = Vec::new();
+    term.draw(|frame| {
+        blockers = tui::overlay_areas(frame.area(), &screen, &help, value.as_ref());
+        before = state.before(enabled, app.screen, frame.area(), (2, 4), &blockers);
+        tui::draw_feedback(
+            frame,
+            &status,
+            &screen,
+            &help,
+            &feedback,
+            enabled.then_some(&mut want),
+        );
+        if let Some(value) = &value {
+            tui::value_popup(frame, value);
+        }
+    })
+    .unwrap();
+    let images = want.iter().map(|image| image.area).collect();
+    let after = state.after(&mut want, &blockers);
+    let visible_images = want.iter().map(|image| image.area).collect();
+    let rows = term
+        .backend()
+        .buffer()
+        .content()
+        .chunks(size.0 as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect();
+    ImageFrame {
+        rows,
+        before,
+        after,
+        blockers,
+        images,
+        visible_images,
+    }
+}
+
+/// Scenario "A value overlay restores its wave" with real keyboard/raw-MIDI setters.
+#[test]
+fn a_value_overlay_restores_its_wave() {
+    for enabled in [false, true] {
+        for source in [Source::Keyboard, Source::Button] {
+            for size in [(80, 26), (120, 40)] {
+                let mut drive = Drive::registry_screen_checks();
+                let mut state = graphics::State::default();
+                let baseline =
+                    image_frame_at(&mut drive, &mut state, enabled, size, Instant::now());
+                assert_eq!(
+                    baseline
+                        .after
+                        .iter()
+                        .any(|command| command.contains("a=t,f=32")),
+                    enabled
+                );
+                match source {
+                    Source::Keyboard => {
+                        drive.tap(KeyCode::Char(']'), M::NONE);
+                    }
+                    _ => {
+                        value_knob(&mut drive, "master.volume", 100);
+                    }
+                }
+                let at = drive.app.value_popup.as_ref().unwrap().at;
+                let popup = image_frame_at(&mut drive, &mut state, enabled, size, at);
+                assert!(
+                    popup.rows.iter().any(|row| row.contains("volume · Master")),
+                    "{}",
+                    popup.rows.join("\n")
+                );
+                let intersects = popup
+                    .images
+                    .iter()
+                    .any(|image| popup.blockers.iter().any(|area| image.intersects(*area)));
+                assert_eq!(
+                    popup
+                        .before
+                        .iter()
+                        .any(|command| command.contains("a=d,d=i")),
+                    intersects
+                );
+                assert!(
+                    popup.after.is_empty(),
+                    "an unchanged unobstructed wave does not blink"
+                );
+                let retained = image_frame_at(
+                    &mut drive,
+                    &mut state,
+                    enabled,
+                    size,
+                    at + LIT_FOR - Duration::from_nanos(1),
+                );
+                assert!(
+                    retained
+                        .rows
+                        .iter()
+                        .any(|row| row.contains("volume · Master"))
+                );
+                assert!(retained.before.is_empty() && retained.after.is_empty());
+                let restored = image_frame_at(&mut drive, &mut state, enabled, size, at + LIT_FOR);
+                assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+                assert!(
+                    restored
+                        .rows
+                        .iter()
+                        .all(|row| !row.contains("volume · Master"))
+                );
+                assert!(restored.before.is_empty());
+                assert_eq!(
+                    restored
+                        .after
+                        .iter()
+                        .any(|command| command.contains("a=t,f=32")),
+                    intersects
+                );
+                assert_eq!(
+                    restored
+                        .after
+                        .iter()
+                        .any(|command| command.contains("a=p,")),
+                    intersects
+                );
+                if intersects {
+                    assert_eq!(restored.after, baseline.after);
+                }
+                if enabled {
+                    // Current Chop waves start below this popup. Exercise a covering image fixture
+                    // with the real popup rectangle and the same production expiry snapshots.
+                    let area = popup.blockers[0];
+                    let image = || {
+                        vec![tui::WaveImage {
+                            id: 1,
+                            area,
+                            peaks: vec![0.7; area.width as usize * 2],
+                            colors: vec![ratatui::style::Color::Rgb(1, 2, 3); area.width as usize],
+                        }]
+                    };
+                    let terminal = ratatui::layout::Rect::new(0, 0, size.0, size.1);
+                    let mut covered = graphics::State::default();
+                    covered.before(true, Screen::Chop, terminal, (2, 4), &[]);
+                    let original = covered.after(&mut image(), &[]);
+                    let hidden =
+                        covered.before(true, Screen::Chop, terminal, (2, 4), &popup.blockers);
+                    assert!(hidden.iter().any(|command| command.contains("a=d,d=i")));
+                    assert!(covered.after(&mut image(), &popup.blockers).is_empty());
+                    assert!(
+                        covered
+                            .before(true, Screen::Chop, terminal, (2, 4), &retained.blockers)
+                            .is_empty()
+                    );
+                    assert!(covered.after(&mut image(), &retained.blockers).is_empty());
+                    assert!(restored.blockers.is_empty());
+                    covered.before(true, Screen::Chop, terminal, (2, 4), &restored.blockers);
+                    assert_eq!(
+                        covered.after(&mut image(), &restored.blockers),
+                        original,
+                        "a covering wave restores at the exact deadline without another input"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Resize and questions keep overlays readable", also with F1 dismissal.
+#[test]
+fn resize_and_questions_keep_overlays_readable() {
+    for enabled in [false, true] {
+        for overlay in ["question", "help"] {
+            let mut drive = Drive::registry_screen_checks();
+            let mut state = graphics::State::default();
+            image_frame_at(&mut drive, &mut state, enabled, (80, 26), Instant::now());
+            drive.tap(KeyCode::Char(']'), M::NONE);
+            let at = drive.app.value_popup.as_ref().unwrap().at;
+            image_frame_at(&mut drive, &mut state, enabled, (80, 26), at);
+            if overlay == "question" {
+                drive.load_pad(18, Arc::new(Sample::mono(vec![0.25; 48_000])), "old target");
+                drive.tap(KeyCode::PageDown, M::NONE);
+                drive.tap(KeyCode::Char('p'), M::NONE);
+                drive.pad_press(Source::Keyboard, 2);
+                drive.pad_release(Source::Keyboard, 2);
+            }
+            drive.tap(
+                if overlay == "question" {
+                    KeyCode::Enter
+                } else {
+                    KeyCode::F(1)
+                },
+                M::NONE,
+            );
+            for (step, size) in [(80, 26), (120, 40), (80, 26)].into_iter().enumerate() {
+                let shown = image_frame_at(
+                    &mut drive,
+                    &mut state,
+                    enabled,
+                    size,
+                    at + Duration::from_millis(100 + step as u64),
+                );
+                assert!(
+                    shown
+                        .rows
+                        .iter()
+                        .all(|row| !row.contains("volume · Master"))
+                );
+                if overlay == "question" {
+                    assert!(
+                        shown
+                            .rows
+                            .iter()
+                            .any(|row| row.contains("KB Enter: replace · Esc: keep")),
+                        "{}",
+                        shown.rows.join("\n")
+                    );
+                    assert!(
+                        shown
+                            .rows
+                            .iter()
+                            .any(|row| row.contains("This cannot be undone."))
+                    );
+                } else {
+                    assert!(shown.rows.iter().any(|row| row.contains("HELP")));
+                }
+                assert!(
+                    shown
+                        .visible_images
+                        .iter()
+                        .all(|image| shown.blockers.iter().all(|area| !image.intersects(*area))),
+                    "no image can cover the text"
+                );
+                if shown
+                    .images
+                    .iter()
+                    .all(|image| shown.blockers.iter().any(|area| image.intersects(*area)))
+                {
+                    assert!(shown.after.is_empty(), "a fully covered wave stays absent");
+                }
+            }
+            let expired = image_frame_at(&mut drive, &mut state, enabled, (80, 26), at + LIT_FOR);
+            let was_hidden = enabled && expired.visible_images.is_empty();
+            assert!(
+                drive.app.current_value_at(at + LIT_FOR).is_none(),
+                "hidden feedback still expires"
+            );
+            drive.tap(KeyCode::Esc, M::NONE);
+            assert!(drive.app.ask.is_none() && !drive.app.help_open);
+            let restored = image_frame_at(&mut drive, &mut state, enabled, (80, 26), at + LIT_FOR);
+            assert_eq!(
+                restored
+                    .after
+                    .iter()
+                    .any(|command| command.contains("a=p,")),
+                was_hidden
+            );
+            assert_eq!(
+                !restored.visible_images.is_empty(),
+                enabled,
+                "an unobstructed wave must remain available"
+            );
+            assert!(
+                restored
+                    .rows
+                    .iter()
+                    .all(|row| !row.contains("volume · Master"))
+            );
+        }
+    }
+}
+
 fn working_question_drive(kind: &str) -> Drive {
     let mut drive = Drive::new();
     let sound = Arc::new(Sample::mono(vec![0.25; 32_000]));
