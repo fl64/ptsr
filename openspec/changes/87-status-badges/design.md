@@ -237,6 +237,23 @@ Review boundaries for 4.4:
 - Text, question, picker and learning priority: closed by `f1_controls_retain_input_priority_and_bindings` and `f1_keeps_settings_picker_and_learning_priority`.
 - Real kitty composition, physical hardware and listening: outside step 4.4 verification. Manual acceptance remains open.
 
+The owner reported a changing window size between Help and Messages after step 4.4.
+Before correction, the drawing code centered Help around its content and gave Messages the full body.
+The owner approved one stable window for both pages and a four-file correction plan.
+
+Use the current Messages body for both pages. Keep page labels and common hints at fixed positions.
+Highlight the selected page. Add the existing scroll hints only on Messages, after the shared hints.
+
+Short help leaves unused space. Do not shrink the history to the old Help window, because that reduces readable rows.
+Keep input routing, message wrapping, scroll height, sound and kitty image composition unchanged.
+
+Stable-window review boundaries after implementation:
+- Short or changed help, empty history and 50 messages: closed by `f1_pages_keep_stable_geometry` across all five screen fixtures at both catalogue sizes.
+- Page labels, message count and common hints: closed by `f1_controls_keep_their_positions`, including active styling and Messages-only scroll hints.
+- Terminal shrink and growth: closed by `f1_frame_follows_terminal_size`, including the last message after bounded scrolling and unchanged page height.
+- Input and saved work: the existing keyboard/raw-MIDI regression suite passes. No production input or sound code changed.
+- Real kitty composition, physical hardware and listening: outside this correction.
+
 ### 6. Keep value and status feedback independent
 
 Use the existing one-second value highlight period for the shared value popup.

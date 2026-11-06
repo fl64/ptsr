@@ -107,6 +107,7 @@ Keep F1 navigation, value popups, the shared input indicator, sound, factory bin
 
 - [x] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
 - [x] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
+- [x] 4.5 Keep Help and Messages in one stable window. Test shared frame, labels and hints across content changes and terminal resizing.
 
 The owner approved thirteen files for step 4.4:
 application main, dispatch, views, notices, input tests and a new `crates/app/src/help.rs`, plus the drawing crate.
@@ -214,6 +215,35 @@ Switch off wave pictures in F12 (`Wave`) for this procedure. Kitty image composi
 6. Repeat step 5 with the controller. Listen for both pad stops. Physical-controller and listening results remain pending. No new WAV accompanies step 4.4.
 
 Step 4.4 closes the automated F1/Tab defect, not the owner's separate manual acceptance.
+
+Stable F1 window correction (4.5):
+The owner reported a changing frame size when switching pages and approved one common window.
+The approved four files are the screen-help delta, design, this task list and `crates/tui/src/lib.rs`, including its drawing tests.
+
+Both pages use the previous Messages body. Page labels and shared hints keep fixed positions.
+Short help can leave unused space. Only terminal resizing changes the common frame dimensions.
+Input, sound, dependencies, saved formats, copy naming and kitty image handling stay unchanged.
+
+Step 4.5 evidence:
+- Three new drawing regressions failed against the previous frame layout and pass after correction.
+- Geometry checks cover all five screens, 0/1/16 help rows, 0/1/50 messages and repeated page switches at both catalogue sizes.
+- Other checks cover fixed labels and hints, active styles, Messages-only scroll hints, resize in both directions and the last message.
+- Existing Unicode wrapping, tiny-terminal and keyboard/raw-MIDI regression tests still pass.
+- `task check`: exits 0, including 718 App tests, 81 input tests, 115 drawing tests and 21 notice-model tests.
+- `task build`: passes. Release compilation used the current worktree's drawing and application sources.
+- `task openspec:check`: passes, 16 changes and specifications, 0 failures.
+- English review uses STE-flavored descriptions and a Strict manual procedure. Existing advisory findings stay unchanged.
+- The callback benchmark command exits 0. Maximum-budget acceptance remains open. Measurements, CSV files and logs stay local under `target/`.
+- No live audio or MIDI device opened. Sound processing stays unchanged. This step needs no new WAV.
+
+Step 4.5 owner procedure (pending):
+1. With wave pictures off, open F1 at 80x26.
+2. Alternate Tab and Shift+Tab. Check that the frame, page labels and shared hints do not move.
+3. Repeat at 120x40. Resize with each page open. Check that both pages follow the terminal size.
+4. Open Messages. Check Up/Down and PageUp/PageDown. Close with Esc. Check that the selected parameter and bank stay unchanged.
+5. Repeat on Pads, Chop, Files, FX and Settings.
+
+Manual acceptance remains pending. Physical-controller, kitty and listening results remain separate, as in the step 4.4 procedure.
 
 ## 5. Values and status
 

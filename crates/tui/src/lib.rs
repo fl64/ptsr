@@ -843,25 +843,41 @@ fn help_block(g: &HelpGroup, rows: usize) -> Vec<Vec<Span<'static>>> {
     out
 }
 
+fn full_help_block(message_count: Option<usize>) -> Block<'static> {
+    let messages = message_count.is_some();
+    let selected = Style::new().fg(CYAN).bold();
+    let idle = Style::new().fg(DIM);
+    // Equal-width labels keep both tab names at the same cell on either page.
+    let mut title = vec![
+        " ".into(),
+        Span::styled(
+            if messages { " HELP " } else { "[HELP]" },
+            if messages { idle } else { selected },
+        ),
+        " ".into(),
+        Span::styled(
+            if messages { "[MESSAGES]" } else { " MESSAGES " },
+            if messages { selected } else { idle },
+        ),
+    ];
+    let mut footer = vec![Span::raw(" Tab/Shift+Tab page · F1/Esc close ")];
+    if let Some(count) = message_count {
+        title.push(format!(" · {count} / 50 ").into());
+        footer.push("· ↑↓ scroll · PgUp/PgDn page ".into());
+    }
+    Block::bordered()
+        .title(Line::from(title))
+        .title_bottom(Line::from(footer))
+        .border_style(Style::new().fg(CYAN))
+        .bg(PANEL)
+}
+
 fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
     let keys_width = rows
         .iter()
         .map(|(k, _)| k.chars().count())
         .max()
         .unwrap_or(0);
-    let text_width = rows
-        .iter()
-        .map(|(_, d)| d.chars().count())
-        .max()
-        .unwrap_or(0);
-    // a row is " cap  text": the cap pads the key by one column on each side; plus the frame
-    let width = ((keys_width + text_width + 7) as u16).min(area.width);
-    let [area] = Layout::horizontal([Constraint::Length(width)])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::vertical([Constraint::Length(rows.len() as u16 + 2)])
-        .flex(Flex::Center)
-        .areas(area);
     let lines: Vec<Line> = rows
         .iter()
         .map(|(k, d)| {
@@ -879,15 +895,7 @@ fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
         })
         .collect();
     frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::bordered()
-                .title(" [HELP] Messages · Tab page · F1/Esc close ")
-                .border_style(Style::new().fg(CYAN))
-                .bg(PANEL),
-        ),
-        area,
-    );
+    frame.render_widget(Paragraph::new(lines).block(full_help_block(None)), area);
 }
 
 /// Visible message rows after status, notice, compact help and frame borders.
@@ -949,11 +957,7 @@ pub fn message_lines(entries: &[Message<'_>], width: u16) -> Vec<Line<'static>> 
 }
 
 fn message_history(frame: &mut Frame, area: Rect, entries: &[Message<'_>], scroll: usize) {
-    let block = Block::bordered()
-        .title(format!(" Help [MESSAGES] · {} / 50 ", entries.len()))
-        .title_bottom(" ↑↓ scroll · PgUp/PgDn page · Tab page · F1/Esc close ")
-        .border_style(Style::new().fg(CYAN))
-        .bg(PANEL);
+    let block = full_help_block(Some(entries.len()));
     let inner = block.inner(area);
     let lines = message_lines(entries, inner.width);
     let start = scroll.min(lines.len().saturating_sub(inner.height as usize));
@@ -6495,6 +6499,202 @@ mod tests {
             .collect();
         assert!(text.contains("the next pad hit swaps them"), "{text}");
         assert!(text.contains(" Ctrl+X "));
+    }
+
+    fn draw_f1(
+        term: &mut Terminal<TestBackend>,
+        screen: &Screen<'_>,
+        page: Option<FullHelp<'_>>,
+    ) -> ratatui::buffer::Buffer {
+        let (status, mut help) = chop_status();
+        help.full = page;
+        term.draw(|frame| draw(frame, &status, screen, &help))
+            .unwrap();
+        term.backend().buffer().clone()
+    }
+
+    fn assert_f1_frame(buffer: &ratatui::buffer::Buffer) {
+        let (w, h) = (buffer.area.width, buffer.area.height);
+        for (x, y, corner) in [
+            (0, 1, "┌"),
+            (w - 1, 1, "┐"),
+            (0, h - 5, "└"),
+            (w - 1, h - 5, "┘"),
+        ] {
+            assert_eq!(buffer[(x, y)].symbol(), corner, "{w}x{h}: ({x}, {y})");
+        }
+        for y in 2..h - 5 {
+            assert_eq!(buffer[(0, y)].symbol(), "│");
+            assert_eq!(buffer[(w - 1, y)].symbol(), "│");
+        }
+    }
+
+    /// Scenario "F1 pages keep stable geometry".
+    #[test]
+    fn f1_pages_keep_stable_geometry() {
+        let wave = [0.1; 400];
+        let screens = [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(&wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+        ];
+        let entries: Vec<_> = (0..50)
+            .map(|_| Message {
+                level: NoticeLevel::Info,
+                origin: "System",
+                text: "A result in the message history",
+            })
+            .collect();
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            for screen in &screens {
+                let baseline = draw_f1(&mut term, screen, None);
+                for count in [0, 1, 16] {
+                    let keys = vec![("Ctrl+J/L".into(), "A help description".into()); count];
+                    for count in [0, 1, 50] {
+                        for page in [
+                            FullHelp::Keys(&keys),
+                            FullHelp::Messages {
+                                entries: &entries[..count],
+                                scroll: 0,
+                            },
+                            FullHelp::Messages {
+                                entries: &entries[..count],
+                                scroll: usize::MAX,
+                            },
+                            FullHelp::Keys(&keys),
+                        ] {
+                            let buffer = draw_f1(&mut term, screen, Some(page));
+                            assert_f1_frame(&buffer);
+                            for y in (0..h).filter(|&y| y == 0 || y >= h - 4) {
+                                for x in 0..w {
+                                    assert_eq!(buffer[(x, y)], baseline[(x, y)]);
+                                }
+                            }
+                        }
+                    }
+                }
+                assert_eq!(draw_f1(&mut term, screen, None), baseline);
+            }
+        }
+    }
+
+    /// Scenario "F1 controls keep their positions".
+    #[test]
+    fn f1_controls_keep_their_positions() {
+        let keys = [("F1".into(), "help".into())];
+        let entries: Vec<_> = (0..50)
+            .map(|_| Message {
+                level: NoticeLevel::Done,
+                origin: "Keyboard",
+                text: "Session saved",
+            })
+            .collect();
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let mut expected = None;
+            for page in [
+                FullHelp::Keys(&keys),
+                FullHelp::Messages {
+                    entries: &[],
+                    scroll: 0,
+                },
+                FullHelp::Messages {
+                    entries: &entries[..1],
+                    scroll: 0,
+                },
+                FullHelp::Messages {
+                    entries: &entries,
+                    scroll: usize::MAX,
+                },
+                FullHelp::Keys(&[]),
+            ] {
+                let messages = matches!(&page, FullHelp::Messages { .. });
+                let buffer = draw_f1(&mut term, &Screen::Pads(idle_pads()), Some(page));
+                let at = |word: &str, y: u16| {
+                    let row = &buffer.content()[usize::from(y * w)..usize::from((y + 1) * w)];
+                    row.windows(word.len())
+                        .position(|cells| {
+                            cells
+                                .iter()
+                                .map(|cell| cell.symbol())
+                                .collect::<String>()
+                                .eq_ignore_ascii_case(word)
+                        })
+                        .unwrap_or_else(|| panic!("{word} absent on row {y}"))
+                        as u16
+                };
+                let positions = (
+                    at("HELP", 1),
+                    at("MESSAGES", 1),
+                    at("Tab/Shift+Tab", h - 5),
+                    at("F1/Esc", h - 5),
+                );
+                assert_eq!(positions, *expected.get_or_insert(positions));
+                for (x, active) in [(positions.0, !messages), (positions.1, messages)] {
+                    assert_eq!(buffer[(x, 1)].fg, if active { CYAN } else { DIM });
+                    assert_eq!(buffer[(x, 1)].modifier.contains(Modifier::BOLD), active);
+                }
+                let footer: String = (0..w).map(|x| buffer[(x, h - 5)].symbol()).collect();
+                assert_eq!(footer.contains("↑↓ scroll"), messages);
+                assert_eq!(footer.contains("PgUp/PgDn page"), messages);
+            }
+        }
+    }
+
+    /// Scenario "F1 frame follows terminal size".
+    #[test]
+    fn f1_frame_follows_terminal_size() {
+        let texts: Vec<_> = (0..50)
+            .map(|i| format!("{}END-{i}", "history words ".repeat(25)))
+            .collect();
+        let entries: Vec<_> = texts
+            .iter()
+            .map(|text| Message {
+                level: NoticeLevel::Info,
+                origin: "System",
+                text,
+            })
+            .collect();
+        let keys = [("F1".into(), "help".into())];
+        let mut term = Terminal::new(TestBackend::new(80, 26)).unwrap();
+        for (w, h) in [(80, 26), (120, 40), (80, 26), (120, 26), (80, 40), (80, 26)] {
+            term.backend_mut().resize(w, h);
+            term.resize(Rect::new(0, 0, w, h)).unwrap();
+            for messages in [false, true, false, true] {
+                let page = if messages {
+                    FullHelp::Messages {
+                        entries: &entries,
+                        scroll: usize::MAX,
+                    }
+                } else {
+                    FullHelp::Keys(&keys)
+                };
+                let buffer = draw_f1(&mut term, &Screen::Pads(idle_pads()), Some(page));
+                assert_f1_frame(&buffer);
+                assert_eq!(messages_page_height(h), usize::from(h - 7));
+                if messages {
+                    let body: String = (2..h - 5)
+                        .flat_map(|y| (1..w - 1).map(move |x| (x, y)))
+                        .map(|position| buffer[position].symbol())
+                        .collect();
+                    assert!(body.contains("END-49"), "{w}x{h}: {body}");
+                }
+            }
+        }
     }
 
     /// Scenarios "Long message text remains readable" and "F1 retains recent results in order".

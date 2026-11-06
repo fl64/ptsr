@@ -159,6 +159,28 @@ Leaving help SHALL reveal the underlying screen without editing work, dirtying t
 - **THEN** reading did not change pads, session dirtiness, project or audio commands
 - **AND** the new process starts with no previous-process history
 
+### Requirement: Stable F1 window
+
+Help and Messages SHALL use the same frame across the available body between status, notice and bottom help rows.
+At a fixed terminal size, frame position and size SHALL NOT depend on the page, help rows or message count.
+Both page labels and the shared page/close hints SHALL retain their positions. Only Messages SHALL advertise its scroll controls.
+Terminal resizing SHALL adapt both pages to the same body without changing existing message scroll rules or input behavior.
+
+#### Scenario: F1 pages keep stable geometry
+- **WHEN** the owner switches between Help and empty or populated Messages at 80×26 or 120×40
+- **THEN** both pages keep the same frame corners and dimensions, including after help content or history changes
+- **AND** status, notice and bottom help rows remain outside that frame
+
+#### Scenario: F1 controls keep their positions
+- **WHEN** the owner switches F1 pages or new messages arrive
+- **THEN** both page labels and the Tab/Shift+Tab and F1/Esc hints stay at the same positions
+- **AND** the selected page remains distinct while only Messages shows its existing scroll hints
+
+#### Scenario: F1 frame follows terminal size
+- **WHEN** the owner enlarges and reduces the terminal with either F1 page open
+- **THEN** both pages use the same current body and keep their frame within the terminal
+- **AND** Messages retains its existing wrapping, page height and bounded scrolling
+
 ### Requirement: F1 history view lifecycle
 
 Each opening SHALL select Help and reset the Messages position. Closing help SHALL retain history.
