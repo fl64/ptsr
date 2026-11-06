@@ -105,7 +105,7 @@ Record levels at all 79 existing slot producers and keep ongoing state separate.
 Extend production keyboard/raw-MIDI, controlled-time and drawing tests. Do not substitute a last-device guess or consume acknowledged input.
 Keep F1 navigation, value popups, the shared input indicator, sound, factory bindings and saved formats outside this step.
 
-- [ ] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
+- [x] 4.3 Preserve five-second manual save success and persistent save state. Add keyboard/raw-MIDI save refusal, priority, retry and project-refusal regression tests.
 - [ ] 4.4 Add F1 Messages and the agreed local page and scroll controls. Test history limits, short windows, origins and no accidental edits or sound commands.
 
 Model verification (4.1): `task check`, `task build` and `task openspec:check` pass.
@@ -145,6 +145,23 @@ Owner checks for 4.2, not yet performed:
 - Press Ctrl+S in a writable disposable session. Check cyan `✓ Session saved` for five seconds.
 - Repeat with existing learned copy and save controls, where available. Button releases must not dismiss an Error.
   Physical-controller and listening results remain separate. No new WAV needs listening.
+
+Save feedback verification (4.3): `task check`, `task build` and `task openspec:check` pass.
+The owner approved three files: application input tests, save tests and this task list.
+The suites pass: 711 App, 81 input, 110 drawing, 21 notice-model and 18 benchmark-report tests. Main-spec scenario coverage also passes.
+Three new tests cover six interrupted-save runs, eighteen refusal/retry runs and six save-state runs.
+Keyboard, raw MIDI notes and learned CC buttons use the production profiles and dispatch. Each produced result retains its actual origin.
+The save notice uses five visible seconds, including interruption and the exact resumed deadline.
+Repeated refusals retain separate history entries without resetting the queue. Background Info and Done results cannot replace the active Error.
+Acknowledgement and later notice expiry retain pending work, read protection and the persistent write-failure status.
+Restored write access does not resume automatic or exit saves. A successful manual retry permits later silent autosave.
+Repairing protected file bytes alone does not permit saving.
+Extended transition tests retain source work, target bytes, picker state and typed names through repeated refusals and background notices.
+Picker confirmation keeps its keyboard path, so transition refusal results correctly record Keyboard after either picker-entry source.
+Debug tests and Release artifacts use this worktree's sources. The Release build reuses unchanged application code.
+Production code, sound processing, bindings, dependencies and saved formats stay unchanged. This step adds no WAV or live-device check.
+The callback benchmark command passes, but its maximum-budget acceptance remains open. Raw results stay local.
+F1 Messages and the Tab exception remain in 4.4. Hardware, kitty and listening checks remain unverified.
 
 ## 5. Values and status
 

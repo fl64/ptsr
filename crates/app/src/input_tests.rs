@@ -6476,6 +6476,236 @@ fn keyboard_and_controller_save_feedback_agree() {
     }
 }
 
+/// Scenarios "The manual save speaks" and "Interrupted notices retain remaining time".
+#[test]
+fn manual_save_success_keeps_five_visible_seconds_through_real_inputs() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for project in [false, true] {
+            let files = TransitionFiles::new();
+            let mut drive = files.save_feedback_drive(project, source);
+            drive.registry_command(source, KeyCode::Char(']'), M::NONE, 93);
+            let before = Instant::now();
+            drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
+            let after = Instant::now();
+            let saved = drive.last_notice().clone();
+            assert_eq!(saved.text, "Session saved");
+            assert_eq!(saved.level, Level::Done);
+            assert_eq!(
+                saved.origin,
+                match source {
+                    Source::Keyboard => Origin::Keyboard,
+                    _ => Origin::Device(PAD_PORT.into()),
+                }
+            );
+            assert_eq!(drive.app.save_status(), tui::SaveStatus::Clean);
+            assert_eq!(
+                session::load_existing(&drive.app.session_file())
+                    .unwrap()
+                    .master_db,
+                drive.app.master_db
+            );
+            let deadline = drive.app.notices.deadline().unwrap();
+            assert!(deadline >= before + Duration::from_secs(5));
+            assert!(deadline <= after + Duration::from_secs(5));
+            let start = deadline - Duration::from_secs(5);
+            drive.app.post_system_notice(
+                Level::Warn,
+                ("background warning".into(), start + Duration::from_secs(1)),
+            );
+            assert_eq!(
+                drive
+                    .app
+                    .frame_notice_at(start + Duration::from_secs(1))
+                    .as_deref(),
+                Some("background warning")
+            );
+            assert_eq!(drive.app.frame_notice_level, Some(Level::Warn));
+            assert_eq!(
+                drive
+                    .app
+                    .frame_notice_at(start + Duration::from_secs(7))
+                    .as_deref(),
+                Some("Session saved")
+            );
+            assert_eq!(drive.app.frame_notice_level, Some(Level::Done));
+            let resumed_deadline = start + Duration::from_secs(11);
+            assert_eq!(drive.app.notices.deadline(), Some(resumed_deadline));
+            assert_eq!(
+                drive
+                    .app
+                    .frame_notice_at(resumed_deadline - Duration::from_nanos(1))
+                    .as_deref(),
+                Some("Session saved")
+            );
+            assert_eq!(drive.app.frame_notice_at(resumed_deadline), None);
+            assert_eq!(drive.app.frame_notice_level, None);
+            assert_eq!(drive.app.save_status(), tui::SaveStatus::Clean);
+            assert_eq!(drive.app.notices.history().len(), 2);
+            assert_eq!(drive.app.notices.history()[1], saved);
+        }
+    }
+}
+
+/// Scenarios "Repeated manual refusals each explain the reason",
+/// "Keyboard and controller save feedback agree", "An informational result cannot hide an error",
+/// "A save failure stays visible after its notice" and "Successful retry clears the save warning".
+#[test]
+fn save_refusals_keep_priority_and_state_until_a_real_retry_succeeds() {
+    use tui::SaveStatus;
+
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for project in [false, true] {
+            for problem in ["write", "damaged", "newer"] {
+                let files = TransitionFiles::new();
+                let mut drive = files.save_feedback_drive(project, source);
+                let path = drive.app.session_file();
+                let valid = std::fs::read(&path).unwrap();
+                let tmp = path.with_extension("toml.tmp");
+                if problem == "write" {
+                    std::fs::write(&tmp, b"occupied").unwrap();
+                } else {
+                    std::fs::write(
+                        &path,
+                        if problem == "damaged" {
+                            "version = [\n"
+                        } else {
+                            "version = 99\n"
+                        },
+                    )
+                    .unwrap();
+                    drive.app.session_read_error = Some(session::load_existing(&path).unwrap_err());
+                }
+                drive.registry_command(source, KeyCode::Char(']'), M::NONE, 93);
+                let before = TransitionFiles::state(&drive);
+                let pending = drive.app.session_dirty;
+                let protection = drive.app.session_read_error.clone();
+                let saved = std::fs::read(&path).unwrap();
+                let status = if problem == "write" {
+                    SaveStatus::Failed
+                } else {
+                    SaveStatus::Unsaved
+                };
+                let origin = match source {
+                    Source::Keyboard => Origin::Keyboard,
+                    _ => Origin::Device(PAD_PORT.into()),
+                };
+                let mut produced = Vec::new();
+                assert!(drive.app.notices.history().is_empty());
+                for _ in 0..2 {
+                    let frame = drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
+                    assert!(frame.commands().is_empty());
+                    let refusal = drive.last_notice().clone();
+                    assert_eq!(refusal.level, Level::Error);
+                    assert_eq!(refusal.origin, origin);
+                    assert_ne!(refusal.text, "Session saved");
+                    produced.push(refusal.clone());
+                    for level in [Level::Info, Level::Done] {
+                        drive.app.post_system_notice(
+                            level,
+                            (format!("background {level:?}"), Instant::now()),
+                        );
+                        produced.push(drive.last_notice().clone());
+                        drive.frame();
+                        assert_eq!(drive.app.notices.current(), Some(&refusal));
+                        assert_eq!(drive.app.frame_notice_level, Some(Level::Error));
+                    }
+                    assert_eq!(TransitionFiles::state(&drive), before);
+                    assert_eq!(drive.app.save_status(), status);
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.session_read_error, protection);
+                    assert_eq!(std::fs::read(&path).unwrap(), saved);
+                    if problem == "write" {
+                        assert_eq!(std::fs::read(&tmp).unwrap(), b"occupied");
+                    }
+                    assert_eq!(
+                        drive.app.notices.history().iter().collect::<Vec<_>>(),
+                        produced.iter().rev().collect::<Vec<_>>()
+                    );
+                }
+                let bank = drive.app.pads.bank;
+                drive.registry_command(source, KeyCode::PageDown, M::NONE, 92);
+                assert_eq!(
+                    drive.app.pads.bank,
+                    bank + 1,
+                    "acknowledgement keeps the action"
+                );
+                assert_eq!(drive.app.notices.current().unwrap().level, Level::Done);
+                assert_eq!(drive.app.save_status(), status);
+                assert_eq!(drive.app.session_dirty, pending);
+                assert_eq!(drive.app.session_read_error, protection);
+                assert_eq!(std::fs::read(&path).unwrap(), saved);
+                let history = drive.app.notices.history().clone();
+                if problem == "write" {
+                    std::fs::remove_file(&tmp).unwrap();
+                } else {
+                    // Repairing the bytes alone must not remove startup read protection.
+                    std::fs::write(&path, &valid).unwrap();
+                }
+                drive
+                    .app
+                    .autosave(pending.unwrap() + SESSION_SAVE + Duration::from_secs(1));
+                drive.app.save_on_exit();
+                assert_eq!(drive.app.notices.history(), &history);
+                assert_eq!(drive.app.session_dirty, pending);
+                assert_eq!(
+                    &std::fs::read(&path).unwrap(),
+                    if problem == "write" { &saved } else { &valid }
+                );
+                drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
+                assert_eq!(drive.last_notice().origin, origin);
+                assert_eq!(drive.app.notices.history().len(), history.len() + 1);
+                if problem == "write" {
+                    assert_eq!(drive.last_notice().text, "Session saved");
+                    assert_eq!(drive.last_notice().level, Level::Done);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                    assert!(drive.app.session_dirty.is_none());
+                    assert!(!drive.app.session_write_failed);
+                    assert_eq!(
+                        session::load_existing(&path).unwrap().master_db,
+                        drive.app.master_db
+                    );
+                    drive.registry_command(source, KeyCode::Char(']'), M::NONE, 93);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
+                    let history = drive.app.notices.history().clone();
+                    drive.app.autosave(
+                        drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
+                    );
+                    assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                    assert_eq!(
+                        drive.app.notices.history(),
+                        &history,
+                        "successful autosave stays silent"
+                    );
+                    assert_eq!(
+                        session::load_existing(&path).unwrap().master_db,
+                        drive.app.master_db
+                    );
+                } else {
+                    assert_eq!(drive.last_notice().level, Level::Error);
+                    assert!(
+                        drive
+                            .last_notice()
+                            .text
+                            .contains(protection.as_ref().unwrap())
+                    );
+                    assert_eq!(drive.app.session_read_error, protection);
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
+                    assert_eq!(std::fs::read(&path).unwrap(), valid);
+                    assert!(
+                        drive
+                            .app
+                            .notices
+                            .history()
+                            .iter()
+                            .all(|notice| notice.text != "Session saved")
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Scenario "The save action appears in GLOBAL".
 /// Scenario "Save learning waits for confirmation".
 /// Scenario "The learned save button survives restart".
@@ -6750,6 +6980,33 @@ impl TransitionFiles {
         drive
     }
 
+    fn save_feedback_drive(&self, project: bool, source: Source) -> Drive {
+        let mut drive = self.drive(project);
+        for (number, action) in [
+            (91, "session.save"),
+            (92, "bank.next"),
+            (93, "master.volume_up"),
+        ] {
+            // Learning keeps one control per action in a group.
+            let key = match source {
+                Source::Notes => input::midi::Key::Note(number),
+                _ => input::midi::Key::Cc(number),
+            };
+            learn::assign(
+                &mut drive.app.learned,
+                "Recorded pads",
+                input::Group::Global,
+                key,
+                action,
+            );
+        }
+        drive
+            .app
+            .sync_learned("Recorded pads", input::Group::Global);
+        drive.midi().recorded_fence();
+        drive
+    }
+
     fn edit(drive: &mut Drive, source: Source) {
         drive.registry_command(source, KeyCode::Char('h'), M::NONE, 89);
         drive.tap(KeyCode::F(3), M::NONE);
@@ -6888,9 +7145,12 @@ fn a_save_refusal_keeps_the_selected_target() {
                     TransitionFiles::pick(&mut drive, source, target, create);
                     let before = TransitionFiles::state(&drive);
                     let picker = TransitionFiles::picker(&drive);
-                    for _ in 0..2 {
-                        drive.app.notices = Notices::new(Instant::now());
+                    let history_len = drive.app.notices.history().len();
+                    for attempt in 1..=2 {
                         drive.tap(KeyCode::Enter, M::NONE);
+                        assert_eq!(drive.last_notice().level, Level::Error);
+                        assert_eq!(drive.last_notice().origin, Origin::Keyboard);
+                        assert_eq!(drive.app.notices.history().len(), history_len + attempt);
                         assert_eq!(TransitionFiles::state(&drive), before);
                         assert_eq!(TransitionFiles::picker(&drive), picker);
                         assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
@@ -6917,6 +7177,37 @@ fn a_save_refusal_keeps_the_selected_target() {
                         );
                         assert!(!files.0.join("C").exists());
                     }
+                    let refusal = drive.last_notice().clone();
+                    for level in [Level::Info, Level::Done] {
+                        drive.app.post_system_notice(
+                            level,
+                            ("background result".into(), Instant::now()),
+                        );
+                    }
+                    assert_eq!(drive.app.notices.history().len(), history_len + 4);
+                    drive.tap(KeyCode::Esc, M::NONE);
+                    if create {
+                        // Esc first leaves the existing name line, then closes the picker.
+                        assert!(drive.app.project_picker.is_some());
+                        drive.tap(KeyCode::Esc, M::NONE);
+                    }
+                    assert!(drive.app.project_picker.is_none());
+                    assert_eq!(drive.app.notices.current(), Some(&refusal));
+                    assert_eq!(drive.app.frame_notice_level, Some(Level::Error));
+                    assert_eq!(
+                        drive.app.save_status(),
+                        if protected {
+                            tui::SaveStatus::Unsaved
+                        } else {
+                            tui::SaveStatus::Failed
+                        }
+                    );
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.session_read_error, reason);
+                    assert_eq!(std::fs::read(&source_file).unwrap(), bytes);
+                    TransitionFiles::pick(&mut drive, source, target, create);
+                    assert_eq!(TransitionFiles::picker(&drive), picker);
+                    assert_eq!(TransitionFiles::state(&drive), before);
                     if !protected {
                         std::fs::remove_dir(&tmp).unwrap();
                         drive.tap(KeyCode::Enter, M::NONE);
@@ -6970,10 +7261,13 @@ fn a_target_read_refusal_preserves_the_source() {
                 let picker = TransitionFiles::picker(&drive);
                 let cuts = drive.app.chop.as_ref().unwrap().saved();
                 let generations = drive.app.load_gen.clone();
-                for _ in 0..2 {
-                    drive.app.notices = Notices::new(Instant::now());
+                let history_len = drive.app.notices.history().len();
+                for attempt in 1..=2 {
                     drive.tap(KeyCode::Enter, M::NONE);
                     assert!(drive.last_notice().text.starts_with("Project not opened:"));
+                    assert_eq!(drive.last_notice().level, Level::Error);
+                    assert_eq!(drive.last_notice().origin, Origin::Keyboard);
+                    assert_eq!(drive.app.notices.history().len(), history_len + attempt);
                     assert_eq!(TransitionFiles::state(&drive), before);
                     assert_eq!(TransitionFiles::picker(&drive), picker);
                     assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);

@@ -83,6 +83,95 @@ fn failed_autosave_retains_pending_work() {
     }
 }
 
+/// Scenarios "A save failure stays visible after its notice",
+/// "Failed autosave retains pending work", "A failed save does not retry on exit"
+/// and "Damaged or newer session remains protected".
+#[test]
+fn notice_acknowledgement_and_expiry_do_not_allow_automatic_saves() {
+    use super::Level;
+    use std::time::Duration;
+    use tui::SaveStatus;
+
+    for project in [false, true] {
+        for problem in ["write", "damaged", "newer"] {
+            let files = Files::new();
+            let mut app = files.app(project);
+            app.save_session().unwrap();
+            let path = app.session_file();
+            let valid = std::fs::read(&path).unwrap();
+            let tmp = if problem == "write" {
+                Some(block_save(&app))
+            } else {
+                std::fs::write(
+                    &path,
+                    if problem == "damaged" {
+                        "version = [\n"
+                    } else {
+                        "version = 99\n"
+                    },
+                )
+                .unwrap();
+                app.session_read_error = Some(session::load(&path).unwrap_err());
+                None
+            };
+            app.pads.pitch[0] = 3;
+            app.dirty();
+            let pending = app.session_dirty;
+            let protection = app.session_read_error.clone();
+            let refusal = app.save_session().unwrap_err();
+            assert_eq!(app.frame_notice().as_deref(), Some(refusal.as_str()));
+            for level in [Level::Info, Level::Done] {
+                app.post_system_notice(level, ("background result".into(), Instant::now()));
+                assert_eq!(app.frame_notice().as_deref(), Some(refusal.as_str()));
+            }
+            let history = app.notices.history().clone();
+            app.acknowledge_notice();
+            assert_eq!(app.notices.current().unwrap().level, Level::Done);
+            let done_end = app.notices.deadline().unwrap();
+            assert_eq!(
+                app.frame_notice_at(done_end).as_deref(),
+                Some("background result")
+            );
+            assert_eq!(app.frame_notice_level, Some(Level::Info));
+            let info_end = app.notices.deadline().unwrap();
+            assert_eq!(info_end, done_end + Duration::from_secs(3));
+            assert_eq!(app.frame_notice_at(info_end), None);
+            assert_eq!(app.frame_notice_level, None);
+            assert_eq!(app.notices.history(), &history);
+            assert_eq!(app.notices.pending_len(), 0);
+            assert_eq!(app.session_dirty, pending);
+            assert_eq!(app.session_read_error, protection);
+            assert_eq!(app.session_write_failed, problem == "write");
+            let status = if problem == "write" {
+                SaveStatus::Failed
+            } else {
+                SaveStatus::Unsaved
+            };
+            assert_eq!(app.save_status(), status);
+
+            if let Some(tmp) = tmp {
+                std::fs::remove_file(tmp).unwrap();
+            } else {
+                std::fs::write(&path, &valid).unwrap();
+            }
+            app.pads.pitch[1] = 7;
+            app.dirty();
+            app.autosave(pending.unwrap() + SESSION_SAVE + Duration::from_secs(60));
+            app.save_on_exit();
+            assert_eq!(std::fs::read(&path).unwrap(), valid);
+            assert_eq!(app.session_dirty, pending);
+            assert_eq!(app.session_read_error, protection);
+            assert_eq!(app.save_status(), status);
+            assert_eq!((app.pads.pitch[0], app.pads.pitch[1]), (3, 7));
+            assert_eq!(app.notices.history(), &history);
+            assert_eq!(
+                app.frame_notice_at(info_end + Duration::from_secs(60)),
+                None
+            );
+        }
+    }
+}
+
 #[test]
 fn manual_retry_restores_autosave() {
     for project in [false, true] {
