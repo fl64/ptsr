@@ -4607,6 +4607,7 @@ fn main() -> std::io::Result<()> {
         });
         let messages = app.message_history();
         let learn_lines = app.learning_view(&keymap);
+        let question = app.question_view(&keymap);
         let feedback = frame_text.feedback_at(&app, text_at);
         let help = tui::Help {
             groups: &groups,
@@ -4614,7 +4615,7 @@ fn main() -> std::io::Result<()> {
             full: full
                 .as_deref()
                 .and_then(|rows| app.full_help_view(rows, &messages)),
-            question: app.ask.as_ref().map(|a| a.lines()),
+            question: question.as_ref(),
             learn: learn_lines.as_ref(),
         };
         let value = app.current_value_at(Instant::now());

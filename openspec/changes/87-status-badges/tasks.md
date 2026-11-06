@@ -351,7 +351,17 @@ Step 5.4 verification:
 
 ## 6. Questions and screen catalogue
 
-- [ ] 6.1 Show ASK and effective answer controls for each existing question. Test owner key overrides and actual connected bindings without adding `ui.confirm`.
+- [x] 6.1 Show ASK and effective answer controls for each existing question. Test owner key overrides and actual connected bindings without adding `ui.confirm`.
+
+Step 6.1 verification:
+- `task check` exits 0: 753 App, 81 input, 123 drawing and 21 notice-model tests pass. The current-source Release build passes in 26.16 s.
+- All six existing question types pass confirmation/cancellation through default keys, owner overrides and raw MIDI. Each keeps ASK and effective keys at both supported sizes.
+- Missing, disconnected and shadowed controller answers stay absent. Production-routing tests cover MIDI edit precedence, which differs from the keyboard question layer.
+- A changed copy target asks again on the first answer and accepts the updated target on the second. Drawing never replaces stored guard lines.
+- Long target and controller lists retain the summary, safety warnings and keyboard row. Omitted rows have counts. Tiny unsupported sizes remain safe.
+- Strict OpenSpec passes all 16 items. Revised English passes the style lint. Physical-controller acceptance, kitty composition and earlier callback maximum-budget failures remain open.
+- No new action, binding, dependency, file format, sound behavior or WAV. Deferred 87a stays unchanged.
+
 - [ ] 6.2 Protect text overlays from kitty images and restore images after dismissal or expiry. Test graphics on/off commands without real audio.
 - [ ] 6.3 Add the checked screen/mode matrix and `task screens`. Render ANSI files at 120×40 and 80×26. Fail tests for missing entries or clipped required content.
 - [ ] 6.4 Check every delta scenario against a named test. Run shared scenarios with keyboard and raw MIDI through actual profiles and dispatch.

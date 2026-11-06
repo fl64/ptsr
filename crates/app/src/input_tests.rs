@@ -13,6 +13,7 @@ fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant
     app.input_sources.advance(now);
     let feedback = app.status_feedback_at(now);
     let learning = app.learning_view(&drive.keymap);
+    let question = app.question_view(&drive.keymap);
     let pads = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
     let screen = tui::Screen::Pads(app.mark_pads(pads));
     let status = tui::Status {
@@ -34,7 +35,7 @@ fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant
         groups: &[],
         hint: None,
         full: None,
-        question: None,
+        question: question.as_ref(),
         learn: learning.as_ref(),
     };
     let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -46,6 +47,320 @@ fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant
         .chunks(width as usize)
         .map(|row| row.iter().map(|cell| cell.symbol()).collect())
         .collect()
+}
+
+fn working_question_drive(kind: &str) -> Drive {
+    let mut drive = Drive::new();
+    let sound = Arc::new(Sample::mono(vec![0.25; 32_000]));
+    drive.load_pad(0, sound.clone(), "source");
+    drive.load_pad(18, sound.clone(), "old target");
+    match kind {
+        "copy" => {
+            drive.tap(KeyCode::Char('c'), M::CONTROL);
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.pad_press(Source::Keyboard, 2);
+            drive.pad_release(Source::Keyboard, 2);
+            assert!(matches!(drive.app.ask, Some(Ask::CopyPad { .. })));
+        }
+        "file" => {
+            drive.ordered_file();
+            drive.tap(KeyCode::Enter, M::NONE);
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.pad_press(Source::Keyboard, 2);
+            drive.pad_release(Source::Keyboard, 2);
+            assert!(matches!(drive.app.ask, Some(Ask::PutFile { .. })));
+        }
+        "plan" => {
+            drive.prepare_chop(sound.clone(), 4);
+            drive.load_pad(18, sound, "old target");
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.tap(KeyCode::Char('p'), M::NONE);
+            drive.pad_press(Source::Keyboard, 2);
+            drive.pad_release(Source::Keyboard, 2);
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(matches!(drive.app.ask, Some(Ask::Plan { .. })));
+        }
+        "reset" | "clear" => {
+            drive.app.pads.volume_db[18] = -6;
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.app.pads.selected = 2;
+            if kind == "reset" {
+                drive.tap(KeyCode::Enter, M::NONE);
+            } else {
+                drive.app.pads.marked.insert(18);
+            }
+            drive.tap(KeyCode::Backspace, M::NONE);
+            assert!(if kind == "reset" {
+                matches!(drive.app.ask, Some(Ask::ResetPads { .. }))
+            } else {
+                matches!(drive.app.ask, Some(Ask::ClearPads { .. }))
+            });
+        }
+        "profile" => {
+            drive.tap(KeyCode::F(12), M::NONE);
+            drive.tap(KeyCode::Tab, M::NONE);
+            drive.tap(KeyCode::Tab, M::NONE);
+            drive.app.midi_row = drive
+                .app
+                .midi_list()
+                .iter()
+                .position(
+                    |row| matches!(row, MidiListRow::Reset { name, .. } if name == "Recorded pads"),
+                )
+                .unwrap();
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(matches!(drive.app.ask, Some(Ask::ResetProfile { .. })));
+        }
+        _ => panic!("unknown question fixture: {kind}"),
+    }
+    drive
+}
+
+/// Scenario "Questions show effective working answers" for every existing question.
+#[test]
+fn questions_show_effective_working_answers() {
+    for kind in ["copy", "file", "plan", "reset", "clear", "profile"] {
+        for route in ["default", "override", "midi"] {
+            for confirm in [false, true] {
+                let mut drive = working_question_drive(kind);
+                let action = match kind {
+                    "profile" => "settings.learn",
+                    "plan" => "chop.edit",
+                    "file" => "browser.hold",
+                    _ => "pad.edit",
+                };
+                drive.bind_action(5, action);
+                drive.bind_action(6, "ui.back");
+                if route == "override" {
+                    let warnings = drive.keymap.overlay(&format!("[global]\nEsc = \"none\"\nF8 = \"ui.back\"\n[screens.{}]\nEnter = \"none\"\nF9 = \"{action}\"\n", drive.app.screen.key())).unwrap();
+                    assert!(warnings.is_empty(), "{warnings:?}");
+                }
+                let stored = drive.app.ask.as_ref().unwrap().lines().to_vec();
+                let old = drive.app.pads.snapshot(18);
+                let history = drive.app.history.len();
+                let snapshot = drive.app.question_view(&drive.keymap).unwrap();
+                let verb = match kind {
+                    "reset" | "profile" => "reset",
+                    "clear" => "clear",
+                    _ => "replace",
+                };
+                let keys = if route == "override" {
+                    format!("KB F9: {verb} · F8: keep")
+                } else {
+                    format!("KB Enter: {verb} · Esc: keep")
+                };
+                assert_eq!(snapshot.answers[0], keys, "{kind}/{route}");
+                assert!(
+                    snapshot
+                        .answers
+                        .iter()
+                        .any(|row| row == &format!("M1 ch1 cc 5: {verb} · ch1 cc 6: keep")),
+                    "{kind}: {:?}",
+                    snapshot.answers
+                );
+                for (width, height) in [(80, 26), (120, 40)] {
+                    let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
+                    assert!(rows[1].contains("ASK"), "{kind}/{route}: {}", rows[1]);
+                    assert!(
+                        rows.iter().any(|row| row.contains(&keys)),
+                        "{kind}/{route}: {}",
+                        rows.join("\n")
+                    );
+                }
+                assert_eq!(drive.app.ask.as_ref().unwrap().lines(), stored);
+                assert_eq!(drive.app.pads.snapshot(18), old);
+                let hit = drive.pad_press(Source::Button, 4);
+                assert!(hit.commands().is_empty());
+                drive.pad_release(Source::Button, 4);
+                assert_eq!(
+                    drive.app.ask.as_ref().unwrap().lines(),
+                    stored,
+                    "a pad cannot answer"
+                );
+                if route == "override" {
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    drive.tap(KeyCode::Esc, M::NONE);
+                    assert_eq!(
+                        drive.app.ask.as_ref().unwrap().lines(),
+                        stored,
+                        "old key labels cannot answer"
+                    );
+                }
+                match route {
+                    "midi" => {
+                        drive.registry_command(
+                            Source::Button,
+                            KeyCode::Enter,
+                            M::NONE,
+                            if confirm { 5 } else { 6 },
+                        );
+                    }
+                    "override" => {
+                        drive.tap(KeyCode::F(if confirm { 9 } else { 8 }), M::NONE);
+                    }
+                    _ => {
+                        drive.tap(
+                            if confirm {
+                                KeyCode::Enter
+                            } else {
+                                KeyCode::Esc
+                            },
+                            M::NONE,
+                        );
+                    }
+                }
+                assert!(drive.app.ask.is_none(), "{kind}/{route}/{confirm}");
+                if !confirm {
+                    assert_eq!(drive.app.pads.snapshot(18), old);
+                    assert_eq!(drive.app.history.len(), history);
+                    continue;
+                }
+                match kind {
+                    "copy" => {
+                        assert_eq!(drive.app.pads.custom_name[18].as_deref(), Some("source 2"))
+                    }
+                    "file" => assert!(drive.app.browser.in_hand.is_none()),
+                    "plan" => assert!(drive.app.pads.link[18].is_some()),
+                    "reset" => assert_eq!(drive.app.pads.volume_db[18], 0),
+                    "clear" => assert!(drive.app.pads.sound[18].is_none()),
+                    "profile" => {
+                        assert!(!drive.app.learned["Recorded pads"]["global"].contains_key("cc 5"))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Missing controller confirmation stays honest".
+#[test]
+fn missing_controller_confirmation_stays_honest() {
+    use input::{Group, midi::Key};
+    let mut drive = working_question_drive("profile");
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert_eq!(view.answers[0], "KB Enter: reset · Esc: keep");
+    assert!(
+        view.answers
+            .iter()
+            .skip(1)
+            .all(|row| !row.contains(": reset")),
+        "{:?}",
+        view.answers
+    );
+    drive.bind_action(5, "settings.learn");
+    assert!(
+        drive
+            .app
+            .question_view(&drive.keymap)
+            .unwrap()
+            .answers
+            .iter()
+            .any(|row| row.contains("cc 5: reset"))
+    );
+    learn::assign(
+        &mut drive.app.learned,
+        "Recorded pads",
+        Group::Settings,
+        Key::Cc(5),
+        "settings.tab_next",
+    );
+    drive.app.sync_learned("Recorded pads", Group::Settings);
+    drive.midi().recorded_fence();
+    assert!(
+        drive
+            .app
+            .question_view(&drive.keymap)
+            .unwrap()
+            .answers
+            .iter()
+            .all(|row| !row.contains("cc 5:")),
+        "a shadowed global binding cannot answer"
+    );
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.ask.is_some());
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.midi().recorded_connect("Unprofiled MIDI input");
+    drive.frame();
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert!(
+        view.answers
+            .iter()
+            .all(|row| !row.contains(": reset") || row.starts_with("KB "))
+    );
+    assert!(
+        view.answers
+            .iter()
+            .all(|row| !row.contains("STOP") && !row.contains("Apply"))
+    );
+    let warnings = drive
+        .keymap
+        .overlay("[screens.settings]\nEnter = \"none\"\n")
+        .unwrap();
+    assert!(warnings.is_empty());
+    assert!(
+        drive.app.question_view(&drive.keymap).unwrap().answers[0].starts_with("KB no confirm key")
+    );
+    assert!(drive.app.ask.is_some());
+}
+
+#[test]
+fn question_answers_keep_midi_edit_precedence_and_target_rechecks() {
+    use input::{Group, midi::Key};
+    let mut drive = working_question_drive("reset");
+    drive.bind_action(5, "pad.edit");
+    learn::assign(
+        &mut drive.app.learned,
+        "Recorded pads",
+        Group::PadsEdit,
+        Key::Cc(5),
+        "pad.volume",
+    );
+    drive.app.sync_learned("Recorded pads", Group::PadsEdit);
+    drive.midi().recorded_fence();
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert!(drive.app.edit);
+    assert!(
+        view.answers[0].contains("Enter: reset"),
+        "keyboard keeps the normal question layer"
+    );
+    assert!(
+        view.answers.iter().all(|row| !row.contains("cc 5:")),
+        "MIDI keeps the actual edit layer"
+    );
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.ask.is_some());
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 29);
+    assert!(drive.app.ask.is_none());
+    assert_eq!(drive.app.pads.volume_db[18], 0);
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = working_question_drive("copy");
+        drive.bind_action(5, "pad.edit");
+        let stored = drive.app.ask.as_ref().unwrap().lines().to_vec();
+        drive.app.pads.custom_name[18] = Some("changed after the question".into());
+        drive.app.question_view(&drive.keymap);
+        assert_eq!(drive.app.ask.as_ref().unwrap().lines(), stored);
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 5);
+        let updated = drive
+            .app
+            .ask
+            .as_ref()
+            .expect("a changed target asks again")
+            .lines();
+        assert_ne!(updated, stored);
+        assert!(
+            updated
+                .iter()
+                .any(|line| line.contains("changed after the question"))
+        );
+        assert!(drive.app.copy_in_hand.is_some());
+        assert!(drive.app.history.is_empty());
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 5);
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.pads.custom_name[18].as_deref(), Some("source 2"));
+        assert_eq!(drive.app.history.len(), 1);
+    }
 }
 
 #[test]

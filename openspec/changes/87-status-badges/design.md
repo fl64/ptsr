@@ -407,6 +407,24 @@ Do not infer STOP or Apply from the unfinished SMC-PAD template.
 If no controller answer exists, show the keyboard path. Generic `ui.confirm` remains in 88.
 No new confirmation is added to direct swaps or existing safe actions.
 
+Step 6.1 keeps stored question lines unchanged: overwrite checks compare those lines with current targets.
+Build a separate question snapshot with body and answer rows. Remove only the old static answer row from that snapshot.
+Resolve effective keyboard bindings with the question's existing normal-key layer.
+Probe connected profiles through production `resolve_input_in`, with the actual MIDI edit layer and learned bindings.
+Only a resolved button press for an existing answer can produce a controller label. Name its real MIDI key and channel, not an assumed physical button.
+Use the same connected-port ordinals as the status row. Omit disconnected profiles and parameter controls.
+Keep the keyboard answer row first. Bound long target/controller lists to the question area, retain safety warnings and show omitted-row counts.
+No question action, target, sound route or dispatch order changes.
+
+Step 6.1 review boundaries after implementation:
+- Owner key overrides and missing keys: closed by production keyboard tests of all six question types, confirmation and cancellation.
+- Normal keyboard versus MIDI edit bindings: closed by raw-MIDI tests through the real profile. A parameter binding cannot produce an answer label.
+- Disconnected or shadowed controller assignments: closed by omission tests. Unknown devices get no inferred STOP or Apply.
+- Target changes between question and answer: closed by keyboard/raw-MIDI re-ask tests. Stored lines stay unchanged until the existing guard refreshes them.
+- Long questions at both sizes: closed by buffer tests retaining title, warnings, keyboard answers and overflow counts. Tiny unsupported sizes remain safe.
+- Non-answer input and held releases: closed by new silent-pad assertions and the existing question regressions. No global lock added.
+- Physical button labels and listening: open, not proved by these offline tests.
+
 ### 8. Make rendering observable offline
 
 `task screens` produces ANSI text from deterministic fixtures, without audio servers, MIDI devices or real project writes.

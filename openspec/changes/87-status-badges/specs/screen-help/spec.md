@@ -244,3 +244,16 @@ Question safety, existing answers and non-answer input behavior SHALL stay uncha
 - **WHEN** a controller has no existing binding that answers the current question
 - **THEN** the question shows its keyboard answers without claiming STOP, Apply or another unavailable controller path
 - **AND** no new action or binding is created by drawing the answer line
+
+### Requirement: Question answer layout
+
+At both supported terminal sizes, an existing question SHALL retain its target summary, safety warnings and keyboard answer row.
+Long target lists SHALL use a visible omitted-row count instead of pushing answers outside the question.
+Controller rows SHALL follow the keyboard row. Excess controller rows SHALL use an omitted-row count.
+This view SHALL NOT change the stored target or the comparison that asks again when the target changes.
+
+#### Scenario: Question answer rows keep safety visible
+- **WHEN** a question has more target or controller rows than fit at 80 by 26 or 120 by 40
+- **THEN** its target summary, safety warnings and keyboard answers stay inside the question
+- **AND** omitted rows have a visible count
+- **AND** the stored confirmation target and its refusal checks stay unchanged

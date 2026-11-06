@@ -608,14 +608,20 @@ pub enum FullHelp<'a> {
     },
 }
 
+/// A drawing snapshot. Stored confirmation targets remain in the application.
+pub struct Question {
+    pub body: Vec<String>,
+    pub answers: Vec<String>,
+}
+
 pub struct Help<'a> {
     pub groups: &'a [HelpGroup],
     /// Next-step hint shown when there is no notice.
     pub hint: Option<&'a str>,
     /// Full help or message history (F1); `None` when closed.
     pub full: Option<FullHelp<'a>>,
-    /// A question that waits for Enter or Esc (overwrite pads?), line by line.
-    pub question: Option<&'a [String]>,
+    /// An existing question with its effective answer controls.
+    pub question: Option<&'a Question>,
     /// Learning context, detail and working controls in the fixed help band.
     pub learn: Option<&'a Learning>,
 }
@@ -870,27 +876,73 @@ fn draw_inner(
     }
 }
 
-fn question(frame: &mut Frame, area: Rect, lines: &[String]) {
-    let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as u16 + 4;
-    let [area] = Layout::horizontal([Constraint::Length(width)])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::vertical([Constraint::Length(lines.len() as u16 + 2)])
-        .flex(Flex::Center)
-        .areas(area);
-    let last = lines.len().saturating_sub(1);
-    let text: Vec<Line> = lines
+fn question_area(area: Rect, question: &Question) -> Rect {
+    let width = question
+        .body
         .iter()
+        .chain(&question.answers)
+        .map(|line| Line::from(line.as_str()).width())
+        .max()
+        .unwrap_or(0)
+        .saturating_add(4)
+        .min(usize::from(area.width)) as u16;
+    let height = question
+        .body
+        .len()
+        .saturating_add(question.answers.len())
+        .saturating_add(2)
+        .min(usize::from(area.height)) as u16;
+    Rect::new(
+        area.x.saturating_add((area.width - width) / 2),
+        area.y.saturating_add((area.height - height) / 2),
+        width,
+        height,
+    )
+}
+
+fn question_rows(question: &Question, rows: usize, width: usize) -> Vec<Line<'static>> {
+    let answer_rows = rows.saturating_sub(question.body.len().min(4));
+    let mut answers = question.answers[..question.answers.len().min(answer_rows)].to_vec();
+    if question.answers.len() > answer_rows && !answers.is_empty() {
+        let last = answers.len() - 1;
+        answers[last] = format!("{} more input answer rows", question.answers.len() - last);
+    }
+    let body_rows = rows.saturating_sub(answers.len());
+    let mut body = question.body[..question.body.len().min(body_rows)].to_vec();
+    if question.body.len() > body_rows && body_rows >= 4 {
+        let head = body_rows - 3;
+        body.truncate(head);
+        body.push(format!(
+            "{} more target rows",
+            question.body.len() - head - 2
+        ));
+        body.extend_from_slice(&question.body[question.body.len() - 2..]);
+    }
+    body.iter()
         .enumerate()
-        .map(|(i, l)| {
-            let line = Line::from(format!(" {l}"));
-            match i {
-                0 => line.fg(MAGENTA).bold(),
-                i if i == last => line.fg(CYAN),
-                _ => line,
+        .map(|(i, text)| {
+            let line = Line::from(format!(" {}", clip_label(text, width)));
+            if i == 0 {
+                line.fg(MAGENTA).bold()
+            } else {
+                line
             }
         })
-        .collect();
+        .chain(
+            answers
+                .iter()
+                .map(|text| Line::from(format!(" {}", clip_label(text, width))).fg(CYAN)),
+        )
+        .collect()
+}
+
+fn question(frame: &mut Frame, area: Rect, question: &Question) {
+    let area = question_area(area, question);
+    let text = question_rows(
+        question,
+        usize::from(area.height.saturating_sub(2)),
+        usize::from(area.width.saturating_sub(3)),
+    );
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(text).block(
@@ -6685,12 +6737,95 @@ mod tests {
     }
 
     #[test]
+    fn question_answer_rows_keep_safety_visible() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            for inputs in [0, 2, 30] {
+                let mut body = vec!["Replace what lies on 128 pads?".into()];
+                body.extend(
+                    (1..=128)
+                        .map(|i| format!("bank 1 pad {i}: 音 e\u{301} old target → new slice")),
+                );
+                body.extend([
+                    "The old files on disk stay.".into(),
+                    "This cannot be undone.".into(),
+                ]);
+                let mut answers = vec!["KB F9: replace · F8: keep".into()];
+                answers.extend(
+                    (1..=inputs).map(|i| format!("M{i} ch1 cc 5: replace · ch1 cc 6: keep")),
+                );
+                let q = Question { body, answers };
+                let original = (q.body.clone(), q.answers.clone());
+                let parent = Rect::new(0, 1, width, height - 5);
+                let area = question_area(parent, &q);
+                assert_eq!(area.intersection(parent), area);
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| {
+                    frame.render_widget(
+                        Paragraph::new(vec![
+                            Line::from(".".repeat(width as usize));
+                            height as usize
+                        ]),
+                        frame.area(),
+                    );
+                    question(frame, parent, &q);
+                })
+                .unwrap();
+                let buffer = term.backend().buffer();
+                let text = buffer
+                    .content()
+                    .chunks(width as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                for marker in [
+                    "Replace what lies on 128 pads?",
+                    "The old files on disk stay.",
+                    "This cannot be undone.",
+                    "KB F9: replace · F8: keep",
+                    "more target rows",
+                ] {
+                    assert!(
+                        text.contains(marker),
+                        "{width}x{height}, {inputs} inputs: {marker}\n{text}"
+                    );
+                }
+                if inputs == 30 {
+                    assert!(text.contains("more input answer rows"));
+                }
+                for y in 0..height {
+                    for x in 0..width {
+                        if !area.contains((x, y).into()) {
+                            assert_eq!(buffer[(x, y)].symbol(), ".");
+                        }
+                    }
+                }
+                assert_eq!(
+                    (q.body, q.answers),
+                    original,
+                    "drawing cannot change the target guard"
+                );
+            }
+        }
+        for (width, height) in [(0, 0), (1, 1), (2, 2), (5, 3)] {
+            let q = Question {
+                body: vec!["音 very long name".into()],
+                answers: vec!["KB F9: replace".into()],
+            };
+            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+            term.draw(|frame| question(frame, frame.area(), &q))
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn question_box_over_the_screen() {
-        let q = [
-            "Replace what lies on 1 pad?".to_string(),
-            "  bank 2  Q  kick  →  slice 1".into(),
-            "Enter: replace · Esc: keep".into(),
-        ];
+        let q = Question {
+            body: vec![
+                "Replace what lies on 1 pad?".into(),
+                "  bank 2  Q  kick  →  slice 1".into(),
+            ],
+            answers: vec!["Enter: replace · Esc: keep".into()],
+        };
         let status = Status {
             badges: Vec::new(),
             save: SaveStatus::Clean,
@@ -6748,7 +6883,7 @@ mod tests {
             .chunks(80)
             .map(|row| row.iter().map(|c| c.symbol()).collect::<String>() + "\n")
             .collect();
-        for line in &q {
+        for line in q.body.iter().chain(&q.answers) {
             assert!(text.contains(line.trim()), "{line} missing");
         }
     }
@@ -7769,7 +7904,10 @@ mod tests {
             ..Learning::default()
         };
         let full = [("F1".into(), "close help".into())];
-        let question = ["Keep the current pads?".into(), "Esc: cancel".into()];
+        let question = Question {
+            body: vec!["Keep the current pads?".into()],
+            answers: vec!["Esc: cancel".into()],
+        };
         for (w, h) in [(60, 24), (100, 26), (252, 60)] {
             for backend in [None, Some("jack")] {
                 for screen in &screens {
@@ -7779,7 +7917,7 @@ mod tests {
                                 groups: &groups,
                                 hint: Some("normal hint"),
                                 full: (mode == 1).then_some(FullHelp::Keys(full.as_slice())),
-                                question: (mode == 2).then_some(question.as_slice()),
+                                question: (mode == 2).then_some(&question),
                                 learn: (mode == 3).then_some(&learn),
                             };
                             let mut status = status_at(128, 0);
@@ -8132,7 +8270,10 @@ mod tests {
                 warning,
             };
             let keys = [("F1".into(), "close".into())];
-            let question = ["Keep work?".into(), "Esc cancel".into()];
+            let question = Question {
+                body: vec!["Keep work?".into()],
+                answers: vec!["Esc cancel".into()],
+            };
             let entries = [];
             let feedback = status_sources();
             for (width, height) in [(80, 26), (120, 40)] {
@@ -8166,7 +8307,7 @@ mod tests {
                                 }),
                                 _ => None,
                             };
-                            help.question = (mode == 3).then_some(question.as_slice());
+                            help.question = (mode == 3).then_some(&question);
                             term.draw(|frame| {
                                 draw_feedback(frame, &status, &screen, &help, &feedback, None)
                             })

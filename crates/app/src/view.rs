@@ -13,6 +13,22 @@ use super::{
     file_name, filter_curve, pads, same_whole_sound, tui_param,
 };
 
+fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
+    use super::Ask;
+    use input::Action;
+    match action {
+        Action::Back => Some(false),
+        Action::SettingsLearn if matches!(ask, Ask::ResetProfile { .. }) => Some(true),
+        Action::BrowserLoad if matches!(ask, Ask::PutFile { .. }) => Some(true),
+        Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit
+            if !matches!(ask, Ask::ResetProfile { .. }) =>
+        {
+            Some(true)
+        }
+        _ => None,
+    }
+}
+
 #[derive(PartialEq, Eq)]
 struct BadgeKey {
     screen: Screen,
@@ -176,6 +192,95 @@ impl App {
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
         }
+    }
+
+    pub(super) fn question_view(&self, keymap: &input::Keymap) -> Option<tui::Question> {
+        use super::Ask;
+        use input::midi::{Activity, Msg, Profile, Resolved};
+        let ask = self.ask.as_ref()?;
+        let verb = match ask {
+            Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
+            Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
+            Ask::ClearPads { .. } => "clear",
+        };
+        let focus = self.focus();
+        let keyboard_blocked = focus.mode.text || focus.mode.picker || focus.mode.screen_learn;
+        let key = |confirm| {
+            keymap
+                .bindings(self.screen)
+                .into_iter()
+                .filter(|(key, action)| {
+                    !keyboard_blocked
+                        && question_answer(ask, *action) == Some(confirm)
+                        && keymap.binding_for(self.screen, self.edit_keys(), key)
+                            == Some(Some(*action))
+                })
+                .map(|(key, _)| key)
+                .min_by_key(|key| (key != "Enter" && key != "Esc", key.clone()))
+        };
+        let confirm =
+            key(true).map_or_else(|| "no confirm key".into(), |key| format!("{key}: {verb}"));
+        let cancel =
+            key(false).map_or_else(|| "no cancel key".into(), |key| format!("{key}: keep"));
+        let mut answers = vec![format!("KB {confirm} · {cancel}")];
+        if !keyboard_blocked && !focus.mode.midi_learn {
+            let maps = super::midi::parse_learned(&self.learned);
+            for (index, (port, _)) in self.input_sources.connected().enumerate() {
+                // Match the worker's port selection. Assignment labels can search another layer.
+                let mut profile = self
+                    .profiles
+                    .iter()
+                    .find(|p| p.matches(port))
+                    .cloned()
+                    .unwrap_or_else(|| Profile::default_for(port));
+                super::midi::apply_learned(&mut profile, &maps);
+                profile.set_seeded(self.seeded.contains(&profile.name));
+                let mut controls: [Option<String>; 2] = [None, None];
+                'channels: for ch in 1..=16 {
+                    for number in 0..=127 {
+                        for msg in [
+                            Msg::Cc {
+                                ch,
+                                cc: number,
+                                value: 127,
+                            },
+                            Msg::NoteOn {
+                                ch,
+                                note: number,
+                                velocity: 127,
+                            },
+                        ] {
+                            let (Some(Resolved::Action(action)), Activity::Press) =
+                                profile.resolve_input_in(self.screen, focus.mode.edit, msg)
+                            else {
+                                continue;
+                            };
+                            let Some(confirm) = question_answer(ask, action) else {
+                                continue;
+                            };
+                            let slot = &mut controls[usize::from(!confirm)];
+                            if slot.is_none() {
+                                *slot = Some(format!(
+                                    "ch{ch} {}: {}",
+                                    msg.key(),
+                                    if confirm { verb } else { "keep" }
+                                ));
+                            }
+                            if controls.iter().all(Option::is_some) {
+                                break 'channels;
+                            }
+                        }
+                    }
+                }
+                let controls = controls.into_iter().flatten().collect::<Vec<_>>();
+                if !controls.is_empty() {
+                    answers.push(format!("M{} {}", index + 1, controls.join(" · ")));
+                }
+            }
+        }
+        // Stored lines remain the overwrite guard. Change only this drawing snapshot.
+        let body = ask.lines()[..ask.lines().len().saturating_sub(1)].to_vec();
+        Some(tui::Question { body, answers })
     }
 
     pub(super) fn learning_view(&self, keymap: &input::Keymap) -> Option<tui::Learning> {
