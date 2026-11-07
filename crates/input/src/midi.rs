@@ -1672,7 +1672,7 @@ mod tests {
 
     #[test]
     fn broken_profile_names_file_and_line() {
-        let smc = include_str!("../../../config/devices/smc-pad.toml");
+        let smc = include_str!("../../../config/devices/smc-pad.toml.example");
         let e = Profile::from_toml("smc-pad.toml", smc).err().unwrap();
         assert!(e.starts_with("smc-pad.toml:7:"), "{e}");
     }

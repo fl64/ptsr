@@ -8069,6 +8069,7 @@ mod tests {
 
     /// 71 input-devices "The shipped bindings all act": the keymap and the device profiles
     /// name only actions the program has; Ctrl+K and knobs k6–k10 of the chop screen are free.
+    /// Scenario "Shipped profiles load without template errors" (input-devices).
     #[test]
     fn the_shipped_bindings_all_act() {
         let (k, warnings) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
@@ -8076,9 +8077,8 @@ mod tests {
         assert_eq!(pads_ctrl(&k, 'k'), None, "Ctrl+K is free");
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/devices");
         let (profiles, errors) = super::midi::load_profiles(dir);
-        // the SMC-PAD file is a template to fill after purchase: it does not parse yet
-        let errors: Vec<_> = errors.iter().filter(|e| !e.contains("smc-pad")).collect();
         assert!(errors.is_empty(), "{errors:?}");
+        assert!(!profiles.iter().any(|p| p.name == "SMC-PAD"));
         let x = profiles.iter().find(|p| p.name == "X-Session Pro").unwrap();
         for (scope, key, name) in x.roles() {
             assert!(input::midi::known(&name), "{key} {name}");

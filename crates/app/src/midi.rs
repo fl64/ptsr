@@ -2279,6 +2279,45 @@ mod tests {
         assert_eq!(seen[16], "not assigned");
     }
 
+    #[test]
+    fn an_example_does_not_replace_a_working_profile() {
+        let dir = std::env::temp_dir().join(format!("ptsr-profile-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("xsession-pro.toml"),
+            include_str!("../../../config/devices/xsession-pro.toml"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("smc-pad.toml.example"),
+            include_str!("../../../config/devices/smc-pad.toml.example"),
+        )
+        .unwrap();
+        let (profiles, errors) = load_profiles(dir.to_str().unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].name, "X-Session Pro");
+        let mut raw = vec![
+            Raw::Connected(PADS.into(), None),
+            Raw::Connected(XS.into(), None),
+        ];
+        raw.extend((36..=52).map(|note| Raw::Msg(PADS.into(), note_on(note), test_stamp())));
+        raw.push(Raw::Msg(XS.into(), knob(24, 64), test_stamp()));
+        let (events, sent) = dispatched(raw, profiles, on_screen(0, 0));
+        assert_eq!(connected(&events), ["default", "X-Session Pro"]);
+        let pads: Vec<_> = sent
+            .iter()
+            .filter_map(|command| match command {
+                Command::PadPress { pad, .. } => Some(*pad),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pads, (0..16).collect::<Vec<_>>());
+        assert_eq!(params(&events), [(Param::PadVolume, 64.0 / 127.0)]);
+    }
+
+    /// Scenario "Invalid working profiles retain default routing" (input-devices).
     /// Scenario "Profile with an error" (input-devices): a profile with `??` from the
     /// template is named with its file and line; the device plays with the default profile.
     #[test]
