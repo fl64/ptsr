@@ -771,7 +771,7 @@ pass cannot be inferred from automated MIDI tests.
   Press `Enter` (edit open) and repeat `U` / `O` / `L`: the same behavior.
 - [ ] On `F2`, press `Ctrl+C`. Make sure that the flash says `COPY · hit a pad` and that
   the program does not quit. Hit an empty pad: make sure that the copy lands with the
-  name ending in ` 2` and that the hit plays nothing. Press `Ctrl+Z`: make sure that the
+  numbered name from section 87a and that the hit plays nothing. Press `Ctrl+Z`: make sure that the
   target comes back. Press `Ctrl+Q`: make sure that the program quits.
 - [ ] On `F3`, press `H`. Make sure that the status says `by hits at -6 dB: N slices`.
   Press `Shift+H`: make sure that the threshold steps back up one list value. Press it
@@ -2034,3 +2034,97 @@ Use `renders/86d-portable-chops.wav` as the existing short sample if needed. It 
 
 Record each result with size, terminal, graphics mode and input source.
 Leave unavailable hardware, kitty composition and listening cases unchecked.
+
+## 87a: Numbered pad copy names
+
+Folder: `changes/87a-copy-names`
+
+Implementation is complete in local commit `5005a17`. Owner acceptance remains open.
+Copies use one `(copy N)` marker and the smallest free number across the current project's eight banks.
+Manual markers use the same rule. The replacement target's current name remains occupied until placement succeeds.
+Old names, samples, settings, sound, saved formats and controls stay unchanged.
+These are separate keyboard, physical-controller and listening checks. No box below has an owner result yet.
+
+### Prepare an isolated owner run
+
+**Owner only.** This procedure opens live audio and MIDI. The agent did not run it.
+Use the `87a-copy-names` worktree and your normal safe listening setup.
+These folders keep the test separate from your existing projects, scratch work and saved bindings.
+Run the commands from that worktree's repository root. Keep this shell open.
+
+```sh
+task build
+check_root="$(mktemp -d "$PWD/target/87a-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data" "$check_root/state" \
+  "$check_root/samples" "$check_root/projects"
+cp renders/83a-pad-copy.wav "$check_root/samples/check.wav"
+printf '[paths]\nsamples = "%s"\nprojects = "%s"\n[audio]\nbuffer_size = 1024\n' \
+  "$check_root/samples" "$check_root/projects" > "$check_root/config/ptsr/config.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_copy_check() {
+  XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" \
+    XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_copy_check
+```
+
+Start in scratch. Open Files with `F6`. Select `check.wav`. Press `Enter`. Hit pad `1` and wait for loading.
+Return to Pads with `F2`. Press `Ctrl+N`. Replace the name with `kick`. Press `Enter`.
+Keep pad edit and text input closed for copying. The keys below are defaults. Use your replacements if necessary.
+
+### Keyboard pass
+
+- [ ] Hit pad `1`. Press `Ctrl+C`. Hit pad `2`. Check `kick (copy 1)` and an unchanged source.
+  Copy pad `1` to pad `3`. Check `kick (copy 2)`. Copy pad `2` to pad `4`.
+  Check `kick (copy 3)`, without another nested marker. Every placement hit must stay silent.
+- [ ] Hit pad `3`. Press `Backspace`. Copy pad `4` to pad `3`.
+  Check reuse of `kick (copy 2)`. Press `Ctrl+Z`. Check the empty target.
+  Repeat the copy. Check the same available number, not a new counter value.
+- [ ] Clear pads `3` and `4` with `Backspace`. Keep only `kick` and `kick (copy 1)`.
+  Copy pad `1` onto pad `2`. Check the proposed `kick (copy 2)` before confirmation.
+  Press `Esc`. Check the unchanged target and retained COPY mode. Hit pad `3`.
+  Check `kick (copy 2)`. Press `Ctrl+Z`. Check that only pad `3` becomes empty.
+  Repeat replacement of pad `2`. Press `Enter`. Check its proposed name. Undo and check `kick (copy 1)` again.
+- [ ] Copy pad `2`. Press `Ctrl+2`. Hit empty pad `1` in bank 2.
+  Check `kick (copy 2)`: the name in bank 1 reserves number 1.
+  Press `Ctrl+S`. Record both banks' names. Quit with `Ctrl+Q`. Run `run_copy_check` again.
+  Check those names and settings. Copy the bank-2 pad to an empty target. Check `kick (copy 3)`.
+- [ ] Create a disposable project with `Ctrl+P`. Load `check.wav` onto its pad `1`.
+  Rename it to `kick (copy 7)`. Copy it to pad `2`. Check `kick (copy 1)` and the unchanged manual source name.
+  The names in scratch must not reserve numbers in this project.
+  Save and restart. Copy pad `2` to pad `3`. Check `kick (copy 2)`.
+- [ ] Rename a loaded source to `rec 2 2 2`. Copy it to an empty target.
+  Check `rec 2 2 2 (copy 1)` and the unchanged source text.
+  Repeat with a long Unicode name. Check the full text in the rename line, not only its clipped pad cell.
+  Repeat with `kick (copy 01)`. Check the literal base: `kick (copy 01) (copy 1)`.
+
+### Physical-controller pass
+
+Use an actual device's existing pad and command assignments. Record its name and preset.
+Use notes 36–51 from a device without a profile, or existing learned pad buttons.
+The X-Session Pro's default command buttons are not a pad grid. The SMC-PAD example is not a working profile.
+Use keyboard commands where no controller binding exists. Record that limit instead of claiming controller-only operation.
+Do not reset a factory map or overwrite performance bindings for this check.
+
+- [ ] Repeat the repeated-copy, copy-of-copy and cross-bank checks with physical pad targets.
+  Use existing controller copy and bank commands where available. Check the same names and silent placement.
+- [ ] Repeat the occupied-target question, cancellation and undo.
+  Use only confirmation controls shown for the actual bindings. Extra pad hits must not answer the question.
+- [ ] Save and restart the disposable project. Repeat a copy with controller targets.
+  Check the next free number. Record unavailable notes, learned buttons and command bindings separately.
+
+### Listening and automated evidence
+
+- [ ] Listen to local `renders/83a-pad-copy.wav`. The first voice is the source and the second is its copy.
+  Check the same sound, without a new click or extra placement hit.
+- [ ] Play the source and copy in the disposable live run. Check the same settings and sound after restart.
+  Report keyboard, physical-controller and listening results separately.
+
+No new sound feature or render is part of 87a. The existing WAV remains byte-identical before and after implementation.
+Its SHA-256 is `2a8e1b1647d7ac6e493c2d00dd319093823d09f1b3785b49924e475c69cc3bfd`.
+`task check` passed 1117 workspace tests, including 780 App tests. Fifteen new tests and existing copy tests cover all 17 delta scenarios.
+`task build` passed. `task openspec:check` reported `Totals: 16 passed, 0 failed (16 items)`.
+`task screens` passed four tests and generated 306 ANSI files at 120x40 and 80x26.
+These commands did not open live audio or MIDI. They do not establish any unchecked owner result above.
+Detailed results and local log paths are in [the active tasks](../openspec/changes/87a-copy-names/tasks.md#implementation-verification).
+Earlier callback maximum-budget failures remain open. Publication, archive and merge need separate permission.

@@ -19,7 +19,7 @@ Activation and code form one logical task because active deltas require real sce
 
 ## 3. Owner checks and documentation
 
-- [ ] 3.1 Update `docs/USER-STORIES.md` and `docs/LIVE-CHECKS.md` with the naming rules and separate keyboard, controller and listening procedures. Record actual automated results and their limits. Check the English text and links. Run `task check`. Commit the documentation separately.
+- [x] 3.1 Update `docs/USER-STORIES.md` and `docs/LIVE-CHECKS.md` with the naming rules and separate keyboard, controller and listening procedures. Record actual automated results and their limits. Check the English text and links. Run `task check`. Commit the documentation separately.
 - [ ] 3.2 Present the checks and local copy render to the owner. Wait for acceptance and separate publication, archive and merge permissions.
 
 ## Historical preparation verification
@@ -63,3 +63,18 @@ The final helper uses the real previous/next commands, and the final full run pa
 English review used STE-flavored descriptions and Strict procedures. Active artifacts have no lint findings.
 Context additions have no hard findings. Four passive-voice suggestions describe approval states and verification limits.
 This review does not establish full ASD dictionary compliance.
+
+## Documentation verification
+
+The separate documentation task passed `task check` with all 1117 workspace tests.
+`task openspec:check` reported `Totals: 16 passed, 0 failed (16 items)`.
+Local logs: `target/87a-docs-check.log` and `target/87a-docs-openspec.log`.
+The existing render SHA-256 still matches the value above.
+Steady maxima were 31.99% wall and 31.34% thread CPU, with no blocks above 50% in this run.
+These results do not resolve earlier callback overruns.
+
+The changed English text has no lint findings after STE-flavored description and Strict procedure review.
+Local Markdown files and heading links passed an automated existence check.
+The owner shell example passed `bash -n`. The agent did not execute it or start the live sampler.
+Owner keyboard, physical-controller and listening results remain open.
+Publication, archive and merge remain outside the current permission.
