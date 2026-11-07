@@ -71,9 +71,49 @@ Their archives are `openspec/changes/archive/2026-11-05-86b-save-retry/`,
 `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
 `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
 Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
-The save-safety sequence is complete. The owner approved one PR for 84b and 86b–86d on `86b-save-retry`.
-This is an explicit exception to separate change branches. Change 87 is not active and needs a separate request.
-Activate only one change at a time. Push and PR need a separate request. The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
+The save-safety sequence is complete. 84b and 86b–86d merged in [PR #9](https://github.com/fl64/ptsr/pull/9) on 2026-11-05.
+That combined PR was an explicit exception to separate change branches.
+The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
+The owner accepted 87 on 2026-11-07 and authorized archive, checks and squash merge in [PR #10](https://github.com/fl64/ptsr/pull/10).
+Archive: `openspec/changes/archive/2026-11-07-87-status-badges/`.
+It defines visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
+The owner approved the specification defaults and the first implementation file plan.
+The behavior-neutral preparation is complete: 12 screen snapshot methods are in `crates/app/src/view.rs`.
+Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
+Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
+Pad corners now show placement targets, existing replacement questions and planned slice numbers. Yellow mode frames retain pad state and bank identity.
+Runtime notices share levels, visible-time lifetimes, priority and latest-50 history.
+F1 opens Help first. Tab/Shift+Tab selects Messages, with levels, origins and wrapped text.
+Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help without changing the work through those local controls.
+Each result keeps its keyboard, actual device or system origin. Startup acknowledgement and silent successful autosave stay unchanged.
+A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
+Offline notice and save-priority regressions pass. The owner accepted step 4.3.
+F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
+Help and Messages share the owner-accepted stable frame.
+Applied values now use a shared one-second popup with object labels and numeric range bars.
+Pickup, refusals, scope-limit messages and editor priority retain their behavior.
+Input-source state now keeps connection identities and original receipt times across production routes.
+Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
+Project changes keep source identities and deadlines.
+Source feedback does not change actions, acknowledgements, velocities or release ownership.
+Shared status keeps recording seconds, permanent KB, the last used controller number, actual audio data, master and project details.
+Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
+A permanent `*` is dim when saved and yellow when pending. `Save failed` remains explicit.
+Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
+The incomplete SMC-PAD example uses `.toml.example` and is not a working profile.
+Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
+Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
+Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.
+Text overlays now remove intersecting kitty pictures before text output and restore the current wave afterward. Unoccluded pictures stay unchanged.
+`task screens` now checks the screen/mode matrix and writes deterministic ANSI files at both supported sizes.
+The files stay local under `renders/screens/`. Real kitty composition still needs a manual check.
+Active-delta coverage now checks test declarations and their attached scenario descriptions.
+Documentation now links catalogue files and separate keyboard, controller, graphics and listening procedures.
+Overall acceptance does not establish individual keyboard, physical-controller, kitty or listening results. Unreported checks remain unverified.
+Earlier callback maximum-budget failures remain unresolved.
+Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
+Activate only one change at a time. Publication of other changes needs a separate request.
+The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
 parameter locks, slice motion and PaulStretch. It and `docs/plans/` are guides, not

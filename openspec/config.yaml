@@ -46,7 +46,49 @@ context: |
   This is overall acceptance, not individual keyboard, physical-controller or listening results.
   The owner authorized archive and merge of the combined PR #5 for 85–86a.
 
-  Change 87 is next, but it is not active.
+  Save safety 86b–86d and report-only diagnostics 84b merged in PR #9 on 2026-11-05. Their archives are complete.
+  The owner requested 87-status-badges and approved its specification step and local signed-off commits.
+  The owner accepted 87 on 2026-11-07 and authorized archive, checks and squash merge in PR #10: https://github.com/fl64/ptsr/pull/10.
+  Archive: openspec/changes/archive/2026-11-07-87-status-badges/.
+  It covers visual feedback for existing modes, messages, values, inputs and questions, plus an offline screen catalogue.
+  The owner approved the specification defaults and the first implementation file plan.
+  The behavior-neutral preparation is complete: 12 screen snapshot methods are in crates/app/src/view.rs.
+  Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
+  Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
+  Pad corners now show placement targets, existing replacement questions and planned slice numbers. Yellow mode frames retain pad state and bank identity.
+  Runtime notices share levels, visible-time lifetimes, priority and latest-50 history.
+  F1 opens Help first. Tab/Shift+Tab selects Messages, with levels, origins and wrapped text.
+  Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help without changing the work through those local controls.
+  Each result keeps its keyboard, actual device or system origin. Startup acknowledgement and silent successful autosave stay unchanged.
+  A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
+  Offline notice and save-priority regressions pass. The owner accepted step 4.3.
+  F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
+  Help and Messages share the owner-accepted stable frame.
+  Applied values now use a shared one-second popup with object labels and numeric range bars.
+  Pickup, refusals, scope-limit messages and editor priority retain their behavior.
+  Input-source state now keeps connection identities and original receipt times across production routes.
+  Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
+  Project changes keep source identities and deadlines.
+  Source feedback does not change actions, acknowledgements, velocities or release ownership.
+  Shared status keeps recording seconds, permanent KB, the last used controller number, actual audio data, master and project details.
+  Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
+  A permanent * is dim when saved and yellow when pending. Save failed remains explicit.
+  Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
+  The incomplete SMC-PAD example uses .toml.example and is not a working profile.
+  Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
+  Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
+  Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.
+  Text overlays now remove intersecting kitty pictures before text output and restore the current wave afterward. Unoccluded pictures stay unchanged.
+  `task screens` now checks the screen/mode matrix and writes deterministic ANSI files at both supported sizes.
+  The files stay local under renders/screens/. Real kitty composition still needs a manual check.
+  Active-delta coverage now checks test declarations and their attached scenario descriptions.
+  Documentation now links catalogue files and separate keyboard, controller, graphics and listening procedures.
+  Overall acceptance does not establish individual keyboard, physical-controller, kitty or listening results. Unreported checks remain unverified.
+  Earlier callback maximum-budget failures remain unresolved.
+  Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
+  Yellow now identifies pad modes, not only marking. Marking still sounds.
+  Manual save success keeps five seconds. Persistent Save failed stays until saving succeeds.
+  Generic controller confirmation remains in 88. Sound, factory bindings and saved formats stay unchanged.
   The order is input and visual changes (87–90), SMC-PAD and its command panel (91–94), then transport and patterns (95–101).
   Read docs/PROJECT.md and docs/plans/README.md before preparing the next change.
   The goal is every non-text action from the SMC-PAD without losing keyboard controls.

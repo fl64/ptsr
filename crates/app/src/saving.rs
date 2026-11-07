@@ -62,7 +62,7 @@ impl App {
                     self.session_write_failed = true;
                 }
                 log::error!("{reason}");
-                self.flash = Some((reason.clone(), Instant::now()));
+                self.post_notice(super::Level::Error, (reason.clone(), Instant::now()));
             }
         }
         result

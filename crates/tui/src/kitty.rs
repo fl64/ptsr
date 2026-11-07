@@ -87,6 +87,30 @@ impl Shown {
         cmds
     }
 
+    /// Remove intersecting pictures before text draws. The next unobstructed update restores them.
+    pub fn suspend(&mut self, blockers: &[Rect]) -> Vec<String> {
+        let mut areas = self
+            .placed
+            .iter()
+            .filter(|(_, area)| {
+                blockers.iter().any(|blocker| {
+                    blocker.width > 0 && blocker.height > 0 && area.intersects(*blocker)
+                })
+            })
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        areas.sort_unstable();
+        let mut commands = Vec::new();
+        for area in areas {
+            if let Some(id) = self.image.remove(&area) {
+                commands.push(delete(id));
+            }
+            self.sent.remove(&area);
+            self.placed.remove(&area);
+        }
+        commands
+    }
+
     /// The commands that take every shown picture off the screen; the state forgets them.
     pub fn drop_all(&mut self) -> Vec<String> {
         let ids: Vec<u32> = self.image.values().copied().collect();
@@ -334,6 +358,36 @@ mod tests {
         let cmds = shown.update(&[img(1, 0.5, 5)], (0, 8));
         assert_eq!(cmds.len(), 1);
         assert!(cmds[0].contains("a=d,d=i"));
+    }
+
+    #[test]
+    fn overlays_remove_only_intersecting_images_before_text() {
+        let mut shown = Shown::default();
+        shown.update(&[img(1, 1.0, 3), img(2, 0.5, 8)], (4, 8));
+        assert!(
+            shown.suspend(&[Rect::new(4, 3, 2, 2)]).is_empty(),
+            "touching edges do not overlap"
+        );
+        assert!(shown.suspend(&[Rect::new(2, 3, 0, 2)]).is_empty());
+        let hidden = shown.suspend(&[Rect::new(3, 4, 2, 2), Rect::new(0, 3, 4, 1)]);
+        assert_eq!(
+            hidden,
+            vec![delete(2)],
+            "remove the whole intersecting image once"
+        );
+        assert!(shown.suspend(&[Rect::new(0, 3, 4, 2)]).is_empty());
+        assert!(
+            shown.update(&[img(2, 0.5, 8)], (4, 8)).is_empty(),
+            "the other image never blinks"
+        );
+        let restored = shown.update(&[img(1, 0.7, 3), img(2, 0.5, 8)], (4, 8));
+        assert!(restored[0].contains("a=t,f=32,t=d,i=2"));
+        assert!(restored[1].contains("a=p,i=2"));
+        assert_eq!(
+            restored.len(),
+            2,
+            "restore current data without touching the other image"
+        );
     }
 
     #[test]

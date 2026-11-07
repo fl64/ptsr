@@ -7,6 +7,2305 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers as
 const PAD_PORT: &str = "Recorded pads MIDI 1";
 const XS_PORT: &str = "USB X-Session MIDI 1";
 
+fn shared_feedback_rows(drive: &mut Drive, width: u16, height: u16, now: Instant) -> Vec<String> {
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = &mut drive.app;
+    app.input_sources.advance(now);
+    let feedback = app.status_feedback_at(now);
+    let learning = app.learning_view(&drive.keymap);
+    let question = app.question_view(&drive.keymap);
+    let pads = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+    let screen = tui::Screen::Pads(app.mark_pads(pads));
+    let status = tui::Status {
+        badges: app.title_badges_at(now),
+        save: app.save_status(),
+        backend: app.audio_alive().map(|audio| audio.backend),
+        recording: app.recording.is_some(),
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: app.master_db,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: app.project.as_ref().map(|project| project.name.as_str()),
+    };
+    let help = tui::Help {
+        groups: &[],
+        hint: None,
+        full: None,
+        question: question.as_ref(),
+        learn: learning.as_ref(),
+    };
+    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+    term.draw(|frame| tui::draw_feedback(frame, &status, &screen, &help, &feedback, None))
+        .unwrap();
+    term.backend()
+        .buffer()
+        .content()
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect()
+}
+
+struct ImageFrame {
+    rows: Vec<String>,
+    before: Vec<String>,
+    after: Vec<String>,
+    blockers: Vec<ratatui::layout::Rect>,
+    images: Vec<ratatui::layout::Rect>,
+    visible_images: Vec<ratatui::layout::Rect>,
+}
+
+fn image_frame_at(
+    drive: &mut Drive,
+    state: &mut graphics::State,
+    enabled: bool,
+    size: (u16, u16),
+    now: Instant,
+) -> ImageFrame {
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = &mut drive.app;
+    app.frame_notice_at(now);
+    app.input_sources.advance(now);
+    let value = app.current_value_at(now).cloned();
+    let question = app.question_view(&drive.keymap);
+    let feedback = app.status_feedback_at(now);
+    let mut view = app.chop_display(app.chop.as_ref().unwrap());
+    if view.slice_keys.is_none() {
+        bank_waves(&mut view.pads, &mut app.pads, app.rate);
+    }
+    view.which = app.which_chop();
+    app.learn_grid(&mut view.pads.pads);
+    let screen = tui::Screen::Chop(Box::new(app.mark_chop(view, None)));
+    let status = tui::Status {
+        badges: app.title_badges_at(now),
+        save: app.save_status(),
+        backend: Some("offline"),
+        recording: false,
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: app.master_db,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: None,
+    };
+    let keys = full_help(&drive.keymap, app.screen, true);
+    let messages = app.message_history();
+    let help = tui::Help {
+        groups: &[],
+        hint: hint_for(app),
+        full: app
+            .help_open
+            .then(|| app.full_help_view(&keys, &messages))
+            .flatten(),
+        question: question.as_ref(),
+        learn: None,
+    };
+    let mut term = Terminal::new(TestBackend::new(size.0, size.1)).unwrap();
+    let mut before = Vec::new();
+    let mut want = Vec::new();
+    let mut blockers = Vec::new();
+    term.draw(|frame| {
+        blockers = tui::overlay_areas(frame.area(), &screen, &help, value.as_ref());
+        before = state.before(enabled, app.screen, frame.area(), (2, 4), &blockers);
+        tui::draw_feedback(
+            frame,
+            &status,
+            &screen,
+            &help,
+            &feedback,
+            enabled.then_some(&mut want),
+        );
+        if let Some(value) = &value {
+            tui::value_popup(frame, value);
+        }
+    })
+    .unwrap();
+    let images = want.iter().map(|image| image.area).collect();
+    let after = state.after(&mut want, &blockers);
+    let visible_images = want.iter().map(|image| image.area).collect();
+    let rows = term
+        .backend()
+        .buffer()
+        .content()
+        .chunks(size.0 as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect();
+    ImageFrame {
+        rows,
+        before,
+        after,
+        blockers,
+        images,
+        visible_images,
+    }
+}
+
+/// Scenario "A value overlay restores its wave" with real keyboard/raw-MIDI setters.
+#[test]
+fn a_value_overlay_restores_its_wave() {
+    for enabled in [false, true] {
+        for source in [Source::Keyboard, Source::Button] {
+            for size in [(80, 26), (120, 40)] {
+                let mut drive = Drive::registry_screen_checks();
+                let mut state = graphics::State::default();
+                let baseline =
+                    image_frame_at(&mut drive, &mut state, enabled, size, Instant::now());
+                assert_eq!(
+                    baseline
+                        .after
+                        .iter()
+                        .any(|command| command.contains("a=t,f=32")),
+                    enabled
+                );
+                match source {
+                    Source::Keyboard => {
+                        drive.tap(KeyCode::Char(']'), M::NONE);
+                    }
+                    _ => {
+                        value_knob(&mut drive, "master.volume", 100);
+                    }
+                }
+                let at = drive.app.value_popup.as_ref().unwrap().at;
+                let popup = image_frame_at(&mut drive, &mut state, enabled, size, at);
+                assert!(
+                    popup.rows.iter().any(|row| row.contains("volume · Master")),
+                    "{}",
+                    popup.rows.join("\n")
+                );
+                let intersects = popup
+                    .images
+                    .iter()
+                    .any(|image| popup.blockers.iter().any(|area| image.intersects(*area)));
+                assert_eq!(
+                    popup
+                        .before
+                        .iter()
+                        .any(|command| command.contains("a=d,d=i")),
+                    intersects
+                );
+                assert!(
+                    popup.after.is_empty(),
+                    "an unchanged unobstructed wave does not blink"
+                );
+                let retained = image_frame_at(
+                    &mut drive,
+                    &mut state,
+                    enabled,
+                    size,
+                    at + LIT_FOR - Duration::from_nanos(1),
+                );
+                assert!(
+                    retained
+                        .rows
+                        .iter()
+                        .any(|row| row.contains("volume · Master"))
+                );
+                assert!(retained.before.is_empty() && retained.after.is_empty());
+                let restored = image_frame_at(&mut drive, &mut state, enabled, size, at + LIT_FOR);
+                assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+                assert!(
+                    restored
+                        .rows
+                        .iter()
+                        .all(|row| !row.contains("volume · Master"))
+                );
+                assert!(restored.before.is_empty());
+                assert_eq!(
+                    restored
+                        .after
+                        .iter()
+                        .any(|command| command.contains("a=t,f=32")),
+                    intersects
+                );
+                assert_eq!(
+                    restored
+                        .after
+                        .iter()
+                        .any(|command| command.contains("a=p,")),
+                    intersects
+                );
+                if intersects {
+                    assert_eq!(restored.after, baseline.after);
+                }
+                if enabled {
+                    // Current Chop waves start below this popup. Exercise a covering image fixture
+                    // with the real popup rectangle and the same production expiry snapshots.
+                    let area = popup.blockers[0];
+                    let image = || {
+                        vec![tui::WaveImage {
+                            id: 1,
+                            area,
+                            peaks: vec![0.7; area.width as usize * 2],
+                            colors: vec![ratatui::style::Color::Rgb(1, 2, 3); area.width as usize],
+                        }]
+                    };
+                    let terminal = ratatui::layout::Rect::new(0, 0, size.0, size.1);
+                    let mut covered = graphics::State::default();
+                    covered.before(true, Screen::Chop, terminal, (2, 4), &[]);
+                    let original = covered.after(&mut image(), &[]);
+                    let hidden =
+                        covered.before(true, Screen::Chop, terminal, (2, 4), &popup.blockers);
+                    assert!(hidden.iter().any(|command| command.contains("a=d,d=i")));
+                    assert!(covered.after(&mut image(), &popup.blockers).is_empty());
+                    assert!(
+                        covered
+                            .before(true, Screen::Chop, terminal, (2, 4), &retained.blockers)
+                            .is_empty()
+                    );
+                    assert!(covered.after(&mut image(), &retained.blockers).is_empty());
+                    assert!(restored.blockers.is_empty());
+                    covered.before(true, Screen::Chop, terminal, (2, 4), &restored.blockers);
+                    assert_eq!(
+                        covered.after(&mut image(), &restored.blockers),
+                        original,
+                        "a covering wave restores at the exact deadline without another input"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Resize and questions keep overlays readable", also with F1 dismissal.
+#[test]
+fn resize_and_questions_keep_overlays_readable() {
+    for enabled in [false, true] {
+        for overlay in ["question", "help"] {
+            let mut drive = Drive::registry_screen_checks();
+            let mut state = graphics::State::default();
+            image_frame_at(&mut drive, &mut state, enabled, (80, 26), Instant::now());
+            drive.tap(KeyCode::Char(']'), M::NONE);
+            let at = drive.app.value_popup.as_ref().unwrap().at;
+            image_frame_at(&mut drive, &mut state, enabled, (80, 26), at);
+            if overlay == "question" {
+                drive.load_pad(18, Arc::new(Sample::mono(vec![0.25; 48_000])), "old target");
+                drive.tap(KeyCode::PageDown, M::NONE);
+                drive.tap(KeyCode::Char('p'), M::NONE);
+                drive.pad_press(Source::Keyboard, 2);
+                drive.pad_release(Source::Keyboard, 2);
+            }
+            drive.tap(
+                if overlay == "question" {
+                    KeyCode::Enter
+                } else {
+                    KeyCode::F(1)
+                },
+                M::NONE,
+            );
+            for (step, size) in [(80, 26), (120, 40), (80, 26)].into_iter().enumerate() {
+                let shown = image_frame_at(
+                    &mut drive,
+                    &mut state,
+                    enabled,
+                    size,
+                    at + Duration::from_millis(100 + step as u64),
+                );
+                assert!(
+                    shown
+                        .rows
+                        .iter()
+                        .all(|row| !row.contains("volume · Master"))
+                );
+                if overlay == "question" {
+                    assert!(
+                        shown
+                            .rows
+                            .iter()
+                            .any(|row| row.contains("KB Enter: replace · Esc: keep")),
+                        "{}",
+                        shown.rows.join("\n")
+                    );
+                    assert!(
+                        shown
+                            .rows
+                            .iter()
+                            .any(|row| row.contains("This cannot be undone."))
+                    );
+                } else {
+                    assert!(shown.rows.iter().any(|row| row.contains("HELP")));
+                }
+                assert!(
+                    shown
+                        .visible_images
+                        .iter()
+                        .all(|image| shown.blockers.iter().all(|area| !image.intersects(*area))),
+                    "no image can cover the text"
+                );
+                if shown
+                    .images
+                    .iter()
+                    .all(|image| shown.blockers.iter().any(|area| image.intersects(*area)))
+                {
+                    assert!(shown.after.is_empty(), "a fully covered wave stays absent");
+                }
+            }
+            let expired = image_frame_at(&mut drive, &mut state, enabled, (80, 26), at + LIT_FOR);
+            let was_hidden = enabled && expired.visible_images.is_empty();
+            assert!(
+                drive.app.current_value_at(at + LIT_FOR).is_none(),
+                "hidden feedback still expires"
+            );
+            drive.tap(KeyCode::Esc, M::NONE);
+            assert!(drive.app.ask.is_none() && !drive.app.help_open);
+            let restored = image_frame_at(&mut drive, &mut state, enabled, (80, 26), at + LIT_FOR);
+            assert_eq!(
+                restored
+                    .after
+                    .iter()
+                    .any(|command| command.contains("a=p,")),
+                was_hidden
+            );
+            assert_eq!(
+                !restored.visible_images.is_empty(),
+                enabled,
+                "an unobstructed wave must remain available"
+            );
+            assert!(
+                restored
+                    .rows
+                    .iter()
+                    .all(|row| !row.contains("volume · Master"))
+            );
+        }
+    }
+}
+
+fn working_question_drive(kind: &str) -> Drive {
+    let mut drive = Drive::new();
+    let sound = Arc::new(Sample::mono(vec![0.25; 32_000]));
+    drive.load_pad(0, sound.clone(), "source");
+    drive.load_pad(18, sound.clone(), "old target");
+    match kind {
+        "copy" => {
+            drive.tap(KeyCode::Char('c'), M::CONTROL);
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.pad_press(Source::Keyboard, 2);
+            drive.pad_release(Source::Keyboard, 2);
+            assert!(matches!(drive.app.ask, Some(Ask::CopyPad { .. })));
+        }
+        "file" => {
+            drive.ordered_file();
+            drive.tap(KeyCode::Enter, M::NONE);
+            drive.tap(KeyCode::F(2), M::NONE);
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.pad_press(Source::Keyboard, 2);
+            drive.pad_release(Source::Keyboard, 2);
+            assert!(matches!(drive.app.ask, Some(Ask::PutFile { .. })));
+        }
+        "plan" => {
+            drive.prepare_chop(sound.clone(), 4);
+            drive.load_pad(18, sound, "old target");
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.tap(KeyCode::Char('p'), M::NONE);
+            drive.pad_press(Source::Keyboard, 2);
+            drive.pad_release(Source::Keyboard, 2);
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(matches!(drive.app.ask, Some(Ask::Plan { .. })));
+        }
+        "reset" | "clear" => {
+            drive.app.pads.volume_db[18] = -6;
+            drive.tap(KeyCode::PageDown, M::NONE);
+            drive.app.pads.selected = 2;
+            if kind == "reset" {
+                drive.tap(KeyCode::Enter, M::NONE);
+            } else {
+                drive.app.pads.marked.insert(18);
+            }
+            drive.tap(KeyCode::Backspace, M::NONE);
+            assert!(if kind == "reset" {
+                matches!(drive.app.ask, Some(Ask::ResetPads { .. }))
+            } else {
+                matches!(drive.app.ask, Some(Ask::ClearPads { .. }))
+            });
+        }
+        "profile" => {
+            drive.tap(KeyCode::F(12), M::NONE);
+            drive.tap(KeyCode::Tab, M::NONE);
+            drive.tap(KeyCode::Tab, M::NONE);
+            drive.app.midi_row = drive
+                .app
+                .midi_list()
+                .iter()
+                .position(
+                    |row| matches!(row, MidiListRow::Reset { name, .. } if name == "Recorded pads"),
+                )
+                .unwrap();
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert!(matches!(drive.app.ask, Some(Ask::ResetProfile { .. })));
+        }
+        _ => panic!("unknown question fixture: {kind}"),
+    }
+    drive
+}
+
+/// Scenario "Questions show effective working answers" for every existing question.
+#[test]
+fn questions_show_effective_working_answers() {
+    for kind in ["copy", "file", "plan", "reset", "clear", "profile"] {
+        for route in ["default", "override", "midi"] {
+            for confirm in [false, true] {
+                let mut drive = working_question_drive(kind);
+                let action = match kind {
+                    "profile" => "settings.learn",
+                    "plan" => "chop.edit",
+                    "file" => "browser.hold",
+                    _ => "pad.edit",
+                };
+                drive.bind_action(5, action);
+                drive.bind_action(6, "ui.back");
+                if route == "override" {
+                    let warnings = drive.keymap.overlay(&format!("[global]\nEsc = \"none\"\nF8 = \"ui.back\"\n[screens.{}]\nEnter = \"none\"\nF9 = \"{action}\"\n", drive.app.screen.key())).unwrap();
+                    assert!(warnings.is_empty(), "{warnings:?}");
+                }
+                let stored = drive.app.ask.as_ref().unwrap().lines().to_vec();
+                let old = drive.app.pads.snapshot(18);
+                let history = drive.app.history.len();
+                let snapshot = drive.app.question_view(&drive.keymap).unwrap();
+                let verb = match kind {
+                    "reset" | "profile" => "reset",
+                    "clear" => "clear",
+                    _ => "replace",
+                };
+                let keys = if route == "override" {
+                    format!("KB F9: {verb} · F8: keep")
+                } else {
+                    format!("KB Enter: {verb} · Esc: keep")
+                };
+                assert_eq!(snapshot.answers[0], keys, "{kind}/{route}");
+                assert!(
+                    snapshot
+                        .answers
+                        .iter()
+                        .any(|row| row == &format!("M1 ch1 cc 5: {verb} · ch1 cc 6: keep")),
+                    "{kind}: {:?}",
+                    snapshot.answers
+                );
+                for (width, height) in [(80, 26), (120, 40)] {
+                    let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
+                    assert!(rows[1].contains("ASK"), "{kind}/{route}: {}", rows[1]);
+                    assert!(
+                        rows.iter().any(|row| row.contains(&keys)),
+                        "{kind}/{route}: {}",
+                        rows.join("\n")
+                    );
+                }
+                assert_eq!(drive.app.ask.as_ref().unwrap().lines(), stored);
+                assert_eq!(drive.app.pads.snapshot(18), old);
+                let hit = drive.pad_press(Source::Button, 4);
+                assert!(hit.commands().is_empty());
+                drive.pad_release(Source::Button, 4);
+                assert_eq!(
+                    drive.app.ask.as_ref().unwrap().lines(),
+                    stored,
+                    "a pad cannot answer"
+                );
+                if route == "override" {
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    drive.tap(KeyCode::Esc, M::NONE);
+                    assert_eq!(
+                        drive.app.ask.as_ref().unwrap().lines(),
+                        stored,
+                        "old key labels cannot answer"
+                    );
+                }
+                match route {
+                    "midi" => {
+                        drive.registry_command(
+                            Source::Button,
+                            KeyCode::Enter,
+                            M::NONE,
+                            if confirm { 5 } else { 6 },
+                        );
+                    }
+                    "override" => {
+                        drive.tap(KeyCode::F(if confirm { 9 } else { 8 }), M::NONE);
+                    }
+                    _ => {
+                        drive.tap(
+                            if confirm {
+                                KeyCode::Enter
+                            } else {
+                                KeyCode::Esc
+                            },
+                            M::NONE,
+                        );
+                    }
+                }
+                assert!(drive.app.ask.is_none(), "{kind}/{route}/{confirm}");
+                if !confirm {
+                    assert_eq!(drive.app.pads.snapshot(18), old);
+                    assert_eq!(drive.app.history.len(), history);
+                    continue;
+                }
+                match kind {
+                    "copy" => {
+                        assert_eq!(drive.app.pads.custom_name[18].as_deref(), Some("source 2"))
+                    }
+                    "file" => assert!(drive.app.browser.in_hand.is_none()),
+                    "plan" => assert!(drive.app.pads.link[18].is_some()),
+                    "reset" => assert_eq!(drive.app.pads.volume_db[18], 0),
+                    "clear" => assert!(drive.app.pads.sound[18].is_none()),
+                    "profile" => {
+                        assert!(!drive.app.learned["Recorded pads"]["global"].contains_key("cc 5"))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Missing controller confirmation stays honest".
+#[test]
+fn missing_controller_confirmation_stays_honest() {
+    use input::{Group, midi::Key};
+    let mut drive = working_question_drive("profile");
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert_eq!(view.answers[0], "KB Enter: reset · Esc: keep");
+    assert!(
+        view.answers
+            .iter()
+            .skip(1)
+            .all(|row| !row.contains(": reset")),
+        "{:?}",
+        view.answers
+    );
+    drive.bind_action(5, "settings.learn");
+    assert!(
+        drive
+            .app
+            .question_view(&drive.keymap)
+            .unwrap()
+            .answers
+            .iter()
+            .any(|row| row.contains("cc 5: reset"))
+    );
+    learn::assign(
+        &mut drive.app.learned,
+        "Recorded pads",
+        Group::Settings,
+        Key::Cc(5),
+        "settings.tab_next",
+    );
+    drive.app.sync_learned("Recorded pads", Group::Settings);
+    drive.midi().recorded_fence();
+    assert!(
+        drive
+            .app
+            .question_view(&drive.keymap)
+            .unwrap()
+            .answers
+            .iter()
+            .all(|row| !row.contains("cc 5:")),
+        "a shadowed global binding cannot answer"
+    );
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.ask.is_some());
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.midi().recorded_connect("Unprofiled MIDI input");
+    drive.frame();
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert!(
+        view.answers
+            .iter()
+            .all(|row| !row.contains(": reset") || row.starts_with("KB "))
+    );
+    assert!(
+        view.answers
+            .iter()
+            .all(|row| !row.contains("STOP") && !row.contains("Apply"))
+    );
+    let warnings = drive
+        .keymap
+        .overlay("[screens.settings]\nEnter = \"none\"\n")
+        .unwrap();
+    assert!(warnings.is_empty());
+    assert!(
+        drive.app.question_view(&drive.keymap).unwrap().answers[0].starts_with("KB no confirm key")
+    );
+    assert!(drive.app.ask.is_some());
+}
+
+#[test]
+fn question_answers_keep_midi_edit_precedence_and_target_rechecks() {
+    use input::{Group, midi::Key};
+    let mut drive = working_question_drive("reset");
+    drive.bind_action(5, "pad.edit");
+    learn::assign(
+        &mut drive.app.learned,
+        "Recorded pads",
+        Group::PadsEdit,
+        Key::Cc(5),
+        "pad.volume",
+    );
+    drive.app.sync_learned("Recorded pads", Group::PadsEdit);
+    drive.midi().recorded_fence();
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert!(drive.app.edit);
+    assert!(
+        view.answers[0].contains("Enter: reset"),
+        "keyboard keeps the normal question layer"
+    );
+    assert!(
+        view.answers.iter().all(|row| !row.contains("cc 5:")),
+        "MIDI keeps the actual edit layer"
+    );
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.ask.is_some());
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 29);
+    assert!(drive.app.ask.is_none());
+    assert_eq!(drive.app.pads.volume_db[18], 0);
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = working_question_drive("copy");
+        drive.bind_action(5, "pad.edit");
+        let stored = drive.app.ask.as_ref().unwrap().lines().to_vec();
+        drive.app.pads.custom_name[18] = Some("changed after the question".into());
+        drive.app.question_view(&drive.keymap);
+        assert_eq!(drive.app.ask.as_ref().unwrap().lines(), stored);
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 5);
+        let updated = drive
+            .app
+            .ask
+            .as_ref()
+            .expect("a changed target asks again")
+            .lines();
+        assert_ne!(updated, stored);
+        assert!(
+            updated
+                .iter()
+                .any(|line| line.contains("changed after the question"))
+        );
+        assert!(drive.app.copy_in_hand.is_some());
+        assert!(drive.app.history.is_empty());
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 5);
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.pads.custom_name[18].as_deref(), Some("source 2"));
+        assert_eq!(drive.app.history.len(), 1);
+    }
+}
+
+#[test]
+fn feedback_cache_tracks_source_identity_and_activity() {
+    let mut drive = Drive::new();
+    let mut text = view::FrameText::default();
+    let at = Instant::now();
+    let first = text.feedback_at(&drive.app, at).inputs;
+    let again = text
+        .feedback_at(&drive.app, at + Duration::from_millis(20))
+        .inputs;
+    assert!(Arc::ptr_eq(&first, &again));
+    assert_eq!(text.builds().1, 1);
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    let receipt = drive.app.input_sources.latest.as_ref().unwrap().1;
+    let active = text.feedback_at(&drive.app, receipt).inputs;
+    assert!(!Arc::ptr_eq(&first, &active));
+    assert!(
+        active
+            .iter()
+            .any(|input| input.compact == "M2" && input.active)
+    );
+    assert!(Arc::ptr_eq(
+        &active,
+        &text.feedback_at(&drive.app, receipt).inputs
+    ));
+    drive.app.input_sources.advance(receipt + LIT_FOR);
+    let expired = text.feedback_at(&drive.app, receipt + LIT_FOR).inputs;
+    assert!(expired.iter().all(|input| !input.active));
+    assert!(!Arc::ptr_eq(&active, &expired));
+    drive.app.apply_session(session::Session::default());
+    assert!(Arc::ptr_eq(
+        &expired,
+        &text.feedback_at(&drive.app, receipt + LIT_FOR).inputs
+    ));
+    drive.midi().recorded_disconnect(XS_PORT);
+    drive.frame();
+    let removed = text.feedback_at(&drive.app, Instant::now()).inputs;
+    assert_eq!(removed.len(), 2);
+    assert_eq!(removed[0].compact, "KB");
+    assert!(removed[1].compact.trim().is_empty());
+    drive.midi().recorded_connect(XS_PORT);
+    drive.frame();
+    let connected = text.feedback_at(&drive.app, Instant::now()).inputs;
+    assert_eq!(connected.len(), 2);
+    assert_eq!(connected[0].compact, "KB");
+    assert!(connected[1].compact.trim().is_empty());
+    assert!(connected.iter().all(|input| !input.active));
+    assert!(
+        !Arc::ptr_eq(&expired, &connected),
+        "equal names do not reuse old connection data"
+    );
+    assert_eq!(text.builds().1, 5);
+}
+
+#[test]
+fn badge_cache_tracks_real_screen_mode_and_page_changes() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            // F3 on Files opens its file. Each screen starts from the same pad fixture.
+            let mut drive = Drive::registry_screen_checks();
+            drive.bind_action(111, "edit.page_next");
+            let mut text = view::FrameText::default();
+            text.badges_at(&drive.app, Instant::now());
+            drive.registry_command(source, key, M::NONE, number);
+            assert_eq!(drive.app.screen, screen);
+            let now = Instant::now();
+            assert_eq!(
+                text.badges_at(&drive.app, now),
+                drive.app.title_badges_at(now)
+            );
+            let builds = text.builds().0;
+            text.badges_at(&drive.app, now);
+            assert_eq!(text.builds().0, builds);
+            if matches!(screen, Screen::Pads | Screen::Chop) {
+                drive.registry_command(
+                    source,
+                    KeyCode::Enter,
+                    M::NONE,
+                    if screen == Screen::Pads { 97 } else { 98 },
+                );
+                let now = Instant::now();
+                assert_eq!(
+                    text.badges_at(&drive.app, now),
+                    drive.app.title_badges_at(now)
+                );
+                assert!(text.builds().0 > builds);
+                if screen == Screen::Pads {
+                    let page = drive.app.help_state().page;
+                    drive.registry_command(source, KeyCode::Tab, M::NONE, 111);
+                    assert_ne!(drive.app.help_state().page, page);
+                    let now = Instant::now();
+                    assert_eq!(
+                        text.badges_at(&drive.app, now),
+                        drive.app.title_badges_at(now)
+                    );
+                    assert!(
+                        text.badges_at(&drive.app, now)
+                            .iter()
+                            .any(|badge| badge.normal.contains(drive.app.help_state().page))
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Scenario "Unchanged views do not freeze timed feedback" through real keyboard and MIDI setters.
+#[test]
+fn unchanged_views_do_not_freeze_timed_feedback() {
+    for midi in [false, true] {
+        let mut drive = value_drive();
+        if midi {
+            value_knob(&mut drive, "pad.volume", 100);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        let at = drive.app.value_popup.as_ref().unwrap().at;
+        drive.app.notices = Notices::new(at);
+        drive
+            .app
+            .post_system_notice(Level::Info, ("cache timer".into(), at));
+        assert_eq!(
+            drive.app.frame_notice_at(at).as_deref(),
+            Some("cache timer")
+        );
+        let mut text = view::FrameText::default();
+        let expected = drive.app.title_badges_at(at);
+        for now in [
+            at,
+            at + LIT_FOR - Duration::from_nanos(1),
+            at + LIT_FOR,
+            at + Duration::from_secs(3),
+        ] {
+            drive.app.input_sources.advance(now);
+            let notice = drive.app.frame_notice_at(now);
+            assert_eq!(notice.is_some(), now < at + Duration::from_secs(3));
+            assert_eq!(
+                drive.app.current_value_at(now).is_some(),
+                now < at + LIT_FOR
+            );
+            assert_eq!(text.badges_at(&drive.app, now), expected);
+            text.feedback_at(&drive.app, now);
+            assert_eq!(
+                text.builds().0,
+                1,
+                "timers do not reconstruct unchanged badge text"
+            );
+        }
+        assert!(drive.app.value_popup.is_none());
+        assert!(drive.app.input_sources.active.is_none());
+    }
+}
+
+fn input_device(drive: &Drive, port: &str) -> input_sources::Source {
+    input_sources::Source::Device {
+        port: port.into(),
+        connection: drive.midi().recorded_connection(port).unwrap(),
+    }
+}
+
+/// Scenario "Keyboard stays visible without controllers".
+#[test]
+fn keyboard_stays_visible_without_controllers() {
+    let mut drive = Drive::offline();
+    let ports: Vec<_> = drive
+        .app
+        .input_sources
+        .connected()
+        .map(|(port, _)| port.to_owned())
+        .collect();
+    for port in ports {
+        drive.midi().recorded_disconnect(&port);
+    }
+    drive.frame();
+    let mut cache = view::FrameText::default();
+    let initial = cache.feedback_at(&drive.app, Instant::now()).inputs;
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial[0].compact, "KB");
+    assert!(!initial[0].active);
+    drive.key(KeyCode::Char('?'), M::NONE, KeyEventKind::Press);
+    let receipt = drive.app.input_sources.latest.clone().unwrap();
+    for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+        drive.key(KeyCode::Char('?'), M::NONE, kind);
+        assert_eq!(drive.app.input_sources.latest.as_ref(), Some(&receipt));
+    }
+    for (width, height) in [(80, 26), (120, 40)] {
+        let before = shared_feedback_rows(
+            &mut drive,
+            width,
+            height,
+            receipt.1 - Duration::from_nanos(1),
+        )[0]
+        .clone();
+        let mut column = None;
+        assert!(before.contains("KB") && !before.contains('▸'), "{before}");
+        for now in [
+            receipt.1,
+            receipt.1 + LIT_FOR - Duration::from_nanos(1),
+            receipt.1 + LIT_FOR,
+        ] {
+            let feedback = cache.feedback_at(&drive.app, now);
+            assert_eq!(feedback.inputs[0].active, now < receipt.1 + LIT_FOR);
+            assert!(Arc::ptr_eq(
+                &feedback.inputs,
+                &cache.feedback_at(&drive.app, now).inputs
+            ));
+            let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+            assert!(row.contains("KB"), "{row}");
+            assert_eq!(row.contains("▸KB"), now < receipt.1 + LIT_FOR, "{row}");
+            let current = row
+                .find("offline")
+                .map(|index| ratatui::text::Line::from(&row[..index]).width())
+                .unwrap();
+            assert_eq!(
+                current,
+                ratatui::text::Line::from(&before[..before.find("offline").unwrap()]).width()
+            );
+            if let Some(previous) = column {
+                assert_eq!(current, previous);
+            }
+            column = Some(current);
+        }
+    }
+}
+
+/// Scenario "Status follows keyboard and connected inputs" through production input and shared drawing.
+#[test]
+fn status_follows_keyboard_and_connected_inputs() {
+    for (_, key, _) in REGISTRY_SCREEN_COMMANDS {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(88, "master.volume_up");
+        drive.tap(key, M::NONE);
+        let pads = drive.seen().pads;
+        let keyboard = drive.tap(KeyCode::Char(']'), M::NONE);
+        assert!(matches!(
+            keyboard.ui.as_slice(),
+            [Command::SetMasterGain { .. }]
+        ));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_sources::Source::Keyboard)
+        );
+        for (width, height) in [(80, 26), (120, 40)] {
+            let row = &shared_feedback_rows(&mut drive, width, height, Instant::now())[0];
+            assert!(
+                row.contains("▸KB") && !row.contains("M1") && !row.contains("M2"),
+                "{row}"
+            );
+            if width == 120 {
+                assert!(!row.contains(PAD_PORT) && !row.contains(XS_PORT), "{row}");
+            }
+        }
+        drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+        drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+        let button = drive.frame();
+        assert!(matches!(
+            button.ui.as_slice(),
+            [Command::SetMasterGain { .. }]
+        ));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_device(&drive, PAD_PORT))
+        );
+        let row = &shared_feedback_rows(&mut drive, 80, 26, Instant::now())[0];
+        assert!(row.contains("▸M1") && !row.contains("▸KB"), "{row}");
+        let knob = value_knob(&mut drive, "master.volume", 100);
+        assert!(matches!(
+            knob.ui.as_slice(),
+            [Command::SetMasterGain { .. }]
+        ));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_device(&drive, XS_PORT))
+        );
+        assert_eq!(
+            drive
+                .app
+                .input_sources
+                .connected()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
+            [PAD_PORT, XS_PORT]
+        );
+        let row = &shared_feedback_rows(&mut drive, 80, 26, Instant::now())[0];
+        assert!(row.contains("▸M2") && !row.contains("▸M1"), "{row}");
+        assert_eq!(drive.seen().pads, pads);
+    }
+}
+
+/// Scenario "Only the last used controller number stays visible".
+/// Scenario "Controller activity keeps status columns fixed".
+#[test]
+fn last_controller_keeps_fixed_columns_through_input_and_expiry() {
+    let mut drive = Drive::offline();
+    for index in 0..8 {
+        drive.midi().recorded_connect(&format!("Aux {index:02}"));
+    }
+    drive.frame();
+    drive.app.project = Some(Project {
+        name: "column check".into(),
+        folder: drive.app.session_path.parent().unwrap().into(),
+    });
+    let ports: Vec<_> = drive
+        .app
+        .input_sources
+        .connected()
+        .map(|(port, _)| port.to_owned())
+        .collect();
+    assert_eq!(ports.len(), 10);
+    let mut columns = [None, None];
+    for index in [0, 7, 9] {
+        let at = Instant::now();
+        drive
+            .midi()
+            .recorded_bytes_at(&ports[index], &[0xb0, 15, 64], &drive.project, at);
+        drive.frame();
+        let label = format!("M{}", index + 1);
+        for now in [at, at + LIT_FOR - Duration::from_nanos(1), at + LIT_FOR] {
+            for (size, (width, height)) in [(80, 26), (120, 40)].into_iter().enumerate() {
+                let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+                assert!(row.contains(&label), "{row}");
+                assert_eq!(row.contains('▸'), now < at + LIT_FOR, "{row}");
+                assert!(
+                    row.contains("KB") && !row.contains("Aux") && !row.contains(" +8"),
+                    "{row}"
+                );
+                let column = |label| {
+                    row.find(label)
+                        .map(|index| ratatui::text::Line::from(&row[..index]).width())
+                };
+                let positions = (column("offline"), column("column check"));
+                assert!(positions.0.is_some() && positions.1.is_some(), "{row}");
+                if let Some(expected) = columns[size] {
+                    assert_eq!(positions, expected, "{row}");
+                }
+                columns[size] = Some(positions);
+            }
+        }
+        let mut cache = view::FrameText::default();
+        let expired = cache.feedback_at(&drive.app, at + LIT_FOR).inputs;
+        drive.tap(KeyCode::Char('?'), M::NONE);
+        let keyboard_at = drive.app.input_sources.latest.as_ref().unwrap().1;
+        // A release, equal CC and older input cannot select another controller.
+        drive.bytes(&ports[1], &[0x80, 36, 0]);
+        drive.bytes(&ports[index], &[0xb0, 15, 64]);
+        drive.midi().recorded_bytes_at(
+            &ports[2],
+            &[0x90, 36, 80],
+            &drive.project,
+            at - Duration::from_nanos(1),
+        );
+        drive.frame();
+        let retained = cache.feedback_at(&drive.app, keyboard_at).inputs;
+        assert!(!Arc::ptr_eq(&expired, &retained));
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].compact, "KB");
+        assert!(retained[0].active);
+        assert_eq!(retained[1].compact.trim(), label);
+        assert!(!retained[1].active);
+        assert!(Arc::ptr_eq(
+            &retained,
+            &cache.feedback_at(&drive.app, keyboard_at).inputs
+        ));
+        let expired_keyboard = cache.feedback_at(&drive.app, keyboard_at + LIT_FOR).inputs;
+        assert!(expired_keyboard.iter().all(|input| !input.active));
+        assert_eq!(expired_keyboard[1].compact.trim(), label);
+        for now in [keyboard_at, keyboard_at + LIT_FOR] {
+            for (size, (width, height)) in [(80, 26), (120, 40)].into_iter().enumerate() {
+                let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+                let column = |label| {
+                    row.find(label)
+                        .map(|index| ratatui::text::Line::from(&row[..index]).width())
+                };
+                assert_eq!(
+                    Some((column("offline"), column("column check"))),
+                    columns[size],
+                    "{row}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn source_labels_follow_identity_when_port_numbers_change() {
+    let mut drive = Drive::new();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    let at = drive.app.input_sources.latest.as_ref().unwrap().1;
+    assert!(shared_feedback_rows(&mut drive, 120, 40, at)[0].contains("▸M2"));
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.frame();
+    let row = &shared_feedback_rows(&mut drive, 120, 40, at)[0];
+    assert!(
+        !row.contains(PAD_PORT) && !row.contains(XS_PORT) && row.contains("▸M1"),
+        "{row}"
+    );
+    drive.midi().recorded_connect(PAD_PORT);
+    drive.frame();
+    let row = &shared_feedback_rows(&mut drive, 120, 40, at)[0];
+    assert!(
+        !row.contains(PAD_PORT) && !row.contains(XS_PORT) && row.contains("▸M2"),
+        "{row}"
+    );
+    let last = at + LIT_FOR - Duration::from_nanos(1);
+    assert!(shared_feedback_rows(&mut drive, 120, 40, last)[0].contains("▸M2"));
+    assert!(!shared_feedback_rows(&mut drive, 120, 40, at + LIT_FOR)[0].contains('▸'));
+}
+
+/// Scenario "Learning keeps safety and next steps visible" through keyboard and raw MIDI.
+#[test]
+fn learning_keeps_safety_and_next_steps_visible() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            if screen == Screen::Settings {
+                continue;
+            }
+            let mut drive = Drive::registry_screen_checks();
+            drive.registry_command(source, key, M::NONE, number);
+            drive.app.session_write_failed = true;
+            drive
+                .app
+                .audio
+                .as_ref()
+                .unwrap()
+                .stopped
+                .store(true, Relaxed);
+            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            assert!(drive.app.screen_learn.is_some());
+            let picked = drive.tap(KeyCode::Char('q'), M::NONE);
+            assert!(picked.commands().is_empty(), "screen learn stays silent");
+            drive.bytes(PAD_PORT, &[0x90, 110, 100]);
+            drive.bytes(PAD_PORT, &[0x80, 110, 0]);
+            let pending = drive.frame();
+            assert!(pending.commands().is_empty());
+            let before = drive.app.learned.clone();
+            for (width, height) in [(80, 26), (120, 40)] {
+                let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
+                assert!(
+                    rows[0].contains("Save failed") && rows[0].contains("no audio"),
+                    "{}",
+                    rows[0]
+                );
+                assert!(!rows[0].contains("LEARN"));
+                assert!(
+                    rows[height as usize - 3].contains("LEARN")
+                        && rows[height as usize - 3].contains("pad Q"),
+                    "{}",
+                    rows[height as usize - 3]
+                );
+                assert!(
+                    rows[height as usize - 1].contains("Enter bind · Esc keep · F10 done"),
+                    "{}",
+                    rows[height as usize - 1]
+                );
+            }
+            assert_eq!(
+                drive.app.learned, before,
+                "drawing does not commit pending input"
+            );
+            drive.tap(KeyCode::Esc, M::NONE);
+            let view = drive.app.learning_view(&drive.keymap).unwrap();
+            assert!(!view.controls.contains("Enter bind"));
+            drive.tap(KeyCode::Enter, M::NONE);
+            assert_eq!(
+                drive.app.learned, before,
+                "a canceled control stays unbound"
+            );
+            drive.tap(KeyCode::F(10), M::NONE);
+            assert!(drive.app.screen_learn.is_none());
+        }
+    }
+}
+
+#[test]
+fn learning_footer_follows_real_controls() {
+    let mut drive = Drive::registry_screen_checks();
+    drive.tap(KeyCode::F(2), M::NONE);
+    let warnings = drive.keymap.overlay(
+        "[global]\nF10 = \"none\"\nF9 = \"learn.toggle\"\n\
+         [edit]\nI = \"none\"\nUp = \"none\"\nK = \"none\"\nDown = \"none\"\nH = \"edit.param_prev\"\nL = \"edit.param_next\"\n"
+    ).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    drive.tap(KeyCode::F(9), M::NONE);
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        view.controls.contains("H L select") && view.controls.contains("Esc/F9 done"),
+        "{}",
+        view.controls
+    );
+    assert!(!view.controls.contains("F10") && !view.detail.contains("F10"));
+    drive.tap(KeyCode::Char('l'), M::NONE);
+    assert_eq!(drive.app.learn_picked().unwrap().0, "pad.volume");
+    drive.bytes(PAD_PORT, &[0x90, 110, 100]);
+    drive.bytes(PAD_PORT, &[0x80, 110, 0]);
+    drive.frame();
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        view.warning && view.detail.contains("knob or fader"),
+        "{}",
+        view.detail
+    );
+    assert!(view.controls.contains("Bksp clear"));
+    let saved = drive.app.learned.clone();
+    drive.tap(KeyCode::Backspace, M::NONE);
+    let clear = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        clear.controls.starts_with("Enter clear · Esc keep"),
+        "{}",
+        clear.controls
+    );
+    assert!(
+        !clear.warning && !clear.detail.contains("knob or fader"),
+        "{}",
+        clear.detail
+    );
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.screen_learn.as_ref().unwrap().clearing);
+    assert_eq!(drive.app.learned, saved);
+    drive.tap(KeyCode::F(10), M::NONE);
+    assert!(
+        drive.app.screen_learn.is_some(),
+        "an overridden key cannot be advertised as exit"
+    );
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(drive.app.screen_learn.is_none());
+    drive.tap(KeyCode::F(6), M::NONE);
+    drive.tap(KeyCode::F(9), M::NONE);
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    assert!(
+        !view.controls.contains("select"),
+        "Files has no parameter walk: {}",
+        view.controls
+    );
+}
+
+/// Scenario "Input highlights retain original receipt time".
+#[test]
+fn input_highlights_retain_original_receipt_time() {
+    for deferred in [false, true] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.load_pad(16, Arc::new(Sample::mono(vec![0.2; 4096])), "deferred");
+        drive.bind_action(88, "bank.next");
+        learn::assign(
+            &mut drive.app.learned,
+            "X-Session Pro",
+            input::Group::Global,
+            input::midi::Key::Note(60),
+            "pad.1",
+        );
+        drive
+            .app
+            .sync_learned("X-Session Pro", input::Group::Global);
+        drive.midi().recorded_fence();
+        let at = Instant::now();
+        if deferred {
+            drive
+                .midi()
+                .recorded_bytes_at(PAD_PORT, &[0xb0, 88, 127], &drive.project, at);
+        }
+        drive
+            .midi()
+            .recorded_bytes_at(XS_PORT, &[0x90, 60, 81], &drive.project, at);
+        let queued = drive.queued_events();
+        let hit = queued
+            .iter()
+            .find(|event| matches!(event.event, midi::Event::PadHit { .. }))
+            .unwrap();
+        assert_eq!(hit.source().unwrap().at, at);
+        assert_eq!(hit.origin(), Some(XS_PORT));
+        assert!(
+            matches!(
+                hit.event,
+                midi::Event::PadHit {
+                    sound: midi::PadSound::UiUnattempted { deferred: true },
+                    ..
+                }
+            ) == deferred
+        );
+        let keyboard = drive.tap(KeyCode::Char(']'), M::NONE);
+        let newer = drive.app.input_sources.latest.clone();
+        if !deferred {
+            assert!(
+                matches!(keyboard.direct.as_slice(), [ProjectCommand { command: ProjectMessage::Command(Command::PadPress { pad: 0, velocity }), .. }] if *velocity == 81.0 / 127.0)
+            );
+        }
+        for event in queued {
+            drive.app.midi_ui_event(event);
+        }
+        assert_eq!(drive.app.input_sources.latest, newer);
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_sources::Source::Keyboard)
+        );
+        let applied = drive.frame();
+        if deferred {
+            assert!(applied.ui.iter().any(|command| matches!(command, Command::PadPress { pad: 16, velocity } if *velocity == 81.0 / 127.0)));
+        } else {
+            assert!(
+                !applied
+                    .ui
+                    .iter()
+                    .any(|command| matches!(command, Command::PadPress { .. }))
+            );
+        }
+        drive.bytes(XS_PORT, &[0x80, 60, 0]);
+        let release = drive.frame();
+        let pad = if deferred { 16 } else { 0 };
+        assert!(release.commands().iter().any(
+            |command| matches!(command, Command::PadRelease { pad: actual } if *actual == pad)
+        ));
+        assert_eq!(drive.app.input_sources.latest, newer);
+        let deadline = newer.unwrap().1 + LIT_FOR;
+        drive
+            .app
+            .input_sources
+            .advance(deadline - Duration::from_nanos(1));
+        assert_eq!(
+            drive.app.input_sources.active,
+            Some(input_sources::Source::Keyboard)
+        );
+        drive.app.input_sources.advance(deadline);
+        assert_eq!(drive.app.input_sources.active, None);
+    }
+}
+
+/// Scenario "Disconnect cannot leave a false active device".
+/// Scenario "Last controller number requires current connection input".
+#[test]
+fn disconnect_cannot_leave_a_false_active_device() {
+    let mut drive = Drive::new();
+    drive.bytes(PAD_PORT, &[0x90, 36, 74]);
+    let queued = drive.queued_events();
+    let old = drive.midi().recorded_connection(PAD_PORT).unwrap();
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
+    drive.midi().recorded_disconnect(PAD_PORT);
+    let disconnected = drive.queued_events();
+    for event in disconnected {
+        drive.app.midi_ui_event(event);
+    }
+    for event in queued {
+        drive.app.midi_ui_event(event);
+    }
+    assert!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .all(|(name, _)| name != PAD_PORT)
+    );
+    assert_eq!(drive.app.input_sources.active, None);
+    drive.midi().recorded_connect(PAD_PORT);
+    drive.frame();
+    let new = drive.midi().recorded_connection(PAD_PORT).unwrap();
+    assert_ne!(new, old);
+    assert_eq!(drive.app.input_sources.active, None);
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
+    drive.bytes(PAD_PORT, &[0x90, 37, 63]);
+    drive.frame();
+    let current = drive.app.input_sources.latest.clone();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, PAD_PORT))
+    );
+    // Deliver an old callback after the new connection. Routing is deliberately not gated.
+    drive.midi().recorded_bytes_from(
+        PAD_PORT,
+        &[0x90, 38, 92],
+        &drive.project,
+        Some(input_sources::Stamp {
+            connection: old,
+            at: Instant::now(),
+        }),
+    );
+    let late = drive.frame();
+    assert!(late.commands().iter().any(|command| matches!(command, Command::PadPress { pad: 2, velocity } if *velocity == 92.0 / 127.0)));
+    assert_eq!(drive.app.input_sources.latest, current);
+    assert_eq!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim(),
+        "M1"
+    );
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.frame();
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
+    drive.midi().recorded_connect(PAD_PORT);
+    drive.frame();
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
+    drive.bytes(PAD_PORT, &[0x90, 39, 80]);
+    drive.frame();
+    let new = drive.midi().recorded_connection(PAD_PORT).unwrap();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, PAD_PORT))
+    );
+    assert_eq!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .find(|(name, _)| *name == PAD_PORT)
+            .unwrap()
+            .1,
+        new
+    );
+}
+
+/// Scenario "First input can precede the connection notice".
+#[test]
+fn first_input_can_precede_the_connection_notice() {
+    for expired in [false, true] {
+        let mut drive = Drive::new();
+        const PORT: &str = "New recorded device 音";
+        drive.midi().recorded_connect(PORT);
+        let connected = drive.queued_events();
+        let at = Instant::now()
+            - if expired {
+                Duration::from_secs(2)
+            } else {
+                Duration::ZERO
+            };
+        drive
+            .midi()
+            .recorded_bytes_at(PORT, &[0x90, 36, 80], &drive.project, at);
+        let message = drive.queued_events();
+        for event in message {
+            drive.app.midi_ui_event(event);
+        }
+        assert!(
+            drive
+                .app
+                .input_sources
+                .connected()
+                .all(|(name, _)| name != PORT)
+        );
+        assert_eq!(drive.app.input_sources.active, None);
+        for event in connected {
+            assert_eq!(
+                event.origin(),
+                None,
+                "connection notices retain system origin"
+            );
+            drive.app.midi_ui_event(event);
+        }
+        assert!(
+            drive
+                .app
+                .input_sources
+                .connected()
+                .any(|(name, _)| name == PORT)
+        );
+        assert_eq!(
+            drive.app.input_sources.active,
+            (!expired).then(|| input_device(&drive, PORT))
+        );
+        assert_eq!(drive.app.input_sources.latest.as_ref().unwrap().1, at);
+    }
+}
+
+/// Scenario "Missing source metadata stays unknown".
+#[test]
+fn missing_source_metadata_stays_unknown() {
+    let mut drive = Drive::new();
+    drive.bind_action(88, "master.volume_up");
+    drive
+        .midi()
+        .recorded_bytes_from(PAD_PORT, &[0xb0, 88, 127], &drive.project, None);
+    let applied = drive.frame();
+    assert!(matches!(
+        applied.ui.as_slice(),
+        [Command::SetMasterGain { .. }]
+    ));
+    assert_eq!(drive.app.input_sources.active, None);
+    assert_eq!(drive.app.input_sources.latest, None);
+    drive.midi().recorded_bytes_from(
+        "Unknown callback port",
+        &[0x90, 36, 70],
+        &drive.project,
+        None,
+    );
+    let unknown = drive.frame();
+    assert!(unknown.commands().iter().any(|command| matches!(command, Command::PadPress { pad: 0, velocity } if *velocity == 70.0 / 127.0)));
+    assert_eq!(drive.app.input_sources.latest, None);
+    assert!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .all(|(name, _)| name != "Unknown callback port")
+    );
+    let connected: Vec<_> = drive
+        .app
+        .input_sources
+        .connected()
+        .map(|(name, id)| (name.to_owned(), id))
+        .collect();
+    drive.app.midi_ui_event(midi::UiEvent::stamped(
+        midi::Event::Action(Action::MasterVolume(1)),
+        &drive.project,
+    ));
+    assert_eq!(drive.app.master_db, 2);
+    assert_eq!(drive.app.input_sources.active, None);
+    assert_eq!(
+        drive
+            .app
+            .input_sources
+            .connected()
+            .map(|(name, id)| (name.to_owned(), id))
+            .collect::<Vec<_>>(),
+        connected
+    );
+}
+
+#[test]
+fn source_activity_keeps_classification_deadlines_and_project_lifetime() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let pressed = drive.pad_press(source, 0);
+        assert!(pressed.commands().iter().any(
+            |command| matches!(command, Command::PadPress { pad: 0, velocity } if *velocity == 1.0)
+        ));
+        let original = drive.app.input_sources.latest.clone();
+        let expected = if matches!(source, Source::Keyboard) {
+            input_sources::Source::Keyboard
+        } else {
+            input_device(&drive, PAD_PORT)
+        };
+        assert_eq!(drive.app.input_sources.active, Some(expected.clone()));
+        if matches!(source, Source::Keyboard) {
+            drive.key(KeyCode::Char('1'), M::SHIFT, KeyEventKind::Repeat);
+            drive.key(KeyCode::Char('1'), M::SHIFT, KeyEventKind::Press);
+            drive.key(
+                KeyCode::Modifier(event::ModifierKeyCode::LeftShift),
+                M::SHIFT,
+                KeyEventKind::Press,
+            );
+            drive.frame();
+            assert_eq!(drive.app.input_sources.latest, original);
+        }
+        let released = drive.pad_release(source, 0);
+        assert!(
+            released
+                .commands()
+                .iter()
+                .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
+        );
+        assert_eq!(drive.app.input_sources.latest, original);
+        drive.app.apply_session(session::Session::default());
+        assert_eq!(drive.app.input_sources.latest, original);
+        assert_eq!(drive.app.input_sources.connected().count(), 2);
+        let deadline = original.unwrap().1 + LIT_FOR;
+        drive
+            .app
+            .input_sources
+            .advance(deadline - Duration::from_nanos(1));
+        assert_eq!(drive.app.input_sources.active, Some(expected));
+        drive.app.input_sources.advance(deadline);
+        assert_eq!(drive.app.input_sources.active, None);
+    }
+    let restarted = tests::test_app();
+    assert_eq!(restarted.input_sources.active, None);
+    assert_eq!(restarted.input_sources.connected().count(), 0);
+}
+
+#[test]
+fn source_activity_uses_real_knob_movement_not_equal_values() {
+    let mut drive = Drive::new();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    let first = drive.app.input_sources.latest.clone();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert_eq!(drive.app.input_sources.latest, first);
+    drive.bytes(XS_PORT, &[0xb0, 15, 0]);
+    drive.frame();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, XS_PORT))
+    );
+    assert!(drive.app.input_sources.latest.as_ref().unwrap().1 > first.unwrap().1);
+    let at = drive.app.input_sources.latest.as_ref().unwrap().1;
+    drive.app.input_sources.advance(at + LIT_FOR);
+    assert_eq!(drive.app.input_sources.active, None);
+}
+
+#[test]
+fn source_knob_comparison_does_not_inherit_an_old_connection() {
+    let mut drive = Drive::new();
+    let old = drive.midi().recorded_connection(XS_PORT).unwrap();
+    drive.midi().recorded_disconnect(XS_PORT);
+    drive.frame();
+    drive.midi().recorded_connect(XS_PORT);
+    drive.frame();
+    drive.midi().recorded_bytes_from(
+        XS_PORT,
+        &[0xb0, 15, 64],
+        &drive.project,
+        Some(input_sources::Stamp {
+            connection: old,
+            at: Instant::now(),
+        }),
+    );
+    drive.frame();
+    assert_eq!(drive.app.input_sources.active, None);
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, XS_PORT))
+    );
+}
+
+#[test]
+fn source_knob_comparison_rejects_older_values_per_channel_and_control() {
+    let mut drive = Drive::new();
+    let at = Instant::now();
+    for (value, age) in [(10, 30), (20, 20), (10, 30), (20, 10)] {
+        drive.midi().recorded_bytes_at(
+            PAD_PORT,
+            &[0xb0, 100, value],
+            &drive.project,
+            at - Duration::from_nanos(age),
+        );
+        drive.frame();
+    }
+    assert_eq!(
+        drive.app.input_sources.latest.as_ref().unwrap().1,
+        at - Duration::from_nanos(20)
+    );
+    for bytes in [[0xb1, 100, 20], [0xb0, 101, 20]] {
+        drive.bytes(PAD_PORT, &bytes);
+        drive.frame();
+        assert!(drive.app.input_sources.latest.as_ref().unwrap().1 > at);
+    }
+}
+
+#[test]
+fn source_metadata_survives_the_project_filter_without_acknowledging() {
+    use std::sync::atomic::Ordering::Release;
+    let mut drive = Drive::offline();
+    drive
+        .app
+        .post_system_notice(Level::Error, ("A shown error".into(), Instant::now()));
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0x90, 36, 80]);
+    let queued = drive.queued_events();
+    let at = queued
+        .iter()
+        .find(|event| event.owner_input())
+        .unwrap()
+        .source()
+        .unwrap()
+        .at;
+    drive.project.epoch.store(1, Release);
+    drive.project.ready.store(1, Release);
+    let before = drive.seen();
+    for event in queued {
+        drive.app.midi_ui_event(event);
+    }
+    assert_eq!(drive.seen(), before, "old-project bodies remain discarded");
+    assert_eq!(drive.app.notice().as_deref(), Some("A shown error"));
+    assert_eq!(
+        drive.app.input_sources.active,
+        Some(input_device(&drive, PAD_PORT))
+    );
+    assert_eq!(drive.app.input_sources.latest.as_ref().unwrap().1, at);
+    drive.app.input_sources.advance(at + LIT_FOR);
+    assert_eq!(drive.app.input_sources.active, None);
+}
+
+fn value_drive() -> Drive {
+    let mut drive = Drive::new();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "value");
+    drive
+}
+
+fn value_knob(drive: &mut Drive, action: &str, value: u8) -> Frame {
+    assert!(input::midi::is_param_action(action), "{action}");
+    let group = if drive.app.screen == Screen::Fx && action.starts_with("edit.param_") {
+        input::Group::Fx
+    } else {
+        input::Group::Global
+    };
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        group,
+        input::midi::Key::Cc(100),
+        action,
+    );
+    drive.app.sync_learned("X-Session Pro", group);
+    drive.bytes(XS_PORT, &[0xb0, 100, value]);
+    drive.frame()
+}
+
+fn shown_value(drive: &Drive) -> tui::Value {
+    drive
+        .app
+        .current_value_at(drive.app.value_popup.as_ref().expect("an applied value").at)
+        .expect("a current value")
+        .clone()
+}
+
+/// Scenario "Values appear on every screen".
+#[test]
+fn values_appear_on_every_screen() {
+    for (screen, key) in [
+        (Screen::Pads, 2),
+        (Screen::Files, 6),
+        (Screen::Chop, 3),
+        (Screen::Fx, 4),
+        (Screen::Settings, 12),
+    ] {
+        let mut drive = value_drive();
+        drive.tap(KeyCode::F(key), M::NONE);
+        assert_eq!(drive.app.screen, screen);
+        let keyboard = drive.tap(KeyCode::Char(']'), M::NONE);
+        assert_eq!(keyboard.ui.len(), 1);
+        assert!(matches!(keyboard.ui[0], Command::SetMasterGain { .. }));
+        assert_eq!(shown_value(&drive).object, "Master");
+        assert_eq!(shown_value(&drive).formatted, "+1 dB");
+        let raw = value_knob(&mut drive, "master.volume", 100);
+        assert_eq!(raw.ui.len(), 1);
+        assert!(raw.direct.is_empty());
+        assert!(matches!(raw.ui[0], Command::SetMasterGain { .. }));
+        let value = shown_value(&drive);
+        assert_eq!(value.parameter, "volume");
+        assert_eq!(value.formatted, format!("{:+} dB", drive.app.master_db));
+        assert!(value.position.is_some_and(|p| (0.0..=1.0).contains(&p)));
+        let at = drive.app.value_popup.as_ref().unwrap().at;
+        let before = drive.seen();
+        assert!(
+            drive
+                .app
+                .current_value_at(at + LIT_FOR - Duration::from_nanos(1))
+                .is_some()
+        );
+        assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+        assert_eq!(drive.seen(), before);
+        assert!(drive.frame().commands().is_empty());
+    }
+}
+
+#[test]
+fn value_popup_covers_pad_parameters_through_real_controls() {
+    use pads::Param as P;
+    for (p, action) in [
+        (P::Volume, "pad.volume"),
+        (P::Pitch, "pad.pitch"),
+        (P::Group, "edit.param_3"),
+        (P::Attack, "pad.attack"),
+        (P::Decay, "pad.decay"),
+        (P::Release, "pad.release"),
+        (P::Filter, "pad.filter"),
+        (P::Cutoff, "pad.cutoff"),
+        (P::Reso, "pad.reso"),
+        (P::Source, "edit.param_1"),
+        (P::Start, "pad.start"),
+        (P::End, "pad.end"),
+        (P::Drive, "edit.param_1"),
+        (P::Send1, "edit.param_2"),
+        (P::Send2, "edit.param_3"),
+    ] {
+        for raw in [false, true] {
+            let mut drive = value_drive();
+            drive.tap(KeyCode::Enter, M::NONE);
+            drive.app.pads.param = p;
+            let frame = if raw {
+                value_knob(&mut drive, action, if p == P::Source { 127 } else { 64 })
+            } else {
+                drive.tap(
+                    if p == P::End {
+                        KeyCode::Left
+                    } else {
+                        KeyCode::Right
+                    },
+                    M::NONE,
+                )
+            };
+            assert!(!frame.ui.is_empty(), "{p:?}, raw {raw}");
+            assert!(frame.direct.is_empty());
+            assert!(
+                !frame
+                    .ui
+                    .iter()
+                    .any(|c| matches!(c, Command::PadPress { .. } | Command::Preview { .. }))
+            );
+            let value = shown_value(&drive);
+            assert_eq!(value.object, "pad 1-1");
+            assert_eq!(value.parameter, drive.app.pads.name(p), "{p:?}, raw {raw}");
+            assert_eq!(value.position.is_none(), matches!(p, P::Filter | P::Source));
+            if matches!(p, P::Source | P::Start | P::End) {
+                assert!(!value.formatted.is_empty());
+            } else {
+                assert_eq!(value.formatted, drive.app.pads.param_value());
+                assert!(matches!(drive.app.lit_now(), Some(Lit::Pad(actual)) if actual == p));
+            }
+        }
+    }
+}
+
+#[test]
+fn value_popup_names_shared_fx_slots_not_selected_pads() {
+    for slot in 0..2 {
+        for row in 0..3 {
+            for raw in [false, true] {
+                let mut drive = value_drive();
+                drive.tap(KeyCode::F(4), M::NONE);
+                drive.app.fx_slot = slot;
+                drive.app.fx_param = row;
+                let type_at_upper_limit = slot == 1 && row == 0;
+                let frame = if raw {
+                    value_knob(
+                        &mut drive,
+                        ["edit.param_1", "edit.param_2", "edit.param_3"][row],
+                        if type_at_upper_limit { 0 } else { 100 },
+                    )
+                } else {
+                    drive.tap(
+                        if type_at_upper_limit {
+                            KeyCode::Left
+                        } else {
+                            KeyCode::Right
+                        },
+                        M::NONE,
+                    )
+                };
+                assert_eq!(
+                    frame.ui.len(),
+                    1,
+                    "slot {slot}, row {row}, raw {raw}: {:?}",
+                    drive.app.input_log
+                );
+                assert!(
+                    matches!(frame.ui[0], Command::SetFx { slot: actual, .. } if actual == slot)
+                );
+                let value = shown_value(&drive);
+                let p = drive.app.fx_selected_param();
+                assert_eq!(value.object, format!("FX {}", slot + 1));
+                assert_eq!(value.parameter, drive.app.pads.name(p));
+                assert_eq!(value.formatted, drive.app.pads.fx_text(0, p));
+                assert_eq!(value.position.is_some(), row > 0);
+                drive.app.pads.bank = 7;
+                drive.app.pads.selected = 15;
+                assert_eq!(shown_value(&drive), value);
+            }
+        }
+    }
+}
+
+#[test]
+fn value_popup_covers_chop_controls_without_changing_their_results() {
+    for (name, key, mods, knob) in [
+        ("start", KeyCode::Right, M::CONTROL, "slice.start"),
+        ("end", KeyCode::Left, M::ALT, "slice.end"),
+        ("cursor", KeyCode::Right, M::NONE, "chop.cursor_pos"),
+        ("view", KeyCode::Up, M::NONE, "chop.zoom"),
+        (
+            "region start",
+            KeyCode::Char(','),
+            M::NONE,
+            "chop.region_start_pos",
+        ),
+        (
+            "region end",
+            KeyCode::Char('.'),
+            M::NONE,
+            "chop.region_end_pos",
+        ),
+        ("threshold", KeyCode::Char('h'), M::NONE, "chop.threshold"),
+    ] {
+        for raw in [false, true] {
+            let mut drive = value_drive();
+            drive.tap(KeyCode::F(3), M::NONE);
+            drive.app.chop.as_mut().unwrap().cursor = 24_000;
+            drive.frame();
+            if raw {
+                value_knob(&mut drive, knob, 64);
+            } else {
+                drive.tap(key, mods);
+            }
+            let value = shown_value(&drive);
+            assert_eq!(value.parameter, name, "{name}, raw {raw}");
+            assert!(value.position.is_some_and(|p| (0.0..=1.0).contains(&p)));
+            assert!(!value.formatted.is_empty());
+            if matches!(name, "start" | "end") {
+                assert_eq!(value.object, "slice 1");
+            }
+        }
+    }
+    let mut drive = value_drive();
+    drive.tap(KeyCode::F(3), M::NONE);
+    drive.tap(KeyCode::Char('y'), M::NONE);
+    assert_eq!(shown_value(&drive).parameter, "equal parts");
+    assert_eq!(shown_value(&drive).formatted, "2");
+    drive.app.chop.as_mut().unwrap().cursor = 12_000;
+    drive.tap(KeyCode::Char(','), M::NONE);
+    drive.tap(KeyCode::Char(','), M::CONTROL);
+    assert_eq!(shown_value(&drive).parameter, "region");
+    assert_eq!(shown_value(&drive).formatted, "0.000..1.000 s");
+    drive.tap(KeyCode::Char('g'), M::CONTROL);
+    assert_eq!(shown_value(&drive).object, "pad 1-1");
+    assert_eq!(shown_value(&drive).parameter, "volume");
+}
+
+/// Scenario "Refused and limited values remain truthful".
+#[test]
+fn refused_and_limited_values_remain_truthful() {
+    let mut drive = value_drive();
+    drive.app.takeover.response = input::midi::Response::Pickup;
+    value_knob(&mut drive, "pad.volume", 0);
+    assert!(drive.app.value_popup.is_none());
+    assert_eq!(drive.app.pads.volume_db[0], 0);
+    assert!(drive.app.pickup.is_some());
+    value_knob(&mut drive, "pad.volume", 127);
+    assert_eq!(shown_value(&drive).formatted, "+6 dB");
+    drive.app.pads.marked.extend([0, 1]);
+    drive.app.value_popup = None;
+    let frame = drive.tap(KeyCode::Right, M::NONE);
+    assert_eq!(frame.ui.len(), 1);
+    assert!(matches!(frame.ui[0], Command::SetPadGain { pad: 1, .. }));
+    assert_eq!(drive.app.pads.volume_db[0], 6);
+    assert_eq!(drive.app.pads.volume_db[1], 1);
+    let value = shown_value(&drive);
+    assert_eq!(
+        (value.object.as_str(), value.formatted.as_str()),
+        ("pad 1-2", "+1 dB")
+    );
+    assert!(drive.last_notice().text.contains("1 pad at the limit"));
+    assert_eq!(drive.last_notice().level, Level::Warn);
+    drive.app.pads.volume_db[1] = 6;
+    drive.app.value_popup = None;
+    assert!(drive.tap(KeyCode::Right, M::NONE).ui.is_empty());
+    assert!(drive.app.value_popup.is_none());
+    assert!(drive.last_notice().text.contains("2 pads at the limit"));
+
+    let mut refused = Drive::offline();
+    refused.tap(KeyCode::F(12), M::NONE);
+    refused.app.settings_row = 2;
+    refused.app.cfg.buffer_size = 128;
+    refused.tap(KeyCode::Right, M::NONE);
+    assert_eq!(refused.app.cfg.buffer_size, 128);
+    assert!(refused.app.value_popup.is_none());
+    assert_eq!(
+        refused.last_notice().text,
+        "offline audio has no buffer size"
+    );
+    assert_eq!(refused.last_notice().level, Level::Error);
+}
+
+/// Scenario "Value deadlines follow actual changes".
+#[test]
+fn value_deadlines_follow_actual_changes() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        if raw {
+            value_knob(&mut drive, "pad.volume", 127);
+        } else {
+            drive.app.pads.volume_db[0] = 5;
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        let at = Instant::now() - Duration::from_millis(600);
+        drive.app.value_popup.as_mut().unwrap().at = at;
+        let seen = drive.seen();
+        let equal = if raw {
+            value_knob(&mut drive, "pad.volume", 127)
+        } else {
+            drive.tap(KeyCode::Right, M::NONE)
+        };
+        assert!(equal.ui.is_empty());
+        assert_eq!(drive.app.value_popup.as_ref().unwrap().at, at);
+        assert!(drive.tap(KeyCode::Right, M::NONE).ui.is_empty());
+        assert_eq!(drive.app.value_popup.as_ref().unwrap().at, at);
+        assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+        assert_eq!(drive.app.pads.volume_db[0], 6);
+        assert_eq!(drive.app.history.len(), seen.history.len());
+        if raw {
+            value_knob(&mut drive, "pad.volume", 64);
+        } else {
+            drive.tap(KeyCode::Left, M::NONE);
+        }
+        let later = drive.app.value_popup.as_ref().unwrap().at;
+        assert!(later > at);
+        assert!(
+            drive
+                .app
+                .current_value_at(later + LIT_FOR - Duration::from_nanos(1))
+                .is_some()
+        );
+        assert!(drive.app.current_value_at(later + LIT_FOR).is_none());
+    }
+}
+
+/// Scenario "Value snapshots retain their original object".
+#[test]
+fn value_snapshots_retain_their_original_object() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        let source = if raw {
+            Source::Button
+        } else {
+            Source::Keyboard
+        };
+        if raw {
+            value_knob(&mut drive, "pad.volume", 100);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        let original = shown_value(&drive);
+        drive.bind_action(103, "edit.undo");
+        drive.bind_action(104, "bank.next");
+        drive.bind_action(105, "screen.files");
+        drive.registry_command(source, KeyCode::Char('o'), M::NONE, 104);
+        drive.app.pads.param = pads::Param::Pitch;
+        drive.registry_command(source, KeyCode::F(6), M::NONE, 105);
+        assert_eq!(shown_value(&drive), original);
+        drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 103);
+        assert!(drive.app.current_value_at(Instant::now()).is_none());
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.app.pads.bank = 0;
+        drive.app.pads.param = pads::Param::Volume;
+        if raw {
+            value_knob(&mut drive, "pad.volume", 64);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        drive.app.pads.sound[0] = Some(Arc::new(Sample::mono(vec![0.2; 48_000])));
+        assert!(drive.app.current_value_at(Instant::now()).is_none());
+        if raw {
+            value_knob(&mut drive, "pad.volume", 32);
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        assert!(drive.app.current_value_at(Instant::now()).is_some());
+        drive.app.apply_session(session::Session::default());
+        assert!(drive.app.value_popup.is_none());
+    }
+}
+
+/// Scenario "Editor prompts take priority over values".
+#[test]
+fn editor_prompts_take_priority_over_values() {
+    for raw in [false, true] {
+        for overlay in 0..9 {
+            let mut drive = value_drive();
+            if raw {
+                value_knob(&mut drive, "master.volume", 100);
+            } else {
+                drive.tap(KeyCode::Char(']'), M::NONE);
+            }
+            let at = drive.app.value_popup.as_ref().unwrap().at;
+            match overlay {
+                0 => {
+                    drive.tap(KeyCode::F(1), M::NONE);
+                }
+                1 => {
+                    drive.tap(KeyCode::F(6), M::NONE);
+                    drive.tap(KeyCode::Char('/'), M::NONE);
+                    assert!(drive.app.browser.editing);
+                }
+                2 => {
+                    drive.tap(KeyCode::Char('n'), M::CONTROL);
+                    assert!(drive.app.pad_naming.is_some());
+                }
+                3 => {
+                    drive.tap(KeyCode::Char('p'), M::CONTROL);
+                    assert!(drive.app.project_picker.is_some());
+                }
+                4 => {
+                    drive.tap(KeyCode::F(10), M::NONE);
+                    assert!(drive.app.screen_learn.is_some());
+                }
+                5 => {
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    drive.tap(KeyCode::Backspace, M::NONE);
+                    assert!(drive.app.ask.is_some());
+                }
+                6 => {
+                    drive.app.path_picker =
+                        Some(PathPicker::open(0, Path::new("target/87-value-picker")));
+                }
+                7 => {
+                    drive.app.learning = Some(learn::Learning::new(action_info("pad.copy")));
+                }
+                _ => {
+                    drive.tap(KeyCode::F(12), M::NONE);
+                    drive.app.settings_tab = 2;
+                    drive.app.midi_row = drive
+                        .app
+                        .midi_list()
+                        .iter()
+                        .position(|row| {
+                            matches!(
+                                row,
+                                MidiListRow::Group {
+                                    group: input::Group::Global,
+                                    ..
+                                }
+                            )
+                        })
+                        .unwrap();
+                    drive.tap(KeyCode::Right, M::NONE);
+                    drive.app.midi_row = drive
+                        .app
+                        .midi_list()
+                        .iter()
+                        .position(|row| matches!(row, MidiListRow::Set { .. }))
+                        .unwrap();
+                    drive.tap(KeyCode::Enter, M::NONE);
+                    assert!(drive.app.midi_run.is_some());
+                }
+            }
+            assert!(
+                drive
+                    .app
+                    .current_value_at(at + Duration::from_millis(1))
+                    .is_none(),
+                "overlay {overlay}"
+            );
+            let before = drive.seen();
+            assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+            assert_eq!(drive.seen(), before);
+            drive.app.help_open = false;
+            drive.app.browser.editing = false;
+            drive.app.pad_naming = None;
+            drive.app.project_picker = None;
+            drive.app.path_picker = None;
+            drive.app.screen_learn = None;
+            drive.app.learning = None;
+            drive.app.midi_run = None;
+            drive.app.ask = None;
+            assert!(drive.app.current_value_at(at + LIT_FOR).is_none());
+            assert_eq!(drive.app.value_popup.as_ref().unwrap().at, at);
+        }
+    }
+}
+
+#[test]
+fn value_popup_labels_settings_choices_without_claiming_server_changes() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        drive.bind_action(101, "settings.value_next");
+        drive.tap(KeyCode::F(12), M::NONE);
+        drive.app.settings_row = 3;
+        let before = drive.app.ui.graphics;
+        if raw {
+            drive.bytes(PAD_PORT, &[0xb0, 101, 127]);
+            drive.bytes(PAD_PORT, &[0xb0, 101, 0]);
+            drive.frame();
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        assert_ne!(drive.app.ui.graphics, before);
+        let value = shown_value(&drive);
+        assert_eq!(value.object, "Settings");
+        assert_eq!(value.parameter, "wave");
+        assert!(value.formatted.contains("next start"));
+        assert!(value.position.is_none());
+        drive.app.settings_tab = 2;
+        drive.app.midi_row = drive
+            .app
+            .midi_list()
+            .iter()
+            .position(|row| matches!(row, MidiListRow::Response))
+            .unwrap();
+        if raw {
+            drive.bytes(PAD_PORT, &[0xb0, 101, 127]);
+            drive.bytes(PAD_PORT, &[0xb0, 101, 0]);
+            drive.frame();
+        } else {
+            drive.tap(KeyCode::Right, M::NONE);
+        }
+        assert_eq!(shown_value(&drive).parameter, "knob response");
+        assert_eq!(
+            shown_value(&drive).formatted,
+            drive.app.takeover.response.name()
+        );
+    }
+}
+
+#[test]
+fn value_popup_expiry_releases_sample_snapshots_on_the_ui_frame() {
+    let mut drive = value_drive();
+    drive.tap(KeyCode::Right, M::NONE);
+    let sample = drive.app.pads.sound[0].as_ref().unwrap().clone();
+    let at = drive.app.value_popup.as_ref().unwrap().at;
+    let owners = Arc::strong_count(&sample);
+    drive
+        .app
+        .frame_notice_at(at + LIT_FOR - Duration::from_nanos(1));
+    assert!(drive.app.value_popup.is_some());
+    assert_eq!(Arc::strong_count(&sample), owners);
+    drive.app.frame_notice_at(at + LIT_FOR);
+    assert!(drive.app.value_popup.is_none());
+    assert_eq!(Arc::strong_count(&sample), owners - 1);
+}
+
+#[test]
+fn value_popup_expiry_restores_text_without_another_input() {
+    use ratatui::{Terminal, backend::TestBackend};
+    for (width, height) in [(80, 26), (120, 40)] {
+        let mut drive = value_drive();
+        drive.tap(KeyCode::Char(']'), M::NONE);
+        let app = &mut drive.app;
+        let at = app.value_popup.as_ref().unwrap().at;
+        let p = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+        let screen = tui::Screen::Pads(app.mark_pads(p));
+        let status = tui::Status {
+            badges: app.title_badges(),
+            save: app.save_status(),
+            backend: None,
+            recording: false,
+            buffer_size: 128,
+            sample_rate: 48_000,
+            load_peak: 0.0,
+            xruns: 0,
+            master_db: app.master_db,
+            meters: ([-60.0; 2], [-60.0; 2], false),
+            notice: None,
+            no_releases: false,
+            project: None,
+        };
+        let help = tui::Help {
+            groups: &[],
+            hint: None,
+            full: None,
+            question: None,
+            learn: None,
+        };
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|f| tui::draw(f, &status, &screen, &help))
+            .unwrap();
+        let baseline = term.backend().buffer().clone();
+        for elapsed in [
+            Duration::ZERO,
+            LIT_FOR - Duration::from_nanos(1),
+            LIT_FOR,
+            LIT_FOR + Duration::from_secs(3),
+        ] {
+            term.draw(|f| {
+                tui::draw(f, &status, &screen, &help);
+                if let Some(value) = app.current_value_at(at + elapsed) {
+                    tui::value_popup(f, value);
+                }
+            })
+            .unwrap();
+            assert_eq!(term.backend().buffer() == &baseline, elapsed >= LIT_FOR);
+        }
+        assert!(drive.frame().commands().is_empty());
+    }
+}
+
+#[test]
+fn value_popup_keeps_categorical_values_and_scoped_button_limits() {
+    for raw in [false, true] {
+        let mut drive = value_drive();
+        let source = if raw {
+            Source::Button
+        } else {
+            Source::Keyboard
+        };
+        for (screen, key, action, name) in [
+            (Screen::Pads, KeyCode::Char('h'), "pad.mode_next", "mode"),
+            (Screen::Chop, KeyCode::Char('n'), "chop.snap_toggle", "snap"),
+            (Screen::Chop, KeyCode::Char('o'), "chop.play_mode", "play"),
+        ] {
+            if screen == Screen::Chop && drive.app.screen != screen {
+                drive.tap(KeyCode::F(3), M::NONE);
+            }
+            drive.bind_action(102, action);
+            drive.registry_command(source, key, M::NONE, 102);
+            assert_eq!(shown_value(&drive).parameter, name);
+            assert!(shown_value(&drive).position.is_none());
+        }
+        drive.tap(KeyCode::F(2), M::NONE);
+        drive.app.pads.marked.extend([0, 1]);
+        drive.app.pads.volume_db[0] = 6;
+        drive.app.pads.volume_db[1] = 0;
+        drive.bind_action(102, "edit.value_inc");
+        let frame = drive.registry_command(source, KeyCode::Right, M::NONE, 102);
+        assert_eq!(frame.ui.len(), 1);
+        assert!(matches!(frame.ui[0], Command::SetPadGain { pad: 1, .. }));
+        assert_eq!(shown_value(&drive).object, "pad 1-2");
+        assert_eq!(shown_value(&drive).formatted, "+1 dB");
+        assert!(drive.last_notice().text.contains("1 pad at the limit"));
+        drive.app.pads.selected = 7;
+        drive.app.pads.volume_db[7] = 2;
+        drive.registry_command(source, KeyCode::Right, M::NONE, 102);
+        assert_eq!(shown_value(&drive).object, "pad 1-2");
+        assert_eq!(shown_value(&drive).formatted, "+2 dB");
+        assert_eq!(drive.app.pads.volume_db[7], 2);
+    }
+}
+
 struct Frame {
     direct: Vec<ProjectCommand>,
     ui: Vec<Command>,
@@ -144,8 +2443,16 @@ impl Drive {
         assert!(drive.app.seeded.iter().any(|name| name == "X-Session Pro"));
         // A fixture with no user path reports that it cannot save the seeded map.
         // Neither input pass writes the owner's config or treats this as a user notice.
-        drive.app.flash = None;
+        drive.app.notices = Notices::new(Instant::now());
         drive
+    }
+
+    fn last_notice(&self) -> &Notice {
+        self.app
+            .notices
+            .history()
+            .front()
+            .expect("a produced notice")
     }
 
     fn midi(&self) -> &midi::Midi {
@@ -181,10 +2488,990 @@ impl Drive {
             self.app.midi_ui_event(event);
         }
         self.app.publish_midi(&self.shared);
+        self.app.input_sources.advance(Instant::now());
         self.app.frame_notice();
         Frame {
             direct,
             ui: std::mem::take(&mut self.app.sent),
+        }
+    }
+}
+
+/// Scenario "Startup acknowledgement retains its exceptions".
+#[test]
+fn startup_warnings_enter_history_once() {
+    let mut drive = Drive::new();
+    drive.app.add_keymap_warnings(vec![
+        "first keymap warning".into(),
+        "second keymap warning".into(),
+    ]);
+    drive
+        .app
+        .post_startup(Level::Warn, NO_RELEASES_NOTICE.into());
+    drive
+        .app
+        .post_startup(Level::Error, "protected startup".into());
+    drive.frame();
+    let history = drive.app.notices.history().clone();
+    drive.bytes(PAD_PORT, &[0x90, 36, 127]);
+    drive.bytes(PAD_PORT, &[0x80, 36, 0]);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("protected startup"));
+    assert_eq!(drive.app.notices.history(), &history);
+    drive.key(KeyCode::Null, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert!(!drive.app.notices.has_startup());
+    assert_eq!(
+        drive.app.frame_notice().as_deref(),
+        Some("first keymap warning")
+    );
+    for _ in 0..10 {
+        drive.app.frame_notice();
+    }
+    assert_eq!(drive.app.notices.history(), &history);
+    drive.key(KeyCode::Right, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert_eq!(drive.app.keymap_warnings.len(), 2);
+    let bank = drive.app.pads.bank;
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_ne!(
+        drive.app.pads.bank, bank,
+        "acknowledgement does not consume the action"
+    );
+    assert_eq!(drive.app.keymap_warnings.len(), 1);
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_eq!(
+        drive.app.keymap_warnings.len(),
+        1,
+        "an inferred repeat is not a new press"
+    );
+    assert_eq!(drive.app.notices.history(), &history);
+}
+
+/// Scenario "Device notices retain the actual event source".
+#[test]
+fn device_notices_retain_the_actual_event_source() {
+    use input::{Group, midi::Key};
+    let mut drive = Drive::registry_screen_checks();
+    drive.tap(KeyCode::F(2), M::NONE);
+    drive.bind_action(88, "pad.copy");
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        Group::Global,
+        Key::Note(60),
+        "pad.copy",
+    );
+    drive.app.sync_learned("X-Session Pro", Group::Global);
+    drive.midi().recorded_fence();
+    drive.app.pads.selected = 3; // Empty on both devices: both requests produce Warn.
+    drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+    drive.bytes(XS_PORT, &[0x90, 60, 127]);
+    drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+    drive.bytes(XS_PORT, &[0x80, 60, 0]);
+    let queued = drive.queued_events();
+    let before = drive.app.notices.history().len();
+    for event in queued {
+        let port = event.origin().map(str::to_owned);
+        let produces = matches!(event.event, midi::Event::Action(Action::PadCopy));
+        drive.app.midi_ui_event(event);
+        if produces {
+            assert_eq!(drive.last_notice().origin, Origin::Device(port.unwrap()));
+            assert_eq!(drive.last_notice().level, Level::Warn);
+        }
+    }
+    assert_eq!(drive.app.notices.history().len(), before + 2);
+    drive.tap(KeyCode::Char('c'), M::CONTROL);
+    assert_eq!(drive.last_notice().origin, Origin::Keyboard);
+    assert_eq!(drive.last_notice().level, Level::Warn);
+
+    drive.app.pads.selected = 0;
+    drive.tap(KeyCode::Char('c'), M::CONTROL);
+    assert_eq!(drive.last_notice().level, Level::Info);
+    drive.bind_action(87, "bank.next");
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        Group::Global,
+        Key::Note(60),
+        "pad.2",
+    );
+    drive.app.sync_learned("X-Session Pro", Group::Global);
+    drive.midi().recorded_fence();
+    drive.bytes(PAD_PORT, &[0xb0, 87, 127]);
+    drive.bytes(XS_PORT, &[0x90, 60, 127]);
+    let queued = drive.queued_events();
+    assert!(queued.iter().any(|event| matches!(
+        event.event,
+        midi::Event::PadHit {
+            sound: midi::PadSound::UiUnattempted { deferred: true },
+            ..
+        }
+    ) && event.origin() == Some(XS_PORT)));
+    for event in queued {
+        drive.app.midi_ui_event(event);
+    }
+    drive.frame();
+    assert_eq!(drive.app.pads.bank, 1);
+    assert!(drive.app.pads.file[17].is_some());
+    assert_eq!(drive.last_notice().text, "copy placed");
+    assert_eq!(drive.last_notice().level, Level::Done);
+    assert_eq!(drive.last_notice().origin, Origin::Device(XS_PORT.into()));
+    drive.bytes(XS_PORT, &[0x80, 60, 0]);
+    drive.frame();
+    drive.tap(KeyCode::F(3), M::NONE);
+    let before = drive.app.notices.history().len();
+    drive.bytes(XS_PORT, &[0xb0, 35, 80]);
+    drive.frame();
+    assert!(drive.app.notices.history().len() > before);
+    assert_eq!(drive.last_notice().origin, Origin::Device(XS_PORT.into()));
+    assert_eq!(drive.last_notice().level, Level::Info);
+}
+
+/// Scenario "Background and release events cannot dismiss errors".
+#[test]
+fn owner_acknowledgement_keeps_the_original_action() {
+    let mut drive = Drive::new();
+    drive.bind_action(88, "bank.next");
+    drive
+        .app
+        .post_system_notice(Level::Error, ("same error".into(), Instant::now()));
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+    drive.bytes(PAD_PORT, &[0x80, 36, 0]);
+    drive.bytes(PAD_PORT, &[0xf8]);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("same error"));
+    drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+    drive.frame();
+    assert_eq!(drive.app.pads.bank, 1);
+    assert!(drive.app.notices.current().is_none());
+    drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+    drive.frame();
+
+    drive
+        .app
+        .post_system_notice(Level::Error, ("same error".into(), Instant::now()));
+    drive.frame();
+    drive
+        .app
+        .post_system_notice(Level::Error, ("same error".into(), Instant::now()));
+    drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+    drive.frame();
+    assert_eq!(drive.app.pads.bank, 2);
+    assert_eq!(
+        drive.app.notice().as_deref(),
+        Some("same error"),
+        "an identical replacement was not shown before input"
+    );
+
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert!(drive.app.notices.current().is_none());
+    drive
+        .app
+        .post_system_notice(Level::Error, ("repeat test".into(), Instant::now()));
+    drive.frame();
+    drive.bytes(XS_PORT, &[0xb0, 15, 64]);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("repeat test"));
+    drive.bytes(XS_PORT, &[0xb0, 15, 0]);
+    drive.frame();
+    assert!(
+        drive.app.notices.current().is_none(),
+        "movement to zero is not a button release"
+    );
+
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    drive
+        .app
+        .post_system_notice(Level::Error, ("keyboard repeat".into(), Instant::now()));
+    drive.frame();
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("keyboard repeat"));
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert_eq!(drive.app.notice().as_deref(), Some("keyboard repeat"));
+    let bank = drive.app.pads.bank;
+    drive.key(KeyCode::PageDown, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_ne!(drive.app.pads.bank, bank);
+    assert!(drive.app.notices.current().is_none());
+}
+
+/// Scenario "Each produced result keeps its meaning".
+#[test]
+fn each_produced_result_keeps_its_meaning() {
+    let mut drive = Drive::new();
+    let path = PathBuf::from("/recorded/chop.wav");
+    drive.app.load_gen[CHOP] = 2;
+    drive.app.chop_loading = Some(path.clone());
+    drive
+        .app
+        .post_system_notice(Level::Error, ("unrelated error".into(), Instant::now()));
+    let history = drive.app.notices.history().clone();
+    for generation in [1, 2] {
+        drive.app.loader_reply(loader::Reply::Loaded {
+            pad: CHOP,
+            generation,
+            path: path.clone(),
+            sound: Arc::new(Sample::mono(vec![0.25; 1024])),
+        });
+        assert_eq!(drive.app.chop_loading.is_some(), generation == 1);
+        assert_eq!(drive.app.notices.history(), &history);
+        assert_eq!(drive.app.notice().as_deref(), Some("unrelated error"));
+    }
+    assert!(drive.app.chop.is_some());
+    drive
+        .app
+        .result_notice(Err("write refused".into()), "same success label".into());
+    assert_eq!(drive.last_notice().level, Level::Error);
+    drive.app.result_notice(Ok(()), "same success label".into());
+    assert_eq!(drive.last_notice().level, Level::Done);
+    assert_eq!(drive.app.notice().as_deref(), Some("write refused"));
+}
+
+#[test]
+fn notice_frame_uses_one_clock_for_expiry_text_and_level() {
+    let mut drive = Drive::new();
+    drive
+        .app
+        .add_keymap_warnings(vec!["waiting keymap warning".into()]);
+    drive
+        .app
+        .post_notice(Level::Info, ("timed result".into(), Instant::now()));
+    let deadline = drive.app.notices.deadline().unwrap();
+    assert_eq!(
+        drive
+            .app
+            .frame_notice_at(deadline - Duration::from_nanos(1))
+            .as_deref(),
+        Some("timed result")
+    );
+    assert_eq!(drive.app.frame_notice_level, Some(Level::Info));
+    assert!(!drive.app.keymap_warning_shown);
+    assert_eq!(
+        drive.app.frame_notice_at(deadline).as_deref(),
+        Some("waiting keymap warning")
+    );
+    assert_eq!(drive.app.frame_notice_level, Some(Level::Warn));
+    assert!(drive.app.keymap_warning_shown);
+    assert_eq!(drive.app.notices.history().len(), 2);
+}
+
+#[test]
+fn notice_loading_state_follows_the_project_generation() {
+    let mut drive = Drive::new();
+    let old = drive.app.load_gen[CHOP];
+    let path = PathBuf::from("/recorded/old-project.wav");
+    drive.app.chop_loading = Some(path.clone());
+    drive
+        .app
+        .post_system_notice(Level::Error, ("retained result".into(), Instant::now()));
+    let history = drive.app.notices.history().clone();
+    drive.app.apply_session(session::Session::default());
+    assert!(drive.app.chop_loading.is_none());
+    drive.app.loader_reply(loader::Reply::Loaded {
+        pad: CHOP,
+        generation: old,
+        path,
+        sound: Arc::new(Sample::mono(vec![0.25; 1024])),
+    });
+    assert!(
+        drive.app.chop.is_none(),
+        "the old project cannot restore its Chop view"
+    );
+    assert!(drive.app.chop_loading.is_none());
+    assert_eq!(drive.app.notice().as_deref(), Some("retained result"));
+    assert_eq!(drive.app.notices.history(), &history);
+}
+
+#[test]
+fn input_prompts_retain_typing_priority() {
+    for context in ["name", "filter", "project"] {
+        for source in [Source::Keyboard, Source::Notes, Source::Button] {
+            let mut drive = Drive::new();
+            drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+            match context {
+                "name" => {
+                    drive.tap(KeyCode::Char('n'), M::CONTROL);
+                }
+                "filter" => {
+                    drive.tap(KeyCode::F(6), M::NONE);
+                    drive.tap(KeyCode::Char('/'), M::NONE);
+                }
+                "project" => {
+                    drive.app.paths.projects = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../target/87-no-project-root");
+                    drive.tap(KeyCode::Char('p'), M::CONTROL);
+                    drive.tap(KeyCode::Char('q'), M::NONE);
+                }
+                _ => unreachable!(),
+            }
+            let text = |drive: &Drive| match context {
+                "name" => drive.app.pad_naming.as_ref().unwrap().1.clone(),
+                "filter" => drive.app.browser.filter.clone(),
+                "project" => drive
+                    .app
+                    .project_picker
+                    .as_ref()
+                    .unwrap()
+                    .naming
+                    .clone()
+                    .unwrap(),
+                _ => unreachable!(),
+            };
+            let before = text(&drive);
+            drive.app.loader_reply(loader::Reply::Failed {
+                pad: PREVIEW,
+                generation: drive.app.load_gen[PREVIEW],
+                path: PathBuf::from("/recorded/missing.wav"),
+                error: "read refused".into(),
+            });
+            drive.frame();
+            let error = drive.last_notice().text.clone();
+            assert!(drive.app.notices.current().is_none());
+            assert_eq!(drive.last_notice().origin, Origin::System);
+            let hit = drive.pad_press(source, 4);
+            if matches!(source, Source::Keyboard) {
+                if context == "filter" {
+                    assert!(matches!(
+                        hit.commands()[..],
+                        [Command::Preview {
+                            sound: None,
+                            region: Region::WHOLE
+                        }]
+                    ));
+                } else {
+                    assert!(hit.commands().is_empty(), "typing is silent");
+                }
+                assert_eq!(text(&drive), format!("{before}q"));
+            } else {
+                assert_full_hit(&hit, 4);
+                assert_eq!(
+                    text(&drive),
+                    before,
+                    "direct MIDI keeps its existing route, not a fake text path"
+                );
+            }
+            assert_only_release(&drive.pad_release(source, 4), 4);
+            assert!(
+                drive.app.notices.current().is_none(),
+                "the hidden Error was not acknowledged"
+            );
+            assert_eq!(
+                drive
+                    .app
+                    .notices
+                    .history()
+                    .iter()
+                    .filter(|notice| notice.text == error)
+                    .count(),
+                1
+            );
+            drive.tap(KeyCode::Esc, M::NONE);
+            if context == "project" {
+                drive.tap(KeyCode::Esc, M::NONE);
+            }
+            assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+            let selected = drive.app.pads.selected;
+            let volume = drive.app.pads.volume_db[selected];
+            drive.tap(KeyCode::Right, M::NONE);
+            assert_ne!(
+                drive
+                    .app
+                    .notices
+                    .current()
+                    .map(|notice| notice.text.as_str()),
+                Some(error.as_str()),
+                "{context} {source:?}: the shown Error must end"
+            );
+            if context == "filter" {
+                assert!(!drive.app.browser.editing);
+                assert!(drive.app.notices.current().is_none());
+            } else {
+                let result = drive.app.notices.current().unwrap();
+                assert_eq!(result.level, Level::Info);
+                assert_eq!(result.origin, Origin::Keyboard);
+                assert_eq!(
+                    drive.app.pads.volume_db[selected],
+                    volume + 1,
+                    "acknowledgement must not consume the value step"
+                );
+            }
+        }
+    }
+}
+
+/// Scenario "F1 navigation stays inside the overlay".
+#[test]
+fn f1_navigation_stays_inside_the_overlay() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let key = if matches!(source, Source::Notes) {
+            input::midi::Key::Note(95)
+        } else {
+            input::midi::Key::Cc(95)
+        };
+        learn::assign(
+            &mut drive.app.learned,
+            "Recorded pads",
+            input::Group::Global,
+            key,
+            "help.toggle",
+        );
+        drive
+            .app
+            .sync_learned("Recorded pads", input::Group::Global);
+        drive.app.edit = true;
+        drive.frame();
+        let opened = drive.registry_command(source, KeyCode::F(1), M::NONE, 95);
+        assert!(drive.app.help_open);
+        assert!(opened.commands().is_empty());
+        let before = drive.seen();
+        let dirty = drive.app.session_dirty;
+        for (code, mods) in [
+            (KeyCode::Tab, M::NONE),
+            (KeyCode::Down, M::NONE),
+            (KeyCode::PageDown, M::NONE),
+            (KeyCode::PageUp, M::NONE),
+            (KeyCode::Up, M::NONE),
+            (KeyCode::BackTab, M::SHIFT),
+        ] {
+            let frame = drive.tap(code, mods);
+            assert!(frame.commands().is_empty(), "{source:?}: {code:?}");
+            assert_eq!(drive.seen(), before, "{source:?}: {code:?}");
+            assert_eq!(drive.app.session_dirty, dirty);
+            assert!(drive.app.help_open);
+        }
+        let closed = drive.tap(KeyCode::Esc, M::NONE);
+        assert!(!drive.app.help_open);
+        assert!(closed.commands().is_empty());
+        assert_eq!(drive.seen(), before);
+        drive.tap(KeyCode::Tab, M::NONE);
+        assert_ne!(drive.app.pads.param, before.param, "Tab works outside help");
+    }
+}
+
+/// Scenario "F1 navigation stays inside the overlay" on every registered screen.
+#[test]
+fn f1_navigation_keeps_every_underlying_screen() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            for (width, height) in [(80, 26), (120, 40)] {
+                let mut drive = Drive::registry_screen_checks();
+                drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+                if screen != Screen::Pads {
+                    drive.registry_command(source, key, M::NONE, number);
+                }
+                assert_eq!(drive.app.screen, screen);
+                for index in 0..50 {
+                    drive.app.post_system_notice(
+                        Level::Info,
+                        (format!("history {index}"), Instant::now()),
+                    );
+                }
+                drive.registry_command(source, KeyCode::F(1), M::NONE, 95);
+                drive.app.resize_help(width, height);
+                let before = drive.seen();
+                let dirty = drive.app.session_dirty;
+                let selections = (
+                    drive.app.fx_slot,
+                    drive.app.fx_param,
+                    drive.app.settings_row,
+                    drive.app.settings_tab,
+                    drive.app.browser.selected,
+                    drive.app.slice_end,
+                );
+                for (code, mods) in [
+                    (KeyCode::Tab, M::NONE),
+                    (KeyCode::Down, M::NONE),
+                    (KeyCode::PageDown, M::NONE),
+                    (KeyCode::PageUp, M::NONE),
+                    (KeyCode::Up, M::NONE),
+                    (KeyCode::BackTab, M::SHIFT),
+                    (KeyCode::Esc, M::NONE),
+                ] {
+                    assert!(
+                        drive.tap(code, mods).commands().is_empty(),
+                        "{source:?} {screen:?}: {code:?}"
+                    );
+                    assert_eq!(drive.seen(), before, "{source:?} {screen:?}: {code:?}");
+                    assert_eq!(drive.app.session_dirty, dirty);
+                    assert_eq!(
+                        (
+                            drive.app.fx_slot,
+                            drive.app.fx_param,
+                            drive.app.settings_row,
+                            drive.app.settings_tab,
+                            drive.app.browser.selected,
+                            drive.app.slice_end
+                        ),
+                        selections
+                    );
+                }
+                assert!(!drive.app.help_open);
+            }
+        }
+    }
+}
+
+fn f1_message_screen(drive: &mut Drive, width: u16, height: u16) -> Vec<String> {
+    use ratatui::{Terminal, backend::TestBackend};
+    drive.app.resize_help(width, height);
+    let app = &mut drive.app;
+    let pads = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
+    let screen = tui::Screen::Pads(app.mark_pads(pads));
+    let status = tui::Status {
+        badges: app.title_badges(),
+        save: app.save_status(),
+        backend: None,
+        recording: false,
+        buffer_size: 128,
+        sample_rate: 48_000,
+        load_peak: 0.0,
+        xruns: 0,
+        master_db: app.master_db,
+        meters: ([-60.0; 2], [-60.0; 2], false),
+        notice: None,
+        no_releases: false,
+        project: app.project.as_ref().map(|project| project.name.as_str()),
+    };
+    let keys = full_help(&drive.keymap, app.screen, true);
+    let entries = app.message_history();
+    let help = tui::Help {
+        groups: &[],
+        hint: None,
+        full: app.full_help_view(&keys, &entries),
+        question: None,
+        learn: None,
+    };
+    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+    term.draw(|frame| tui::draw(frame, &status, &screen, &help))
+        .unwrap();
+    term.backend()
+        .buffer()
+        .content()
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+        .collect()
+}
+
+/// Scenarios "F1 retains recent results in order" and "F1 history does not persist or edit work".
+#[test]
+fn f1_retains_recent_results_in_order() {
+    use input::{Group, midi::Key};
+    let mut drive = Drive::new();
+    drive.bind_action(88, "pad.copy");
+    learn::assign(
+        &mut drive.app.learned,
+        "X-Session Pro",
+        Group::Global,
+        Key::Note(60),
+        "pad.copy",
+    );
+    drive.app.sync_learned("X-Session Pro", Group::Global);
+    drive.frame();
+    drive.load_pad(1, Arc::new(Sample::mono(vec![0.2; 4096])), "existing work");
+    drive.tap(KeyCode::Right, M::NONE);
+    assert!(!drive.app.history.is_empty());
+    drive.app.notices = Notices::new(Instant::now());
+    let mut expected = Vec::new();
+    for index in 0..56 {
+        let origin = match index % 4 {
+            0 => {
+                drive.tap(KeyCode::Char('c'), M::CONTROL);
+                Origin::Keyboard
+            }
+            1 => {
+                drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
+                drive.bytes(PAD_PORT, &[0xb0, 88, 0]);
+                drive.frame();
+                Origin::Device(PAD_PORT.into())
+            }
+            2 => {
+                drive.bytes(XS_PORT, &[0x90, 60, 127]);
+                drive.bytes(XS_PORT, &[0x80, 60, 0]);
+                drive.frame();
+                Origin::Device(XS_PORT.into())
+            }
+            _ => {
+                drive.app.post_system_notice(
+                    Level::Info,
+                    (format!("system result {index:02}"), Instant::now()),
+                );
+                drive.frame();
+                Origin::System
+            }
+        };
+        assert_eq!(drive.last_notice().origin, origin);
+        expected.push(drive.last_notice().clone());
+    }
+    let expected: Vec<_> = expected.into_iter().rev().take(50).collect();
+    assert_eq!(
+        drive
+            .app
+            .notices
+            .history()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        expected
+    );
+    drive.app.session_dirty = Some(Instant::now());
+    drive.app.project = Some(Project {
+        name: "history project".into(),
+        folder: "target/87-history-project".into(),
+    });
+    let before = drive.seen();
+    let dirty = drive.app.session_dirty;
+    let project = (
+        drive.app.project.as_ref().unwrap().name.clone(),
+        drive.app.project.as_ref().unwrap().folder.clone(),
+    );
+    drive.tap(KeyCode::F(1), M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Tab, M::NONE);
+    let entries = drive.app.message_history();
+    assert_eq!(entries.len(), 50);
+    for (entry, stored) in entries.iter().zip(&expected) {
+        assert_eq!(entry.text, stored.text);
+        assert_eq!(
+            entry.origin,
+            match &stored.origin {
+                Origin::Keyboard => "Keyboard",
+                Origin::Device(port) => port,
+                Origin::System => "System",
+            }
+        );
+        assert_eq!(
+            entry.level,
+            if stored.level == Level::Warn {
+                tui::NoticeLevel::Warn
+            } else {
+                tui::NoticeLevel::Info
+            }
+        );
+    }
+    for (width, height) in [(80, 26), (120, 40)] {
+        let rows = f1_message_screen(&mut drive, width, height);
+        assert!(rows[1].contains("[MESSAGES]"));
+        assert!(rows[3].contains("system result 55"));
+        let mut visible = rows.join("\n");
+        for _ in 0..10 {
+            let frame = drive.tap(KeyCode::PageDown, M::NONE);
+            assert!(frame.commands().is_empty());
+            visible.push_str(&f1_message_screen(&mut drive, width, height).join("\n"));
+        }
+        for name in ["Keyboard", PAD_PORT, XS_PORT, "System"] {
+            assert!(visible.contains(name));
+        }
+        for index in (7..56).step_by(4) {
+            assert!(visible.contains(&format!("system result {index:02}")));
+        }
+        for _ in 0..10 {
+            drive.tap(KeyCode::PageUp, M::NONE);
+        }
+    }
+    let history = drive.app.notices.history().clone();
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.help_open);
+    assert_eq!(drive.seen(), before);
+    assert_eq!(drive.app.session_dirty, dirty);
+    assert_eq!(
+        (
+            drive.app.project.as_ref().unwrap().name.clone(),
+            drive.app.project.as_ref().unwrap().folder.clone()
+        ),
+        project
+    );
+    assert_eq!(drive.app.notices.history(), &history);
+    let restart = tests::test_app();
+    assert!(restart.message_history().is_empty());
+}
+
+/// Scenario "F1 history handles empty and changing content".
+#[test]
+fn f1_history_handles_empty_and_changing_content() {
+    let mut drive = Drive::new();
+    drive.tap(KeyCode::F(1), M::NONE);
+    let keys = f1_message_screen(&mut drive, 80, 26).join("\n");
+    assert!(keys.contains("[HELP]"));
+    drive.tap(KeyCode::BackTab, M::SHIFT);
+    assert!(drive.app.help_overlay.messages);
+    assert!(
+        f1_message_screen(&mut drive, 80, 26)
+            .join("\n")
+            .contains("No messages yet")
+    );
+    for code in [
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+    ] {
+        assert!(drive.tap(code, M::NONE).commands().is_empty());
+        assert_eq!(drive.app.help_overlay.scroll, 0);
+    }
+    for index in 0..51 {
+        drive
+            .app
+            .post_system_notice(Level::Info, (format!("result {index:02}"), Instant::now()));
+    }
+    f1_message_screen(&mut drive, 80, 26);
+    drive.key(KeyCode::Down, M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert_eq!(drive.app.help_overlay.scroll, 1);
+    drive.key(KeyCode::Down, M::NONE, KeyEventKind::Repeat);
+    drive.frame();
+    assert_eq!(drive.app.help_overlay.scroll, 2);
+    drive.key(KeyCode::Down, M::NONE, KeyEventKind::Release);
+    drive.frame();
+    assert_eq!(drive.app.help_overlay.scroll, 2);
+    drive.tap(KeyCode::PageDown, M::NONE);
+    assert_eq!(
+        drive.app.help_overlay.scroll,
+        2 + tui::messages_page_height(26)
+    );
+    let at = drive.app.help_overlay.scroll;
+    for code in [KeyCode::Tab, KeyCode::Tab] {
+        drive.key(code, M::NONE, KeyEventKind::Press);
+        drive.frame();
+        let page = drive.app.help_overlay.messages;
+        drive.key(code, M::NONE, KeyEventKind::Repeat);
+        drive.frame();
+        assert_eq!(drive.app.help_overlay.messages, page);
+        drive.key(code, M::NONE, KeyEventKind::Release);
+        drive.frame();
+        assert_eq!(drive.app.help_overlay.scroll, at);
+    }
+    drive.app.post_system_notice(
+        Level::Done,
+        ("arrived while scrolled".into(), Instant::now()),
+    );
+    f1_message_screen(&mut drive, 80, 26);
+    assert_eq!(drive.app.help_overlay.scroll, at);
+    assert_eq!(
+        drive.app.message_history()[0].text,
+        "arrived while scrolled"
+    );
+    for _ in 0..20 {
+        drive.tap(KeyCode::PageDown, M::NONE);
+    }
+    let bottom = drive.app.help_overlay.scroll;
+    drive.tap(KeyCode::Down, M::NONE);
+    assert_eq!(drive.app.help_overlay.scroll, bottom);
+    f1_message_screen(&mut drive, 120, 40);
+    assert!(drive.app.help_overlay.scroll < bottom);
+    assert_eq!(
+        drive.app.help_overlay.scroll,
+        tui::message_lines(&drive.app.message_history(), 118).len() - tui::messages_page_height(40)
+    );
+    drive.app.post_system_notice(
+        Level::Error,
+        ("background error under help".into(), Instant::now()),
+    );
+    drive.frame();
+    assert!(
+        drive.app.notices.current().is_none(),
+        "help hides the live notice"
+    );
+    let history = drive.app.notices.history().clone();
+    drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Press);
+    drive.frame();
+    assert!(!drive.app.help_open);
+    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+    drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Repeat);
+    drive.frame();
+    assert!(!drive.app.help_open);
+    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+    drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Release);
+    drive.tap(KeyCode::F(1), M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    assert_eq!(drive.app.help_overlay.scroll, 0);
+    assert_eq!(drive.app.notices.history(), &history);
+    drive.tap(KeyCode::Tab, M::NONE);
+    for _ in 0..20 {
+        drive.tap(KeyCode::PageUp, M::NONE);
+    }
+    assert_eq!(drive.app.help_overlay.scroll, 0);
+}
+
+/// Scenario "F1 controls retain input priority and bindings".
+#[test]
+fn f1_controls_retain_input_priority_and_bindings() {
+    let mut drive = Drive::new();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.1; 4096])), "name");
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Char('n'), M::CONTROL);
+    assert!(drive.app.pad_naming.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.key(KeyCode::Char('q'), M::NONE, KeyEventKind::Press);
+    assert!(drive.frame().commands().is_empty());
+    assert!(drive.app.pad_naming.as_ref().unwrap().1.ends_with('q'));
+    drive.key(KeyCode::Char('q'), M::NONE, KeyEventKind::Release);
+    // The existing keyboard route forwards releases even when typing consumed the press.
+    assert_only_release(&drive.frame(), 4);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.pad_naming.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Char('p'), M::CONTROL);
+    assert!(drive.app.project_picker.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.project_picker.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::F(6), M::NONE);
+    drive.tap(KeyCode::Char('/'), M::NONE);
+    assert!(drive.app.browser.editing);
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.browser.editing && drive.app.help_open);
+    drive.tap(KeyCode::F(2), M::NONE);
+    drive.tap(KeyCode::F(10), M::NONE);
+    assert!(drive.app.screen_learn.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.screen_learn.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Char('a'), M::CONTROL);
+    drive.tap(KeyCode::Backspace, M::NONE);
+    assert!(drive.app.ask.is_some());
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.ask.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.help_open);
+    assert!(
+        drive
+            .keymap
+            .overlay("[global]\nF9 = \"help.toggle\"\nF1 = \"none\"\n")
+            .unwrap()
+            .is_empty()
+    );
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(drive.app.help_open);
+    drive.tap(KeyCode::Tab, M::NONE);
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(!drive.app.help_open);
+    drive.tap(KeyCode::F(9), M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+}
+
+/// Scenario "F1 controls retain input priority and bindings" for settings pickers and MIDI learning.
+#[test]
+fn f1_keeps_settings_picker_and_learning_priority() {
+    let mut drive = Drive::new();
+    drive.tap(KeyCode::F(12), M::NONE);
+    for _ in 0..3 {
+        drive.tap(KeyCode::Tab, M::NONE);
+    }
+    drive.app.paths.projects = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.path_picker.is_some());
+    // The picker already owns F1. Open help before the picker instead.
+    drive.tap(KeyCode::Esc, M::NONE);
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.path_picker.is_some() && drive.app.help_open);
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(!drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.path_picker.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.help_open);
+    for _ in 0..3 {
+        drive.tap(KeyCode::Tab, M::NONE);
+    }
+    assert_eq!(drive.app.settings_tab, 2);
+    let group = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                MidiListRow::Group {
+                    group: input::Group::Global
+                }
+            )
+        })
+        .unwrap();
+    for _ in 0..group {
+        drive.tap(KeyCode::Down, M::NONE);
+    }
+    drive.tap(KeyCode::Right, M::NONE);
+    let action = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| matches!(row, MidiListRow::Action { .. }))
+        .unwrap();
+    for _ in group..action {
+        drive.tap(KeyCode::Down, M::NONE);
+    }
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.learning.is_some());
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.learning.is_none() && drive.app.help_open);
+    drive.tap(KeyCode::Esc, M::NONE);
+    let set = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| matches!(row, MidiListRow::Set { .. }))
+        .unwrap();
+    for _ in 0..action.abs_diff(set) {
+        drive.tap(
+            if set > action {
+                KeyCode::Down
+            } else {
+                KeyCode::Up
+            },
+            M::NONE,
+        );
+    }
+    assert!(matches!(
+        drive.app.midi_list()[drive.app.midi_row],
+        MidiListRow::Set { .. }
+    ));
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.midi_run.is_some());
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.midi_run.is_none() && drive.app.help_open);
+}
+
+/// Scenario "Pad releases survive F1 navigation".
+#[test]
+fn pad_releases_survive_f1_navigation() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.1; 4096])), "gate");
+        drive.frame();
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        drive.tap(KeyCode::F(1), M::NONE);
+        drive.tap(KeyCode::Tab, M::NONE);
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        assert!(!drive.app.pads.held[0]);
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        drive.tap(KeyCode::BackTab, M::SHIFT);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        assert!(!drive.app.pads.held[0]);
+        let repeated = drive.pad_release(source, 0);
+        if matches!(source, Source::Keyboard) {
+            // HeldPads forwards each physical release, also outside help.
+            assert_only_release(&repeated, 0);
+        } else {
+            assert!(repeated.commands().is_empty());
         }
     }
 }
@@ -240,7 +3527,12 @@ impl Drive {
                 .ask
                 .as_ref()
                 .map_or_else(Vec::new, |ask| ask.lines().to_vec()),
-            notice: self.app.flash.as_ref().map(|(text, _)| text.clone()),
+            notice: self
+                .app
+                .notices
+                .history()
+                .front()
+                .map(|notice| notice.text.clone()),
             history: self
                 .app
                 .history
@@ -2143,7 +5435,7 @@ fn swap_cancellation_and_loading_refusal_parity_from_raw_midi() {
         assert!(drive.app.pad_in_hand.is_none());
         assert!(drive.app.history.is_empty());
         assert_eq!(
-            drive.app.flash.as_ref().unwrap().0,
+            drive.last_notice().text,
             "Wait until loading finishes, then swap."
         );
         assert_eq!(
@@ -6072,15 +9364,25 @@ fn keyboard_and_controller_save_feedback_agree() {
                 let pending = drive.app.session_dirty;
                 let before = drive.seen();
                 for _ in 0..2 {
-                    drive.app.flash = None;
+                    drive.app.notices = Notices::new(Instant::now());
                     drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 88);
-                    let (notice, at) = drive.app.flash.as_ref().unwrap().clone();
+                    let notice = drive.last_notice().text.clone();
+                    let at = Instant::now();
                     assert_eq!(notice == "Session saved", problem == "none");
-                    assert_eq!(
-                        drive.app.notice_at(at + FLASH - Duration::from_nanos(1)),
-                        Some(notice.clone())
-                    );
-                    assert_eq!(drive.app.notice_at(at + FLASH), None);
+                    if problem == "none" {
+                        let deadline = drive.app.notices.deadline().unwrap();
+                        assert_eq!(
+                            drive.app.notice_at(deadline - Duration::from_nanos(1)),
+                            Some(notice.clone())
+                        );
+                        assert_eq!(drive.app.notice_at(deadline), None);
+                    } else {
+                        assert_eq!(
+                            drive.app.notice_at(at + Duration::from_secs(60)),
+                            Some(notice.clone())
+                        );
+                        assert_eq!(drive.last_notice().level, Level::Error);
+                    }
                     assert_eq!(
                         drive.app.session_dirty,
                         if problem == "none" { None } else { pending }
@@ -6102,7 +9404,7 @@ fn keyboard_and_controller_save_feedback_agree() {
                     } else {
                         assert_eq!(session::load(&path).unwrap().master_db, drive.app.master_db);
                     }
-                    let result = (notice, bytes, drive.app.save_status());
+                    let result = (notice.clone(), bytes, drive.app.save_status());
                     if let Some(expected) = &expected {
                         assert_eq!(
                             &result, expected,
@@ -6111,23 +9413,255 @@ fn keyboard_and_controller_save_feedback_agree() {
                     } else {
                         expected = Some(result);
                     }
-                    drive.app.flash = Some(("another notice".into(), at));
-                    assert_eq!(drive.app.notice_at(at), Some("another notice".into()));
+                    drive
+                        .app
+                        .post_notice(Level::Info, ("another notice".into(), at));
+                    assert_eq!(drive.app.notice_at(at), Some(notice));
                 }
                 if problem == "write" {
                     std::fs::remove_file(&tmp).unwrap();
                     drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 88);
-                    assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                    assert_eq!(drive.last_notice().text, "Session saved");
                     assert_eq!(drive.app.save_status(), SaveStatus::Clean);
                     drive.registry_command(source, KeyCode::Char(']'), M::NONE, 89);
                     assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
-                    drive.app.flash = None;
+                    drive.app.notices = Notices::new(Instant::now());
                     drive.app.autosave(
                         drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
                     );
                     assert_eq!(drive.app.save_status(), SaveStatus::Clean);
-                    assert!(drive.app.flash.is_none());
+                    assert!(drive.app.notices.history().is_empty());
                     assert_eq!(session::load(&path).unwrap().master_db, drive.app.master_db);
+                }
+            }
+        }
+    }
+}
+
+/// Scenarios "The manual save speaks" and "Interrupted notices retain remaining time".
+#[test]
+fn manual_save_success_keeps_five_visible_seconds_through_real_inputs() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for project in [false, true] {
+            let files = TransitionFiles::new();
+            let mut drive = files.save_feedback_drive(project, source);
+            drive.registry_command(source, KeyCode::Char(']'), M::NONE, 93);
+            let before = Instant::now();
+            drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
+            let after = Instant::now();
+            let saved = drive.last_notice().clone();
+            assert_eq!(saved.text, "Session saved");
+            assert_eq!(saved.level, Level::Done);
+            assert_eq!(
+                saved.origin,
+                match source {
+                    Source::Keyboard => Origin::Keyboard,
+                    _ => Origin::Device(PAD_PORT.into()),
+                }
+            );
+            assert_eq!(drive.app.save_status(), tui::SaveStatus::Clean);
+            assert_eq!(
+                session::load_existing(&drive.app.session_file())
+                    .unwrap()
+                    .master_db,
+                drive.app.master_db
+            );
+            let deadline = drive.app.notices.deadline().unwrap();
+            assert!(deadline >= before + Duration::from_secs(5));
+            assert!(deadline <= after + Duration::from_secs(5));
+            let start = deadline - Duration::from_secs(5);
+            drive.app.post_system_notice(
+                Level::Warn,
+                ("background warning".into(), start + Duration::from_secs(1)),
+            );
+            assert_eq!(
+                drive
+                    .app
+                    .frame_notice_at(start + Duration::from_secs(1))
+                    .as_deref(),
+                Some("background warning")
+            );
+            assert_eq!(drive.app.frame_notice_level, Some(Level::Warn));
+            assert_eq!(
+                drive
+                    .app
+                    .frame_notice_at(start + Duration::from_secs(7))
+                    .as_deref(),
+                Some("Session saved")
+            );
+            assert_eq!(drive.app.frame_notice_level, Some(Level::Done));
+            let resumed_deadline = start + Duration::from_secs(11);
+            assert_eq!(drive.app.notices.deadline(), Some(resumed_deadline));
+            assert_eq!(
+                drive
+                    .app
+                    .frame_notice_at(resumed_deadline - Duration::from_nanos(1))
+                    .as_deref(),
+                Some("Session saved")
+            );
+            assert_eq!(drive.app.frame_notice_at(resumed_deadline), None);
+            assert_eq!(drive.app.frame_notice_level, None);
+            assert_eq!(drive.app.save_status(), tui::SaveStatus::Clean);
+            assert_eq!(drive.app.notices.history().len(), 2);
+            assert_eq!(drive.app.notices.history()[1], saved);
+        }
+    }
+}
+
+/// Scenarios "Repeated manual refusals each explain the reason",
+/// "Keyboard and controller save feedback agree", "An informational result cannot hide an error",
+/// "A save failure stays visible after its notice" and "Successful retry clears the save warning".
+#[test]
+fn save_refusals_keep_priority_and_state_until_a_real_retry_succeeds() {
+    use tui::SaveStatus;
+
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for project in [false, true] {
+            for problem in ["write", "damaged", "newer"] {
+                let files = TransitionFiles::new();
+                let mut drive = files.save_feedback_drive(project, source);
+                let path = drive.app.session_file();
+                let valid = std::fs::read(&path).unwrap();
+                let tmp = path.with_extension("toml.tmp");
+                if problem == "write" {
+                    std::fs::write(&tmp, b"occupied").unwrap();
+                } else {
+                    std::fs::write(
+                        &path,
+                        if problem == "damaged" {
+                            "version = [\n"
+                        } else {
+                            "version = 99\n"
+                        },
+                    )
+                    .unwrap();
+                    drive.app.session_read_error = Some(session::load_existing(&path).unwrap_err());
+                }
+                drive.registry_command(source, KeyCode::Char(']'), M::NONE, 93);
+                let before = TransitionFiles::state(&drive);
+                let pending = drive.app.session_dirty;
+                let protection = drive.app.session_read_error.clone();
+                let saved = std::fs::read(&path).unwrap();
+                let status = if problem == "write" {
+                    SaveStatus::Failed
+                } else {
+                    SaveStatus::Unsaved
+                };
+                let origin = match source {
+                    Source::Keyboard => Origin::Keyboard,
+                    _ => Origin::Device(PAD_PORT.into()),
+                };
+                let mut produced = Vec::new();
+                assert!(drive.app.notices.history().is_empty());
+                for _ in 0..2 {
+                    let frame = drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
+                    assert!(frame.commands().is_empty());
+                    let refusal = drive.last_notice().clone();
+                    assert_eq!(refusal.level, Level::Error);
+                    assert_eq!(refusal.origin, origin);
+                    assert_ne!(refusal.text, "Session saved");
+                    produced.push(refusal.clone());
+                    for level in [Level::Info, Level::Done] {
+                        drive.app.post_system_notice(
+                            level,
+                            (format!("background {level:?}"), Instant::now()),
+                        );
+                        produced.push(drive.last_notice().clone());
+                        drive.frame();
+                        assert_eq!(drive.app.notices.current(), Some(&refusal));
+                        assert_eq!(drive.app.frame_notice_level, Some(Level::Error));
+                    }
+                    assert_eq!(TransitionFiles::state(&drive), before);
+                    assert_eq!(drive.app.save_status(), status);
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.session_read_error, protection);
+                    assert_eq!(std::fs::read(&path).unwrap(), saved);
+                    if problem == "write" {
+                        assert_eq!(std::fs::read(&tmp).unwrap(), b"occupied");
+                    }
+                    assert_eq!(
+                        drive.app.notices.history().iter().collect::<Vec<_>>(),
+                        produced.iter().rev().collect::<Vec<_>>()
+                    );
+                }
+                let bank = drive.app.pads.bank;
+                drive.registry_command(source, KeyCode::PageDown, M::NONE, 92);
+                assert_eq!(
+                    drive.app.pads.bank,
+                    bank + 1,
+                    "acknowledgement keeps the action"
+                );
+                assert_eq!(drive.app.notices.current().unwrap().level, Level::Done);
+                assert_eq!(drive.app.save_status(), status);
+                assert_eq!(drive.app.session_dirty, pending);
+                assert_eq!(drive.app.session_read_error, protection);
+                assert_eq!(std::fs::read(&path).unwrap(), saved);
+                let history = drive.app.notices.history().clone();
+                if problem == "write" {
+                    std::fs::remove_file(&tmp).unwrap();
+                } else {
+                    // Repairing the bytes alone must not remove startup read protection.
+                    std::fs::write(&path, &valid).unwrap();
+                }
+                drive
+                    .app
+                    .autosave(pending.unwrap() + SESSION_SAVE + Duration::from_secs(1));
+                drive.app.save_on_exit();
+                assert_eq!(drive.app.notices.history(), &history);
+                assert_eq!(drive.app.session_dirty, pending);
+                assert_eq!(
+                    &std::fs::read(&path).unwrap(),
+                    if problem == "write" { &saved } else { &valid }
+                );
+                drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
+                assert_eq!(drive.last_notice().origin, origin);
+                assert_eq!(drive.app.notices.history().len(), history.len() + 1);
+                if problem == "write" {
+                    assert_eq!(drive.last_notice().text, "Session saved");
+                    assert_eq!(drive.last_notice().level, Level::Done);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                    assert!(drive.app.session_dirty.is_none());
+                    assert!(!drive.app.session_write_failed);
+                    assert_eq!(
+                        session::load_existing(&path).unwrap().master_db,
+                        drive.app.master_db
+                    );
+                    drive.registry_command(source, KeyCode::Char(']'), M::NONE, 93);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
+                    let history = drive.app.notices.history().clone();
+                    drive.app.autosave(
+                        drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
+                    );
+                    assert_eq!(drive.app.save_status(), SaveStatus::Clean);
+                    assert_eq!(
+                        drive.app.notices.history(),
+                        &history,
+                        "successful autosave stays silent"
+                    );
+                    assert_eq!(
+                        session::load_existing(&path).unwrap().master_db,
+                        drive.app.master_db
+                    );
+                } else {
+                    assert_eq!(drive.last_notice().level, Level::Error);
+                    assert!(
+                        drive
+                            .last_notice()
+                            .text
+                            .contains(protection.as_ref().unwrap())
+                    );
+                    assert_eq!(drive.app.session_read_error, protection);
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.save_status(), SaveStatus::Unsaved);
+                    assert_eq!(std::fs::read(&path).unwrap(), valid);
+                    assert!(
+                        drive
+                            .app
+                            .notices
+                            .history()
+                            .iter()
+                            .all(|notice| notice.text != "Session saved")
+                    );
                 }
             }
         }
@@ -6312,7 +9846,7 @@ fn the_learned_save_button_survives_restart() {
                 assert_eq!(drive.app.screen, screen);
                 drive.tap(KeyCode::Char(']'), M::NONE);
                 drive.registry_command(source, KeyCode::Null, M::NONE, 88);
-                assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                assert_eq!(drive.last_notice().text, "Session saved");
                 assert_eq!(drive.app.save_status(), SaveStatus::Clean);
                 assert_eq!(
                     session::load(&session_path).unwrap().master_db,
@@ -6327,24 +9861,24 @@ fn the_learned_save_button_survives_restart() {
             let tmp = session_path.with_extension("toml.tmp");
             std::fs::write(&tmp, "occupied").unwrap();
             for _ in 0..2 {
-                drive.app.flash = None;
+                drive.app.notices = Notices::new(Instant::now());
                 drive.registry_command(source, KeyCode::Null, M::NONE, 88);
-                assert_ne!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+                assert_ne!(drive.last_notice().text, "Session saved");
                 assert_eq!(drive.app.save_status(), SaveStatus::Failed);
                 assert_eq!(drive.app.session_dirty, pending_work);
                 assert_eq!(std::fs::read(&session_path).unwrap(), saved);
             }
             std::fs::remove_file(&tmp).unwrap();
             drive.registry_command(source, KeyCode::Null, M::NONE, 88);
-            assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+            assert_eq!(drive.last_notice().text, "Session saved");
             assert_eq!(drive.app.save_status(), SaveStatus::Clean);
             drive.tap(KeyCode::Char(']'), M::NONE);
-            drive.app.flash = None;
+            drive.app.notices = Notices::new(Instant::now());
             drive.app.autosave(
                 drive.app.session_dirty.unwrap() + SESSION_SAVE + Duration::from_nanos(1),
             );
             assert_eq!(drive.app.save_status(), SaveStatus::Clean);
-            assert!(drive.app.flash.is_none());
+            assert!(drive.app.notices.history().is_empty());
             assert_eq!(
                 session::load(&session_path).unwrap().master_db,
                 drive.app.master_db
@@ -6405,6 +9939,33 @@ impl TransitionFiles {
         config::save_section(&config_path, "project", &drive.app.project_cfg).unwrap();
         drive.app.user_path = Some(config_path);
         drive.frame();
+        drive
+    }
+
+    fn save_feedback_drive(&self, project: bool, source: Source) -> Drive {
+        let mut drive = self.drive(project);
+        for (number, action) in [
+            (91, "session.save"),
+            (92, "bank.next"),
+            (93, "master.volume_up"),
+        ] {
+            // Learning keeps one control per action in a group.
+            let key = match source {
+                Source::Notes => input::midi::Key::Note(number),
+                _ => input::midi::Key::Cc(number),
+            };
+            learn::assign(
+                &mut drive.app.learned,
+                "Recorded pads",
+                input::Group::Global,
+                key,
+                action,
+            );
+        }
+        drive
+            .app
+            .sync_learned("Recorded pads", input::Group::Global);
+        drive.midi().recorded_fence();
         drive
     }
 
@@ -6546,9 +10107,12 @@ fn a_save_refusal_keeps_the_selected_target() {
                     TransitionFiles::pick(&mut drive, source, target, create);
                     let before = TransitionFiles::state(&drive);
                     let picker = TransitionFiles::picker(&drive);
-                    for _ in 0..2 {
-                        drive.app.flash = None;
+                    let history_len = drive.app.notices.history().len();
+                    for attempt in 1..=2 {
                         drive.tap(KeyCode::Enter, M::NONE);
+                        assert_eq!(drive.last_notice().level, Level::Error);
+                        assert_eq!(drive.last_notice().origin, Origin::Keyboard);
+                        assert_eq!(drive.app.notices.history().len(), history_len + attempt);
                         assert_eq!(TransitionFiles::state(&drive), before);
                         assert_eq!(TransitionFiles::picker(&drive), picker);
                         assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
@@ -6560,7 +10124,7 @@ fn a_save_refusal_keeps_the_selected_target() {
                             drive.app.project.as_ref().map(|p| p.name.as_str()),
                             project.then_some("A")
                         );
-                        let notice = &drive.app.flash.as_ref().unwrap().0;
+                        let notice = &drive.last_notice().text;
                         assert_ne!(notice, "Session saved");
                         assert!(!notice.starts_with("Project "));
                         assert!(drive.app.ask.is_none());
@@ -6575,6 +10139,37 @@ fn a_save_refusal_keeps_the_selected_target() {
                         );
                         assert!(!files.0.join("C").exists());
                     }
+                    let refusal = drive.last_notice().clone();
+                    for level in [Level::Info, Level::Done] {
+                        drive.app.post_system_notice(
+                            level,
+                            ("background result".into(), Instant::now()),
+                        );
+                    }
+                    assert_eq!(drive.app.notices.history().len(), history_len + 4);
+                    drive.tap(KeyCode::Esc, M::NONE);
+                    if create {
+                        // Esc first leaves the existing name line, then closes the picker.
+                        assert!(drive.app.project_picker.is_some());
+                        drive.tap(KeyCode::Esc, M::NONE);
+                    }
+                    assert!(drive.app.project_picker.is_none());
+                    assert_eq!(drive.app.notices.current(), Some(&refusal));
+                    assert_eq!(drive.app.frame_notice_level, Some(Level::Error));
+                    assert_eq!(
+                        drive.app.save_status(),
+                        if protected {
+                            tui::SaveStatus::Unsaved
+                        } else {
+                            tui::SaveStatus::Failed
+                        }
+                    );
+                    assert_eq!(drive.app.session_dirty, pending);
+                    assert_eq!(drive.app.session_read_error, reason);
+                    assert_eq!(std::fs::read(&source_file).unwrap(), bytes);
+                    TransitionFiles::pick(&mut drive, source, target, create);
+                    assert_eq!(TransitionFiles::picker(&drive), picker);
+                    assert_eq!(TransitionFiles::state(&drive), before);
                     if !protected {
                         std::fs::remove_dir(&tmp).unwrap();
                         drive.tap(KeyCode::Enter, M::NONE);
@@ -6628,18 +10223,13 @@ fn a_target_read_refusal_preserves_the_source() {
                 let picker = TransitionFiles::picker(&drive);
                 let cuts = drive.app.chop.as_ref().unwrap().saved();
                 let generations = drive.app.load_gen.clone();
-                for _ in 0..2 {
-                    drive.app.flash = None;
+                let history_len = drive.app.notices.history().len();
+                for attempt in 1..=2 {
                     drive.tap(KeyCode::Enter, M::NONE);
-                    assert!(
-                        drive
-                            .app
-                            .flash
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .starts_with("Project not opened:")
-                    );
+                    assert!(drive.last_notice().text.starts_with("Project not opened:"));
+                    assert_eq!(drive.last_notice().level, Level::Error);
+                    assert_eq!(drive.last_notice().origin, Origin::Keyboard);
+                    assert_eq!(drive.app.notices.history().len(), history_len + attempt);
                     assert_eq!(TransitionFiles::state(&drive), before);
                     assert_eq!(TransitionFiles::picker(&drive), picker);
                     assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
@@ -6796,7 +10386,7 @@ fn a_missing_source_folder_blocks_switching_until_restored() {
             let pending = drive.app.session_dirty;
             for _ in 0..2 {
                 drive.tap(KeyCode::Enter, M::NONE);
-                assert!(drive.app.flash.as_ref().unwrap().0.contains("is gone"));
+                assert!(drive.last_notice().text.contains("is gone"));
                 assert_eq!(TransitionFiles::state(&drive), before);
                 assert_eq!(TransitionFiles::picker(&drive), picker);
                 assert_eq!(drive.app.session_dirty, pending);
@@ -7022,7 +10612,7 @@ impl PortableProject {
 
     fn save(drive: &mut Drive, source: Source) {
         drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 89);
-        assert_eq!(drive.app.flash.as_ref().unwrap().0, "Session saved");
+        assert_eq!(drive.last_notice().text, "Session saved");
         assert!(drive.app.session_dirty.is_none());
     }
 
@@ -7202,12 +10792,645 @@ fn portable_chops_keep_old_project_compatibility() {
     }
 }
 
+fn badge_labels(drive: &Drive) -> Vec<String> {
+    let before = drive.seen();
+    let badges = drive.app.title_badges();
+    assert_eq!(
+        drive.seen(),
+        before,
+        "preparing badges cannot change application state"
+    );
+    badges.into_iter().map(|badge| badge.normal).collect()
+}
+
+fn pad_feedback(drive: &Drive) -> tui::PadFeedback {
+    let before = (
+        drive.seen(),
+        drive.app.session_dirty,
+        drive.app.pending_audio.len(),
+        drive.app.sent.len(),
+    );
+    let feedback = drive.app.pad_feedback();
+    assert_eq!(
+        (
+            drive.seen(),
+            drive.app.session_dirty,
+            drive.app.pending_audio.len(),
+            drive.app.sent.len()
+        ),
+        before,
+        "drawing pad feedback cannot change state or send audio commands"
+    );
+    feedback
+}
+
+/// Scenario "Placement marks distinguish confirmation from swap".
+#[test]
+fn placement_marks_distinguish_confirmation_from_swap() {
+    use tui::PadCorner::{Available, Replace};
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for operation in ["file", "copy", "swap"] {
+            for target in [4, 5] {
+                let mut drive = Drive::new();
+                let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+                drive.load_pad(0, sound.clone(), "source");
+                drive.load_pad(4, sound, "target");
+                drive.bind_action(102, "pad.copy");
+                drive.bind_action(103, "pad.take");
+                drive.bind_action(104, "screen.pads");
+                let controls = if matches!(source, Source::Keyboard) {
+                    source
+                } else {
+                    Source::Button
+                };
+                match operation {
+                    "file" => {
+                        drive.ordered_file();
+                        drive.registry_command(controls, KeyCode::Enter, M::NONE, 82);
+                        drive.registry_command(controls, KeyCode::F(2), M::NONE, 104);
+                    }
+                    "copy" => {
+                        drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 102);
+                    }
+                    _ => {
+                        drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 103);
+                    }
+                }
+                let feedback = pad_feedback(&drive);
+                assert!(feedback.outline);
+                let asks = operation != "swap" && target == 4;
+                assert_eq!(
+                    feedback.corners[target],
+                    Some(if asks { Replace } else { Available })
+                );
+                let before = drive.seen().pads;
+                assert_silent_target(&drive.pad_press(source, target));
+                if asks {
+                    assert_eq!(drive.seen().pads, before);
+                    assert_eq!(
+                        matches!(drive.app.ask, Some(Ask::PutFile { .. })),
+                        operation == "file"
+                    );
+                    assert_eq!(
+                        matches!(drive.app.ask, Some(Ask::CopyPad { .. })),
+                        operation == "copy"
+                    );
+                } else {
+                    assert!(
+                        drive.app.ask.is_none(),
+                        "an available target adds no question"
+                    );
+                    if operation == "file" {
+                        let deadline = Instant::now() + Duration::from_secs(5);
+                        while drive.app.pads.loading[target].is_some() {
+                            let reply = drive
+                                .app
+                                .loader
+                                .as_ref()
+                                .unwrap()
+                                .1
+                                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                                .unwrap();
+                            drive.app.loader_reply(reply);
+                        }
+                        assert!(drive.app.pads.sound[target].is_some());
+                        assert!(drive.app.browser.in_hand.is_none());
+                    }
+                    assert!(
+                        drive.seen().pads != before,
+                        "{source:?}, {operation}, target {target}"
+                    );
+                }
+                drive.pad_release(source, target);
+            }
+        }
+    }
+}
+
+#[test]
+fn pad_corner_marks_respect_loading_cancellation_and_whole_file_identity() {
+    use tui::PadCorner::{Available, Replace};
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+        drive.load_pad(0, sound.clone(), "source");
+        drive.load_pad(4, sound, "target");
+        drive.bind_action(102, "pad.copy");
+        drive.bind_action(103, "pad.take");
+        drive.bind_action(104, "ui.back");
+        let controls = if matches!(source, Source::Keyboard) {
+            source
+        } else {
+            Source::Button
+        };
+        drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 102);
+        assert_eq!(
+            pad_feedback(&drive).corners[0],
+            None,
+            "the source cancels copying"
+        );
+        drive.app.pads.loading[4] = Some(33);
+        assert_eq!(pad_feedback(&drive).corners[4], None);
+        let before = drive.seen().pads;
+        assert_silent_target(&drive.pad_press(source, 4));
+        drive.pad_release(source, 4);
+        assert!(drive.app.copy_in_hand.is_some());
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.seen().pads, before);
+        drive.app.pads.loading[4] = None;
+        assert_eq!(pad_feedback(&drive).corners[4], Some(Replace));
+        drive.pad_press(source, 0);
+        drive.pad_release(source, 0);
+        assert!(drive.app.copy_in_hand.is_none());
+        assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+
+        drive.app.pads.selected = 0;
+        drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 103);
+        assert_eq!(pad_feedback(&drive).corners[4], Some(Available));
+        drive.app.pads.loading[0] = Some(1);
+        assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
+        drive.app.pads.loading[0] = None;
+        drive.app.pads.loading[4] = Some(2);
+        assert_eq!(pad_feedback(&drive).corners[4], None);
+        assert_silent_target(&drive.pad_press(source, 4));
+        drive.pad_release(source, 4);
+        assert!(
+            drive.app.pad_in_hand.is_none(),
+            "the existing refused swap drops its hand"
+        );
+        drive.app.pads.loading[4] = None;
+        drive.registry_command(controls, KeyCode::Esc, M::NONE, 104);
+
+        // Use the real browser hold route, with the same lexical file identity as pad 1.
+        drive.tap(KeyCode::F(6), M::NONE);
+        drive.app.browser.dir = PathBuf::new();
+        drive.app.browser.entries = vec![browser::Entry {
+            name: "source.wav".into(),
+            is_dir: false,
+            favorite: None,
+        }];
+        drive.app.browser.selected = 0;
+        drive.bind_action(82, "browser.hold");
+        drive.registry_command(controls, KeyCode::Enter, M::NONE, 82);
+        assert_eq!(pad_feedback(&drive).corners[0], None);
+        drive.app.pads.region[0] = Region {
+            start: 1,
+            end: 1024,
+        };
+        assert_eq!(
+            pad_feedback(&drive).corners[0],
+            Some(Replace),
+            "a slice is not the whole file"
+        );
+        drive.app.pads.loading[4] = Some(50);
+        assert_eq!(
+            pad_feedback(&drive).corners[4],
+            Some(Replace),
+            "file replacement still asks during loading"
+        );
+    }
+}
+
+/// Scenario "Marking changes appearance without silencing pads".
+#[test]
+fn marking_changes_appearance_without_silencing_pads() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+        drive.bind_action(102, "pad.mark_toggle");
+        drive.bind_action(103, "ui.back");
+        let controls = if matches!(source, Source::Keyboard) {
+            source
+        } else {
+            Source::Button
+        };
+        drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+        assert!(pad_feedback(&drive).outline);
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        assert!(drive.app.pads.marked.contains(&0));
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+        assert!(
+            !pad_feedback(&drive).outline,
+            "retained marks alone do not outline the grid"
+        );
+        assert_eq!(badge_labels(&drive), ["1 MARKED · Esc drops"]);
+        drive.registry_command(controls, KeyCode::Esc, M::NONE, 103);
+        assert!(drive.app.pads.marked.is_empty());
+        assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+    }
+}
+
+/// Scenario "Assignment numbers appear on target pads".
+#[test]
+fn assignment_numbers_appear_on_target_pads() {
+    use tui::PadCorner::Slice;
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(102, "chop.assign");
+        drive.bind_action(103, "chop.assign_order");
+        drive.bind_action(104, "bank.next");
+        drive.bind_action(105, "ui.back");
+        let controls = if matches!(source, Source::Keyboard) {
+            source
+        } else {
+            Source::Button
+        };
+        let before = drive.seen().pads;
+        let chop = drive.app.chop.as_ref().unwrap();
+        let sound = chop.sound.clone();
+        let slices = chop.slices();
+        drive.registry_command(controls, KeyCode::Char('p'), M::NONE, 102);
+        assert!(pad_feedback(&drive).outline);
+        assert_slice_preview(&drive.pad_press(source, 5), &sound, slices[0]);
+        drive.pad_release(source, 5);
+        assert_eq!(pad_feedback(&drive).corners[5], Some(Slice(1)));
+        assert_slice_preview(&drive.pad_press(source, 6), &sound, slices[1]);
+        drive.pad_release(source, 6);
+        assert_eq!(pad_feedback(&drive).corners[6], Some(Slice(2)));
+        assert_eq!(drive.seen().pads, before, "a plan has not applied anything");
+        drive.registry_command(controls, KeyCode::PageDown, M::NONE, 104);
+        assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
+        drive.registry_command(controls, KeyCode::Tab, M::NONE, 103);
+        assert_slice_preview(&drive.pad_press(source, 14), &sound, slices[0]);
+        drive.pad_release(source, 14);
+        assert_eq!(
+            pad_feedback(&drive).corners[14..],
+            [Some(Slice(1)), Some(Slice(2))]
+        );
+        drive.registry_command(controls, KeyCode::PageDown, M::NONE, 104);
+        assert_eq!(
+            pad_feedback(&drive).corners[..2],
+            [Some(Slice(3)), Some(Slice(4))]
+        );
+        drive.registry_command(controls, KeyCode::Esc, M::NONE, 105);
+        assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+        assert_eq!(drive.seen().pads, before);
+    }
+}
+
+/// Scenarios "Learning and placement keep existing sound rules" and "Hidden grids retain visible mode identity".
+#[test]
+fn learning_and_hidden_grids_keep_existing_sound_rules() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(102, "ui.pads_toggle");
+        drive.bind_action(103, "chop.assign");
+        drive.bind_action(104, "ui.back");
+        drive.bind_action(105, "pad.copy");
+        drive.registry_command(source, KeyCode::Char('o'), M::CONTROL, 102);
+        assert!(drive.app.ui.hide_pads);
+        drive.registry_command(source, KeyCode::Char('p'), M::NONE, 103);
+        let view = drive.app.mark_chop(
+            drive.app.chop_display(drive.app.chop.as_ref().unwrap()),
+            None,
+        );
+        assert!(!view.pads.hidden && view.pads.feedback.outline);
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        let view = drive.app.mark_chop(
+            drive.app.chop_display(drive.app.chop.as_ref().unwrap()),
+            None,
+        );
+        assert!(view.pads.hidden && !view.pads.feedback.outline);
+        for (screen, key, cc) in [
+            (Screen::Pads, KeyCode::F(2), 90),
+            (Screen::Files, KeyCode::F(6), 92),
+            (Screen::Chop, KeyCode::F(3), 93),
+        ] {
+            drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+            if screen == Screen::Chop {
+                // F3 on Pads opens the selected sample; on Files it opens a browser entry.
+                drive.pad_press(source, 0);
+                drive.pad_release(source, 0);
+            }
+            drive.registry_command(source, key, M::NONE, cc);
+            assert_eq!(
+                drive.app.screen,
+                screen,
+                "{source:?}: selected pad {}, notice {:?}",
+                drive.app.pads.selected_abs(),
+                drive.app.notice()
+            );
+            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            assert!(pad_feedback(&drive).outline);
+            assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
+            assert_silent_target(&drive.pad_press(source, 4));
+            drive.pad_release(source, 4);
+            drive.tap(KeyCode::F(10), M::NONE);
+            assert_eq!(pad_feedback(&drive), tui::PadFeedback::default());
+        }
+        drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+        drive.registry_command(source, KeyCode::Char('c'), M::CONTROL, 105);
+        let view = pads_view(&mut drive.app.pads, None, None, Vec::new(), None, 48_000);
+        let view = drive.app.mark_pads(view);
+        assert!(view.hidden && view.feedback.outline);
+        assert!(badge_labels(&drive)[0].contains("COPY"));
+    }
+}
+
+/// Scenario "Mode badges follow the active screen state".
+#[test]
+fn mode_badges_follow_keyboard_and_raw_midi() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(102, "pad.copy");
+        drive.bind_action(103, "ui.back");
+        drive.app.browser.dir = "target/87-badge-files".into();
+        for (screen, key, number) in REGISTRY_SCREEN_COMMANDS {
+            drive.registry_command(source, KeyCode::F(2), M::NONE, 90);
+            assert!(badge_labels(&drive).is_empty());
+            drive.registry_command(source, KeyCode::Char('c'), M::CONTROL, 102);
+            drive.registry_command(source, key, M::NONE, number);
+            assert_eq!(drive.app.screen, screen);
+            assert_eq!(
+                badge_labels(&drive),
+                ["COPY · hit a pad"],
+                "{source:?}, {screen:?}"
+            );
+            drive.registry_command(source, KeyCode::Esc, M::NONE, 103);
+            assert!(badge_labels(&drive).is_empty());
+            if screen != Screen::Settings {
+                drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+                assert_eq!(badge_labels(&drive), ["LEARN"]);
+                // MIDI becomes a learning candidate. F10 keeps its existing keyboard exit.
+                drive.tap(KeyCode::F(10), M::NONE);
+                assert!(badge_labels(&drive).is_empty());
+            }
+        }
+    }
+}
+
+/// Scenario "Every existing mode has its badge".
+#[test]
+fn every_existing_mode_has_its_badge() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::new();
+        drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+        for (cc, action) in [
+            (102, "pad.mark_toggle"),
+            (103, "pad.edit"),
+            (104, "ui.back"),
+            (105, "pad.take"),
+            (106, "pad.copy"),
+            (107, "edit.page_next"),
+        ] {
+            drive.bind_action(cc, action);
+        }
+        assert!(badge_labels(&drive).is_empty());
+        drive.registry_command(source, KeyCode::Char('m'), M::NONE, 102);
+        assert_eq!(badge_labels(&drive), ["MARK · hit pads · 0 marked"]);
+        drive.pad_press(source, 0);
+        drive.pad_release(source, 0);
+        assert_eq!(badge_labels(&drive), ["MARK · hit pads · 1 marked"]);
+        drive.registry_command(source, KeyCode::Char('m'), M::NONE, 102);
+        assert_eq!(badge_labels(&drive), ["1 MARKED · Esc drops"]);
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 103);
+        assert_eq!(
+            badge_labels(&drive),
+            ["1 MARKED · Esc drops", "EDIT · TONE"]
+        );
+        drive.registry_command(source, KeyCode::Tab, M::NONE, 107);
+        assert!(badge_labels(&drive).contains(&"EDIT · ENV".into()));
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        assert_eq!(badge_labels(&drive), ["1 MARKED · Esc drops"]);
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        assert!(badge_labels(&drive).is_empty());
+        drive.registry_command(source, KeyCode::Char('x'), M::CONTROL, 105);
+        assert_eq!(badge_labels(&drive), ["SWAP · hit a pad"]);
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        drive.registry_command(source, KeyCode::Char('c'), M::CONTROL, 106);
+        assert_eq!(badge_labels(&drive), ["COPY · hit a pad"]);
+        drive.pad_press(source, 0);
+        drive.pad_release(source, 0);
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+
+        drive.prepare_chop(Arc::new(Sample::mono(vec![0.25; 48_000])), 4);
+        for (cc, action) in [
+            (108, "chop.assign"),
+            (109, "chop.edit"),
+            (110, "chop.loop_toggle"),
+            (111, "chop.as_pad_toggle"),
+        ] {
+            drive.bind_action(cc, action);
+        }
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 109);
+        assert_eq!(badge_labels(&drive), ["EDIT · BOUNDS"]);
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        drive.registry_command(source, KeyCode::Char('o'), M::ALT, 110);
+        drive.registry_command(source, KeyCode::Char('p'), M::ALT, 111);
+        assert_eq!(badge_labels(&drive), ["LOOP", "AS PAD"]);
+        drive.registry_command(source, KeyCode::Char('p'), M::NONE, 108);
+        assert_eq!(badge_labels(&drive)[0], "ASSIGN · 0/4 placed");
+        drive.pad_press(source, 4);
+        drive.pad_release(source, 4);
+        assert_eq!(badge_labels(&drive)[0], "ASSIGN · 1/4 placed");
+        drive.registry_command(source, KeyCode::Esc, M::NONE, 104);
+        assert_eq!(badge_labels(&drive), ["LOOP", "AS PAD"]);
+        drive.registry_command(source, KeyCode::Char('o'), M::ALT, 110);
+        drive.registry_command(source, KeyCode::Char('p'), M::ALT, 111);
+        assert!(badge_labels(&drive).is_empty());
+    }
+}
+
+/// Scenario "Overlapping placements remain visible".
+#[test]
+fn overlapping_placements_remain_visible_without_changing_priority() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for mask in 1..8 {
+            let mut drive = Drive::new();
+            let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+            drive.load_pad(0, sound.clone(), "source");
+            drive.load_pad(4, sound, "target");
+            for (cc, action) in [
+                (102, "pad.copy"),
+                (103, "pad.take"),
+                (104, "screen.files"),
+                (105, "browser.hold"),
+                (106, "screen.pads"),
+            ] {
+                drive.bind_action(cc, action);
+            }
+            let controls = if matches!(source, Source::Keyboard) {
+                Source::Keyboard
+            } else {
+                Source::Button
+            };
+            if mask & 2 != 0 {
+                drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 102);
+            }
+            if mask & 4 != 0 {
+                drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 103);
+            }
+            if mask & 1 != 0 {
+                drive.app.browser.dir = "target/87-badge-files".into();
+                drive.registry_command(controls, KeyCode::F(6), M::NONE, 104);
+                drive.app.browser.entries = vec![browser::Entry {
+                    name: "new.wav".into(),
+                    is_dir: false,
+                    favorite: None,
+                }];
+                drive.app.browser.selected = 0;
+                drive.registry_command(controls, KeyCode::Enter, M::NONE, 105);
+                drive.registry_command(controls, KeyCode::F(2), M::NONE, 106);
+            }
+            let labels = badge_labels(&drive);
+            assert_eq!(labels.len(), 1, "one compound badge");
+            for (bit, name) in [(1, "IN HAND"), (2, "COPY"), (4, "SWAP")] {
+                assert_eq!(
+                    labels[0].contains(name),
+                    mask & bit != 0,
+                    "{mask}: {labels:?}"
+                );
+            }
+            assert_eq!(
+                pad_feedback(&drive).corners[4],
+                Some(if mask & 3 != 0 {
+                    tui::PadCorner::Replace
+                } else {
+                    tui::PadCorner::Available
+                }),
+                "all seven overlapping operations retain their target marks"
+            );
+            let before = drive.seen().pads;
+            assert_silent_target(&drive.pad_press(source, 4));
+            drive.pad_release(source, 4);
+            let swap_wins = mask & 4 != 0
+                && mask & 2 == 0
+                && (matches!(source, Source::Keyboard) || mask & 1 == 0);
+            if swap_wins {
+                assert!(drive.app.ask.is_none(), "an occupied swap remains direct");
+                assert_ne!(drive.seen().pads, before);
+                assert_eq!(
+                    badge_labels(&drive),
+                    if mask & 1 != 0 {
+                        vec!["IN HAND · hit a pad".to_string()]
+                    } else {
+                        Vec::new()
+                    }
+                );
+            } else {
+                assert_eq!(drive.seen().pads, before);
+                let file_wins =
+                    mask & 1 != 0 && (!matches!(source, Source::Keyboard) || mask & 6 == 0);
+                assert_eq!(
+                    matches!(drive.app.ask, Some(Ask::PutFile { .. })),
+                    file_wins
+                );
+                assert_eq!(
+                    matches!(drive.app.ask, Some(Ask::CopyPad { .. })),
+                    !file_wins && mask & 2 != 0
+                );
+                assert_eq!(badge_labels(&drive)[1], "ASK");
+            }
+        }
+    }
+}
+
+#[test]
+fn midi_list_learning_has_a_badge_without_muting_pads() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::registry_screen_checks();
+        drive.bind_action(108, "settings.learn");
+        drive.registry_command(source, KeyCode::F(12), M::NONE, 91);
+        drive.registry_command(source, KeyCode::Tab, M::NONE, 99);
+        drive.registry_command(source, KeyCode::Tab, M::NONE, 99);
+        drive.app.midi_open = vec![input::Group::Pads];
+        drive.app.midi_row = drive
+            .app
+            .midi_list()
+            .iter()
+            .position(|row| matches!(row, MidiListRow::Action { info } if info.name == "pad.copy"))
+            .unwrap();
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 108);
+        assert_eq!(badge_labels(&drive), ["LEARN"]);
+        assert_full_hit(&drive.pad_press(source, 0), 0);
+        assert_eq!(badge_labels(&drive), ["LEARN"]);
+        assert_only_release(&drive.pad_release(source, 0), 0);
+        // F12 keeps its existing keyboard cancellation of captured MIDI candidates.
+        drive.tap(KeyCode::Esc, M::NONE);
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(badge_labels(&drive).is_empty());
+    }
+}
+
+#[test]
+fn recording_badges_follow_real_input_and_controlled_elapsed_time() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = Drive::offline();
+        drive.app.routed.input = Some("offline microphone".into());
+        drive.app.paths.samples = format!(
+            "target/87-silent-recording-{}-{source:?}",
+            std::process::id()
+        )
+        .into();
+        drive.bind_action(109, "record.mic");
+        if matches!(source, Source::Keyboard) {
+            drive.key(KeyCode::Char('r'), M::ALT, KeyEventKind::Press);
+        } else {
+            drive.bytes(PAD_PORT, &[0xb0, 109, 127]);
+        }
+        drive.frame();
+        let (_, start) = drive
+            .app
+            .recording
+            .expect("the production route started recording");
+        let mut text = view::FrameText::default();
+        for seconds in [0, 1, 12, 123] {
+            let badges = drive
+                .app
+                .title_badges_at(start + Duration::from_secs(seconds));
+            assert_eq!(badges[0].kind, tui::BadgeKind::Attention);
+            assert_eq!(badges[0].normal, format!("● REC {seconds}s"));
+            assert_eq!(badges[0].compact, "REC");
+            let now = start + Duration::from_secs(seconds);
+            assert_eq!(text.badges_at(&drive.app, now), badges);
+            let builds = text.builds().0;
+            assert_eq!(
+                text.badges_at(&drive.app, now + Duration::from_nanos(1)),
+                badges
+            );
+            assert_eq!(text.builds().0, builds);
+            assert_eq!(
+                text.feedback_at(&drive.app, now).recording_seconds,
+                Some(seconds)
+            );
+            assert_eq!(
+                drive.app.status_feedback_at(now).recording_seconds,
+                Some(seconds)
+            );
+            for (width, height) in [(80, 26), (120, 40)] {
+                let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+                assert!(row.contains(&format!("rec {seconds}s")), "{row}");
+            }
+        }
+        if matches!(source, Source::Keyboard) {
+            drive.key(KeyCode::Char('r'), M::ALT, KeyEventKind::Release);
+        } else {
+            drive.bytes(PAD_PORT, &[0xb0, 109, 0]);
+            drive.frame();
+            assert!(
+                drive.app.recording.is_some(),
+                "the existing MIDI button ignores its release"
+            );
+            drive.bytes(PAD_PORT, &[0xb0, 109, 127]);
+        }
+        drive.frame();
+        assert!(drive.app.recording.is_none());
+        assert!(badge_labels(&drive).is_empty());
+        assert!(
+            !drive.app.paths.samples.exists(),
+            "a recording with no frames writes no files"
+        );
+    }
+}
+
 fn pads_play_badge(drive: &mut Drive) -> bool {
     use ratatui::{Terminal, backend::TestBackend};
     let app = &mut drive.app;
     let view = pads_view(&mut app.pads, None, None, Vec::new(), None, app.rate);
     let screen = tui::Screen::Pads(app.mark_pads(view));
     let status = tui::Status {
+        badges: app.title_badges(),
         save: app.save_status(),
         backend: None,
         recording: false,
@@ -7331,6 +11554,143 @@ fn pads_play_badge_follows_all_sounding_pads() {
         );
         drive.render_blocks(400);
         assert!(!pads_play_badge(&mut drive), "all pad voices ended");
+    }
+}
+
+/// Scenarios "Pads PLAY badge follows all sounding pads" and "Pads PLAY badge ignores silent requests and old projects".
+#[test]
+fn pads_play_badge_keeps_voice_identity_beside_pad_feedback() {
+    use std::sync::atomic::Ordering::Acquire;
+
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        for mode in ["normal", "mark", "copy", "swap", "file", "learn"] {
+            for hidden in [false, true] {
+                for switch in [false, true] {
+                    let mut drive = Drive::offline();
+                    drive.parity_pad(0, false);
+                    drive.app.pads.gate[18] = false;
+                    let snap = drive.app.pads.snapshot(18);
+                    for command in drive.app.pads.put_back(18, &snap) {
+                        drive.app.send(command);
+                    }
+                    for (cc, action) in [
+                        (102, "pad.mark_toggle"),
+                        (103, "pad.copy"),
+                        (104, "pad.take"),
+                        (105, "bank.next"),
+                        (106, "ui.pads_toggle"),
+                        (107, "learn.toggle"),
+                        (108, "pad.edit"),
+                        (109, "screen.pads"),
+                    ] {
+                        drive.bind_action(cc, action);
+                    }
+                    let controls = if matches!(source, Source::Keyboard) {
+                        source
+                    } else {
+                        Source::Button
+                    };
+                    drive.registry_command(controls, KeyCode::F(2), M::NONE, 109);
+                    drive.render_blocks(4);
+                    assert!(!pads_play_badge(&mut drive));
+                    // Offline MIDI writes directly to the callback queue. The rendered hit
+                    // below proves acceptance without capturing or replaying that route.
+                    drive.velocity_hit(source, 127);
+                    assert!(!pads_play_badge(&mut drive), "a queued hit is not a voice");
+                    let hit = drive.render_blocks(1);
+                    assert!(engine::checks::peak(&hit.0) > 0.01);
+                    drive.pad_release(source, 2);
+                    assert!(pads_play_badge(&mut drive));
+                    if hidden {
+                        drive.registry_command(controls, KeyCode::Enter, M::NONE, 108);
+                        assert!(drive.app.edit);
+                    }
+                    match mode {
+                        "mark" => {
+                            drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+                        }
+                        "copy" => {
+                            drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 103);
+                        }
+                        "swap" => {
+                            drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 104);
+                        }
+                        "file" => {
+                            drive.ordered_file();
+                            drive.registry_command(controls, KeyCode::Enter, M::NONE, 82);
+                            drive.registry_command(controls, KeyCode::F(2), M::NONE, 109);
+                        }
+                        _ => {}
+                    }
+                    drive.registry_command(controls, KeyCode::PageDown, M::NONE, 105);
+                    if hidden {
+                        drive.registry_command(controls, KeyCode::Char('o'), M::CONTROL, 106);
+                    }
+                    if mode == "learn" {
+                        drive.registry_command(controls, KeyCode::F(10), M::NONE, 107);
+                    }
+                    assert_ne!(drive.app.pads.bank, 1, "the voice stays on another bank");
+                    assert_eq!(drive.app.ui.hide_pads, hidden);
+                    let feedback = pad_feedback(&drive);
+                    assert_eq!(feedback.outline, mode != "normal");
+                    if matches!(mode, "copy" | "swap" | "file") {
+                        assert_eq!(feedback.corners[0], Some(tui::PadCorner::Available));
+                    }
+                    assert!(
+                        pads_play_badge(&mut drive),
+                        "{source:?}, {mode}, hidden {hidden}"
+                    );
+                    if switch {
+                        let old_epoch = drive.project.epoch.load(Acquire);
+                        drive.app.apply_session(session::Session::default());
+                        // The old snapshot still reports a voice before the next callback.
+                        assert!(
+                            drive
+                                .app
+                                .audio
+                                .as_ref()
+                                .unwrap()
+                                .stats
+                                .pads_playing(old_epoch)
+                        );
+                        drive.frame();
+                        if !pad_feedback(&drive).outline {
+                            drive.registry_command(controls, KeyCode::Char('m'), M::NONE, 102);
+                        }
+                        assert!(pad_feedback(&drive).outline);
+                        assert!(
+                            !pads_play_badge(&mut drive),
+                            "a mode cannot expose an old-project voice"
+                        );
+                        let new_epoch = drive.project.epoch.load(Acquire);
+                        for _ in 0..256 {
+                            drive.app.flush_audio();
+                            drive.render_blocks(1);
+                            assert!(!pads_play_badge(&mut drive));
+                            if drive.project.ready.load(Acquire) == new_epoch
+                                && drive.app.pending_audio.is_empty()
+                            {
+                                break;
+                            }
+                        }
+                        assert_eq!(drive.project.ready.load(Acquire), new_epoch);
+                        assert!(drive.app.pending_audio.is_empty());
+                    } else {
+                        let end = drive.render_blocks(400);
+                        assert!(
+                            !pads_play_badge(&mut drive),
+                            "the last voice ended, not the mode"
+                        );
+                        assert_eq!(pad_feedback(&drive), feedback);
+                        for channel in [&end.0, &end.1] {
+                            assert_eq!(engine::checks::first_non_finite(channel), None);
+                            assert!(engine::checks::peak(channel) < 1.0);
+                            assert_eq!(engine::checks::peak(&channel[49_000..]), 0.0);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{App, Project, SESSION_SAVE, session, tests::test_app};
+use super::{App, Instant, Notices, Project, SESSION_SAVE, session, tests::test_app};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -71,12 +71,104 @@ fn failed_autosave_retains_pending_work() {
         app.pads.pitch[1] = 7;
         app.dirty();
         std::fs::remove_file(tmp).unwrap();
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         app.autosave(now + std::time::Duration::from_secs(60));
-        assert!(app.flash.is_none(), "no automatic retry or repeated notice");
+        assert!(
+            app.notices.history().is_empty(),
+            "no automatic retry or repeated notice"
+        );
         assert_eq!(app.session_dirty, pending);
         assert_eq!(std::fs::read(path).unwrap(), saved);
         assert_eq!((app.pads.pitch[0], app.pads.pitch[1]), (3, 7));
+    }
+}
+
+/// Scenarios "A save failure stays visible after its notice",
+/// "Failed autosave retains pending work", "A failed save does not retry on exit"
+/// and "Damaged or newer session remains protected".
+#[test]
+fn notice_acknowledgement_and_expiry_do_not_allow_automatic_saves() {
+    use super::Level;
+    use std::time::Duration;
+    use tui::SaveStatus;
+
+    for project in [false, true] {
+        for problem in ["write", "damaged", "newer"] {
+            let files = Files::new();
+            let mut app = files.app(project);
+            app.save_session().unwrap();
+            let path = app.session_file();
+            let valid = std::fs::read(&path).unwrap();
+            let tmp = if problem == "write" {
+                Some(block_save(&app))
+            } else {
+                std::fs::write(
+                    &path,
+                    if problem == "damaged" {
+                        "version = [\n"
+                    } else {
+                        "version = 99\n"
+                    },
+                )
+                .unwrap();
+                app.session_read_error = Some(session::load(&path).unwrap_err());
+                None
+            };
+            app.pads.pitch[0] = 3;
+            app.dirty();
+            let pending = app.session_dirty;
+            let protection = app.session_read_error.clone();
+            let refusal = app.save_session().unwrap_err();
+            assert_eq!(app.frame_notice().as_deref(), Some(refusal.as_str()));
+            for level in [Level::Info, Level::Done] {
+                app.post_system_notice(level, ("background result".into(), Instant::now()));
+                assert_eq!(app.frame_notice().as_deref(), Some(refusal.as_str()));
+            }
+            let history = app.notices.history().clone();
+            app.acknowledge_notice();
+            assert_eq!(app.notices.current().unwrap().level, Level::Done);
+            let done_end = app.notices.deadline().unwrap();
+            assert_eq!(
+                app.frame_notice_at(done_end).as_deref(),
+                Some("background result")
+            );
+            assert_eq!(app.frame_notice_level, Some(Level::Info));
+            let info_end = app.notices.deadline().unwrap();
+            assert_eq!(info_end, done_end + Duration::from_secs(3));
+            assert_eq!(app.frame_notice_at(info_end), None);
+            assert_eq!(app.frame_notice_level, None);
+            assert_eq!(app.notices.history(), &history);
+            assert_eq!(app.notices.pending_len(), 0);
+            assert_eq!(app.session_dirty, pending);
+            assert_eq!(app.session_read_error, protection);
+            assert_eq!(app.session_write_failed, problem == "write");
+            let status = if problem == "write" {
+                SaveStatus::Failed
+            } else {
+                SaveStatus::Unsaved
+            };
+            assert_eq!(app.save_status(), status);
+
+            if let Some(tmp) = tmp {
+                std::fs::remove_file(tmp).unwrap();
+            } else {
+                std::fs::write(&path, &valid).unwrap();
+            }
+            app.pads.pitch[1] = 7;
+            app.dirty();
+            app.autosave(pending.unwrap() + SESSION_SAVE + Duration::from_secs(60));
+            app.save_on_exit();
+            assert_eq!(std::fs::read(&path).unwrap(), valid);
+            assert_eq!(app.session_dirty, pending);
+            assert_eq!(app.session_read_error, protection);
+            assert_eq!(app.save_status(), status);
+            assert_eq!((app.pads.pitch[0], app.pads.pitch[1]), (3, 7));
+            assert_eq!(app.notices.history(), &history);
+            assert_eq!(
+                app.frame_notice_at(info_end + Duration::from_secs(60)),
+                None
+            );
+        }
     }
 }
 
@@ -100,10 +192,13 @@ fn manual_retry_restores_autosave() {
         assert_eq!((stored.pads["0"].pitch, stored.pads["1"].pitch), (3, 7));
         app.pads.pitch[1] = 9;
         app.dirty();
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         app.autosave(app.session_dirty.unwrap() + SESSION_SAVE + std::time::Duration::from_secs(1));
         assert!(app.session_dirty.is_none());
-        assert!(app.flash.is_none(), "successful autosave stays silent");
+        assert!(
+            app.notices.history().is_empty(),
+            "successful autosave stays silent"
+        );
         assert_eq!(
             session::load(&app.session_file()).unwrap().pads["1"].pitch,
             9
@@ -122,9 +217,9 @@ fn a_failed_save_does_not_retry_on_exit() {
     app.dirty();
     assert!(app.save_session().is_err());
     std::fs::remove_file(tmp).unwrap();
-    app.flash = None;
+    app.notices = Notices::new(Instant::now());
     app.save_on_exit();
-    assert!(app.flash.is_none());
+    assert!(app.notices.history().is_empty());
     assert!(app.session_dirty.is_some());
     assert_eq!(std::fs::read(app.session_file()).unwrap(), saved);
     app.save_session().unwrap();
@@ -154,10 +249,10 @@ fn damaged_or_newer_session_remains_protected() {
             app.dirty();
             let pending = app.session_dirty;
             for _ in 0..2 {
-                app.flash = None;
+                app.notices = Notices::new(Instant::now());
                 let error = app.save_session().unwrap_err();
                 assert!(error.contains(&reason));
-                assert_eq!(app.flash.as_ref().unwrap().0, error);
+                assert_eq!(app.notices.current().unwrap().text, error);
                 assert_eq!(app.session_read_error.as_ref(), Some(&reason));
                 assert_eq!(app.session_dirty, pending);
                 assert!(
@@ -185,9 +280,9 @@ fn saving_does_not_recreate_a_deleted_project() {
     app.dirty();
     let pending = app.session_dirty;
     for _ in 0..2 {
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         assert!(app.save_session().unwrap_err().contains("is gone"));
-        assert!(app.flash.is_some());
+        assert!(app.notices.current().is_some());
         assert!(!folder.exists());
         assert_eq!(app.session_dirty, pending);
     }

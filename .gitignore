@@ -1,4 +1,5 @@
 /target
 /renders/*.wav
+/renders/screens/
 *.swp
 .DS_Store
