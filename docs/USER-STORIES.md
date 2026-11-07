@@ -122,6 +122,40 @@ These examples do not prove real kitty composition, controller operation or list
    in the project after restart. A new sound gets its file name; a failed load keeps the
    previous name. Swapping pads moves the name with the sound.
 
+## Copy a pad without a growing name
+
+`[87a]` Use a disposable project for these steps. Keep pad edit and text input closed.
+The default keys below stay unchanged. Use your replacement keys if you changed the map.
+
+1. Select a loaded pad named `kick`. Press `Ctrl+C`. Hit an empty pad.
+   The target becomes `kick (copy 1)`. The source stays unchanged. Placement makes no hit sound.
+2. Copy `kick` to another empty pad. It becomes `kick (copy 2)`.
+   Copy `kick (copy 1)` to a third target. It becomes `kick (copy 3)`, not a repeated marker.
+3. Delete `kick (copy 2)` with `Backspace`. Copy `kick (copy 3)` to an empty pad.
+   The new name is `kick (copy 2)`. Numbers identify free names, not the order of earlier copies.
+   `Ctrl+Z` restores the target. Its number becomes available again.
+4. Read the proposed copy name in the replacement question.
+   The target's old name still counts as occupied. If only `kick` and `kick (copy 1)` exist,
+   replacing the latter proposes `kick (copy 2)`. `Esc` keeps its old sound and the copy in hand.
+5. Change banks before you place another copy. All eight banks share the same name search.
+   Missing and loading pads also reserve their names. Names in another project do not reserve a number.
+6. Keep a slice number in the base: `break 2` becomes `break 2 (copy 1)`.
+   Old text such as `rec 2 2 2` stays literal: its first copy is `rec 2 2 2 (copy 1)`.
+   A manual final marker has meaning too: `kick (copy 7)` belongs to the `kick` name family.
+   Its next copy takes the smallest free number. The source name stays unchanged.
+7. Save with `Ctrl+S` and restart. Names and settings remain.
+   The next copy uses the names that actually exist after loading. Saving needs no new counter or sample rename.
+
+Only a final marker written exactly as ` (copy N)` has this meaning.
+`N` must use positive ASCII digits without a leading zero. `kick (copy 01)` and `kick (Copy 1)` remain literal text.
+Full Unicode names determine collisions before the existing display clipping.
+The copy keeps the name and settings captured when you pressed `Ctrl+C`.
+A changed proposed name needs another confirmation. Cancellation reserves no number.
+
+Use existing controller bindings for copy, banks, targets and undo. Use keyboard commands where no binding exists.
+This change adds no controller assignment. Separate owner passes are in [section 87a](LIVE-CHECKS.md#87a-numbered-pad-copy-names).
+Sound stays unchanged. The local listening reference is `renders/83a-pad-copy.wav`.
+
 ## A project for a track
 
 1. `[11]` Press `Ctrl+P`. The project list opens.
@@ -208,8 +242,9 @@ These examples do not prove real kitty composition, controller operation or list
 10. `[83a]` `U` and `O` turn the banks, with the edit open or closed; `J` `L` and the
     arrows change the selected value instead. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` also
     turn the banks. `[83a]` `Ctrl+C` takes a copy of the selected loaded pad: the next
-    pad hit places it (an occupied pad asks first), the copy keeps every setting with a
-    name ending in ` 2`, and `Ctrl+Z` brings the target back.
+    pad hit places it (an occupied pad asks first), and the copy keeps every setting.
+    `[87a]` Its name uses one numbered `(copy N)` marker. Refer to "Copy a pad without a growing name".
+    `Ctrl+Z` brings the target back.
 11. `[21]` Turn knobs 1–3 of the controller in edit mode. They change the parameters of
     the page.
 12. `[21]` The strip above the grid shows the envelope of the pad as a line on the wave.

@@ -127,6 +127,15 @@ not permission to combine the new changes.
   Earlier callback maximum-budget failures remain unresolved.
   Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
   Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
+- The owner accepted `87a-copy-names` on 2026-11-07 after the short keyboard check.
+  Archive: `openspec/changes/archive/2026-11-07-87a-copy-names/`. The main pad-assignment specification contains its requirements.
+  Copies use one `(copy N)` marker and the smallest free number across all current banks.
+  Manual canonical markers have the same meaning. The target's current name stays occupied until replacement succeeds.
+  Existing names, sample files, sound, controls and saved formats stay unchanged.
+  The owner reported success for repeated copies, a copy of a copy, numbered names and silent placement.
+  Remaining keyboard checks, physical-controller checks, separate listening and callback maximum-budget limits remain open.
+  The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
+  Work stays in the main repository folder. Change 88 is not active.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
