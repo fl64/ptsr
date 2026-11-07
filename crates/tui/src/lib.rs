@@ -1,5 +1,7 @@
 //! Screens. They only draw a state snapshot and never touch the engine.
 
+use std::sync::Arc;
+
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
@@ -59,15 +61,166 @@ pub enum SaveStatus {
 impl SaveStatus {
     fn spans(self) -> Vec<Span<'static>> {
         match self {
-            Self::Clean => Vec::new(),
-            Self::Unsaved => vec![" Unsaved ·".fg(AMBER).bg(BG)],
-            Self::Failed => vec![" Save failed ·".fg(MAGENTA).bg(BG).bold()],
+            Self::Clean | Self::Unsaved => Vec::new(),
+            Self::Failed => vec!["Save failed".fg(MAGENTA).bg(BG).bold()],
+        }
+    }
+
+    fn marker(self) -> Span<'static> {
+        "*".fg(if self == Self::Clean { DIM } else { AMBER }).bg(BG)
+    }
+}
+
+/// Semantic meaning of an optional title badge, independent of its label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BadgeKind {
+    PadMode,
+    On,
+    Attention,
+}
+
+/// Existing mode with full and compact labels, in application priority order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Badge {
+    pub kind: BadgeKind,
+    pub normal: String,
+    pub compact: String,
+}
+
+impl Badge {
+    pub fn new(kind: BadgeKind, normal: impl Into<String>, compact: impl Into<String>) -> Self {
+        Self {
+            kind,
+            normal: normal.into(),
+            compact: compact.into(),
         }
     }
 }
 
-/// State snapshot for the status line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoticeLevel {
+    Info,
+    Done,
+    Warn,
+    Error,
+}
+
+#[derive(Clone, Copy)]
+pub struct NoticeLine<'a> {
+    pub text: &'a str,
+    /// Ongoing states and prompts retain their existing style.
+    pub level: Option<NoticeLevel>,
+}
+
+impl<'a> NoticeLine<'a> {
+    pub fn plain(text: &'a str) -> Self {
+        Self { text, level: None }
+    }
+}
+
+/// One actual source, with a distinct compact label and original connection activity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputSource {
+    pub normal: String,
+    pub compact: String,
+    pub active: bool,
+}
+
+/// Dynamic feedback from the application, independent of legacy screen snapshots.
+#[derive(Default)]
+pub struct Feedback {
+    pub inputs: Arc<[InputSource]>,
+    pub recording_seconds: Option<u64>,
+}
+
+/// Learning context and working controls in the fixed help band.
+#[derive(Default)]
+pub struct Learning {
+    pub context: String,
+    pub detail: String,
+    pub controls: String,
+    pub warning: bool,
+}
+
+struct StatusKey {
+    width: u16,
+    save: SaveStatus,
+    backend: Option<String>,
+    recording: bool,
+    seconds: Option<u64>,
+    inputs: Arc<[InputSource]>,
+    buffer_size: u32,
+    sample_rate: u32,
+    xruns: u64,
+    master_db: i8,
+    no_releases: bool,
+    project: Option<String>,
+}
+
+impl StatusKey {
+    fn matches(&self, status: &Status, feedback: &Feedback, width: u16) -> bool {
+        self.width == width
+            && self.save == status.save
+            && self.backend.as_deref() == status.backend
+            && self.recording == status.recording
+            && self.seconds == feedback.recording_seconds
+            && self.inputs == feedback.inputs
+            && self.buffer_size == status.buffer_size
+            && self.sample_rate == status.sample_rate
+            && self.xruns == status.xruns
+            && self.master_db == status.master_db
+            && self.no_releases == status.no_releases
+            && self.project.as_deref() == status.project
+    }
+
+    fn new(status: &Status, feedback: &Feedback, width: u16) -> Self {
+        Self {
+            width,
+            save: status.save,
+            backend: status.backend.map(str::to_owned),
+            recording: status.recording,
+            seconds: feedback.recording_seconds,
+            inputs: Arc::clone(&feedback.inputs),
+            buffer_size: status.buffer_size,
+            sample_rate: status.sample_rate,
+            xruns: status.xruns,
+            master_db: status.master_db,
+            no_releases: status.no_releases,
+            project: status.project.map(str::to_owned),
+        }
+    }
+}
+
+/// Only the formatted status row. Live meters, notices and screen indicators are never cached.
+#[derive(Default)]
+pub struct TextCache {
+    key: Option<StatusKey>,
+    line: Line<'static>,
+    #[cfg(test)]
+    builds: usize,
+}
+
+impl TextCache {
+    fn row(&mut self, status: &Status, feedback: &Feedback, width: u16) -> &Line<'static> {
+        if self
+            .key
+            .as_ref()
+            .is_none_or(|key| !key.matches(status, feedback, width))
+        {
+            self.line = status_line_at(status, feedback, width);
+            self.key = Some(StatusKey::new(status, feedback, width));
+            #[cfg(test)]
+            {
+                self.builds += 1;
+            }
+        }
+        &self.line
+    }
+}
+
+/// Shared title and status snapshot.
 pub struct Status<'a> {
+    pub badges: Vec<Badge>,
     pub save: SaveStatus,
     /// Audio backend (`jack`, `cpal`); `None` means no audio.
     pub backend: Option<&'a str>,
@@ -82,7 +235,7 @@ pub struct Status<'a> {
     /// Output meter levels in dB: bar, peak hold, per channel; with the latched clip light.
     pub meters: ([f32; 2], [f32; 2], bool),
     /// Message for the owner: why there is no audio, terminal warning.
-    pub notice: Option<&'a str>,
+    pub notice: Option<NoticeLine<'a>>,
     /// The terminal has no kitty protocol: no key releases, gate pads play as one-shot.
     pub no_releases: bool,
     /// The open project's name; `None` when no project is open.
@@ -332,7 +485,23 @@ const CURVE_BOTTOM_DB: f32 = -36.0;
 /// A row of the pad panel: the parameter, its label and its value (56).
 pub type PanelRow = (PadParam, &'static str, String);
 
+/// Existing placement result, not a new pad action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadCorner {
+    Available,
+    Replace,
+    Slice(u16),
+}
+
+/// Read-only feedback for the sixteen cells of the visible bank.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PadFeedback {
+    pub outline: bool,
+    pub corners: [Option<PadCorner>; 16],
+}
+
 pub struct Pads {
+    pub feedback: PadFeedback,
     /// Any real pad voice in the current ready project, across all banks; not hit flashes or FX tails.
     pub playing: bool,
     pub bank: usize,
@@ -346,8 +515,6 @@ pub struct Pads {
     pub bank_fill: [u16; BANKS],
     /// Per bank, its marked pads (76); a bank with marks shows them in the bank row.
     pub bank_marks: [u16; BANKS],
-    /// The mark plate on the title line (76): marking is on or pads stay marked.
-    pub mark_plate: Option<String>,
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
     /// The splash at start (73): while it is `Some`, the strip shows it instead of the
@@ -425,21 +592,124 @@ pub struct HelpGroup {
     pub items: Vec<(String, String)>,
 }
 
+/// One result from the current process history, with its actual event source.
+pub struct Message<'a> {
+    pub level: NoticeLevel,
+    pub origin: &'a str,
+    pub text: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub enum FullHelp<'a> {
+    Keys(&'a [(String, String)]),
+    Messages {
+        entries: &'a [Message<'a>],
+        scroll: usize,
+    },
+}
+
+/// A drawing snapshot. Stored confirmation targets remain in the application.
+pub struct Question {
+    pub body: Vec<String>,
+    pub answers: Vec<String>,
+}
+
 pub struct Help<'a> {
     pub groups: &'a [HelpGroup],
     /// Next-step hint shown when there is no notice.
     pub hint: Option<&'a str>,
-    /// Full help (F1): (keys, description); `None` when closed.
-    pub full: Option<&'a [(String, String)]>,
-    /// A question that waits for Enter or Esc (overwrite pads?), line by line.
-    pub question: Option<&'a [String]>,
-    /// The learn mode in words (52): the first line takes the top of the screen, the rest
-    /// the help band.
-    pub learn: Option<&'a [String]>,
+    /// Full help or message history (F1); `None` when closed.
+    pub full: Option<FullHelp<'a>>,
+    /// An existing question with its effective answer controls.
+    pub question: Option<&'a Question>,
+    /// Learning context, detail and working controls in the fixed help band.
+    pub learn: Option<&'a Learning>,
+}
+
+fn frame_areas(area: Rect) -> [Rect; 4] {
+    Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(HELP_ROWS),
+    ])
+    .areas(area)
+}
+
+/// Text areas that must be free of pictures before the terminal writes this frame.
+pub fn overlay_areas(area: Rect, screen: &Screen, help: &Help, value: Option<&Value>) -> Vec<Rect> {
+    let [_, body, _, _] = frame_areas(area);
+    let mut overlays = Vec::new();
+    if help.full.is_some() || matches!(screen, Screen::ProjectPicker(_)) {
+        overlays.push(body);
+    }
+    if let Some(question) = help.question {
+        overlays.push(question_area(body, question));
+    }
+    if let Some(value) = value {
+        let area = value_area(area, value.position.is_some());
+        if area.width >= 3 {
+            overlays.push(area);
+        }
+    }
+    overlays.retain(|area| area.width > 0 && area.height > 0);
+    overlays
 }
 
 pub fn draw(frame: &mut Frame, s: &Status, screen: &Screen, help: &Help) {
-    draw_inner(frame, s, screen, help, None);
+    draw_inner(frame, s, screen, help, &Feedback::default(), None, None);
+}
+
+/// An applied parameter result. Numeric positions use the parameter's existing range.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Value {
+    pub object: String,
+    pub parameter: String,
+    pub formatted: String,
+    pub position: Option<f32>,
+}
+
+fn value_area(area: Rect, numeric: bool) -> Rect {
+    let width = area.width.min(52);
+    Rect::new(
+        area.right().saturating_sub(width),
+        area.y.saturating_add(2),
+        width,
+        area.height
+            .saturating_sub(HELP_ROWS + 3)
+            .min(if numeric { 2 } else { 1 }),
+    )
+}
+
+/// Draw after the screen. The caller hides values while a higher-priority editor is open.
+pub fn value_popup(frame: &mut Frame, value: &Value) {
+    let area = value_area(frame.area(), value.position.is_some());
+    if area.width < 3 || area.height == 0 {
+        return;
+    }
+    frame.render_widget(Block::new().bg(PANEL).fg(TEXT), area);
+    let text = Line::from(value.formatted.as_str()).fg(CYAN).bold();
+    let width = text.width().min((area.width / 2) as usize) as u16;
+    let right = Rect::new(area.right() - width - 1, area.y, width, 1);
+    let left = Rect::new(area.x + 1, area.y, area.width.saturating_sub(width + 3), 1);
+    frame.render_widget(
+        Line::from(format!("{} · {}", value.parameter, value.object)).fg(TEXT),
+        left,
+    );
+    frame.render_widget(text, right);
+    if area.height > 1
+        && let Some(position) = value.position.filter(|p| p.is_finite())
+    {
+        let width = area.width.saturating_sub(2) as usize;
+        let filled = (position.clamp(0.0, 1.0) * width as f32).round() as usize;
+        frame.render_widget(
+            Line::from(vec![
+                "█".repeat(filled).fg(CYAN),
+                "─".repeat(width - filled).fg(DIM),
+            ]),
+            Rect::new(area.x + 1, area.y + 1, width as u16, 1),
+        );
+    }
 }
 
 /// The logo of the splash (73), byte-exact: 4 lines of 10 characters, trailing spaces
@@ -518,7 +788,40 @@ pub fn draw_gfx(
     help: &Help,
     images: &mut Vec<WaveImage>,
 ) {
-    draw_inner(frame, s, screen, help, Some(images));
+    draw_inner(
+        frame,
+        s,
+        screen,
+        help,
+        &Feedback::default(),
+        None,
+        Some(images),
+    );
+}
+
+/// The production screen and its shared feedback, with optional wave images.
+pub fn draw_feedback(
+    frame: &mut Frame,
+    s: &Status,
+    screen: &Screen,
+    help: &Help,
+    feedback: &Feedback,
+    images: Option<&mut Vec<WaveImage>>,
+) {
+    draw_inner(frame, s, screen, help, feedback, None, images);
+}
+
+/// The production frame with reusable text, but current live screen and timer snapshots.
+pub fn draw_cached(
+    frame: &mut Frame,
+    s: &Status,
+    screen: &Screen,
+    help: &Help,
+    feedback: &Feedback,
+    cache: &mut TextCache,
+    images: Option<&mut Vec<WaveImage>>,
+) {
+    draw_inner(frame, s, screen, help, feedback, Some(cache), images);
 }
 
 fn draw_inner(
@@ -526,93 +829,144 @@ fn draw_inner(
     s: &Status,
     screen: &Screen,
     help: &Help,
+    feedback: &Feedback,
+    cache: Option<&mut TextCache>,
     images: Option<&mut Vec<WaveImage>>,
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
     let help_rows = help_lines(help.groups, frame.area().width);
-    let [top, body, notice, help_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-        Constraint::Length(HELP_ROWS),
-    ])
-    .areas(frame.area());
+    let [top, body, notice, help_area] = frame_areas(frame.area());
 
-    match help.learn {
-        Some(lines) => {
-            let mut spans = s.save.spans();
-            spans.push(Span::styled(
-                lines.first().cloned().unwrap_or_default(),
-                Style::new().fg(BG).bg(MAGENTA).bold(),
-            ));
-            frame.render_widget(
-                Line::from(spans).style(Style::new().fg(BG).bg(MAGENTA).bold()),
-                top,
-            );
-        }
-        None => frame.render_widget(status_line(s), top),
+    match cache {
+        Some(cache) => frame.render_widget(cache.row(s, feedback, top.width), top),
+        None => frame.render_widget(status_line_at(s, feedback, top.width), top),
     }
     let pickup = match screen {
         Screen::Fx(f) => f.pickup.as_deref(),
         _ => None,
     };
     match (s.notice, pickup, help.hint) {
-        (Some(n), _, _) | (None, Some(n), _) => {
-            frame.render_widget(Line::from(format!(" {n}")).fg(MAGENTA), notice)
+        (Some(n), _, _) => {
+            let (glyph, style) = match n.level {
+                Some(NoticeLevel::Done) => ("✓ ", Style::new().fg(CYAN)),
+                Some(NoticeLevel::Info) => ("· ", Style::new().fg(DIM)),
+                Some(NoticeLevel::Warn) => ("! ", Style::new().fg(MAGENTA)),
+                Some(NoticeLevel::Error) => ("✗ ", Style::new().fg(MAGENTA).bold()),
+                None => ("", Style::new().fg(MAGENTA)),
+            };
+            frame.render_widget(
+                Line::from(format!(" {glyph}{}", n.text)).style(style),
+                notice,
+            );
         }
+        (None, Some(n), _) => frame.render_widget(Line::from(format!(" {n}")).fg(MAGENTA), notice),
         (None, None, Some(h)) => frame.render_widget(Line::from(format!(" {h}")).fg(DIM), notice),
         _ => {}
     }
     match screen {
         // the project picker (11) is modal: it takes the body instead of the screen,
         // the help line below stays as on any screen
-        Screen::ProjectPicker(p) => frame.render_widget(project_picker(p), body),
+        Screen::ProjectPicker(p) => frame.render_widget(project_picker(p, s, body.width), body),
         Screen::Pads(p) => pads(frame, body, p, s),
-        Screen::Fx(f) => fx(frame, body, f),
-        Screen::Settings(st) => frame.render_widget(settings(st, body.height), body),
-        Screen::Files(f) => files(frame, body, f),
-        Screen::Chop(c) => chop(frame, body, c, images),
+        Screen::Fx(f) => fx(frame, body, f, s),
+        Screen::Settings(st) => settings(frame, body, st, s),
+        Screen::Files(f) => files(frame, body, f, s),
+        Screen::Chop(c) => chop(frame, body, c, s, images),
     }
     match help.learn {
-        Some(lines) => {
-            let rest: Vec<Line> = lines
-                .iter()
-                .skip(1)
-                .map(|l| Line::from(l.clone()))
-                .collect();
-            frame.render_widget(Paragraph::new(rest), help_area);
+        Some(learn) => {
+            frame.render_widget(Block::new().bg(PANEL), help_area);
+            let lines = [
+                Line::from(clip_label(&learn.context, help_area.width as usize))
+                    .fg(MARK)
+                    .bold(),
+                Line::from(clip_label(&learn.detail, help_area.width as usize))
+                    .fg(if learn.warning { MAGENTA } else { DIM }),
+                Line::from(clip_label(&learn.controls, help_area.width as usize)).fg(CYAN),
+            ];
+            frame.render_widget(Paragraph::new(lines.to_vec()), help_area);
         }
         None => frame.render_widget(Paragraph::new(help_rows), help_area),
     }
-    if let Some(full) = help.full {
-        full_help(frame, body, full);
+    match help.full {
+        Some(FullHelp::Keys(rows)) => full_help(frame, body, rows),
+        Some(FullHelp::Messages { entries, scroll }) => {
+            message_history(frame, body, entries, scroll);
+        }
+        None => {}
     }
     if let Some(q) = help.question {
         question(frame, body, q);
     }
 }
 
-fn question(frame: &mut Frame, area: Rect, lines: &[String]) {
-    let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as u16 + 4;
-    let [area] = Layout::horizontal([Constraint::Length(width)])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::vertical([Constraint::Length(lines.len() as u16 + 2)])
-        .flex(Flex::Center)
-        .areas(area);
-    let last = lines.len().saturating_sub(1);
-    let text: Vec<Line> = lines
+fn question_area(area: Rect, question: &Question) -> Rect {
+    let width = question
+        .body
         .iter()
+        .chain(&question.answers)
+        .map(|line| Line::from(line.as_str()).width())
+        .max()
+        .unwrap_or(0)
+        .saturating_add(4)
+        .min(usize::from(area.width)) as u16;
+    let height = question
+        .body
+        .len()
+        .saturating_add(question.answers.len())
+        .saturating_add(2)
+        .min(usize::from(area.height)) as u16;
+    Rect::new(
+        area.x.saturating_add((area.width - width) / 2),
+        area.y.saturating_add((area.height - height) / 2),
+        width,
+        height,
+    )
+}
+
+fn question_rows(question: &Question, rows: usize, width: usize) -> Vec<Line<'static>> {
+    let answer_rows = rows.saturating_sub(question.body.len().min(4));
+    let mut answers = question.answers[..question.answers.len().min(answer_rows)].to_vec();
+    if question.answers.len() > answer_rows && !answers.is_empty() {
+        let last = answers.len() - 1;
+        answers[last] = format!("{} more input answer rows", question.answers.len() - last);
+    }
+    let body_rows = rows.saturating_sub(answers.len());
+    let mut body = question.body[..question.body.len().min(body_rows)].to_vec();
+    if question.body.len() > body_rows && body_rows >= 4 {
+        let head = body_rows - 3;
+        body.truncate(head);
+        body.push(format!(
+            "{} more target rows",
+            question.body.len() - head - 2
+        ));
+        body.extend_from_slice(&question.body[question.body.len() - 2..]);
+    }
+    body.iter()
         .enumerate()
-        .map(|(i, l)| {
-            let line = Line::from(format!(" {l}"));
-            match i {
-                0 => line.fg(MAGENTA).bold(),
-                i if i == last => line.fg(CYAN),
-                _ => line,
+        .map(|(i, text)| {
+            let line = Line::from(format!(" {}", clip_label(text, width)));
+            if i == 0 {
+                line.fg(MAGENTA).bold()
+            } else {
+                line
             }
         })
-        .collect();
+        .chain(
+            answers
+                .iter()
+                .map(|text| Line::from(format!(" {}", clip_label(text, width))).fg(CYAN)),
+        )
+        .collect()
+}
+
+fn question(frame: &mut Frame, area: Rect, question: &Question) {
+    let area = question_area(area, question);
+    let text = question_rows(
+        question,
+        usize::from(area.height.saturating_sub(2)),
+        usize::from(area.width.saturating_sub(3)),
+    );
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(text).block(
@@ -750,25 +1104,41 @@ fn help_block(g: &HelpGroup, rows: usize) -> Vec<Vec<Span<'static>>> {
     out
 }
 
+fn full_help_block(message_count: Option<usize>) -> Block<'static> {
+    let messages = message_count.is_some();
+    let selected = Style::new().fg(CYAN).bold();
+    let idle = Style::new().fg(DIM);
+    // Equal-width labels keep both tab names at the same cell on either page.
+    let mut title = vec![
+        " ".into(),
+        Span::styled(
+            if messages { " HELP " } else { "[HELP]" },
+            if messages { idle } else { selected },
+        ),
+        " ".into(),
+        Span::styled(
+            if messages { "[MESSAGES]" } else { " MESSAGES " },
+            if messages { selected } else { idle },
+        ),
+    ];
+    let mut footer = vec![Span::raw(" Tab/Shift+Tab page · F1/Esc close ")];
+    if let Some(count) = message_count {
+        title.push(format!(" · {count} / 50 ").into());
+        footer.push("· ↑↓ scroll · PgUp/PgDn page ".into());
+    }
+    Block::bordered()
+        .title(Line::from(title))
+        .title_bottom(Line::from(footer))
+        .border_style(Style::new().fg(CYAN))
+        .bg(PANEL)
+}
+
 fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
     let keys_width = rows
         .iter()
         .map(|(k, _)| k.chars().count())
         .max()
         .unwrap_or(0);
-    let text_width = rows
-        .iter()
-        .map(|(_, d)| d.chars().count())
-        .max()
-        .unwrap_or(0);
-    // a row is " cap  text": the cap pads the key by one column on each side; plus the frame
-    let width = ((keys_width + text_width + 7) as u16).min(area.width);
-    let [area] = Layout::horizontal([Constraint::Length(width)])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::vertical([Constraint::Length(rows.len() as u16 + 2)])
-        .flex(Flex::Center)
-        .areas(area);
     let lines: Vec<Line> = rows
         .iter()
         .map(|(k, d)| {
@@ -786,14 +1156,77 @@ fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
         })
         .collect();
     frame.render_widget(Clear, area);
+    frame.render_widget(Paragraph::new(lines).block(full_help_block(None)), area);
+}
+
+/// Visible message rows after status, notice, compact help and frame borders.
+pub fn messages_page_height(terminal_height: u16) -> usize {
+    terminal_height.saturating_sub(HELP_ROWS + 4) as usize
+}
+
+/// The same wrapped rows determine drawing and the application's scroll bounds.
+pub fn message_lines(entries: &[Message<'_>], width: u16) -> Vec<Line<'static>> {
+    fn append(rows: &mut Vec<Line<'static>>, text: &str, width: usize, style: Style) {
+        for part in text.split('\n') {
+            let span = Span::raw(part);
+            let mut line = String::new();
+            let mut used = 0;
+            for grapheme in span.styled_graphemes(style) {
+                let cells = Span::raw(grapheme.symbol).width();
+                if used + cells > width && !line.is_empty() {
+                    rows.push(Line::from(std::mem::take(&mut line)).style(style));
+                    used = 0;
+                }
+                if cells <= width {
+                    line.push_str(grapheme.symbol);
+                    used += cells;
+                }
+            }
+            rows.push(Line::from(line).style(style));
+        }
+    }
+
+    let mut rows = Vec::new();
+    if width == 0 {
+        return rows;
+    }
+    if entries.is_empty() {
+        append(
+            &mut rows,
+            "No messages yet",
+            width as usize,
+            Style::new().fg(DIM),
+        );
+    }
+    for entry in entries {
+        let (glyph, label, style) = match entry.level {
+            NoticeLevel::Info => ("·", "Info", Style::new().fg(DIM)),
+            NoticeLevel::Done => ("✓", "Done", Style::new().fg(CYAN)),
+            NoticeLevel::Warn => ("!", "Warn", Style::new().fg(MAGENTA)),
+            NoticeLevel::Error => ("✗", "Error", Style::new().fg(MAGENTA).bold()),
+        };
+        append(
+            &mut rows,
+            &format!("{glyph} {label} · {}", entry.origin),
+            width as usize,
+            style,
+        );
+        append(&mut rows, entry.text, width as usize, style);
+        rows.push(Line::default());
+    }
+    rows
+}
+
+fn message_history(frame: &mut Frame, area: Rect, entries: &[Message<'_>], scroll: usize) {
+    let block = full_help_block(Some(entries.len()));
+    let inner = block.inner(area);
+    let lines = message_lines(entries, inner.width);
+    let start = scroll.min(lines.len().saturating_sub(inner.height as usize));
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::bordered()
-                .title(" HELP · F1 closes ")
-                .border_style(Style::new().fg(CYAN))
-                .bg(PANEL),
-        ),
-        area,
+        Paragraph::new(lines.into_iter().skip(start).collect::<Vec<_>>()),
+        inner,
     );
 }
 
@@ -968,7 +1401,15 @@ fn pad_grid(frame: &mut Frame, area: Rect, p: &Pads, waves: u16) {
         for (c, cell) in cells.iter().enumerate() {
             let i = r * 4 + c;
             if let Some(pad) = p.pads.get(i) {
-                pad_cell(frame, *cell, pad, i == p.selected, bank, waves);
+                pad_cell(
+                    frame,
+                    *cell,
+                    pad,
+                    i == p.selected,
+                    bank,
+                    waves,
+                    (p.feedback.outline, p.feedback.corners[i]),
+                );
             }
         }
     }
@@ -997,6 +1438,72 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
     Line::from(spans)
 }
 
+/// Keep fixed slots first. Drop lower priorities before compacting the last badge.
+fn title<'a>(mut fixed: Vec<Span<'a>>, badges: &[Badge], width: u16, reserve: usize) -> Line<'a> {
+    let available =
+        (width as usize).saturating_sub(fixed.iter().map(Span::width).sum::<usize>() + reserve);
+    let mut count = badges.len().min(3);
+    let normal_width = |n: usize| {
+        badges[..n]
+            .iter()
+            .map(|b| Line::from(b.normal.as_str()).width() + 3)
+            .sum::<usize>()
+    };
+    while count > 1 && normal_width(count) > available {
+        count -= 1;
+    }
+    let compact = normal_width(count) > available;
+    let used = badges[..count]
+        .iter()
+        .map(|b| {
+            Line::from(if compact {
+                b.compact.as_str()
+            } else {
+                b.normal.as_str()
+            })
+            .width()
+                + 3
+        })
+        .sum::<usize>();
+    if used <= available {
+        for b in &badges[..count] {
+            let color = match b.kind {
+                BadgeKind::PadMode => MARK,
+                BadgeKind::On => CYAN,
+                BadgeKind::Attention => MAGENTA,
+            };
+            let text = if compact { &b.compact } else { &b.normal };
+            fixed.push(" ".into());
+            fixed.push(Span::styled(
+                format!(" {text} "),
+                Style::new().fg(BG).bg(color).bold(),
+            ));
+        }
+    }
+    Line::from(fixed)
+}
+
+/// Shorten title details in display cells, not UTF-8 bytes.
+fn title_detail(text: &str, width: usize) -> String {
+    if Line::from(text).width() <= width {
+        return text.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    for ch in text.chars() {
+        let mut next = out.clone();
+        next.push(ch);
+        if Line::from(next.as_str()).width() + 1 > width {
+            break;
+        }
+        out = next;
+    }
+    out.push('…');
+    out
+}
+
 fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
     let (badge, badge_style) = if p.playing {
@@ -1004,19 +1511,19 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     } else {
         (" PLAY     ", Style::new().fg(DIM).bg(BG))
     };
-    let mut title = vec![
-        Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT)),
-        " ".into(),
-        Span::styled(badge, badge_style),
-    ];
-    if let Some(plate) = &p.mark_plate {
-        title.push(" ".into());
-        title.push(Span::styled(
-            format!(" {plate} "),
-            Style::new().fg(BG).bg(MARK).bold(),
-        ));
-    }
-    frame.render_widget(Line::from(title), f.title);
+    frame.render_widget(
+        title(
+            vec![
+                Span::styled(" F2 PADS ", Style::new().fg(BG).bg(TEXT)),
+                " ".into(),
+                Span::styled(badge, badge_style),
+            ],
+            &s.badges,
+            f.title.width,
+            0,
+        ),
+        f.title,
+    );
     if p.hidden {
         frame.render_widget(pad_line(p, Vec::new(), true), f.bank);
     } else {
@@ -1658,7 +2165,15 @@ fn mode(gate: bool) -> &'static str {
     if gate { "gate" } else { "one-shot" }
 }
 
-fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: Color, waves: u16) {
+fn pad_cell(
+    frame: &mut Frame,
+    area: Rect,
+    pad: &PadView,
+    selected: bool,
+    bank: Color,
+    waves: u16,
+    (outline, corner): (bool, Option<PadCorner>),
+) {
     // The bank color owns the idle frame and key letter; state colors go above it.
     // A marked pad keeps its frame in every idle state, so the group stays visible.
     let (border, bg, fg) = match (pad.flash, pad.marked, selected) {
@@ -1666,18 +2181,37 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
         (true, _, _) => (WHITE, WHITE, BG),
         (false, true, _) => (MARK, MARK_BG, BRIGHT),
         (false, false, true) => (CYAN, PANEL, TEXT),
+        (false, false, false) if outline => (MARK, PANEL, if pad.dim { DIM } else { TEXT }),
         // the chop screen: a pad with no slice of the open chop steps back (36)
         (false, false, false) if pad.dim => (BORDER, PANEL, DIM),
         (false, false, false) => (bank, PANEL, TEXT),
     };
     let key = Span::styled(
         pad.key.to_uppercase().to_string(),
-        Style::new().fg(if pad.flash { BG } else { border }),
+        Style::new().fg(if pad.flash {
+            BG
+        } else if outline && !pad.in_hand && !pad.marked && !selected {
+            bank
+        } else {
+            border
+        }),
     );
     let mut block = Block::bordered()
         .title(key)
         .border_style(Style::new().fg(border))
         .style(Style::new().bg(bg).fg(fg));
+    if let Some(corner) = corner {
+        let text = match corner {
+            PadCorner::Available => "◎".to_string(),
+            PadCorner::Replace => "!".to_string(),
+            PadCorner::Slice(n) => n.to_string(),
+        };
+        block = block.title_top(
+            Line::from(text)
+                .fg(if pad.flash { BG } else { MARK })
+                .right_aligned(),
+        );
+    }
     if pad.dashed {
         block = block.border_set(ratatui::symbols::border::Set {
             vertical_left: "┆",
@@ -1751,14 +2285,16 @@ fn pad_cell(frame: &mut Frame, area: Rect, pad: &PadView, selected: bool, bank: 
 
 /// The project picker of Ctrl+P (11), drawn over the whole body in place of the screen
 /// (as [`PathPickerView`] takes the rows of the Paths tab in place of theirs).
-fn fx(frame: &mut Frame, area: Rect, f: &Fx) {
-    let [title, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
-    frame.render_widget(
-        Line::from(" F4 FX · shared project effects")
-            .fg(CYAN)
-            .bold(),
-        title,
+fn fx(frame: &mut Frame, area: Rect, f: &Fx, s: &Status) {
+    let [header, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+    let mut heading = title(
+        vec![Span::styled(" F4 FX ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        header.width,
+        24,
     );
+    heading.spans.push("· shared project effects".fg(DIM));
+    frame.render_widget(heading, header);
     let label_width = f
         .blocks
         .iter()
@@ -1867,11 +2403,13 @@ fn fx(frame: &mut Frame, area: Rect, f: &Fx) {
     }
 }
 
-fn project_picker(p: &ProjectPickerView) -> Paragraph<'static> {
-    let mut lines = vec![Line::from(Span::styled(
-        " PROJECTS ",
-        Style::new().fg(BG).bg(TEXT),
-    ))];
+fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> Paragraph<'static> {
+    let mut lines = vec![title(
+        vec![Span::styled(" PROJECTS ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        width,
+        0,
+    )];
     if p.entries.is_empty() {
         lines.push("no projects yet — type a name".fg(DIM).into());
     }
@@ -1900,7 +2438,51 @@ fn project_picker(p: &ProjectPickerView) -> Paragraph<'static> {
     Paragraph::new(lines)
 }
 
-fn settings(st: &Settings, height: u16) -> Paragraph<'static> {
+fn settings(frame: &mut Frame, area: Rect, st: &Settings, s: &Status) {
+    let [header, diagnostics, body] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    let tab = |i: usize, name: &str| {
+        if st.tab == i {
+            Span::styled(format!("[{name}]"), Style::new().fg(CYAN).bold())
+        } else {
+            format!(" {name} ").fg(DIM)
+        }
+    };
+    let names = ["Audio", "Input", "MIDI", "Paths"];
+    let mut heading = title(
+        vec![Span::styled(" F12 SETTINGS ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        header.width,
+        11,
+    );
+    let mut tabs = vec![Span::raw("   ")];
+    for (i, name) in names.iter().enumerate() {
+        if i > 0 {
+            tabs.push(" ".into());
+        }
+        tabs.push(tab(i, name));
+    }
+    let room = (header.width as usize).saturating_sub(heading.width());
+    if tabs.iter().map(Span::width).sum::<usize>() > room {
+        tabs = vec![
+            "   ".into(),
+            tab(st.tab, names.get(st.tab).copied().unwrap_or("Settings")),
+        ];
+    }
+    heading.spans.extend(tabs);
+    frame.render_widget(heading, header);
+    if st.tab == 0 {
+        let text = format!(" CPU {:.0} % · xruns {}", s.load_peak, s.xruns);
+        frame.render_widget(Line::from(text).fg(DIM), diagnostics);
+    }
+    frame.render_widget(settings_body(st, body.height), body);
+}
+
+fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
     let label = |row: usize, name: &str| {
         let text = format!(" {name:<8}");
         if st.row == row {
@@ -1917,27 +2499,7 @@ fn settings(st: &Settings, height: u16) -> Paragraph<'static> {
         spans
     };
 
-    let tab = |i: usize, name: &str| {
-        if st.tab == i {
-            Span::styled(format!("[{name}]"), Style::new().fg(CYAN).bold())
-        } else {
-            format!(" {name} ").fg(DIM)
-        }
-    };
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(" F12 SETTINGS ", Style::new().fg(BG).bg(TEXT)),
-            "   ".into(),
-            tab(0, "Audio"),
-            " ".into(),
-            tab(1, "Input"),
-            " ".into(),
-            tab(2, "MIDI"),
-            " ".into(),
-            tab(3, "Paths"),
-        ]),
-        Line::default(),
-    ];
+    let mut lines = Vec::new();
     if st.tab == 3 {
         if let Some(p) = &st.picker {
             lines.push(Line::from(Span::styled(
@@ -2098,7 +2660,7 @@ fn settings(st: &Settings, height: u16) -> Paragraph<'static> {
     Paragraph::new(lines)
 }
 
-fn files(frame: &mut Frame, area: Rect, f: &Files) {
+fn files(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     let pf = pad_frame(area, f.pads.hidden);
     // the title carries what the screen says: the file in hand or the error (31)
     let note = match (f.in_hand, f.error) {
@@ -2109,13 +2671,15 @@ fn files(frame: &mut Frame, area: Rect, f: &Files) {
         (None, Some(e)) => format!("   {e}").fg(MAGENTA),
         (None, None) => "".into(),
     };
-    frame.render_widget(
-        Line::from(vec![
-            Span::styled(" F6 FILES ", Style::new().fg(BG).bg(TEXT)),
-            note,
-        ]),
-        pf.title,
+    let reserve = note.width().min(20);
+    let mut heading = title(
+        vec![Span::styled(" F6 FILES ", Style::new().fg(BG).bg(TEXT))],
+        &s.badges,
+        pf.title.width,
+        reserve,
     );
+    heading.spans.push(note);
+    frame.render_widget(heading, pf.title);
     // the wave of the selected file over the whole strip, its length on the first row
     if let Some((secs, wave)) = f.preview {
         // the file the wave is of, next to its length (66)
@@ -2277,7 +2841,63 @@ fn dot_peaks(wave: &[f32], dots: usize, top: f32) -> Vec<f32> {
         .collect()
 }
 
-fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<WaveImage>>) {
+// Paragraph can put a wide grapheme in its last single cell. Pre-wrap only wide side text.
+fn side_rows(text: &str, width: u16) -> Vec<String> {
+    let width = usize::from(width);
+    if width == 0 {
+        return Vec::new();
+    }
+    if !Span::raw(text)
+        .styled_graphemes(Style::default())
+        .any(|g| Span::raw(g.symbol).width() > 1)
+    {
+        return vec![text.into()];
+    }
+    let mut rows = Vec::new();
+    let mut line = String::new();
+    let mut gap = String::new();
+    let mut used = 0;
+    for token in text.split_inclusive(char::is_whitespace) {
+        let word = token.trim_end_matches(char::is_whitespace);
+        if !word.is_empty() {
+            if !line.is_empty()
+                && used + Span::raw(gap.as_str()).width() + Span::raw(word).width() > width
+            {
+                rows.push(std::mem::take(&mut line));
+                used = 0;
+                gap.clear();
+            }
+            for part in [gap.as_str(), word] {
+                for grapheme in Span::raw(part).styled_graphemes(Style::default()) {
+                    let cells = Span::raw(grapheme.symbol).width();
+                    if cells > width {
+                        continue;
+                    }
+                    if used + cells > width {
+                        rows.push(std::mem::take(&mut line));
+                        used = 0;
+                    }
+                    line.push_str(grapheme.symbol);
+                    used += cells;
+                }
+            }
+            gap.clear();
+        }
+        gap.push_str(&token[word.len()..]);
+    }
+    if !line.is_empty() {
+        rows.push(line);
+    }
+    rows
+}
+
+fn chop(
+    frame: &mut Frame,
+    area: Rect,
+    c: &Chop,
+    s: &Status,
+    mut images: Option<&mut Vec<WaveImage>>,
+) {
     let pf = pad_frame(area, c.pads.hidden);
     let header = pf.title;
     // the marks over the wave are the top two rows of the strip (31)
@@ -2288,35 +2908,59 @@ fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<Wav
     ])
     .areas(pf.strip);
     let slices = c.bounds.len().saturating_sub(1);
-    let badge = if matches!(c.mode.as_str(), "LISTEN" | "LISTEN ▶") {
-        format!(" {:<8} ", c.mode)
+    let playing = c.mode == "LISTEN ▶";
+    let badge = if playing {
+        " LISTEN ▶ "
     } else {
-        format!(" {} ", c.mode)
+        " LISTEN   "
     };
-    let badge_style = if c.mode == "LISTEN" {
-        Style::new().fg(DIM).bg(BG)
-    } else {
+    let badge_style = if playing {
         Style::new().fg(BG).bg(CYAN)
+    } else {
+        Style::new().fg(DIM).bg(BG)
     };
-    frame.render_widget(
-        Line::from(vec![
-            Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
-            " ".into(),
-            Span::styled(badge, badge_style),
-            format!("   cuts of {}", c.file).into(),
-            match c.which {
-                Some((i, n)) => format!(" · chop {i} of {n}").into(),
-                None => "".into(),
-            },
-            format!(
-                "   {:.2} s · {slices} slice{}",
-                c.seconds,
-                if slices == 1 { "" } else { "s" }
-            )
-            .fg(DIM),
-        ]),
-        header,
+    let slice_count = format!(" · {slices} slice{}", if slices == 1 { "" } else { "s" });
+    let variant = c
+        .which
+        .map_or_else(String::new, |(i, n)| format!(" · chop {i} of {n}"));
+    let suffix_width = Line::from(format!("{variant}{slice_count}")).width();
+    let fixed = vec![
+        Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
+        " ".into(),
+        Span::styled(badge, badge_style),
+    ];
+    let fixed_width = fixed.iter().map(Span::width).sum::<usize>();
+    let mode_width = s
+        .badges
+        .first()
+        .map_or(0, |b| Line::from(b.compact.as_str()).width() + 3);
+    // Keep the variant and count. Reduce the filename budget before hiding the active mode.
+    let file_reserve = (header.width as usize)
+        .saturating_sub(fixed_width + mode_width + suffix_width + 3)
+        .min(12);
+    let mut heading = title(
+        fixed,
+        &s.badges,
+        header.width,
+        suffix_width + 3 + file_reserve,
     );
+    let details = Line::from(vec![
+        format!("   cuts of {}", c.file).into(),
+        variant.clone().into(),
+        format!("   {:.2} s{slice_count}", c.seconds).fg(DIM),
+    ]);
+    let room = (header.width as usize).saturating_sub(heading.width());
+    if details.width() <= room {
+        heading.spans.extend(details.spans);
+    } else {
+        let file_width = room.saturating_sub(suffix_width + 3);
+        heading
+            .spans
+            .push(format!("   {}", title_detail(c.file, file_width)).into());
+        heading.spans.push(variant.into());
+        heading.spans.push(slice_count.fg(DIM));
+    }
+    frame.render_widget(heading, header);
     let width = wave.width as usize;
     let col = |at: f32| ((at * width as f32) as usize).min(width.saturating_sub(1));
     let (first, last) = (
@@ -2544,9 +3188,10 @@ fn chop(frame: &mut Frame, area: Rect, c: &Chop, mut images: Option<&mut Vec<Wav
     }
     slice_line.push(format!(" {}", c.info).fg(CYAN));
     let lines: Vec<Line> = std::iter::once(Line::from(slice_line))
-        .chain(c.side.iter().enumerate().map(|(i, l)| {
-            let line = Line::from(l.clone());
-            if i == 0 { line.fg(CYAN) } else { line.fg(DIM) }
+        .chain(c.side.iter().enumerate().flat_map(|(i, line)| {
+            side_rows(line, pf.side.width)
+                .into_iter()
+                .map(move |line| Line::from(line).fg(if i == 0 { CYAN } else { DIM }))
         }))
         .collect();
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), pf.side);
@@ -2612,51 +3257,136 @@ fn meter(level: f32) -> Span<'static> {
 }
 
 /// The status marker of a terminal without key releases, in the owner's words (68).
-const NO_RELEASES: &str = " · no key releases: gate pads play one-shot";
+const NO_RELEASES: &str = "no key releases: gate pads play one-shot";
 
-fn status_line(s: &Status) -> Line<'static> {
-    let Some(backend) = s.backend else {
-        let mut line = s.save.spans();
-        if s.recording {
-            line.push(" ● rec ".fg(MAGENTA).bold());
+/// Clip at grapheme boundaries within a terminal-cell budget. Labels cannot inject rows or controls.
+fn clip_label(text: &str, width: usize) -> String {
+    let text: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let span = Span::raw(text.as_str());
+    if span.width() <= width {
+        return text;
+    }
+    let mut clipped = String::new();
+    let mut used = 0;
+    for grapheme in span.styled_graphemes(Style::default()) {
+        let cells = Span::raw(grapheme.symbol).width();
+        if used + cells > width.saturating_sub(1) {
+            break;
         }
-        line.push(" ○ no audio".fg(MAGENTA));
-        if s.no_releases {
-            line.push(NO_RELEASES.fg(DIM));
+        clipped.push_str(grapheme.symbol);
+        used += cells;
+    }
+    if width > 0 {
+        clipped.push('…');
+    }
+    clipped
+}
+
+fn status_inputs(inputs: &[InputSource], stage: u8) -> Vec<Span<'static>> {
+    if stage >= 6 {
+        return Vec::new();
+    }
+    if inputs.is_empty() {
+        return vec![" KB".fg(DIM)];
+    }
+    let mut spans = Vec::new();
+    for input in inputs {
+        if !spans.is_empty() {
+            spans.push(Span::raw(" "));
         }
-        if let Some(name) = s.project {
-            line.push(Span::from(format!(" · {name}")));
-        }
-        return Line::from(line);
-    };
-    let ms = s.buffer_size as f32 / s.sample_rate.max(1) as f32 * 1000.0;
-    let size = if s.buffer_size == 0 {
-        "auto".to_string()
-    } else {
-        s.buffer_size.to_string()
-    };
-    let xruns = Span::from(format!("xruns {}", s.xruns));
-    let mut spans = s.save.spans();
+        // Keep both marker cells and the application's reserved controller width.
+        let label = clip_label(&input.compact, usize::MAX);
+        let span = Span::raw(format!("{}{label}", if input.active { "▸" } else { " " }));
+        spans.push(if input.active {
+            span.fg(CYAN).bold()
+        } else {
+            span.fg(DIM)
+        });
+    }
+    spans
+}
+
+fn status_candidate(s: &Status, feedback: &Feedback, stage: u8) -> Line<'static> {
+    let full_audio = stage < 2;
+    let brief = stage >= 7;
+    let mut segments = Vec::new();
+    segments.push(s.save.spans());
+    if stage != 0 || s.project.is_none() {
+        segments.push(vec![s.save.marker()]);
+    }
     if s.recording {
-        spans.push(" ● rec ".fg(MAGENTA).bold());
+        let text = match feedback.recording_seconds {
+            Some(seconds) if !brief => format!("rec {seconds}s"),
+            _ => "rec".into(),
+        };
+        segments.push(vec![text.fg(MAGENTA).bold()]);
     }
-    spans.push(" ● ".fg(CYAN));
-    spans.push(Span::from(format!(
-        "{backend} {size} @ {} Hz · {ms:.1} ms · CPU {:.0} % · master {:+} dB · ",
-        s.sample_rate, s.load_peak, s.master_db
-    )));
-    spans.push(if s.xruns > 0 {
-        xruns.fg(MAGENTA).bold()
-    } else {
-        xruns
-    });
+    segments.push(status_inputs(&feedback.inputs, stage));
+    match s.backend {
+        None => segments.push(vec!["no audio".fg(MAGENTA).bold()]),
+        Some(backend) if full_audio => {
+            let ms = s.buffer_size as f32 / s.sample_rate.max(1) as f32 * 1000.0;
+            let size = if s.buffer_size == 0 {
+                "auto".into()
+            } else {
+                s.buffer_size.to_string()
+            };
+            segments.push(vec![Span::raw(format!(
+                "{backend} {size} / {} kHz · {ms:.1} ms · master {:+} dB",
+                s.sample_rate as f64 / 1000.0,
+                s.master_db
+            ))]);
+        }
+        _ => {}
+    }
+    if s.xruns > 0 {
+        let text = if brief {
+            "xruns >0".into()
+        } else {
+            format!("xruns {}", s.xruns)
+        };
+        segments.push(vec![text.fg(MAGENTA).bold()]);
+    }
     if s.no_releases {
-        spans.push(NO_RELEASES.fg(DIM));
+        segments.push(vec![NO_RELEASES.fg(DIM)]);
     }
-    if let Some(name) = s.project {
-        spans.push(Span::from(format!(" · {name}")));
+    if stage == 0
+        && let Some(project) = s.project
+    {
+        segments.push(vec![
+            Span::raw(clip_label(project, usize::MAX)),
+            Span::raw(" "),
+            s.save.marker(),
+        ]);
+    }
+    let separator = if stage < 3 { " · " } else { " " };
+    let mut spans = Vec::new();
+    for segment in segments.into_iter().filter(|segment| !segment.is_empty()) {
+        if !spans.is_empty() {
+            spans.push(separator.fg(DIM));
+        }
+        spans.extend(segment);
     }
     Line::from(spans)
+}
+
+fn status_line_at(s: &Status, feedback: &Feedback, width: u16) -> Line<'static> {
+    for stage in 0..=7 {
+        let line = status_candidate(s, feedback, stage);
+        if line.width() <= width as usize {
+            return line;
+        }
+    }
+    // Only unsupported tiny terminals can truncate the minimum safety line.
+    status_candidate(s, feedback, 7)
+}
+
+#[cfg(test)]
+fn status_line(s: &Status) -> Line<'static> {
+    status_line_at(s, &Feedback::default(), u16::MAX)
 }
 
 /// A key cap: bright text on the border gray, so the key stands apart from what it does
@@ -2668,6 +3398,37 @@ fn key(k: &str) -> Span<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assignment_sidebar_keeps_graphemes_and_ascii_wrapping() {
+        let ascii = "  overwrites  bank 1: pad 1 kick, pad 2 snare";
+        assert_eq!(side_rows(ascii, 23), vec![ascii]);
+        assert_eq!(side_rows("音  e\u{301}", 23), vec!["音  e\u{301}"]);
+        assert!(side_rows("音", 0).is_empty());
+        let texts = [
+            "  overwrites bank 1: pad 1 kick, pad 2 snare, pad 3 音 e\u{301} sample".into(),
+            "音e\u{301}".repeat(128),
+        ];
+        for text in texts {
+            for width in [2, 23, 40] {
+                let rows = side_rows(&text, width);
+                for row in &rows {
+                    assert!(
+                        Span::raw(row.as_str()).width() <= usize::from(width),
+                        "{width}: {row:?}"
+                    );
+                    assert!(!row.starts_with('\u{301}'), "a grapheme was split: {row:?}");
+                }
+                let retained: String = rows
+                    .concat()
+                    .chars()
+                    .filter(|ch| !ch.is_whitespace())
+                    .collect();
+                let original: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+                assert_eq!(retained, original, "a target character was lost");
+            }
+        }
+    }
     use ratatui::style::Modifier;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -2715,9 +3476,9 @@ mod tests {
             param: PadParam::Volume,
             // pads 1 and W of the current bank (2) hold a sound
             playing: false,
+            feedback: PadFeedback::default(),
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -2733,6 +3494,7 @@ mod tests {
             slot: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -2932,6 +3694,7 @@ mod tests {
     #[test]
     fn the_status_line_names_the_open_project() {
         let status = |backend, project| Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend,
             recording: false,
@@ -2966,6 +3729,7 @@ mod tests {
     #[test]
     fn plain_words_for_no_key_releases() {
         let status = |no_releases| Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -3252,9 +4016,9 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             playing: false,
+            feedback: PadFeedback::default(),
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -3286,6 +4050,7 @@ mod tests {
             playhead: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -3403,7 +4168,17 @@ mod tests {
 
     /// A screen drawn at `w`×`h` as text rows and as (symbol, fg, bg) cells.
     fn draw_rows(screen: &Screen, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
-        let (status, help) = chop_status();
+        draw_badge_rows(screen, w, h, Vec::new())
+    }
+
+    fn draw_badge_rows(
+        screen: &Screen,
+        w: u16,
+        h: u16,
+        badges: Vec<Badge>,
+    ) -> Vec<Vec<(String, Color, Color)>> {
+        let (mut status, help) = chop_status();
+        status.badges = badges;
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
         term.draw(|fr| draw(fr, &status, screen, &help)).unwrap();
         term.backend()
@@ -3616,9 +4391,47 @@ mod tests {
     }
 
     #[test]
+    fn notice_appearance_identifies_its_level() {
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut status = status_at(128, 0);
+            let (_, help) = chop_status();
+            let screen = Screen::Pads(idle_pads());
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            term.draw(|frame| draw(frame, &status, &screen, &help))
+                .unwrap();
+            let baseline = term.backend().buffer().clone();
+            for (level, glyph, color, bold) in [
+                (NoticeLevel::Info, "·", DIM, false),
+                (NoticeLevel::Done, "✓", CYAN, false),
+                (NoticeLevel::Warn, "!", MAGENTA, false),
+                (NoticeLevel::Error, "✗", MAGENTA, true),
+            ] {
+                status.notice = Some(NoticeLine {
+                    text: "Recorded result",
+                    level: Some(level),
+                });
+                term.draw(|frame| draw(frame, &status, &screen, &help))
+                    .unwrap();
+                let buffer = term.backend().buffer();
+                let row = h - 4;
+                assert_eq!(buffer[(1, row)].symbol(), glyph);
+                assert_eq!(buffer[(1, row)].fg, color);
+                assert_eq!(buffer[(1, row)].modifier.contains(Modifier::BOLD), bold);
+                for y in 0..h {
+                    if y != row {
+                        for x in 0..w {
+                            assert_eq!(buffer[(x, y)], baseline[(x, y)]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn shared_fx_pickup_does_not_hide_a_notice() {
         let (mut status, help) = chop_status();
-        status.notice = Some("project saved");
+        status.notice = Some(NoticeLine::plain("project saved"));
         let mut f = shared_fx();
         f.pickup = Some("pickup: turn to 250 ms".into());
         let mut term = Terminal::new(TestBackend::new(40, 12)).unwrap();
@@ -3649,6 +4462,417 @@ mod tests {
                 term.draw(|fr| draw(fr, &status, &Screen::Fx(f), &help))
                     .unwrap();
             }
+        }
+    }
+
+    /// Scenarios "Mode badges follow the active screen state" and "Badges retain identity without color".
+    #[test]
+    fn mode_badges_follow_the_active_screen_state() {
+        let wave = [0.1; 400];
+        for (w, h) in [(120, 40), (80, 26)] {
+            let screens = [
+                Screen::Pads(idle_pads()),
+                Screen::Fx(shared_fx()),
+                Screen::Files(Files {
+                    dir: "samples",
+                    entries: vec![],
+                    selected: 0,
+                    in_hand: None,
+                    error: None,
+                    pads: idle_pads(),
+                    filter: "",
+                    editing: false,
+                    preview: None,
+                    playhead: None,
+                }),
+                Screen::Chop(Box::new(chop_demo(&wave))),
+                Screen::Settings(settings_view(0, 0)),
+                Screen::ProjectPicker(ProjectPickerView {
+                    entries: vec!["beat".into()],
+                    selected: 0,
+                    naming: None,
+                }),
+            ];
+            for screen in &screens {
+                let before = draw_rows(screen, w, h);
+                for (kind, normal, compact, color) in [
+                    (BadgeKind::PadMode, "COPY · hit a pad", "COPY", MARK),
+                    (BadgeKind::On, "EDIT · FILTER", "EDIT FILTER", CYAN),
+                    (BadgeKind::Attention, "ASK", "ASK", MAGENTA),
+                    (BadgeKind::Attention, "● REC 12s", "REC", MAGENTA),
+                ] {
+                    let after =
+                        draw_badge_rows(screen, w, h, vec![Badge::new(kind, normal, compact)]);
+                    assert!(
+                        row_text(&after, 1).contains(normal),
+                        "{w}: {}",
+                        row_text(&after, 1)
+                    );
+                    let text: String = after[1]
+                        .iter()
+                        .filter(|(_, _, bg)| *bg == color)
+                        .map(|(symbol, _, _)| symbol.as_str())
+                        .collect();
+                    assert_eq!(text.trim(), normal);
+                    for y in 0..h as usize {
+                        if y != 1 {
+                            assert_eq!(after[y], before[y], "{w}x{h}, row {y}");
+                        }
+                    }
+                    assert_eq!(
+                        draw_rows(screen, w, h),
+                        before,
+                        "leaving the mode removes only its badge"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Scenario "Narrow titles retain the pad mode".
+    #[test]
+    fn narrow_titles_retain_the_pad_mode() {
+        let wave = [0.1; 400];
+        let file = "名字-long-break-name-".repeat(12);
+        for (w, h, which) in [
+            (80, 26, (2, 3)),
+            (120, 40, (2, 3)),
+            (80, 26, (128, 129)),
+            (120, 40, (128, 129)),
+        ] {
+            let mut view = chop_demo(&wave);
+            view.file = &file;
+            view.which = Some(which);
+            view.bounds = (0..=128).map(|n| n as f32 / 128.0).collect();
+            let badges = vec![
+                Badge::new(
+                    BadgeKind::PadMode,
+                    "IN HAND + COPY + SWAP · hit a pad",
+                    "IN HAND/COPY/SWAP",
+                ),
+                Badge::new(BadgeKind::Attention, "ASK", "ASK"),
+                Badge::new(BadgeKind::Attention, "● REC 123s", "REC"),
+                Badge::new(BadgeKind::On, "EDIT · BOUNDS", "EDIT BOUNDS"),
+            ];
+            let rows = draw_badge_rows(&Screen::Chop(Box::new(view)), w, h, badges);
+            let text = row_text(&rows, 1);
+            for label in ["F3 CHOP", "LISTEN", "IN HAND", "COPY", "SWAP", "128 slices"] {
+                assert!(text.contains(label), "{w}: {label}: {text}");
+            }
+            assert!(
+                text.contains(&format!("chop {} of {}", which.0, which.1)),
+                "{text}"
+            );
+            let name_column = rows[1]
+                .iter()
+                .position(|cell| cell.0 == "名")
+                .expect("the filename starts with a wide glyph");
+            assert_eq!(
+                rows[1][name_column + 2].0,
+                "字",
+                "wide glyphs keep their two-cell spacing"
+            );
+            assert_eq!(rows[1].len(), w as usize);
+            assert!(
+                !text.contains("EDIT"),
+                "the fourth optional badge cannot appear"
+            );
+            if w == 80 {
+                assert!(text.contains("IN HAND/COPY/SWAP"), "{text}");
+                assert!(!text.contains("ASK") && !text.contains("REC"));
+            } else {
+                assert!(text.contains("ASK"), "{text}");
+                assert_eq!(text.contains("REC 123s"), which == (2, 3), "{text}");
+            }
+        }
+        for (normal, compact) in [
+            ("MARK · hit pads · 128 marked", "MARK 128"),
+            ("128 MARKED · Esc drops", "128 MARKED"),
+            ("ASSIGN · 128/128 placed", "ASSIGN 128/128"),
+            ("EDIT · FILTER", "EDIT FILTER"),
+            ("EDIT · BOUNDS", "EDIT BOUNDS"),
+            ("EDIT · FX 2", "EDIT FX 2"),
+        ] {
+            let badge = Badge::new(BadgeKind::PadMode, normal, compact);
+            let width = (Line::from(compact).width() + 3) as u16;
+            let line = title(vec![], &[badge], width, 0);
+            assert_eq!(
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+                    .trim(),
+                compact
+            );
+            assert!(line.width() <= width as usize);
+        }
+    }
+
+    /// Scenario "Playback slots remain stable beside modes".
+    #[test]
+    fn playback_slots_remain_stable_beside_modes() {
+        let wave = [0.1; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for graphics in [false, true] {
+                let mut first_column = None;
+                for playing in [false, true, false] {
+                    let mut view = chop_demo(&wave);
+                    view.mode = if playing { "LISTEN ▶" } else { "LISTEN" }.into();
+                    let (mut status, help) = chop_status();
+                    status.badges = vec![Badge::new(BadgeKind::On, "EDIT · BOUNDS", "EDIT BOUNDS")];
+                    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                    let mut images = Vec::new();
+                    term.draw(|frame| {
+                        let screen = Screen::Chop(Box::new(view));
+                        if graphics {
+                            draw_gfx(frame, &status, &screen, &help, &mut images);
+                        } else {
+                            draw(frame, &status, &screen, &help);
+                        }
+                    })
+                    .unwrap();
+                    let row = &term.backend().buffer().content()[w as usize..2 * w as usize];
+                    let text: String = row.iter().map(|c| c.symbol()).collect();
+                    assert_eq!(
+                        row[10..20].iter().map(|c| c.symbol()).collect::<String>(),
+                        if playing {
+                            " LISTEN ▶ "
+                        } else {
+                            " LISTEN   "
+                        }
+                    );
+                    for cell in &row[10..20] {
+                        assert_eq!(
+                            (cell.fg, cell.bg),
+                            if playing { (BG, CYAN) } else { (DIM, BG) }
+                        );
+                    }
+                    let column = row
+                        .windows(4)
+                        .position(|r| r.iter().map(|c| c.symbol()).collect::<String>() == "EDIT")
+                        .unwrap();
+                    if let Some(before) = first_column {
+                        assert_eq!(column, before);
+                    }
+                    first_column = Some(column);
+                    assert!(text.contains("break_lofi.wav") && text.contains("4 slices"));
+                    assert_eq!(images.len(), usize::from(graphics));
+                    if graphics {
+                        assert_eq!(
+                            images[0].area,
+                            Rect {
+                                y: frame_at(w, h).strip.y + 2,
+                                height: frame_at(w, h).strip.height - 2,
+                                ..frame_at(w, h).strip
+                            }
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scenarios "Playback slots remain stable beside modes" and "Pads PLAY badge has fixed width".
+    #[test]
+    fn playback_slots_stay_fixed_with_pad_corner_feedback() {
+        let wave = [0.1; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for graphics in [false, true] {
+                for chop in [false, true] {
+                    for hidden in [false, true] {
+                        for edit in [false, true] {
+                            for (name, normal, compact, corner) in [
+                                ("MARK", "MARK · hit pads · 1 marked", "MARK 1", None),
+                                (
+                                    "IN HAND",
+                                    "IN HAND · hit a pad",
+                                    "IN HAND",
+                                    Some(PadCorner::Available),
+                                ),
+                                ("COPY", "COPY · hit a pad", "COPY", Some(PadCorner::Replace)),
+                                (
+                                    "SWAP",
+                                    "SWAP · hit a pad",
+                                    "SWAP",
+                                    Some(PadCorner::Available),
+                                ),
+                                ("LEARN", "LEARN", "LEARN", None),
+                                (
+                                    "ASSIGN",
+                                    "ASSIGN · 128/128 placed",
+                                    "ASSIGN 128/128",
+                                    Some(PadCorner::Slice(1)),
+                                ),
+                            ] {
+                                if !chop && name == "ASSIGN" {
+                                    continue;
+                                }
+                                let mut first: Option<Vec<ratatui::buffer::Cell>> = None;
+                                let mut first_images = None;
+                                for playing in [false, true, false] {
+                                    let mut p = idle_pads();
+                                    p.playing = playing;
+                                    p.hidden = hidden && name != "ASSIGN";
+                                    p.edit = edit.then_some("TONE");
+                                    p.feedback.outline = true;
+                                    p.feedback.corners[0] = if chop && name != "ASSIGN" {
+                                        None
+                                    } else {
+                                        corner
+                                    };
+                                    p.pads[0].name = "名字-sample".into();
+                                    p.pads[1].flash = true;
+                                    p.pads[2].in_hand = name == "SWAP";
+                                    p.pads[5].marked = name == "MARK";
+                                    if name == "MARK" {
+                                        p.bank_marks[0] = 1 << 5;
+                                    }
+                                    if name == "LEARN" {
+                                        p.pads[0].note = Some("CC 80".into());
+                                    }
+                                    if name == "ASSIGN" {
+                                        p.feedback.corners[15] = Some(PadCorner::Slice(128));
+                                    }
+                                    let screen = if chop {
+                                        let mut view = chop_demo(&wave);
+                                        view.pads = p;
+                                        view.edit = edit;
+                                        view.mode = if name == "ASSIGN" {
+                                            if playing {
+                                                "ASSIGN · BY HAND ▶"
+                                            } else {
+                                                "ASSIGN · BY HAND"
+                                            }
+                                        } else if playing {
+                                            "LISTEN ▶"
+                                        } else {
+                                            "LISTEN"
+                                        }
+                                        .into();
+                                        if name == "ASSIGN" {
+                                            view.bounds =
+                                                (0..=128).map(|n| n as f32 / 128.0).collect();
+                                        }
+                                        Screen::Chop(Box::new(view))
+                                    } else {
+                                        Screen::Pads(p)
+                                    };
+                                    let (mut status, help) = chop_status();
+                                    status.badges =
+                                        vec![Badge::new(BadgeKind::PadMode, normal, compact)];
+                                    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                                    let mut images = Vec::new();
+                                    term.draw(|frame| {
+                                        if graphics {
+                                            draw_gfx(frame, &status, &screen, &help, &mut images);
+                                        } else {
+                                            draw(frame, &status, &screen, &help);
+                                        }
+                                    })
+                                    .unwrap();
+                                    let cells = term.backend().buffer().content();
+                                    let row = &cells[w as usize..2 * w as usize];
+                                    let needle = if chop { "LISTEN" } else { "PLAY" };
+                                    let at = row
+                                        .windows(needle.len())
+                                        .position(|cells| {
+                                            cells
+                                                .iter()
+                                                .map(|cell| cell.symbol())
+                                                .collect::<String>()
+                                                == needle
+                                        })
+                                        .unwrap();
+                                    let slot = at - 1..at + 9;
+                                    // Assignment audition keeps the existing idle LISTEN slot.
+                                    let active = playing && name != "ASSIGN";
+                                    let expected = match (chop, active) {
+                                        (true, true) => " LISTEN ▶ ",
+                                        (true, false) => " LISTEN   ",
+                                        (false, true) => " PLAY ▶   ",
+                                        (false, false) => " PLAY     ",
+                                    };
+                                    assert_eq!(
+                                        row[slot.clone()]
+                                            .iter()
+                                            .map(|cell| cell.symbol())
+                                            .collect::<String>(),
+                                        expected
+                                    );
+                                    for cell in &row[slot.clone()] {
+                                        assert_eq!(
+                                            (cell.fg, cell.bg),
+                                            if active { (BG, CYAN) } else { (DIM, BG) }
+                                        );
+                                    }
+                                    let text: String =
+                                        row.iter().map(|cell| cell.symbol()).collect();
+                                    assert!(text.contains(name), "{w}x{h}: {text}");
+                                    if let Some(before) = &first {
+                                        for (index, (old, new)) in
+                                            before.iter().zip(cells).enumerate()
+                                        {
+                                            if index / w as usize != 1
+                                                || !slot.contains(&(index % w as usize))
+                                            {
+                                                assert_eq!(
+                                                    old, new,
+                                                    "{w}x{h}: {name}, graphics {graphics}, hidden {hidden}, edit {edit}, cell {index}"
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        first = Some(cells.to_vec());
+                                    }
+                                    let areas: Vec<_> =
+                                        images.iter().map(|image| image.area).collect();
+                                    if let Some(before) = &first_images {
+                                        assert_eq!(&areas, before);
+                                    } else {
+                                        first_images = Some(areas);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn settings_title_badges_stay_visible_while_midi_rows_scroll() {
+        let entries: Vec<_> = (0..40)
+            .map(|n| MidiRow::Action {
+                label: format!("action{n:02}"),
+                who: "none".into(),
+                taken: false,
+                stays: Vec::new(),
+            })
+            .collect();
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut st = settings_view(2, 0);
+            st.midi_rows = &entries;
+            st.midi_row = 39;
+            let rows = draw_badge_rows(
+                &Screen::Settings(st),
+                w,
+                h,
+                vec![Badge::new(BadgeKind::PadMode, "LEARN", "LEARN")],
+            );
+            let header = row_text(&rows, 1);
+            assert!(
+                header.contains("F12 SETTINGS")
+                    && header.contains("LEARN")
+                    && header.contains("[MIDI]"),
+                "{header}"
+            );
+            assert!(rows[3..h as usize - 4].iter().any(|row| {
+                row.iter()
+                    .map(|c| c.0.as_str())
+                    .collect::<String>()
+                    .contains("action39")
+            }));
         }
     }
 
@@ -3738,6 +4962,166 @@ mod tests {
         );
     }
 
+    /// Scenarios "Placement marks distinguish confirmation from swap" and "Assignment numbers appear on target pads".
+    #[test]
+    fn pad_corner_marks_keep_identity_and_state_styles() {
+        for width in [13, 24, 40] {
+            for corner in [
+                PadCorner::Available,
+                PadCorner::Replace,
+                PadCorner::Slice(128),
+            ] {
+                for state in ["idle", "selected", "hit", "marked", "hand"] {
+                    let mut pad = idle_pads().pads.remove(0);
+                    pad.name = "名字".into();
+                    pad.flash = state == "hit";
+                    pad.marked = state == "marked";
+                    pad.in_hand = state == "hand";
+                    let mut term = Terminal::new(TestBackend::new(width, 4)).unwrap();
+                    term.draw(|frame| {
+                        pad_cell(
+                            frame,
+                            frame.area(),
+                            &pad,
+                            state == "selected",
+                            BANK_COLORS[2],
+                            0,
+                            (true, Some(corner)),
+                        )
+                    })
+                    .unwrap();
+                    let cells = term.backend().buffer().content();
+                    let text = match corner {
+                        PadCorner::Available => "◎".to_string(),
+                        PadCorner::Replace => "!".to_string(),
+                        PadCorner::Slice(n) => n.to_string(),
+                    };
+                    let (fg, bg) = match state {
+                        "selected" => (CYAN, PANEL),
+                        "hit" => (WHITE, WHITE),
+                        "marked" => (MARK, MARK_BG),
+                        "hand" => (MAGENTA, PANEL),
+                        _ => (MARK, PANEL),
+                    };
+                    assert_eq!((cells[0].fg, cells[0].bg), (fg, bg), "{width}, {state}");
+                    assert_eq!(cells[1].symbol(), "1", "the key stays readable");
+                    assert_eq!(
+                        cells[1].fg,
+                        if state == "idle" {
+                            BANK_COLORS[2]
+                        } else if state == "hit" {
+                            BG
+                        } else {
+                            fg
+                        }
+                    );
+                    let start = width as usize - 1 - Line::from(text.as_str()).width();
+                    let label: String = cells[start..width as usize - 1]
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect();
+                    assert_eq!(label, text);
+                    assert_eq!(cells[width as usize - 1].symbol(), "┐");
+                    assert_eq!(cells[width as usize + 2].symbol(), "名");
+                    assert_eq!(cells[width as usize + 4].symbol(), "字");
+                }
+            }
+        }
+    }
+
+    /// Scenarios "Marking changes appearance without silencing pads" and "Hidden grids retain visible mode identity".
+    #[test]
+    fn yellow_grid_feedback_keeps_shared_geometry_and_hidden_layout() {
+        fn pads<'a>(screen: &'a mut Screen<'_>) -> &'a mut Pads {
+            match screen {
+                Screen::Pads(p) => p,
+                Screen::Files(f) => &mut f.pads,
+                Screen::Chop(c) => &mut c.pads,
+                _ => panic!("a grid screen is required"),
+            }
+        }
+        let wave = [0.1; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut screens = [
+                Screen::Pads(idle_pads()),
+                Screen::Files(Files {
+                    dir: "samples",
+                    entries: vec![],
+                    selected: 0,
+                    in_hand: None,
+                    error: None,
+                    pads: idle_pads(),
+                    filter: "",
+                    editing: false,
+                    preview: None,
+                    playhead: None,
+                }),
+                Screen::Chop(Box::new(chop_demo(&wave))),
+            ];
+            for screen in &mut screens {
+                let p = pads(screen);
+                p.pads[1].flash = true;
+                p.pads[2].marked = true;
+                p.pads[3].in_hand = true;
+                let before = draw_rows(screen, w, h);
+                let p = pads(screen);
+                p.feedback.outline = true;
+                p.feedback.corners[0] = Some(PadCorner::Available);
+                p.feedback.corners[1] = Some(PadCorner::Replace);
+                p.feedback.corners[2] = Some(PadCorner::Slice(128));
+                let after = draw_rows(screen, w, h);
+                assert!(
+                    after
+                        .iter()
+                        .flatten()
+                        .any(|(text, fg, _)| text == "◎" && *fg == MARK)
+                );
+                assert!(
+                    after
+                        .iter()
+                        .flatten()
+                        .any(|(text, fg, bg)| text == "─" && *fg == MARK && *bg == PANEL)
+                );
+                // The cell edges, strip, panel and bottom rows stay at their original coordinates.
+                for y in 0..h as usize {
+                    for x in 0..w as usize {
+                        if ["┌", "┐", "└", "┘", "│", "┆"].contains(&before[y][x].0.as_str())
+                        {
+                            assert_eq!(after[y][x].0, before[y][x].0, "{w}x{h}: {x},{y}");
+                        }
+                    }
+                }
+                for y in [
+                    0,
+                    1,
+                    h as usize - 4,
+                    h as usize - 3,
+                    h as usize - 2,
+                    h as usize - 1,
+                ] {
+                    assert_eq!(after[y], before[y], "shared row {y}");
+                }
+                pads(screen).feedback = PadFeedback::default();
+                assert_eq!(
+                    draw_rows(screen, w, h),
+                    before,
+                    "leaving the mode restores the cells"
+                );
+                pads(screen).hidden = true;
+                let hidden = draw_rows(screen, w, h);
+                pads(screen).feedback = PadFeedback {
+                    outline: true,
+                    corners: [Some(PadCorner::Replace); 16],
+                };
+                assert_eq!(
+                    draw_rows(screen, w, h),
+                    hidden,
+                    "mode marks cannot open a hidden grid"
+                );
+            }
+        }
+    }
+
     /// 77 "The mode as a glyph" and "The group on the pad": `⇢ +1 mute 2` under the
     /// name of a one-shot pad at +1 dB in group 2, `⇥` for a gate pad at 0 dB; no digit on
     /// the frame.
@@ -3776,10 +5160,23 @@ mod tests {
                             p.playing = playing;
                             p.hidden = hidden;
                             p.edit = edit.then_some("TONE");
-                            if marked {
-                                p.mark_plate = Some("MARK · hit pads · 3 marked".into());
-                            }
-                            let rows = render_pads_at(p, width, height);
+                            let badges = if marked {
+                                vec![Badge::new(
+                                    BadgeKind::PadMode,
+                                    "MARK · hit pads · 3 marked",
+                                    "MARK 3",
+                                )]
+                            } else {
+                                Vec::new()
+                            };
+                            let rows = render_pads_snapshot(
+                                p,
+                                ([-60.0; 2], [-60.0; 2], false),
+                                false,
+                                width,
+                                height,
+                                badges,
+                            );
                             let y = (0..rows.len())
                                 .find(|&y| row_text(&rows, y).contains("F2 PADS"))
                                 .unwrap();
@@ -3852,9 +5249,16 @@ mod tests {
     /// 76 "The mark plate": the plate stands on the title line, black on yellow.
     #[test]
     fn the_mark_plate_is_yellow_on_the_title_line() {
-        let mut p = idle_pads();
-        p.mark_plate = Some("MARK · hit pads · 3 marked".into());
-        let rows = draw_rows(&Screen::Pads(p), 100, 30);
+        let rows = draw_badge_rows(
+            &Screen::Pads(idle_pads()),
+            100,
+            30,
+            vec![Badge::new(
+                BadgeKind::PadMode,
+                "MARK · hit pads · 3 marked",
+                "MARK 3",
+            )],
+        );
         let y = (0..rows.len())
             .find(|&y| row_text(&rows, y).contains("F2 PADS"))
             .expect("the title line");
@@ -4210,6 +5614,7 @@ mod tests {
                 learn: None,
             };
             let status = Status {
+                badges: Vec::new(),
                 save: SaveStatus::Clean,
                 backend: None,
                 recording: false,
@@ -4930,7 +6335,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4945,6 +6349,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         Chop {
             owners: Vec::new(),
@@ -4992,6 +6397,7 @@ mod tests {
             ..chop_demo(&wave)
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -5197,6 +6603,12 @@ mod tests {
         }
         let mut view = chop_demo(&wave);
         view.mode = "ASSIGN · by hand".into();
+        let mut status = status;
+        status.badges = vec![Badge::new(
+            BadgeKind::PadMode,
+            "ASSIGN · 1/4 placed",
+            "ASSIGN 1/4",
+        )];
         term.draw(|frame| draw(frame, &status, &Screen::Chop(Box::new(view)), &help))
             .unwrap();
         let header = term
@@ -5212,13 +6624,16 @@ mod tests {
             })
             .unwrap();
         let text = header.iter().map(|cell| cell.symbol()).collect::<String>();
-        assert!(text.contains(" ASSIGN · by hand    cuts of"));
+        assert!(
+            text.contains(" LISTEN     ASSIGN · 1/4 placed    cuts of"),
+            "{text}"
+        );
         let start = text.find(" ASSIGN").unwrap();
-        for cell in &header[start..start + " ASSIGN · by hand ".chars().count()] {
+        for cell in &header[start..start + " ASSIGN · 1/4 placed ".chars().count()] {
             assert_eq!(
                 (cell.fg, cell.bg),
-                (BG, CYAN),
-                "assign badge stays unchanged"
+                (BG, MARK),
+                "assignment is a separate PadMode badge"
             );
         }
     }
@@ -5278,6 +6693,7 @@ mod tests {
         let wave: Vec<f32> = (0..4000).map(|i| (i % 1000) as f32 / 1000.0).collect();
         let c = chop_demo(&wave);
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -5426,13 +6842,150 @@ mod tests {
     }
 
     #[test]
+    fn overlay_rectangles_follow_the_actual_text_layout() {
+        let q = Question {
+            body: vec!["Replace the selected pad?".into()],
+            answers: vec!["KB Enter: replace · Esc: keep".into()],
+        };
+        let value = Value {
+            object: "pad 1".into(),
+            parameter: "Volume".into(),
+            formatted: "0 dB".into(),
+            position: Some(0.5),
+        };
+        let mut help = Help {
+            groups: &[],
+            hint: None,
+            full: Some(FullHelp::Keys(&[])),
+            question: Some(&q),
+            learn: None,
+        };
+        let wave = [];
+        for (width, height) in [(80, 26), (120, 40)] {
+            let terminal = Rect::new(0, 0, width, height);
+            let [_, body, _, _] = frame_areas(terminal);
+            for screen in status_screens(&wave) {
+                let areas = overlay_areas(terminal, &screen, &help, Some(&value));
+                assert_eq!(
+                    areas,
+                    vec![body, question_area(body, &q), value_area(terminal, true)]
+                );
+                assert!(
+                    areas
+                        .iter()
+                        .all(|area| terminal.intersection(*area) == *area)
+                );
+            }
+            help.full = None;
+            help.question = None;
+            for screen in status_screens(&wave) {
+                let areas = overlay_areas(terminal, &screen, &help, None);
+                assert_eq!(
+                    areas,
+                    if matches!(screen, Screen::ProjectPicker(_)) {
+                        vec![body]
+                    } else {
+                        vec![]
+                    }
+                );
+            }
+            help.full = Some(FullHelp::Keys(&[]));
+            help.question = Some(&q);
+        }
+    }
+
+    #[test]
+    fn question_answer_rows_keep_safety_visible() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            for inputs in [0, 2, 30] {
+                let mut body = vec!["Replace what lies on 128 pads?".into()];
+                body.extend(
+                    (1..=128)
+                        .map(|i| format!("bank 1 pad {i}: 音 e\u{301} old target → new slice")),
+                );
+                body.extend([
+                    "The old files on disk stay.".into(),
+                    "This cannot be undone.".into(),
+                ]);
+                let mut answers = vec!["KB F9: replace · F8: keep".into()];
+                answers.extend(
+                    (1..=inputs).map(|i| format!("M{i} ch1 cc 5: replace · ch1 cc 6: keep")),
+                );
+                let q = Question { body, answers };
+                let original = (q.body.clone(), q.answers.clone());
+                let parent = Rect::new(0, 1, width, height - 5);
+                let area = question_area(parent, &q);
+                assert_eq!(area.intersection(parent), area);
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| {
+                    frame.render_widget(
+                        Paragraph::new(vec![
+                            Line::from(".".repeat(width as usize));
+                            height as usize
+                        ]),
+                        frame.area(),
+                    );
+                    question(frame, parent, &q);
+                })
+                .unwrap();
+                let buffer = term.backend().buffer();
+                let text = buffer
+                    .content()
+                    .chunks(width as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                for marker in [
+                    "Replace what lies on 128 pads?",
+                    "The old files on disk stay.",
+                    "This cannot be undone.",
+                    "KB F9: replace · F8: keep",
+                    "more target rows",
+                ] {
+                    assert!(
+                        text.contains(marker),
+                        "{width}x{height}, {inputs} inputs: {marker}\n{text}"
+                    );
+                }
+                if inputs == 30 {
+                    assert!(text.contains("more input answer rows"));
+                }
+                for y in 0..height {
+                    for x in 0..width {
+                        if !area.contains((x, y).into()) {
+                            assert_eq!(buffer[(x, y)].symbol(), ".");
+                        }
+                    }
+                }
+                assert_eq!(
+                    (q.body, q.answers),
+                    original,
+                    "drawing cannot change the target guard"
+                );
+            }
+        }
+        for (width, height) in [(0, 0), (1, 1), (2, 2), (5, 3)] {
+            let q = Question {
+                body: vec!["音 very long name".into()],
+                answers: vec!["KB F9: replace".into()],
+            };
+            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+            term.draw(|frame| question(frame, frame.area(), &q))
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn question_box_over_the_screen() {
-        let q = [
-            "Replace what lies on 1 pad?".to_string(),
-            "  bank 2  Q  kick  →  slice 1".into(),
-            "Enter: replace · Esc: keep".into(),
-        ];
+        let q = Question {
+            body: vec![
+                "Replace what lies on 1 pad?".into(),
+                "  bank 2  Q  kick  →  slice 1".into(),
+            ],
+            answers: vec!["Enter: replace · Esc: keep".into()],
+        };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -5455,7 +7008,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5470,6 +7022,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         let help = Help {
             groups: &[],
@@ -5488,7 +7041,7 @@ mod tests {
             .chunks(80)
             .map(|row| row.iter().map(|c| c.symbol()).collect::<String>() + "\n")
             .collect();
-        for line in &q {
+        for line in q.body.iter().chain(&q.answers) {
             assert!(text.contains(line.trim()), "{line} missing");
         }
     }
@@ -5514,6 +7067,451 @@ mod tests {
             .collect();
         assert!(text.contains("the next pad hit swaps them"), "{text}");
         assert!(text.contains(" Ctrl+X "));
+    }
+
+    /// Scenario "Values appear on every screen".
+    #[test]
+    fn value_popup_keeps_geometry_and_restores_content() {
+        let wave = [0.1; 400];
+        let screens = [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(&wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+        ];
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let (mut status, help) = chop_status();
+            status.save = SaveStatus::Failed;
+            status.notice = Some(NoticeLine {
+                text: "A refusal stays visible",
+                level: Some(NoticeLevel::Error),
+            });
+            for screen in &screens {
+                term.draw(|f| draw(f, &status, screen, &help)).unwrap();
+                let baseline = term.backend().buffer().clone();
+                for position in [None, Some(-0.5), Some(0.0), Some(0.5), Some(1.0), Some(2.0)] {
+                    let value = Value {
+                        object: "pad 2-Q".into(),
+                        parameter: "cutoff".into(),
+                        formatted: "1.2 kHz".into(),
+                        position,
+                    };
+                    term.draw(|f| {
+                        draw(f, &status, screen, &help);
+                        value_popup(f, &value);
+                    })
+                    .unwrap();
+                    let buffer = term.backend().buffer();
+                    let area = value_area(buffer.area, position.is_some());
+                    for y in 0..h {
+                        for x in 0..w {
+                            if !area.contains((x, y).into()) {
+                                assert_eq!(buffer[(x, y)], baseline[(x, y)], "{w}x{h}, ({x}, {y})");
+                            }
+                        }
+                    }
+                    let line: String = (area.x..area.right())
+                        .map(|x| buffer[(x, area.y)].symbol())
+                        .collect();
+                    assert!(
+                        line.contains("cutoff")
+                            && line.contains("pad 2-Q")
+                            && line.contains("1.2 kHz"),
+                        "{line}"
+                    );
+                    if let Some(position) = position {
+                        let filled = (area.x..area.right())
+                            .filter(|&x| buffer[(x, area.y + 1)].symbol() == "█")
+                            .count();
+                        assert_eq!(
+                            filled,
+                            (position.clamp(0.0, 1.0) * (area.width - 2) as f32).round() as usize
+                        );
+                    }
+                    term.draw(|f| draw(f, &status, screen, &help)).unwrap();
+                    assert_eq!(term.backend().buffer(), &baseline);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn value_popup_bounds_unicode_and_small_terminals() {
+        for (w, h) in [(0, 0), (1, 1), (2, 6), (3, 8), (8, 10), (80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            for position in [None, Some(0.5), Some(f32::NAN), Some(f32::INFINITY)] {
+                let value = Value {
+                    object: "Settings".into(),
+                    parameter: "output".into(),
+                    formatted: "猫e\u{301}音".repeat(40),
+                    position,
+                };
+                term.draw(|f| {
+                    f.render_widget(Block::new().bg(BG).fg(TEXT), f.area());
+                    value_popup(f, &value);
+                })
+                .unwrap();
+                let buffer = term.backend().buffer();
+                let area = value_area(buffer.area, position.is_some());
+                for y in 0..h {
+                    for x in 0..w {
+                        if !area.contains((x, y).into()) {
+                            assert_eq!(buffer[(x, y)].bg, BG);
+                        }
+                    }
+                }
+                if w >= 80 {
+                    let line: String = (0..w).map(|x| buffer[(x, area.y)].symbol()).collect();
+                    assert!(
+                        line.contains("output")
+                            && line.contains("Settings")
+                            && line.contains('猫')
+                            && line.contains("e\u{301}")
+                            && line.contains('音'),
+                        "{line}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn draw_f1(
+        term: &mut Terminal<TestBackend>,
+        screen: &Screen<'_>,
+        page: Option<FullHelp<'_>>,
+    ) -> ratatui::buffer::Buffer {
+        let (status, mut help) = chop_status();
+        help.full = page;
+        term.draw(|frame| draw(frame, &status, screen, &help))
+            .unwrap();
+        term.backend().buffer().clone()
+    }
+
+    fn assert_f1_frame(buffer: &ratatui::buffer::Buffer) {
+        let (w, h) = (buffer.area.width, buffer.area.height);
+        for (x, y, corner) in [
+            (0, 1, "┌"),
+            (w - 1, 1, "┐"),
+            (0, h - 5, "└"),
+            (w - 1, h - 5, "┘"),
+        ] {
+            assert_eq!(buffer[(x, y)].symbol(), corner, "{w}x{h}: ({x}, {y})");
+        }
+        for y in 2..h - 5 {
+            assert_eq!(buffer[(0, y)].symbol(), "│");
+            assert_eq!(buffer[(w - 1, y)].symbol(), "│");
+        }
+    }
+
+    /// Scenario "F1 pages keep stable geometry".
+    #[test]
+    fn f1_pages_keep_stable_geometry() {
+        let wave = [0.1; 400];
+        let screens = [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(&wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+        ];
+        let entries: Vec<_> = (0..50)
+            .map(|_| Message {
+                level: NoticeLevel::Info,
+                origin: "System",
+                text: "A result in the message history",
+            })
+            .collect();
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            for screen in &screens {
+                let baseline = draw_f1(&mut term, screen, None);
+                for count in [0, 1, 16] {
+                    let keys = vec![("Ctrl+J/L".into(), "A help description".into()); count];
+                    for count in [0, 1, 50] {
+                        for page in [
+                            FullHelp::Keys(&keys),
+                            FullHelp::Messages {
+                                entries: &entries[..count],
+                                scroll: 0,
+                            },
+                            FullHelp::Messages {
+                                entries: &entries[..count],
+                                scroll: usize::MAX,
+                            },
+                            FullHelp::Keys(&keys),
+                        ] {
+                            let buffer = draw_f1(&mut term, screen, Some(page));
+                            assert_f1_frame(&buffer);
+                            for y in (0..h).filter(|&y| y == 0 || y >= h - 4) {
+                                for x in 0..w {
+                                    assert_eq!(buffer[(x, y)], baseline[(x, y)]);
+                                }
+                            }
+                        }
+                    }
+                }
+                assert_eq!(draw_f1(&mut term, screen, None), baseline);
+            }
+        }
+    }
+
+    /// Scenario "F1 controls keep their positions".
+    #[test]
+    fn f1_controls_keep_their_positions() {
+        let keys = [("F1".into(), "help".into())];
+        let entries: Vec<_> = (0..50)
+            .map(|_| Message {
+                level: NoticeLevel::Done,
+                origin: "Keyboard",
+                text: "Session saved",
+            })
+            .collect();
+        for (w, h) in [(80, 26), (120, 40)] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let mut expected = None;
+            for page in [
+                FullHelp::Keys(&keys),
+                FullHelp::Messages {
+                    entries: &[],
+                    scroll: 0,
+                },
+                FullHelp::Messages {
+                    entries: &entries[..1],
+                    scroll: 0,
+                },
+                FullHelp::Messages {
+                    entries: &entries,
+                    scroll: usize::MAX,
+                },
+                FullHelp::Keys(&[]),
+            ] {
+                let messages = matches!(&page, FullHelp::Messages { .. });
+                let buffer = draw_f1(&mut term, &Screen::Pads(idle_pads()), Some(page));
+                let at = |word: &str, y: u16| {
+                    let row = &buffer.content()[usize::from(y * w)..usize::from((y + 1) * w)];
+                    row.windows(word.len())
+                        .position(|cells| {
+                            cells
+                                .iter()
+                                .map(|cell| cell.symbol())
+                                .collect::<String>()
+                                .eq_ignore_ascii_case(word)
+                        })
+                        .unwrap_or_else(|| panic!("{word} absent on row {y}"))
+                        as u16
+                };
+                let positions = (
+                    at("HELP", 1),
+                    at("MESSAGES", 1),
+                    at("Tab/Shift+Tab", h - 5),
+                    at("F1/Esc", h - 5),
+                );
+                assert_eq!(positions, *expected.get_or_insert(positions));
+                for (x, active) in [(positions.0, !messages), (positions.1, messages)] {
+                    assert_eq!(buffer[(x, 1)].fg, if active { CYAN } else { DIM });
+                    assert_eq!(buffer[(x, 1)].modifier.contains(Modifier::BOLD), active);
+                }
+                let footer: String = (0..w).map(|x| buffer[(x, h - 5)].symbol()).collect();
+                assert_eq!(footer.contains("↑↓ scroll"), messages);
+                assert_eq!(footer.contains("PgUp/PgDn page"), messages);
+            }
+        }
+    }
+
+    /// Scenario "F1 frame follows terminal size".
+    #[test]
+    fn f1_frame_follows_terminal_size() {
+        let texts: Vec<_> = (0..50)
+            .map(|i| format!("{}END-{i}", "history words ".repeat(25)))
+            .collect();
+        let entries: Vec<_> = texts
+            .iter()
+            .map(|text| Message {
+                level: NoticeLevel::Info,
+                origin: "System",
+                text,
+            })
+            .collect();
+        let keys = [("F1".into(), "help".into())];
+        let mut term = Terminal::new(TestBackend::new(80, 26)).unwrap();
+        for (w, h) in [(80, 26), (120, 40), (80, 26), (120, 26), (80, 40), (80, 26)] {
+            term.backend_mut().resize(w, h);
+            term.resize(Rect::new(0, 0, w, h)).unwrap();
+            for messages in [false, true, false, true] {
+                let page = if messages {
+                    FullHelp::Messages {
+                        entries: &entries,
+                        scroll: usize::MAX,
+                    }
+                } else {
+                    FullHelp::Keys(&keys)
+                };
+                let buffer = draw_f1(&mut term, &Screen::Pads(idle_pads()), Some(page));
+                assert_f1_frame(&buffer);
+                assert_eq!(messages_page_height(h), usize::from(h - 7));
+                if messages {
+                    let body: String = (2..h - 5)
+                        .flat_map(|y| (1..w - 1).map(move |x| (x, y)))
+                        .map(|position| buffer[position].symbol())
+                        .collect();
+                    assert!(body.contains("END-49"), "{w}x{h}: {body}");
+                }
+            }
+        }
+    }
+
+    /// Scenarios "Long message text remains readable" and "F1 retains recent results in order".
+    #[test]
+    fn long_message_text_remains_readable() {
+        let origin = "MIDI 控制 e\u{301} ".repeat(24);
+        let text = "Result 世界 e\u{301} 👩‍🔬 ".repeat(60);
+        for (width, height) in [(80, 26), (120, 40)] {
+            let entries = [Message {
+                level: NoticeLevel::Error,
+                origin: &origin,
+                text: &text,
+            }];
+            let lines = message_lines(&entries, width - 2);
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.width() <= (width - 2) as usize)
+            );
+            let joined = lines.iter().map(ToString::to_string).collect::<String>();
+            assert_eq!(joined, format!("✗ Error · {origin}{text}"));
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.style.fg == Some(MAGENTA) || line.width() == 0)
+            );
+            let page = messages_page_height(height);
+            let mut visible = String::new();
+            for scroll in 0..=lines.len().saturating_sub(page) {
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| {
+                    let body = Rect::new(0, 1, width, height - 5);
+                    message_history(frame, body, &entries, scroll);
+                })
+                .unwrap();
+                let rows: Vec<String> = term
+                    .backend()
+                    .buffer()
+                    .content()
+                    .chunks(width as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                assert!(rows[1].contains("[MESSAGES]"));
+                assert!(rows[height as usize - 5].contains("F1/Esc close"));
+                // Cell positions, not UTF-8 indices: wide glyphs occupy a second cell.
+                let buffer = term.backend().buffer();
+                for y in 2..height - 5 {
+                    assert_eq!(buffer[(0, y)].symbol(), "│");
+                    assert_eq!(buffer[(width - 1, y)].symbol(), "│");
+                }
+                visible.push_str(&rows[2..height as usize - 5].join(""));
+            }
+            assert!(visible.contains("Result"));
+            assert!(visible.contains("MIDI"));
+        }
+        for (level, glyph, color) in [
+            (NoticeLevel::Info, "· Info", DIM),
+            (NoticeLevel::Done, "✓ Done", CYAN),
+            (NoticeLevel::Warn, "! Warn", MAGENTA),
+            (NoticeLevel::Error, "✗ Error", MAGENTA),
+        ] {
+            let entries = [Message {
+                level,
+                origin: "Keyboard",
+                text: "result",
+            }];
+            let rows = message_lines(&entries, 78);
+            assert!(rows[0].to_string().starts_with(glyph));
+            assert_eq!(rows[0].style.fg, Some(color));
+            assert_eq!(
+                rows[0]
+                    .style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD),
+                level == NoticeLevel::Error
+            );
+        }
+    }
+
+    /// Scenarios "F1 history handles empty and changing content" and "F1 navigation stays inside the overlay".
+    #[test]
+    fn f1_history_handles_empty_and_changing_content() {
+        let texts: Vec<_> = (0..50).rev().map(|i| format!("result {i:02}")).collect();
+        let entries: Vec<_> = texts
+            .iter()
+            .map(|text| Message {
+                level: NoticeLevel::Done,
+                origin: "System",
+                text,
+            })
+            .collect();
+        for (width, height) in [(80, 26), (120, 40), (12, 9), (2, 2), (1, 1)] {
+            for messages in [&[][..], entries.as_slice()] {
+                for scroll in [0, 3, usize::MAX] {
+                    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                    term.draw(|frame| message_history(frame, frame.area(), messages, scroll))
+                        .unwrap();
+                }
+            }
+        }
+        for (width, height) in [(80, 26), (120, 40)] {
+            let lines = message_lines(&entries, width - 2);
+            let page = messages_page_height(height);
+            let mut seen = String::new();
+            for scroll in (0..lines.len()).step_by(page) {
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| {
+                    message_history(frame, Rect::new(0, 1, width, height - 5), &entries, scroll)
+                })
+                .unwrap();
+                let rows: Vec<String> = term
+                    .backend()
+                    .buffer()
+                    .content()
+                    .chunks(width as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                assert!(rows[1].contains("50 / 50"));
+                if scroll == 0 {
+                    assert!(rows[3].contains("result 49"));
+                    assert!(!rows.join("\n").contains("result 00"));
+                }
+                seen.push_str(&rows.join("\n"));
+            }
+            for text in &texts {
+                assert!(seen.contains(text), "{text} at {width}x{height}");
+            }
+            let empty = message_lines(&[], width - 2);
+            assert_eq!(empty[0].to_string(), "No messages yet");
+        }
     }
 
     #[test]
@@ -5636,7 +7634,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5651,6 +7648,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         }
     }
 
@@ -5678,7 +7676,19 @@ mod tests {
         w: u16,
         h: u16,
     ) -> Vec<Vec<(String, Color, Color)>> {
+        render_pads_snapshot(p, meters, recording, w, h, Vec::new())
+    }
+
+    fn render_pads_snapshot(
+        p: Pads,
+        meters: ([f32; 2], [f32; 2], bool),
+        recording: bool,
+        w: u16,
+        h: u16,
+        badges: Vec<Badge>,
+    ) -> Vec<Vec<(String, Color, Color)>> {
         let status = Status {
+            badges,
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording,
@@ -5848,7 +7858,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5863,6 +7872,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         // quiet start, loud middle: the envelope must show the difference
         let wave: Vec<f32> = (0..1600).map(|i| if i < 800 { 0.1 } else { 1.0 }).collect();
@@ -5879,6 +7889,7 @@ mod tests {
             playhead: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -5947,7 +7958,6 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -5962,6 +7972,7 @@ mod tests {
             fx: Vec::new(),
             slot: None,
             playing: false,
+            feedback: PadFeedback::default(),
         };
         let wave: Vec<f32> = vec![0.5; 100];
         let c = Chop {
@@ -5990,6 +8001,7 @@ mod tests {
             hot: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6039,36 +8051,21 @@ mod tests {
     #[test]
     fn a_save_failure_stays_visible_after_its_notice() {
         let wave = [0.1; 400];
-        let screens = [
-            Screen::Pads(idle_pads()),
-            Screen::Files(Files {
-                dir: "~/Music",
-                entries: vec![("kick.wav", false, false)],
-                selected: 0,
-                in_hand: None,
-                error: None,
-                pads: idle_pads(),
-                filter: "",
-                editing: false,
-                preview: None,
-                playhead: None,
-            }),
-            Screen::Chop(Box::new(chop_demo(&wave))),
-            Screen::Fx(shared_fx()),
-            Screen::Settings(settings_view(0, 0)),
-            Screen::ProjectPicker(ProjectPickerView {
-                entries: vec!["beat".into()],
-                selected: 0,
-                naming: Some("new".into()),
-            }),
-        ];
+        let screens = status_screens(&wave);
         let groups = [HelpGroup {
             name: "CHECK",
             items: vec![("F1".into(), "help".into())],
         }];
-        let learn = ["LEARN · select an action".into(), "Esc: cancel".into()];
+        let learn = Learning {
+            context: "LEARN · select an action".into(),
+            controls: "Esc: cancel".into(),
+            ..Learning::default()
+        };
         let full = [("F1".into(), "close help".into())];
-        let question = ["Keep the current pads?".into(), "Esc: cancel".into()];
+        let question = Question {
+            body: vec!["Keep the current pads?".into()],
+            answers: vec!["Esc: cancel".into()],
+        };
         for (w, h) in [(60, 24), (100, 26), (252, 60)] {
             for backend in [None, Some("jack")] {
                 for screen in &screens {
@@ -6077,13 +8074,13 @@ mod tests {
                             let help = Help {
                                 groups: &groups,
                                 hint: Some("normal hint"),
-                                full: (mode == 1).then_some(full.as_slice()),
-                                question: (mode == 2).then_some(question.as_slice()),
-                                learn: (mode == 3).then_some(learn.as_slice()),
+                                full: (mode == 1).then_some(FullHelp::Keys(full.as_slice())),
+                                question: (mode == 2).then_some(&question),
+                                learn: (mode == 3).then_some(&learn),
                             };
                             let mut status = status_at(128, 0);
                             status.backend = backend;
-                            status.notice = notice;
+                            status.notice = notice.map(NoticeLine::plain);
                             status.recording = true;
                             status.project = Some("beat");
                             let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
@@ -6102,11 +8099,8 @@ mod tests {
                                     .iter()
                                     .map(|c| c.symbol())
                                     .collect::<String>();
-                                assert_eq!(
-                                    top.contains("Unsaved"),
-                                    save == SaveStatus::Unsaved,
-                                    "{w}x{h}: {top}"
-                                );
+                                assert!(top.contains('*'), "{w}x{h}: {top}");
+                                assert!(!top.contains("Unsaved"), "{top}");
                                 assert_eq!(
                                     top.contains("Save failed"),
                                     save == SaveStatus::Failed,
@@ -6117,12 +8111,506 @@ mod tests {
                                     &baseline.content()[w as usize..],
                                     "body, notices and help do not move"
                                 );
+                                assert!(top.contains("rec"));
+                                assert_eq!(buffer[(w - 1, 0)].bg, BG);
                                 if mode == 3 {
-                                    assert!(top.contains("LEARN · select an action"));
-                                    assert_eq!(buffer[(w - 1, 0)].bg, MAGENTA);
-                                } else {
-                                    assert!(top.contains("rec"));
+                                    let learning: String = (0..w)
+                                        .map(|x| buffer[(x, h - HELP_ROWS)].symbol())
+                                        .collect();
+                                    assert!(
+                                        learning.contains("LEARN · select an action"),
+                                        "{learning}"
+                                    );
+                                    assert!(!top.contains("LEARN"));
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cached_status_rebuilds_only_for_its_visible_inputs() {
+        let mut cache = TextCache::default();
+        let mut status = status_at(128, 0);
+        let mut feedback = Feedback::default();
+        for cpu in [0.0, 0.2, 0.5, 0.6, 1.4, 100.0] {
+            status.load_peak = cpu;
+            assert_eq!(
+                cache.row(&status, &feedback, 120),
+                &status_line_at(&status, &feedback, 120)
+            );
+            assert_eq!(cache.builds, 1);
+        }
+        status.meters = ([-1.0; 2], [0.0; 2], true);
+        status.notice = Some(NoticeLine::plain("another frame's notice"));
+        status
+            .badges
+            .push(Badge::new(BadgeKind::Attention, "ASK", "ASK"));
+        cache.row(&status, &feedback, 120);
+        assert_eq!(
+            cache.builds, 1,
+            "live screen data is not a status-row input"
+        );
+        let mut width = 120;
+        for change in 0..13 {
+            match change {
+                0 => width = 80,
+                1 => status.save = SaveStatus::Failed,
+                2 => status.project = Some("different project"),
+                3 => status.master_db = -5,
+                4 => status.buffer_size = 256,
+                5 => status.sample_rate = 96_000,
+                6 => status.xruns = 8,
+                7 => status.recording = true,
+                8 => feedback.recording_seconds = Some(0),
+                9 => feedback.recording_seconds = Some(1),
+                10 => {
+                    feedback.inputs = vec![InputSource {
+                        normal: "M1".into(),
+                        compact: "M1".into(),
+                        active: true,
+                    }]
+                    .into()
+                }
+                11 => status.no_releases = true,
+                _ => status.backend = None,
+            }
+            assert_eq!(
+                cache.row(&status, &feedback, width),
+                &status_line_at(&status, &feedback, width),
+                "change {change}"
+            );
+            assert_eq!(cache.builds, change + 2);
+        }
+    }
+
+    /// Scenario "Unchanged views do not freeze timed feedback": cache only the status text.
+    #[test]
+    fn unchanged_views_do_not_freeze_timed_feedback() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let mut cache = TextCache::default();
+            let mut status = status_at(128, 0);
+            let feedback = Feedback::default();
+            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+            let mut quiet_meter = Vec::new();
+            for phase in 0..3 {
+                let mut pads = idle_pads();
+                pads.playing = phase == 1;
+                status.meters = if phase == 1 {
+                    ([-1.0; 2], [0.0; 2], true)
+                } else {
+                    ([-60.0; 2], [-60.0; 2], false)
+                };
+                status.notice = (phase == 1).then_some(NoticeLine::plain("an active notice"));
+                let help = Help {
+                    groups: &[],
+                    hint: Some(if phase == 0 {
+                        "first fallback"
+                    } else {
+                        "restored fallback"
+                    }),
+                    full: None,
+                    question: None,
+                    learn: None,
+                };
+                term.draw(|frame| {
+                    draw_cached(
+                        frame,
+                        &status,
+                        &Screen::Pads(pads),
+                        &help,
+                        &feedback,
+                        &mut cache,
+                        None,
+                    )
+                })
+                .unwrap();
+                let buffer = term.backend().buffer();
+                let row = |y| {
+                    (0..width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                };
+                assert_eq!(row(1).contains("PLAY ▶"), phase == 1, "{}", row(1));
+                assert!(row(height - 4).contains(match phase {
+                    0 => "first fallback",
+                    1 => "an active notice",
+                    _ => "restored fallback",
+                }));
+                let side = frame_at(width, height).side;
+                let meter: Vec<_> = (side.y..side.y + METER_ROWS)
+                    .flat_map(|y| (side.x..side.right()).map(move |x| buffer[(x, y)].clone()))
+                    .collect();
+                if phase == 0 {
+                    quiet_meter = meter;
+                } else if phase == 1 {
+                    assert_ne!(
+                        meter, quiet_meter,
+                        "live meters must change with an unchanged status row"
+                    );
+                } else {
+                    assert_eq!(meter, quiet_meter);
+                }
+                assert_eq!(
+                    cache.builds, 1,
+                    "notices, hints, meters and playback do not reconstruct static status text"
+                );
+            }
+        }
+    }
+
+    fn status_screens(wave: &[f32]) -> [Screen<'_>; 6] {
+        [
+            Screen::Pads(idle_pads()),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("kick.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: idle_pads(),
+                filter: "",
+                editing: false,
+                preview: None,
+                playhead: None,
+            }),
+            Screen::Chop(Box::new(chop_demo(wave))),
+            Screen::Fx(shared_fx()),
+            Screen::Settings(settings_view(0, 0)),
+            Screen::ProjectPicker(ProjectPickerView {
+                entries: vec!["beat".into()],
+                selected: 0,
+                naming: Some("new".into()),
+            }),
+        ]
+    }
+
+    fn status_text(line: Line<'_>) -> String {
+        line.spans.into_iter().map(|span| span.content).collect()
+    }
+
+    fn status_sources() -> Feedback {
+        Feedback {
+            inputs: vec![InputSource {
+                normal: format!("M2:{}\n\u{1b}音", "same long port ".repeat(8)),
+                compact: "M2".into(),
+                active: true,
+            }]
+            .into(),
+            recording_seconds: Some(12),
+        }
+    }
+
+    /// Scenario "Narrow status retains safety indicators".
+    #[test]
+    fn narrow_status_retains_safety_indicators() {
+        for width in [80, 120] {
+            for backend in [None, Some("jack")] {
+                for save in [SaveStatus::Unsaved, SaveStatus::Failed] {
+                    for xruns in [0, 3, u64::MAX] {
+                        for seconds in [12, u64::MAX] {
+                            let mut status = status_at(128, xruns);
+                            status.save = save;
+                            status.backend = backend;
+                            status.no_releases = true;
+                            status.recording = true;
+                            status.project = Some(
+                                "a project name far too long to keep ahead of safety indicators",
+                            );
+                            let mut feedback = status_sources();
+                            feedback.recording_seconds = Some(seconds);
+                            let original = feedback.inputs.clone();
+                            let line = status_line_at(&status, &feedback, width);
+                            assert!(
+                                line.width() <= width as usize,
+                                "{}",
+                                status_text(line.clone())
+                            );
+                            let text = status_text(line);
+                            assert!(
+                                text.contains(if save == SaveStatus::Failed {
+                                    "Save failed"
+                                } else {
+                                    "*"
+                                }),
+                                "{text}"
+                            );
+                            assert!(text.contains("rec"), "{text}");
+                            assert!(text.contains(NO_RELEASES), "{text}");
+                            assert_eq!(text.contains("no audio"), backend.is_none(), "{text}");
+                            if xruns > 0 {
+                                assert!(text.contains("xruns"), "{text}");
+                            }
+                            assert!(!text.contains(status.project.unwrap()), "{text}");
+                            assert!(!text.chars().any(char::is_control), "{text:?}");
+                            assert_eq!(
+                                feedback.inputs, original,
+                                "compaction does not rewrite history origins"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn keyboard_remains_visible_without_source_feedback() {
+        for width in [80, 120] {
+            let status = status_at(128, 0);
+            let row = status_text(status_line_at(&status, &Feedback::default(), width));
+            assert!(row.contains("KB"), "{row}");
+            assert!(!row.contains("▸KB"), "{row}");
+        }
+    }
+
+    /// Scenario "Pending work uses a quiet project marker".
+    #[test]
+    fn pending_work_uses_a_quiet_project_marker() {
+        for width in [80, 120] {
+            for project in [
+                Some("beat"),
+                None,
+                Some(
+                    "a project name too long to keep in the status row with all current audio details and a very long suffix",
+                ),
+            ] {
+                let mut status = status_at(512, 0);
+                status.backend = Some("jack");
+                status.project = project;
+                let feedback = status_sources();
+                let mut cache = TextCache::default();
+                let mut saved = None;
+                for save in [
+                    SaveStatus::Clean,
+                    SaveStatus::Unsaved,
+                    SaveStatus::Failed,
+                    SaveStatus::Clean,
+                    SaveStatus::Unsaved,
+                ] {
+                    status.save = save;
+                    let line = cache.row(&status, &feedback, width).clone();
+                    let text = status_text(line.clone());
+                    assert!(line.width() <= width as usize, "{text}");
+                    assert_eq!(text.matches('*').count(), 1, "{text}");
+                    assert!(!text.contains("Unsaved"), "{text}");
+                    assert_eq!(
+                        text.contains("Save failed"),
+                        save == SaveStatus::Failed,
+                        "{text}"
+                    );
+                    let marker = line.spans.iter().find(|span| span.content == "*").unwrap();
+                    assert_eq!(
+                        marker.style.fg,
+                        Some(if save == SaveStatus::Clean {
+                            DIM
+                        } else {
+                            AMBER
+                        })
+                    );
+                    assert!(!marker.style.add_modifier.contains(Modifier::BOLD));
+                    if project == Some("beat") {
+                        assert!(text.ends_with("beat *"), "{text}");
+                    } else if let Some(long) = project {
+                        assert!(!text.contains(long), "{text}");
+                    }
+                    if save != SaveStatus::Failed {
+                        if let Some(before) = &saved {
+                            assert_eq!(&text, before, "saved and pending change color, not cells");
+                        } else {
+                            saved = Some(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scenario "Compact status retains actual audio values".
+    /// Scenario "Settings retains audio load diagnostics".
+    #[test]
+    fn compact_audio_status_keeps_settings_diagnostics() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let mut cache = TextCache::default();
+            for (backend, size, rate, master, project, cpu, xruns) in [
+                ("jack", 512, 48_000, 1, "new", 12.0, 0),
+                ("cpal", 256, 44_100, -4, "beat", 87.0, 3),
+            ] {
+                let mut status = status_at(size, xruns);
+                status.backend = Some(backend);
+                status.sample_rate = rate;
+                status.master_db = master;
+                status.project = Some(project);
+                status.load_peak = cpu;
+                let feedback = Feedback::default();
+                let row = status_text(cache.row(&status, &feedback, width).clone());
+                let ms = size as f32 / rate as f32 * 1000.0;
+                for label in [
+                    format!("{backend} {size} / {} kHz", rate as f64 / 1000.0),
+                    format!("{ms:.1} ms"),
+                    format!("master {master:+} dB"),
+                    project.into(),
+                ] {
+                    assert!(row.contains(&label), "{row}");
+                }
+                assert!(!row.contains("CPU") && !row.contains("xruns 0"), "{row}");
+                assert_eq!(row.contains("xruns 3"), xruns == 3, "{row}");
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                let help = Help {
+                    groups: &[],
+                    hint: None,
+                    full: None,
+                    question: None,
+                    learn: None,
+                };
+                let draw = |term: &mut Terminal<TestBackend>, status: &Status| {
+                    term.draw(|frame| {
+                        draw(frame, status, &Screen::Settings(settings_view(0, 0)), &help)
+                    })
+                    .unwrap();
+                    term.backend().buffer().clone()
+                };
+                let before = draw(&mut term, &status);
+                let text = before
+                    .content()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(
+                    text.contains(&format!("CPU {cpu:.0} % · xruns {xruns}")),
+                    "{text}"
+                );
+                status.load_peak += 1.0;
+                let after = draw(&mut term, &status);
+                let controls = (3 * width as usize)..;
+                assert_eq!(
+                    &before.content()[controls.clone()],
+                    &after.content()[controls]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn status_width_removes_project_then_audio_then_input() {
+        let mut status = status_at(128, 3);
+        status.project = Some("session with a full name");
+        let feedback = status_sources();
+        let full = status_candidate(&status, &feedback, 0);
+        assert!(
+            status_text(status_line_at(&status, &feedback, full.width() as u16))
+                .contains(status.project.unwrap())
+        );
+        let audio = status_candidate(&status, &feedback, 1);
+        let text = status_text(status_line_at(&status, &feedback, audio.width() as u16));
+        assert!(!text.contains(status.project.unwrap()), "{text}");
+        assert!(text.contains("jack 128 / 48 kHz"), "{text}");
+        assert!(text.contains("▸M2"), "{text}");
+        let input = status_candidate(&status, &feedback, 2);
+        let text = status_text(status_line_at(&status, &feedback, input.width() as u16));
+        assert!(!text.contains("CPU"), "{text}");
+        assert!(text.contains("▸M2"), "{text}");
+        let compact = status_candidate(&status, &feedback, 4);
+        let text = status_text(status_line_at(&status, &feedback, compact.width() as u16));
+        assert!(
+            !text.contains("KB") && !text.contains("M1") && text.contains("▸M2"),
+            "{text}"
+        );
+        assert!(!text.contains("same long port"), "{text}");
+        assert!(text.contains("xruns 3"), "{text}");
+        for width in 0..20 {
+            let label = clip_label("音e\u{301}🎚️\n\t\u{1b}name", width);
+            assert!(Span::raw(&label).width() <= width, "{width}: {label}");
+            assert!(!label.chars().any(char::is_control));
+            assert!(!label.starts_with('\u{301}'));
+        }
+    }
+
+    /// Scenario "Learning keeps safety and next steps visible".
+    #[test]
+    fn learning_keeps_safety_and_next_steps_visible() {
+        let wave = [0.1; 400];
+        for warning in [false, true] {
+            let learning = Learning {
+                context: format!("LEARN · 音{}", "very long parameter ".repeat(12)),
+                detail: "Another-layer control stays unchanged".into(),
+                controls: "Enter bind · Esc keep · F10 done".into(),
+                warning,
+            };
+            let keys = [("F1".into(), "close".into())];
+            let question = Question {
+                body: vec!["Keep work?".into()],
+                answers: vec!["Esc cancel".into()],
+            };
+            let entries = [];
+            let feedback = status_sources();
+            for (width, height) in [(80, 26), (120, 40)] {
+                for backend in [None, Some("jack")] {
+                    for screen in status_screens(&wave) {
+                        let mut status = status_at(128, 3);
+                        status.save = SaveStatus::Failed;
+                        status.backend = backend;
+                        status.recording = true;
+                        status.no_releases = true;
+                        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                        let mut help = Help {
+                            groups: &[],
+                            hint: None,
+                            full: None,
+                            question: None,
+                            learn: None,
+                        };
+                        term.draw(|frame| {
+                            draw_feedback(frame, &status, &screen, &help, &feedback, None)
+                        })
+                        .unwrap();
+                        let baseline = term.backend().buffer().clone();
+                        for mode in 0..4 {
+                            help.learn = (mode == 0).then_some(&learning);
+                            help.full = match mode {
+                                1 => Some(FullHelp::Keys(&keys)),
+                                2 => Some(FullHelp::Messages {
+                                    entries: &entries,
+                                    scroll: 0,
+                                }),
+                                _ => None,
+                            };
+                            help.question = (mode == 3).then_some(&question);
+                            term.draw(|frame| {
+                                draw_feedback(frame, &status, &screen, &help, &feedback, None)
+                            })
+                            .unwrap();
+                            let buffer = term.backend().buffer();
+                            assert_eq!(
+                                &buffer.content()[..width as usize],
+                                &baseline.content()[..width as usize],
+                                "all overlays retain the same safety status"
+                            );
+                            let row = |y| {
+                                (0..width)
+                                    .map(|x| buffer[(x, y)].symbol())
+                                    .collect::<String>()
+                            };
+                            let top = row(0);
+                            for text in ["Save failed", "rec", "xruns 3", NO_RELEASES] {
+                                assert!(top.contains(text), "{width}x{height}: {top}");
+                            }
+                            if mode == 0 {
+                                assert!(row(height - 3).starts_with("LEARN"));
+                                assert!(row(height - 1).contains(&learning.controls));
+                                assert_eq!(
+                                    buffer[(0, height - 2)].fg,
+                                    if warning { MAGENTA } else { DIM }
+                                );
+                                let end = width as usize * (height - 4) as usize;
+                                assert_eq!(
+                                    &buffer.content()[width as usize..end],
+                                    &baseline.content()[width as usize..end],
+                                    "learning does not move or repaint screen rows"
+                                );
                             }
                         }
                     }
@@ -6133,6 +8621,7 @@ mod tests {
 
     fn status_at(buffer_size: u32, xruns: u64) -> Status<'static> {
         Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -6157,7 +8646,7 @@ mod tests {
             .iter()
             .map(|s| s.content.clone())
             .collect();
-        assert!(text.contains("jack 256 @ 48000 Hz · 5.3 ms"), "{text}");
+        assert!(text.contains("jack 256 / 48 kHz · 5.3 ms"), "{text}");
     }
 
     /// audio-engine "Buffer underrun": the xrun counter counts up and stands out.
@@ -6170,9 +8659,7 @@ mod tests {
                 .find(|s| s.content.starts_with("xruns"))
                 .unwrap()
         };
-        let quiet = span(0);
-        assert_eq!(quiet.content, "xruns 0");
-        assert_ne!(quiet.style.fg, Some(MAGENTA));
+        assert!(!status_text(status_line(&status_at(256, 0))).contains("xruns"));
         let late = span(3);
         assert_eq!(late.content, "xruns 3");
         assert_eq!(late.style.fg, Some(MAGENTA), "highlighted");
@@ -6212,6 +8699,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6305,6 +8793,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6378,6 +8867,7 @@ mod tests {
             picker: None,
         };
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: Some("jack"),
             recording: false,
@@ -6441,6 +8931,7 @@ mod tests {
 
     fn settings_text(st: Settings) -> String {
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6489,6 +8980,7 @@ mod tests {
     /// The project picker (11) as the screen body shows it, as the tests read it back.
     fn project_picker_text(p: ProjectPickerView) -> String {
         let status = Status {
+            badges: Vec::new(),
             save: SaveStatus::Clean,
             backend: None,
             recording: false,
@@ -6593,9 +9085,9 @@ mod tests {
             scope: String::new(),
             param: PadParam::Volume,
             playing: false,
+            feedback: PadFeedback::default(),
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
-            mark_plate: None,
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -6763,6 +9255,7 @@ mod tests {
     fn chop_status() -> (Status<'static>, Help<'static>) {
         (
             Status {
+                badges: Vec::new(),
                 save: SaveStatus::Clean,
                 backend: Some("jack"),
                 recording: false,

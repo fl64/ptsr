@@ -195,6 +195,15 @@ pub enum Resolved {
     },
 }
 
+/// Physical activity, independent of whether the current screen has an action.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Activity {
+    None,
+    Press,
+    Release,
+    Movement,
+}
+
 #[derive(Clone, Debug)]
 enum Control {
     Pad(usize),
@@ -619,12 +628,56 @@ impl Profile {
 
     /// Same, with an edit mode open or not: the `[edit]` layer goes first.
     pub fn resolve_in(&self, screen: Screen, edit: bool, msg: Msg) -> Option<Resolved> {
+        self.resolve_input_in(screen, edit, msg).0
+    }
+
+    /// Resolve the actual message once, with activity for notice acknowledgement.
+    pub fn resolve_input_in(
+        &self,
+        screen: Screen,
+        edit: bool,
+        msg: Msg,
+    ) -> (Option<Resolved>, Activity) {
+        let mut activity = Activity::None;
+        let resolved = self.resolve_inner(screen, edit, msg, &mut activity);
+        (resolved, activity)
+    }
+
+    fn activity(&self, msg: Msg, learned: Option<&str>) -> Activity {
+        match msg {
+            Msg::NoteOn { .. } => Activity::Press,
+            Msg::NoteOff { .. } => Activity::Release,
+            Msg::Cc { cc, value, .. } => {
+                let continuous = match self.ccs.get(&cc) {
+                    Some(Control::Knob { .. }) => true,
+                    Some(Control::Button(_) | Control::Pad(_)) => false,
+                    None => learned.is_none_or(is_param_action),
+                };
+                if continuous {
+                    Activity::Movement
+                } else if value > 0 {
+                    Activity::Press
+                } else {
+                    Activity::Release
+                }
+            }
+        }
+    }
+
+    fn resolve_inner(
+        &self,
+        screen: Screen,
+        edit: bool,
+        msg: Msg,
+        activity: &mut Activity,
+    ) -> Option<Resolved> {
         let ch = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
         };
         if self.channel.is_some_and(|c| c != ch) {
             return None;
         }
+        *activity = self.activity(msg, None);
         let (value, on) = match msg {
             Msg::NoteOn { velocity, .. } => (velocity, true),
             Msg::NoteOff { .. } => (0, false),
@@ -638,6 +691,7 @@ impl Profile {
         if rules.fx_page_controls
             && let Some((action, name)) = self.fx_binding(msg.key())
         {
+            *activity = self.activity(msg, Some(action));
             let mut resolved = learned_resolved(action, msg, value, on)?;
             if let (Some(name), Resolved::Param { control, .. }) = (name, &mut resolved) {
                 *control = name.to_string();
@@ -654,6 +708,7 @@ impl Profile {
                 .get(&Scope::Edit(screen))
                 .and_then(|m| m.get(&msg.key()))
         {
+            *activity = self.activity(msg, Some(action));
             return learned_resolved(action, msg, value, on);
         }
         let layered = !self.seeded
@@ -670,6 +725,7 @@ impl Profile {
                 if rules.fx_page_controls && fx_compatible(action) {
                     return None;
                 }
+                *activity = self.activity(msg, Some(action));
                 return learned_resolved(action, msg, value, on);
             }
         }
@@ -957,6 +1013,104 @@ mod tests {
                 )),
             );
         }
+    }
+
+    #[test]
+    fn notice_activity_uses_effective_bindings_without_changing_actions() {
+        let mut p = Profile::default_for("recorded");
+        p.set_learned(
+            Scope::Global,
+            [
+                (Key::Cc(80), "session.save".into()),
+                (Key::Cc(81), "pad.volume".into()),
+                (Key::Cc(82), "pad.2".into()),
+            ]
+            .into(),
+        );
+        p.set_learned(
+            Scope::Edit(Screen::Pads),
+            [(Key::Cc(80), "pad.pitch".into())].into(),
+        );
+        for seeded in [false, true] {
+            p.set_seeded(seeded);
+            for screen in Screen::ALL {
+                for edit in [false, true] {
+                    for value in [0, 1, 64, 127] {
+                        for cc in [80, 81, 82, 99] {
+                            let msg = Msg::Cc { ch: 1, cc, value };
+                            let (action, activity) = p.resolve_input_in(screen, edit, msg);
+                            assert_eq!(action, p.resolve_in(screen, edit, msg));
+                            let continuous = cc == 81
+                                || cc == 99
+                                || (cc == 80 && edit && screen == Screen::Pads);
+                            assert_eq!(
+                                activity,
+                                if continuous {
+                                    Activity::Movement
+                                } else if value > 0 {
+                                    Activity::Press
+                                } else {
+                                    Activity::Release
+                                },
+                                "{screen:?} edit={edit} seeded={seeded} cc={cc} value={value}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let mut p = xsession();
+        p.set_learned(Scope::Global, [(Key::Cc(24), "session.save".into())].into());
+        assert_eq!(
+            p.resolve_input_in(
+                Screen::Pads,
+                false,
+                Msg::Cc {
+                    ch: 1,
+                    cc: 24,
+                    value: 0
+                }
+            )
+            .1,
+            Activity::Movement
+        );
+        assert_eq!(
+            p.resolve_input_in(
+                Screen::Pads,
+                false,
+                Msg::Cc {
+                    ch: 2,
+                    cc: 24,
+                    value: 0
+                }
+            ),
+            (None, Activity::None)
+        );
+        let p = Profile::from_toml("button.toml", "[device]\nname='Button'\nmatch_port='Button'\n[controls.buttons]\nsave={cc=80}\n[screens.global]\nsave='session.save'\n").unwrap();
+        assert_eq!(
+            p.resolve_input_in(
+                Screen::Pads,
+                false,
+                Msg::Cc {
+                    ch: 1,
+                    cc: 80,
+                    value: 0
+                }
+            ),
+            (None, Activity::Release)
+        );
+        assert_eq!(
+            p.resolve_input_in(
+                Screen::Pads,
+                false,
+                Msg::Cc {
+                    ch: 1,
+                    cc: 80,
+                    value: 127
+                }
+            ),
+            (Some(Resolved::Action(Action::SessionSave)), Activity::Press)
+        );
     }
 
     #[test]
@@ -1518,7 +1672,7 @@ mod tests {
 
     #[test]
     fn broken_profile_names_file_and_line() {
-        let smc = include_str!("../../../config/devices/smc-pad.toml");
+        let smc = include_str!("../../../config/devices/smc-pad.toml.example");
         let e = Profile::from_toml("smc-pad.toml", smc).err().unwrap();
         assert!(e.starts_with("smc-pad.toml:7:"), "{e}");
     }

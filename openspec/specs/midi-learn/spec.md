@@ -118,60 +118,59 @@ The system SHALL show pads 1–16 and banks 1–8 as one row each with how many 
 - **THEN** pads 1–5 stay learned and the row says "5 of 16 learned"
 
 ### Requirement: Learn on the screen
-`F10` SHALL toggle screen learn on Pads, Chop and Files.
-The top line SHALL name the mode, selected element, control and next step in words.
-Bound elements SHALL carry control labels.
-Unbound elements SHALL carry none.
-The selected element SHALL be lit and show its control or "none".
-The top line SHALL name action, layer and page (`cutoff · PADS · EDIT · FILTER`).
+
+`F10` SHALL toggle screen learn on Pads, Chop, Files and FX.
+A learning block in the fixed three-row help band SHALL name the mode, selected element, control and next step.
+It SHALL name action, layer and page, including `cutoff · PADS · EDIT · FILTER`.
+Bound elements SHALL carry control labels. Unbound elements SHALL carry none.
+The selected element SHALL remain lit and show its control or `none`.
 
 #### Scenario: Pick by the pad key
 - **WHEN** the mode is open on the pads screen and the owner presses pad key Q
-- **THEN** pad Q is lit, no sound plays, and the top line says pad Q is picked and to move a control
+- **THEN** pad Q is lit and no sound plays
+- **AND** the learning block identifies pad Q and asks the owner to move a control
 
 #### Scenario: The binding is shown
 - **WHEN** pad Q plays from controller pad 5 and the owner picks pad Q
-- **THEN** the label of pad Q and the top line say `pad 5`; a pad with no control says `none`
+- **THEN** the label of pad Q and the learning block say `pad 5`
+- **AND** a pad with no control says `none`
 
 ### Requirement: Screen learn waits for confirmation
 
-A moved control SHALL appear beside the old one in the selected label and top line, in pending colour (`pad 5 → k3`).
+A moved control SHALL appear beside the old one in the selected label and learning block, in pending colour (`pad 5 → k3`).
 It SHALL NOT bind immediately.
 `Enter` SHALL bind it in the selected layer's learned group and advance to the next pad, parameter or command.
 Learn SHALL ignore that control until another control moves or a key selects an element.
 
 #### Scenario: A turn waits for Enter
-- **WHEN** pad Q is picked, bound to controller pad 5, and the owner hits controller pad 6
-- **THEN** the label says `pad 5 → pad 6` with `pad 6` in the pending colour, pad 5 still
-  plays pad Q; after `Enter` pad 6 plays pad Q, pad W is picked next, and pad 6 hit again
-  does not show as pending for pad W
+- **WHEN** the owner selects pad Q, which has controller pad 5, and hits controller pad 6
+- **THEN** the label says `pad 5 → pad 6` with `pad 6` in the pending colour
+- **AND** pad 5 still plays pad Q
+- **AND** after `Enter` pad 6 plays pad Q and the program selects pad W
+- **AND** another pad 6 hit does not show as pending for pad W
 
 #### Scenario: The panel row shows the pending control
-- **WHEN** the pitch, bound to cc 24, is picked with `I` `K` and the owner turns cc 26
-- **THEN** the pitch row of the pad panel says `◂ cc 24 → cc 26`, `cc 26` in the pending
-  colour, and the pitch still follows cc 24
+- **WHEN** the owner selects pitch with `I` `K`, with cc 24 bound, and turns cc 26
+- **THEN** the pitch row of the pad panel says `◂ cc 24 → cc 26`, with `cc 26` in the pending colour
+- **AND** the pitch still follows cc 24
 
 ### Requirement: Screen learn recalls the last action
 
 `F10` within 5 s of a key action, pad hit or value step SHALL select that action in its original layer and page.
 A value step SHALL select its changed parameter.
-The top line SHALL identify a last-action selection.
+The learning block SHALL identify a last-action selection.
 After a refused control, it SHALL explain that `I` `K`, pad keys or command keys select another element.
 
 #### Scenario: Do, then F10
-- **WHEN** the pad edit is open on the FILTER page, the owner steps the cutoff with `L`,
-  presses `F10` within 5 s and turns k5
-- **THEN** the top line says `cutoff · PADS · EDIT · FILTER`, the cutoff row says
-  `none → k5`; after `Enter` k5 turns the cutoff while the pad edit is open, and with the
-  edit closed k5 keeps what it had on the pads screen
+- **WHEN** the pad edit is open on FILTER, the owner steps the cutoff with `L`, presses `F10` within 5 s and turns k5
+- **THEN** the learning block says `cutoff · PADS · EDIT · FILTER`, and the cutoff row says `none → k5`
+- **AND** after `Enter` k5 turns the cutoff in the edit, but keeps its previous action with the edit closed
 
 #### Scenario: The line says where the pick came from
-- **WHEN** the owner presses `F10`, then `Enter` (it picks "edit pad", the action of its
-  key), and turns a knob
-- **THEN** the top line says "edit pad" needs a button and why, and that `I` `K` pick a
-  parameter
-- **WHEN** the owner presses `PgDn`, then `F10` at once, and turns a knob
-- **THEN** the top line also says "next bank" is the last thing done
+- **WHEN** the owner presses `F10`, then `Enter` to pick `edit pad`, and turns a knob
+- **THEN** the learning block explains that `edit pad` needs a button and that `I` `K` select a parameter
+- **WHEN** the owner presses `PgDn`, then `F10` at once
+- **THEN** the learning block identifies `next bank` as the last action
 
 #### Scenario: Too late for the last action
 - **WHEN** the owner presses `PgDn` and presses `F10` 10 s later
@@ -182,32 +181,29 @@ After a refused control, it SHALL explain that `I` `K`, pad keys or command keys
 Parameters SHALL accept knobs/faders that drive them directly.
 Commands SHALL accept buttons/controller pads.
 Wrong control types SHALL NOT become pending.
-The top line SHALL explain why: parameters have values to turn, buttons only press, commands act once per press, and knobs would repeat each tick.
+The learning block SHALL explain why: parameters have values to turn, buttons only press, and knobs repeat commands on every tick.
 
 #### Scenario: A button for a parameter
-- **WHEN** the cutoff is picked and the owner presses controller button b6
-- **THEN** nothing is pending, and the top line says the cutoff needs a knob or a fader
-  because it has a value to turn and a button only presses
+- **WHEN** the owner selects cutoff and presses controller button b6
+- **THEN** nothing is pending, and the learning block explains that cutoff needs a knob or fader instead of a button
 
 ### Requirement: Screen learn preserves layer scope
 
 An element selected in edit SHALL bind to that screen's edit group and work while edit is open.
 Otherwise, it SHALL bind to the screen group.
-A control's losing element in the same layer SHALL light in taken colour with a top-line warning.
+A control's losing element in the same layer SHALL light in taken colour with a warning in the learning block.
 `Enter` SHALL move it.
-Other-layer assignments SHALL appear grey in the top line without warning, because layers act at different times.
+Other-layer assignments SHALL appear grey in that block without warning, because layers act at different times.
 
 #### Scenario: Taken in this layer
-- **WHEN** k5 turns the resonance in the pad edit and the owner learns k5 for the cutoff in
-  the pad edit
-- **THEN** the resonance row lights in the taken colour and the top line warns that the
-  resonance loses k5; `Esc` keeps it, `Enter` moves k5 to the cutoff
+- **WHEN** k5 turns resonance in pad edit and the owner learns k5 for cutoff in the same edit
+- **THEN** resonance lights in taken colour, and the learning block warns that resonance loses k5
+- **AND** `Esc` keeps k5 on resonance, while `Enter` moves it to cutoff
 
 #### Scenario: Bound in another layer
-- **WHEN** k5 turns the pad volume on the pads screen and the owner learns k5 for the
-  cutoff in the pad edit
-- **THEN** the top line names `k5 on PADS: volume` in grey with no warning; after `Enter`
-  k5 turns the volume with the edit closed and the cutoff with it open
+- **WHEN** k5 turns pad volume and the owner learns k5 for cutoff in pad edit
+- **THEN** the learning block names `k5 on PADS: volume` in grey without a warning
+- **AND** after `Enter` k5 turns volume outside the edit and cutoff inside the edit
 
 ### Requirement: Screen learn pending control replacement
 
@@ -216,22 +212,22 @@ Another moved control SHALL replace the pending control.
 `F10` SHALL leave learn and drop pending input.
 
 #### Scenario: Esc keeps the old one
-- **WHEN** a control stands pending for the cutoff and the owner presses `Esc`
-- **THEN** the cutoff keeps its old control, the cutoff stays picked, and the pending
-  colour is gone
+- **WHEN** a control stands pending for cutoff and the owner presses `Esc`
+- **THEN** cutoff keeps its old control and stays selected, without a pending colour
 
 #### Scenario: Another control takes its place
-- **WHEN** k3 stands pending for the cutoff and the owner turns k4
+- **WHEN** k3 stands pending for cutoff and the owner turns k4
 - **THEN** k4 stands pending in place of k3
 
 #### Scenario: A knob is not a button
-- **WHEN** "next bank" is picked and the owner turns a knob
-- **THEN** nothing is pending and the top line says a button is needed, because the next
-  bank acts once per press and a knob would repeat it on every tick
+- **WHEN** the owner selects `next bank` and turns a knob
+- **THEN** nothing is pending
+- **AND** the learning block explains that this action needs a button because a knob would repeat the action
 
 #### Scenario: A taken control
-- **WHEN** knob k5 turns the volume, the owner picks the cutoff with `I` `K` and turns k5
-- **THEN** the volume row lights too and the line says k5 leaves the volume; `Esc` keeps k5 on the volume, `Enter` moves it to the cutoff
+- **WHEN** k5 turns volume and the owner selects cutoff with `I` `K` and turns k5
+- **THEN** volume lights, and the learning block says k5 leaves volume
+- **AND** `Esc` keeps k5 on volume, while `Enter` moves it to cutoff
 
 ### Requirement: Screen learn key selection is silent
 
@@ -345,3 +341,16 @@ The cleanup SHALL NOT reset or reassign existing owner bindings or X-Session def
 #### Scenario: Cleanup does not reset X Session controls
 - **WHEN** the cleanup is installed with an initialized or owner-modified X-Session profile
 - **THEN** all its controls keep their roles without a reset or new unsafe direct command
+
+### Requirement: Learning preserves the common status
+
+Screen learning SHALL keep the shared status row and its safety indicators visible.
+Its learning block SHALL stay inside the existing three-row help band without moving the title, grid or notice row.
+The block SHALL distinguish selected context, pending or refusal detail, and working next-step controls.
+Long labels SHALL shorten before next-step controls disappear.
+Learning input, silence, confirmation and saved assignments SHALL remain unchanged.
+
+#### Scenario: Learning keeps safety and next steps visible
+- **WHEN** keyboard or raw MIDI opens screen learning while save state, recording or audio warnings are present
+- **THEN** the status retains its applicable safety indicators at 80×26 and 120×40
+- **AND** the learning block shows its selected context and working next steps without moving the grid

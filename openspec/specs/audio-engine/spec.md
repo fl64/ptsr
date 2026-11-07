@@ -24,7 +24,12 @@ The system SHALL process sound in the audio thread without memory allocation, lo
 - **THEN** the sound keeps playing without dropouts
 
 ### Requirement: Sound observability
-The system SHALL show in the status line the audio thread load in percent and a counter of buffer underruns (xruns), and on the pads screen the master output level of each channel: a bar in dB, a peak-hold mark, and an overload light that latches while the output clips and goes out on the next hit that does not clip. The levels come from the mixed output itself, so they match what is heard and what an offline render contains.
+
+Settings Audio SHALL show audio thread load in percent and the xrun counter, including zero.
+The permanent status SHALL show only nonzero xruns, highlighted, without CPU percentage.
+Pads SHALL retain channel meters in dB, peak holds and the overload light.
+Meters SHALL use the mixed output. The overload light SHALL latch on clipping and clear on the next non-clipping hit.
+Sound processing and load measurements SHALL stay unchanged.
 
 #### Scenario: Buffer underrun
 - **WHEN** the audio thread did not fill the buffer in time
@@ -37,6 +42,11 @@ The system SHALL show in the status line the audio thread load in percent and a 
 #### Scenario: Overload latches
 - **WHEN** layered pads push the output to a full-scale sample and then a single quiet pad plays
 - **THEN** the overload light comes on with the clip and goes out only after the quiet hit
+
+#### Scenario: Settings retains audio load diagnostics
+- **WHEN** the owner opens Settings Audio at either supported size
+- **THEN** the current CPU load and xrun count remain readable below the tabs
+- **AND** the permanent status omits CPU and zero xruns without moving settings controls
 
 ### Requirement: Offline render
 The system SHALL be able to play a scenario of events without a sound card and save the result to WAV, using the same engine as live.
