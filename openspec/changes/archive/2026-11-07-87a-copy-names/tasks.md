@@ -2,7 +2,8 @@
 
 Change 87 is complete and merged into `master` at `93362d9`.
 The owner approved all three naming choices, activation, the implementation file plan and local signed-off commits.
-Publication, merge and archive need separate permission.
+The owner accepted 87a on 2026-11-07 and authorized archive, signed-off commits, push, a PR and squash merge.
+Keep the branch after merge. Work stays in the main repository folder, without another worktree.
 Each completed task requires a successful `task check` and a separate signed-off local commit.
 
 ## 1. Specification preparation
@@ -20,7 +21,7 @@ Activation and code form one logical task because active deltas require real sce
 ## 3. Owner checks and documentation
 
 - [x] 3.1 Update `docs/USER-STORIES.md` and `docs/LIVE-CHECKS.md` with the naming rules and separate keyboard, controller and listening procedures. Record actual automated results and their limits. Check the English text and links. Run `task check`. Commit the documentation separately.
-- [ ] 3.2 Present the checks and local copy render to the owner. Wait for acceptance and separate publication, archive and merge permissions.
+- [x] 3.2 Present the checks and local copy render to the owner. Record acceptance and separate publication, archive and merge permissions.
 
 ## Historical preparation verification
 
@@ -76,5 +77,55 @@ These results do not resolve earlier callback overruns.
 The changed English text has no lint findings after STE-flavored description and Strict procedure review.
 Local Markdown files and heading links passed an automated existence check.
 The owner shell example passed `bash -n`. The agent did not execute it or start the live sampler.
-Owner keyboard, physical-controller and listening results remain open.
-Publication, archive and merge remain outside the current permission.
+These documentation checks preceded the owner results below.
+
+## Owner acceptance and closure (2026-11-07)
+
+The owner reported success after the short keyboard check in the main repository folder.
+That check covered repeated copies, a copy of a copy, names 1 through 3 and silent placement.
+It does not establish results for the remaining keyboard checks, physical MIDI or separate WAV listening.
+The owner then authorized acceptance recording, specification sync, archive, checks, signed-off commits, push, a PR and squash merge.
+Keep the branch. No sound-processing correction or change 88 is part of this closure.
+
+The Release build in the main folder passed before the owner check:
+
+```text
+Finished `release` profile [optimized + debuginfo] target(s) in 13.18s
+```
+
+The build dependency file names the main repository source, not the earlier worktree.
+The existing copy render retains the SHA-256 recorded above.
+
+Closure boundaries:
+
+| Situation | Required result | Status |
+| --- | --- | --- |
+| Archive updates the main specification | Keep all unrelated requirements and apply all 17 delta scenarios | Closed by archive comparison and main-spec tests |
+| A local command succeeds | Do not infer physical-controller, listening or maximum-budget acceptance | Closed by separate result records |
+| The PR head or base changes | Check the new head and CI before merge | Verification required before merge |
+| A network write succeeds without a response | Read remote state before retry | Closed by publication procedure |
+| Squash merge completes | Keep the PR title, signoff and branch, and compare the merged tree | Verification required after merge |
+
+### Archive verification
+
+`openspec archive 87a-copy-names --yes` added five requirements and modified one in the main pad-assignment specification.
+All six requirement blocks match the archived delta, including its 17 scenarios.
+Unrelated requirement blocks and the other 14 main specifications remain unchanged. The main specs now contain 804 scenarios.
+
+All closure commands ran in the main repository folder and exited 0:
+
+- `task check`: 1117 workspace tests, including 780 App, 81 input and 129 drawing tests.
+- `task build`: ``Finished `release` profile [optimized + debuginfo] target(s) in 0.06s``.
+- `task openspec:check`: `Totals: 15 passed, 0 failed (15 items)`.
+- `task screens`: `test result: ok. 4 passed; 0 failed`, with 306 ANSI files.
+
+Local logs and matching zero-valued `.exit` files are under `target/87a-closure/`.
+The log names are `check.log`, `build.log`, `openspec-check.log` and `screens.log`.
+Main-spec coverage passed after archive. The copy render retains its recorded SHA-256.
+This run's steady maxima were 32.83% wall and 28.67% thread CPU, with no blocks above 50%.
+Project-switch maxima were 13.25% wall and 13.26% thread CPU, with no blocks above 50%.
+These observations do not close earlier callback maximum-budget failures.
+
+STE-flavored descriptions and Strict procedures have no lint findings in the archived artifacts and revised context text.
+The local links and heading anchor exist. The owner shell example passes `bash -n` without execution.
+No live sampler, physical-controller or separate listening result comes from these automated checks.

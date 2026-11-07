@@ -113,13 +113,15 @@ Overall acceptance does not establish individual keyboard, physical-controller, 
 Earlier callback maximum-budget failures remain unresolved.
 Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
 Activate only one change at a time. Publication of other changes needs a separate request.
-The owner approved activation and implementation of `87a-copy-names` after completion of 87, before 88.
-Its active requirements are in `openspec/changes/87a-copy-names/`.
+The owner accepted `87a-copy-names` on 2026-11-07 after the short keyboard check.
+Archive: `openspec/changes/archive/2026-11-07-87a-copy-names/`. Its requirements are in the main pad-assignment specification.
 Copies use one `(copy N)` marker and the smallest free number across all current banks.
 Manual canonical markers have the same meaning. The current target name stays occupied until replacement succeeds.
 Existing names, sample files, sound, controls and saved formats stay unchanged.
-The implementation file plan and local signed-off commits are approved. Publication, archive and merge need separate permission.
-No owner keyboard, physical-controller or listening result is implied.
+The owner reported success for repeated copies, a copy of a copy, numbered names and silent placement.
+Remaining keyboard checks, physical-controller checks and separate listening remain unverified.
+The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
+Work stays in the main repository folder. Change 88 is not active.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

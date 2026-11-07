@@ -2037,20 +2037,22 @@ Leave unavailable hardware, kitty composition and listening cases unchecked.
 
 ## 87a: Numbered pad copy names
 
-Folder: `changes/87a-copy-names`
+Folder: `changes/archive/2026-11-07-87a-copy-names`
 
-Implementation is complete in local commit `5005a17`. Owner acceptance remains open.
+The owner accepted 87a on 2026-11-07 after the short keyboard check.
+The owner authorized archive, signed-off commits, push, a PR and squash merge. Keep the branch.
 Copies use one `(copy N)` marker and the smallest free number across the current project's eight banks.
 Manual markers use the same rule. The replacement target's current name remains occupied until placement succeeds.
 Old names, samples, settings, sound, saved formats and controls stay unchanged.
-These are separate keyboard, physical-controller and listening checks. No box below has an owner result yet.
+The owner reported success for the first keyboard check: repeated copies, a copy of a copy, numbered names and silent placement.
+Other keyboard checks, physical-controller checks and separate listening remain unverified. Their boxes stay open.
 
 ### Prepare an isolated owner run
 
 **Owner only.** This procedure opens live audio and MIDI. The agent did not run it.
-Use the `87a-copy-names` worktree and your normal safe listening setup.
+Use the main repository folder and your normal safe listening setup. No additional worktree is necessary.
 These folders keep the test separate from your existing projects, scratch work and saved bindings.
-Run the commands from that worktree's repository root. Keep this shell open.
+Run the commands from the repository root. Keep this shell open.
 
 ```sh
 task build
@@ -2074,7 +2076,7 @@ Keep pad edit and text input closed for copying. The keys below are defaults. Us
 
 ### Keyboard pass
 
-- [ ] Hit pad `1`. Press `Ctrl+C`. Hit pad `2`. Check `kick (copy 1)` and an unchanged source.
+- [x] Hit pad `1`. Press `Ctrl+C`. Hit pad `2`. Check `kick (copy 1)` and an unchanged source.
   Copy pad `1` to pad `3`. Check `kick (copy 2)`. Copy pad `2` to pad `4`.
   Check `kick (copy 3)`, without another nested marker. Every placement hit must stay silent.
 - [ ] Hit pad `3`. Press `Backspace`. Copy pad `4` to pad `3`.
@@ -2126,5 +2128,5 @@ Its SHA-256 is `2a8e1b1647d7ac6e493c2d00dd319093823d09f1b3785b49924e475c69cc3bfd
 `task build` passed. `task openspec:check` reported `Totals: 16 passed, 0 failed (16 items)`.
 `task screens` passed four tests and generated 306 ANSI files at 120x40 and 80x26.
 These commands did not open live audio or MIDI. They do not establish any unchecked owner result above.
-Detailed results and local log paths are in [the active tasks](../openspec/changes/87a-copy-names/tasks.md#implementation-verification).
-Earlier callback maximum-budget failures remain open. Publication, archive and merge need separate permission.
+These implementation results precede archive. Refer to [the archived tasks](../openspec/changes/archive/2026-11-07-87a-copy-names/tasks.md#owner-acceptance-and-closure-2026-11-07) for closure evidence.
+Earlier callback maximum-budget failures remain open. Owner acceptance does not close that separate issue.

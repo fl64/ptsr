@@ -5,7 +5,10 @@
 The owner approved this naming direction and specification preparation on 2026-11-06.
 Change 87 is complete and merged into `master` at `93362d9`.
 The owner approved the three naming choices below, activation, the implementation file plan and local signed-off commits.
-This is the only active change. Publication, archive and merge need separate permission.
+The owner accepted 87a on 2026-11-07 after the short keyboard pass.
+The owner authorized archive, signed-off commits, push, a PR and squash merge. Keep the branch.
+Remaining keyboard procedures, physical-controller procedures and separate listening remain unverified.
+This closure does not activate change 88.
 
 ## Why
 

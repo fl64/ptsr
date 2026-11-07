@@ -94,9 +94,13 @@ context: |
   The goal is every non-text action from the SMC-PAD without losing keyboard controls.
   Requirements are drafts and will change. docs/VISION.md and docs/plans/ are guides, not requirements.
   Deferred changes are preparation only. Activate one change before implementation.
-  The only active change is 87a-copy-names, based on master at 93362d9 after completion of 87.
+  The owner accepted 87a-copy-names on 2026-11-07 after the short keyboard check.
+  Archive: openspec/changes/archive/2026-11-07-87a-copy-names/. The main pad-assignment spec contains its requirements.
   The owner approved numbered copy names, reuse of the smallest free number, manual markers and occupied-target names.
-  Activation, the implementation file plan and local signed-off commits are approved. Publication, archive and merge need separate permission.
+  The owner reported success for repeated copies, a copy of a copy, numbered names and silent placement.
+  Remaining keyboard checks, physical-controller checks and separate listening remain unverified.
+  The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
+  Work stays in the main repository folder. No change is active. Change 88 needs separate activation.
   Existing names, sample files, sound, controls and saved formats stay unchanged.
 
   Normally use a separate branch. The owner requested plan/controller-first-patterns for 84, 84a and 85 as an exception.

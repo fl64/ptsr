@@ -2,12 +2,14 @@
 
 ## Status and evidence
 
-This is the active naming change on the separate `87a-copy-names` branch.
+This naming change uses the separate `87a-copy-names` branch.
 The preparation base was `origin/master` at `a4789f4`.
 Change 87 is complete and merged into `master` at `93362d9`.
 The implementation base includes that merge without rewriting the preparation history.
 The owner approved the three naming choices below, activation, the implementation file plan and local signed-off commits.
-Publication, archive and merge still need separate permission.
+The owner accepted 87a on 2026-11-07 after the short keyboard pass.
+The owner authorized archive, signed-off commits, push, a PR and squash merge with the branch retained.
+Work stays in the main repository folder. Remaining manual procedures keep their unverified status.
 Change 87 remains separate. Its implementation and acceptance are not new work in 87a.
 
 Confirmed baseline:
