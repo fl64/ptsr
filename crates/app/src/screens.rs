@@ -607,11 +607,16 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
             tui::InputSource {
                 normal: "KB".into(),
                 compact: "KB".into(),
-                active: case.mode != Mode::Device,
+                active: false,
             },
             tui::InputSource {
-                normal: "M1:Offline fixture pads".into(),
-                compact: "M1".into(),
+                normal: "M1".into(),
+                compact: if case.mode == Mode::Device {
+                    "M1"
+                } else {
+                    "  "
+                }
+                .into(),
                 active: case.mode == Mode::Device,
             },
         ]
@@ -799,7 +804,10 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::Warn => require("Offline fixture: wait for loading"),
         Mode::Error => require("Offline fixture: save refused"),
         Mode::Messages => require("Offline fixture: operation complete"),
-        Mode::Unsaved => require("Unsaved"),
+        Mode::Unsaved => {
+            require("*");
+            assert!(!text.contains("Unsaved"));
+        }
         Mode::SaveFailed => require("Save failed"),
         Mode::Safety => {
             for label in [

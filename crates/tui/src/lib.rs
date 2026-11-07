@@ -61,10 +61,13 @@ pub enum SaveStatus {
 impl SaveStatus {
     fn spans(self) -> Vec<Span<'static>> {
         match self {
-            Self::Clean => Vec::new(),
-            Self::Unsaved => vec!["Unsaved".fg(AMBER).bg(BG)],
+            Self::Clean | Self::Unsaved => Vec::new(),
             Self::Failed => vec!["Save failed".fg(MAGENTA).bg(BG).bold()],
         }
+    }
+
+    fn marker(self) -> Span<'static> {
+        "*".fg(if self == Self::Clean { DIM } else { AMBER }).bg(BG)
     }
 }
 
@@ -148,7 +151,6 @@ struct StatusKey {
     inputs: Arc<[InputSource]>,
     buffer_size: u32,
     sample_rate: u32,
-    cpu: u32,
     xruns: u64,
     master_db: i8,
     no_releases: bool,
@@ -165,7 +167,6 @@ impl StatusKey {
             && self.inputs == feedback.inputs
             && self.buffer_size == status.buffer_size
             && self.sample_rate == status.sample_rate
-            && self.cpu == status.load_peak.round_ties_even().to_bits()
             && self.xruns == status.xruns
             && self.master_db == status.master_db
             && self.no_releases == status.no_releases
@@ -182,7 +183,6 @@ impl StatusKey {
             inputs: Arc::clone(&feedback.inputs),
             buffer_size: status.buffer_size,
             sample_rate: status.sample_rate,
-            cpu: status.load_peak.round_ties_even().to_bits(),
             xruns: status.xruns,
             master_db: status.master_db,
             no_releases: status.no_releases,
@@ -2439,7 +2439,7 @@ fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> Paragraph<'s
 }
 
 fn settings(frame: &mut Frame, area: Rect, st: &Settings, s: &Status) {
-    let [header, _, body] = Layout::vertical([
+    let [header, diagnostics, body] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -2475,6 +2475,10 @@ fn settings(frame: &mut Frame, area: Rect, st: &Settings, s: &Status) {
     }
     heading.spans.extend(tabs);
     frame.render_widget(heading, header);
+    if st.tab == 0 {
+        let text = format!(" CPU {:.0} % · xruns {}", s.load_peak, s.xruns);
+        frame.render_widget(Line::from(text).fg(DIM), diagnostics);
+    }
     frame.render_widget(settings_body(st, body.height), body);
 }
 
@@ -3286,32 +3290,21 @@ fn status_inputs(inputs: &[InputSource], stage: u8) -> Vec<Span<'static>> {
         return Vec::new();
     }
     if inputs.is_empty() {
-        return vec!["KB".fg(DIM)];
+        return vec![" KB".fg(DIM)];
     }
     let mut spans = Vec::new();
-    let mut omitted = 0;
-    for (i, input) in inputs.iter().enumerate() {
-        if stage == 5 && i > 0 && !input.active {
-            omitted += 1;
-            continue;
-        }
+    for input in inputs {
         if !spans.is_empty() {
-            spans.push(" ".into());
+            spans.push(Span::raw(" "));
         }
-        let label = match stage {
-            0..=2 => clip_label(&input.normal, usize::MAX),
-            3 => clip_label(&input.normal, 18),
-            _ => clip_label(&input.compact, usize::MAX),
-        };
-        let span = Span::raw(format!("{}{label}", if input.active { "▸" } else { "" }));
+        // Keep both marker cells and the application's reserved controller width.
+        let label = clip_label(&input.compact, usize::MAX);
+        let span = Span::raw(format!("{}{label}", if input.active { "▸" } else { " " }));
         spans.push(if input.active {
             span.fg(CYAN).bold()
         } else {
             span.fg(DIM)
         });
-    }
-    if omitted > 0 {
-        spans.push(format!(" +{omitted}").fg(DIM));
     }
     spans
 }
@@ -3321,6 +3314,9 @@ fn status_candidate(s: &Status, feedback: &Feedback, stage: u8) -> Line<'static>
     let brief = stage >= 7;
     let mut segments = Vec::new();
     segments.push(s.save.spans());
+    if stage != 0 || s.project.is_none() {
+        segments.push(vec![s.save.marker()]);
+    }
     if s.recording {
         let text = match feedback.recording_seconds {
             Some(seconds) if !brief => format!("rec {seconds}s"),
@@ -3339,8 +3335,9 @@ fn status_candidate(s: &Status, feedback: &Feedback, stage: u8) -> Line<'static>
                 s.buffer_size.to_string()
             };
             segments.push(vec![Span::raw(format!(
-                "{backend} {size} @ {} Hz · {ms:.1} ms · CPU {:.0} % · master {:+} dB",
-                s.sample_rate, s.load_peak, s.master_db
+                "{backend} {size} / {} kHz · {ms:.1} ms · master {:+} dB",
+                s.sample_rate as f64 / 1000.0,
+                s.master_db
             ))]);
         }
         _ => {}
@@ -3352,8 +3349,6 @@ fn status_candidate(s: &Status, feedback: &Feedback, stage: u8) -> Line<'static>
             format!("xruns {}", s.xruns)
         };
         segments.push(vec![text.fg(MAGENTA).bold()]);
-    } else if full_audio {
-        segments.push(vec!["xruns 0".into()]);
     }
     if s.no_releases {
         segments.push(vec![NO_RELEASES.fg(DIM)]);
@@ -3361,7 +3356,11 @@ fn status_candidate(s: &Status, feedback: &Feedback, stage: u8) -> Line<'static>
     if stage == 0
         && let Some(project) = s.project
     {
-        segments.push(vec![Span::raw(clip_label(project, usize::MAX))]);
+        segments.push(vec![
+            Span::raw(clip_label(project, usize::MAX)),
+            Span::raw(" "),
+            s.save.marker(),
+        ]);
     }
     let separator = if stage < 3 { " · " } else { " " };
     let mut spans = Vec::new();
@@ -8100,11 +8099,8 @@ mod tests {
                                     .iter()
                                     .map(|c| c.symbol())
                                     .collect::<String>();
-                                assert_eq!(
-                                    top.contains("Unsaved"),
-                                    save == SaveStatus::Unsaved,
-                                    "{w}x{h}: {top}"
-                                );
+                                assert!(top.contains('*'), "{w}x{h}: {top}");
+                                assert!(!top.contains("Unsaved"), "{top}");
                                 assert_eq!(
                                     top.contains("Save failed"),
                                     save == SaveStatus::Failed,
@@ -8140,7 +8136,7 @@ mod tests {
         let mut cache = TextCache::default();
         let mut status = status_at(128, 0);
         let mut feedback = Feedback::default();
-        for cpu in [0.0, 0.2, 0.5] {
+        for cpu in [0.0, 0.2, 0.5, 0.6, 1.4, 100.0] {
             status.load_peak = cpu;
             assert_eq!(
                 cache.row(&status, &feedback, 120),
@@ -8148,15 +8144,6 @@ mod tests {
             );
             assert_eq!(cache.builds, 1);
         }
-        status.load_peak = 0.6;
-        assert_eq!(
-            cache.row(&status, &feedback, 120),
-            &status_line_at(&status, &feedback, 120)
-        );
-        assert_eq!(cache.builds, 2);
-        status.load_peak = 1.4;
-        cache.row(&status, &feedback, 120);
-        assert_eq!(cache.builds, 2);
         status.meters = ([-1.0; 2], [0.0; 2], true);
         status.notice = Some(NoticeLine::plain("another frame's notice"));
         status
@@ -8164,7 +8151,7 @@ mod tests {
             .push(Badge::new(BadgeKind::Attention, "ASK", "ASK"));
         cache.row(&status, &feedback, 120);
         assert_eq!(
-            cache.builds, 2,
+            cache.builds, 1,
             "live screen data is not a status-row input"
         );
         let mut width = 120;
@@ -8182,8 +8169,8 @@ mod tests {
                 9 => feedback.recording_seconds = Some(1),
                 10 => {
                     feedback.inputs = vec![InputSource {
-                        normal: "KB".into(),
-                        compact: "KB".into(),
+                        normal: "M1".into(),
+                        compact: "M1".into(),
                         active: true,
                     }]
                     .into()
@@ -8196,7 +8183,7 @@ mod tests {
                 &status_line_at(&status, &feedback, width),
                 "change {change}"
             );
-            assert_eq!(cache.builds, change + 3);
+            assert_eq!(cache.builds, change + 2);
         }
     }
 
@@ -8307,23 +8294,11 @@ mod tests {
 
     fn status_sources() -> Feedback {
         Feedback {
-            inputs: vec![
-                InputSource {
-                    normal: "KB".into(),
-                    compact: "KB".into(),
-                    active: false,
-                },
-                InputSource {
-                    normal: format!("M1:{}\n\u{1b}音", "same long port ".repeat(8)),
-                    compact: "M1".into(),
-                    active: false,
-                },
-                InputSource {
-                    normal: format!("M2:{}e\u{301}", "same long port ".repeat(8)),
-                    compact: "M2".into(),
-                    active: true,
-                },
-            ]
+            inputs: vec![InputSource {
+                normal: format!("M2:{}\n\u{1b}音", "same long port ".repeat(8)),
+                compact: "M2".into(),
+                active: true,
+            }]
             .into(),
             recording_seconds: Some(12),
         }
@@ -8359,7 +8334,7 @@ mod tests {
                                 text.contains(if save == SaveStatus::Failed {
                                     "Save failed"
                                 } else {
-                                    "Unsaved"
+                                    "*"
                                 }),
                                 "{text}"
                             );
@@ -8383,6 +8358,143 @@ mod tests {
     }
 
     #[test]
+    fn keyboard_remains_visible_without_source_feedback() {
+        for width in [80, 120] {
+            let status = status_at(128, 0);
+            let row = status_text(status_line_at(&status, &Feedback::default(), width));
+            assert!(row.contains("KB"), "{row}");
+            assert!(!row.contains("▸KB"), "{row}");
+        }
+    }
+
+    /// Scenario "Pending work uses a quiet project marker".
+    #[test]
+    fn pending_work_uses_a_quiet_project_marker() {
+        for width in [80, 120] {
+            for project in [
+                Some("beat"),
+                None,
+                Some(
+                    "a project name too long to keep in the status row with all current audio details and a very long suffix",
+                ),
+            ] {
+                let mut status = status_at(512, 0);
+                status.backend = Some("jack");
+                status.project = project;
+                let feedback = status_sources();
+                let mut cache = TextCache::default();
+                let mut saved = None;
+                for save in [
+                    SaveStatus::Clean,
+                    SaveStatus::Unsaved,
+                    SaveStatus::Failed,
+                    SaveStatus::Clean,
+                    SaveStatus::Unsaved,
+                ] {
+                    status.save = save;
+                    let line = cache.row(&status, &feedback, width).clone();
+                    let text = status_text(line.clone());
+                    assert!(line.width() <= width as usize, "{text}");
+                    assert_eq!(text.matches('*').count(), 1, "{text}");
+                    assert!(!text.contains("Unsaved"), "{text}");
+                    assert_eq!(
+                        text.contains("Save failed"),
+                        save == SaveStatus::Failed,
+                        "{text}"
+                    );
+                    let marker = line.spans.iter().find(|span| span.content == "*").unwrap();
+                    assert_eq!(
+                        marker.style.fg,
+                        Some(if save == SaveStatus::Clean {
+                            DIM
+                        } else {
+                            AMBER
+                        })
+                    );
+                    assert!(!marker.style.add_modifier.contains(Modifier::BOLD));
+                    if project == Some("beat") {
+                        assert!(text.ends_with("beat *"), "{text}");
+                    } else if let Some(long) = project {
+                        assert!(!text.contains(long), "{text}");
+                    }
+                    if save != SaveStatus::Failed {
+                        if let Some(before) = &saved {
+                            assert_eq!(&text, before, "saved and pending change color, not cells");
+                        } else {
+                            saved = Some(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scenario "Compact status retains actual audio values".
+    /// Scenario "Settings retains audio load diagnostics".
+    #[test]
+    fn compact_audio_status_keeps_settings_diagnostics() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let mut cache = TextCache::default();
+            for (backend, size, rate, master, project, cpu, xruns) in [
+                ("jack", 512, 48_000, 1, "new", 12.0, 0),
+                ("cpal", 256, 44_100, -4, "beat", 87.0, 3),
+            ] {
+                let mut status = status_at(size, xruns);
+                status.backend = Some(backend);
+                status.sample_rate = rate;
+                status.master_db = master;
+                status.project = Some(project);
+                status.load_peak = cpu;
+                let feedback = Feedback::default();
+                let row = status_text(cache.row(&status, &feedback, width).clone());
+                let ms = size as f32 / rate as f32 * 1000.0;
+                for label in [
+                    format!("{backend} {size} / {} kHz", rate as f64 / 1000.0),
+                    format!("{ms:.1} ms"),
+                    format!("master {master:+} dB"),
+                    project.into(),
+                ] {
+                    assert!(row.contains(&label), "{row}");
+                }
+                assert!(!row.contains("CPU") && !row.contains("xruns 0"), "{row}");
+                assert_eq!(row.contains("xruns 3"), xruns == 3, "{row}");
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                let help = Help {
+                    groups: &[],
+                    hint: None,
+                    full: None,
+                    question: None,
+                    learn: None,
+                };
+                let draw = |term: &mut Terminal<TestBackend>, status: &Status| {
+                    term.draw(|frame| {
+                        draw(frame, status, &Screen::Settings(settings_view(0, 0)), &help)
+                    })
+                    .unwrap();
+                    term.backend().buffer().clone()
+                };
+                let before = draw(&mut term, &status);
+                let text = before
+                    .content()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(
+                    text.contains(&format!("CPU {cpu:.0} % · xruns {xruns}")),
+                    "{text}"
+                );
+                status.load_peak += 1.0;
+                let after = draw(&mut term, &status);
+                let controls = (3 * width as usize)..;
+                assert_eq!(
+                    &before.content()[controls.clone()],
+                    &after.content()[controls]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn status_width_removes_project_then_audio_then_input() {
         let mut status = status_at(128, 3);
         status.project = Some("session with a full name");
@@ -8395,16 +8507,16 @@ mod tests {
         let audio = status_candidate(&status, &feedback, 1);
         let text = status_text(status_line_at(&status, &feedback, audio.width() as u16));
         assert!(!text.contains(status.project.unwrap()), "{text}");
-        assert!(text.contains("CPU"), "{text}");
-        assert!(text.contains("same long port"), "{text}");
+        assert!(text.contains("jack 128 / 48 kHz"), "{text}");
+        assert!(text.contains("▸M2"), "{text}");
         let input = status_candidate(&status, &feedback, 2);
         let text = status_text(status_line_at(&status, &feedback, input.width() as u16));
         assert!(!text.contains("CPU"), "{text}");
-        assert!(text.contains("same long port"), "{text}");
+        assert!(text.contains("▸M2"), "{text}");
         let compact = status_candidate(&status, &feedback, 4);
         let text = status_text(status_line_at(&status, &feedback, compact.width() as u16));
         assert!(
-            text.contains("KB") && text.contains("M1") && text.contains("▸M2"),
+            !text.contains("KB") && !text.contains("M1") && text.contains("▸M2"),
             "{text}"
         );
         assert!(!text.contains("same long port"), "{text}");
@@ -8534,7 +8646,7 @@ mod tests {
             .iter()
             .map(|s| s.content.clone())
             .collect();
-        assert!(text.contains("jack 256 @ 48000 Hz · 5.3 ms"), "{text}");
+        assert!(text.contains("jack 256 / 48 kHz · 5.3 ms"), "{text}");
     }
 
     /// audio-engine "Buffer underrun": the xrun counter counts up and stands out.
@@ -8547,9 +8659,7 @@ mod tests {
                 .find(|s| s.content.starts_with("xruns"))
                 .unwrap()
         };
-        let quiet = span(0);
-        assert_eq!(quiet.content, "xruns 0");
-        assert_ne!(quiet.style.fg, Some(MAGENTA));
+        assert!(!status_text(status_line(&status_at(256, 0))).contains("xruns"));
         let late = span(3);
         assert_eq!(late.content, "xruns 3");
         assert_eq!(late.style.fg, Some(MAGENTA), "highlighted");

@@ -61,6 +61,8 @@ pub(super) struct State {
     devices: BTreeMap<String, Device>,
     pub(super) latest: Option<(Source, Instant)>,
     pub(super) active: Option<Source>,
+    // Controller identity outlives its highlight and is independent of keyboard input.
+    last_controller: Option<(Source, Instant)>,
 }
 
 impl State {
@@ -70,23 +72,66 @@ impl State {
         })
     }
 
-    pub(super) fn snapshot(&self) -> Vec<tui::InputSource> {
+    pub(super) fn controller_at(&self, now: Instant) -> Option<(Source, bool)> {
+        let (source, at) = self.last_controller.as_ref()?;
+        let Source::Device { port, connection } = source else {
+            return None;
+        };
+        self.connected()
+            .any(|(name, id)| name == port && id == *connection)
+            .then(|| {
+                let active = self
+                    .latest
+                    .as_ref()
+                    .is_some_and(|(latest, _)| latest == source)
+                    && now
+                        .checked_duration_since(*at)
+                        .is_some_and(|elapsed| elapsed < HIGHLIGHT);
+                (source.clone(), active)
+            })
+    }
+
+    pub(super) fn keyboard_at(&self, now: Instant) -> bool {
+        self.latest.as_ref().is_some_and(|(source, at)| {
+            *source == Source::Keyboard
+                && now
+                    .checked_duration_since(*at)
+                    .is_some_and(|elapsed| elapsed < HIGHLIGHT)
+        })
+    }
+
+    pub(super) fn snapshot(&self, now: Instant) -> Vec<tui::InputSource> {
         let mut inputs = vec![tui::InputSource {
             normal: "KB".into(),
             compact: "KB".into(),
-            active: self.active == Some(Source::Keyboard),
+            active: self.keyboard_at(now),
         }];
-        inputs.extend(self.connected().enumerate().map(|(i, (port, connection))| {
-            let compact = format!("M{}", i + 1);
-            tui::InputSource {
-                normal: format!("{compact}:{port}"),
-                compact,
-                active: self.active.as_ref().is_some_and(|source| {
-                    matches!(source, Source::Device { port: active, connection: id }
-                        if active == port && *id == connection)
-                }),
-            }
-        }));
+        let count = self.connected().count();
+        if count == 0 {
+            return inputs;
+        }
+        let width = count.to_string().len() + 1;
+        let controller = self.controller_at(now);
+        let number = controller
+            .as_ref()
+            .and_then(|(source, _)| {
+                self.connected()
+                    .position(|(port, connection)| {
+                        *source
+                            == Source::Device {
+                                port: port.into(),
+                                connection,
+                            }
+                    })
+                    .map(|index| format!("M{}", index + 1))
+            })
+            .unwrap_or_default();
+        let label = format!("{number:<width$}");
+        inputs.push(tui::InputSource {
+            normal: label.clone(),
+            compact: label,
+            active: controller.is_some_and(|(_, active)| active),
+        });
         inputs
     }
 
@@ -137,6 +182,9 @@ impl State {
             .as_ref()
             .is_none_or(|(_, previous)| at >= *previous)
         {
+            if matches!(source, Source::Device { .. }) {
+                self.last_controller = Some((source.clone(), at));
+            }
             self.latest = Some((source, at));
         }
     }

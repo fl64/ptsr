@@ -116,7 +116,8 @@ impl BadgeKey {
 }
 
 struct SourceKey {
-    active: Option<super::input_sources::Source>,
+    keyboard_active: bool,
+    controller: Option<(super::input_sources::Source, bool)>,
     connections: Vec<(String, super::input_sources::Connection)>,
 }
 
@@ -150,7 +151,8 @@ impl FrameText {
     pub(super) fn feedback_at(&mut self, app: &App, now: Instant) -> tui::Feedback {
         let source = &app.input_sources;
         let unchanged = self.source_key.as_ref().is_some_and(|key| {
-            key.active == source.active
+            key.keyboard_active == source.keyboard_at(now)
+                && key.controller == source.controller_at(now)
                 && source.connected().eq(key
                     .connections
                     .iter()
@@ -159,7 +161,8 @@ impl FrameText {
         if !unchanged {
             self.inputs = app.status_feedback_at(now).inputs;
             self.source_key = Some(SourceKey {
-                active: source.active.clone(),
+                keyboard_active: source.keyboard_at(now),
+                controller: source.controller_at(now),
                 connections: source
                     .connected()
                     .map(|(name, id)| (name.to_owned(), id))
@@ -187,7 +190,7 @@ impl FrameText {
 impl App {
     pub(super) fn status_feedback_at(&self, now: Instant) -> tui::Feedback {
         tui::Feedback {
-            inputs: self.input_sources.snapshot().into(),
+            inputs: self.input_sources.snapshot(now).into(),
             recording_seconds: self
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),

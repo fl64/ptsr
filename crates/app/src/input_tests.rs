@@ -728,10 +728,14 @@ fn feedback_cache_tracks_source_identity_and_activity() {
     drive.frame();
     let removed = text.feedback_at(&drive.app, Instant::now()).inputs;
     assert_eq!(removed.len(), 2);
+    assert_eq!(removed[0].compact, "KB");
+    assert!(removed[1].compact.trim().is_empty());
     drive.midi().recorded_connect(XS_PORT);
     drive.frame();
     let connected = text.feedback_at(&drive.app, Instant::now()).inputs;
-    assert_eq!(connected.len(), 3);
+    assert_eq!(connected.len(), 2);
+    assert_eq!(connected[0].compact, "KB");
+    assert!(connected[1].compact.trim().is_empty());
     assert!(connected.iter().all(|input| !input.active));
     assert!(
         !Arc::ptr_eq(&expired, &connected),
@@ -846,6 +850,71 @@ fn input_device(drive: &Drive, port: &str) -> input_sources::Source {
     }
 }
 
+/// Scenario "Keyboard stays visible without controllers".
+#[test]
+fn keyboard_stays_visible_without_controllers() {
+    let mut drive = Drive::offline();
+    let ports: Vec<_> = drive
+        .app
+        .input_sources
+        .connected()
+        .map(|(port, _)| port.to_owned())
+        .collect();
+    for port in ports {
+        drive.midi().recorded_disconnect(&port);
+    }
+    drive.frame();
+    let mut cache = view::FrameText::default();
+    let initial = cache.feedback_at(&drive.app, Instant::now()).inputs;
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial[0].compact, "KB");
+    assert!(!initial[0].active);
+    drive.key(KeyCode::Char('?'), M::NONE, KeyEventKind::Press);
+    let receipt = drive.app.input_sources.latest.clone().unwrap();
+    for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+        drive.key(KeyCode::Char('?'), M::NONE, kind);
+        assert_eq!(drive.app.input_sources.latest.as_ref(), Some(&receipt));
+    }
+    for (width, height) in [(80, 26), (120, 40)] {
+        let before = shared_feedback_rows(
+            &mut drive,
+            width,
+            height,
+            receipt.1 - Duration::from_nanos(1),
+        )[0]
+        .clone();
+        let mut column = None;
+        assert!(before.contains("KB") && !before.contains('▸'), "{before}");
+        for now in [
+            receipt.1,
+            receipt.1 + LIT_FOR - Duration::from_nanos(1),
+            receipt.1 + LIT_FOR,
+        ] {
+            let feedback = cache.feedback_at(&drive.app, now);
+            assert_eq!(feedback.inputs[0].active, now < receipt.1 + LIT_FOR);
+            assert!(Arc::ptr_eq(
+                &feedback.inputs,
+                &cache.feedback_at(&drive.app, now).inputs
+            ));
+            let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+            assert!(row.contains("KB"), "{row}");
+            assert_eq!(row.contains("▸KB"), now < receipt.1 + LIT_FOR, "{row}");
+            let current = row
+                .find("offline")
+                .map(|index| ratatui::text::Line::from(&row[..index]).width())
+                .unwrap();
+            assert_eq!(
+                current,
+                ratatui::text::Line::from(&before[..before.find("offline").unwrap()]).width()
+            );
+            if let Some(previous) = column {
+                assert_eq!(current, previous);
+            }
+            column = Some(current);
+        }
+    }
+}
+
 /// Scenario "Status follows keyboard and connected inputs" through production input and shared drawing.
 #[test]
 fn status_follows_keyboard_and_connected_inputs() {
@@ -866,11 +935,11 @@ fn status_follows_keyboard_and_connected_inputs() {
         for (width, height) in [(80, 26), (120, 40)] {
             let row = &shared_feedback_rows(&mut drive, width, height, Instant::now())[0];
             assert!(
-                row.contains("▸KB") && row.contains("M1") && row.contains("M2"),
+                row.contains("▸KB") && !row.contains("M1") && !row.contains("M2"),
                 "{row}"
             );
             if width == 120 {
-                assert!(row.contains(PAD_PORT) && row.contains(XS_PORT), "{row}");
+                assert!(!row.contains(PAD_PORT) && !row.contains(XS_PORT), "{row}");
             }
         }
         drive.bytes(PAD_PORT, &[0xb0, 88, 127]);
@@ -910,29 +979,123 @@ fn status_follows_keyboard_and_connected_inputs() {
     }
 }
 
+/// Scenario "Only the last used controller number stays visible".
+/// Scenario "Controller activity keeps status columns fixed".
+#[test]
+fn last_controller_keeps_fixed_columns_through_input_and_expiry() {
+    let mut drive = Drive::offline();
+    for index in 0..8 {
+        drive.midi().recorded_connect(&format!("Aux {index:02}"));
+    }
+    drive.frame();
+    drive.app.project = Some(Project {
+        name: "column check".into(),
+        folder: drive.app.session_path.parent().unwrap().into(),
+    });
+    let ports: Vec<_> = drive
+        .app
+        .input_sources
+        .connected()
+        .map(|(port, _)| port.to_owned())
+        .collect();
+    assert_eq!(ports.len(), 10);
+    let mut columns = [None, None];
+    for index in [0, 7, 9] {
+        let at = Instant::now();
+        drive
+            .midi()
+            .recorded_bytes_at(&ports[index], &[0xb0, 15, 64], &drive.project, at);
+        drive.frame();
+        let label = format!("M{}", index + 1);
+        for now in [at, at + LIT_FOR - Duration::from_nanos(1), at + LIT_FOR] {
+            for (size, (width, height)) in [(80, 26), (120, 40)].into_iter().enumerate() {
+                let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+                assert!(row.contains(&label), "{row}");
+                assert_eq!(row.contains('▸'), now < at + LIT_FOR, "{row}");
+                assert!(
+                    row.contains("KB") && !row.contains("Aux") && !row.contains(" +8"),
+                    "{row}"
+                );
+                let column = |label| {
+                    row.find(label)
+                        .map(|index| ratatui::text::Line::from(&row[..index]).width())
+                };
+                let positions = (column("offline"), column("column check"));
+                assert!(positions.0.is_some() && positions.1.is_some(), "{row}");
+                if let Some(expected) = columns[size] {
+                    assert_eq!(positions, expected, "{row}");
+                }
+                columns[size] = Some(positions);
+            }
+        }
+        let mut cache = view::FrameText::default();
+        let expired = cache.feedback_at(&drive.app, at + LIT_FOR).inputs;
+        drive.tap(KeyCode::Char('?'), M::NONE);
+        let keyboard_at = drive.app.input_sources.latest.as_ref().unwrap().1;
+        // A release, equal CC and older input cannot select another controller.
+        drive.bytes(&ports[1], &[0x80, 36, 0]);
+        drive.bytes(&ports[index], &[0xb0, 15, 64]);
+        drive.midi().recorded_bytes_at(
+            &ports[2],
+            &[0x90, 36, 80],
+            &drive.project,
+            at - Duration::from_nanos(1),
+        );
+        drive.frame();
+        let retained = cache.feedback_at(&drive.app, keyboard_at).inputs;
+        assert!(!Arc::ptr_eq(&expired, &retained));
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].compact, "KB");
+        assert!(retained[0].active);
+        assert_eq!(retained[1].compact.trim(), label);
+        assert!(!retained[1].active);
+        assert!(Arc::ptr_eq(
+            &retained,
+            &cache.feedback_at(&drive.app, keyboard_at).inputs
+        ));
+        let expired_keyboard = cache.feedback_at(&drive.app, keyboard_at + LIT_FOR).inputs;
+        assert!(expired_keyboard.iter().all(|input| !input.active));
+        assert_eq!(expired_keyboard[1].compact.trim(), label);
+        for now in [keyboard_at, keyboard_at + LIT_FOR] {
+            for (size, (width, height)) in [(80, 26), (120, 40)].into_iter().enumerate() {
+                let row = &shared_feedback_rows(&mut drive, width, height, now)[0];
+                let column = |label| {
+                    row.find(label)
+                        .map(|index| ratatui::text::Line::from(&row[..index]).width())
+                };
+                assert_eq!(
+                    Some((column("offline"), column("column check"))),
+                    columns[size],
+                    "{row}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn source_labels_follow_identity_when_port_numbers_change() {
     let mut drive = Drive::new();
     drive.bytes(XS_PORT, &[0xb0, 15, 64]);
     drive.frame();
     let at = drive.app.input_sources.latest.as_ref().unwrap().1;
-    assert!(shared_feedback_rows(&mut drive, 120, 40, at)[0].contains("▸M2:"));
+    assert!(shared_feedback_rows(&mut drive, 120, 40, at)[0].contains("▸M2"));
     drive.midi().recorded_disconnect(PAD_PORT);
     drive.frame();
     let row = &shared_feedback_rows(&mut drive, 120, 40, at)[0];
     assert!(
-        !row.contains(PAD_PORT) && row.contains(&format!("▸M1:{XS_PORT}")),
+        !row.contains(PAD_PORT) && !row.contains(XS_PORT) && row.contains("▸M1"),
         "{row}"
     );
     drive.midi().recorded_connect(PAD_PORT);
     drive.frame();
     let row = &shared_feedback_rows(&mut drive, 120, 40, at)[0];
     assert!(
-        row.contains(&format!("M1:{PAD_PORT}")) && row.contains(&format!("▸M2:{XS_PORT}")),
+        !row.contains(PAD_PORT) && !row.contains(XS_PORT) && row.contains("▸M2"),
         "{row}"
     );
     let last = at + LIT_FOR - Duration::from_nanos(1);
-    assert!(shared_feedback_rows(&mut drive, 120, 40, last)[0].contains("▸M2:"));
+    assert!(shared_feedback_rows(&mut drive, 120, 40, last)[0].contains("▸M2"));
     assert!(!shared_feedback_rows(&mut drive, 120, 40, at + LIT_FOR)[0].contains('▸'));
 }
 
@@ -1155,12 +1318,19 @@ fn input_highlights_retain_original_receipt_time() {
 }
 
 /// Scenario "Disconnect cannot leave a false active device".
+/// Scenario "Last controller number requires current connection input".
 #[test]
 fn disconnect_cannot_leave_a_false_active_device() {
     let mut drive = Drive::new();
     drive.bytes(PAD_PORT, &[0x90, 36, 74]);
     let queued = drive.queued_events();
     let old = drive.midi().recorded_connection(PAD_PORT).unwrap();
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
     drive.midi().recorded_disconnect(PAD_PORT);
     let disconnected = drive.queued_events();
     for event in disconnected {
@@ -1182,6 +1352,12 @@ fn disconnect_cannot_leave_a_false_active_device() {
     let new = drive.midi().recorded_connection(PAD_PORT).unwrap();
     assert_ne!(new, old);
     assert_eq!(drive.app.input_sources.active, None);
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
     drive.bytes(PAD_PORT, &[0x90, 37, 63]);
     drive.frame();
     let current = drive.app.input_sources.latest.clone();
@@ -1202,6 +1378,31 @@ fn disconnect_cannot_leave_a_false_active_device() {
     let late = drive.frame();
     assert!(late.commands().iter().any(|command| matches!(command, Command::PadPress { pad: 2, velocity } if *velocity == 92.0 / 127.0)));
     assert_eq!(drive.app.input_sources.latest, current);
+    assert_eq!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim(),
+        "M1"
+    );
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.frame();
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
+    drive.midi().recorded_connect(PAD_PORT);
+    drive.frame();
+    assert!(
+        drive.app.status_feedback_at(Instant::now()).inputs[1]
+            .compact
+            .trim()
+            .is_empty()
+    );
+    drive.bytes(PAD_PORT, &[0x90, 39, 80]);
+    drive.frame();
+    let new = drive.midi().recorded_connection(PAD_PORT).unwrap();
     assert_eq!(
         drive.app.input_sources.active,
         Some(input_device(&drive, PAD_PORT))
