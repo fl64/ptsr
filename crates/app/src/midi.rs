@@ -5,11 +5,13 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use crate::input_sources::{Connection, Stamp as SourceStamp};
 
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
-use input::midi::{Key, Msg, Param, Profile, Resolved, Scope};
+use input::midi::{Activity, Key, Msg, Param, Profile, Resolved, Scope};
 use input::{Action, Focus, Group, PadRoute, route_pad};
 use std::sync::atomic::Ordering::Acquire;
 
@@ -109,8 +111,8 @@ impl Shared {
 }
 
 enum Raw {
-    Connected(String),
-    Disconnected(String),
+    Connected(String, Option<Connection>),
+    Disconnected(String, Option<Connection>),
     Msg(String, Msg, Stamp),
     /// New learned assignments of a profile in a group.
     Learned(String, Scope, HashMap<Key, String>),
@@ -134,6 +136,7 @@ type UiHolds = HashMap<(String, u8, Key), Vec<UiHold>>;
 struct Stamp {
     epoch: u64,
     ready: bool,
+    source: Option<SourceStamp>,
 }
 
 impl Stamp {
@@ -142,30 +145,58 @@ impl Stamp {
             return Self {
                 epoch: 0,
                 ready: false,
+                source: None,
             };
         };
         let epoch = project.epoch.load(Acquire);
         let ready = project.ready.load(Acquire) == epoch;
-        Self { epoch, ready }
+        Self {
+            epoch,
+            ready,
+            source: None,
+        }
+    }
+
+    fn ready(epoch: u64) -> Self {
+        Self {
+            epoch,
+            ready: true,
+            source: None,
+        }
     }
 }
 
 /// Learned assignments per (profile name, group scope; 28).
 pub type LearnedMaps = HashMap<(String, Scope), HashMap<Key, String>>;
 
+#[derive(Clone)]
+struct Provenance {
+    port: String,
+    source: Option<SourceStamp>,
+    from_message: bool,
+    activity: Activity,
+}
+
 pub struct UiEvent {
     pub event: Event,
     stamp: Option<Stamp>,
     sequence: Option<u64>,
+    origin: Option<Provenance>,
+    owner_input: bool,
 }
 
 struct UiSender {
     tx: Sender<UiEvent>,
     last_sent: u64,
+    origin: Option<Provenance>,
 }
 
 impl UiSender {
     fn send(&mut self, event: Event, stamp: Option<Stamp>) {
+        self.send_input(event, stamp, false);
+    }
+
+    fn send_input(&mut self, event: Event, stamp: Option<Stamp>, owner_input: bool) {
         let sequence = matches!(
             &event,
             Event::Action(_)
@@ -181,6 +212,8 @@ impl UiSender {
                 event,
                 stamp,
                 sequence,
+                origin: self.origin.clone(),
+                owner_input,
             })
             .is_ok()
             && let Some(sequence) = sequence
@@ -197,7 +230,28 @@ impl UiEvent {
             event,
             stamp: Some(Stamp::capture(Some(project))),
             sequence: None,
+            origin: None,
+            owner_input: false,
         }
+    }
+
+    pub fn origin(&self) -> Option<&str> {
+        let origin = self.origin.as_ref()?;
+        origin.from_message.then_some(origin.port.as_str())
+    }
+
+    pub(super) fn source(&self) -> Option<SourceStamp> {
+        self.origin.as_ref()?.source
+    }
+
+    pub(super) fn activity(&self) -> Activity {
+        self.origin
+            .as_ref()
+            .map_or(Activity::None, |origin| origin.activity)
+    }
+
+    pub fn owner_input(&self) -> bool {
+        self.owner_input
     }
 
     pub fn sequence(&self) -> Option<u64> {
@@ -223,6 +277,8 @@ pub struct Midi {
     pub events: Receiver<UiEvent>,
     updates: Sender<Raw>,
     shared: Arc<Shared>,
+    #[cfg(test)]
+    recorded_connections: std::cell::RefCell<HashMap<String, Option<Connection>>>,
 }
 
 impl Midi {
@@ -253,6 +309,7 @@ impl Midi {
                 events,
                 updates,
                 shared,
+                recorded_connections: Default::default(),
             },
             worker,
         )
@@ -260,21 +317,58 @@ impl Midi {
 
     #[cfg(test)]
     pub fn recorded_connect(&self, port: &str) {
-        self.updates.send(Raw::Connected(port.into())).unwrap();
+        let connection = Connection::fresh();
+        self.recorded_connections
+            .borrow_mut()
+            .insert(port.into(), connection);
+        self.updates
+            .send(Raw::Connected(port.into(), connection))
+            .unwrap();
     }
 
     #[cfg(test)]
     pub fn recorded_disconnect(&self, port: &str) {
-        self.updates.send(Raw::Disconnected(port.into())).unwrap();
+        let connection = self
+            .recorded_connections
+            .borrow_mut()
+            .remove(port)
+            .flatten();
+        self.updates
+            .send(Raw::Disconnected(port.into(), connection))
+            .unwrap();
+    }
+
+    #[cfg(test)]
+    pub fn recorded_connection(&self, port: &str) -> Option<Connection> {
+        self.recorded_connections
+            .borrow()
+            .get(port)
+            .copied()
+            .flatten()
     }
 
     #[cfg(test)]
     pub fn recorded_bytes(&self, port: &str, bytes: &[u8], project: &ProjectState) {
-        if let Some(msg) = Msg::parse(bytes) {
-            self.updates
-                .send(Raw::Msg(port.into(), msg, Stamp::capture(Some(project))))
-                .unwrap();
-        }
+        self.recorded_bytes_at(port, bytes, project, Instant::now());
+    }
+
+    #[cfg(test)]
+    pub fn recorded_bytes_at(&self, port: &str, bytes: &[u8], project: &ProjectState, at: Instant) {
+        let source = self
+            .recorded_connection(port)
+            .map(|connection| SourceStamp { connection, at });
+        self.recorded_bytes_from(port, bytes, project, source);
+    }
+
+    #[cfg(test)]
+    pub fn recorded_bytes_from(
+        &self,
+        port: &str,
+        bytes: &[u8],
+        project: &ProjectState,
+        source: Option<SourceStamp>,
+    ) {
+        receive(&self.updates, port, bytes, Some(project), source);
     }
 
     #[cfg(test)]
@@ -384,11 +478,28 @@ pub fn start(
         events: rx,
         updates: raw_tx,
         shared,
+        #[cfg(test)]
+        recorded_connections: Default::default(),
+    }
+}
+
+fn receive(
+    tx: &Sender<Raw>,
+    port: &str,
+    bytes: &[u8],
+    project: Option<&ProjectState>,
+    source: Option<SourceStamp>,
+) {
+    if let Some(msg) = Msg::parse(bytes) {
+        let mut stamp = Stamp::capture(project);
+        stamp.source = source;
+        let _ = tx.send(Raw::Msg(port.into(), msg, stamp));
     }
 }
 
 fn scan(tx: Sender<Raw>, project: Option<Arc<ProjectState>>) {
-    let mut connections: HashMap<String, midir::MidiInputConnection<()>> = HashMap::new();
+    let mut connections: HashMap<String, (midir::MidiInputConnection<()>, Option<Connection>)> =
+        HashMap::new();
     let scanner = match midir::MidiInput::new("ptsr scan") {
         Ok(s) => s,
         Err(e) => {
@@ -404,11 +515,11 @@ fn scan(tx: Sender<Raw>, project: Option<Arc<ProjectState>>) {
             .filter(|(n, _)| !n.contains("Midi Through"))
             .collect();
 
-        connections.retain(|name, _| {
+        connections.retain(|name, (_, connection)| {
             let alive = ports.iter().any(|(n, _)| n == name);
             if !alive {
                 log::info!("MIDI disconnected: {name}");
-                let _ = tx.send(Raw::Disconnected(name.clone()));
+                let _ = tx.send(Raw::Disconnected(name.clone(), *connection));
             }
             alive
         });
@@ -425,22 +536,22 @@ fn scan(tx: Sender<Raw>, project: Option<Arc<ProjectState>>) {
             };
             let (cb_tx, cb_name) = (tx.clone(), name.clone());
             let cb_project = project.clone();
+            let connection = Connection::fresh();
             let conn = input.connect(
                 &port,
                 "ptsr-in",
                 move |_, bytes, _| {
-                    if let Some(msg) = Msg::parse(bytes) {
-                        let stamp = Stamp::capture(cb_project.as_deref());
-                        let _ = cb_tx.send(Raw::Msg(cb_name.clone(), msg, stamp));
-                    }
+                    let at = Instant::now();
+                    let source = connection.map(|connection| SourceStamp { connection, at });
+                    receive(&cb_tx, &cb_name, bytes, cb_project.as_deref(), source);
                 },
                 (),
             );
             match conn {
                 Ok(c) => {
                     log::info!("MIDI connected: {name}");
-                    let _ = tx.send(Raw::Connected(name.clone()));
-                    connections.insert(name, c);
+                    let _ = tx.send(Raw::Connected(name.clone(), connection));
+                    connections.insert(name, (c, connection));
                 }
                 Err(e) => log::warn!("MIDI: cannot connect {name}: {e}"),
             }
@@ -463,7 +574,9 @@ fn dispatch(
     let mut ui = UiSender {
         tx,
         last_sent: shared.input().0,
+        origin: None,
     };
+    let mut positions: HashMap<(String, u8, Key), u8> = HashMap::new();
     let mut defaults: HashMap<String, Profile> = HashMap::new();
     let mut pressed = DirectHolds::new();
     let mut ui_pressed = UiHolds::new();
@@ -499,8 +612,30 @@ fn dispatch(
                 continue;
             }
         };
+        // Freeze the source of this raw event into every derived UI envelope.
+        // Later events from another port cannot relabel queued work.
+        ui.origin = match &raw {
+            Raw::Msg(port, _, stamp) => Some(Provenance {
+                port: port.clone(),
+                source: stamp.source,
+                from_message: true,
+                activity: Activity::None,
+            }),
+            Raw::Connected(port, connection) | Raw::Disconnected(port, connection) => {
+                Some(Provenance {
+                    port: port.clone(),
+                    source: connection.map(|connection| SourceStamp {
+                        connection,
+                        at: Instant::now(),
+                    }),
+                    from_message: false,
+                    activity: Activity::None,
+                })
+            }
+            _ => None,
+        };
         let (port, msg, stamp) = match raw {
-            Raw::Connected(port) => {
+            Raw::Connected(port, _) => {
                 let profile = profiles
                     .iter()
                     .find(|p| p.matches(&port))
@@ -508,7 +643,8 @@ fn dispatch(
                 ui.send(Event::Connected { port, profile }, None);
                 continue;
             }
-            Raw::Disconnected(port) => {
+            Raw::Disconnected(port, _) => {
+                positions.retain(|(device, _, _), _| *device != port);
                 // a held gate pad would hang without its note off
                 pressed.retain(|(p, _, _), held| {
                     if *p == port {
@@ -516,7 +652,7 @@ fn dispatch(
                             pending.push_back(release_command(abs, epoch));
                             ui.send(
                                 Event::PadRelease { abs, direct: true },
-                                Some(Stamp { epoch, ready: true }),
+                                Some(Stamp::ready(epoch)),
                             );
                         }
                     }
@@ -530,10 +666,7 @@ fn dispatch(
                                     abs: hold.abs,
                                     id: hold.id,
                                 },
-                                Some(Stamp {
-                                    epoch: hold.epoch,
-                                    ready: true,
-                                }),
+                                Some(Stamp::ready(hold.epoch)),
                             );
                         }
                     }
@@ -599,13 +732,23 @@ fn dispatch(
             }),
         };
         let waiting = ui.last_sent != acknowledged;
-        let resolved = profile.resolve_in(focus.screen, focus.mode.edit, msg);
+        let (resolved, activity) = profile.resolve_input_in(focus.screen, focus.mode.edit, msg);
+        if let Some(origin) = &mut ui.origin {
+            origin.activity = activity;
+        }
+        let owner_input = match (activity, msg) {
+            (Activity::Press, _) => true,
+            (Activity::Movement, Msg::Cc { ch, value, .. }) => {
+                positions.insert((port.clone(), ch, msg.key()), value) != Some(value)
+            }
+            _ => false,
+        };
         let meaning = match &resolved {
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
         };
-        ui.send(
+        ui.send_input(
             Event::Message {
                 port: port.clone(),
                 profile: profile.name.clone(),
@@ -613,6 +756,7 @@ fn dispatch(
                 meaning,
             },
             Some(stamp),
+            owner_input,
         );
         let channel = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
@@ -748,7 +892,7 @@ fn release_tracked(
             pending.push_back(release_command(abs, epoch));
             ui.send(
                 Event::PadRelease { abs, direct: true },
-                Some(Stamp { epoch, ready: true }),
+                Some(Stamp::ready(epoch)),
             );
         }
     }
@@ -759,10 +903,7 @@ fn release_tracked(
                     abs: hold.abs,
                     id: hold.id,
                 },
-                Some(Stamp {
-                    epoch: hold.epoch,
-                    ready: true,
-                }),
+                Some(Stamp::ready(hold.epoch)),
             );
         }
     }
@@ -961,6 +1102,7 @@ mod tests {
         let mut sender = UiSender {
             tx,
             last_sent: u64::MAX,
+            origin: None,
         };
         sender.send(Event::Action(Action::BankNext), None);
         let action = rx.recv().unwrap();
@@ -1002,7 +1144,11 @@ mod tests {
     #[test]
     fn direct_notifications_parameters_logs_and_releases_do_not_create_barriers() {
         let (tx, rx) = mpsc::channel();
-        let mut sender = UiSender { tx, last_sent: 9 };
+        let mut sender = UiSender {
+            tx,
+            last_sent: 9,
+            origin: None,
+        };
         let events = [
             Event::PadHit {
                 abs: 2,
@@ -1082,6 +1228,7 @@ mod tests {
         let mut sender = UiSender {
             tx,
             last_sent: u64::MAX,
+            origin: None,
         };
         sender.send(Event::Action(Action::BankNext), None);
         assert_eq!(sender.last_sent, u64::MAX);
@@ -1169,7 +1316,11 @@ mod tests {
                 .send(Raw::Msg(
                     "controller".into(),
                     note_on(36),
-                    Stamp { epoch: 0, ready },
+                    Stamp {
+                        epoch: 0,
+                        ready,
+                        source: None,
+                    },
                 ))
                 .unwrap();
             drop(raw_tx);
@@ -1198,7 +1349,9 @@ mod tests {
         let state = Arc::new(ProjectState::default());
         let (raw_tx, raw_rx) = mpsc::channel();
         let (tx, rx) = mpsc::channel();
-        raw_tx.send(Raw::Connected("controller".into())).unwrap();
+        raw_tx
+            .send(Raw::Connected("controller".into(), None))
+            .unwrap();
         raw_tx
             .send(Raw::Msg(
                 "controller".into(),
@@ -1371,7 +1524,7 @@ mod tests {
                 .send(Raw::Msg(port.clone(), note_on(36), test_stamp()))
                 .unwrap();
             if disconnect {
-                raw_tx.send(Raw::Disconnected(port)).unwrap();
+                raw_tx.send(Raw::Disconnected(port, None)).unwrap();
             } else {
                 raw_tx
                     .send(Raw::Msg(
@@ -1466,10 +1619,7 @@ mod tests {
     const XS: &str = "USB X-Session MIDI 1";
 
     fn test_stamp() -> Stamp {
-        Stamp {
-            epoch: 0,
-            ready: true,
-        }
+        Stamp::ready(0)
     }
 
     fn note_on(note: u8) -> Msg {
@@ -1739,11 +1889,12 @@ mod tests {
             let stale = Stamp {
                 epoch: 7,
                 ready: false,
+                source: None,
             };
             raw_tx
                 .send(Raw::Msg(XS.into(), foreign_release, stale))
                 .unwrap();
-            raw_tx.send(Raw::Connected(XS.into())).unwrap();
+            raw_tx.send(Raw::Connected(XS.into(), None)).unwrap();
             assert!(matches!(
                 rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
                 Event::Message { msg, .. } if msg == foreign_release
@@ -1776,7 +1927,7 @@ mod tests {
             raw_tx
                 .send(Raw::Msg(XS.into(), knob(25, 0), test_stamp()))
                 .unwrap();
-            raw_tx.send(Raw::Disconnected(XS.into())).unwrap();
+            raw_tx.send(Raw::Disconnected(XS.into(), None)).unwrap();
             drop(raw_tx);
             let hit = consumer.pop().unwrap();
             assert_eq!(hit.epoch, 0);
@@ -1855,7 +2006,7 @@ mod tests {
                     .map(|ch| Raw::Msg(XS.into(), press(ch), test_stamp()))
                     .into();
                 if disconnect {
-                    raw.push(Raw::Disconnected(XS.into()));
+                    raw.push(Raw::Disconnected(XS.into(), None));
                 } else {
                     raw.extend([2, 1].map(|ch| Raw::Msg(XS.into(), release(ch), test_stamp())));
                 }
@@ -1974,7 +2125,7 @@ mod tests {
                     direct: false
                 }
             ));
-            raw_tx.send(Raw::Disconnected(PADS.into())).unwrap();
+            raw_tx.send(Raw::Disconnected(PADS.into(), None)).unwrap();
             assert!(matches!(
                 rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
                 Event::Disconnected { .. }
@@ -2047,8 +2198,8 @@ mod tests {
     #[test]
     fn two_controllers() {
         let raw = vec![
-            Raw::Connected(PADS.into()),
-            Raw::Connected(XS.into()),
+            Raw::Connected(PADS.into(), None),
+            Raw::Connected(XS.into(), None),
             Raw::Msg(PADS.into(), note_on(36), test_stamp()),
             Raw::Msg(XS.into(), knob(24, 100), test_stamp()),
             Raw::Msg(PADS.into(), note_on(37), test_stamp()),
@@ -2071,12 +2222,12 @@ mod tests {
     #[test]
     fn controller_pulled_out_during_play() {
         let raw = vec![
-            Raw::Connected(XS.into()),
-            Raw::Connected(PADS.into()),
+            Raw::Connected(XS.into(), None),
+            Raw::Connected(PADS.into(), None),
             Raw::Msg(PADS.into(), note_on(36), test_stamp()),
-            Raw::Disconnected(PADS.into()),
-            Raw::Disconnected(XS.into()),
-            Raw::Connected(XS.into()),
+            Raw::Disconnected(PADS.into(), None),
+            Raw::Disconnected(XS.into(), None),
+            Raw::Connected(XS.into(), None),
             Raw::Msg(XS.into(), knob(24, 64), test_stamp()),
         ];
         let (events, sent) = dispatched(raw, vec![xsession()], on_screen(0, 0));
@@ -2105,7 +2256,7 @@ mod tests {
     #[test]
     fn new_controller() {
         let port = "Some Keys MIDI 1";
-        let mut raw = vec![Raw::Connected(port.into())];
+        let mut raw = vec![Raw::Connected(port.into(), None)];
         raw.extend((36..=52).map(|n| Raw::Msg(port.into(), note_on(n), test_stamp())));
         let (events, sent) = dispatched(raw, vec![xsession()], on_screen(0, 0));
         let pads: Vec<usize> = sent
@@ -2128,6 +2279,45 @@ mod tests {
         assert_eq!(seen[16], "not assigned");
     }
 
+    #[test]
+    fn an_example_does_not_replace_a_working_profile() {
+        let dir = std::env::temp_dir().join(format!("ptsr-profile-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("xsession-pro.toml"),
+            include_str!("../../../config/devices/xsession-pro.toml"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("smc-pad.toml.example"),
+            include_str!("../../../config/devices/smc-pad.toml.example"),
+        )
+        .unwrap();
+        let (profiles, errors) = load_profiles(dir.to_str().unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].name, "X-Session Pro");
+        let mut raw = vec![
+            Raw::Connected(PADS.into(), None),
+            Raw::Connected(XS.into(), None),
+        ];
+        raw.extend((36..=52).map(|note| Raw::Msg(PADS.into(), note_on(note), test_stamp())));
+        raw.push(Raw::Msg(XS.into(), knob(24, 64), test_stamp()));
+        let (events, sent) = dispatched(raw, profiles, on_screen(0, 0));
+        assert_eq!(connected(&events), ["default", "X-Session Pro"]);
+        let pads: Vec<_> = sent
+            .iter()
+            .filter_map(|command| match command {
+                Command::PadPress { pad, .. } => Some(*pad),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pads, (0..16).collect::<Vec<_>>());
+        assert_eq!(params(&events), [(Param::PadVolume, 64.0 / 127.0)]);
+    }
+
+    /// Scenario "Invalid working profiles retain default routing" (input-devices).
     /// Scenario "Profile with an error" (input-devices): a profile with `??` from the
     /// template is named with its file and line; the device plays with the default profile.
     #[test]
@@ -2145,7 +2335,7 @@ mod tests {
         let e = errors.first().expect("the error is named");
         assert!(e.contains("smc-pad.toml:4:"), "the file and the line: {e}");
         let raw = vec![
-            Raw::Connected(PADS.into()),
+            Raw::Connected(PADS.into(), None),
             Raw::Msg(PADS.into(), note_on(36), test_stamp()),
         ];
         let (events, sent) = dispatched(raw, profiles, on_screen(0, 0));
@@ -2158,7 +2348,7 @@ mod tests {
     #[test]
     fn reading_the_layout() {
         let raw = vec![
-            Raw::Connected(XS.into()),
+            Raw::Connected(XS.into(), None),
             Raw::Msg(XS.into(), knob(24, 64), test_stamp()),
             Raw::Msg(XS.into(), knob(99, 10), test_stamp()),
         ];

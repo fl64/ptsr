@@ -82,7 +82,7 @@ The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these
 ## Controllers
 
 - ptsr has a profile for the M-Audio X-Session Pro: `config/devices/xsession-pro.toml`.
-- `config/devices/smc-pad.toml` is a template for the M-VAVE SMC-PAD. It is not complete, and ptsr does not read it yet. The [SMC-PAD plan](docs/plans/SMC-PAD-INTEGRATION.md) describes the next integration, not current controls.
+- `config/devices/smc-pad.toml.example` is an unfinished template for the M-VAVE SMC-PAD. ptsr loads only `.toml` profiles and ignores this example. The [SMC-PAD plan](docs/plans/SMC-PAD-INTEGRATION.md) describes the next integration, not current controls.
 - A device without a profile plays the pads from notes 36–51.
 - More than one controller can work at the same time.
 - To bind a control to an action, press `F10` on a screen (learn mode), or use the MIDI tab in `F12`.

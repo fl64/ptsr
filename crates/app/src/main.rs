@@ -3,19 +3,27 @@ mod browser;
 mod chop;
 mod config;
 mod dispatch;
+mod graphics;
+mod help;
+mod input_sources;
 mod learn;
 mod loader;
 mod meters;
 mod midi;
+mod notices;
 mod pads;
 mod saving;
 mod session;
+mod values;
+mod view;
 mod wav;
 
 #[cfg(test)]
 mod input_tests;
 #[cfg(test)]
 mod saving_tests;
+#[cfg(test)]
+mod screens;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -38,6 +46,7 @@ use ratatui::crossterm::{
 
 use audio::{Audio, Routed};
 use config::AudioConfig;
+use notices::{Level, Notice, NoticeToken, Notices, Origin};
 
 /// Metronome click velocity.
 const CLICK_VELOCITY: f32 = 100.0 / 127.0;
@@ -89,8 +98,6 @@ enum Lit {
 const FRAME: Duration = Duration::from_millis(33);
 /// How long the audio thread load peak stays on screen.
 const LOAD_WINDOW: Duration = Duration::from_millis(500);
-/// How long a one-off message stays (save error, buffer size rejected).
-const FLASH: Duration = Duration::from_secs(5);
 const BUFFER_SIZES: [u32; 5] = [64, 128, 256, 512, 1024];
 const SETTINGS_ROWS: usize = 4;
 const DEVICES: &str = "config/devices";
@@ -396,6 +403,9 @@ struct App {
     fx_param: usize,
     settings_row: usize,
     help_open: bool,
+    help_overlay: help::State,
+    value_popup: Option<values::Shown>,
+    input_sources: input_sources::State,
     pads: pads::Pads,
     /// Output meters for the pads screen: bars, peak hold, the latching overload light.
     meters: meters::Meters,
@@ -515,10 +525,11 @@ struct App {
     /// The engine sample rate.
     rate: u32,
     input_level: f32,
-    flash: Option<(String, Instant)>,
-    /// Startup notices (config, session, keymap, terminal): the first key event of the
-    /// session clears them (22), until then they hold the notice line.
-    startup: Vec<String>,
+    notices: Notices,
+    notice_origin: Origin,
+    shown_error: Option<NoticeToken>,
+    frame_notice_level: Option<Level>,
+    chop_loading: Option<PathBuf>,
     keymap_warnings: std::collections::VecDeque<String>,
     keymap_warning_shown: bool,
     /// The splash in the wave strip at start (73): `true` until the first sound — a note
@@ -568,7 +579,7 @@ impl App {
         };
         if let Err(e) = result {
             log::error!("{e}");
-            self.flash = Some((e, Instant::now()));
+            self.post_notice(Level::Error, (e, Instant::now()));
         }
     }
 
@@ -586,6 +597,7 @@ impl App {
     /// pads, the chops. The start and the project open/switch both come here; everything
     /// of the previous state is dropped — nothing leaks between projects.
     fn apply_session(&mut self, sess: session::Session) {
+        self.value_popup = None;
         self.pending_audio.clear();
         self.audio_held.fill(None);
         self.midi_ui_held.clear();
@@ -619,6 +631,7 @@ impl App {
         self.set_master(sess.master_db);
         self.pads = pads::Pads::default();
         self.pad_naming = None;
+        self.chop_loading = None;
         self.chop = None;
         self.plan = None;
         self.plan_undo.clear();
@@ -714,10 +727,7 @@ impl App {
             None => Err("settings are not saved: fix the config file first".into()),
         };
         let shown = tilde(&at.display().to_string());
-        self.flash = Some((
-            result.map_or_else(|e| e, |_| format!("{what}: {shown}")),
-            Instant::now(),
-        ));
+        self.result_notice(result, format!("{what}: {shown}"));
     }
 
     /// (11) The config's `[project]` section: the last opened project's name. An error
@@ -729,7 +739,7 @@ impl App {
         };
         if let Err(e) = result {
             log::error!("{e}");
-            self.flash = Some((e, Instant::now()));
+            self.post_notice(Level::Error, (e, Instant::now()));
         }
     }
 
@@ -796,7 +806,10 @@ impl App {
             Ok(s) => s,
             Err(e) => {
                 log::error!("{e}");
-                self.flash = Some((format!("Project not opened: {e}"), Instant::now()));
+                self.post_notice(
+                    Level::Error,
+                    (format!("Project not opened: {e}"), Instant::now()),
+                );
                 return false;
             }
         };
@@ -811,7 +824,7 @@ impl App {
             folder,
         });
         self.apply_session(sess);
-        self.flash = Some((format!("Project {name}"), Instant::now()));
+        self.post_notice(Level::Done, (format!("Project {name}"), Instant::now()));
         self.project_cfg.last = Some(name);
         self.save_project_cfg();
         true
@@ -838,7 +851,7 @@ impl App {
             });
         if let Err(e) = result {
             log::error!("{e}");
-            self.flash = Some((e, Instant::now()));
+            self.post_notice(Level::Error, (e, Instant::now()));
             return false;
         }
         self.open_project(folder)
@@ -1057,25 +1070,6 @@ impl App {
         true
     }
 
-    /// The project picker as drawn: the open project is marked (35).
-    fn picker_view(&self) -> Option<tui::ProjectPickerView> {
-        let open = self.project.as_ref().map(|p| p.name.as_str());
-        self.project_picker
-            .as_ref()
-            .map(|p| tui::ProjectPickerView {
-                entries: p
-                    .entries
-                    .iter()
-                    .map(|name| match open {
-                        Some(o) if o == name => format!("{name}  ● open"),
-                        _ => name.clone(),
-                    })
-                    .collect(),
-                selected: p.selected,
-                naming: p.naming.clone(),
-            })
-    }
-
     /// (11) The window title: the open project joins the program's name while its folder
     /// is still on disk; a deleted folder drops the name.
     fn window_title(&self) -> String {
@@ -1104,26 +1098,35 @@ impl App {
             return;
         }
         let Some(a) = self.audio.as_ref() else {
-            self.flash = Some((
-                "No sound: there is nothing to record from.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Warn,
+                (
+                    "No sound: there is nothing to record from.".into(),
+                    Instant::now(),
+                ),
+            );
             return;
         };
         if source == audio::SOURCE_MIC && self.routed.input.is_none() {
-            self.flash = Some((
-                "No microphone is connected: nothing to record from.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Warn,
+                (
+                    "No microphone is connected: nothing to record from.".into(),
+                    Instant::now(),
+                ),
+            );
             return;
         }
         if source == audio::SOURCE_OUTPUT {
             let tapped = a.tap_output(&self.routed.playback);
             if !tapped {
-                self.flash = Some((
-                    "The output device has no monitor to record.".into(),
-                    Instant::now(),
-                ));
+                self.post_notice(
+                    Level::Warn,
+                    (
+                        "The output device has no monitor to record.".into(),
+                        Instant::now(),
+                    ),
+                );
                 return;
             }
         }
@@ -1165,22 +1168,28 @@ impl App {
     /// The ring of a stopped recording becomes a WAV in `root`, and the file goes in hand.
     fn keep_recording(&mut self, ring: &[f32], capped: bool, root: &Path) {
         let Some(sample) = sample_from_interleaved(ring, self.rate) else {
-            self.flash = Some((
-                "The recording was silent: nothing is kept.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Info,
+                (
+                    "The recording was silent: nothing is kept.".into(),
+                    Instant::now(),
+                ),
+            );
             return;
         };
         if let Err(e) = std::fs::create_dir_all(root) {
-            self.flash = Some((
-                format!("Cannot create {}: {e}", root.display()),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Error,
+                (
+                    format!("Cannot create {}: {e}", root.display()),
+                    Instant::now(),
+                ),
+            );
             return;
         }
         let path = free_name(root, &stamp(std::time::SystemTime::now()));
         if let Err(e) = wav::write(&path, &sample, self.rate) {
-            self.flash = Some((e, Instant::now()));
+            self.post_notice(Level::Error, (e, Instant::now()));
             return;
         }
         let secs = sample.left.len() as f32 / self.rate as f32;
@@ -1189,10 +1198,13 @@ impl App {
         } else {
             ""
         };
-        self.flash = Some((
-            format!("Recorded {secs:.1} s{cap} · hit a pad"),
-            Instant::now(),
-        ));
+        self.post_notice(
+            if capped { Level::Warn } else { Level::Done },
+            (
+                format!("Recorded {secs:.1} s{cap} · hit a pad"),
+                Instant::now(),
+            ),
+        );
         self.browser.in_hand = Some(path);
     }
 
@@ -1219,61 +1231,6 @@ impl App {
         }
     }
 
-    /// The lit thing while it is still lit.
-    fn lit_now(&self) -> Option<Lit> {
-        self.lit
-            .filter(|(_, at)| at.elapsed() < LIT_FOR)
-            .map(|(l, _)| l)
-    }
-
-    /// The pad panel's marks: the edit frame with its page and knobs, the lit parameter.
-    fn mark_pads(&self, mut v: tui::Pads) -> tui::Pads {
-        if let Some(audio) = &self.audio {
-            use std::sync::atomic::Ordering::Acquire;
-            let epoch = audio.project.epoch.load(Acquire);
-            v.playing = audio.project.ready.load(Acquire) == epoch
-                && audio.stats.pads_playing(epoch)
-                && audio.project.epoch.load(Acquire) == epoch
-                && audio.project.ready.load(Acquire) == epoch;
-        }
-        if self.edit && self.screen == Screen::Pads {
-            let (page, params) = self.pads.page();
-            v.edit = Some(page);
-            v.pages = pads::page_names();
-            if page == "FILTER" {
-                v.curve = Some(filter_curve(
-                    self.pads.filter_settings(self.pads.selected_abs()),
-                ));
-            }
-            v.knobs = params.iter().map(|&p| tui_param(p)).collect();
-        }
-        if let Some(Lit::Pad(p)) = self.lit_now() {
-            v.lit = Some(tui_param(p));
-        }
-        // the learn mode labels the grid and the panel with their controls (47, 52)
-        self.learn_grid(&mut v.pads);
-        self.learn_panel(&mut v);
-        v.hidden = self.ui.hide_pads;
-        v
-    }
-
-    /// The chop screen's marks: the edit name on the slice line and the bound in play — a
-    /// held modifier's (Ctrl the start, Alt the end), the picked one in the edit, the one
-    /// that just moved.
-    fn mark_chop<'a>(&self, mut v: tui::Chop<'a>, held: Option<input::Modifier>) -> tui::Chop<'a> {
-        v.edit = self.edit;
-        // the plan is checked on the grid: the assign mode shows it even with the pads hidden (32)
-        v.pads.hidden = self.ui.hide_pads && self.plan.is_none();
-        v.hot = match (held, self.lit_now()) {
-            (Some(input::Modifier::Ctrl), _) => Some(false),
-            (Some(input::Modifier::Alt), _) => Some(true),
-            _ if self.edit => Some(self.slice_end),
-            (_, Some(Lit::Bound(end))) => Some(end),
-            _ => None,
-        };
-        v
-    }
-
     fn fx_selected_param(&self) -> pads::Param {
         EFFECT_PARAMS[3 + self.fx_slot * 3 + self.fx_param]
     }
@@ -1290,92 +1247,6 @@ impl App {
         match p.slot() {
             Some(k) => format!("FX {} {}", k + 1, self.pads.name(p)),
             None => self.pads.name(p).into(),
-        }
-    }
-
-    fn fx_view(&self) -> tui::Fx {
-        let profiles = self.live_profiles();
-        tui::Fx {
-            blocks: std::array::from_fn(|k| tui::FxBlock {
-                rows: std::array::from_fn(|i| {
-                    let p = EFFECT_PARAMS[3 + k * 3 + i];
-                    (
-                        self.pads.name(p),
-                        self.pads.fx_text(self.pads.selected_abs(), p),
-                    )
-                }),
-            }),
-            selected: self.fx_slot,
-            param: self.fx_param,
-            pickup: self.pickup.as_ref().map(|p| p.0.clone()),
-            learn: if self.screen_learn.is_some() {
-                (0..3)
-                    .map(|i| {
-                        let name = self.learn_params()[i].0;
-                        (
-                            i,
-                            self.learn_shown(&profiles, name)
-                                .unwrap_or_else(|| "none".into()),
-                        )
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            },
-            lit: match self.lit_now() {
-                _ if self.screen_learn.is_some() => self.learn_params()[..3]
-                    .iter()
-                    .position(|(name, _)| self.learn_picked().is_some_and(|p| p.0 == *name)),
-                Some(Lit::Pad(p)) if p.slot() == Some(self.fx_slot) => EFFECT_PARAMS
-                    [3 + self.fx_slot * 3..6 + self.fx_slot * 3]
-                    .iter()
-                    .position(|&v| v == p),
-                _ => None,
-            },
-        }
-    }
-
-    /// What the help line says about the states of this moment.
-    fn help_state(&self) -> HelpState {
-        HelpState {
-            hand: match (
-                self.browser.in_hand.is_some(),
-                self.pad_in_hand.is_some(),
-                self.copy_in_hand.is_some(),
-            ) {
-                (true, _, _) => Some("hit a pad to put it there"),
-                (false, true, _) => Some("hit a pad to swap them"),
-                // 83a: a copy in hand names its next step instead of the swap hint
-                (false, false, true) => Some("hit a pad to copy it there"),
-                _ => None,
-            },
-            preview_on: self.preview_on,
-            assign: self.plan.is_some(),
-            snap: self.chop.as_ref().map_or(chop::Snap::Off, |c| c.snap),
-            tab: self.settings_tab,
-            param_name: match (self.screen, self.slice_end) {
-                (Screen::Chop, true) => "end",
-                (Screen::Chop, false) => "start",
-                (Screen::Fx, _) => self.pads.name(self.fx_selected_param()),
-                _ => self.pads.param_name(),
-            },
-            page: match self.screen {
-                Screen::Chop => "BOUNDS",
-                Screen::Fx => {
-                    if self.fx_slot == 0 {
-                        "FX 1"
-                    } else {
-                        "FX 2"
-                    }
-                }
-                _ => self.pads.page().0,
-            },
-            play: self.chop.as_ref().map_or("to end", |c| c.play.name()),
-            looping: self.chop.as_ref().is_some_and(|c| c.looping),
-            as_pad: self.chop.as_ref().is_some_and(|c| c.as_pad),
-            marking: self.pads.marking,
-            scope: self.pads.scope_name(),
-            edit: self.edit,
         }
     }
 
@@ -1410,7 +1281,7 @@ impl App {
             } else {
                 "pad is empty: put a sample on it first (F6)"
             };
-            self.flash = Some((why.into(), Instant::now()));
+            self.post_notice(Level::Warn, (why.into(), Instant::now()));
             return;
         };
         let (region, link) = (self.pads.region[abs], self.pads.link[abs]);
@@ -1430,11 +1301,14 @@ impl App {
             self.fresh_undo = Some((old.file.clone(), epoch, old.epoch));
             self.chop = Some(old.fresh(epoch));
             self.older.push(old);
-            self.flash = Some((
-                "a new chop of this file; the older one keeps its pads, Ctrl+Z goes back to it"
-                    .into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Info,
+                (
+                    "a new chop of this file; the older one keeps its pads, Ctrl+Z goes back to it"
+                        .into(),
+                    Instant::now(),
+                ),
+            );
         }
         self.sync_links();
         let Some(c) = self.chop.as_mut() else {
@@ -1495,7 +1369,10 @@ impl App {
             .filter(|e| !e.is_dir)
             .map(|e| self.browser.dir.join(&e.name))
         else {
-            self.flash = Some(("select a file to chop".into(), Instant::now()));
+            self.post_notice(
+                Level::Warn,
+                ("select a file to chop".into(), Instant::now()),
+            );
             return;
         };
         // already in memory: on a pad or in a chop
@@ -1513,7 +1390,7 @@ impl App {
             Some(sound) => self.show_file_chop(path, sound),
             None => {
                 self.load_gen[CHOP] += 1;
-                self.flash = Some((format!("Loading {}…", file_name(&path)), Instant::now()));
+                self.chop_loading = Some(path.clone());
                 self.request(CHOP, path, self.load_gen[CHOP]);
             }
         }
@@ -1536,11 +1413,11 @@ impl App {
     fn normalize_pad(&mut self) {
         let no_pad = "no pad to set the volume on".to_string();
         let Some(abs) = self.chop_from else {
-            self.flash = Some((no_pad, Instant::now()));
+            self.post_notice(Level::Warn, (no_pad, Instant::now()));
             return;
         };
         let Some(sound) = self.pads.sound[abs].clone() else {
-            self.flash = Some((no_pad, Instant::now()));
+            self.post_notice(Level::Warn, (no_pad, Instant::now()));
             return;
         };
         let (start, end) = (
@@ -1569,7 +1446,14 @@ impl App {
         } else {
             format!("normalized: {db:+} dB")
         };
-        self.flash = Some((text, Instant::now()));
+        self.post_notice(
+            if raw > f32::from(pads::MAX_DB) {
+                Level::Warn
+            } else {
+                Level::Done
+            },
+            (text, Instant::now()),
+        );
     }
 
     /// Makes the chop of `file` the open one; `true` when it had to be made new.
@@ -1904,7 +1788,7 @@ impl App {
         } else {
             format!("{n} {pads} changed; Ctrl+Z returns")
         };
-        self.flash = Some((text, Instant::now()));
+        self.post_notice(Level::Info, (text, Instant::now()));
     }
 
     /// Slices of the open chop that no pad plays: they wear a `○` (36).
@@ -1936,41 +1820,6 @@ impl App {
                     && self.pads.link[a].is_some_and(|l| l.1 == c.epoch)
             })
             .count()
-    }
-
-    fn chop_display<'a>(&self, chop: &'a chop::Chop) -> tui::Chop<'a> {
-        let preview = self.playhead();
-        let mut view = chop_view(chop, self.plan.as_ref(), preview, self.rate, &self.pads);
-        // Only the line and badge use pad positions. Space and M still use the
-        // preview position, so observing a pad cannot change transport or edits.
-        if preview.is_none()
-            && self.plan.is_none()
-            && self.screen == Screen::Chop
-            && let Some(audio) = &self.audio
-        {
-            use std::sync::atomic::Ordering::Acquire;
-            let epoch = audio.project.epoch.load(Acquire);
-            if audio.project.ready.load(Acquire) == epoch {
-                let position = audio.stats.pad_position(&chop.sound, epoch, |pad| {
-                    self.pads.file[pad].as_ref() == Some(&chop.file)
-                        && self.pads.link[pad].is_some_and(|(_, e)| e == chop.epoch)
-                });
-                if audio.project.epoch.load(Acquire) == epoch
-                    && audio.project.ready.load(Acquire) == epoch
-                {
-                    if position.is_some() {
-                        view.mode.push_str(" ▶");
-                    }
-                    view.playhead = position
-                        .filter(|p| (chop.view.start..chop.view.end).contains(p))
-                        .map(|p| {
-                            (p - chop.view.start) as f32
-                                / (chop.view.end - chop.view.start).max(1) as f32
-                        });
-                }
-            }
-        }
-        view
     }
 
     /// Where the chop screen playback is, in frames of the sample.
@@ -2075,7 +1924,7 @@ impl App {
         let by_hand = matches!(plan, chop::Plan::ByHand(_));
         let all_placed = format!("all {count} slices placed: Enter applies");
         if by_hand && plan.all_planned(count) {
-            self.flash = Some((all_placed, Instant::now()));
+            self.post_notice(Level::Info, (all_placed, Instant::now()));
         } else {
             plan.hit(abs, before);
             if by_hand {
@@ -2083,7 +1932,7 @@ impl App {
                     Some(next) => {
                         c.select_slice(next);
                     }
-                    None => self.flash = Some((all_placed, Instant::now())),
+                    None => self.post_notice(Level::Info, (all_placed, Instant::now())),
                 }
             }
             self.change_plan(plan.clone(), before);
@@ -2121,10 +1970,13 @@ impl App {
             let start = self.pads.selected_abs();
             let slice = self.chop.as_ref().map_or(0, |c| c.selected);
             self.change_plan(chop::Plan::InOrder(Some(start)), slice);
-            self.flash = Some((
-                format!("from {}: Enter applies", pad_place(start)),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Info,
+                (
+                    format!("from {}: Enter applies", pad_place(start)),
+                    Instant::now(),
+                ),
+            );
             return;
         }
         let (Some(c), Some(plan)) = (&self.chop, &self.plan) else {
@@ -2136,7 +1988,10 @@ impl App {
         let targets = plan.targets(slices.len());
         let taken = |p: usize| self.pads.file[p].is_some();
         let Some(summary) = chop::summary(&targets, slices.len(), taken) else {
-            self.flash = Some(("nothing planned: hit a pad".into(), Instant::now()));
+            self.post_notice(
+                Level::Warn,
+                ("nothing planned: hit a pad".into(), Instant::now()),
+            );
             return;
         };
         let lost: Vec<String> = targets
@@ -2184,7 +2039,10 @@ impl App {
             });
             self.send(Command::SetPadRegion { pad: abs, region });
         }
-        self.flash = Some((format!("slices placed on {summary}"), Instant::now()));
+        self.post_notice(
+            Level::Done,
+            (format!("slices placed on {summary}"), Instant::now()),
+        );
         // the chop stays open: its cuts can still be moved and the pads follow
         self.plan = None;
         self.goto(Screen::Pads);
@@ -2247,26 +2105,35 @@ impl App {
     fn take_copy(&mut self) {
         let abs = self.pads.selected_abs();
         if self.pads.sound[abs].is_none() {
-            self.flash = Some(("Copy what? This pad holds nothing.".into(), Instant::now()));
+            self.post_notice(
+                Level::Warn,
+                ("Copy what? This pad holds nothing.".into(), Instant::now()),
+            );
             return;
         }
         if self.pads.missing[abs] {
-            self.flash = Some((
-                "Copy what? The file this pad plays is gone.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Copy what? The file this pad plays is gone.".into(),
+                    Instant::now(),
+                ),
+            );
             return;
         }
         if self.pads.loading[abs].is_some() {
-            self.flash = Some((
-                "Wait until loading finishes, then copy.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Wait until loading finishes, then copy.".into(),
+                    Instant::now(),
+                ),
+            );
             return;
         }
         let snap = self.pads.snapshot(abs);
         self.copy_in_hand = Some((abs, snap));
-        self.flash = Some((("COPY · hit a pad").into(), Instant::now()));
+        self.post_notice(Level::Info, (("COPY · hit a pad").into(), Instant::now()));
     }
 
     /// 83a: a pad hit with a copy in hand picks the target: the hit does not play, the
@@ -2279,14 +2146,17 @@ impl App {
         if abs == source {
             // a hit on the original source cancels: no pad changes, no undo step
             self.copy_in_hand = None;
-            self.flash = Some(("copy dropped".into(), Instant::now()));
+            self.post_notice(Level::Info, ("copy dropped".into(), Instant::now()));
             return true;
         }
         if self.pads.loading[abs].is_some() {
-            self.flash = Some((
-                "Wait until loading finishes, then place the copy.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Wait until loading finishes, then place the copy.".into(),
+                    Instant::now(),
+                ),
+            );
             return true;
         }
         if self.pads.sound[abs].is_some() && self.pads.loading[abs].is_none() {
@@ -2341,7 +2211,7 @@ impl App {
             self.send(cmd);
         }
         self.dirty();
-        self.flash = Some(("copy placed".into(), Instant::now()));
+        self.post_notice(Level::Done, ("copy placed".into(), Instant::now()));
     }
 
     /// The displayed name of the copy before it is placed: the source's name plus ` 2`.
@@ -2376,10 +2246,13 @@ impl App {
         }
         if self.pads.loading[from].is_some() || self.pads.loading[abs].is_some() {
             // the load would land on the old place
-            self.flash = Some((
-                "Wait until loading finishes, then swap.".into(),
-                Instant::now(),
-            ));
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Wait until loading finishes, then swap.".into(),
+                    Instant::now(),
+                ),
+            );
             return;
         }
         let cmd = self.pads.swap(from, abs);
@@ -2405,10 +2278,13 @@ impl App {
                 if self.browser.in_hand.as_ref() == Some(&path) {
                     self.browser.in_hand = None;
                 }
-                self.flash = Some((
-                    format!("{} already lies there", file_name(&path)),
-                    Instant::now(),
-                ));
+                self.post_notice(
+                    Level::Info,
+                    (
+                        format!("{} already lies there", file_name(&path)),
+                        Instant::now(),
+                    ),
+                );
                 return;
             }
             let mut lines = vec![
@@ -2508,10 +2384,13 @@ impl App {
                 error,
             } => {
                 if generation == self.load_gen[PREVIEW] {
-                    self.flash = Some((
-                        format!("Cannot play {}: {error}", file_name(&path)),
-                        Instant::now(),
-                    ));
+                    self.post_system_notice(
+                        Level::Error,
+                        (
+                            format!("Cannot play {}: {error}", file_name(&path)),
+                            Instant::now(),
+                        ),
+                    );
                 }
             }
             loader::Reply::Progress {
@@ -2525,7 +2404,7 @@ impl App {
                 sound,
             } => {
                 if generation == self.load_gen[CHOP] {
-                    self.flash = None;
+                    self.chop_loading = None;
                     self.show_file_chop(path, sound);
                 }
             }
@@ -2536,10 +2415,14 @@ impl App {
                 error,
             } => {
                 if generation == self.load_gen[CHOP] {
-                    self.flash = Some((
-                        format!("Cannot chop {}: {error}", file_name(&path)),
-                        Instant::now(),
-                    ));
+                    self.chop_loading = None;
+                    self.post_system_notice(
+                        Level::Error,
+                        (
+                            format!("Cannot chop {}: {error}", file_name(&path)),
+                            Instant::now(),
+                        ),
+                    );
                 }
             }
             loader::Reply::Progress { pad, percent } => {
@@ -2584,10 +2467,13 @@ impl App {
                 error,
             } if generation == self.load_gen[pad] => {
                 self.pads.loading[pad] = None;
-                self.flash = Some((
-                    format!("Cannot load {}: {error}", file_name(&path)),
-                    Instant::now(),
-                ));
+                self.post_system_notice(
+                    Level::Error,
+                    (
+                        format!("Cannot load {}: {error}", file_name(&path)),
+                        Instant::now(),
+                    ),
+                );
                 // a session file that no longer loads: the pad goes silent; a new file that
                 // failed leaves the pad as it was
                 if self.pads.file[pad].as_ref() == Some(&path) {
@@ -2803,7 +2689,7 @@ impl App {
         self.sync_learned(&profile, group);
         self.save_midi();
         log::info!("MIDI learn on screen: {profile} {key} -> {name}");
-        self.flash = Some((format!("{key} → {label}"), Instant::now()));
+        self.post_notice(Level::Done, (format!("{key} → {label}"), Instant::now()));
         // "do, then F10" binds one element: nothing to walk on to (57)
         if self.screen_learn.as_ref().is_some_and(|l| l.once) {
             self.screen_learn = None;
@@ -2917,7 +2803,7 @@ impl App {
                 self.sync_learned(&profile, group);
             }
             self.save_midi();
-            self.flash = Some((format!("cleared: {label}"), Instant::now()));
+            self.post_notice(Level::Done, (format!("cleared: {label}"), Instant::now()));
             return true;
         }
         false
@@ -3101,8 +2987,7 @@ impl App {
         }
     }
 
-    /// The three lines of the learn mode in words (52): the top line of the screen, then
-    /// what to do next in the help band.
+    /// Learning messages and confirmation details before the fixed-band view arranges them.
     fn learn_lines(&self) -> Option<Vec<String>> {
         let l = self.screen_learn.as_ref()?;
         let profiles = self.live_profiles();
@@ -3321,7 +3206,7 @@ impl App {
         };
         if let Err(e) = result {
             log::error!("{e}");
-            self.flash = Some((e, Instant::now()));
+            self.post_notice(Level::Error, (e, Instant::now()));
         }
     }
 
@@ -3590,10 +3475,7 @@ impl App {
             Some(p) => config::save_section(p, "knobs", &section),
             None => Err("settings are not saved: fix the config file first".into()),
         };
-        self.flash = Some((
-            result.map_or_else(|e| e, |_| format!("knobs: {}", next.name())),
-            Instant::now(),
-        ));
+        self.result_notice(result, format!("knobs: {}", next.name()));
     }
 
     /// Opens the group of the selected row (`true`) or closes it, and selects its row.
@@ -3882,7 +3764,7 @@ impl App {
     /// `Ctrl+Z` on the pads (61): the last step comes back, every pad of it sounds as before.
     fn undo_pads(&mut self) {
         let Some(step) = self.history.pop() else {
-            self.flash = Some(("nothing to undo".into(), Instant::now()));
+            self.post_notice(Level::Info, ("nothing to undo".into(), Instant::now()));
             return;
         };
         for (abs, snap) in &step.pads {
@@ -3905,7 +3787,10 @@ impl App {
             [(abs, _)] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
             many => format!("{} pads", many.len()),
         };
-        self.flash = Some((format!("undo: {} on {on}", step.what), Instant::now()));
+        self.post_notice(
+            Level::Done,
+            (format!("undo: {} on {on}", step.what), Instant::now()),
+        );
     }
 
     fn set_pad_region(&mut self, abs: usize, region: Region) {
@@ -3945,7 +3830,10 @@ impl App {
         };
         self.set_pad_region(abs, region);
         self.lit = Some((Lit::Pad(pads::Param::Source), Instant::now()));
-        self.flash = Some((format!("source: {}", source_word(source)), Instant::now()));
+        self.post_notice(
+            Level::Info,
+            (format!("source: {}", source_word(source)), Instant::now()),
+        );
     }
 
     /// Moves the pad's start or end to `to` frames; a pad that followed the file or its
@@ -3982,19 +3870,22 @@ impl App {
         self.lit = Some((Lit::Pad(what), Instant::now()));
         let key = PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase();
         let secs = |f: usize| f as f32 / self.rate.max(1) as f32;
-        self.flash = Some((
-            match was {
-                pads::Source::Slice(_) => {
-                    format!("pad {key} no longer follows the cuts; Ctrl+Z links it back")
-                }
-                _ => format!(
-                    "{}: {:.3} s",
-                    if end { "end" } else { "start" },
-                    secs(if end { region.end } else { region.start })
-                ),
-            },
-            Instant::now(),
-        ));
+        self.post_notice(
+            Level::Info,
+            (
+                match was {
+                    pads::Source::Slice(_) => {
+                        format!("pad {key} no longer follows the cuts; Ctrl+Z links it back")
+                    }
+                    _ => format!(
+                        "{}: {:.3} s",
+                        if end { "end" } else { "start" },
+                        secs(if end { region.end } else { region.start })
+                    ),
+                },
+                Instant::now(),
+            ),
+        );
     }
 
     /// The value keys on the SOURCE page: the source steps through its list, a bound moves
@@ -4002,7 +3893,10 @@ impl App {
     fn source_value(&mut self, up: bool, fine: bool) {
         let abs = self.pads.selected_abs();
         let Some((start, stop, _)) = self.pad_bounds(abs) else {
-            self.flash = Some(("empty pad: nothing to play from".into(), Instant::now()));
+            self.post_notice(
+                Level::Warn,
+                ("empty pad: nothing to play from".into(), Instant::now()),
+            );
             return;
         };
         match self.pads.param {
@@ -4077,10 +3971,7 @@ impl App {
             } else {
                 "Braille"
             };
-            self.flash = Some((
-                result.map_or_else(|e| e, |_| format!("wave: {what} from the next start")),
-                Instant::now(),
-            ));
+            self.result_notice(result, format!("wave: {what} from the next start"));
             return;
         }
         if row == 2 {
@@ -4096,7 +3987,7 @@ impl App {
                     self.cfg.buffer_size = size;
                     self.save();
                 }
-                Some(Err(e)) => self.flash = Some((e, Instant::now())),
+                Some(Err(e)) => self.post_notice(Level::Error, (e, Instant::now())),
                 None => {}
             }
             return;
@@ -4119,72 +4010,6 @@ impl App {
         }
         self.reroute();
         self.save();
-    }
-
-    fn notice(&self) -> Option<String> {
-        self.notice_at(Instant::now())
-    }
-
-    fn notice_at(&self, now: Instant) -> Option<String> {
-        if let Some((source, at)) = &self.recording {
-            let elapsed = now.saturating_duration_since(*at);
-            return Some(format!(
-                "Recording {} {}.{:01} s… {}",
-                if *source == audio::SOURCE_MIC {
-                    "the microphone"
-                } else {
-                    "the output"
-                },
-                elapsed.as_secs(),
-                elapsed.subsec_millis() / 100,
-                if *source == audio::SOURCE_MIC {
-                    "release Alt+R to stop"
-                } else {
-                    "Ctrl+T to stop"
-                }
-            ));
-        }
-        if self.audio.as_ref().is_some_and(|a| a.stopped.load(Relaxed)) {
-            return Some("Audio stopped: the sound server or device went away.".into());
-        }
-        if let Some((msg, at)) = &self.flash
-            && now.saturating_duration_since(*at) < FLASH
-        {
-            return Some(msg.clone());
-        }
-        if let Some(abs) = (0..PADS).find(|&p| self.pads.loading[p].is_some()) {
-            let name = self.pads.file[abs]
-                .as_deref()
-                .map(file_name)
-                .unwrap_or_default();
-            return Some(format!(
-                "Loading {name} {}%",
-                self.pads.loading[abs].unwrap_or(0)
-            ));
-        }
-        if let Some((what, want, got)) = self.missing() {
-            return Some(format!(
-                "{what} '{want}' not found, using '{}'",
-                got.unwrap_or("none")
-            ));
-        }
-        self.startup.first().cloned().or_else(|| {
-            (!self.key_notice_blocked())
-                .then(|| self.keymap_warnings.front().cloned())
-                .flatten()
-        })
-    }
-
-    fn frame_notice(&mut self) -> Option<String> {
-        let notice = self
-            .pad_naming
-            .as_ref()
-            .map(|(_, name)| format!("Name: {name}▏  Enter saves · Esc cancels"))
-            .or_else(|| self.notice());
-        self.keymap_warning_shown = !self.key_notice_blocked()
-            && self.keymap_warnings.front().is_some()
-            && notice.as_ref() == self.keymap_warnings.front();
-        notice
     }
 
     fn key_notice_blocked(&self) -> bool {
@@ -4216,7 +4041,7 @@ impl App {
             screen.is_none_or(|screen| screen == self.screen) && *old == key
         });
         if let Some((_, _, message)) = row {
-            self.flash = Some(((*message).into(), Instant::now()));
+            self.post_notice(Level::Warn, ((*message).into(), Instant::now()));
             return true;
         }
         false
@@ -4225,15 +4050,7 @@ impl App {
     /// The first key event of the session clears the startup notices: the owner has read
     /// them (22).
     fn dismiss_startup(&mut self) {
-        self.startup.clear();
-    }
-
-    /// The splash view while no sound went (73); `None` draws the wave in the strip.
-    fn splash_view(&self) -> Option<tui::Splash> {
-        self.splash.then(|| tui::Splash {
-            version: env!("CARGO_PKG_VERSION"),
-            loading: self.splash_line(),
-        })
+        self.notices.dismiss_startup(Instant::now());
     }
 
     /// A pad that can sound now: a loaded sample, not still loading, not failed (73).
@@ -4244,26 +4061,6 @@ impl App {
             && self.pads.loading[pad].is_none()
     }
 
-    /// The loading line of the splash (73): what loads now, `ready` when all is loaded,
-    /// or a file that did not load.
-    fn splash_line(&self) -> String {
-        if let Some(pad) = (0..PADS).find(|&p| self.pads.missing[p] && self.pads.file[p].is_some())
-        {
-            return format!(
-                "cannot load {}",
-                file_name(self.pads.file[pad].as_deref().unwrap_or(Path::new("")))
-            );
-        }
-        let loading = self.pads.loading.iter().filter(|l| l.is_some()).count();
-        if loading > 0 {
-            format!(
-                "loading the session, {loading} {}",
-                if loading == 1 { "sample" } else { "samples" }
-            )
-        } else {
-            "ready".into()
-        }
-    }
     /// A saved device that is missing now: (what, saved name, where audio goes).
     fn missing(&self) -> Option<(&'static str, &str, Option<&str>)> {
         self.audio_alive()?.devices()?;
@@ -4391,6 +4188,9 @@ fn main() -> std::io::Result<()> {
         fx_param: 0,
         settings_row: 0,
         help_open: false,
+        help_overlay: help::State::default(),
+        value_popup: None,
+        input_sources: input_sources::State::default(),
         pads: pads::Pads::default(),
         meters: meters::Meters::default(),
         settings_tab: 0,
@@ -4446,8 +4246,11 @@ fn main() -> std::io::Result<()> {
         ask: None,
         rate: 48_000,
         input_level: 0.0,
-        flash: None,
-        startup: Vec::new(),
+        notices: Notices::new(Instant::now()),
+        notice_origin: Origin::System,
+        shown_error: None,
+        frame_notice_level: None,
+        chop_loading: None,
         keymap_warnings: Default::default(),
         keymap_warning_shown: false,
         // the splash shows from the first frame on and lives until the first sound (73)
@@ -4468,31 +4271,36 @@ fn main() -> std::io::Result<()> {
     // favorites the browser holds, so the saved ones go in first (03b)
     app.browser.favorites = favorites;
     app.apply_session(sess);
-    // a broken project file speaks right away, as open_project does (11)
-    if let Some(e) = project_notice {
-        app.flash = Some((e, Instant::now()));
+    // Session read protection below records this failure once at startup.
+    if let Some(e) = project_notice.filter(|_| session_notice.is_none()) {
+        app.post_startup(Level::Error, e);
     }
     let (keymap, keymap_notice, keymap_warnings) = load_keymap(
         &config::xdg_dir("XDG_CONFIG_HOME", ".config").join("keymap.toml"),
         DEFAULT_KEYMAP,
     );
-    app.keymap_warnings.extend(keymap_warnings);
+    app.add_keymap_warnings(keymap_warnings);
     let (profiles, profile_errors) = midi::load_profiles(DEVICES);
     if let Some(msg) = audio_msg {
-        app.flash = Some((msg, Instant::now()));
+        app.post_startup(
+            if app.audio.is_some() {
+                Level::Warn
+            } else {
+                Level::Error
+            },
+            msg,
+        );
     }
-    if let Some(e) = profile_errors.first()
-        && app.flash.is_none()
-    {
-        app.flash = Some((
+    for e in profile_errors {
+        app.post_startup(
+            Level::Warn,
             format!("{e}; that device uses the default profile"),
-            Instant::now(),
-        ));
+        );
     }
     let shared = Arc::new(midi::Shared::default());
     app.profiles = profiles.clone();
     if let Some(notice) = app.drop_dead_bindings() {
-        app.startup.push(notice);
+        app.post_startup(Level::Warn, notice);
     }
     app.migrate_fx_bindings();
     let maps = midi::parse_learned(&app.learned);
@@ -4530,13 +4338,18 @@ fn main() -> std::io::Result<()> {
     app.pads.track_keys = kitty;
     // Braille unless the owner switched the picture on (04b): only then ask the terminal
     let graphics = app.ui.graphics && graphics_support();
-    let mut shown = tui::Shown::default();
+    let mut shown = graphics::State::default();
+    let mut frame_text = view::FrameText::default();
+    let mut status_text = tui::TextCache::default();
     // the startup notices live on the app: the first key event of the session clears them
-    for notice in [loaded.error, session_notice, keymap_notice] {
-        app.startup.extend(notice);
+    for notice in [loaded.error, session_notice, keymap_notice]
+        .into_iter()
+        .flatten()
+    {
+        app.post_startup(Level::Error, notice);
     }
     if !kitty {
-        app.startup.push(NO_RELEASES_NOTICE.into());
+        app.post_startup(Level::Warn, NO_RELEASES_NOTICE.into());
     }
     let mut held = HeldPads::default();
     let mut keys_down = input::HeldKeys::default();
@@ -4611,15 +4424,23 @@ fn main() -> std::io::Result<()> {
             app.input_level = a.stats.take_input_peak().max(app.input_level * 0.8);
             app.meters.update(a.stats.take_output(), Instant::now());
         }
+        let size = match term.size() {
+            Ok(size) => size,
+            Err(error) => break Err(error),
+        };
+        app.resize_help(size.width, size.height);
         let fresh = app.window_title();
         if fresh != title {
             title = fresh;
             let _ = execute!(std::io::stdout(), SetTitle(title.as_str()));
         }
 
+        app.input_sources.advance(Instant::now());
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
+        let text_at = Instant::now();
         let status = tui::Status {
+            badges: frame_text.badges_at(&app, text_at).to_vec(),
             save: app.save_status(),
             backend: app.audio_alive().map(|a| a.backend),
             recording: app.recording.is_some(),
@@ -4633,7 +4454,15 @@ fn main() -> std::io::Result<()> {
                 app.meters.peak_db(),
                 app.meters.clip(),
             ),
-            notice: notice.as_deref(),
+            notice: notice.as_deref().map(|text| tui::NoticeLine {
+                text,
+                level: app.frame_notice_level.map(|level| match level {
+                    Level::Info => tui::NoticeLevel::Info,
+                    Level::Done => tui::NoticeLevel::Done,
+                    Level::Warn => tui::NoticeLevel::Warn,
+                    Level::Error => tui::NoticeLevel::Error,
+                }),
+            }),
             no_releases: !kitty,
             project: app
                 .project
@@ -4686,6 +4515,7 @@ fn main() -> std::io::Result<()> {
                     error: app.browser.error.as_deref(),
                     pads: {
                         let mut v = tui::Pads {
+                            feedback: app.pad_feedback(),
                             hidden: app.ui.hide_pads,
                             ..pads_view(&mut app.pads, None, app.pad_in_hand, out, None, app.rate)
                         };
@@ -4778,39 +4608,55 @@ fn main() -> std::io::Result<()> {
             }
             rows
         });
-        let learn_lines = app.learn_lines();
+        let messages = app.message_history();
+        let learn_lines = app.learning_view(&keymap);
+        let question = app.question_view(&keymap);
+        let feedback = frame_text.feedback_at(&app, text_at);
         let help = tui::Help {
             groups: &groups,
             hint: hint_for(&app),
-            full: full.as_deref(),
-            question: app.ask.as_ref().map(|a| a.lines()),
-            learn: learn_lines.as_deref(),
+            full: full
+                .as_deref()
+                .and_then(|rows| app.full_help_view(rows, &messages)),
+            question: question.as_ref(),
+            learn: learn_lines.as_ref(),
+        };
+        let value = app.current_value_at(Instant::now());
+        let cell_px = if graphics {
+            match terminal::window_size() {
+                Ok(s) if s.columns > 0 && s.rows > 0 => (s.width / s.columns, s.height / s.rows),
+                _ => (0, 0),
+            }
+        } else {
+            (0, 0)
         };
         let mut want = Vec::new();
-        let drawn = if graphics {
-            term.draw(|f| tui::draw_gfx(f, &status, &screen, &help, &mut want))
-        } else {
-            term.draw(|f| tui::draw(f, &status, &screen, &help))
-        };
+        let mut blockers = Vec::new();
+        let drawn = term.try_draw(|f| -> std::io::Result<()> {
+            blockers = tui::overlay_areas(f.area(), &screen, &help, value);
+            let commands = shown.before(graphics, app.screen, f.area(), cell_px, &blockers);
+            graphics::send(&mut std::io::stdout(), &commands)?;
+            tui::draw_cached(
+                f,
+                &status,
+                &screen,
+                &help,
+                &feedback,
+                &mut status_text,
+                graphics.then_some(&mut want),
+            );
+            if let Some(value) = value {
+                tui::value_popup(f, value);
+            }
+            Ok(())
+        });
         if let Err(e) = drawn {
             break Err(e);
         }
-        // the pictures go out after the frame: transmit what changed, place where it sits
-        if graphics {
-            let cell_px = match terminal::window_size() {
-                Ok(s) if s.columns > 0 && s.rows > 0 => (s.width / s.columns, s.height / s.rows),
-                _ => (0, 0),
-            };
-            let cmds = shown.update(&want, cell_px);
-            if !cmds.is_empty() {
-                let mut out = std::io::stdout();
-                let sent = out
-                    .write_all(cmds.concat().as_bytes())
-                    .and_then(|_| out.flush());
-                if let Err(e) = sent {
-                    break Err(e);
-                }
-            }
+        // Only unobstructed pictures go out after the successful text frame.
+        let commands = shown.after(&mut want, &blockers);
+        if let Err(e) = graphics::send(&mut std::io::stdout(), &commands) {
+            break Err(e);
         }
 
         match event::poll(FRAME) {
@@ -5205,6 +5051,7 @@ fn pads_view(
         })
         .collect();
     tui::Pads {
+        feedback: tui::PadFeedback::default(),
         playing: false,
         fx,
         bank: p.bank,
@@ -5215,7 +5062,6 @@ fn pads_view(
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
         bank_marks: bank_marks(p),
-        mark_plate: mark_plate(p),
         out_wave,
         splash,
         big: big_view(p, rate),
@@ -5303,16 +5149,6 @@ fn bank_fill(p: &pads::Pads) -> [u16; tui::BANKS] {
         }
     }
     fill
-}
-
-/// The plate on the title line of the pads screen (76): marking is on, or pads stay marked.
-fn mark_plate(p: &pads::Pads) -> Option<String> {
-    let n = p.marked.len();
-    if p.marking {
-        Some(format!("MARK · hit pads · {n} marked"))
-    } else {
-        (n > 0).then(|| format!("{n} MARKED · Esc drops"))
-    }
 }
 
 /// Per bank, a bitmask of its marked pads (76).
@@ -5659,6 +5495,7 @@ fn chop_view<'a>(
                 ],
                 None,
                 tui::Pads {
+                    feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: page,
                     pads,
@@ -5672,7 +5509,6 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
                     bank_marks: [0; tui::BANKS],
-                    mark_plate: None,
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -5774,6 +5610,7 @@ fn chop_view<'a>(
                     playing: false,
                     bank: p.bank,
                     pads,
+                    feedback: tui::PadFeedback::default(),
                     // the pad of the selected slice, when it is in this bank
                     selected: (0..PADS_PER_BANK)
                         .find(|&i| {
@@ -5786,7 +5623,6 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
-                    mark_plate: mark_plate(p),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -5894,6 +5730,7 @@ fn chop_view<'a>(
                 side,
                 Some(marks),
                 tui::Pads {
+                    feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: p.bank,
                     pads,
@@ -5908,7 +5745,6 @@ fn chop_view<'a>(
                     learn: Vec::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
-                    mark_plate: mark_plate(p),
                     edit: None,
                     pages: Vec::new(),
                     knobs: Vec::new(),
@@ -7038,7 +6874,9 @@ fn init_log() -> PathBuf {
 mod tests {
     use super::{BIG_COLS, HelpState, Region, Sample, big_view, step_in};
     use super::{Command, Screen, browser};
+    use super::{Level, Notices};
     use input::Action;
+    use std::time::Instant;
 
     /// Scenario "The envelope is visible", the data behind the drawing: the big view
     /// carries the piece (the region only) with the pad's fade-in and tail, and the
@@ -7628,6 +7466,9 @@ mod tests {
             fx_param: 0,
             settings_row: 0,
             help_open: false,
+            help_overlay: help::State::default(),
+            value_popup: None,
+            input_sources: input_sources::State::default(),
             pads: pads::Pads::default(),
             meters: meters::Meters::default(),
             settings_tab: 0,
@@ -7682,8 +7523,11 @@ mod tests {
             ask: None,
             rate: 48_000,
             input_level: 0.0,
-            flash: None,
-            startup: Vec::new(),
+            notices: Notices::new(Instant::now()),
+            notice_origin: super::Origin::System,
+            shown_error: None,
+            frame_notice_level: None,
+            chop_loading: None,
             keymap_warnings: Default::default(),
             keymap_warning_shown: false,
             splash: false,
@@ -8225,6 +8069,7 @@ mod tests {
 
     /// 71 input-devices "The shipped bindings all act": the keymap and the device profiles
     /// name only actions the program has; Ctrl+K and knobs k6–k10 of the chop screen are free.
+    /// Scenario "Shipped profiles load without template errors" (input-devices).
     #[test]
     fn the_shipped_bindings_all_act() {
         let (k, warnings) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
@@ -8232,9 +8077,8 @@ mod tests {
         assert_eq!(pads_ctrl(&k, 'k'), None, "Ctrl+K is free");
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/devices");
         let (profiles, errors) = super::midi::load_profiles(dir);
-        // the SMC-PAD file is a template to fill after purchase: it does not parse yet
-        let errors: Vec<_> = errors.iter().filter(|e| !e.contains("smc-pad")).collect();
         assert!(errors.is_empty(), "{errors:?}");
+        assert!(!profiles.iter().any(|p| p.name == "SMC-PAD"));
         let x = profiles.iter().find(|p| p.name == "X-Session Pro").unwrap();
         for (scope, key, name) in x.roles() {
             assert!(input::midi::known(&name), "{key} {name}");
@@ -8648,7 +8492,7 @@ Enter = "browser.hold"
                 }
                 _ => unreachable!(),
             }
-            app.flash = Some(("keep this notice".into(), std::time::Instant::now()));
+            app.post_notice(Level::Warn, ("keep this notice".into(), Instant::now()));
             NoticeInput::default().event(
                 &mut app,
                 &keymap,
@@ -8663,7 +8507,7 @@ Enter = "browser.hold"
         let mut input = NoticeInput::default();
         let event = KeyEvent::new(KeyCode::Char('r'), M::CONTROL);
         input.event(&mut app, &keymap, event, true);
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         input.event(&mut app, &keymap, event, true);
         assert_eq!(flash(&app), "");
         input.event(
@@ -8905,8 +8749,8 @@ Enter = "browser.hold"
                 3 => {
                     app.apply(Action::LearnToggle);
                 }
-                4 => app.flash = Some(("higher priority".into(), std::time::Instant::now())),
-                5 => app.startup.push("old startup notice".into()),
+                4 => app.post_notice(Level::Warn, ("higher priority".into(), Instant::now())),
+                5 => app.post_startup(Level::Warn, "old startup notice".into()),
                 6 => app.pads.loading[0] = Some(0),
                 7 => app.recording = Some((super::audio::SOURCE_OUTPUT, std::time::Instant::now())),
                 _ => unreachable!(),
@@ -8924,11 +8768,11 @@ Enter = "browser.hold"
             app.pad_naming = None;
             app.ask = None;
             app.screen_learn = None;
-            app.flash = None;
+            app.notices = Notices::new(Instant::now());
             app.pads.loading[0] = None;
             app.recording = None;
             assert!(
-                app.startup.is_empty(),
+                !app.notices.has_startup(),
                 "the old startup dismissal rule stays"
             );
             assert_eq!(app.frame_notice().as_deref(), Some("pending warning"));
@@ -8936,9 +8780,9 @@ Enter = "browser.hold"
         // An expired flash must not acknowledge a warning that no frame showed yet.
         let mut app = test_app();
         app.keymap_warnings.push_back("not shown yet".into());
-        app.flash = Some(("flash".into(), std::time::Instant::now()));
+        app.post_notice(Level::Warn, ("flash".into(), Instant::now()));
         assert_eq!(app.frame_notice().as_deref(), Some("flash"));
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         let mut input = NoticeInput::default();
         assert!(!input.dispatch(
             &mut app,
@@ -8949,8 +8793,16 @@ Enter = "browser.hold"
         assert_eq!(app.keymap_warnings.len(), 1);
     }
 
+    // Outcome assertions inspect production history, not the priority-selected line.
+    fn last_notice(app: &super::App) -> Option<&str> {
+        app.notices
+            .history()
+            .front()
+            .map(|notice| notice.text.as_str())
+    }
+
     fn flash(app: &super::App) -> &str {
-        app.flash.as_ref().map_or("", |(s, _)| s.as_str())
+        last_notice(app).unwrap_or_default()
     }
 
     /// One second of a stereo tone as the ring holds it.
@@ -10989,12 +10841,12 @@ Enter = "browser.hold"
     #[test]
     fn a_message_passes() {
         let mut app = test_app();
-        app.flash = Some(("MIDI connected".into(), std::time::Instant::now()));
+        app.post_notice(Level::Info, ("MIDI connected".into(), Instant::now()));
         assert!(
             super::hint_for(&app).is_some(),
             "the hint stays under the message"
         );
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         assert_eq!(
             super::hint_for(&app),
             Some("Pads are empty: F6 opens files, Enter takes one, a pad hit puts it there."),
@@ -12815,7 +12667,7 @@ Enter = "browser.hold"
         }
         c.select_slice(1);
         app.chop = Some(c);
-        let status = |app: &super::App| app.flash.as_ref().map(|f| f.0.clone());
+        let status = |app: &super::App| last_notice(app).map(str::to_owned);
         app.apply(input::Action::MarkerNudge {
             right: true,
             fine: false,
@@ -12827,7 +12679,7 @@ Enter = "browser.hold"
         app.apply(input::Action::Undo);
         assert_eq!(status(&app).as_deref(), Some("2 pads changed back"));
         // an edit that no pad hears says nothing
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         app.apply(input::Action::ChopZoom { zoom_in: true });
         assert_eq!(status(&app), None);
     }
@@ -12875,10 +12727,7 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [24_000, 48_000], "the two loudest hits at −6 dB");
         assert_eq!(c.threshold_db, -6.0);
-        assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
-            Some("by hits at -6 dB: 3 slices")
-        );
+        assert_eq!(last_notice(&app), Some("by hits at -6 dB: 3 slices"));
     }
 
     /// 68 chopping "By hits says what it replaced": 16 hand-made slices, Ctrl+Y says how
@@ -12897,7 +12746,7 @@ Enter = "browser.hold"
         app.chop = Some(c);
         chop_key(&mut app, KeyCode::Char('h'), M::NONE);
         assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
+            last_notice(&app),
             Some("by hits at -6 dB: 3 slices (were 16) · Ctrl+Z brings them back")
         );
         chop_key(&mut app, KeyCode::Char('z'), M::CONTROL);
@@ -12916,7 +12765,7 @@ Enter = "browser.hold"
         let h = |app: &mut super::App| chop_key(app, KeyCode::Char('h'), M::NONE);
         let state = |app: &super::App| {
             let c = app.chop.as_ref().unwrap();
-            (c.markers.clone(), app.flash.as_ref().map(|f| f.0.clone()))
+            (c.markers.clone(), last_notice(app).map(str::to_owned))
         };
         h(&mut app);
         assert_eq!(state(&app).0, [24_000, 48_000]);
@@ -13029,17 +12878,11 @@ Enter = "browser.hold"
             [24_000, 48_000],
             "no jump"
         );
-        assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
-            Some("turn k11 down ↓")
-        );
+        assert_eq!(last_notice(&app), Some("turn k11 down ↓"));
         // down through the current value: the knob picks up at 0 dB, only the loudest keeps a cut
         xsession(&mut app, knob(K11, 0));
         assert_eq!(app.chop.as_ref().unwrap().markers, [24_000]);
-        assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
-            Some("1 cut at 0 dB")
-        );
+        assert_eq!(last_notice(&app), Some("1 cut at 0 dB"));
         // up to the quiet end: every hit the detector found gets its cut
         xsession(&mut app, knob(K11, 127));
         let (markers, db) = (
@@ -13048,17 +12891,11 @@ Enter = "browser.hold"
         );
         assert_eq!(markers, [24_000, 48_000, 72_000, 96_000]);
         assert_eq!(db, -40.0);
-        assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
-            Some("4 cuts at -40 dB")
-        );
+        assert_eq!(last_notice(&app), Some("4 cuts at -40 dB"));
         // mid: the −15.6 dB hit is out, the −9.5 dB one stays
         xsession(&mut app, knob(K11, 32));
         assert_eq!(app.chop.as_ref().unwrap().markers, [24_000, 48_000, 72_000]);
-        assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
-            Some("3 cuts at -10 dB")
-        );
+        assert_eq!(last_notice(&app), Some("3 cuts at -10 dB"));
         // the whole turn so far is one undo step: back to the cuts Ctrl+Y made
         chop_key(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL);
         let c = app.chop.as_ref().unwrap();
@@ -13090,18 +12927,19 @@ Enter = "browser.hold"
         app.apply(input::Action::ChopCut);
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [48_000], "the marker snapped to the hit");
-        assert_eq!(
-            app.flash.as_ref().map(|f| f.0.as_str()),
-            Some("marker snapped to hit")
-        );
+        assert_eq!(last_notice(&app), Some("marker snapped to hit"));
         // the hits mode off: the cut stays where the sound is
         app.apply(input::Action::ChopSnapToggle);
         app.fake_playhead = Some(48_000 + 12_000);
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         app.apply(input::Action::ChopCut);
         let c = app.chop.as_ref().unwrap();
         assert_eq!(c.markers, [48_000, 60_000], "where pressed, no snap");
-        assert_eq!(app.flash, None, "no snap status with the hits mode off");
+        assert_eq!(
+            last_notice(&app),
+            None,
+            "no snap status with the hits mode off"
+        );
     }
 
     /// 04d for the owner: a synthetic break chopped by three presses of Ctrl+Y, the
@@ -13459,7 +13297,7 @@ Enter = "browser.hold"
             c.range,
             app.plan.clone(),
         );
-        app.flash = None;
+        app.notices = Notices::new(Instant::now());
         for a in [
             input::Action::ChopCut,
             input::Action::MarkerNudge {
@@ -14272,7 +14110,7 @@ Enter = "browser.hold"
         use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let mut app = test_app();
-        app.startup = vec![super::NO_RELEASES_NOTICE.into()];
+        app.post_startup(Level::Warn, super::NO_RELEASES_NOTICE.into());
         assert_eq!(app.notice().as_deref(), Some(super::NO_RELEASES_NOTICE));
         // what the event loop does with every key event: dismiss first, resolve after
         let feed = |app: &mut super::App, e: KeyEvent| {
@@ -14284,7 +14122,10 @@ Enter = "browser.hold"
         // a key that is no command for anyone still clears the warning
         feed(&mut app, KeyEvent::new(KeyCode::Char('5'), M::NONE));
         assert_eq!(app.notice(), None, "the warning is gone, the hint is back");
-        assert!(app.startup.is_empty(), "the whole list is cleared at once");
+        assert!(
+            !app.notices.has_startup(),
+            "the whole list is cleared at once"
+        );
         // and further presses keep it that way
         feed(&mut app, KeyEvent::new(KeyCode::Char('h'), M::NONE));
         assert_eq!(app.notice(), None);
@@ -16990,7 +16831,7 @@ Enter = "browser.hold"
 
     fn undo(app: &mut super::App) -> String {
         app.apply(Action::Undo);
-        app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default()
+        last_notice(app).unwrap_or_default().to_owned()
     }
 
     /// 67 "Enter with no pad hit": in order, Enter takes the selected pad of bank 2 as the
@@ -17344,7 +17185,12 @@ Enter = "browser.hold"
     #[test]
     fn the_mark_plate() {
         let mut app = undo_app();
-        let plate = |app: &mut super::App| panel_now(app).mark_plate;
+        let plate = |app: &mut super::App| {
+            app.title_badges()
+                .into_iter()
+                .find(|badge| badge.normal.contains("MARK"))
+                .map(|badge| badge.normal)
+        };
         assert_eq!(plate(&mut app), None);
         app.apply(Action::PadMarkToggle);
         for pad in [0, 1, 2] {
@@ -19176,7 +19022,9 @@ Enter = "browser.hold"
             cuts,
             "the cuts did not move"
         );
-        assert!(app.flash.is_none() || flash(&app) != "assigning: Enter applies, Esc leaves");
+        assert!(
+            last_notice(&app).is_none() || flash(&app) != "assigning: Enter applies, Esc leaves"
+        );
     }
 
     /// 35 chopping "A region over a laid-out break": the region start at slice 8 leaves
@@ -19734,6 +19582,7 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         let view = super::chop_view(c, app.plan.as_ref(), None, 48_000, &app.pads);
         let status = tui::Status {
+            badges: app.title_badges(),
             save: app.save_status(),
             backend: Some("jack"),
             recording: false,
@@ -20233,6 +20082,7 @@ Enter = "browser.hold"
         let view = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
         let view = app.mark_pads(view);
         let status = tui::Status {
+            badges: app.title_badges(),
             save: app.save_status(),
             backend: Some("jack"),
             recording: false,

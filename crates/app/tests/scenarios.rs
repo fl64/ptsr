@@ -1,5 +1,5 @@
-//! Every scenario of the main specs is named by a test, or listed with its reason in
-//! `openspec/untested.md` (AGENTS.md, "Tests").
+//! Main scenarios have a named test or a reason in `openspec/untested.md`.
+//! Active deltas require a test name or an attached scenario description on a test.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -32,10 +32,10 @@ fn snake(s: &str) -> String {
         .join("_")
 }
 
-/// (spec, scenario) of every main spec.
-fn scenarios() -> Vec<(String, String)> {
+/// The capability and scenario names below one specification directory.
+fn scenarios(directory: &Path) -> Vec<(String, String)> {
     let mut specs = Vec::new();
-    files(&root().join("openspec/specs"), "md", &mut specs);
+    files(directory, "md", &mut specs);
     let mut out = Vec::new();
     for f in specs {
         let spec = f
@@ -65,6 +65,88 @@ fn untested() -> BTreeSet<String> {
         .collect()
 }
 
+/// Read the project's plain test declarations, not arbitrary mentions in helper bodies.
+fn test_names(code: &str) -> Vec<(String, String)> {
+    let mut header = Vec::new();
+    let mut out = Vec::new();
+    for line in code.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with("///") || line.starts_with("#[") {
+            header.push(line);
+            continue;
+        }
+        if header.contains(&"#[test]")
+            && let Some((name, _)) = line
+                .strip_prefix("fn ")
+                .and_then(|line| line.split_once('('))
+        {
+            out.push((name.trim().into(), header.join("\n").to_lowercase()));
+        }
+        header.clear();
+    }
+    out
+}
+
+#[test]
+fn active_delta_scenarios_name_real_tests() {
+    let mut sources = Vec::new();
+    files(&root().join("crates"), "rs", &mut sources);
+    let tests: Vec<_> = sources
+        .iter()
+        .flat_map(|path| test_names(&fs::read_to_string(path).unwrap()))
+        .collect();
+    let mut missing = Vec::new();
+    for change in fs::read_dir(root().join("openspec/changes"))
+        .unwrap()
+        .map(Result::unwrap)
+    {
+        if change.file_name() == "archive" {
+            continue;
+        }
+        let directory = change.path().join("specs");
+        if !directory.is_dir() {
+            continue;
+        }
+        for (spec, scenario) in scenarios(&directory) {
+            let named = tests.iter().any(|(name, description)| {
+                name.contains(&snake(&scenario)) || description.contains(&scenario.to_lowercase())
+            });
+            if !named {
+                missing.push(format!(
+                    "{scenario} ({}/{spec})",
+                    change.file_name().to_string_lossy()
+                ));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "active scenarios need a named test or an attached scenario description:\n  {}",
+        missing.join("\n  ")
+    );
+}
+
+#[test]
+fn test_name_audit_requires_a_real_test_header() {
+    let source = concat!(
+        "/// A scenario named by a helper is not coverage.\n",
+        "fn helper() {}\n",
+        "/// A named scenario\n",
+        "#[test]\n",
+        "#[allow(unused)]\n",
+        "fn real_test() {}\n",
+        "/// An orphan description\n",
+        "const NOT_A_TEST: &str = \"fn another()\";\n",
+        "fn another_helper() {}\n",
+    );
+    assert_eq!(
+        test_names(source),
+        vec![(
+            "real_test".into(),
+            "/// a named scenario\n#[test]\n#[allow(unused)]".into()
+        )]
+    );
+}
+
 #[test]
 fn every_scenario_names_its_test() {
     let mut sources = Vec::new();
@@ -75,7 +157,7 @@ fn every_scenario_names_its_test() {
         .collect();
     let named = |s: &str| code.contains(&s.to_lowercase()) || code.contains(&snake(s));
     let skip = untested();
-    let all = scenarios();
+    let all = scenarios(&root().join("openspec/specs"));
     assert!(all.len() > 400, "the specs were read: {}", all.len());
 
     let missing: Vec<String> = all
