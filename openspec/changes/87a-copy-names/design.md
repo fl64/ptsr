@@ -2,14 +2,13 @@
 
 ## Status and evidence
 
-This is a deferred specification, not an active implementation change.
-The owner approved preparation on a separate `87a-copy-names` branch, with implementation after change 87.
-The preparation base is `origin/master` at `a4789f4`.
+This is the active naming change on the separate `87a-copy-names` branch.
+The preparation base was `origin/master` at `a4789f4`.
 Change 87 is complete and merged into `master` at `93362d9`.
-The owner approved the three naming choices below after that merge.
-The current revision changes only the four draft documents, without code, commits or publication.
-Activation and the implementation file plan still need approval.
-Change 87 remains separate. Its implementation files and acceptance record do not belong to this revision.
+The implementation base includes that merge without rewriting the preparation history.
+The owner approved the three naming choices below, activation, the implementation file plan and local signed-off commits.
+Publication, archive and merge still need separate permission.
+Change 87 remains separate. Its implementation and acceptance are not new work in 87a.
 
 Confirmed baseline:
 
@@ -38,7 +37,8 @@ These source locations describe the preparation base, not the later change-87 la
 ## Naming rules
 
 The three choices above are owner decisions, not unresolved defaults.
-Review the remaining technical details against current `master` before activation.
+The review against `93362d9` found no change to the main copy requirements.
+The existing question compares both the current target name and the proposed copy name before replacement.
 
 ### Base name and marker
 
@@ -96,7 +96,7 @@ Use full names for collision scans and storage even when the screen clips them.
 
 ## Boundary review
 
-The table specifies planned tests. No implementation test for the new behavior exists yet.
+The table specifies the required implementation tests. A closed design decision is not a passing test result.
 
 | Situation | Expected result | Status | Planned test |
 | --- | --- | --- | --- |
@@ -111,11 +111,25 @@ The table specifies planned tests. No implementation test for the new behavior e
 | An old name contains ` 2 2 2` | Keep those numbers | Closed in draft | Legacy-name preservation |
 | A Unicode name is longer than its cell | Keep the full stored name and existing clipping | Closed in draft | Name collision and drawing regressions |
 
-All draft scenarios remain open for implementation and verification.
+All scenarios need implementation and verification before completion.
 Audio callback work, MIDI device measurement and new controls are outside this naming change.
+
+## Implementation
+
+Capture the full displayed name in the existing copy snapshot at pickup.
+Use one name calculation for the replacement question and placement.
+Remove only a canonical final marker, without parsing its number into a machine integer.
+Scan all 128 current pad names on the UI thread. At most 128 names can occupy the numbered candidates.
+This bounds the search without a saved counter or new dependencies.
+
+The implementation and its unit tests stay in `crates/app/src/main.rs`.
+Recorded keyboard and raw-MIDI scenarios stay in `crates/app/src/input_tests.rs`.
+The active delta audit requires real tests for all scenarios.
+Keep activation, implementation and scenario tests in one logical commit so that `task check` can pass.
+Update user steps in `docs/USER-STORIES.md` and `docs/LIVE-CHECKS.md` in the following documentation task.
 
 ## Open questions
 
 The owner resolved all three naming questions with the decisions above.
 No naming question remains open.
-The implementation file plan and activation still need approval after review against current `master`.
+The owner approved the implementation file plan and activation. No product question blocks implementation.

@@ -127,6 +127,13 @@ not permission to combine the new changes.
   Earlier callback maximum-budget failures remain unresolved.
   Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
   Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
+- The owner approved activation and implementation of `87a-copy-names` after completion of 87, before 88.
+  Its requirements are in `openspec/changes/87a-copy-names/`, on a separate branch with the same name.
+  Copies use one `(copy N)` marker and the smallest free number across all current banks.
+  Manual canonical markers have the same meaning. The target's current name stays occupied until replacement succeeds.
+  Existing names, sample files, sound, controls and saved formats stay unchanged.
+  Local signed-off commits are approved. Publication, archive and merge need separate permission.
+  Hardware, listening and callback maximum-budget limits remain open.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

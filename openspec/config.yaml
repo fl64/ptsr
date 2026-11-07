@@ -94,6 +94,10 @@ context: |
   The goal is every non-text action from the SMC-PAD without losing keyboard controls.
   Requirements are drafts and will change. docs/VISION.md and docs/plans/ are guides, not requirements.
   Deferred changes are preparation only. Activate one change before implementation.
+  The only active change is 87a-copy-names, based on master at 93362d9 after completion of 87.
+  The owner approved numbered copy names, reuse of the smallest free number, manual markers and occupied-target names.
+  Activation, the implementation file plan and local signed-off commits are approved. Publication, archive and merge need separate permission.
+  Existing names, sample files, sound, controls and saved formats stay unchanged.
 
   Normally use a separate branch. The owner requested plan/controller-first-patterns for 84, 84a and 85 as an exception.
   Closure of 85 and work on 86 share 86-screen-registry and one PR by owner request. Keep their commits separate.

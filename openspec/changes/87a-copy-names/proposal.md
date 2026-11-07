@@ -4,9 +4,8 @@
 
 The owner approved this naming direction and specification preparation on 2026-11-06.
 Change 87 is complete and merged into `master` at `93362d9`.
-The owner approved the three naming choices below after that merge.
-This change stays deferred until approval of activation and the implementation file plan.
-The current step changes only these four draft documents, without code, commits or publication.
+The owner approved the three naming choices below, activation, the implementation file plan and local signed-off commits.
+This is the only active change. Publication, archive and merge need separate permission.
 
 ## Why
 
@@ -36,7 +35,7 @@ Unchanged names would be simpler, but they would not distinguish copies from the
 
 ## How to verify
 
-These procedures apply after implementation, not to this deferred draft.
+These procedures apply to the implementation. Keep automated results separate from owner verification.
 Use disposable work with no names that already contain `(copy N)`.
 
 ### Keyboard
