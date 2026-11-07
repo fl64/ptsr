@@ -27,7 +27,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-06)
+## Current status (2026-11-07)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -88,7 +88,9 @@ not permission to combine the new changes.
   The save-safety sequence is complete. 84b and 86b–86d merged in [PR #9](https://github.com/fl64/ptsr/pull/9) on 2026-11-05.
   That combined PR was an explicit exception to separate change branches.
 - The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
-  The active change covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
+  The owner accepted 87 on 2026-11-07 and authorized archive, checks and squash merge in [PR #10](https://github.com/fl64/ptsr/pull/10).
+  Archive: `openspec/changes/archive/2026-11-07-87-status-badges/`.
+  It covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
   The owner approved the specification defaults and the first implementation file plan.
   The behavior-neutral preparation is complete: 12 screen snapshot methods are in `crates/app/src/view.rs`.
   Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
@@ -108,8 +110,11 @@ not permission to combine the new changes.
   Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
   Project changes keep source identities and deadlines.
   Source feedback does not change actions, acknowledgements, velocities or release ownership.
-  Shared status now shows recording seconds, KB and connected inputs, audio and project details with width priorities.
-  Active inputs have an arrow and cyan emphasis. M1, M2 and later labels distinguish connected ports.
+  Shared status keeps recording seconds, permanent KB, the last used controller number, actual audio data, master and project details.
+  Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
+  A permanent `*` is dim when saved and yellow when pending. `Save failed` remains explicit.
+  Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
+  The incomplete SMC-PAD example uses `.toml.example` and is not a working profile.
   Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
   Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
   Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.
@@ -118,11 +123,10 @@ not permission to combine the new changes.
   The files stay local under `renders/screens/`. Real kitty composition still needs a manual check.
   Active-delta coverage now checks test declarations and their attached scenario descriptions.
   Documentation now links catalogue files and separate keyboard, controller, graphics and listening procedures.
-  Overall manual acceptance remains open.
-  Other manual keyboard, physical-controller and listening checks remain unverified.
+  Overall acceptance does not establish individual keyboard, physical-controller, kitty or listening results. Unreported checks remain unverified.
+  Earlier callback maximum-budget failures remain unresolved.
   Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
-  The owner authorized completion and PR publication of 87, but not merge or archive.
-  [PR #10](https://github.com/fl64/ptsr/pull/10) is open in draft. Manual acceptance and callback maximum-budget limits remain open.
+  Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the

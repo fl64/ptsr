@@ -3,6 +3,10 @@
 Each implementation task includes its named scenario tests, a successful `task check` and a separate signed-off commit.
 Do not combine the preparation move with behavior changes.
 
+Current decision, 2026-11-07: the owner accepted change 87 and authorized archive in this PR, checks and squash merge.
+This decision replaces the earlier publication-only limits recorded below. Keep the branch after merge.
+Individual hardware, kitty and listening checks remain unverified. Earlier callback maximum-budget failures remain open.
+
 ## 1. Specification
 
 - [x] 1.1 Record the approved scope, owner decisions, compatibility exceptions, risks, scenario deltas and current status. Check OpenSpec and English text.
@@ -428,8 +432,8 @@ Final check evidence (7.2):
 - The final benchmark reports steady wall maximum 49.06% and CPU maximum 48.60%. This run does not erase the earlier wall and CPU exceedances or establish their cause.
 - No live sampler, physical-controller, kitty-composition or listening result comes from these automated checks.
 - Overall manual acceptance remains open. The authorized PR stays in draft. Merge and archive remain unauthorized.
-- [ ] 7.4 Archive only after owner acceptance and main-spec scenario coverage. Merge and archive need separate owner authorization.
-- [x] 7.5 Publish the verified branch and open its PR to master. Keep the PR in draft while manual acceptance and callback-budget limits remain open.
+- [x] 7.4 Archive the accepted change with all six main-spec updates. Check scenario coverage, strict validation and the full project suite before squash merge.
+- [x] 7.5 Publish the verified branch and open its PR to master. The owner later authorized removal of draft status and squash merge.
 
 [PR #10](https://github.com/fl64/ptsr/pull/10) targets master and stays in draft.
 The saved title, body and exact head match the local branch. The remote `Change names` check passes.
@@ -489,4 +493,45 @@ Controller checks:
 Listening artifacts: no new WAV, because sound processing stays unchanged.
 Use existing sound checks in `docs/LIVE-CHECKS.md` for overall acceptance.
 Screen examples are `renders/screens/pads-normal-120x40.ansi`, `pads-unsaved-80x26.ansi` and `pads-input-device-80x26.ansi`.
-These automated checks start no live sound or controller session. The owner does not authorize merge or archive.
+These automated checks start no live sound or controller session.
+The owner later accepted 87 and authorized archive, checks and squash merge, as recorded above.
+
+## 9. Acceptance and closure
+
+The owner accepted 87 on 2026-11-07 after approving the corrected header.
+The approved order is acceptance, archive in the same PR, checks, then squash merge to master.
+Use the existing PR title unchanged and merge only its verified head. Do not delete the branch.
+Apply all six deltas to the main specifications. Do not skip specification updates or validation.
+Update current status and archive links in the OpenSpec context, project context, plan index and live checks.
+This acceptance does not report individual hardware, kitty or listening results or resolve earlier callback overruns.
+Deferred 87a, measured SMC-PAD integration and sound-performance corrections stay outside 87.
+
+### Archive verification
+
+`openspec archive 87-status-badges --yes` created `2026-11-07-87-status-badges` with specification updates and validation enabled.
+It added 36 requirements and modified 13 across six main specifications. All earlier requirement names remain.
+The closure task stayed unchecked until archive verification completed. The archive command reported that one pending task.
+An independent comparison matches all 49 delta requirements and 102 scenarios, with unrelated requirements unchanged.
+All 102 archived scenarios name real test declarations. The main specifications contain 789 scenarios. No active change remains.
+
+The first strict check rejected the save-status requirement's length. Shorter equivalent text now matches in the archive and main spec.
+No scenario, save behavior or safety rule changed in that correction.
+
+Commands and results after archive:
+
+- `cargo test -p ptsr --test scenarios`: `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.40s`.
+- `task check`: exit 0, with 1,102 workspace tests, including 765 App and 129 drawing tests. Formatting, names, licenses, Clippy and benchmark checks pass.
+- `task build`: exit 0, with `Finished \`release\` profile [optimized + debuginfo] target(s) in 0.07s`.
+- `task openspec:check`: `Totals: 15 passed, 0 failed (15 items)`.
+- `task screens`: `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 761 filtered out; finished in 7.86s`.
+  It retains 306 local ANSI files at both supported sizes.
+
+Separate elapsed times: scenario audit 6.52 s, full check 80.57 s, warm Release build 0.13 s and screen catalogue 7.99 s.
+The steady benchmark reports wall maximum 28.57% and thread CPU maximum 16.03%, with no blocks above 50%.
+Project-switch maxima are 12.69% wall and 12.73% thread CPU. This run does not resolve the earlier callback overruns.
+Local evidence uses `target/87-archive-`: command, audit, scenarios, check, build, screens and OpenSpec logs, plus separate timing files.
+
+Changed descriptions use STE-flavored review. Changed procedures use Strict review. Per-document changed-text lint has zero hard findings.
+Remaining passive-state advice does not change the actor or result. Full dictionary compliance is not established.
+These offline checks start no live sampler and establish no hardware, kitty or listening result.
+The archive changes no program source, sound, binding, dependency, saved format or owner audio setting.

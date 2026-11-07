@@ -1875,12 +1875,19 @@ Change 87 and callback-budget corrections remain outside 86d. Push and PR need s
 
 ## 87: Visual feedback and screen catalogue
 
-Folder: `changes/87-status-badges`
+Folder: `changes/archive/2026-11-07-87-status-badges`
 
-Implementation and offline catalogue checks exist. Overall manual acceptance remains open.
-Earlier scoped acceptances do not complete the unchecked procedures below.
+The owner accepted 87 on 2026-11-07 and authorized archive, checks and squash merge in [PR #10](https://github.com/fl64/ptsr/pull/10).
+Overall acceptance does not complete the unchecked keyboard, physical-controller, kitty or listening procedures below.
+The archive applies all six deltas to the main specifications. Verification is recorded in its `tasks.md`, section 9.
 Callback maximum-budget failures remain open. A successful p99 exit does not close that limit.
-Do not merge or archive from this checklist.
+Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
+
+Current status correction: `KB` is permanent. Only the last used controller number remains beside it after highlight expiry or keyboard activity.
+Input and save-state columns stay fixed. The permanent `*` is dim when saved and yellow when pending.
+Read this marker in place of older `Unsaved` instructions. Keep the separate `Save failed` warning until saving succeeds.
+Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
+The unfinished SMC-PAD example is not a working profile. Use the archive's section 8 for the separate correction checks.
 
 ### Offline catalogue
 

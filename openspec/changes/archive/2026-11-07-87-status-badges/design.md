@@ -2,6 +2,10 @@
 
 ## Context
 
+Current decision, 2026-11-07: the owner accepted 87 and authorized archive in the same PR, checks and squash merge.
+This decision replaces the earlier publication-only limits in this history. Keep the branch after merge.
+Individual hardware, kitty and listening checks remain unverified. Earlier callback maximum-budget failures remain open.
+
 The owner approved the full visual scope on 2026-11-05, then approved this specification step and local signed-off commits.
 The base is merged save safety and diagnostic work at `a4789f4`.
 The owner then approved the navigation and message defaults and the first implementation file plan.

@@ -14,12 +14,11 @@ Existing fixed screen/playback badges SHALL retain their widths and playback rul
 
 ### Requirement: Persistent save status
 
-Every screen SHALL keep one `*` after the project name, instead of `Unsaved`.
-The marker SHALL be dim when saved and yellow while changes await saving. Only its color SHALL change between these states.
-If the project name is absent or omitted for width, the status SHALL keep `*` as a separate segment.
-A write refusal SHALL also show `Save failed` with the existing warning style and width priority until a save succeeds.
-Temporary notices SHALL NOT hide the marker or save failure. A successful save SHALL dim the marker and remove `Save failed`.
-These requirements SHALL NOT change save timing, retries or stored data.
+Every screen SHALL keep one `*` instead of `Unsaved`: dim when saved, yellow when pending. Only its color SHALL change.
+It SHALL follow the project name or stay separate if that name is absent or omitted.
+Write refusal SHALL add `Save failed` with existing warning style and width priority until saving succeeds.
+Notices SHALL NOT hide either indicator. Saving SHALL dim `*` and remove `Save failed` only after success.
+Save timing, retries and stored data SHALL stay unchanged.
 
 #### Scenario: Pending work has a visible save state
 - **WHEN** a keyboard or controller action changes the session before autosave
