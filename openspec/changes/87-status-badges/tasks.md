@@ -442,11 +442,51 @@ The owner authorized completion through PR publication. This does not authorize 
 The owner approved both corrections in this branch and the existing draft PR.
 The earlier automated checks do not establish these corrections. Manual acceptance remains open.
 
-- [ ] 8.1 Exclude the unfinished SMC-PAD example from working profiles. Update the input-device delta, README and parser fixture. Remove the shipped-profile error exclusion. Test the real directory, ignored examples and invalid actual profiles with default routing.
-- [ ] 8.2 Check the final owner decision and screen-layout delta before status code. Keep permanent `KB` plus the last used controller number, not a controller list or count. Reserve fixed keyboard, number and activity-marker cells.
-- [ ] 8.3 Shorten the permanent status with the approved label, actual audio values, master and project. Remove full input lists, CPU and zero xruns. Replace `Unsaved` with permanent `*`: dim when saved, yellow when pending. Keep `Save failed`, other safety warnings and Settings diagnostics. Test both sizes, fixed save-state columns, keyboard activity, number changes, one-second expiry, disconnection, stale input and cache updates.
-- [ ] 8.4 Run the project checks, Release build, strict OpenSpec validation, screen catalogue and English checks. Check source provenance. Present separate keyboard and controller owner checks.
+- [x] 8.1 Exclude the unfinished SMC-PAD example from working profiles. Update the input-device delta, README and parser fixture. Remove the shipped-profile error exclusion. Test the real directory, ignored examples and invalid actual profiles with default routing.
+- [x] 8.2 Check the final owner decision and screen-layout delta before status code. Keep permanent `KB` plus the last used controller number, not a controller list or count. Reserve fixed keyboard, number and activity-marker cells.
+- [x] 8.3 Shorten the permanent status with the approved label, actual audio values, master and project. Remove full input lists, CPU and zero xruns. Replace `Unsaved` with permanent `*`: dim when saved, yellow when pending. Keep `Save failed`, other safety warnings and Settings diagnostics. Test both sizes, fixed save-state columns, keyboard activity, number changes, one-second expiry, disconnection, stale input and cache updates.
+- [x] 8.4 Run the project checks, Release build, strict OpenSpec validation, screen catalogue and English checks. Check source provenance. Present separate keyboard and controller owner checks.
 
 Use targeted tests during each correction and run the complete `task check` before its commit.
 Measure preparation, compilation and checks separately. Keep each completed correction in its own signed-off commit.
 No new sound behavior or render, measured controller profile, binding, saved format or dependency belongs to these corrections.
+
+### Correction evidence and handoff
+
+- `task check` exits 0: 1,102 workspace tests pass, including 765 App tests and 129 drawing tests. Formatting, names, licenses, Clippy and benchmark checks pass.
+- `task build` exits 0. `task openspec:check` reports `Totals: 16 passed, 0 failed (16 items)`.
+- `task screens` reports `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 761 filtered out; finished in 8.44s`.
+  The catalogue contains 306 local ANSI files at both supported sizes.
+- Local final logs and separate timings are in `target/87-final-*.log` and `target/87-final-*.time`.
+  Workspace precompilation takes 2.94 seconds. The full check takes 115.14 seconds. The final warm Release check takes 0.13 seconds.
+  The earlier changed-source Release build takes 17.81 seconds. The final screen catalogue takes 8.57 seconds.
+- `cargo metadata` identifies this workspace and its local `target` directory. The executed App test dependency file records this repository in `CARGO_MANIFEST_DIR`.
+  Release dependency paths also point to this repository, not another working tree.
+- Changed English text passes the STE-flavored review and lint with zero hard findings. Two passive-voice advisories remain: `is connected` and `is highlighted`.
+  These describe states rather than identify an actor. This result does not establish full dictionary compliance.
+- The final steady callback sample reports wall maximum 29.15% and thread CPU maximum 19.27%, with zero blocks above 50%.
+  Earlier maximum-budget failures remain open. This run does not establish their cause or resolution.
+- The owner accepts the header's appearance. This does not establish complete keyboard, controller, timing, graphics or listening acceptance.
+
+Keyboard checks:
+
+1. Start ptsr without controller input. Check permanent `KB` and a dim `*`.
+2. On Pads, press F2. Check one-second `KB` emphasis and unchanged following columns.
+3. Change a parameter. Check a yellow `*`, with no `Unsaved` text or column movement.
+4. Save the project. Check that `*` becomes dim without disappearing.
+5. Use the refused-save procedure from `docs/LIVE-CHECKS.md`. Read the yellow `*` in place of its older `Unsaved` instruction.
+   Check that `Save failed` stays visible through other notices until saving succeeds.
+
+Controller checks:
+
+1. Use a working profile. Check that the unfinished SMC-PAD example creates no startup warning.
+2. Move a control. Check the selected `M1` or other current controller number and one-second emphasis.
+3. Wait for emphasis to end. Check that its number remains. Press a keyboard command and check that the number stays beside `KB`.
+4. Alternate available controllers. Check that only the last number appears and later columns do not move at 80 by 26 and 120 by 40.
+5. Disconnect the selected source. Check that its number disappears. Reconnect and check that fresh input is necessary before its number returns.
+6. Open F12 Input for full port names. Open F12 Audio for CPU load and the complete xrun count.
+
+Listening artifacts: no new WAV, because sound processing stays unchanged.
+Use existing sound checks in `docs/LIVE-CHECKS.md` for overall acceptance.
+Screen examples are `renders/screens/pads-normal-120x40.ansi`, `pads-unsaved-80x26.ansi` and `pads-input-device-80x26.ansi`.
+These automated checks start no live sound or controller session. The owner does not authorize merge or archive.
