@@ -2131,7 +2131,9 @@ impl App {
             );
             return;
         }
-        let snap = self.pads.snapshot(abs);
+        let mut snap = self.pads.snapshot(abs);
+        // Keep the full pickup name even if the source later changes or has no file name.
+        snap.name = Some(pad_name(&self.pads, abs));
         self.copy_in_hand = Some((abs, snap));
         self.post_notice(Level::Info, (("COPY · hit a pad").into(), Instant::now()));
     }
@@ -2165,7 +2167,7 @@ impl App {
                 "  {}: {} → {}",
                 pad_place(abs),
                 pad_name(&self.pads, abs),
-                self.copy_name(&snap, abs)
+                self.copy_name(&snap)
             ));
             lines.extend(overwrite_footer());
             // a changed target asks again: only the same question, still open, places
@@ -2193,17 +2195,12 @@ impl App {
         self.copy_target(abs);
     }
 
-    /// Puts the copy on `abs`: the snapshot answers the pad, its name gets ` 2`, the
-    /// source stays and the hand clears. One undo step for the target only.
+    /// Places the snapshot with an available numbered name. The source stays unchanged.
+    /// One undo step restores only the target.
     fn place_copy(&mut self, source: usize, mut snap: pads::PadSnap, abs: usize) {
         self.ask = None;
         self.copy_in_hand = None;
-        let name = self.copy_name(&snap, abs);
-        if let Some(n) = &mut snap.name {
-            *n = format!("{n} 2");
-        } else {
-            snap.name = Some(name);
-        }
+        snap.name = Some(self.copy_name(&snap));
         // the undo step is the apply's own: only the target changed (the snapshot was
         // taken at pickup, the source stays), so the step restores the target alone
         let _ = source;
@@ -2214,25 +2211,29 @@ impl App {
         self.post_notice(Level::Done, ("copy placed".into(), Instant::now()));
     }
 
-    /// The displayed name of the copy before it is placed: the source's name plus ` 2`.
-    fn copy_name(&self, snap: &pads::PadSnap, abs: usize) -> String {
-        let _ = abs;
-        match &snap.name {
-            Some(n) => format!("{n} 2"),
-            None => {
-                // the file name as the panel shows it, without the custom name
-                let stem = snap
-                    .file
-                    .as_deref()
-                    .and_then(|f| f.file_stem())
-                    .map(|s| s.to_string_lossy().into_owned());
-                match (stem, snap.slice) {
-                    (Some(stem), Some(n)) => format!("{stem} {n} 2"),
-                    (Some(stem), None) => format!("{stem} 2"),
-                    (None, Some(n)) => format!("pad {} 2", n),
-                    (None, None) => "copy 2".into(),
-                }
+    /// The question and placement use the same pickup base and current occupied names.
+    fn copy_name(&self, snap: &pads::PadSnap) -> String {
+        let name = snap.name.as_deref().unwrap_or("copy");
+        // Recognize decimal text without parsing: an existing marker can exceed any integer type.
+        let base = name
+            .strip_suffix(')')
+            .and_then(|text| text.rsplit_once(" (copy "))
+            .filter(|(_, number)| {
+                !number.is_empty()
+                    && !number.starts_with('0')
+                    && number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            .map_or(name, |(base, _)| base);
+        let occupied: std::collections::BTreeSet<_> =
+            (0..PADS).map(|abs| pad_name(&self.pads, abs)).collect();
+        let mut number = 1;
+        loop {
+            let candidate = format!("{base} (copy {number})");
+            if !occupied.contains(&candidate) {
+                return candidate;
             }
+            // At most PADS names are occupied, so a candidate is free by PADS + 1.
+            number += 1;
         }
     }
 
@@ -18112,7 +18113,7 @@ Enter = "browser.hold"
         hit(&mut app, 1);
         app.pads.selected = 1;
         app.apply(Action::PadEdit); // Enter
-        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         assert!(app.pads.file[0].is_some(), "the source stays");
     }
 
@@ -18126,12 +18127,12 @@ Enter = "browser.hold"
         // the help line names the copy step
         assert_eq!(app.help_state().hand, Some("hit a pad to copy it there"));
         hit(&mut app, 1);
-        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         // save and reload: the session keeps the copy's name, link and settings
         let session = app.pads.to_session(None, app.rate);
         let mut again = test_app();
         again.pads.restore(&session, app.rate);
-        assert_eq!(again.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(again.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         assert_eq!(again.pads.slice[1], Some(3), "the slice link saves");
         assert_eq!(again.pads.link[1], app.pads.link[1]);
         assert_eq!(again.pads.volume_db[1], app.pads.volume_db[1]);
@@ -18510,7 +18511,7 @@ Enter = "browser.hold"
             velocity: 1.0,
             ui_press: None,
         });
-        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         assert!(app.copy_in_hand.is_none());
     }
 
@@ -18666,7 +18667,7 @@ Enter = "browser.hold"
     }
 
     /// 83a pad-assignment "Copy the selected pad with all settings": Ctrl+C takes a copy,
-    /// a hit on an empty pad places it with the name plus ` 2`, and the hit plays nothing.
+    /// a hit on an empty pad places it with a numbered copy name and plays nothing.
     #[test]
     fn copy_the_selected_pad_with_all_settings() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -18686,12 +18687,12 @@ Enter = "browser.hold"
             "the target hit does not play: {:?}",
             app.sent
         );
-        // W keeps all Q's settings, with its name ending in ` 2`
+        // W keeps all Q's settings with the new numbered name.
         assert!(app.pads.file[1].is_some());
-        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         assert!(app.copy_in_hand.is_none(), "the copy hand clears");
         let w = settings_of(&app, 1);
-        // name is the one setting that differs: ` 2` was appended
+        // Only the name differs from the source settings.
         let q: Vec<_> = q.into_iter().filter(|(k, _)| k != "name").collect();
         let w: Vec<_> = w.into_iter().filter(|(k, _)| k != "name").collect();
         assert_eq!(q, w, "every setting but the name copies");
@@ -18755,7 +18756,7 @@ Enter = "browser.hold"
         app.pads.selected = 1; // Enter answers about the selected pad
         app.apply(Action::PadEdit); // Enter
         assert!(app.ask.is_none(), "the question was answered");
-        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         assert!(app.pads.file[0].is_some(), "the source stays");
         // a changed target asks again: a second Enter with a different selected pad
         // places nothing on it
@@ -18823,7 +18824,7 @@ Enter = "browser.hold"
         app.pads.marked = (0..super::PADS).collect();
         screen_key(&mut app, Screen::Pads, KeyCode::Char('c'), M::CONTROL);
         hit(&mut app, 1);
-        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка (copy 1)"));
         assert!(app.pads.file[2].is_none(), "only W changed");
         assert!(!app.pads.marked.is_empty(), "the marks stay");
     }
@@ -18866,7 +18867,7 @@ Enter = "browser.hold"
             "the target hit plays nothing: {:?}",
             app.sent
         );
-        assert_eq!(app.pads.custom_name[18].as_deref(), Some("Бочка 2"));
+        assert_eq!(app.pads.custom_name[18].as_deref(), Some("Бочка (copy 1)"));
         assert!(app.pads.file[0].is_some(), "the source stays");
         assert!(app.copy_in_hand.is_none(), "the hand clears");
         // a release of a held pad still works: no crash, nothing else changes
