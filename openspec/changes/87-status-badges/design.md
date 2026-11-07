@@ -514,6 +514,83 @@ The owner approved these choices after the specification review:
 
 This approval implies no hardware result, listening result or callback maximum-budget acceptance.
 
+## Owner corrections after the first manual run
+
+The owner approved two corrections in this branch and the existing draft PR.
+They do not authorize merge, archive, the deferred copy-name change or callback correction.
+The status decisions below replace earlier source-list, save-indicator and status-cache choices.
+
+### Keep the unfinished controller example outside working profiles
+
+Rename `config/devices/smc-pad.toml` to `config/devices/smc-pad.toml.example`.
+The existing loader accepts only files with the `.toml` extension. Keep that rule unchanged.
+Update the README reference and the parser test's included file.
+Remove the shipped-profile test exception that suppresses errors containing `smc-pad`.
+Test the real shipped directory without any error exclusions.
+Test that an invalid actual `.toml` still reports its file and line and uses the default profile.
+Do not guess channel, note or CC values. The measured profile remains change 91.
+
+Rejected: suppressing the template warning by filename or filling its unknown values with assumed hardware data.
+These approaches hide actual profile errors or claim unmeasured device behavior.
+
+### Shorten the permanent status
+
+The owner supplied this example and clarified that `x` is the controller number: `M1`, `M2` and so on.
+`Mx` is notation, not literal status text.
+
+```text
+KB M1 · jack 512 / 48 kHz · 10.7 ms · master +1 dB · new *
+```
+
+Read actual backend, buffer, rate, master and project values. The example does not fix these values.
+Keep `KB` permanently, including before input and without connected controllers.
+Remove full port names, CPU percentage and zero xruns.
+Show only the last used connected controller number. Do not show other controller numbers or a connection count.
+Use the existing connected-source numbering. This correction does not infer new physical-device groups.
+Keep recording, unsaved work, save failures, audio loss, nonzero xruns and the no-key-releases warning visible.
+Keep complete port names and input events in F12 Input. Keep CPU diagnostics available in Settings.
+Do not treat several ports from one X-Session as several measured physical controllers.
+Keep the existing connection identities, original input times, action routing and held-pad release ownership.
+Test both supported terminal sizes, cache invalidation and safety indicators before manual acceptance.
+
+The owner's final choice replaces the earlier list proposals: show only the last used controller.
+A new controller input selects its number. Only the newest input source has emphasis for one second after original receipt.
+Expiry removes emphasis, not `KB` or the controller number. Keyboard input highlights `KB` without selecting a different controller.
+Reserve keyboard and activity-marker cells too. Keyboard activity and expiry cannot move later columns.
+Releases, equal repeated values, derived notifications and stale delivery do not select another controller.
+Before first controller input or after disconnection of the last used controller, show no number. Reconnection needs fresh input.
+
+Reserve one marker cell and one number field before drawing. Size the field for the widest current connected-source number.
+Keep the reserved input-segment width unchanged while the connected set and terminal width stay unchanged.
+Changing activity, highlight expiry or replacing M1 with M8 or M10 must not move the following audio or project columns.
+A connection change or terminal resize can recompute the reserved width. Preserve the existing safety-priority rules when space is short.
+
+Rejected: a three-number list with `+N`, or a list that expands during activity.
+The owner needs the last used controller, not a permanent inventory. Full diagnostics remain in F12 Input.
+
+### Quiet save marker
+
+The owner approved replacing `Unsaved` with a permanent `*` after the project name.
+Use dim for saved and yellow for pending work. Keep the same text and terminal cells between these states.
+If the project is absent or omitted for width, retain the marker as a separate status segment.
+Keep `Save failed` as an additional explicit warning with its existing style and priority until saving succeeds.
+Do not change save timing, retries, state transitions or stored data.
+
+Rejected: hiding pending work, removing the marker after saving or replacing a write failure with color alone.
+These options hide unsaved work, move columns or weaken failure feedback.
+
+### Correction boundaries
+
+- Broken working profile beside an ignored example: closed by loader and production-dispatch tests. Keep actual file-and-line errors.
+- Keyboard after controller input: closed by permanent-keyboard, source-cache and fixed-column tests. Newest-source emphasis retains the original deadline and controller identity.
+- Pending versus saved: closed by fixed-column and marker-color tests with visible, absent and width-omitted project names.
+- Save failure during notices: closed by existing shared-screen save-safety tests. The full warning and marker remain. No persistence changes.
+- Equal CC values, releases and older deliveries: closed by original classification and receipt-order checks. Input routing stays unchanged.
+- Disconnect and reconnect: closed by current connection identity. Reconnection needs new input before a number appears.
+- M1, M8 and M10 at both supported widths: closed by reserved number/marker space and terminal-cell column checks.
+- Audio diagnostics: CPU previously appeared only in the status. Move CPU and the full xrun counter below the Settings Audio tabs.
+- Sound, measured hardware maps and callback timing correction: outside this correction. Existing acceptance limits remain open.
+
 ## Active-delta coverage audit
 
 The coverage check keeps the existing main-spec and `untested.md` checks.
@@ -526,6 +603,14 @@ Closing text reveals the retained Error. A new action acknowledges it without lo
 No production input, sound or persistence code changes in this audit.
 
 ## Open questions
+
+### Compact controller label
+
+Closed by the owner: `x` is the controller number, not literal text or a controller count.
+The final choice shows only the last used controller. No three-number list or `+N` remains.
+The input segment must keep its width through number changes and highlight expiry. Reserve number and marker space before drawing.
+Default for no previous input or a disconnected last source: show no number rather than guess another source.
+Full port names and input events remain available in F12 Input. Existing connection numbering stays unchanged.
 
 None for preparation, title badges, pad feedback or the step 4.1 model. The owner approved each file plan before implementation.
 Ask the owner before changing an approved choice.

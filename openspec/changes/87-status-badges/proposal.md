@@ -15,7 +15,11 @@ This change adds visual feedback for existing actions, not new sound controls.
 - Use yellow for modes where pads do more than ordinary playback, including marking, assignment, file placement, copy, swap and learning.
 - Classify messages as Done, Info, Warn or Error. Protect higher-priority messages and keep the latest 50 in F1 Messages.
 - Show changed values in the same place on every screen.
-- Show recording, connected inputs, the last active input, audio and project in a shared status line.
+- Show recording, permanent `KB`, the last used controller number, actual audio data, master volume and project in a shared status line.
+- Keep one save marker: dim `*` when saved, yellow `*` while pending. Keep `Save failed` explicit.
+- Keep the controller segment width stable through number changes and one-second highlight expiry.
+- Keep complete input diagnostics in F12 Input and CPU diagnostics in Settings, not in the permanent status line.
+- Exclude the incomplete SMC-PAD example from working profiles without suppressing errors in actual profile files.
 - Show existing answer controls in questions. Do not advertise future controller buttons.
 - Add an offline screen catalogue at 120×40 and 80×26, with graphics-overlay tests.
 - Move screen-data preparation into its own module before adding behavior.
@@ -32,6 +36,7 @@ None. These changes extend existing screen capabilities.
 - `screen-help`: message levels, lifetime, queue, history and truthful question controls.
 - `pad-playback`: mode corner marks, yellow grid frames and compatibility with existing playback indicators.
 - `midi-learn`: a bounded learning block that keeps the shared status visible without changing learning actions.
+- `input-devices`: exclude example files from working profiles and retain errors and fallback for invalid actual profiles.
 
 ## Impact
 
@@ -47,6 +52,7 @@ Manual save success keeps its five-second notice. Persistent save warnings stay 
 
 Out of scope: `ui.confirm` (88), button holds (89), relative encoders (90), the measured SMC-PAD profile (91), command panels and action echo (92).
 Transport, patterns, pad lights and callback performance correction are also out of scope.
+The SMC-PAD correction does not supply measured controls or activate the future controller profile.
 Hardware behavior and listening remain unverified.
 
 ## How to verify
@@ -68,8 +74,9 @@ Hardware behavior and listening remain unverified.
 1. Use an existing working profile or learn unused controls in F12. Do not assume the SMC-PAD template is operational.
 2. Learn `pad.mark_toggle`, `pad.copy`, `pad.take` and `session.save` buttons, plus a `pad.volume` knob.
 3. Repeat the marking, placement, value and save procedures through those controls and MIDI pad notes.
-4. Alternate keyboard and controller actions. Verify the input indicator and unchanged action results.
-5. For questions without an existing controller answer, use the keyboard answers in the question. Controller-only confirmation belongs to 88.
+4. Alternate keyboard and controller actions. Verify permanent `KB`, the retained last controller number and one-second input emphasis.
+5. Change a parameter. Verify that `*` changes from dim to yellow without moving the status. Save and verify that it becomes dim.
+6. For questions without an existing controller answer, use the keyboard answers in the question. Controller-only confirmation belongs to 88.
 
 ### Offline screens and sound
 

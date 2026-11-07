@@ -12,6 +12,34 @@ Existing fixed screen/playback badges SHALL retain their widths and playback rul
 - **THEN** the folder path stands above its first list row in the right column
 - **AND** mode badges do not move the strip, grid, bank row or right column
 
+### Requirement: Persistent save status
+
+Every screen SHALL keep one `*` after the project name, instead of `Unsaved`.
+The marker SHALL be dim when saved and yellow while changes await saving. Only its color SHALL change between these states.
+If the project name is absent or omitted for width, the status SHALL keep `*` as a separate segment.
+A write refusal SHALL also show `Save failed` with the existing warning style and width priority until a save succeeds.
+Temporary notices SHALL NOT hide the marker or save failure. A successful save SHALL dim the marker and remove `Save failed`.
+These requirements SHALL NOT change save timing, retries or stored data.
+
+#### Scenario: Pending work has a visible save state
+- **WHEN** a keyboard or controller action changes the session before autosave
+- **THEN** the status shows a yellow `*` on Pads, Files, Chop, FX and Settings instead of `Unsaved`
+
+#### Scenario: A save failure stays visible after its notice
+- **WHEN** a save fails and its notice expires or another notice appears
+- **THEN** `Save failed` remains visible in the shared status line on every screen, including small and large supported terminals
+- **AND** no new mode opens, no row moves, and existing help, notices and controls remain available
+
+#### Scenario: Successful retry clears the save warning
+- **WHEN** a manual retry saves all pending work
+- **THEN** `*` becomes dim and `Save failed` disappears from the status
+- **AND** a later edit makes `*` yellow until its save succeeds
+
+#### Scenario: Pending work uses a quiet project marker
+- **WHEN** save state changes between saved and pending with a visible, absent or width-omitted project name at either supported size
+- **THEN** one `*` changes between dim and yellow without moving status columns or showing `Unsaved`
+- **AND** a save failure keeps the marker and adds the full warning until saving succeeds
+
 ## ADDED Requirements
 
 ### Requirement: Shared title mode badges
@@ -116,22 +144,66 @@ Existing notices and local highlights SHALL retain their behavior.
 
 ### Requirement: Shared status segments
 
-The status SHALL show persistent save state, recording, input, audio and project in that order.
-Recording SHALL show elapsed seconds while this detail fits.
-It SHALL list KB and actual connected devices, with distinguishable compact labels.
-A new owner input SHALL highlight its actual source for one second.
-Missing origin data SHALL NOT become a guessed device.
-No transport or layer indicator SHALL appear before its corresponding feature exists.
+The status SHALL show save failures, recording, input, audio and project in that order.
+Recording SHALL show seconds when space permits.
+Input SHALL keep `KB` and the last used connected controller number, such as `M8`.
+Only the newest source SHALL have emphasis for one second after receipt. Expiry SHALL retain both labels.
+Missing origin SHALL NOT become a guessed device. No transport or layer indicator SHALL appear before its feature exists.
 
 #### Scenario: Status follows keyboard and connected inputs
 - **WHEN** keyboard and two connected MIDI devices produce events in turn
-- **THEN** the input segment lists the connected devices and highlights the actual most recent source
+- **THEN** the input segment keeps `KB` and the last used controller number, with emphasis on the newest input during its original one-second deadline
 - **AND** source metadata does not change velocity, action results, audio routing or release ownership
 
 #### Scenario: Disconnect cannot leave a false active device
 - **WHEN** a device disconnects and a delayed event from its old connection arrives
 - **THEN** the input list does not show that old connection as connected or active
 - **AND** a reconnect gets a current connection identity without inheriting a stale highlight
+
+### Requirement: Last controller identity
+
+The number SHALL use existing connected-source numbering, without a new physical-device grouping inferred from port names.
+Only actual controller input SHALL select it. Keyboard input, releases, equal values, derived notifications and stale deliveries SHALL NOT select another number.
+The controller field SHALL NOT list full port names, other controllers or a count.
+Full port names and input events SHALL remain available in F12 Input.
+
+#### Scenario: Only the last used controller number stays visible
+- **WHEN** M8 produces new input among ten connected controllers, its highlight expires and the owner uses the keyboard
+- **THEN** KB and M8 remain in the input segment without a controller list or count
+- **AND** later input from M10 replaces it with M10, while releases and stale events do not select another number
+
+### Requirement: Last controller connection lifetime
+
+Before the first controller input or after that controller disconnects, the segment SHALL show no controller number.
+Reconnection SHALL NOT inherit a disconnected connection's last-used state.
+Missing metadata SHALL NOT select or invent a number.
+
+#### Scenario: Last controller number requires current connection input
+- **WHEN** controllers connect before any input, then one produces input, disconnects and reconnects
+- **THEN** the number appears only after current-connection input and disappears on its disconnection
+- **AND** reconnection and late input from the old connection do not restore the old last-used state
+
+### Requirement: Stable controller segment width
+
+Input SHALL reserve `KB`, one marker per source and a field for the widest current controller number.
+With an unchanged connected set and terminal width, keyboard activity, number changes and expiry SHALL NOT move following status columns.
+Connection changes and terminal resizing MAY recompute that width. Safety indicators SHALL retain their existing priority.
+
+#### Scenario: Controller activity keeps status columns fixed
+- **WHEN** input alternates between M1, M8 and M10 among ten connected controllers and their highlights expire
+- **THEN** the reserved controller segment width and following audio and project columns stay unchanged at both supported terminal sizes
+- **AND** marker changes and number changes do not expand the segment or remove safety indicators
+
+### Requirement: Permanent keyboard identity
+
+`KB` SHALL remain visible before any input, without connected controllers and after its highlight expires, subject to existing safety width priorities.
+Keyboard repeats and releases SHALL NOT extend its highlight.
+Keyboard activity SHALL NOT restart the retained controller's deadline.
+
+#### Scenario: Keyboard stays visible without controllers
+- **WHEN** no controller is connected and a keyboard press, repeat and release occur
+- **THEN** `KB` remains visible before, during and after its one-second highlight
+- **AND** repeats and releases do not extend the original deadline or move following status columns
 
 ### Requirement: Input source identity
 
@@ -176,6 +248,17 @@ The first value in a new connection SHALL count as movement, even if an old conn
 - **WHEN** an older control value arrives after a newer value and the owner repeats the newer value
 - **THEN** neither delivery restarts the highlight
 - **AND** equal values on different channels or controls remain independent
+
+### Requirement: Compact audio status
+
+The permanent status SHALL use actual backend, buffer size, sample rate, latency, master volume and project values.
+It SHALL NOT show CPU percentage or zero xruns. CPU diagnostics SHALL remain available in Settings.
+Nonzero xruns and audio loss SHALL retain their warnings and width priority.
+
+#### Scenario: Compact status retains actual audio values
+- **WHEN** the audio format, backend, master or project changes at either supported size
+- **THEN** the status shows the current values without permanent CPU or zero-xrun fields
+- **AND** nonzero xruns, audio loss and Settings CPU diagnostics remain available
 
 ### Requirement: Status width priorities
 

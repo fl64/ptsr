@@ -436,3 +436,17 @@ The saved title, body and exact head match the local branch. The remote `Change 
 Manual acceptance and callback maximum-budget failures remain open. No merge or archive occurs.
 
 The owner authorized completion through PR publication. This does not authorize merge, archive, deferred 87a or callback correction.
+
+## 8. Corrections after the first manual run
+
+The owner approved both corrections in this branch and the existing draft PR.
+The earlier automated checks do not establish these corrections. Manual acceptance remains open.
+
+- [ ] 8.1 Exclude the unfinished SMC-PAD example from working profiles. Update the input-device delta, README and parser fixture. Remove the shipped-profile error exclusion. Test the real directory, ignored examples and invalid actual profiles with default routing.
+- [ ] 8.2 Check the final owner decision and screen-layout delta before status code. Keep permanent `KB` plus the last used controller number, not a controller list or count. Reserve fixed keyboard, number and activity-marker cells.
+- [ ] 8.3 Shorten the permanent status with the approved label, actual audio values, master and project. Remove full input lists, CPU and zero xruns. Replace `Unsaved` with permanent `*`: dim when saved, yellow when pending. Keep `Save failed`, other safety warnings and Settings diagnostics. Test both sizes, fixed save-state columns, keyboard activity, number changes, one-second expiry, disconnection, stale input and cache updates.
+- [ ] 8.4 Run the project checks, Release build, strict OpenSpec validation, screen catalogue and English checks. Check source provenance. Present separate keyboard and controller owner checks.
+
+Use targeted tests during each correction and run the complete `task check` before its commit.
+Measure preparation, compilation and checks separately. Keep each completed correction in its own signed-off commit.
+No new sound behavior or render, measured controller profile, binding, saved format or dependency belongs to these corrections.
