@@ -303,7 +303,16 @@ A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio
 - **Parameter locks:** any pad parameter can have its own value on one step: filter, cutoff, decay, drive, sends, the slice. The step plays with this value, and the next step returns to the pad value. You set a lock in step mode: hold a step and turn a knob.
 - **Row lengths (polyrhythm):** each pad row of a pattern can have its own length in steps, for example 12 steps for the hi-hat and 16 for the kick. The rows drift against each other and meet again after the common length.
 - **Euclidean fill:** for one pad row, set the number of hits, the number of steps and the rotation. The program spreads the hits as evenly as possible. Two knobs change it live.
-- **Mutations:** commands that change a pattern by chance: shuffle the slices on the pads, thin the hits, move hits by one step, swap two rows. Each mutation is one undo step, so you can roll again.
+- **Phrase variation (1.x, replaces mutations):** one variation knob sets the chance of a 1/16 retrigger after a hit and a slice swap.
+  Each phrase gets a new variant from the original. Phrase length is 1, 2 or 4 bars, with 2 as the default.
+  Keep the first half of the first bar as written, to anchor the groove.
+  - **Warp:** a knob sets the chance of a stretched hit, or half speed one octave down.
+  - **Phrase-end fill:** select a random matrix roll, starting 8, 4 or 2 steps before the phrase ends.
+    Reject rolls that do not fit. A 1/32 roll needs 2 steps or fewer.
+  - **Freeze:** keep the current variant across phrases.
+  - **Back to straight:** one action resets variation and warp to zero.
+  - Keep a seed per pattern so a variant can play again. Compute variation at playback, like quantize.
+    Never change the written pattern. This differs from the saved A/B/C/D copies below.
 - **Humanize:** a small random change of time and velocity for each hit at playback. One knob sets the amount. The stored hits do not change.
 - **Groove templates:** extract timing offsets and velocities from a break or recorded take, per step of a 1/16 or 1/32 grid.
   Save the result as a groove. Apply it to any pattern at playback, with amount 0–100 %.
@@ -482,7 +491,7 @@ choice on Pads is still open: proposed A changes values and moves banks to U/O.
 
 ### Version 0.2: patterns and the launcher
 
-6. **Pattern sequencer:** transport, recording, quantization, overdub, step mode with substeps and step parameters, swing, note repeat, pad mute (`docs/plans/PATTERNS.md`). Then parameter locks, row lengths, Euclidean fill, mutations and humanize.
+6. **Pattern sequencer:** transport, recording, quantization, overdub, step mode with substeps and step parameters, swing, note repeat, pad mute (`docs/plans/PATTERNS.md`). Then parameter locks, row lengths, Euclidean fill, phrase variation and humanize.
 7. **Clip launcher and scenes**, tracks, mixer, launcher mode on the SMC-PAD.
 8. **Time stretch, audio tracks and audio clips** with disk streaming and warp. Pad BPM sync.
 9. **Pad link, live mode, 16 Levels.**
@@ -569,11 +578,42 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
 - **Visual control** (section 17): one badge model, levels for messages; yellow means "the pads do something other than sound" (default; changes `docs/ui/STYLE.md`).
 - **Patterns:** the sequencer is in the audio thread; time in ticks (960 per quarter); a pattern keeps the hits as played, and quantize applies at playback (it is non-destructive); a pattern uses absolute pads 0–127 (default); one pattern plays at a time until the launcher exists (default).
 - **New projects from the controller** get a date name; the owner can rename them from the keyboard.
-- **Modulation, parameter locks and slice motion** (sections 7, 12, 16a) remain later ideas after the pattern sequencer.
+- **Modulation, parameter locks and slice motion** (sections 7, 12, 16a): V1 moves minimum per-hit locks into milestone 0.4b.
+  More locks, phrase variation, slice follow, playhead mode and general modulation remain `1.x`.
   The priority below replaces the earlier parameter-locks-first order.
-- **Sample workflows** (section 16b): extend 95–100 with fast grids, half-time, fills and velocity ramps.
+- **Sample workflows** (section 16b): V1 includes 1/64 quantize/step grids and pitch/velocity ramps inside ratchets.
+  Half-time, fills and other velocity ramps remain `1.x`.
   Changes 102–108 plan sample tempo, break patterns, locks, resampling, bass, mix and movement.
   Resolve callback budget failures before 95. Describe tasks without specific genre names.
   These plans do not authorize code.
 - Priority after the pattern sequencer: groove templates, pattern variations and chains, quick sample operations.
 - **V1 minimum:** [plans/V1.md](plans/V1.md) sets the core loop and eight release criteria. It overrides earlier priorities and stages. Everything outside its scope is `1.x`. Only the owner can add scope.
+- **V1 sound scope, approved on 2026-11-07:** milestone 0.4b follows patterns and precedes 0.5.
+  - **0.4b:** minimum step locks, ratchets with ramps/probability, master stutter, roll matrix, then offline PaulStretch, in that order.
+    Held performance effects start on the next grid, with the pattern clock running and its normal output silent underneath.
+    Release returns on the next pattern hit, without an unintended gap or doubled hit.
+    The `ROLL` layer latches on both inputs. Its 16 pads play held cells, with a one-bar keyboard fallback when releases are unavailable.
+
+    Minimum locks cover slice, start, reverse, pitch and filter cutoff. The stretch factor is 2 … 50.
+  - **0.5 effects:** keep shared reverb/delay sends and add serial insert chains with up to four effects on each pad and master.
+    Drive/waveshaper, bit/rate crusher, filter and compressor are the first insert effects. The owner can change their order.
+    Add a soft/hard master clipper, off by default, before the always-on limiter.
+    Effect amounts use makeup curves and RMS checks at 0/50/100 %, within ±1.5 dB.
+    Add a one-knob master DJ filter and a combined rate/bit lo-fi insert.
+  - **0.5 pad playback:** add per-pad pitch envelopes and crossfade pad loops.
+    Gate pads loop while held. One-shot pads loop until their next hit.
+    Slices default to pitch gate on and a crossfade mono group after Chop. Check fractional event starts, not only whole-sample offsets.
+- **V1 checks:** cover 5 ms slices, repeated triggers and a render of 64 slices of 10 ms at 1/32.
+  The callback workload includes full insert chains and simultaneous 1/32 ratchets at 200 BPM on 16 pads.
+  The owner finishes glitch ambient, drum and bass or jungle, and industrial hardcore or hard techno tracks.
+  Each friction item names its source track. These are release checks, not claims about current sound.
+
+  Render each roll-matrix cell at 172 BPM, with level, timing and click checks.
+  Cover presses between steps, releases between steps and a press/release within one step.
+- **V1 boundary:** buses and their send chains, sidechain, pad layers, ring modulator, comb/formant filters, tuner/project key and long automation remain `1.x`.
+  Chromatic mode (106), LFOs (108), granular freeze and spectral effects also remain `1.x`.
+  Check licenses before any PaulStretch source reuse or library choice. This plan chooses no dependency.
+  Real-time old-sampler stretch, tuned comb feedback and MIDI clock in/out remain `1.x`, as described in [V1 section 4](plans/V1.md#4-everything-else-is-1x).
+  Until the real-time stretch exists, the 1.0 matrix's stretch-all cell uses half speed, one octave down.
+- **88 on hold:** the owner deferred confirmation work until a MIDI device is available for live checks.
+  Recorded MIDI tests do not replace physical acceptance. Independent 0.3 sound-quality work can proceed through its own proposal.

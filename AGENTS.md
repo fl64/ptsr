@@ -81,8 +81,18 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 ## Tests — the agent does not hear sound
 
 - The engine can make an **offline render**: a scenario (pad hits, time, parameters) → WAV without a sound card.
-- Automatic checks of renders: no NaN and no infinities, no clipping, silence where it must be, hit timing ±1 sample.
+- Automatic checks of renders: no NaN or infinities, no clipping, required silence, level, timing ±1 sample and clicks.
+- Render every new effect to WAV. Check level, timing and clicks automatically.
+- For fx-core amount controls, check RMS at 0 %, 50 % and 100 %, within ±1.5 dB of the reference.
+  Define reference sounds and measurement windows in the design.
+- Render every roll-matrix cell at 172 BPM. Check press between steps, release between steps, and press/release within one step.
+  Check quantized starts, the running pattern and return without unintended gaps or doubled hits.
 - For each sound feature: a WAV in `renders/` for the owner.
+- Do not add third-party samples, breaks or kits to the repository.
+  Tests and repository renders use generated sounds or the owner's recordings released under CC0.
+- If an optional demo needs a well-known break, the owner downloads it and keeps it outside the repository.
+  Only that optional demo test skips when the external file is missing.
+  Required tests use the permitted audio sources and do not skip because a demo file is absent.
 - Audio callback benchmark: at 32 voices (polyphony from 02), not more than 50 % of the buffer budget (128 samples / 48 kHz).
 - Test the input logic (keyboard, MIDI, keyboard layouts) without hardware, on recorded event sequences.
 - **Every user scenario in the specs is covered by a test.** A requirement or scenario goes into a spec — the same change adds a test that walks it: input logic on recorded events, state in a unit test, sound in an offline render with the automated checks. Name the test after the spec scenario, so the name shows which scenario is covered. What cannot be automated (how the sound feels) the owner checks in `renders/`, but even there an automated check for clipping, silence and timing is required. A step is not done until its scenarios are covered. The test `crates/app/tests/scenarios.rs` checks this in `task check`: a scenario of `openspec/specs/` with no test that names it fails the check. A scenario that you cannot test without hardware goes into `openspec/untested.md` with its reason, and only there. Archive a change only when this test passes with its scenarios in the main specs.

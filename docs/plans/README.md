@@ -7,10 +7,35 @@ It selects the minimum for both keyboard and SMC-PAD, with no clicks and no cras
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
 The new quality, export and release changes reserve numbers 109–120. Callback correction keeps 94a.
+The new glitch-kit and pad-sound names are planning labels. Assign numbers before their OpenSpec proposals.
 Independent report-only change 84b adds local overrun records before further product work.
 
-The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4),
+The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4), glitch kit (0.4b),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
+The owner expanded the 1.0 sound scope on 2026-11-07:
+
+- **0.4:** quantize and step grids include 1/64. The default step view stays 1/16.
+- **0.4b, in order:** minimum step locks, ratchets, held master stutter, roll matrix, then offline PaulStretch.
+  Held performance uses start on the next 1/16 boundary, with 1/32 as another setting.
+  The pattern runs underneath with its normal output silent. Release returns on the next hit, without unintended gaps or doubled hits.
+  The latched `ROLL` layer provides 16 held cells on keyboard and SMC-PAD, with rate/variant glyphs and a badge.
+  A keyboard without releases plays a cell for one bar. Each cell gets a checked render at 172 BPM.
+- **0.5:** retain shared reverb/delay sends and add serial insert chains with up to four effects per pad and master.
+  Include drive/waveshaper, bit/rate crusher, filter and compressor. The owner can change their order.
+  A soft/hard master clipper defaults to off before the always-on limiter.
+  Add pad pitch envelopes and crossfade loop playback for gate and one-shot pads.
+  Add makeup curves with RMS checks at 0/50/100 %, within ±1.5 dB, a one-knob master DJ filter and a rate/bit lo-fi insert.
+- **Release gates:** 5 ms slices and repeated triggers, plus 64 slices of 10 ms at 1/32 without clicks.
+  Slice modes add pitch gate, crossfade mono groups and fractional event starts. Pitch gate and crossfade mono default to on for chopped slices.
+  The callback workload includes full insert chains and simultaneous 1/32 ratchets at 200 BPM on 16 pads.
+  Three finished tracks cover glitch ambient, drum and bass or jungle, and industrial hardcore or hard techno.
+  Each friction item names its source track.
+
+The exact ranges, real-time rules and 1.x boundary are in [V1.md](V1.md).
+More locks from 104, phrase variation, real-time old-sampler stretch, tuned comb feedback and MIDI clock in/out remain `1.x`.
+Slice follow, granular/spectral tools, buses, sidechain and chromatic/LFO work also remain `1.x`.
+Phrase variation replaces mutations and never rewrites the stored pattern.
+Until real-time stretch exists, the 1.0 matrix uses half speed, one octave down.
 See [V1 owner questions](V1.md#6-owner-questions) for the hardware-dependent work order.
 The [friction log](../V1-FRICTION.md) starts with current-program sessions. It has no recorded sessions yet.
 These documents do not activate a change or claim success on a release criterion.
@@ -19,7 +44,8 @@ These documents do not activate a change or claim success on a release criterion
 
 These plans were imported from the owner's eight planning documents on 2026-11-03.
 The vision is in `../VISION.md`. This folder also holds later plans for project safety
-and sample workflows. Describe musical tasks without specific genre names.
+and sample workflows. Describe implementation tasks without specific genre names.
+Release acceptance uses the three styles that the owner selected in V1.
 These plans guide the agent, like `docs/VISION.md`. They are not requirements.
 Requirements come only from `openspec/specs/` and the active change.
 Each change starts with an OpenSpec proposal, design, spec deltas and tasks.
@@ -136,6 +162,9 @@ not permission to combine the new changes.
   Remaining keyboard checks, physical-controller checks, separate listening and callback maximum-budget limits remain open.
   The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
   Work stays in the main repository folder. Change 88 is not active.
+- The owner deferred 88 on 2026-11-07 until a MIDI device is available for live checks.
+  Do not start it now. Recorded MIDI tests cannot establish the physical-controller result.
+  Independent 0.3 sound-quality work can proceed through its own proposal. Later input prerequisites remain.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -256,6 +285,9 @@ of track 1. Track 3 needs the screen registry for a new screen, plus `ui.confirm
 It also needs the track 2 command panel for the new actions' controller paths.
 Project save safety 86b–86d comes before 87. Callback correction 94a is a separate gate before 95.
 Track 4 follows the pattern base through 100a. It does not wait for optional timestamps (101).
+For 1.0, V1 inserts the glitch kit after patterns and before sample tempo, resampling, effects and export.
+The minimum locks from 104 move into `step-locks` in 0.4b. The rest of 104 stays `1.x`.
+The diagram below retains the broader roadmap, not the revised 1.0 order.
 Change 103 needs 102. Changes 104 and 105 need patterns. Changes 106–108 can change order between them.
 
 ```
@@ -341,8 +373,10 @@ before code. The imported plans do not override an existing requirement.
    fails the reach test, unless it is on the text-only list.
 4. **Real time stays safe.** No allocation, locks, I/O or logs in the audio callback. New engine
    data goes as `Arc` through `rtrb`, and old data goes back through the garbage queue.
-5. **Each sound change has a render** in `renders/` and the automatic checks (no NaN, no clip,
-   timing ±1 sample).
+5. **Each sound change has a render** in `renders/` with automatic checks for finite samples, clipping, level, timing ±1 sample and clicks.
+   Check fx-core reference RMS at 0/50/100 % amount against the ±1.5 dB limit.
+   Render all roll cells at 172 BPM and the three press/release cases in V1.
+   Use generated sounds or the owner's CC0 recordings. Only optional external demo tests can skip for a missing owner-supplied file.
 6. **The keyboard keeps its comfort.** The keyboard is the reference.
    Refactors and controller work do not change a key's role, except where the proposal explicitly states a change.
    Every new action also has a keyboard key or path, except controller-only actions.
@@ -361,8 +395,17 @@ answer, take the default and write the question into `design.md` under "Open que
 
 | Before | Question | Default |
 |---|---|---|
-| 0.2 | Is the SMC-PAD at hand? Without it, 90–93 cannot be accepted | If not, do 0.3 and 0.4 first, then 0.2. Keep unverified controller checks open |
+| 0.2 | Is the SMC-PAD at hand? Without it, 90–93 cannot be accepted | If not, start independent 0.3 work. Resolve input prerequisites before 0.4. Keep unverified controller checks open |
+| 88 | When does confirmation work resume? | After a MIDI device is available for live checks. Owner decision: defer 88 |
 | 0.4 | One swing amount in 1.0? | Yes, if 96 makes it cheap |
+| 0.4b | Is the glitch kit in 1.0? | Yes |
+| 0.4b | Stutter on the master only, or also per pad in 1.0? | Master only |
+| 0.4b | Roll matrix target: master, selected pad, or the pattern's last hit? | The last hit of the pattern |
+| 0.4b | Effect start grid | 1/16. Setting: 1/16 or 1/32 |
+| 0.3 | Crossfade mono voice as the default for chopped slices? | Yes |
+| 1.x | Phrase length for variation | 2 bars |
+| 0.5 | Insert slots per pad | 4 |
+| 0.5 | Master clipper on by default? | Off. The limiter is always on |
 | 0.5 | Export format default | 24-bit WAV at the project rate |
 | 0.6 | Release form | One binary in tar.gz on GitHub Releases, built for glibc 2.28 |
 | 0.6 | How many autosave versions | 10 |
@@ -385,4 +428,4 @@ answer, take the default and write the question into `design.md` under "Open que
 | 99 | Default slot switch boundary | 8 bars |
 | 102 | Pad fit default for a new slice | Off. The owner enables it |
 | 102 | Automatic tempo detection library | aubio (GPL-3.0, compatible). Proposal only. Check the version and wrapper before code |
-| 104 | Which parameters can be locked first? | Cutoff, pitch, start, decay and sends |
+| 104 (1.x) | Which parameters follow the minimum locks in 0.4b? | Decay and sends, with the exact extension set in its design |
