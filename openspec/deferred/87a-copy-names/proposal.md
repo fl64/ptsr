@@ -3,8 +3,10 @@
 ## Status
 
 The owner approved this naming direction and specification preparation on 2026-11-06.
-This change stays deferred until change 87 is complete.
-This draft does not authorize implementation, publication or archive.
+Change 87 is complete and merged into `master` at `93362d9`.
+The owner approved the three naming choices below after that merge.
+This change stays deferred until approval of activation and the implementation file plan.
+The current step changes only these four draft documents, without code, commits or publication.
 
 ## Why
 
@@ -18,9 +20,12 @@ The owner cannot tell which numbers identify slices and which identify copies.
 - A copy of a copy replaces its final copy marker instead of adding another marker.
 - A new name avoids occupied names across all banks of the current project or scratch session.
 - A slice number stays in the base name: `break 2 (copy 1)`.
-- Existing names stay unchanged until the owner explicitly renames or copies a pad.
+- Existing source names stay unchanged when the owner copies a pad.
+- The next copy reuses the smallest free positive number, including numbers freed by deletion or undo.
+- A final canonical ` (copy N)` marker has the same meaning in a manual source name.
+- The target's current name reserves its number until replacement succeeds.
 
-`design.md` separates approved behavior from defaults that need review before activation.
+The owner approved these last three choices. `design.md` records their consequences and the remaining activation work.
 
 ## Out of scope
 

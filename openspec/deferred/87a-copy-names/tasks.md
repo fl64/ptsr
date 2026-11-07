@@ -1,9 +1,11 @@
 # Tasks: Pad copy names
 
-This change stays deferred until change 87 is complete.
-The owner authorized only specification preparation now.
+Change 87 is complete and merged into `master` at `93362d9`.
+The owner approved all three naming choices and an update to these four draft documents.
+This change stays deferred until approval of activation and the implementation file plan.
+The current step permits no code changes, commits or publication.
 Each completed task requires a successful `task check` and a separate signed-off local commit.
-Publication, merge and archive require separate permission.
+Commit permission for this revision remains separate. Publication, merge and archive also need separate permission.
 
 ## 1. Specification preparation
 
@@ -11,7 +13,8 @@ Publication, merge and archive require separate permission.
 
 ## 2. Activation after change 87
 
-- [ ] 2.1 Resolve the design Open questions with the owner. Review this draft against the completed change 87 and agree implementation files before activation.
+- [ ] 2.1 Record the three approved naming choices in these four artifacts. Review the English text and check the deferred draft directly. Obtain separate commit permission before committing this revision.
+- [ ] 2.2 Review this draft against completed change 87 at `93362d9`. Agree the implementation files and obtain activation approval. Update the branch base without mixing change-87 implementation into change 87a.
 
 ## 3. Name selection and placement
 
@@ -26,6 +29,10 @@ Publication, merge and archive require separate permission.
 - [ ] 4.3 Present separate keyboard and controller checks to the owner. Archive only after acceptance and main-spec scenario coverage pass.
 
 ## Verification status
+
+The current revision records the owner decisions without implementing the naming rules.
+Task 2.1 stays incomplete until the required checks and an authorized commit.
+The results below apply only to the original preparation, not this revision.
 
 Preparation verification: `task check` and `task openspec:check` pass on the unchanged application base `a4789f4`.
 The suites pass: 690 App, 80 input, 102 drawing and 18 benchmark-report tests.

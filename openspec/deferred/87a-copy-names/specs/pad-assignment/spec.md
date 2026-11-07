@@ -28,7 +28,7 @@ Copies SHALL use `<base> (copy N)`.
 The base SHALL be the full source name at pickup, before clipping, without its final canonical ` (copy N)` marker.
 Canonical `N` SHALL be a positive ASCII decimal number without leading zeroes or a machine-integer size limit.
 The marker SHALL use the shown case and spaces.
-Only that final marker SHALL identify a copy family.
+Only that final marker SHALL identify a copy family, including in a manual name.
 The system SHALL preserve all other base text, including Unicode and slice numbers.
 
 #### Scenario: Repeated source copies use numbered names
@@ -52,9 +52,10 @@ The system SHALL preserve all other base text, including Unicode and slice numbe
 
 ### Requirement: Copy names avoid occupied names in all banks
 
-The system SHALL choose the smallest positive `N` whose complete candidate name differs from every current pad name.
-It SHALL compare full names exactly, before screen clipping, across every bank of the current project or scratch session.
-The scan SHALL include the source, the occupied target, missing pads and loading pads.
+The system SHALL choose the smallest positive `N` with an unoccupied complete candidate name.
+It SHALL compare full names exactly before clipping, across all banks of the current project or scratch session.
+The scan SHALL include the source, missing pads and loading pads.
+The target's current name SHALL remain occupied until replacement succeeds.
 Names in other projects SHALL NOT reserve numbers.
 The system SHALL NOT use a saved counter or change another pad's name to make a candidate available.
 
@@ -67,6 +68,7 @@ The system SHALL NOT use a saved counter or change another pad's name to make a 
 - **WHEN** `kick (copy 1)` and `kick (copy 3)` exist, but `kick (copy 2)` does not
 - **THEN** the next copy in that family uses `kick (copy 2)`
 - **AND** the same rule applies when deletion or undo frees that name
+- **AND** a copy of `kick (copy 3)` also uses `kick (copy 2)` if that gap remains free
 
 #### Scenario: Replacement includes the current target name
 - **WHEN** the only numbered name is `kick (copy 1)` on an occupied target and the owner confirms copying `kick` onto it

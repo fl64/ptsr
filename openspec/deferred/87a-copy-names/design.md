@@ -5,7 +5,11 @@
 This is a deferred specification, not an active implementation change.
 The owner approved preparation on a separate `87a-copy-names` branch, with implementation after change 87.
 The preparation base is `origin/master` at `a4789f4`.
-Change 87 remains separate. Its implementation files and acceptance record do not belong to this commit.
+Change 87 is complete and merged into `master` at `93362d9`.
+The owner approved the three naming choices below after that merge.
+The current revision changes only the four draft documents, without code, commits or publication.
+Activation and the implementation file plan still need approval.
+Change 87 remains separate. Its implementation files and acceptance record do not belong to this revision.
 
 Confirmed baseline:
 
@@ -25,11 +29,16 @@ These source locations describe the preparation base, not the later change-87 la
 - Preserve the slice number in the base name.
 - Do not clean existing ` 2` chains automatically. A number can belong to a slice or a manual name.
 - Prepare a separate deferred change. Implement only after change 87 is complete.
+- Reuse the smallest free positive copy number after clearing or undo. Numbers are names, not a copy history.
+- Treat a canonical final ` (copy N)` in a manual name as the marker for its next copy.
+  Keep the manual source name unchanged.
+- Include the occupied target's current name when selecting a number, until replacement succeeds.
+  Replacing `kick (copy 1)` with a copy of `kick` therefore selects `kick (copy 2)` if available.
 
-## Proposed defaults
+## Naming rules
 
-These defaults make the draft testable. They are not additional owner decisions.
-Review the Open questions before activation.
+The three choices above are owner decisions, not unresolved defaults.
+Review the remaining technical details against current `master` before activation.
 
 ### Base name and marker
 
@@ -92,8 +101,9 @@ The table specifies planned tests. No implementation test for the new behavior e
 | Situation | Expected result | Status | Planned test |
 | --- | --- | --- | --- |
 | A copy name exists in another bank | Skip that complete name | Closed in draft | Keyboard and raw MIDI through production routes |
-| A source copy has a larger number and a lower number is free | Reuse the smallest free number | Requires owner review | Gap and undo scenarios |
-| A manual name ends in canonical `(copy N)` | Treat that suffix as the marker for its next copy | Requires owner review | Canonical and noncanonical names |
+| A source copy has a larger number and a lower number is free | Reuse the smallest free number | Closed by owner decision | Gap and undo scenarios |
+| A manual name ends in canonical `(copy N)` | Treat that suffix as the marker for its next copy | Closed by owner decision | Canonical and noncanonical names |
+| An occupied target already has a copy number | Include its current name until replacement succeeds | Closed by owner decision | Replacement includes the current target name |
 | Names change while a replacement question is open | Ask again if the proposed copy name changes | Closed in draft | Confirmation sequence |
 | The source name changes after pickup | Keep the base from the pickup snapshot | Closed in draft | Snapshot sequence |
 | The owner cancels or a request fails | Change no pad and reserve no number | Closed in draft | Cancel, refusal and retry sequences |
@@ -106,13 +116,6 @@ Audio callback work, MIDI device measurement and new controls are outside this n
 
 ## Open questions
 
-1. May the program reuse a lower number after clearing or undo?
-   Default: yes. Choose the smallest free positive number, without a persistent counter.
-2. How should copying treat a manual name that ends in canonical ` (copy N)`?
-   Default: treat that final suffix as the copy marker. Preserve the manual source name itself.
-   This avoids new saved metadata, but the next copy does not retain that suffix as literal base text.
-3. Does replacement exclude the target's old name when it selects a number?
-   Default: no. Include every current pad name until placement succeeds.
-   This avoids an exception in the name scan, but replacement can select a higher number.
-
-These questions do not block storage of this deferred draft. Resolve them before implementation.
+The owner resolved all three naming questions with the decisions above.
+No naming question remains open.
+The implementation file plan and activation still need approval after review against current `master`.
