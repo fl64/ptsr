@@ -92,6 +92,8 @@ impl App {
             .pads
             .to_session(Some(self.browser.dir.clone()), self.rate);
         s.master_db = self.master_db;
+        s.bpm = self.transport.bpm;
+        s.metronome = self.transport.metronome;
         let open = self
             .chop
             .iter()

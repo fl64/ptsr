@@ -9,6 +9,7 @@ use std::{path::PathBuf, sync::Arc};
 #[derive(Clone)]
 enum Target {
     Master,
+    Tempo,
     Mode {
         abs: usize,
         scope: Vec<usize>,
@@ -113,6 +114,7 @@ impl App {
         };
         let target = match action {
             Action::MasterVolume(_) => Target::Master,
+            Action::TempoStep { .. } => Target::Tempo,
             Action::PadModeNext => Target::Mode {
                 abs: self.pads.selected_abs(),
                 scope: self.pads.scope_pads(),
@@ -186,6 +188,7 @@ impl App {
         };
         let target = match *param {
             Param::MasterVolume => Target::Master,
+            Param::Tempo => Target::Tempo,
             Param::PadVolume => self.pad_value_target(pads::Param::Volume),
             Param::PadPitch => self.pad_value_target(pads::Param::Pitch),
             Param::PadAttack | Param::PadDecay | Param::PadRelease => {
@@ -281,6 +284,13 @@ impl App {
             sound: None,
         };
         match target {
+            Target::Tempo => {
+                c.view.object = "Transport".into();
+                c.view.parameter = "tempo".into();
+                c.view.formatted = format!("{:.1} BPM", self.transport.bpm);
+                c.view.position = Some(self.tempo_position());
+                c.numbers.push(self.transport.bpm);
+            }
             Target::Master => {
                 c.view.object = "Master".into();
                 c.view.parameter = "volume".into();

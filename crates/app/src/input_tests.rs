@@ -1,5 +1,7 @@
 //! Recorded input through the production keyboard and MIDI routes. No device or sound card.
 
+mod transport;
+
 use super::*;
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers as M};
@@ -4128,7 +4130,7 @@ fn each_registered_screen_keeps_its_effective_help() {
                     Screen::Pads => (
                         "pad.edit",
                         "Enter",
-                        &["PAD", "CHANGE", "BANK", "REC", ""],
+                        &["PAD", "CHANGE", "BANK", "CLOCK", "REC", ""],
                         &[
                             "PADS",
                             "BANK",
@@ -4141,13 +4143,13 @@ fn each_registered_screen_keeps_its_effective_help() {
                     Screen::Settings => (
                         "settings.row_next",
                         "K",
-                        &["SETTINGS", "REC", ""],
+                        &["SETTINGS", "CLOCK", "REC", ""],
                         &["PADS", "BANK", "CHOP", "SETTINGS", "SOUND", "SCREENS"],
                     ),
                     Screen::Files => (
                         "browser.hold",
                         "Enter",
-                        &["FILES", "BANK", "REC", ""],
+                        &["FILES", "BANK", "CLOCK", "REC", ""],
                         &[
                             "PADS",
                             "BANK",
@@ -4161,13 +4163,13 @@ fn each_registered_screen_keeps_its_effective_help() {
                     Screen::Chop => (
                         "chop.cut",
                         "M",
-                        &["MOVE", "CUT", "PADS", "BOUNDS", "BANK", "REC", ""],
+                        &["MOVE", "CUT", "PADS", "BOUNDS", "BANK", "CLOCK", "REC", ""],
                         &["PADS", "BANK", "CHOP", "SOUND", "SCREENS"],
                     ),
                     Screen::Fx => (
                         "edit.page_next",
                         "Tab",
-                        &["SHARED FX", "BANK", "REC", ""],
+                        &["SHARED FX", "BANK", "CLOCK", "REC", ""],
                         &["PADS", "BANK", "CHOP", "SOUND", "SCREENS"],
                     ),
                 };
@@ -6743,7 +6745,7 @@ fn restored_copy_names_determine_the_next_available_number() {
                     drive.app.session_path.clone()
                 };
                 let stored = session::load(&saved).unwrap();
-                assert_eq!(stored.version, 3);
+                assert_eq!(stored.version, 4);
                 assert_eq!(stored.pads["0"].name.as_deref(), Some(base));
                 assert_eq!(stored.pads["1"].name, Some(format!("{base} (copy 1)")));
                 let mut again = numbered_copy_drive();
@@ -11074,7 +11076,7 @@ impl PortableProject {
             &self.file
         };
         let key = stored.to_string_lossy();
-        assert_eq!(sess.version, 3);
+        assert_eq!(sess.version, 4);
         assert_eq!(sess.chops.len(), 1);
         assert_eq!(sess.kept.len(), 1);
         assert_eq!(sess.chops[key.as_ref()], self.states[2]);
@@ -11237,7 +11239,7 @@ fn portable_chops_keep_old_project_compatibility() {
             assert_eq!(drive.app.pads.link[0], Some((4, 3)));
             assert_eq!(drive.app.pads.pitch[0], 3);
             assert_eq!(drive.app.pads.volume_db[0], -6);
-            assert_eq!(session::load_existing(&path).unwrap().version, 3);
+            assert_eq!(session::load_existing(&path).unwrap().version, 4);
         }
     }
 }
@@ -11250,7 +11252,27 @@ fn badge_labels(drive: &Drive) -> Vec<String> {
         before,
         "preparing badges cannot change application state"
     );
-    badges.into_iter().map(|badge| badge.normal).collect()
+    assert!(
+        badges
+            .first()
+            .is_some_and(|badge| badge.normal.ends_with("■ 120.0"))
+    );
+    badges
+        .into_iter()
+        .filter_map(|badge| {
+            if badge.normal == "■ 120.0" {
+                None
+            } else {
+                Some(
+                    badge
+                        .normal
+                        .strip_suffix(" · ■ 120.0")
+                        .unwrap_or(&badge.normal)
+                        .to_string(),
+                )
+            }
+        })
+        .collect()
 }
 
 fn pad_feedback(drive: &Drive) -> tui::PadFeedback {
@@ -11829,9 +11851,10 @@ fn recording_badges_follow_real_input_and_controlled_elapsed_time() {
             let badges = drive
                 .app
                 .title_badges_at(start + Duration::from_secs(seconds));
-            assert_eq!(badges[0].kind, tui::BadgeKind::Attention);
-            assert_eq!(badges[0].normal, format!("● REC {seconds}s"));
-            assert_eq!(badges[0].compact, "REC");
+            assert_eq!(badges[0].normal, "■ 120.0");
+            assert_eq!(badges[1].kind, tui::BadgeKind::Attention);
+            assert_eq!(badges[1].normal, format!("● REC {seconds}s"));
+            assert_eq!(badges[1].compact, "REC");
             let now = start + Duration::from_secs(seconds);
             assert_eq!(text.badges_at(&drive.app, now), badges);
             let builds = text.builds().0;

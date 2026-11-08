@@ -1,5 +1,5 @@
 //! Audio callback benchmark: 32 voices with pitch, envelope, filter, drive and both sends,
-//! a reverb and a delay busy (56), 128-sample block,
+//! a reverb and a delay busy (56), transport and metronome at 172 BPM, 128-sample block,
 //! 48 kHz. Target: at most 50 % of the block budget.
 //! Run: `cargo bench -p engine`.
 
@@ -20,6 +20,9 @@ const BLOCK: usize = 128;
 const BLOCKS: usize = 20_000;
 
 fn setup(mut send: impl FnMut(Command)) {
+    send(Command::SetTempo { bpm: 172.0 });
+    send(Command::SetMetronome { enabled: true });
+    send(Command::TransportPlay);
     // A press, pitch change and envelope for every pad.
     // different pads: hitting one pad again would cut its previous voice
     for pad in 0..MAX_VOICES {
@@ -102,7 +105,7 @@ fn main() -> io::Result<()> {
     let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
     setup(|cmd| tx.push(cmd).unwrap());
     let mut rt = Realtime::new(
-        Engine::with_sounds(SR, vec![], vec![sound]),
+        Engine::with_sounds(SR, engine::click(SR), vec![sound]),
         vec![rx],
         Arc::new(Stats::default()),
         SR,
@@ -119,7 +122,7 @@ fn main() -> io::Result<()> {
     let p99 = report.wall.p99;
     let max = report.wall.max;
     println!(
-        "{MAX_VOICES} voices with pitch, envelope, filter, drive and sends, reverb and delay, block {BLOCK} @ {SR} Hz, budget {:.3} ms: mean {:.2} %, p99 {:.2} %, max {:.2} %",
+        "{MAX_VOICES} voices with pitch, envelope, filter, drive and sends, reverb and delay, transport/metronome at 172 BPM, block {BLOCK} @ {SR} Hz, budget {:.3} ms: mean {:.2} %, p99 {:.2} %, max {:.2} %",
         budget * 1e3,
         pct(mean),
         pct(p99),
@@ -146,7 +149,7 @@ fn bench_switch(budget: f64, trace: &mut Trace) -> io::Result<f64> {
             .collect(),
     ));
     let (garbage_tx, mut garbage_rx) = rtrb::RingBuffer::new(1024);
-    let mut engine = Engine::with_sounds(SR, vec![], vec![]);
+    let mut engine = Engine::with_sounds(SR, engine::click(SR), vec![]);
     engine.set_garbage(garbage_tx);
     let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
     let state = Arc::new(ProjectState::default());

@@ -9,7 +9,7 @@
 
 ptsr is a sampler for the Linux terminal. You play pads from the computer keyboard and from MIDI controllers. You chop a break into slices, put the slices on pads and shape each pad: pitch, envelope, filter, mute groups and effects. Projects and the session stay on the disk.
 
-Version 0.1.0. The specifications in `openspec/specs/` define the behavior. Each change starts as a specification. Tests and code follow.
+Version 0.1.0. The specifications in `openspec/specs/` and active changes define the behavior. Each change starts as a specification. Tests and code follow.
 
 ## What you need
 
@@ -64,6 +64,9 @@ Start ptsr from the repository folder. ptsr reads the controller profiles from `
 - `Enter` on the pads screen opens pad edit. `Tab` changes the page. `I` and `K` select a parameter. `J` and `L` change its value.
 - `F4` opens the shared FX screen. `Tab` selects FX 1 or FX 2. The same page knobs control the selected block.
 - `F12` opens the settings: the sound device, the buffer, MIDI and the knob response.
+- `Space` starts or stops the beat clock on Pads, FX and Settings. Chop and Files keep their preview keys.
+  `Ctrl+Up/Down` changes tempo by 1 BPM. Add Shift for 0.1 BPM. `Alt+M` toggles the metronome.
+  The range is 40–300 BPM. Patterns are not implemented yet.
 
 `docs/USER-STORIES.md` gives each task step by step.
 
@@ -78,6 +81,10 @@ Start ptsr from the repository folder. ptsr reads the controller profiles from `
 | `~/ptsr/projects/`, `~/ptsr/samples/` | the projects and the samples (change the roots in F12) |
 
 The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these folders. ptsr reads settings and sessions from the current `ptsr` folders only.
+
+Session format 4 saves tempo and metronome preference, but not running state or clock position.
+Formats 1–3 remain readable. Older binaries refuse format 4. Keep a backup before saving with this version.
+The [isolated transport procedure](docs/LIVE-CHECKS.md#95-transport-and-metronome) keeps owner checks separate from existing projects.
 
 ## Controllers
 

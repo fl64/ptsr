@@ -14,6 +14,7 @@ mod notices;
 mod pads;
 mod saving;
 mod session;
+mod transport;
 mod values;
 mod view;
 mod wav;
@@ -387,6 +388,7 @@ struct UiPadHold {
 }
 
 struct App {
+    transport: transport::State,
     audio: Option<Audio>,
     pending_audio: std::collections::VecDeque<ProjectCommand>,
     audio_held: [Option<u64>; PADS],
@@ -628,6 +630,14 @@ impl App {
         self.copy_in_hand = None;
         self.stop_preview();
         self.edit = false;
+        self.transport = transport::State::default();
+        self.transport.bpm = sess.bpm;
+        self.transport.metronome = sess.metronome;
+        self.takeover.reset_target(transport::TEMPO_TARGET);
+        self.send(Command::SetTempo { bpm: sess.bpm });
+        self.send(Command::SetMetronome {
+            enabled: sess.metronome,
+        });
         self.set_master(sess.master_db);
         self.pads = pads::Pads::default();
         self.pad_naming = None;
@@ -4171,6 +4181,7 @@ fn main() -> std::io::Result<()> {
     // absolute paths as they are (11)
     let sess = with_resolved_paths(sess, start_project.as_ref().map(|p| p.folder.as_path()));
     let mut app = App {
+        transport: transport::State::default(),
         audio,
         pending_audio: Default::default(),
         audio_held: [None; PADS],
@@ -4779,6 +4790,12 @@ const MOVED_KEYS: &[(Option<Screen>, &str, &str)] = &[
 ];
 
 const CLEANUP_DEFAULTS: &[(Option<Screen>, &str, &str)] = &[
+    (None, "Space", "transport.toggle"),
+    (None, "Ctrl+Up", "transport.tempo_up"),
+    (None, "Ctrl+Down", "transport.tempo_down"),
+    (None, "Ctrl+Shift+Up", "transport.tempo_up_fine"),
+    (None, "Ctrl+Shift+Down", "transport.tempo_down_fine"),
+    (None, "Alt+M", "metronome.toggle"),
     (None, "Alt+R", "record.mic"),
     (Some(Screen::Chop), "Ctrl+G", "chop.normalize"),
     (Some(Screen::Chop), "H", "chop.hits"),
@@ -5981,6 +5998,54 @@ struct HelpState {
     edit: bool,
 }
 
+fn transport_help(keymap: &Keymap, screen: Screen) -> tui::HelpGroup {
+    let item = |actions: &[Action], text: &str| {
+        let keys = keymap
+            .bindings(screen)
+            .into_iter()
+            .filter(|(_, action)| actions.contains(action))
+            .map(|(key, _)| key)
+            .collect();
+        (letters_first(keys).join(" "), text.to_string())
+    };
+    tui::HelpGroup {
+        name: "CLOCK",
+        items: vec![
+            item(&[Action::TransportToggle], "play/stop"),
+            item(
+                &[
+                    Action::TempoStep {
+                        up: false,
+                        fine: false,
+                    },
+                    Action::TempoStep {
+                        up: true,
+                        fine: false,
+                    },
+                ],
+                "BPM",
+            ),
+            item(
+                &[
+                    Action::TempoStep {
+                        up: false,
+                        fine: true,
+                    },
+                    Action::TempoStep {
+                        up: true,
+                        fine: true,
+                    },
+                ],
+                "0.1 BPM",
+            ),
+            item(&[Action::MetronomeToggle], "metro"),
+        ]
+        .into_iter()
+        .filter(|(key, _)| !key.is_empty())
+        .collect(),
+    }
+}
+
 fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::HelpGroup> {
     let item = |actions: &[Action], text: String| (keys(keymap, screen, actions), text);
     // the edit layer keys: the same on every screen, over the screen keys
@@ -6340,6 +6405,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
             }]
         }
     };
+    groups.push(transport_help(keymap, screen));
     groups.push(tui::HelpGroup {
         name: "REC",
         items: vec![
@@ -6490,6 +6556,7 @@ fn ctrl_text(a: Action) -> String {
         Action::ChopZoom { zoom_in: true } => "zoom in".into(),
         Action::ChopZoom { zoom_in: false } => "zoom out".into(),
         Action::BrowserFavorite => "favorite".into(),
+        Action::MetronomeToggle => "metro".into(),
         a => describe(a),
     }
 }
@@ -6632,6 +6699,13 @@ fn describe(a: Action) -> String {
         Action::Quit => "quit".into(),
         Action::SessionSave => "save the session now".into(),
         Action::Click => "test click".into(),
+        Action::TransportToggle => "transport: play / stop".into(),
+        Action::MetronomeToggle => "metronome: on / off".into(),
+        Action::TempoStep { up, fine } => format!(
+            "tempo {} {} BPM",
+            if up { "up" } else { "down" },
+            if fine { "0.1" } else { "1" }
+        ),
         Action::SettingsRow(_) => "select row".into(),
         Action::SettingsValue(_) => "change value".into(),
         Action::SettingsTab => "switch tab: audio / input / MIDI".into(),
@@ -6707,7 +6781,11 @@ fn help_section(a: Action) -> usize {
         | Action::SettingsTab
         | Action::SettingsLearn
         | Action::SettingsClear => 4,
-        Action::MasterVolume(_) | Action::Click => 5,
+        Action::MasterVolume(_)
+        | Action::Click
+        | Action::TransportToggle
+        | Action::MetronomeToggle
+        | Action::TempoStep { .. } => 5,
         Action::RecordMic(_) | Action::RecordOutputToggle => 5,
         Action::ScreenPads
         | Action::ScreenSettings
@@ -7449,6 +7527,7 @@ mod tests {
     pub(super) fn test_app() -> super::App {
         use super::*;
         App {
+            transport: transport::State::default(),
             audio: None,
             pending_audio: Default::default(),
             audio_held: [None; PADS],
@@ -11246,8 +11325,8 @@ Enter = "browser.hold"
         let app = test_app();
         let groups = super::help_groups(&keymap, input::Screen::Pads, &app.help_state());
         let names: Vec<_> = groups.iter().map(|g| g.name).collect();
-        assert_eq!(names, ["PAD", "CHANGE", "BANK", "REC", ""]);
-        assert_eq!(tui::help_dropped(&groups, 140), 0);
+        assert_eq!(names, ["PAD", "CHANGE", "BANK", "CLOCK", "REC", ""]);
+        assert_eq!(tui::help_dropped(&super::without_modifiers(groups), 140), 0);
     }
 
     /// 43 "The same order on every screen": BANK right after the screen's own groups.
@@ -11267,7 +11346,11 @@ Enter = "browser.hold"
                 .map(|g| g.name)
                 .collect();
             let n = names.len();
-            assert_eq!(names[n - 3..], ["BANK", "REC", ""], "{screen:?}: {names:?}");
+            assert_eq!(
+                names[n - 4..],
+                ["BANK", "CLOCK", "REC", ""],
+                "{screen:?}: {names:?}"
+            );
         }
     }
 
@@ -11358,6 +11441,7 @@ Enter = "browser.hold"
             [
                 ("Bksp".to_string(), "delete right".to_string()),
                 ("J L".to_string(), "right bound".to_string()),
+                ("M".to_string(), "metro".to_string()),
                 // 49: the loop of the play; 50: play as the pad
                 ("O".to_string(), "loop".to_string()),
                 ("P".to_string(), "as pad".to_string()),
@@ -17200,10 +17284,13 @@ Enter = "browser.hold"
         }
         assert_eq!(
             plate(&mut app).as_deref(),
-            Some("MARK · hit pads · 3 marked")
+            Some("MARK · hit pads · 3 marked · ■ 120.0")
         );
         app.apply(Action::PadMarkToggle);
-        assert_eq!(plate(&mut app).as_deref(), Some("3 MARKED · Esc drops"));
+        assert_eq!(
+            plate(&mut app).as_deref(),
+            Some("3 MARKED · Esc drops · ■ 120.0")
+        );
         app.apply(Action::Back);
         assert_eq!(plate(&mut app), None);
     }
@@ -18244,9 +18331,11 @@ Enter = "browser.hold"
             input::Screen::Settings,
         ] {
             for (k, a) in keymap.bindings(screen) {
+                let fine_tempo = matches!(a, Action::TempoStep { fine: true, .. })
+                    && matches!(k.as_str(), "Ctrl+Shift+↑" | "Ctrl+Shift+↓");
                 assert!(
-                    !k.starts_with("Ctrl+Shift+") && !k.starts_with("Alt+Shift+"),
-                    "no double-modifier command: {k}"
+                    fine_tempo || (!k.starts_with("Ctrl+Shift+") && !k.starts_with("Alt+Shift+")),
+                    "no double-modifier letter command: {k}"
                 );
                 if k.chars().count() == 1 && pad.contains(k.as_str()) {
                     panic!("a command on the pad block: {k} = {a:?}");

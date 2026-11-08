@@ -124,6 +124,7 @@ pub fn param_of(action: &str) -> Option<Param> {
         "pad.start" => Some(Param::PadStart),
         "pad.end" => Some(Param::PadEnd),
         "master.volume" => Some(Param::MasterVolume),
+        "transport.tempo" => Some(Param::Tempo),
         "slice.start" => Some(Param::SliceStart),
         "slice.end" => Some(Param::SliceEnd),
         "chop.zoom" => Some(Param::Zoom),
@@ -152,6 +153,7 @@ pub enum Param {
     PadVolume,
     PadPitch,
     MasterVolume,
+    Tempo,
     /// Chop screen: start and end of the selected slice.
     SliceStart,
     SliceEnd,
@@ -878,6 +880,11 @@ impl Takeover {
             response,
             ..Default::default()
         }
+    }
+
+    /// An external edit requires every control of this target to catch the new value.
+    pub fn reset_target(&mut self, target: u64) {
+        self.state.retain(|_, state| state.0 != target);
     }
 
     /// `target` identifies what the control drives now (e.g. the selected pad); a new target

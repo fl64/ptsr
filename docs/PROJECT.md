@@ -16,7 +16,14 @@ The sampler loads samples, chops them, assigns them to pads and plays them. Pad 
 microphone and output recording, projects, MIDI learn and shared FX are already present.
 Change 82 (the F4 FX screen and safe physical X-Session defaults) was merged in PR #3,
 accepted by the owner and archived on 2026-11-03. The SMC-PAD profile is still an incomplete
-template. Transport and pattern sequencing are not implemented.
+template. Change 95 implements the beat clock and metronome. Pattern sequencing is not implemented.
+The clock runs at 40–300 BPM on the audio thread. Space toggles it on Pads, FX and Settings.
+Chop and Files keep their previews. Format 4 saves tempo and metronome preference, not running position.
+Offline regression tests and p99 exit checks pass. Recorded callback maximum failures remain unresolved. See [verification limits](../openspec/changes/archive/2026-11-08-95-transport/tasks.md#implementation-verification).
+The owner accepted 95 and authorized archive and checks on 2026-11-08. Individual keyboard, physical-controller and listening results remain unverified.
+The archive and main specifications contain its requirements. No change is active.
+The owner later authorized push, PR publication and squash merge after required checks pass. Keep the branch and recorded limits.
+See [the archived proposal](../openspec/changes/archive/2026-11-08-95-transport/proposal.md) and [owner procedures](LIVE-CHECKS.md#95-transport-and-metronome).
 
 The next goal: every action that does not need typed text can be done from the SMC-PAD.
 The keyboard stays the reference and keeps its controls. The work order is:

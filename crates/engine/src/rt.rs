@@ -26,6 +26,7 @@ pub struct Stats {
     rec_hist: History,
     buffer_size: AtomicU32,
     sample_rate: AtomicU32,
+    transport: crate::transport::Published,
     pad_revision: AtomicU64,
     pad_epoch: AtomicU64,
     pad_positions: [PadPosition; crate::SLOTS],
@@ -88,6 +89,7 @@ impl Default for Stats {
             rec_hist: History::default(),
             buffer_size: AtomicU32::new(0),
             sample_rate: AtomicU32::new(0),
+            transport: crate::transport::Published::default(),
             pad_revision: AtomicU64::new(0),
             pad_epoch: AtomicU64::new(0),
             pad_positions: std::array::from_fn(|_| PadPosition::default()),
@@ -96,6 +98,11 @@ impl Default for Stats {
 }
 
 impl Stats {
+    /// Accepted transport state for this project, or no snapshot during a concurrent write.
+    pub fn transport(&self, epoch: u64) -> Option<crate::transport::Snapshot> {
+        self.transport.read(epoch)
+    }
+
     // One writer, bounded stores, no waiting. SeqCst orders the fields with the revision
     // so a reader cannot combine an old voice identity with a new position or epoch.
     fn record_pad_positions(&self, voices: &[crate::Voice], epoch: u64) {
@@ -334,8 +341,14 @@ impl Realtime {
                     let msg = self.held[index].as_ref().or_else(|| queue.peek().ok());
                     let Some(msg) = msg else { break };
                     if let ProjectMessage::Command(cmd) = &msg.command {
-                        let hit =
-                            matches!(cmd, Command::PadPress { .. } | Command::PadRelease { .. });
+                        let hit = matches!(
+                            cmd,
+                            Command::PadPress { .. }
+                                | Command::PadRelease { .. }
+                                | Command::TransportPlay
+                                | Command::TransportStop
+                                | Command::TransportToggle
+                        );
                         let discard = msg.epoch != epoch
                             || (hit
                                 && (!msg.ready_at_send
@@ -363,7 +376,11 @@ impl Realtime {
                     let hit = matches!(
                         &msg.command,
                         ProjectMessage::Command(
-                            Command::PadPress { .. } | Command::PadRelease { .. }
+                            Command::PadPress { .. }
+                                | Command::PadRelease { .. }
+                                | Command::TransportPlay
+                                | Command::TransportStop
+                                | Command::TransportToggle
                         )
                     );
                     if !transition_done && !hit {
@@ -394,6 +411,9 @@ impl Realtime {
         self.engine.process(left, right);
         self.stats
             .record_pad_positions(&self.engine.voices, self.epoch);
+        self.stats
+            .transport
+            .record(self.engine.transport(), self.epoch);
 
         let budget = left.len() as f32 / self.sample_rate as f32;
         let permille = (started.elapsed().as_secs_f32() / budget * 1000.0) as u32;

@@ -39,6 +39,7 @@ struct BadgeKey {
     seconds: Option<u64>,
     looping: bool,
     as_pad: bool,
+    transport: (u16, bool, bool, u64, u8),
 }
 
 impl BadgeKey {
@@ -88,9 +89,29 @@ impl BadgeKey {
                 format!("{count} MARKED"),
             ));
         }
+        let (tempo, playing, metro, bar, beat) = self.transport;
+        let clock = format!(
+            "{} {:.1}{}{}",
+            if playing { "▶" } else { "■" },
+            tempo as f64 / 10.0,
+            if metro { " M" } else { "" },
+            if playing {
+                format!(" {bar}:{beat}")
+            } else {
+                String::new()
+            }
+        );
+        let compact_clock = clock.replace(' ', "");
         let mut badges = Vec::new();
         let mut pad_modes = pad_modes.into_iter();
-        badges.extend(pad_modes.next());
+        let clock_badge = if let Some(mut mode) = pad_modes.next() {
+            mode.normal.push_str(&format!(" · {clock}"));
+            mode.compact.push_str(&format!(" {compact_clock}"));
+            mode
+        } else {
+            Badge::new(On, &clock, &compact_clock)
+        };
+        badges.push(clock_badge);
         if mode.question {
             badges.push(Badge::new(Attention, "ASK", "ASK"));
         }
@@ -489,7 +510,16 @@ impl App {
             }
             _ => None,
         };
+        let transport = self.transport_state();
+        let (bar, beat) = transport.bar_beat();
         BadgeKey {
+            transport: (
+                (transport.bpm * 10.0).round() as u16,
+                transport.playing,
+                transport.metronome,
+                bar,
+                beat,
+            ),
             screen: self.screen,
             mode: self.focus().mode,
             assignment,

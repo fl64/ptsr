@@ -6,6 +6,7 @@ pub mod filter;
 pub mod fx;
 pub mod offline;
 pub mod rt;
+pub mod transport;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -93,6 +94,15 @@ impl Default for Region {
 /// What the engine does on command from other threads or from a render scenario.
 #[derive(Clone, Debug)]
 pub enum Command {
+    SetTempo {
+        bpm: f64,
+    },
+    TransportPlay,
+    TransportStop,
+    TransportToggle,
+    SetMetronome {
+        enabled: bool,
+    },
     Click {
         velocity: f32,
     },
@@ -278,6 +288,9 @@ pub struct Engine {
     voices: [Voice; SLOTS],
     pads: [Pad; PADS],
     click: Arc<Sample>,
+    transport: transport::Clock,
+    metro_pos: Option<usize>,
+    metro_velocity: f32,
     master: f32,
     /// Master gain at the start of the block: ramps to `master` within the block.
     master_from: f32,
@@ -366,6 +379,9 @@ impl Engine {
                 group: 0,
             }),
             click: Arc::new(Sample::mono(click)),
+            transport: transport::Clock::default(),
+            metro_pos: None,
+            metro_velocity: 1.0,
             master: 1.0,
             master_from: 1.0,
             fade_len: ((sample_rate as f32 * FADE_SECONDS) as u32).max(1),
@@ -440,6 +456,7 @@ impl Engine {
 
     /// Begin a project transition without releasing samples on the audio thread.
     pub fn switch_project(&mut self) {
+        self.transport = transport::Clock::default();
         for v in &mut self.voices {
             if v.sound.is_some() && v.fade.is_none_or(|f| f > self.fade_len) {
                 if let Some(f) = v.fade {
@@ -506,9 +523,28 @@ impl Engine {
         }
     }
 
-    /// Runs the command `offset` samples after the start of the next block.
+    pub fn transport(&self) -> transport::Snapshot {
+        self.transport.state
+    }
+
+    /// Pad and preview starts use `offset`; transport controls apply at the block boundary.
     pub fn handle(&mut self, offset: usize, cmd: Command) {
         match cmd {
+            Command::SetTempo { bpm } => {
+                if let Some(bpm) = transport::tempo(bpm) {
+                    self.transport.state.bpm = bpm;
+                }
+            }
+            Command::TransportPlay => self.transport.play(),
+            Command::TransportStop => self.transport.stop(),
+            Command::TransportToggle => {
+                if self.transport.state.playing {
+                    self.transport.stop();
+                } else {
+                    self.transport.play();
+                }
+            }
+            Command::SetMetronome { enabled } => self.transport.state.metronome = enabled,
             Command::Click { velocity } => {
                 let click = self.click.clone();
                 self.start(click, Region::WHOLE, None, offset, velocity, false);
@@ -938,6 +974,25 @@ impl Engine {
             p.drive_from = p.drive;
             p.sends_from = p.sends;
         }
+        for i in 0..n {
+            if let Some(velocity) = self.transport.frame(self.sample_rate as f64) {
+                self.metro_pos = Some(0);
+                self.metro_velocity = velocity;
+            }
+            if let Some(pos) = self.metro_pos {
+                if let Some(&sample) = self.click.left.get(pos) {
+                    let fade = self.switch_fade.map_or(1.0, |f| {
+                        f.saturating_sub(i as u32) as f32 / self.fade_len as f32
+                    });
+                    let value = sample * self.metro_velocity * fade;
+                    left[i] += value;
+                    right[i] += value;
+                    self.metro_pos = Some(pos + 1);
+                } else {
+                    self.metro_pos = None;
+                }
+            }
+        }
         // the shared slots add their wet sound to the pads' own (56)
         if self.switch_clear.is_none() {
             for (k, slot) in self.slots.iter_mut().enumerate() {
@@ -954,6 +1009,7 @@ impl Engine {
         if let Some(f) = self.switch_fade {
             if f as usize <= n {
                 self.switch_fade = None;
+                self.metro_pos = None;
                 self.reset_pad = Some(0);
                 self.preview_loop = None;
                 self.preview_as = None;

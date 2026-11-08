@@ -32,6 +32,39 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static A: Counting = Counting;
 
+/// Scenario "Transport remains allocation free under active control".
+#[test]
+fn transport_remains_allocation_free_under_active_control() {
+    let (mut tx, rx) = rtrb::RingBuffer::new(64);
+    let mut rt = Realtime::new(
+        Engine::new(48_000),
+        vec![rx],
+        Arc::new(Stats::default()),
+        48_000,
+    );
+    let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+    let before = allocs();
+    for block in 0..2000 {
+        for command in [
+            Command::SetTempo {
+                bpm: 40.0 + (block % 260) as f64,
+            },
+            Command::SetMetronome {
+                enabled: block % 3 != 0,
+            },
+            Command::TransportPlay,
+        ] {
+            tx.push(command).unwrap();
+        }
+        if block % 137 == 0 {
+            tx.push(Command::TransportStop).unwrap();
+            tx.push(Command::TransportToggle).unwrap();
+        }
+        rt.process(&mut l, &mut r);
+    }
+    assert_eq!(allocs(), before);
+}
+
 #[test]
 fn process_does_not_allocate() {
     let (mut tx, rx) = rtrb::RingBuffer::new(64);

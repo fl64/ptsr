@@ -2130,3 +2130,78 @@ Its SHA-256 is `2a8e1b1647d7ac6e493c2d00dd319093823d09f1b3785b49924e475c69cc3bfd
 These commands did not open live audio or MIDI. They do not establish any unchecked owner result above.
 These implementation results precede archive. Refer to [the archived tasks](../openspec/changes/archive/2026-11-07-87a-copy-names/tasks.md#owner-acceptance-and-closure-2026-11-07) for closure evidence.
 Earlier callback maximum-budget failures remain open. Owner acceptance does not close that separate issue.
+
+## 95: Transport and metronome
+
+Folder: `changes/archive/2026-11-08-95-transport`
+
+The owner accepted 95 and authorized archive and checks on 2026-11-08.
+Overall acceptance does not establish individual keyboard, physical-controller or listening results. Their checkboxes remain open.
+The agent did not open live audio or MIDI. This procedure is for the owner.
+Transport does not play patterns. Space keeps preview playback on Chop and Files.
+Saving writes session format 4. Older binaries refuse it. Keep existing projects outside this isolated run.
+
+### Prepare an isolated owner run
+
+Run these commands from the repository root. Keep this shell open.
+
+```sh
+task build
+check_root="$(mktemp -d "$PWD/target/95-owner.XXXXXX")"
+mkdir -p "$check_root/config/ptsr" "$check_root/data" "$check_root/state" \
+  "$check_root/samples" "$check_root/projects"
+cp renders/83a-pad-copy.wav "$check_root/samples/check.wav"
+printf '[paths]\nsamples = "%s"\nprojects = "%s"\n[audio]\nbuffer_size = 1024\n' \
+  "$check_root/samples" "$check_root/projects" > "$check_root/config/ptsr/config.toml"
+printf 'Owner check folder: %s\n' "$check_root"
+run_transport_check() {
+  XDG_CONFIG_HOME="$check_root/config" XDG_DATA_HOME="$check_root/data" \
+    XDG_STATE_HOME="$check_root/state" ./target/release/ptsr
+}
+run_transport_check
+```
+
+### Keyboard pass
+
+- [ ] On Pads, check stopped transport at 120.0 BPM. Press `Alt+M`, then `Space`.
+  Check the play indicator, metronome indicator and bar/beat. Hold Space. Check that it does not toggle repeatedly.
+- [ ] Press `Ctrl+Up` and `Ctrl+Down`. Check 1 BPM steps. Add Shift. Check 0.1 BPM steps and the value popup.
+  Repeat with the Russian layout. Record the terminal and whether modified arrows reach the program.
+- [ ] Switch between Pads, FX and Settings. Check the same clock. Press Space to stop.
+  Check bar 1, beat 1 after restarting. On Chop and Files, check that Space still controls preview.
+- [ ] Open Files. Load `check.wav` onto pad `1`. Return to Pads. Start transport, then hit pad `1`.
+  Stop transport before the sample ends. Check that the pad tail continues.
+- [ ] Start transport with the metronome enabled. Disable it for several beats, then enable it between beats.
+  Check that the clock continues and the next click follows its beat without replaying missed clicks.
+- [ ] Use `Ctrl+P` to create project `A`. Set 172.3 BPM and enable the metronome. Save with `Ctrl+S`.
+  Create project `B`. Set 90 BPM and disable the metronome. Save it.
+  Start transport. Switch to `A`. Check 172.3 BPM, metronome enabled and stopped transport.
+  Switch to `B`. Check its separate settings. Select `B` while its clock runs. Check uninterrupted position.
+- [ ] Save. Quit with `Ctrl+Q`. Run `run_transport_check` again.
+  Check the last project's tempo and metronome preference, with transport stopped.
+- [ ] Resize to 80x26 and 120x40. Open F1 and a replacement question while transport runs.
+  Check readable clock, mode and question labels. Check that learn selection does not start transport or change tempo.
+
+### Physical-controller pass
+
+Do not reset existing profiles or performance bindings. Use available spare controls in this isolated config.
+The SMC-PAD example remains an incomplete template. Do not infer controller-only reach from these steps.
+
+- [ ] In F12 MIDI, open GLOBAL. Learn separate transport and metronome buttons. Press Enter to save each assignment.
+  Check one action per press, without another action on release. Repeat coarse and fine tempo buttons.
+- [ ] Learn the GLOBAL tempo knob. In jump mode, check both limits: 40 and 300 BPM.
+  Check the BPM popup. Save and restart. Check the same assignments and unchanged existing controller roles.
+- [ ] With two available controllers, check pickup separately. Change tempo with the keyboard between knob movements.
+  Check that one controller does not unlock the other. Check scale response separately.
+
+### Listening and offline evidence
+
+- [ ] Listen to local `renders/95-transport.wav`. Hear 120 BPM, then 90 BPM, a stop, then a restart at 172 BPM.
+  Check the stronger first beat and quieter beats 2–4. Check silence during the stop and after the final tail.
+- [ ] In the isolated live run, check metronome timing and pad tails by ear.
+  Record listening and physical-controller results separately. Leave unavailable checks open.
+
+`task test` generates the WAV without a sound card. The file is local, not an attached recording of live hardware.
+The callback benchmark includes 32 voices, effects, transport and metronome at 172 BPM.
+Keep its existing budget limits. The p99 exit checks pass. Earlier maximum-target failures remain unresolved.
+See [verification limits](../openspec/changes/archive/2026-11-08-95-transport/tasks.md#implementation-verification). A later passing run does not close maximum-budget or slow-core investigations.

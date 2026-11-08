@@ -10,11 +10,24 @@ use serde::{Deserialize, Serialize};
 /// 2: a pad can hold a slice of its file (`start`, `end`); version 1 files read as whole files.
 /// 3: the cuts of each chopped file (`chops`) and pads linked to them (`link`, `epoch`);
 /// version 2 slices are turned into chops when read.
-const VERSION: u32 = 3;
+// 4: project tempo and metronome preference; playback always opens stopped.
+const VERSION: u32 = 4;
+
+fn default_bpm() -> f64 {
+    engine::transport::DEFAULT_BPM
+}
+
+fn valid_bpm(bpm: f64) -> bool {
+    bpm.is_finite() && (engine::transport::MIN_BPM..=engine::transport::MAX_BPM).contains(&bpm)
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Session {
     pub version: u32,
+    #[serde(default = "default_bpm")]
+    pub bpm: f64,
+    #[serde(default)]
+    pub metronome: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_dir: Option<PathBuf>,
     /// Pad index (0..128) as text, TOML keys are strings; pads at defaults are left out.
@@ -67,6 +80,8 @@ impl Default for Session {
     fn default() -> Self {
         Self {
             version: VERSION,
+            bpm: default_bpm(),
+            metronome: false,
             browser_dir: None,
             pads: BTreeMap::new(),
             master_db: 0,
@@ -174,6 +189,13 @@ fn load_from(path: &Path, missing_is_empty: bool) -> Result<Session, String> {
         ));
     }
     let mut s = s;
+    if !valid_bpm(s.bpm) {
+        return Err(format!(
+            "{}: tempo must be finite and within 40–300 BPM",
+            path.display()
+        ));
+    }
+    s.bpm = engine::transport::tempo(s.bpm).unwrap();
     if s.version < 3 {
         chops_from_slices(&mut s);
     }
@@ -234,7 +256,16 @@ pub fn save_project(path: &Path, session: &Session) -> Result<(), String> {
 fn save_to(path: &Path, session: &Session, create_parent: bool) -> Result<(), String> {
     use std::io::Write;
 
-    let text = toml::to_string(session).map_err(|e| e.to_string())?;
+    if !valid_bpm(session.bpm) {
+        return Err(format!(
+            "{}: tempo must be finite and within 40–300 BPM",
+            path.display()
+        ));
+    }
+    let mut value = toml::Value::try_from(session).map_err(|e| e.to_string())?;
+    value["version"] = toml::Value::Integer(VERSION.into());
+    value["bpm"] = toml::Value::Float(engine::transport::tempo(session.bpm).unwrap());
+    let text = toml::to_string(&value).map_err(|e| e.to_string())?;
     let err = |e: std::io::Error| format!("{}: {e}", path.display());
     if create_parent && let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(err)?;

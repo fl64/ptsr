@@ -1438,21 +1438,29 @@ fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool) -> Line<'s
     Line::from(spans)
 }
 
-/// Keep fixed slots first. Drop lower priorities before compacting the last badge.
+/// Keep fixed slots first. Compact labels before dropping lower-priority badges.
 fn title<'a>(mut fixed: Vec<Span<'a>>, badges: &[Badge], width: u16, reserve: usize) -> Line<'a> {
     let available =
         (width as usize).saturating_sub(fixed.iter().map(Span::width).sum::<usize>() + reserve);
     let mut count = badges.len().min(3);
-    let normal_width = |n: usize| {
+    let badge_width = |n: usize, compact: bool| {
         badges[..n]
             .iter()
-            .map(|b| Line::from(b.normal.as_str()).width() + 3)
+            .map(|b| {
+                Line::from(if compact {
+                    b.compact.as_str()
+                } else {
+                    b.normal.as_str()
+                })
+                .width()
+                    + 3
+            })
             .sum::<usize>()
     };
-    while count > 1 && normal_width(count) > available {
+    while count > 1 && badge_width(count, true) > available {
         count -= 1;
     }
-    let compact = normal_width(count) > available;
+    let compact = badge_width(count, false) > available;
     let used = badges[..count]
         .iter()
         .map(|b| {
@@ -2919,22 +2927,32 @@ fn chop(
     } else {
         Style::new().fg(DIM).bg(BG)
     };
-    let slice_count = format!(" · {slices} slice{}", if slices == 1 { "" } else { "s" });
-    let variant = c
+    let mut slice_count = format!(" · {slices} slice{}", if slices == 1 { "" } else { "s" });
+    let mut variant = c
         .which
         .map_or_else(String::new, |(i, n)| format!(" · chop {i} of {n}"));
-    let suffix_width = Line::from(format!("{variant}{slice_count}")).width();
     let fixed = vec![
         Span::styled(" F3 CHOP ", Style::new().fg(BG).bg(TEXT)),
         " ".into(),
         Span::styled(badge, badge_style),
     ];
     let fixed_width = fixed.iter().map(Span::width).sum::<usize>();
-    let mode_width = s
+    let mode_width: usize = s
         .badges
-        .first()
-        .map_or(0, |b| Line::from(b.compact.as_str()).width() + 3);
-    // Keep the variant and count. Reduce the filename budget before hiding the active mode.
+        .iter()
+        .take(2)
+        .map(|b| Line::from(b.compact.as_str()).width() + 3)
+        .sum();
+    if fixed_width + mode_width + Line::from(format!("{variant}{slice_count}")).width() + 3
+        > header.width as usize
+    {
+        variant = c
+            .which
+            .map_or_else(String::new, |(i, n)| format!(" #{i}/{n}"));
+        slice_count = format!(" · {slices}sl");
+    }
+    let suffix_width = Line::from(format!("{variant}{slice_count}")).width();
+    // Keep variant and count identities. File text yields before mode and question badges.
     let file_reserve = (header.width as usize)
         .saturating_sub(fixed_width + mode_width + suffix_width + 3)
         .min(12);
@@ -4563,12 +4581,25 @@ mod tests {
                 text.contains(&format!("chop {} of {}", which.0, which.1)),
                 "{text}"
             );
-            let name_column = rows[1]
+            let mut name_view = chop_demo(&wave);
+            name_view.file = &file;
+            name_view.which = Some(which);
+            let name_rows = draw_badge_rows(
+                &Screen::Chop(Box::new(name_view)),
+                w,
+                h,
+                vec![Badge::new(
+                    BadgeKind::PadMode,
+                    "IN HAND + COPY + SWAP · hit a pad",
+                    "IN HAND/COPY/SWAP",
+                )],
+            );
+            let name_column = name_rows[1]
                 .iter()
                 .position(|cell| cell.0 == "名")
-                .expect("the filename starts with a wide glyph");
+                .expect("the filename starts with a wide glyph when space permits");
             assert_eq!(
-                rows[1][name_column + 2].0,
+                name_rows[1][name_column + 2].0,
                 "字",
                 "wide glyphs keep their two-cell spacing"
             );
@@ -4579,10 +4610,9 @@ mod tests {
             );
             if w == 80 {
                 assert!(text.contains("IN HAND/COPY/SWAP"), "{text}");
-                assert!(!text.contains("ASK") && !text.contains("REC"));
+                assert!(text.contains("ASK") && !text.contains("REC"));
             } else {
-                assert!(text.contains("ASK"), "{text}");
-                assert_eq!(text.contains("REC 123s"), which == (2, 3), "{text}");
+                assert!(text.contains("ASK") && text.contains("REC"), "{text}");
             }
         }
         for (normal, compact) in [
@@ -8286,6 +8316,49 @@ mod tests {
                 naming: Some("new".into()),
             }),
         ]
+    }
+
+    #[test]
+    fn transport_clock_keeps_mode_and_question_at_supported_sizes() {
+        let wave = [0.1; 400];
+        for (width, height) in [(80, 26), (120, 40)] {
+            for mut screen in status_screens(&wave) {
+                if let Screen::Chop(chop) = &mut screen {
+                    chop.file = "音 e\u{301} very long sample name for transport";
+                    chop.which = Some((128, 129));
+                    chop.bounds = (0..=128).map(|n| n as f32 / 128.0).collect();
+                }
+                let clock = "▶ 172.0 M 12:4";
+                let rows = draw_badge_rows(
+                    &screen,
+                    width,
+                    height,
+                    vec![
+                        Badge::new(
+                            BadgeKind::PadMode,
+                            format!("IN HAND + COPY + SWAP · hit a pad · {clock}"),
+                            "IN HAND/COPY/SWAP ▶172.0M12:4",
+                        ),
+                        Badge::new(BadgeKind::Attention, "ASK", "ASK"),
+                        Badge::new(BadgeKind::Attention, "● REC 123s", "REC"),
+                    ],
+                );
+                let text = row_text(&rows, 1);
+                for required in ["IN HAND", "COPY", "SWAP", "172.0", "12:4", "ASK"] {
+                    assert!(text.contains(required), "{width}: {required}: {text}");
+                }
+                if matches!(screen, Screen::Chop(_)) {
+                    assert!(
+                        text.contains("128/129") || text.contains("chop 128 of 129"),
+                        "{text}"
+                    );
+                    assert!(
+                        text.contains("128sl") || text.contains("128 slices"),
+                        "{text}"
+                    );
+                }
+            }
+        }
     }
 
     fn status_text(line: Line<'_>) -> String {

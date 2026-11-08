@@ -34,7 +34,12 @@ F1 = "help.toggle"            # not "?": that is Shift plus a character, not a p
 "Ctrl+O" = "ui.pads_toggle"   # hide the pad grid on F2, F6, F3: the wave takes its rows (32)
 Esc = "ui.back"
 "Ctrl+Q" = "app.quit"
-Space = "metronome.click"     # test click; the chop and files screens use Space for their own actions
+Space = "transport.toggle"  # Chop and Files keep their preview actions
+"Ctrl+Up" = "transport.tempo_up"
+"Ctrl+Down" = "transport.tempo_down"
+"Ctrl+Shift+Up" = "transport.tempo_up_fine"
+"Ctrl+Shift+Down" = "transport.tempo_down_fine"
+"Alt+M" = "metronome.toggle"
 "Alt+R" = "record.mic"       # hold: record the microphone, release: stop (83a)
 "Ctrl+T" = "record.output"    # toggle: record what ptsr plays right now
 

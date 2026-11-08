@@ -172,11 +172,7 @@ Save timing, retries and stored data SHALL stay unchanged.
 
 ### Requirement: Shared title mode badges
 
-Every screen SHALL use one shared composition for existing mode badges.
-Badges SHALL have text and a semantic color: yellow for PadMode, cyan for On and magenta for Attention.
-They SHALL show at most three optional badges, separate from fixed playback slots.
-An active PadMode SHALL come first, then ASK, recording and ordinary On badges in that order.
-Color alone SHALL NOT identify a mode.
+Every screen SHALL use shared title composition. Badge colors SHALL remain yellow for PadMode, cyan for On and magenta for Attention. Transport SHALL share the first mode badge, or occupy the first badge when no mode is active. ASK, recording and remaining modes SHALL follow in their existing order. At most three badges SHALL appear, separate from fixed playback slots. Color alone SHALL NOT identify a mode.
 
 #### Scenario: Mode badges follow the active screen state
 - **WHEN** keyboard or raw MIDI actions enter and leave existing modes on Pads, Files, Chop, FX and Settings
@@ -189,15 +185,12 @@ Color alone SHALL NOT identify a mode.
 
 ### Requirement: Existing mode badge labels
 
-The title SHALL name active placement modes `IN HAND`, `COPY`, `SWAP` or `ASSIGN`.
-It SHALL name marking `MARK` or `N MARKED`, editing `EDIT` with its page, learning `LEARN` and questions `ASK`.
-Recording SHALL show `REC` with elapsed time when space permits. Chop toggles SHALL show `LOOP` and `AS PAD`.
-Mark and assignment badges SHALL retain their counts. Inactive states SHALL NOT produce these badges.
+Placement labels SHALL be `IN HAND`, `COPY`, `SWAP` or `ASSIGN`. Marking SHALL show `MARK` or `N MARKED`, editing `EDIT` with its page, learning `LEARN` and questions `ASK`. Recording SHALL show `REC` with elapsed time when space permits. Chop toggles SHALL show `LOOP` and `AS PAD`. Mark and assignment badges SHALL retain counts. Inactive states SHALL NOT produce these mode labels. Transport feedback SHALL remain distinct from pad playback. Patterns and controller panels remain out of scope.
 
 #### Scenario: Every existing mode has its badge
 - **WHEN** each existing placement, marking, edit, learning, question, recording or Chop toggle state is active in a separate fixture
 - **THEN** its badge uses the specified label, page, count or elapsed time
-- **AND** no badge advertises transport, pattern or controller-panel state
+- **AND** transport feedback remains separate from pad-playback state without advertising patterns or a controller panel
 
 #### Scenario: Overlapping placements remain visible
 - **WHEN** more than one of file placement, copy and swap is pending
@@ -206,10 +199,7 @@ Mark and assignment badges SHALL retain their counts. Inactive states SHALL NOT 
 
 ### Requirement: Badge width and compatibility
 
-At supported widths, badges SHALL retain screen identity and an active PadMode label.
-Lower-priority optional badges SHALL disappear first, then remaining labels SHALL use compact forms without losing mode identity.
-PLAY and LISTEN SHALL retain their existing ten-cell slots, styles, actual-playback semantics and stable following columns as playback changes.
-Badge changes SHALL NOT change sound, effective keys, saved data or input order.
+At supported widths, badges SHALL retain screen identity, transport feedback, questions and the active PadMode label. Compact labels SHALL precede removal of lower-priority badges. File details SHALL yield space first. Crowded Chop headers MAY use `#i/n` for variants and `Nsl` for slice counts without losing these numbers. PLAY and LISTEN SHALL retain their ten-cell slots, styles, actual-playback semantics and stable following columns. Badges SHALL NOT change sound, keys, data or input order.
 
 #### Scenario: Narrow titles retain the pad mode
 - **WHEN** several badges compete for title width at 80×26

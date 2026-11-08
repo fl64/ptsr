@@ -9,7 +9,7 @@ context: |
 
   The current baseline includes sample loading, chopping, pad play and shaping, projects, recording, MIDI learn and shared FX.
   The owner accepted change 82, which adds F4 FX and safe X-Session controls. Its archive is complete.
-  The SMC-PAD profile remains a template. Transport and patterns are not implemented.
+  The SMC-PAD profile remains a template. Transport and metronome are implemented. Pattern sequencing is not implemented.
 
   The owner accepted keymap cleanup 83a without completing the manual checks in docs/LIVE-CHECKS.md.
   Its archive commit is 2b084d1. This acceptance implies no listening or physical SMC-PAD pass.
@@ -102,6 +102,17 @@ context: |
   The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
   Work stays in the main repository folder. No change is active. Change 88 needs separate activation.
   Existing names, sample files, sound, controls and saved formats stay unchanged.
+
+  The owner accepted 95-transport and authorized specification sync, archive and checks on 2026-11-08.
+  Archive: openspec/changes/archive/2026-11-08-95-transport/. No change is active.
+  Its requirements are in the main transport, keyboard, midi-learn, projects and screen-layout specifications.
+  The audio-thread clock runs at 40–300 BPM. Space toggles it on Pads, FX and Settings. Chop and Files keep previews.
+  Format 4 saves tempo and metronome preference, not running state or position. Formats 1–3 remain readable.
+  Overall acceptance does not establish individual keyboard, terminal, physical-controller or listening results.
+  Earlier callback maximum-budget failures remain open. A passing p99 exit or later maximum does not close them.
+  Separate metronome waveform visuals and diagnosis of a click at Chop preview start remain deferred.
+  The owner later authorized push, PR publication and squash merge after required checks pass. Keep the branch and recorded limits.
+  Keep repository-only roadmap edits separate.
 
   Normally use a separate branch. The owner requested plan/controller-first-patterns for 84, 84a and 85 as an exception.
   Closure of 85 and work on 86 share 86-screen-registry and one PR by owner request. Keep their commits separate.

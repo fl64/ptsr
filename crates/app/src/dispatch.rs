@@ -161,6 +161,20 @@ impl App {
                     ),
                 );
             }
+            Action::TransportToggle | Action::TempoStep { .. } | Action::MetronomeToggle
+                if self.transport_input_blocked() => {}
+            Action::TransportToggle => self.send(Command::TransportToggle),
+            Action::TempoStep { up, fine } => {
+                let step = if fine { 0.1 } else { 1.0 };
+                self.set_tempo(self.transport.bpm + if up { step } else { -step }, true);
+            }
+            Action::MetronomeToggle => {
+                self.transport.metronome = !self.transport.metronome;
+                self.send(Command::SetMetronome {
+                    enabled: self.transport.metronome,
+                });
+                self.dirty();
+            }
             Action::Click => self.send(Command::Click {
                 velocity: CLICK_VELOCITY,
             }),
@@ -1418,7 +1432,15 @@ impl App {
             } => {
                 // a knob position 0..1 spans the range of the parameter
                 let span = (pads::MAX_DB - pads::MIN_DB) as f32;
+                if param == Param::Tempo && self.transport_input_blocked() {
+                    return;
+                }
                 let (current, target, shown) = match param {
+                    Param::Tempo => (
+                        self.tempo_position(),
+                        super::transport::TEMPO_TARGET,
+                        format!("{:.1} BPM", self.transport.bpm),
+                    ),
                     Param::PadVolume => {
                         let abs = self.pads.selected_abs();
                         (
@@ -1485,6 +1507,10 @@ impl App {
                     Ok(value)
                 };
                 match (value, param) {
+                    (Ok(v), Param::Tempo) => {
+                        self.pickup = None;
+                        self.set_tempo(40.0 + v.clamp(0.0, 1.0) as f64 * 260.0, false);
+                    }
                     (Ok(v), Param::PadVolume) => {
                         self.pickup = None;
                         self.lit = Some((Lit::Pad(pads::Param::Volume), now));
@@ -1569,6 +1595,9 @@ impl App {
                             // the master hint is needed on every screen, not only on the pads one
                             Param::MasterVolume => {
                                 self.post_notice(Level::Info, (format!("Master: {hint}"), now))
+                            }
+                            Param::Tempo => {
+                                self.post_notice(Level::Info, (format!("Tempo: {hint}"), now))
                             }
                             Param::SliceStart
                             | Param::SliceEnd

@@ -560,6 +560,12 @@ pub enum Action {
     BankSelect(usize),
     /// Master volume step in dB.
     MasterVolume(i8),
+    TransportToggle,
+    TempoStep {
+        up: bool,
+        fine: bool,
+    },
+    MetronomeToggle,
     /// Take the selected pad in hand; the next pad hit swaps the two.
     PadTake,
     /// Take a copy of the selected loaded pad (83a); the next pad hit places it.
@@ -763,6 +769,24 @@ impl Action {
             "screen.chop" => Self::ScreenChop,
             "screen.fx" => Self::ScreenFx,
             "transport.play_stop" => Self::ChopPlay,
+            "transport.toggle" => Self::TransportToggle,
+            "transport.tempo_up" => Self::TempoStep {
+                up: true,
+                fine: false,
+            },
+            "transport.tempo_down" => Self::TempoStep {
+                up: false,
+                fine: false,
+            },
+            "transport.tempo_up_fine" => Self::TempoStep {
+                up: true,
+                fine: true,
+            },
+            "transport.tempo_down_fine" => Self::TempoStep {
+                up: false,
+                fine: true,
+            },
+            "metronome.toggle" => Self::MetronomeToggle,
             "chop.cut" => Self::ChopCut,
             "chop.play_mode" => Self::ChopPlayMode,
             "chop.loop_toggle" => Self::ChopLoopToggle,
@@ -978,6 +1002,48 @@ pub struct ActionInfo {
 /// Every action a key or a controller can drive, by group. Quitting is left out on purpose:
 /// a stray controller press must not close the program during a set.
 pub const ACTIONS: &[ActionInfo] = &[
+    ActionInfo {
+        name: "transport.toggle",
+        label: "transport play / stop",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "metronome.toggle",
+        label: "metronome on / off",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.tempo_up",
+        label: "tempo up 1 BPM",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.tempo_down",
+        label: "tempo down 1 BPM",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.tempo_up_fine",
+        label: "tempo up 0.1 BPM",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.tempo_down_fine",
+        label: "tempo down 0.1 BPM",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.tempo",
+        label: "tempo",
+        group: Group::Global,
+        knob: true,
+    },
     ActionInfo {
         name: "screen.pads",
         label: "pads screen",
@@ -2470,25 +2536,15 @@ impl Keymap {
         keys
     }
 
-    /// Keys for an action on a screen, for the help line; screen keys first, then shared ones.
+    /// Effective keys for an action on a screen, for the help line.
     pub fn keys_for(&self, screen: Screen, action: Action) -> Vec<String> {
-        let mut keys: Vec<String> = self
-            .screens
-            .get(&screen)
+        self.bindings(screen)
             .into_iter()
-            .chain([&self.global])
-            .flat_map(|m| {
-                m.iter()
-                    .filter(|(_, a)| **a == Some(action))
-                    .map(|(c, _)| chord_name(c))
-            })
-            .collect();
-        keys.sort();
-        keys.dedup();
-        keys
+            .filter_map(|(key, bound)| (bound == action).then_some(key))
+            .collect()
     }
 
-    /// All bindings of a screen plus shared ones, for the full help (F1).
+    /// Effective screen and shared bindings, for the full help (F1).
     pub fn bindings(&self, screen: Screen) -> Vec<(String, Action)> {
         let mut all: Vec<_> = self
             .screens
@@ -2496,11 +2552,14 @@ impl Keymap {
             .into_iter()
             .chain([&self.global])
             .flat_map(|m| {
-                m.iter()
-                    .filter_map(|(c, a)| a.as_ref().map(|a| (chord_name(c), *a)))
+                m.iter().filter_map(|(c, a)| {
+                    a.filter(|action| self.entry(screen, false, *c) == Some(&Some(*action)))
+                        .map(|action| (chord_name(c), action))
+                })
             })
             .collect();
         all.sort_by(|a, b| a.0.cmp(&b.0));
+        all.dedup();
         all
     }
 }
