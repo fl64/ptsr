@@ -3,7 +3,8 @@
 Read `README.md` first. Key choices follow `KEYMAP-CLEANUP.md` (83a). This track needs
 the input work (84–90), the SMC profile and panel
 (91–92), the reach checks (93) and comfort (93a, including redo). Pad lights (94) are optional.
-The separate callback budget change before 95 is a prerequisite, not optional reporting work.
+The owner deferred separate sound-quality work, including callback investigation. It no longer precedes patterns by default.
+Existing real-time rules, tests and benchmark limits still apply. Each proposal must resolve its remaining input prerequisites.
 Each change states its keyboard keys and its SMC-PAD path. The reach test of 93 covers them.
 The design sketches below are proposals, not existing Rust interfaces or saved file formats.
 
@@ -12,8 +13,10 @@ The additions below support fast breaks, fills and detailed step control inside 
 
 ## 1. Where we start
 
-- There is no transport: no tempo, no play / stop, no clock. `Space` is `metronome.click`, a
-  test click.
+- Transport 95 is implemented and archived. It provides an audio-frame clock at 960 ticks per quarter note, 4/4 and 40–300 BPM.
+  Space toggles the clock on Pads, FX and Settings. Chop and Files keep their previews.
+  Format 4 saves tempo and metronome preference. It never restores running state or position.
+  Start 96 from this implementation and the [main transport specification](../../openspec/specs/transport/spec.md).
 - The engine is ready for exact timing: `Engine::handle(offset, cmd)` takes an offset inside the
   block, and `Voice.delay` starts a voice in the middle of a block. The offline render uses this.
   In real time, `Realtime::process` calls `handle(0, ...)`: a command acts at the block start.
@@ -35,10 +38,11 @@ A frozen UI does not stop the beat. Files: `engine/src/transport.rs`, `engine/sr
 frames_per_tick = sample_rate * 60 / (bpm * 960)      // f64
 ```
 
-The transport keeps `tick: f64` and adds `block_len / frames_per_tick` per block. An event at
-tick `t` inside the block starts at `offset = round((t - tick_at_block_start) * frames_per_tick)`.
-A tempo change acts at the next block start; the tick position does not jump. 4/4 only.
-Tempo 40–300 BPM.
+The implemented transport advances fractional ticks for each processed audio frame. Empty blocks do not advance it.
+For 96, use that clock to schedule events within each block. Do not add a second clock.
+The scheduling sketch uses `offset = round((t - tick_at_block_start) * frames_per_tick)` for integer output-frame offsets.
+A tempo change acts at the next block start. The tick position does not jump. 4/4 only, 40–300 BPM.
+Define block-edge rounding and loop behavior in the 96 design before code. Fractional source starts are not a prerequisite.
 
 ### 2.3 A pattern is raw hits plus settings; the engine gets a compiled list
 
@@ -47,7 +51,7 @@ App side (`crates/app/src/pattern.rs`), saved in the project:
 ```rust
 pub struct PatternData {
     pub bars: u8,              // 1..=64
-    pub quantize: Grid,        // Off, 1/4, 1/8, 1/16, 1/32, 1/8T, 1/16T, 1/32T
+    pub quantize: Grid,        // Off, 1/4, 1/8, 1/16, 1/32, 1/64, 1/8T, 1/16T, 1/32T
     pub strength: u8,          // 0..=100, steps of 10
     pub hits: Vec<Hit>,        // as played, not quantized; max 4096
 }
@@ -99,9 +103,9 @@ playhead has not reached. The new pattern would play it again in the same lap. R
 
 ### 2.6 The transport position goes to the UI by atomics
 
-`Stats` (or a new `TransportState`) holds `tick: AtomicU64` (tick × 16 for sub-tick), `playing:
-AtomicBool`, `recording: AtomicBool`, `lap: AtomicU32`. The UI draws bar.beat and the playhead
-from them.
+Transport 95 publishes one coherent snapshot with a revision and project epoch. The UI never advances its own clock.
+Keep that contract in 96. Do not replace it with unrelated atomic reads that can mix projects or clock states.
+Recording and lap fields remain future work for 97. Define their coherent publication before code.
 
 ### 2.7 What a pad hit means in the new modes
 
@@ -111,11 +115,12 @@ picks a pattern slot, no sound). `Record` is not a mode: pads sound and the engi
 
 ## 3. The changes
 
-### Before 95 — `94a-callback-budget`
+### Deferred — `94a-callback-budget`
 
-Goal: resolve the callback peaks above 50 % and slow-core CPU spikes before sequencer work.
-Dense rolls at 172 BPM add callback work. A report alone does not close this gate.
-This is a separate small change. It does not depend on optional pad lights (94).
+Goal, when resumed: investigate the earlier callback peaks above 50 % and slow-core CPU spikes.
+The owner deferred this work until a separate request. It is not a prerequisite for transport or pattern implementation.
+Historical measurements remain unresolved, not accepted as fixed.
+Existing checks still apply to each pattern change. This deferral does not permit a failed-check commit.
 
 Spec deltas: `audio-engine`, for any explicit performance correction and its regression scenarios.
 Keep the existing 50 % target and real-time rules.
@@ -134,74 +139,54 @@ Tasks:
 Tests: the original slow-core and peak cases, repeated callback measurements, no allocation
 and existing sound regressions. Do not claim closure from one favorable run.
 
-How to verify: review the repeated measurements and the unresolved limits before starting 95.
+Owner check, when resumed: review the repeated measurements and the unresolved limits.
 If a sound path changes, render it and give the owner a listening comparison.
 
-### Change 95 — `95-transport`
+### Change 95 — `95-transport` (implemented and archived)
 
-Goal: tempo, play / stop, a metronome on the beats. This is row 7 of `docs/BACKLOG.md`, without
-the BPM detection of samples.
+The [archived proposal](../../openspec/changes/archive/2026-11-08-95-transport/proposal.md) and main specifications define the implemented behavior.
+They replace the imported 95 sketch, not the requirements of later changes.
 
-Spec deltas: new capability `transport`; `keyboard` (Space); `midi-learn` (GLOBAL: play / stop,
-metronome, tempo knob); `projects` (the tempo is saved with the project).
+- Audio-frame clock: 4/4, 960 ticks per quarter note, 40–300 BPM in 0.1 BPM steps, default 120 BPM.
+- Starting from stopped resets the clock. Stop resets the clock. Repeated explicit play/stop commands are idempotent.
+  One-shot tails continue. Tempo changes preserve position.
+- A dedicated metronome uses the existing click sample without taking a pad voice.
+  Accents are 1.0 on beat 1 and 0.6 on other beats. Onset accuracy is within one output frame.
+- Space uses `transport.toggle` on Pads, FX and Settings. Chop and Files keep their preview actions.
+  The legacy `transport.play_stop` still means Chop preview. `metronome.click` remains the test-click action without a new default key.
+- Ctrl+Up/Down changes tempo by 1 BPM. Ctrl+Shift+Up/Down changes it by 0.1 BPM. Alt+M toggles the metronome.
+- Existing MIDI learn supplies GLOBAL buttons and an absolute tempo knob through the current takeover rules.
+  No SMC-PAD hold or factory role is implemented by 95. Those controls still need the measured profile and hold support.
+- Format 4 saves `bpm` and `metronome`, not running state or position.
+  Formats 1–3 remain readable. Older binaries refuse format 4. Keep backups before saving.
+- The title shows accepted clock state. Tempo changes show the BPM value and range.
+  Published snapshots retain project epochs and coherent fields.
 
-Engine:
+Pattern scheduling is not implemented. Count-in belongs to 97. Half-time remains `1.x` under V1.
+Tap tempo and metronome level remain planned additions, not implemented 95 controls.
+Keep their scope and input decisions in a later approved proposal.
+Separate metronome traces on the waveform and diagnosis of the reported Chop-start click remain deferred.
 
-1. `Transport` with `playing`, `bpm`, `tick`, `metronome: bool`, `count_in: Option<u32>`.
-2. Commands: `SetTempo { bpm: f32 }`, `TransportPlay`, `TransportStop`, `SetMetronome { on }`,
-   `CountIn { bars }` (used by 97).
-3. The metronome uses the existing click voice: velocity 1.0 on beat 1 of a bar, 0.6 on the other
-   beats, exact offsets.
-4. `TransportStop`: the clock stops and goes back to tick 0. One-shot tails ring on. From
-   change 96, sequenced gate notes get their release. Panic is a separate action that also
-   fades voices, preview and FX tails.
-5. Half-time is a transport setting for pattern playback at half speed.
-   Project BPM, the bar clock and the metronome stay unchanged.
-   Define phase changes and gate-release rules in 95. Apply the playback factor in 96.
+Offline transport, input, migration, title and no-allocation tests pass. The p99 benchmark exit checks pass.
+Recorded maximum-budget failures remain unresolved. General acceptance does not establish individual terminal, controller or listening results.
 
-App:
-
-1. `bpm` in the project (session version 4 with `bpm = 120.0` when absent; this is the migration
-   start for 96 too).
-2. `Space` on Pads, FX and Settings: `transport.play_stop`. Chop and Files keep their own Space.
-   `metronome.click` stays an action for learn but has no default key.
-3. Tempo on the keyboard: `Ctrl+Up` / `Ctrl+Down`, 1 BPM; with Shift 0.1 BPM. Check them
-   against `config/keymap.toml` and against the terminals of the README (Ghostty took
-   `Ctrl+0` before, see backlog row 22). If a terminal takes them, write it in the design and
-   pick other right-half keys.
-4. `metronome.toggle`: pick a right-half keyboard key in the design and check it for clashes.
-5. The title line shows `120.0 BPM  ▶ 3.2` while playing.
-6. Add half-time on/off with keyboard and controller paths. Save its state with the project.
-   Show `HALF` next to the transport state. The default is normal speed.
-
-SMC-PAD: PLAY tap on Pads is `transport.play_stop`; PLAY hold is `metronome.toggle` (the tap /
-hold of 89; the tap then acts on release, write it in the spec); bank 2 knob 7 is the tempo. The
-reach test of 93 must pass with the new actions.
-
-Visual: the transport segment of the status line and the `▶ 2.3` badge (`VISUAL.md` §2.6, §2.1);
-the value pop-up for the tempo.
-
-Tests:
-
-1. Render: 8 bars at 120 BPM with the metronome, blocks of 64, 128 and 1000 frames: every click
-   at its exact frame (±1), accents on beat 1.
-2. Render: tempo 120 → 90 in the middle: no jump in position, the clicks follow the new tempo.
-3. Stop and play: the first click at frame 0 of the play.
-4. `realtime_no_alloc` covers the transport.
-5. Input: Space starts and stops. The SMC-PAD PLAY does the same (parity harness).
-6. Render metronome accents at 170, 172 and 180 BPM. Check the first beat of each bar.
-7. Half-time selection and restart preserve project BPM and metronome timing.
-   Pattern duration and release tests follow in 96.
-
-Render for the owner: `renders/95-transport.wav`.
+Local render: `renders/95-transport.wav`.
+See the [separate owner procedure](../LIVE-CHECKS.md#95-transport-and-metronome) for keyboard, controller and listening checks.
 
 ### Change 96 — `96-pattern-play`
 
 Goal: one pattern plays in a loop with the transport. No recording and no screen yet; the owner
 writes a pattern into `project.toml` by hand to check it.
 
-Spec deltas: new capability `patterns`; `projects` (patterns saved; version 4); `pad-assignment`
-(swap moves the hits).
+Spec deltas:
+
+- New capability `patterns`.
+- `projects`: saved patterns and migration from implemented format 4 and supported earlier formats.
+- `pad-assignment`: swap moves the hits.
+- `pad-playback`: the slice pitch gate.
+
+The per-pad slice pitch gate belongs here because it needs the pattern clock.
+It defines planned playback behavior, not a general sound-quality correction.
 
 Engine:
 
@@ -215,6 +200,10 @@ Engine:
    oldest at once. Stop sends all pending releases.
 4. A hit on a pad with no sound is silent; no error.
 5. The `Garbage` enum (§2.4).
+6. Slice pitch gate: a per-pad setting, on by default for slices, cuts a pitched-up slice at the next pattern step.
+   Never extend the slice beyond its source end. Use the engine's existing cut path.
+   Define which step grid supplies the boundary before code, including empty steps, triplets, swing and loop end.
+   Also define stop, pattern replacement, tempo changes and interaction with manual hits.
 
 App:
 
@@ -233,7 +222,10 @@ App:
    hits = [[0, 0, 100, 0], [1920, 1, 110, 0], [3840, 0, 100, 0]]
    ```
 
-2. Migration 3 → 4: no patterns, bpm 120.
+2. Migrate from format 4 and supported earlier formats without patterns. Preserve saved tempo and metronome preferences.
+   Use 120 BPM only when the older format has no tempo. Choose the new format version in the 96 proposal.
+   Preserve existing mute-group numbers and memberships, manual assignments and ungrouped overlap.
+   Add keyboard and controller paths for the per-pad pitch gate, with saved state and undo.
 3. `Ctrl+X` swap: hits of the two pads trade pads in every pattern (if the owner confirmed).
 4. The title line shows the slot, for example `A1 ▶ 1.3`.
 
@@ -246,12 +238,15 @@ Tests:
 3. Render: pattern replaced while playing (one hit added ahead of the playhead): no hit missed
    or doubled around the swap.
 4. Render: mute group pads in a pattern cut each other.
-5. Session round trip and the migration from version 3.
-6. Half-time doubles a pattern's duration without changing project BPM or metronome timing.
-   Check gate releases, loop boundaries and a rate change under the rules from 95.
-7. Benchmark dense patterns at 172 BPM against the callback gate before 95.
+5. Session round trip and migration fixtures for every supported earlier format, preserving transport preferences and existing mute groups.
+6. Pattern loops and gate releases keep the transport clock and metronome timing unchanged.
+   Half-time is outside the 1.0 scope. Do not add it as a prerequisite for 96.
+7. Benchmark dense patterns at 172 BPM against the existing callback limits.
+8. Render pitched-up slices with the pitch gate on and off. Check the next-step cutoff and its fade.
+   Cover empty steps, loop end, stop, tempo changes and pattern replacement under the approved boundary rule.
+9. Check pitch-gate controls, undo and old-session defaults through keyboard and raw MIDI production routes.
 
-Render for the owner: `renders/96-pattern-play.wav`.
+Render for the owner: `renders/96-pattern-play.wav`, including separate pitch-gate comparisons.
 
 How to verify (owner): paste the TOML above into the project, load the kick on pad 1 (bank 1,
 `1`) and the snare on pad 2 (`2`), start with Space.
@@ -465,9 +460,10 @@ synthetic clock.
 
 ## 4. Additions
 
-`CROSS-CUTTING.md` §4 adds tasks to 95–98 (tap tempo, metronome level, project switch, length
-change, closed passes, undo of step edits, rows of other banks) and the change `100a-pad-mute`.
-They are part of these changes.
+`CROSS-CUTTING.md` §4 proposes tap tempo, metronome level, project switch, length changes,
+closed passes, undo of step edits, rows of other banks and `100a-pad-mute`.
+Transport 95 did not implement tap tempo or metronome level. Assign those additions in a later approved proposal.
+V1 selects the 1.0 scope. The active change must state its exact tasks before code.
 
 ## 5. Later, not planned here
 

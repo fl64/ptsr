@@ -101,8 +101,11 @@ One complete loop, from the keyboard and the SMC-PAD, with no clicks and no cras
 **sample → chop → pads → pattern → resample → effects → export**
 
 - **0.2 — Input:** status feedback, confirmation, button holds, relative encoders and complete SMC-PAD controls.
-- **0.3 — Sound:** callback budget, click-free changes, slice pitch gates, crossfade mono groups, fractional starts, pitch quality, master safety and recording latency.
+- **0.3 — Deferred sound work:** callback investigation, pitch quality, master safety and recording latency.
+  Resume these changes only on a separate owner request, not before patterns by default.
 - **0.4 — Patterns:** transport, recording, quantize, step editing, slots, note repeat and mute. Grids include 1/64.
+  Transport 95 is implemented. Next: 96 pattern playback, then 97 recording and 98 step editing.
+  Change 96 also plans the per-pad slice pitch gate. It needs the pattern clock.
 - **0.4b — Glitch kit:** step locks, ratchets, held master stutter, a 4×4 roll matrix and offline PaulStretch.
   Held effects start on the next grid. The pattern runs silently underneath and returns on its next hit after release.
 - **0.5 — Complete the loop:** sample tempo, resampling, serial insert chains, shared sends, pitch envelopes, crossfade loops, sample operations and offline WAV export.
@@ -110,7 +113,8 @@ One complete loop, from the keyboard and the SMC-PAD, with no clicks and no cras
 - **0.6 — Release:** project recovery, format compatibility, a four-hour soak, one release binary and a short manual.
 
 Release needs three finished owner tracks and completed keyboard, controller and listening checks.
-The callback timing issue and physical-controller checks remain open.
+The callback timing issue and physical-controller checks remain open. Existing tests and benchmark limits still apply.
+The reported Chop-start click needs a separate investigation. Its cause is unknown.
 Everything outside this minimum is **1.x**. These are plans, not current capabilities.
 
 See [the V1 plan and release criteria](docs/plans/V1.md), [the backlog](docs/BACKLOG.md)

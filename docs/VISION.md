@@ -4,10 +4,10 @@
 
 Version 3 · 03.11.2026 · project name: ptsr. Version 3 adds modulation, pattern ideas, slice ideas, the controller-first goal and visual control (sections 12, 16a, 17, 20, 22, 24). The detailed plans for the next changes are in [plans/README.md](plans/README.md).
 
-Current status: change 82 (shared FX and X-Session defaults) is accepted and archived.
-The next work is keymap cleanup (83a), input parity, visual control, SMC-PAD integration
-and then patterns.
-These are plans, not shipped features. See `docs/PROJECT.md` for the current state.
+Current status: transport 95 is implemented, archived and merged. Pattern sequencing is not implemented.
+Next: 96 pattern playback, then 97 recording and 98 step editing.
+SMC-PAD integration and physical-controller acceptance remain incomplete.
+The broader features below are plans, not shipped features. See `docs/PROJECT.md` for the current state.
 SMC-PAD hardware details below are reference assumptions until change 91 measures the
 owner's device on Linux.
 
@@ -584,7 +584,8 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
 - **Sample workflows** (section 16b): V1 includes 1/64 quantize/step grids and pitch/velocity ramps inside ratchets.
   Half-time, fills and other velocity ramps remain `1.x`.
   Changes 102–108 plan sample tempo, break patterns, locks, resampling, bass, mix and movement.
-  Resolve callback budget failures before 95. Describe tasks without specific genre names.
+  Separate callback investigation waits for an owner request. Existing benchmark checks remain mandatory.
+  Describe tasks without specific genre names.
   These plans do not authorize code.
 - Priority after the pattern sequencer: groove templates, pattern variations and chains, quick sample operations.
 - **V1 minimum:** [plans/V1.md](plans/V1.md) sets the core loop and eight release criteria. It overrides earlier priorities and stages. Everything outside its scope is `1.x`. Only the owner can add scope.
@@ -602,8 +603,9 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
     Add a one-knob master DJ filter and a combined rate/bit lo-fi insert.
   - **0.5 pad playback:** add per-pad pitch envelopes and crossfade pad loops.
     Gate pads loop while held. One-shot pads loop until their next hit.
-    Slices default to pitch gate on and a crossfade mono group after Chop. Check fractional event starts, not only whole-sample offsets.
-- **V1 checks:** cover 5 ms slices, repeated triggers and a render of 64 slices of 10 ms at 1/32.
+    The per-pad slice pitch gate belongs to 96 because it needs the pattern clock.
+    Keep existing mute groups and assignment defaults. Fresh Chop targets remain ungrouped.
+- **V1 checks:** the owner listens during normal use and reports unwanted clicks with a reproducible scenario.
   The callback workload includes full insert chains and simultaneous 1/32 ratchets at 200 BPM on 16 pads.
   The owner finishes glitch ambient, drum and bass or jungle, and industrial hardcore or hard techno tracks.
   Each friction item names its source track. These are release checks, not claims about current sound.
@@ -616,4 +618,9 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
   Real-time old-sampler stretch, tuned comb feedback and MIDI clock in/out remain `1.x`, as described in [V1 section 4](plans/V1.md#4-everything-else-is-1x).
   Until the real-time stretch exists, the 1.0 matrix's stretch-all cell uses half speed, one octave down.
 - **88 on hold:** the owner deferred confirmation work until a MIDI device is available for live checks.
-  Recorded MIDI tests do not replace physical acceptance. Independent 0.3 sound-quality work can proceed through its own proposal.
+  Recorded MIDI tests do not replace physical acceptance.
+- **Current priority:** prepare 96 from implemented transport 95 and saved format 4, then recording and step editing.
+  Resolve input prerequisites in each proposal. Sound-quality changes 94a and 110–112 wait for a separate request.
+  Change 109 is canceled. The owner removed universal fades, automatic slice grouping and fractional-start prerequisites from the plan.
+  Existing tests and real-time limits remain mandatory. Historical callback maximum-budget failures remain unresolved.
+  Diagnosis of the reported Chop-start click remains deferred. Its cause is unknown.

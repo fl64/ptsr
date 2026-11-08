@@ -6,12 +6,15 @@
 It selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
-The new quality, export and release changes reserve numbers 109–120. Callback correction keeps 94a.
+The quality, export and release changes retain numbers 110–120. Deferred callback investigation keeps 94a. Change 109 is canceled.
 The new glitch-kit and pad-sound names are planning labels. Assign numbers before their OpenSpec proposals.
 Independent report-only change 84b adds local overrun records before further product work.
 
-The normal order is input/controller (0.2), sound quality (0.3), patterns (0.4), glitch kit (0.4b),
+The functional order is input/controller (0.2), patterns (0.4), glitch kit (0.4b),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
+The owner deferred sound-quality work (0.3). Transport 95 is implemented.
+Prepare 96 pattern playback next, then 97 recording and 98 step editing.
+Existing real-time rules, tests and benchmark limits stay mandatory. Input prerequisites need explicit decisions before code.
 The owner expanded the 1.0 sound scope on 2026-11-07:
 
 - **0.4:** quantize and step grids include 1/64. The default step view stays 1/16.
@@ -25,8 +28,9 @@ The owner expanded the 1.0 sound scope on 2026-11-07:
   A soft/hard master clipper defaults to off before the always-on limiter.
   Add pad pitch envelopes and crossfade loop playback for gate and one-shot pads.
   Add makeup curves with RMS checks at 0/50/100 %, within ±1.5 dB, a one-knob master DJ filter and a rate/bit lo-fi insert.
-- **Release gates:** 5 ms slices and repeated triggers, plus 64 slices of 10 ms at 1/32 without clicks.
-  Slice modes add pitch gate, crossfade mono groups and fractional event starts. Pitch gate and crossfade mono default to on for chopped slices.
+- **Release checks:** the owner listens during normal use and reports unwanted clicks with a reproducible scenario.
+  Keep existing mute groups and assignment defaults. The owner removed universal fades and automatic slice grouping from the plan.
+  Change 96 plans the pattern-step pitch gate. It defaults to on for slices.
   The callback workload includes full insert chains and simultaneous 1/32 ratchets at 200 BPM on 16 pads.
   Three finished tracks cover glitch ambient, drum and bass or jungle, and industrial hardcore or hard techno.
   Each friction item names its source track.
@@ -53,7 +57,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-07)
+## Current status (2026-11-08)
 
 - Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
   all remaining checks. It is archived in
@@ -164,7 +168,17 @@ not permission to combine the new changes.
   Work stays in the main repository folder. Change 88 is not active.
 - The owner deferred 88 on 2026-11-07 until a MIDI device is available for live checks.
   Do not start it now. Recorded MIDI tests cannot establish the physical-controller result.
-  Independent 0.3 sound-quality work can proceed through its own proposal. Later input prerequisites remain.
+  Later input prerequisites remain.
+- Transport 95 is archived and merged in [PR #13](https://github.com/fl64/ptsr/pull/13).
+  It implements the audio-frame clock, project tempo, metronome, shared controls and visible clock state.
+  Format 4 saves tempo and metronome preference, not running position. Patterns are not implemented.
+  Individual keyboard, physical-controller and listening results remain unverified.
+  Start 96 from this implementation, not from the older 95 sketch in the imported plans.
+- The owner deferred separate sound-quality work until a separate request and chose pattern playback next.
+  Callback investigation 94a is no longer a separate prerequisite before transport or patterns.
+  Historical callback maximum-budget failures remain unresolved. Existing checks and benchmark limits stay mandatory.
+  Diagnosis of the reported Chop-start click remains deferred. Its cause is unknown.
+  The owner removed the universal fade requirement. Keep mute groups off / 1–8 and manual assignments unchanged.
 - Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
   until 91 carries the useful parts and removes the old folder.
 - The SMC-PAD port, preset, relative encoding and lights still need measurements on the
@@ -272,7 +286,7 @@ Unselected parts remain `1.x`, even when they have a planned change number.
 | before 87 | Save retry, safe project switches and portable chop variants | This document, Project save safety | 86b–86d |
 | 1 | Input parity, refactors and new input features. Change 87 is the visual base | `REFACTOR-INPUT.md`, `VISUAL.md` (87) | 84–90 |
 | 2 | SMC-PAD integration and the command panel | `SMC-PAD-INTEGRATION.md` | 91–94 |
-| before 95 | Resolve callback peaks and slow-core CPU spikes | `PATTERNS.md` | 94a |
+| deferred | Investigate callback peaks and slow-core CPU spikes after a separate owner request | `PATTERNS.md` | 94a |
 | 3 | Transport, patterns, recording, sequencer | `PATTERNS.md` | 95–100a, optional 101 |
 | 4, after 100a | Sample tempo, break patterns, locks, resampling, bass, mix and movement | `SAMPLE-WORKFLOWS.md` | 102–108 |
 | all | Tools, safety, comfort, docs and risks. Changes 93a and 100a | `CROSS-CUTTING.md` | tasks in many changes |
@@ -283,7 +297,7 @@ Each new mode or state brings its badge, pad glyphs, notices and hints for both 
 The order is not free. Track 2 needs the mode model, the button hold and the relative encoders
 of track 1. Track 3 needs the screen registry for a new screen, plus `ui.confirm` and button holds (`erase`, note repeat).
 It also needs the track 2 command panel for the new actions' controller paths.
-Project save safety 86b–86d comes before 87. Callback correction 94a is a separate gate before 95.
+Project save safety 86b–86d comes before 87. The owner deferred separate callback investigation 94a, not existing benchmark checks.
 Track 4 follows the pattern base through 100a. It does not wait for optional timestamps (101).
 For 1.0, V1 inserts the glitch kit after patterns and before sample tempo, resampling, effects and export.
 The minimum locks from 104 move into `step-locks` in 0.4b. The rest of 104 stays `1.x`.
@@ -305,9 +319,8 @@ Change 103 needs 102. Changes 104 and 105 need patterns. Changes 106–108 can c
             92 command panel ◄─────────────┘
                  │
             93 controller reach ─► 93a comfort ─┬─► (94 pad lights, optional)
-                                               └─► 94a callback budget gate
-                                                        │
-            95 transport ◄─────────────────────────────┘
+                                               │
+            95 transport ◄─────────────────────┘
                  │
             96 pattern play ─► 97 pattern record ─► 98 step + screen
                                                         │
@@ -328,10 +341,11 @@ The owner measures the SMC-PAD on Linux and sets the encoders to relative. This 
 Change 82 is archived. The new prerequisite for 84 is keymap cleanup 83a.
 Change 91 will replace change 83 (`openspec/deferred/83-controller-profiles`).
 In 91, move its useful sources, pad orientation and raw-byte test approach into the new change.
-Then remove the deferred folder. Complete 93 and 93a before transport work, so new actions have both input paths
-and recording can use redo. Change 94 is optional and does not block 95.
-Change 94a must resolve the earlier callback budget failures before 95 starts.
-A passing p99 check alone does not close that gate.
+Then remove the deferred folder. The diagram retains the controller-first dependency plan, not completed hardware acceptance.
+Transport 95 uses existing keyboard and learnable MIDI paths. Physical-controller checks and the unfinished controller work remain open.
+Each later proposal must resolve the input prerequisites it needs. Recording still needs an explicit redo decision.
+Change 94 is optional. Change 94a waits for a separate owner request, not a separate implementation step before patterns.
+A passing p99 check alone does not resolve the historical maximum-budget failures.
 
 Letters keep the existing change numbers valid. These additions do not renumber 87–101.
 The owner can change the order, subject to the dependencies above.
@@ -395,14 +409,13 @@ answer, take the default and write the question into `design.md` under "Open que
 
 | Before | Question | Default |
 |---|---|---|
-| 0.2 | Is the SMC-PAD at hand? Without it, 90–93 cannot be accepted | If not, start independent 0.3 work. Resolve input prerequisites before 0.4. Keep unverified controller checks open |
+| 0.2 | Is the SMC-PAD at hand? Without it, 90–93 cannot be accepted | Prepare 96 from implemented transport 95. Resolve input prerequisites in each proposal. Keep sound-quality work deferred and unverified controller checks open |
 | 88 | When does confirmation work resume? | After a MIDI device is available for live checks. Owner decision: defer 88 |
 | 0.4 | One swing amount in 1.0? | Yes, if 96 makes it cheap |
 | 0.4b | Is the glitch kit in 1.0? | Yes |
 | 0.4b | Stutter on the master only, or also per pad in 1.0? | Master only |
 | 0.4b | Roll matrix target: master, selected pad, or the pattern's last hit? | The last hit of the pattern |
 | 0.4b | Effect start grid | 1/16. Setting: 1/16 or 1/32 |
-| 0.3 | Crossfade mono voice as the default for chopped slices? | Yes |
 | 1.x | Phrase length for variation | 2 bars |
 | 0.5 | Insert slots per pad | 4 |
 | 0.5 | Master clipper on by default? | Off. The limiter is always on |
