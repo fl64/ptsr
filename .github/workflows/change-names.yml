@@ -3,7 +3,7 @@ name: Change names
 on:
   pull_request:
     branches: [master]
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -34,3 +34,14 @@ jobs:
         run: |
           python3 -B scripts/check_names.py --title "$PR_TITLE"
           python3 -B scripts/check_names.py --range "$BASE_SHA..$HEAD_SHA"
+      - name: Check large source files
+        env:
+          BASE_SHA: ${{github.event.pull_request.base.sha}}
+          HEAD_SHA: ${{github.event.pull_request.head.sha}}
+          ALLOW_GROWTH: ${{contains(github.event.pull_request.labels.*.name, 'allow-large-file-growth')}}
+        run: |
+          if [ "$ALLOW_GROWTH" = true ]; then
+            python3 -B scripts/check_file_growth.py --base "$BASE_SHA" --head "$HEAD_SHA" --allow-growth
+          else
+            python3 -B scripts/check_file_growth.py --base "$BASE_SHA" --head "$HEAD_SHA"
+          fi
