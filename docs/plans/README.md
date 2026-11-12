@@ -4,6 +4,7 @@
 
 [V1.md](V1.md) is the release plan: sample → chop → pads → pattern → resample → effects → export.
 [FX-FILTERS.md](FX-FILTERS.md) is the ordered plan for effects, filters, pad sound and the metronome path.
+[UI-UX.md](UI-UX.md) plans screen space, pattern editing, wording and the bank mixer.
 V1 selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
