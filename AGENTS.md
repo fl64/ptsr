@@ -8,6 +8,7 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - **Work from the specs, not from the memory of the conversation.** The code implements what the specs of the active change and `openspec/specs/` say, and only that. What is not in a spec is not done. If a spec misses something, first edit the spec, then write the code.
 - The requirements are a draft. If, during implementation, you see that a requirement is inconvenient or contradicts another requirement, **stop and propose a specification edit**. Do not silently work around the specification.
 - One change at a time. Small changes are better than large ones.
+- New behavior work uses one OpenSpec number, one branch and one PR per change. Do not combine new changes or add a letter suffix to a new number unless the owner requests that exception in the PR. Historical identifiers stay unchanged.
 - Each change goes in its own branch and a pull request to `master`. Do not commit to `master` directly.
 - After each completed task, make a commit with a clear message.
 - **Everything you agree on with the owner goes into the spec at once.** A decision from the conversation (behavior, UX, keys, knobs, texts) goes into the proposal/design/spec/tasks of the active change before the code. Write a question without an answer in design.md, section "Open questions", together with the option you took by default.
@@ -17,6 +18,7 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - All repository texts are in English and follow ASD-STE100 Simplified Technical English: `README.md`, `AGENTS.md`, `docs/`, the `openspec/` artifacts and commit messages. Key names of the Russian layout (`х`, `Й`) are technical names and stay. Talk to the owner in Russian.
 - Prefer the `asd-ste100` skill for new or revised English documentation. Use STE-flavored mode for descriptions and Strict mode for procedures. Run its `scripts/ste-lint.py` on the changed text. Review the results without a full dictionary compliance claim. Keep the original meaning and technical names. Do not rewrite unrelated documents only for style.
 - `docs/VISION.md` and `docs/plans/` are guides, not requirements. Requirements are only in `openspec/specs/` and in active changes. A deferred draft does not authorize code.
+- Do not increase the line count of `crates/app/src/main.rs` or `crates/tui/src/lib.rs`. Put new code in modules. The required CI check compares each file with the PR base. The owner can approve an explicit exception by applying the `allow-large-file-growth` label to that PR.
 
 ## Branch and pull request names
 
