@@ -3,7 +3,8 @@
 ## Start here: v1.0.0
 
 [V1.md](V1.md) is the release plan: sample → chop → pads → pattern → resample → effects → export.
-It selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
+[FX-FILTERS.md](FX-FILTERS.md) is the ordered plan for effects, filters, pad sound and the metronome path.
+V1 selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
 Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
 Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
 The quality, export and release changes retain numbers 110–120. Deferred callback investigation keeps 94a. Change 109 is canceled.
@@ -12,7 +13,8 @@ Independent report-only change 84b adds local overrun records before further pro
 
 The functional order is input/controller (0.2), patterns (0.4), glitch kit (0.4b),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
-The owner deferred sound-quality work (0.3). The project now includes transport 95 and patterns 96–98k.
+The owner resumed part of sound-quality work (0.3) in the FX and filters plan.
+The project now includes transport 95 and patterns 96–98k.
 On 2026-11-12, the owner chose a full-bank A1 overview before targeted step editing.
 Change 98l adds the overview. Change 98a adds one-hit correction. The earlier 98a draft is a historical guide.
 Edit panels share the pad edit frame since 98d–98h.
@@ -39,7 +41,8 @@ The owner expanded the 1.0 sound scope on 2026-11-07:
 
 The exact ranges, real-time rules and 1.x boundary are in [V1.md](V1.md).
 More locks from 104, phrase variation, real-time old-sampler stretch, tuned comb feedback and MIDI clock in/out remain `1.x`.
-Slice follow, granular/spectral tools, buses, sidechain and chromatic/LFO work also remain `1.x`.
+Slice follow, granular/spectral tools, group buses, sidechain and chromatic/LFO work also remain `1.x`.
+The per-pad bus in the FX and filters plan is separate from later group buses.
 Phrase variation replaces mutations and never rewrites the stored pattern.
 Until real-time stretch exists, the 1.0 matrix uses half speed, one octave down.
 See [V1 owner questions](V1.md#6-owner-questions) for the hardware-dependent work order.
