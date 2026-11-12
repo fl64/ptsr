@@ -10,6 +10,7 @@ shift_velocity = 127
 F2 = "screen.pads"
 F3 = "screen.chop"
 F4 = "screen.fx"
+F5 = "screen.pattern"
 F6 = "screen.files"
 F12 = "screen.settings"           # audio; input debug is a tab inside (02b)
 PageUp = "bank.prev"
@@ -127,6 +128,7 @@ Enter = "browser.hold"        # "file in hand": a pad hit puts it there, Enter a
 [screens.pads]
 "Alt+Up" = "pattern.view_next"     # a finer rhythm view, as Up zooms in on Chop
 "Alt+Down" = "pattern.view_prev"
+"Alt+H" = "pattern.overview_empty_toggle"
 "Alt+G" = "pad.pitch_gate_toggle"
 "Ctrl+N" = "pad.rename"
 U = "bank.prev"        # U/O turn the banks, with the edit open or closed too (83a)

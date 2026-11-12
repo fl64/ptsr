@@ -1416,6 +1416,7 @@ impl App {
     fn goto(&mut self, screen: Screen) {
         let from = self.screen;
         self.screen = screen;
+        self.pattern_view.overview = false;
         self.pattern_panel = None;
         self.erase_pads &= screen == Screen::Pads;
         self.edit = false;
@@ -4847,7 +4848,11 @@ fn main() -> std::io::Result<()> {
                     let mut view = app.mark_pads_recording(view, pattern_recording);
                     view.bank_pattern = app.bank_pattern();
                     if app.screen == Screen::Pads {
-                        view.pattern = Some(app.pattern_strip(&keymap));
+                        if app.pattern_view.overview {
+                            view.overview = Some(app.pattern_overview_at(&keymap, size.width));
+                        } else {
+                            view.pattern = Some(app.pattern_strip(&keymap));
+                        }
                     }
                     tui::Screen::Pads(view)
                 }
@@ -4907,6 +4912,7 @@ fn main() -> std::io::Result<()> {
             // the picker takes the keys: the line says its own (35)
             (Some(p), _) => picker_help(p.naming.is_some()),
             (None, Some(m)) => modifier_groups(&keymap, app.screen, m, app.ui.hide_pads),
+            (None, None) if app.pattern_view.overview => as_combos(groups),
             (None, None) if kitty => without_modifiers(groups),
             (None, None) => as_combos(groups),
         };
@@ -5043,6 +5049,11 @@ fn graphics_support() -> bool {
 /// The hint line under the help groups; a short-lived message never removes it.
 fn hint_for(app: &App) -> Option<&'static str> {
     match app.screen {
+        Screen::Pads if app.pattern_view.overview => Some(if app.pattern_view.hide_empty_banks {
+            "A1 table: view only · pads play · Alt+H shows empty banks."
+        } else {
+            "A1 table: view only · pads play · Alt+H hides empty banks."
+        }),
         Screen::Pads if app.pads.file.iter().all(Option::is_none) => {
             Some("Pads are empty: F6 opens files, Enter takes one, a pad hit puts it there.")
         }
@@ -5375,6 +5386,7 @@ fn pads_view(
     tui::Pads {
         feedback: tui::PadFeedback::default(),
         pattern: None,
+        overview: None,
         playing: false,
         fx,
         bank: p.bank,
@@ -5841,6 +5853,7 @@ fn chop_view_routed<'a>(
                 None,
                 tui::Pads {
                     pattern: None,
+                    overview: None,
                     feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: page,
@@ -5963,6 +5976,7 @@ fn chop_view_routed<'a>(
                 Some(marks),
                 tui::Pads {
                     pattern: None,
+                    overview: None,
                     playing: false,
                     bank: p.bank,
                     pads,
@@ -6093,6 +6107,7 @@ fn chop_view_routed<'a>(
                 Some(marks),
                 tui::Pads {
                     pattern: None,
+                    overview: None,
                     feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: p.bank,
@@ -6781,6 +6796,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
             item(&[Action::HelpToggle], "help".into()),
             item(&[Action::ScreenChop], "chop".into()),
             item(&[Action::ScreenFx], "FX".into()),
+            item(&[Action::ScreenPattern], "pattern".into()),
             item(&[Action::ScreenFiles], "files".into()),
             item(&[Action::ScreenSettings], "settings".into()),
         ],
@@ -6982,10 +6998,13 @@ fn describe(a: Action) -> String {
         Action::PatternValueDec => "decrease the selected A1 value with controls open".into(),
         Action::PatternValueInc => "increase the selected A1 value with controls open".into(),
         Action::PatternViewPrev => {
-            "Pads: previous view division. Recorded timing stays unchanged.".into()
+            "Pads or A1 overview: previous view division. Recorded timing stays unchanged.".into()
         }
         Action::PatternViewNext => {
-            "Pads: next view division. Recorded timing stays unchanged.".into()
+            "Pads or A1 overview: next view division. Recorded timing stays unchanged.".into()
+        }
+        Action::PatternOverviewEmptyToggle => {
+            "A1 overview: show or hide empty bank sections.".into()
         }
         Action::PatternClear => "clear all of A1 after a question. Ctrl+Z restores.".into(),
         Action::CursorMove { right, .. } => {
@@ -7016,6 +7035,7 @@ fn describe(a: Action) -> String {
             "pads: take the sound off the selected pad; in the edit, reset its settings".into()
         }
         Action::ScreenPads => "pads screen".into(),
+        Action::ScreenPattern => "pattern overview".into(),
         Action::ScreenFx => "shared FX screen".into(),
         Action::ScreenSettings => "audio settings".into(),
         Action::ScreenFiles => "files screen".into(),
@@ -7195,8 +7215,10 @@ fn help_section(a: Action) -> usize {
         | Action::PatternValueInc
         | Action::PatternViewPrev
         | Action::PatternViewNext
+        | Action::PatternOverviewEmptyToggle
         | Action::PatternClear => 5,
         Action::ScreenPads
+        | Action::ScreenPattern
         | Action::ScreenSettings
         | Action::ScreenFiles
         | Action::ScreenChop
@@ -11128,7 +11150,7 @@ Enter = "browser.hold"
                 .iter()
                 .map(|i| i.0.clone())
                 .collect();
-            assert_eq!(keys, ["F1", "F3", "F4", "F6", "F12"], "{screen:?}");
+            assert_eq!(keys, ["F1", "F3", "F4", "F5", "F6", "F12"], "{screen:?}");
         }
     }
 

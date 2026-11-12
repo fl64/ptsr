@@ -200,6 +200,15 @@ impl App {
             Action::PatternViewPrev | Action::PatternViewNext => {
                 self.change_pattern_view(action == Action::PatternViewNext);
             }
+            Action::PatternOverviewEmptyToggle
+                if self.screen == Screen::Pads
+                    && self.pattern_view.overview
+                    && !self.transport_input_blocked()
+                    && !self.help_open =>
+            {
+                self.pattern_view.hide_empty_banks = !self.pattern_view.hide_empty_banks;
+            }
+            Action::PatternOverviewEmptyToggle => {}
             Action::PatternClear => self.ask_clear_pattern(),
             Action::PatternRecord => self.toggle_pattern_record(),
             Action::PatternErase => self.toggle_pattern_erase(),
@@ -268,6 +277,10 @@ impl App {
                 }
             }
             Action::ScreenPads => self.goto(Screen::Pads),
+            Action::ScreenPattern => {
+                self.goto(Screen::Pads);
+                self.pattern_view.overview = true;
+            }
             Action::ScreenFiles => self.goto(Screen::Files),
             Action::ScreenFx => self.goto(Screen::Fx),
             Action::ScreenChop if self.screen == Screen::Files => self.open_file_chop(),
@@ -661,6 +674,7 @@ impl App {
             Action::Back if self.learning.is_some() => self.learning = None,
             // the help covers the screen: Esc closes it before the edit mode under it
             Action::Back if self.help_open => self.help_open = false,
+            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
             // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
             Action::Back if self.erase_pads => self.erase_pads = false,

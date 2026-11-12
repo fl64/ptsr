@@ -73,6 +73,14 @@ enum Mode {
     PatternViewMultiple,
     PatternViewHidden,
     PatternViewSafety,
+    PatternOverviewAbsent,
+    PatternOverviewEmpty,
+    PatternOverviewStraight,
+    PatternOverviewTriplet,
+    PatternOverviewOffGrid,
+    PatternOverviewMultiple,
+    PatternOverviewHiddenHit,
+    PatternOverviewSafety,
     PatternErasePads,
     PitchGateOff,
     PitchGateA1,
@@ -145,6 +153,14 @@ impl Mode {
         Self::PatternViewMultiple,
         Self::PatternViewHidden,
         Self::PatternViewSafety,
+        Self::PatternOverviewAbsent,
+        Self::PatternOverviewEmpty,
+        Self::PatternOverviewStraight,
+        Self::PatternOverviewTriplet,
+        Self::PatternOverviewOffGrid,
+        Self::PatternOverviewMultiple,
+        Self::PatternOverviewHiddenHit,
+        Self::PatternOverviewSafety,
         Self::PatternErasePads,
         Self::PitchGateOff,
         Self::PitchGateA1,
@@ -217,6 +233,14 @@ impl Mode {
             Self::PatternViewMultiple => "pattern-view-multiple",
             Self::PatternViewHidden => "pattern-view-hidden",
             Self::PatternViewSafety => "pattern-view-safety",
+            Self::PatternOverviewAbsent => "pattern-overview-absent",
+            Self::PatternOverviewEmpty => "pattern-overview-empty",
+            Self::PatternOverviewStraight => "pattern-overview-straight",
+            Self::PatternOverviewTriplet => "pattern-overview-triplet",
+            Self::PatternOverviewOffGrid => "pattern-overview-off-grid",
+            Self::PatternOverviewMultiple => "pattern-overview-multiple",
+            Self::PatternOverviewHiddenHit => "pattern-overview-hidden-hit",
+            Self::PatternOverviewSafety => "pattern-overview-safety",
             Self::PatternErasePads => "pattern-erase-pads",
             Self::PitchGateOff => "pitch-gate-off",
             Self::PitchGateA1 => "pitch-gate-a1",
@@ -233,6 +257,14 @@ impl Mode {
             | Self::PatternViewMultiple
             | Self::PatternViewHidden
             | Self::PatternViewSafety
+            | Self::PatternOverviewAbsent
+            | Self::PatternOverviewEmpty
+            | Self::PatternOverviewStraight
+            | Self::PatternOverviewTriplet
+            | Self::PatternOverviewOffGrid
+            | Self::PatternOverviewMultiple
+            | Self::PatternOverviewHiddenHit
+            | Self::PatternOverviewSafety
             | Self::PatternErasePads
             | Self::Tone
             | Self::Envelope
@@ -359,6 +391,14 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-view-multiple",
                         "pattern-view-hidden",
                         "pattern-view-safety",
+                        "pattern-overview-absent",
+                        "pattern-overview-empty",
+                        "pattern-overview-straight",
+                        "pattern-overview-triplet",
+                        "pattern-overview-off-grid",
+                        "pattern-overview-multiple",
+                        "pattern-overview-hidden-hit",
+                        "pattern-overview-safety",
                         "pattern-erase-pads",
                         "pitch-gate-off",
                         "pitch-gate-a1",
@@ -681,6 +721,20 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternViewMultiple
         | Mode::PatternViewHidden
         | Mode::PatternViewSafety => add_pattern_view(&mut app, case.mode),
+        Mode::PatternOverviewAbsent => {
+            app.pads.pattern = None;
+            app.pattern_view.overview = true;
+        }
+        Mode::PatternOverviewEmpty => {
+            add_pattern(&mut app, Mode::PatternEmpty);
+            app.pattern_view.overview = true;
+        }
+        Mode::PatternOverviewStraight
+        | Mode::PatternOverviewTriplet
+        | Mode::PatternOverviewOffGrid
+        | Mode::PatternOverviewMultiple
+        | Mode::PatternOverviewHiddenHit
+        | Mode::PatternOverviewSafety => add_pattern_overview(&mut app, case.mode),
         Mode::PatternErasePads => {
             add_pattern_view(&mut app, Mode::PatternViewMultiple);
             app.apply(Action::PatternErase);
@@ -779,6 +833,31 @@ fn add_pattern_view(app: &mut App, mode: Mode) {
     }
 }
 
+fn add_pattern_overview(app: &mut App, mode: Mode) {
+    let view_mode = match mode {
+        Mode::PatternOverviewTriplet => Mode::PatternViewTriplet,
+        Mode::PatternOverviewMultiple => Mode::PatternViewMultiple,
+        Mode::PatternOverviewSafety => Mode::PatternViewSafety,
+        _ => Mode::PatternViewOffGrid,
+    };
+    add_pattern_view(app, view_mode);
+    app.pattern_view.overview = true;
+    let raw = app.pads.pattern.as_mut().unwrap();
+    raw.hits.extend([[960, 20, 90, 0], [1920, 54, 70, 0]]);
+    for (pad, name) in [
+        (20, "rec-20261031-200404 20 minute take"),
+        (54, "rec-20261101-091500 21 minute take"),
+    ] {
+        app.pads.sound[pad] = app.pads.sound[0].clone();
+        app.pads.file[pad] = Some(format!("/offline/samples/{name}.wav").into());
+        app.pads.custom_name[pad] = Some(name.into());
+    }
+    if mode == Mode::PatternOverviewHiddenHit {
+        raw.bars = 1;
+        raw.hits.push([5000, 20, 100, 0]);
+    }
+}
+
 fn add_recording(app: &mut App, mode: Mode) {
     let (audio, mut realtime) = audio::offline(48_000);
     app.audio = Some(audio);
@@ -858,7 +937,11 @@ fn render_app_layers(
     let mut pads = app.mark_pads_recording(pads, pattern_recording);
     pads.bank_pattern = app.bank_pattern();
     if app.screen == Screen::Pads {
-        pads.pattern = Some(app.pattern_strip(keymap));
+        if app.pattern_view.overview {
+            pads.overview = Some(app.pattern_overview_at(keymap, case.size.0));
+        } else {
+            pads.pattern = Some(app.pattern_strip(keymap));
+        }
     }
     let mut chop = app.chop_display_recording(app.chop.as_ref().unwrap(), pattern_recording);
     if chop.slice_keys.is_none() {
@@ -877,12 +960,17 @@ fn render_app_layers(
                 .is_some_and(|picker| picker.naming.is_some()),
         )
     } else {
-        without_modifiers(app.pattern_help_groups(
+        let groups = app.pattern_help_groups(
             keymap,
             help_groups(keymap, app.screen, &app.help_state()),
             pattern_recording,
             kitty,
-        ))
+        );
+        if app.pattern_view.overview {
+            as_combos(groups)
+        } else {
+            without_modifiers(groups)
+        }
     };
     let history = app.message_history();
     let help = tui::Help {
@@ -1071,6 +1159,14 @@ fn check_frame(case: Case, buffer: &Buffer) {
     };
     match case.mode {
         Mode::Picker | Mode::PickerName => require("PROJECT"),
+        Mode::PatternOverviewAbsent
+        | Mode::PatternOverviewEmpty
+        | Mode::PatternOverviewStraight
+        | Mode::PatternOverviewTriplet
+        | Mode::PatternOverviewOffGrid
+        | Mode::PatternOverviewMultiple
+        | Mode::PatternOverviewHiddenHit
+        | Mode::PatternOverviewSafety => require("PATTERN · A1"),
         Mode::Help | Mode::Messages => {
             require("HELP");
             require("MESSAGES");
@@ -1176,6 +1272,16 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("no audio");
             require("xruns 3");
             require("~");
+        }
+        Mode::PatternOverviewAbsent => require("No A1"),
+        Mode::PatternOverviewEmpty => require("view 1/16"),
+        Mode::PatternOverviewStraight => require("steps 1-"),
+        Mode::PatternOverviewTriplet => require("view 1/16 triplet"),
+        Mode::PatternOverviewOffGrid | Mode::PatternOverviewHiddenHit => require("~"),
+        Mode::PatternOverviewMultiple => require(" 2"),
+        Mode::PatternOverviewSafety => {
+            require("Save failed");
+            require("PATTERN · A1");
         }
         Mode::PatternSafety => {
             require("REC A1");
@@ -2040,6 +2146,14 @@ L="none"
                     | Mode::PatternViewMultiple
                     | Mode::PatternViewHidden
                     | Mode::PatternViewSafety
+                    | Mode::PatternOverviewAbsent
+                    | Mode::PatternOverviewEmpty
+                    | Mode::PatternOverviewStraight
+                    | Mode::PatternOverviewTriplet
+                    | Mode::PatternOverviewOffGrid
+                    | Mode::PatternOverviewMultiple
+                    | Mode::PatternOverviewHiddenHit
+                    | Mode::PatternOverviewSafety
             ) && !app
                 .pattern_record_state()
                 .is_some_and(|state| state.phase != engine::capture::Phase::Idle)
@@ -2238,6 +2352,242 @@ L="none"
             assert!(app.session_path.starts_with("/offline"));
             assert_eq!(render(*case, &keymap).0, render(*case, &keymap).0);
         }
+    }
+
+    const OVERVIEW_MODES: [Mode; 8] = [
+        Mode::PatternOverviewAbsent,
+        Mode::PatternOverviewEmpty,
+        Mode::PatternOverviewStraight,
+        Mode::PatternOverviewTriplet,
+        Mode::PatternOverviewOffGrid,
+        Mode::PatternOverviewMultiple,
+        Mode::PatternOverviewHiddenHit,
+        Mode::PatternOverviewSafety,
+    ];
+
+    /// Scenario "Pattern key names its destination".
+    #[test]
+    fn pattern_key_names_its_destination() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let case = Case {
+            screen: Screen::Files,
+            mode: Mode::Normal,
+            size: (120, 40),
+        };
+        let now = Instant::now();
+        let mut app = fixture(case, now);
+        let (_, files) = render_app(case, &keymap, app, now);
+        let files_rows = files
+            .content()
+            .chunks(case.size.0 as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        assert!(
+            files_rows
+                .iter()
+                .any(|row| row.contains("F5") && row.contains("pattern")),
+            "{:?}",
+            &files_rows[files_rows.len() - 3..]
+        );
+
+        app = fixture(case, now);
+        app.apply(Action::ScreenPattern);
+        assert!(app.pattern_view.overview);
+        let overview_case = Case {
+            screen: Screen::Pads,
+            ..case
+        };
+        let (_, overview) = render_app(overview_case, &keymap, app, now);
+        let title = overview.content()[case.size.0 as usize..2 * case.size.0 as usize]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(title.contains("PATTERN · A1"), "{title}");
+    }
+
+    /// Scenario "Catalogue covers the overview without devices".
+    #[test]
+    fn catalogue_covers_the_overview_without_devices() {
+        let cases = matrix();
+        for mode in OVERVIEW_MODES {
+            for size in SIZES {
+                assert!(cases.iter().any(|case| {
+                    case.screen == Screen::Pads && case.mode == mode && case.size == size
+                }));
+            }
+        }
+        let mut missing = cases.clone();
+        let gone = missing
+            .iter()
+            .position(|case| case.mode == Mode::PatternOverviewTriplet)
+            .unwrap();
+        let case = missing.remove(gone);
+        assert!(validate(&missing).unwrap_err().contains(&case.name()));
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for case in cases
+            .into_iter()
+            .filter(|case| OVERVIEW_MODES.contains(&case.mode))
+        {
+            let app = fixture(case, Instant::now());
+            assert!(app.session_path.starts_with("/offline"));
+            let (first, _) = render_app(case, &keymap, app, Instant::now());
+            assert_eq!(first, render(case, &keymap).0);
+        }
+    }
+
+    /// Scenario "Overview keeps 16 rows and safety text visible".
+    #[test]
+    fn overview_keeps_sixteen_rows_and_safety_text_visible() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewSafety,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.pads.custom_name[0] = Some("long wide 界 name that must stay in one row".into());
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            check_frame(case, &buffer);
+            let rows = buffer
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>();
+            assert!(rows[1].contains("PATTERN · A1"));
+            assert!(rows[2].contains("BANKS · pads with A1 hits"));
+            assert!(rows[2].contains("8:0 empty shown"), "{}", rows[2]);
+            for number in 10..16 {
+                assert!(rows[3].contains(&format!("{number} ")), "{}", rows[3]);
+            }
+            for (index, key) in "1234QWERASDFZXCV".chars().enumerate() {
+                assert!(
+                    rows[5 + index].contains(&format!(" {key} ")),
+                    "{key}: {}",
+                    rows[5 + index]
+                );
+            }
+            assert!(rows[0].contains("Save failed"));
+            let help = rows[size.1 as usize - 3..].join("\n");
+            for text in ["PATTERN", "BANK", "CLOCK", "view", "empty shown"] {
+                assert!(help.contains(text), "{text}: {help}");
+            }
+            assert!(
+                rows[size.1 as usize - 4].contains("Alt+H hides empty banks."),
+                "{}",
+                rows[size.1 as usize - 4]
+            );
+        }
+    }
+
+    /// Scenario "Overview uses wide terminal space for names and steps".
+    #[test]
+    fn overview_uses_wide_terminal_space_for_names_and_steps() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let case = Case {
+            screen: Screen::Pads,
+            mode: Mode::PatternOverviewStraight,
+            size: (120, 40),
+        };
+        let (_, buffer) = render(case, &keymap);
+        let rows = buffer
+            .content()
+            .chunks(case.size.0 as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("rec-20261031-200404 20 minute take"))
+        );
+        assert!(
+            (105..119).any(|x| matches!(buffer[(x, 5)].symbol(), "·" | "■" | "~")),
+            "time cells must use the right side"
+        );
+
+        let absent = Case {
+            mode: Mode::PatternOverviewAbsent,
+            ..case
+        };
+        let now = Instant::now();
+        let mut app = fixture(absent, now);
+        let long_name = "rec-20261031-200404 20 minute take from the room";
+        app.pads.custom_name[0] = Some(long_name.into());
+        let (_, buffer) = render_app(absent, &keymap, app, now);
+        let title = buffer.content()[120..240]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(title.contains(long_name), "{title}");
+        let row = buffer.content()[5 * 120..6 * 120]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(row.contains('…'), "{row}");
+    }
+
+    /// Scenario "Overview bank borders show identity without color alone".
+    #[test]
+    fn overview_bank_borders_show_identity_without_color_alone() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let case = Case {
+            screen: Screen::Pads,
+            mode: Mode::PatternOverviewStraight,
+            size: (120, 40),
+        };
+        let now = Instant::now();
+        let app = fixture(case, now);
+        let (_, buffer) = render_app(case, &keymap, app, now);
+        assert_eq!(buffer[(0, 4)].symbol(), "┏");
+        assert_eq!(buffer[(0, 4)].fg, tui::BANK_COLORS[0]);
+        assert_eq!(buffer[(0, 22)].symbol(), "╭");
+        assert_eq!(buffer[(0, 22)].fg, tui::BANK_COLORS[1]);
+        let index = buffer.content()[2 * 120..3 * 120]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(index.contains("BANKS · pads with A1 hits"), "{index}");
+        for bank in 1..=8 {
+            assert!(index.contains(&format!("{bank}:")), "{index}");
+        }
+    }
+
+    /// Scenario "Overview hides empty banks without losing access".
+    /// Scenario "Overview bank navigation reaches a hidden empty bank".
+    #[test]
+    fn overview_hides_empty_bank_sections_without_losing_access() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let case = Case {
+            screen: Screen::Pads,
+            mode: Mode::PatternOverviewStraight,
+            size: (120, 80),
+        };
+        let now = Instant::now();
+        let mut app = fixture(case, now);
+        let text = |app: App| {
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            buffer
+                .content()
+                .chunks(case.size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let all = text(fixture(case, now));
+        assert!(all.contains("BANK 3 / 8"), "default shows empty banks");
+        app.pattern_view.hide_empty_banks = true;
+        let hidden = text(app);
+        assert!(hidden.contains("BANK 1 / 8"));
+        assert!(hidden.contains("BANK 2 / 8"));
+        assert!(hidden.contains("BANK 4 / 8"));
+        assert!(!hidden.contains("BANK 3 / 8"));
+        assert!(hidden.contains("3:0"), "fixed index keeps the bank");
+
+        let mut selected = fixture(case, now);
+        selected.pattern_view.hide_empty_banks = true;
+        selected.pads.bank = 2;
+        let selected_text = text(selected);
+        assert!(selected_text.contains("BANK 3 / 8"));
     }
 
     /// Scenario "Pattern strip distinguishes subdivisions and event density".

@@ -12,8 +12,10 @@ Independent report-only change 84b adds local overrun records before further pro
 
 The functional order is input/controller (0.2), patterns (0.4), glitch kit (0.4b),
 tempo/resample/effects/export (0.5), then data safety and release (0.6).
-The owner deferred sound-quality work (0.3). Transport 95 and patterns 96–98c are implemented.
-The step editor (draft 98a) is next for patterns. Edit panels share the pad edit frame since 98d–98h.
+The owner deferred sound-quality work (0.3). The project now includes transport 95 and patterns 96–98k.
+On 2026-11-12, the owner chose a full-bank A1 overview before targeted step editing.
+Change 98l adds the overview. The step editor remains a deferred 98a draft for a later change.
+Edit panels share the pad edit frame since 98d–98h.
 Existing real-time rules, tests and benchmark limits stay mandatory. Input prerequisites need explicit decisions before code.
 The owner expanded the 1.0 sound scope on 2026-11-07:
 

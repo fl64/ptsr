@@ -3,6 +3,8 @@
 This file is a guide, not a requirement. It does not authorize code.
 Change 98 now covers only the rhythm view. The owner accepted that view on 2026-11-11.
 The step editor below was part of the first 98 proposal. It moves here so that change 98 can close with complete tests.
+The owner chose a full-bank A1 overview first on 2026-11-12. Change 98l adds that read-only screen.
+Review this editor draft after the overview. The current 98l change does not authorize editor code.
 Start a new OpenSpec change (for example `98a-step-edit`) before code. Review each requirement with the owner again.
 
 Context: [the change 98 design](../../openspec/changes/98-pattern-screen/design.md) keeps the editor decisions, edge cases and open questions.

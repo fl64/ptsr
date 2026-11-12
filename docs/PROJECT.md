@@ -30,6 +30,7 @@ Alt+E erases under the playhead in a pass, or whole pads outside a pass. Alt+N o
 Changes 98d–98h give the F4, Chop slice and F12 editors the frame of the pad edit, and show the test tone of an empty pad.
 The archive and main specifications contain their requirements. No change is active.
 Keyboard, physical-controller and listening checks of 96–98h are not done yet. See [owner procedures](LIVE-CHECKS.md#96-98h-patterns-and-edit-frames).
+Change 98l adds a read-only A1 overview with all eight banks in one vertical list. The owner accepted it and authorized PR and merge on 2026-11-12. Its requirements are in the archive and main specifications. Keyboard, controller and listening checks remain unverified. See [owner procedures](LIVE-CHECKS.md#98l-a1-pattern-overview).
 
 The next goal: every action that does not need typed text can be done from the SMC-PAD.
 The keyboard stays the reference and keeps its controls. The work order is:

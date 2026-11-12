@@ -662,6 +662,35 @@ impl App {
         use input::Action;
         use input::midi::{Activity, Msg, Resolved};
         let mut rows = super::full_help(keymap, self.screen, kitty);
+        if self.pattern_view.overview {
+            rows.push((
+                "Pattern overview".into(),
+                "Bank sections form one list. Each shown bank has 16 pad rows. Pads still play."
+                    .into(),
+            ));
+            rows.push((
+                "A1 marks".into(),
+                "Square: hit. Tilde: off-grid hit. Number: several hits. Light plate: playback."
+                    .into(),
+            ));
+            rows.push((
+                "Bank scope".into(),
+                "Bank keys move through sections. The current bank stays visible. The table does not edit A1."
+                    .into(),
+            ));
+            rows.push((
+                self.help_bindings(keymap, Action::PatternOverviewEmptyToggle)
+                    .join("/"),
+                format!(
+                    "Empty banks: {}. Switch their sections without changing A1.",
+                    if self.pattern_view.hide_empty_banks {
+                        "hidden"
+                    } else {
+                        "shown"
+                    }
+                ),
+            ));
+        }
         for action in [
             Action::HelpPagePrev,
             Action::HelpPageNext,
@@ -1088,6 +1117,62 @@ impl App {
     ) -> Vec<tui::HelpGroup> {
         use engine::capture::Phase;
         use input::Action;
+        if self.pattern_view.overview {
+            let item = |actions: &[Action], label: &str| {
+                let keys = actions
+                    .iter()
+                    .flat_map(|&action| self.help_bindings(keymap, action))
+                    .collect::<Vec<_>>()
+                    .join("/");
+                (
+                    if keys.is_empty() { "none".into() } else { keys },
+                    label.into(),
+                )
+            };
+            let mut clock = super::transport_help(keymap, self.screen);
+            clock.items.truncate(1);
+            clock.items.push(item(&[Action::HelpToggle], "marks"));
+            let bank_keys = [Action::BankPrev, Action::BankNext]
+                .into_iter()
+                .filter_map(|action| {
+                    self.help_bindings(keymap, action)
+                        .into_iter()
+                        .min_by_key(String::len)
+                })
+                .collect::<Vec<_>>();
+            let bank = (
+                if bank_keys.is_empty() {
+                    "none".into()
+                } else {
+                    bank_keys.join("/")
+                },
+                "bank".into(),
+            );
+            return vec![
+                tui::HelpGroup {
+                    name: "PATTERN",
+                    items: vec![
+                        item(&[Action::ScreenPads, Action::Back], "Pads"),
+                        item(&[Action::PatternViewPrev, Action::PatternViewNext], "view"),
+                    ],
+                },
+                tui::HelpGroup {
+                    name: "BANK",
+                    items: vec![
+                        bank,
+                        item(
+                            &[Action::PatternOverviewEmptyToggle],
+                            if self.pattern_view.hide_empty_banks {
+                                "empty hidden"
+                            } else {
+                                "empty shown"
+                            },
+                        ),
+                    ],
+                },
+                clock,
+            ];
+        }
         if self.key_notice_blocked() {
             return groups;
         }

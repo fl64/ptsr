@@ -341,7 +341,7 @@ fn f1_pages_keyboard_repeats_removals_and_edit_keys_keep_banks_and_pad_releases(
                 }
                 assert_eq!(drive.seen(), before);
                 for key in ['h', 'р'] {
-                    assert!(drive.keymap.overlay("[global]\n'Alt+PageDown' = 'none'\n'Alt+H' = 'help.page_next'\n[edit]\n'Alt+PageUp' = 'none'\n'Alt+H' = 'help.page_prev'\n").unwrap().is_empty());
+                    assert!(drive.keymap.overlay("[global]\n'Alt+PageDown' = 'none'\n'Alt+H' = 'help.page_next'\n[edit]\n'Alt+PageUp' = 'none'\n'Alt+H' = 'help.page_prev'\n[screens.pads]\n'Alt+H' = 'help.page_next'\n").unwrap().is_empty());
                     let frame = f1_pages_live(&mut drive, (80, 26), kitty);
                     let maximum = frame.lines.len().saturating_sub(18);
                     let old = drive.app.help_overlay.keys_scroll;

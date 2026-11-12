@@ -2713,3 +2713,25 @@ Folder: `changes/archive/2026-11-12-98k-selected-pad-frame`
 
 - [ ] Record A1 with hits on the selected pad and press Space. Check that the selected pad keeps its cyan frame on each hit, and only its inside flashes white.
 - [ ] Turn marking on and mark the selected pad. Check the cyan frame around the yellow fill.
+
+## 98l: A1 pattern overview
+
+Folder: `changes/archive/2026-11-12-98l-pattern-overview`
+
+The owner accepted the overview and authorized its PR and merge on 2026-11-12. The checks below remain unverified.
+Use a disposable project or a copy. Start `target/release/ptsr` after `task build`.
+
+### Keyboard and screen
+
+- [ ] Record A1 hits on pads in banks 1 and 2. Press F5. Check the eight-bank index and 16 rows in the current bank.
+- [ ] Check that `bank:count` means pads with A1 hits. Check long sample names and the bank-colored outlines at 80x26 and 120x40.
+- [ ] Press U and O. Check that the selected bank section enters the viewport without changing the sound.
+- [ ] Press Alt+H twice. Check that empty bank sections disappear and return while all eight bank numbers stay in the index.
+- [ ] Press Alt+Up and Alt+Down. Check that the grid division changes without changing A1. Press Space and check the moving plate.
+- [ ] Press F1 and read the mark legend. Press Esc to return to the overview. Press F2 to return to Pads.
+
+### Controller and sound
+
+- [ ] In F12 MIDI, learn `screen.pattern`, `pattern.overview_empty_toggle` and the two view actions on buttons.
+- [ ] Use the learned buttons in the overview. Hit and release a Gate pad. Check its sound and release against Pads.
+- [ ] Listen to the local `renders/97-pattern-record.wav`. The overview changes no sound and adds no WAV.

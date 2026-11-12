@@ -57,6 +57,8 @@ impl Division {
 #[derive(Default)]
 pub(super) struct State {
     pub division: Division,
+    pub overview: bool,
+    pub hide_empty_banks: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,6 +147,44 @@ impl Model {
         }
         cells
     }
+
+    #[cfg(test)]
+    pub(super) fn overview_cells(&self, bank: usize) -> Vec<Vec<tui::PatternCell>> {
+        let count = (u32::from(self.bars) * self.division.cells_per_bar()) as usize;
+        let (rows, _) = self.overview_page_cells(0, count);
+        let start = bank * super::PADS_PER_BANK;
+        rows.into_iter()
+            .skip(start)
+            .take(super::PADS_PER_BANK)
+            .collect()
+    }
+
+    pub(super) fn overview_page_cells(
+        &self,
+        first: usize,
+        end: usize,
+    ) -> (Vec<Vec<tui::PatternCell>>, [u16; tui::BANKS]) {
+        let mut rows =
+            vec![vec![tui::PatternCell::default(); end.saturating_sub(first)]; super::PADS];
+        let mut active = [0u16; tui::BANKS];
+        let spacing = self.division.spacing();
+        for event in &self.events {
+            let pad = event.played.pad();
+            if pad >= super::PADS {
+                continue;
+            }
+            active[pad / super::PADS_PER_BANK] |= 1 << (pad % super::PADS_PER_BANK);
+            let cell = (event.played.tick() / spacing) as usize;
+            if !(first..end).contains(&cell) {
+                continue;
+            }
+            if let Some(mark) = rows[pad].get_mut(cell - first) {
+                mark.count += 1;
+                mark.off_grid |= !event.played.tick().is_multiple_of(spacing);
+            }
+        }
+        (rows, active)
+    }
 }
 
 /// No UI timer or cached transport fallback can fabricate a moving position.
@@ -162,6 +202,93 @@ pub(super) fn position(
 }
 
 impl super::App {
+    #[cfg(test)]
+    pub(super) fn pattern_overview(&self, keymap: &input::Keymap) -> tui::PatternOverview {
+        self.pattern_overview_at(keymap, 80)
+    }
+
+    pub(super) fn pattern_overview_at(
+        &self,
+        keymap: &input::Keymap,
+        width: u16,
+    ) -> tui::PatternOverview {
+        let mut view = tui::PatternOverview {
+            header: String::new(),
+            rows: vec![Vec::new(); super::PADS],
+            names: (0..super::PADS)
+                .map(|abs| {
+                    if self.pads.file[abs].is_some() {
+                        super::pad_name(&self.pads, abs)
+                    } else {
+                        "empty".into()
+                    }
+                })
+                .collect(),
+            active_pads: [0; tui::BANKS],
+            hide_empty: self.pattern_view.hide_empty_banks,
+            beat_cells: 1,
+            playhead: None,
+            first_cell: 0,
+            total_cells: 0,
+        };
+        let Some(raw) = &self.pads.pattern else {
+            let keys = self
+                .help_bindings(keymap, input::Action::PatternRecord)
+                .join("/");
+            view.header = format!(
+                "No A1 · {} record A1",
+                if keys.is_empty() { "none" } else { &keys }
+            );
+            return view;
+        };
+        let model = raw.checked().and_then(|raw| {
+            Model::new(
+                &raw,
+                self.pads.pattern_rows.as_deref(),
+                self.pattern_view.division,
+            )
+            .map_err(|error| error.to_string())
+        });
+        let model = match model {
+            Ok(model) => model,
+            Err(error) => {
+                view.header = format!("A1 unavailable: {error}");
+                return view;
+            }
+        };
+        let spacing = model.division.spacing();
+        let tick = position(
+            self.pattern_snapshot(),
+            u32::from(model.bars) * TICKS_PER_BAR,
+        );
+        let location = tick.map_or_else(
+            || format!("{} bars", model.bars),
+            |tick| {
+                format!(
+                    "bar {}/{} beat {}",
+                    tick / TICKS_PER_BAR + 1,
+                    model.bars,
+                    tick % TICKS_PER_BAR / 960 + 1
+                )
+            },
+        );
+        let quantize = if raw.quantize == "off" {
+            "quantize off".to_string()
+        } else {
+            format!("quantize {} {} %", raw.quantize, raw.strength)
+        };
+        view.header = format!("{} · {location} · {quantize}", model.division.label());
+        view.beat_cells = (960 / spacing) as usize;
+        view.playhead = tick.map(|tick| (tick / spacing) as usize);
+        view.total_cells = (u32::from(model.bars) * model.division.cells_per_bar()) as usize;
+        let page =
+            tui::pattern_overview_page_cells(width as usize, view.beat_cells, view.total_cells);
+        view.first_cell = view.playhead.unwrap_or(0) / page * page;
+        let end = (view.first_cell + page).min(view.total_cells);
+        (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
+        view
+    }
+
     pub(super) fn change_pattern_view(&mut self, next: bool) {
         if self.transport_input_blocked() || self.help_open {
             return;
@@ -170,7 +297,7 @@ impl super::App {
             self.post_notice(
                 super::Level::Info,
                 (
-                    "Open Pads to change the pattern view.".into(),
+                    "Open Pads or the A1 overview to change the pattern view.".into(),
                     std::time::Instant::now(),
                 ),
             );
@@ -316,6 +443,67 @@ impl super::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Overview shows all pad rows and source events".
+    #[test]
+    fn overview_shows_all_pad_rows_and_source_events() {
+        let raw = RawPattern::new(
+            1,
+            Grid::Off,
+            100,
+            vec![
+                Hit::new(0, 0, 100, 0).unwrap(),
+                Hit::new(1, 0, 80, 0).unwrap(),
+                Hit::new(120, 4, 90, 0).unwrap(),
+                Hit::new(0, 20, 70, 0).unwrap(),
+            ],
+        )
+        .unwrap();
+        let before = raw.clone();
+        let model = Model::new(&raw, None, Division::default()).unwrap();
+        let bank1 = model.overview_cells(0);
+        assert_eq!(bank1.len(), 16);
+        assert!(bank1.iter().all(|row| row.len() == 16));
+        assert_eq!(bank1[0][0].count, 2);
+        assert!(bank1[0][0].off_grid);
+        assert_eq!(bank1[4][0].count, 1);
+        assert!(bank1[4][0].off_grid);
+        assert!(bank1[1].iter().all(|cell| cell.count == 0));
+        let bank2 = model.overview_cells(1);
+        assert_eq!(bank2[4][0].count, 1);
+        assert!(bank2[0].iter().all(|cell| cell.count == 0));
+        let (page, active) = model.overview_page_cells(0, 4);
+        assert_eq!(page.len(), 128);
+        assert!(page.iter().all(|row| row.len() == 4));
+        assert_eq!(page[20][0].count, 1);
+        assert_eq!(active[0].count_ones(), 2);
+        assert_eq!(active[1].count_ones(), 1);
+        let (later, later_active) = model.overview_page_cells(4, 8);
+        assert!(later.iter().flatten().all(|cell| cell.count == 0));
+        assert_eq!(later_active, active, "bank counts cover the whole loop");
+        assert_eq!(raw, before);
+    }
+
+    /// Scenario "Overview filters hidden hits before seam wrapping".
+    #[test]
+    fn overview_filters_hidden_hits_before_seam_wrapping() {
+        let raw = RawPattern::new(
+            1,
+            Grid::Sixteenth,
+            100,
+            vec![
+                Hit::new(3839, 0, 100, 0).unwrap(),
+                Hit::new(4000, 1, 90, 0).unwrap(),
+            ],
+        )
+        .unwrap();
+        let model = Model::new(&raw, None, Division::default()).unwrap();
+        let rows = model.overview_cells(0);
+        assert_eq!(rows[0][0].count, 1);
+        assert_eq!(rows[0].iter().map(|cell| cell.count).sum::<usize>(), 1);
+        assert!(rows[1].iter().all(|cell| cell.count == 0));
+        assert_eq!(raw.hits().len(), 2, "projection keeps hidden raw rows");
+    }
 
     fn make_raw(bars: u8, grid: Grid, strength: u8, ticks: &[u32]) -> RawPattern {
         RawPattern::new(

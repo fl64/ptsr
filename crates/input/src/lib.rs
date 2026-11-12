@@ -608,6 +608,7 @@ pub enum Action {
     /// The learn mode on the screen (47): on and off.
     LearnToggle,
     ScreenPads,
+    ScreenPattern,
     ScreenSettings,
     ScreenFiles,
     ScreenChop,
@@ -744,6 +745,7 @@ pub enum Action {
     /// Change only the pattern display division on Pads.
     PatternViewPrev,
     PatternViewNext,
+    PatternOverviewEmptyToggle,
     /// Asks, then empties A1 (98b).
     PatternClear,
     /// Settings screen: row up/down, value back/forward.
@@ -803,6 +805,7 @@ impl Action {
                 _ => return None,
             },
             "screen.pads" => Self::ScreenPads,
+            "screen.pattern" => Self::ScreenPattern,
             "screen.settings" => Self::ScreenSettings,
             "screen.files" => Self::ScreenFiles,
             "screen.chop" => Self::ScreenChop,
@@ -951,6 +954,7 @@ impl Action {
             "pattern.controls" => Self::PatternControls,
             "pattern.view_prev" => Self::PatternViewPrev,
             "pattern.view_next" => Self::PatternViewNext,
+            "pattern.overview_empty_toggle" => Self::PatternOverviewEmptyToggle,
             "pattern.clear" => Self::PatternClear,
             "pattern.param_prev" => Self::PatternParamPrev,
             "pattern.param_next" => Self::PatternParamNext,
@@ -1063,6 +1067,7 @@ pub fn short_label(action: &str) -> &'static str {
         "transport.tempo_down_fine" => "bpm-.1",
         "transport.tempo" => "tempo",
         "screen.pads" => "pads",
+        "screen.pattern" => "rhythm",
         "screen.settings" => "setup",
         "screen.files" => "files",
         "screen.chop" => "chop",
@@ -1110,6 +1115,7 @@ pub fn short_label(action: &str) -> &'static str {
         "pattern.value_inc" => "A1 v+",
         "pattern.view_prev" => "view<",
         "pattern.view_next" => "view>",
+        "pattern.overview_empty_toggle" => "empty",
         "pattern.clear" => "clrA1",
         "pattern.bars" => "bars",
         "pattern.quantize" => "quant",
@@ -1279,6 +1285,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "screen.pads",
         label: "pads screen",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "screen.pattern",
+        label: "pattern overview",
         group: Group::Global,
         knob: false,
     },
@@ -1562,6 +1574,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "pattern.view_next",
         label: "next pattern view division",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.overview_empty_toggle",
+        label: "show or hide empty banks",
         group: Group::Global,
         knob: false,
     },
@@ -3125,6 +3143,8 @@ mod tests {
                         ),
                         Some(if edit {
                             Action::HelpPagePrev
+                        } else if screen == Screen::Pads {
+                            Action::PatternOverviewEmptyToggle
                         } else {
                             Action::HelpPageNext
                         })

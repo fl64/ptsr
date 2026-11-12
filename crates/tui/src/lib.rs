@@ -548,7 +548,7 @@ pub struct PadFeedback {
     pub corners: [Option<PadCorner>; 16],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PatternCell {
     pub count: usize,
     pub off_grid: bool,
@@ -577,8 +577,25 @@ pub struct PatternStrip {
     pub playhead: Option<usize>,
 }
 
+/// The visible time page for all banks at the current A1 view division.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternOverview {
+    pub header: String,
+    pub rows: Vec<Vec<PatternCell>>,
+    pub names: Vec<String>,
+    pub active_pads: [u16; BANKS],
+    pub hide_empty: bool,
+    pub beat_cells: usize,
+    pub playhead: Option<usize>,
+    pub first_cell: usize,
+    pub total_cells: usize,
+}
+
 /// Row labels `all` and `pad Q` take this many columns; each beat opens with a space (98i).
 const PATTERN_LABEL: usize = 5;
+fn overview_label_width(width: usize) -> usize {
+    (width * 38 / 100).clamp(28, 48)
+}
 
 /// Cells on one page at `width` columns: the most whole bars that fit (4/4), then half a
 /// bar, then one beat. Each beat takes a leading space and two columns per cell, and each
@@ -599,8 +616,36 @@ pub fn pattern_page_cells(width: usize, beat_cells: usize, total: usize) -> usiz
     }
 }
 
+pub fn pattern_overview_page_cells(width: usize, beat_cells: usize, total: usize) -> usize {
+    overview_page_layout(width, beat_cells, total).0
+}
+
+fn overview_page_layout(width: usize, beat_cells: usize, total: usize) -> (usize, usize) {
+    let beat_cells = beat_cells.max(1);
+    let bar_cells = 4 * beat_cells;
+    let preferred_label = overview_label_width(width);
+    let minimum_label = preferred_label.min(27);
+    let room = width.saturating_sub(minimum_label + 2);
+    // A number can have two digits. Keep a third cell between neighboring numbers.
+    let bars = ((room + 1) / (3 * bar_cells + 4)).min(total.max(bar_cells) / bar_cells);
+    let count = if bars > 0 {
+        bars * bar_cells
+    } else if 3 * (2 * beat_cells) < room {
+        2 * beat_cells
+    } else {
+        beat_cells
+    };
+    let separators = count / beat_cells - 1;
+    let needed = 3 * count + separators;
+    let label = preferred_label
+        .min(width.saturating_sub(needed + 2))
+        .max(minimum_label);
+    (count, label)
+}
+
 pub struct Pads {
     pub pattern: Option<PatternStrip>,
+    pub overview: Option<PatternOverview>,
     pub feedback: PadFeedback,
     /// Any real pad voice in the current ready project, across all banks; not hit flashes or FX tails.
     pub playing: bool,
@@ -1147,7 +1192,7 @@ fn draw_inner(
     // the help row explains Pitch Gate only where it acts: a linked slice with it on;
     // elsewhere the panel and F1 keep the state and the row goes back to ordinary help
     let pitch_gate = match screen {
-        Screen::Pads(pads) => pads
+        Screen::Pads(pads) if pads.overview.is_none() => pads
             .pads
             .get(pads.selected)
             .map(|pad| pad.pitch_gate)
@@ -1195,7 +1240,10 @@ fn draw_inner(
         // the project picker (11) is modal: it takes the body instead of the screen,
         // the help line below stays as on any screen
         Screen::ProjectPicker(p) => frame.render_widget(project_picker(p, s, body.width), body),
-        Screen::Pads(p) => pads(frame, body, p, s),
+        Screen::Pads(p) => match &p.overview {
+            Some(overview) => pattern_overview(frame, body, p, overview),
+            None => pads(frame, body, p, s),
+        },
         Screen::Fx(f) => fx(frame, body, f, s),
         Screen::Settings(st) => settings(frame, body, st, s),
         Screen::Files(f) => files(frame, body, f, s),
@@ -2665,6 +2713,231 @@ fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStrip) {
                 ..area
             },
         );
+    }
+}
+
+fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view: &PatternOverview) {
+    if area.width < 40 || area.height == 0 {
+        return;
+    }
+    let width = area.width as usize;
+    let count = view.rows.first().map_or(0, Vec::len);
+    let beat_cells = view.beat_cells.max(1);
+    let label_width = overview_page_layout(width, beat_cells, view.total_cells).1;
+    let grid_width = width - label_width - 2;
+    let bar_cells = 4 * beat_cells;
+    let first = view.first_cell;
+    let end = (first + count).min(view.total_cells);
+    let mut title = format!("PATTERN · A1 · B{}/8 · {}", pads.bank + 1, view.header);
+    if view.total_cells > 0 {
+        title.push_str(&format!(
+            " · steps {}-{}/{}",
+            first + 1,
+            end,
+            view.total_cells
+        ));
+    }
+    let selected = pads.bank * 16 + pads.selected;
+    if let (Some(name), Some(pad)) = (view.names.get(selected), pads.pads.get(pads.selected)) {
+        let detail = format!(" · {} {name}", pad.key.to_ascii_uppercase());
+        if name != "empty" && Span::raw(format!("{title}{detail}")).width() <= width {
+            title.push_str(&detail);
+        }
+    }
+    frame.render_widget(
+        Line::from(clip_label(&title, width)).fg(CYAN).bold(),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    if area.height < 2 {
+        return;
+    }
+
+    let mut index = vec![Span::styled(
+        "BANKS · pads with A1 hits ",
+        Style::new().fg(DIM),
+    )];
+    for (bank, &color) in BANK_COLORS.iter().enumerate() {
+        let hits = view.active_pads[bank].count_ones();
+        let label = if bank == pads.bank {
+            format!("[{}:{}] ", bank + 1, hits)
+        } else {
+            format!("{}:{} ", bank + 1, hits)
+        };
+        let style = if bank == pads.bank {
+            Style::new().fg(color).bold().underlined()
+        } else {
+            Style::new().fg(color)
+        };
+        index.push(Span::styled(label, style));
+    }
+    index.push(Span::styled(
+        if view.hide_empty {
+            "empty hidden"
+        } else {
+            "empty shown"
+        },
+        Style::new().fg(DIM),
+    ));
+    frame.render_widget(
+        Line::from(index),
+        Rect::new(area.x, area.y + 1, area.width, 1),
+    );
+    if area.height < 3 {
+        return;
+    }
+
+    let separators = (1..count)
+        .filter(|offset| (first + offset).is_multiple_of(beat_cells))
+        .count();
+    let usable = grid_width.saturating_sub(separators);
+    if count > 0 && usable < 2 * count {
+        frame.render_widget(
+            Line::from("Widen the terminal to show this view division.").fg(DIM),
+            Rect::new(area.x, area.y + 2, area.width, 1),
+        );
+        return;
+    }
+    let base = if count == 0 { 0 } else { usable / count };
+    let extra = if count == 0 { 0 } else { usable % count };
+    let widths = (0..count)
+        .map(|offset| base + ((offset + 1) * extra / count - offset * extra / count))
+        .collect::<Vec<_>>();
+    let mut numbers = vec![Span::raw(" ".repeat(label_width + 1))];
+    for (offset, &cell_width) in widths.iter().enumerate() {
+        let cell = first + offset;
+        if offset > 0 && cell.is_multiple_of(beat_cells) {
+            numbers.push(Span::styled(
+                if cell.is_multiple_of(bar_cells) {
+                    "│"
+                } else {
+                    " "
+                },
+                Style::new().fg(DIM),
+            ));
+        }
+        numbers.push(Span::styled(
+            format!("{:^cell_width$}", cell % bar_cells + 1),
+            Style::new().fg(DIM),
+        ));
+    }
+    frame.render_widget(
+        Line::from(numbers),
+        Rect::new(area.x, area.y + 2, area.width, 1),
+    );
+
+    let visible = (0..BANKS)
+        .filter(|&bank| !view.hide_empty || view.active_pads[bank] != 0 || bank == pads.bank)
+        .collect::<Vec<_>>();
+    let selected_pos = visible
+        .iter()
+        .position(|&bank| bank == pads.bank)
+        .unwrap_or(0);
+    let full_sections = (area.height as usize).saturating_sub(3) / 18;
+    let start = selected_pos.saturating_sub(full_sections.saturating_sub(1));
+    let mut y = area.y + 3;
+    for &bank in visible.iter().skip(start) {
+        if y >= area.bottom() {
+            break;
+        }
+        let color = BANK_COLORS[bank];
+        let current = bank == pads.bank;
+        let style = if current {
+            Style::new().fg(color).bold()
+        } else {
+            Style::new().fg(color)
+        };
+        let active_pads = view.active_pads[bank].count_ones();
+        let section_name = format!(
+            " BANK {} / 8 · {} {} with hits ",
+            bank + 1,
+            active_pads,
+            if active_pads == 1 { "pad" } else { "pads" }
+        );
+        let fill = width.saturating_sub(2 + Span::raw(section_name.as_str()).width());
+        let top = format!(
+            "{}{}{}{}",
+            if current { '┏' } else { '╭' },
+            section_name,
+            "━".repeat(fill),
+            if current { '┓' } else { '╮' }
+        );
+        frame.render_widget(
+            Line::from(top).style(style),
+            Rect::new(area.x, y, area.width, 1),
+        );
+        y += 1;
+
+        for row in 0..16 {
+            if y >= area.bottom() {
+                break;
+            }
+            let abs = bank * 16 + row;
+            let key = pads
+                .pads
+                .get(row)
+                .map_or('?', |pad| pad.key.to_ascii_uppercase());
+            let name = view.names.get(abs).map_or("empty", String::as_str);
+            let text = clip_label(&format!(" {key} {name}"), label_width);
+            let text_width = Span::raw(text.as_str()).width();
+            let text = format!("{text}{}", " ".repeat(label_width - text_width));
+            let selected = current && row == pads.selected;
+            let mut spans = vec![
+                Span::styled(if current { "┃" } else { "│" }, style),
+                Span::styled(text, Style::new().fg(if selected { CYAN } else { TEXT })),
+            ];
+            let cells = view.rows.get(abs);
+            for (offset, &cell_width) in widths.iter().enumerate() {
+                let cell = first + offset;
+                if offset > 0 && cell.is_multiple_of(beat_cells) {
+                    spans.push(Span::styled(
+                        if cell.is_multiple_of(bar_cells) {
+                            "│"
+                        } else {
+                            " "
+                        },
+                        Style::new().fg(DIM),
+                    ));
+                }
+                let mark = cells.and_then(|cells| cells.get(offset));
+                let glyph = match mark.map_or(0, |mark| mark.count) {
+                    0 => '·',
+                    1 if mark.is_some_and(|mark| mark.off_grid) => '~',
+                    1 => '■',
+                    count @ 2..=9 => char::from(b'0' + count as u8),
+                    _ => '+',
+                };
+                let shade = if (cell / beat_cells) % 2 == 1 {
+                    Style::new().bg(BEAT_BG)
+                } else {
+                    Style::new()
+                };
+                let cell_style = if view.playhead == Some(cell) {
+                    Style::new().fg(BG).bg(PLATE).bold()
+                } else {
+                    shade.fg(if glyph == '·' { STEP_EMPTY } else { WHITE })
+                };
+                let left = (cell_width - 1) / 2;
+                spans.push(Span::styled(" ".repeat(left), cell_style));
+                spans.push(Span::styled(glyph.to_string(), cell_style));
+                spans.push(Span::styled(" ".repeat(cell_width - left - 1), cell_style));
+            }
+            spans.push(Span::styled(if current { "┃" } else { "│" }, style));
+            frame.render_widget(Line::from(spans), Rect::new(area.x, y, area.width, 1));
+            y += 1;
+        }
+        if y < area.bottom() {
+            let bottom = format!(
+                "{}{}{}",
+                if current { '┗' } else { '╰' },
+                "━".repeat(width - 2),
+                if current { '┛' } else { '╯' }
+            );
+            frame.render_widget(
+                Line::from(bottom).style(style),
+                Rect::new(area.x, y, area.width, 1),
+            );
+            y += 1;
+        }
     }
 }
 
@@ -4358,6 +4631,29 @@ mod tests {
         assert_eq!(pattern_page_cells(20, 4, 32), 4);
     }
 
+    /// Scenario "Overview pages align to musical beats".
+    #[test]
+    fn overview_pages_align_to_musical_beats() {
+        for beat_cells in [1, 2, 3, 4, 6, 8, 12, 16] {
+            for width in [80, 120] {
+                for bars in [1, 2, 64] {
+                    let total = bars * 4 * beat_cells;
+                    let page = pattern_overview_page_cells(width, beat_cells, total);
+                    assert!(page > 0 && page <= total);
+                    assert_eq!(page % beat_cells, 0);
+                    for first in (0..total).step_by(page) {
+                        assert_eq!(first % beat_cells, 0);
+                        assert!((first + page).min(total) <= total);
+                    }
+                }
+            }
+        }
+        assert_eq!(pattern_overview_page_cells(80, 4, 64), 16);
+        assert_eq!(pattern_overview_page_cells(120, 4, 64), 16);
+        assert_eq!(pattern_overview_page_cells(80, 12, 192), 12);
+        assert_eq!(pattern_overview_page_cells(80, 16, 256), 16);
+    }
+
     fn strip_rows(screen: &Screen, status: &Status, w: u16, h: u16) -> Vec<String> {
         let groups = [HelpGroup {
             name: "PAD",
@@ -4908,6 +5204,7 @@ mod tests {
         ];
         let pads = Pads {
             pattern: None,
+            overview: None,
             bank: 1,
             pads: keys
                 .iter()
@@ -5449,6 +5746,7 @@ mod tests {
         ];
         let pads = Pads {
             pattern: None,
+            overview: None,
             bank: 2,
             pads: keys
                 .iter()
@@ -7864,6 +8162,7 @@ mod tests {
         ];
         let pads = Pads {
             pattern: None,
+            overview: None,
             bank: 0,
             pads: keys
                 .iter()
@@ -8576,6 +8875,7 @@ mod tests {
         };
         let pads = Pads {
             pattern: None,
+            overview: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -9287,6 +9587,7 @@ mod tests {
         ];
         Pads {
             pattern: None,
+            overview: None,
             bank: 0,
             pads: keys
                 .iter()
@@ -9645,6 +9946,7 @@ mod tests {
     fn files_preview_fills_the_strip() {
         let pads = Pads {
             pattern: None,
+            overview: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -9747,6 +10049,7 @@ mod tests {
     fn one_slice_is_said_in_plain_words() {
         let pads = Pads {
             pattern: None,
+            overview: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -10994,6 +11297,7 @@ mod tests {
     fn bank_row_with_fill_fits_narrow_terminals() {
         let p = Pads {
             pattern: None,
+            overview: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
