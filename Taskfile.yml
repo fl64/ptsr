@@ -49,6 +49,10 @@ tasks:
       - python3 -B -m unittest discover -s scripts -p test_check_names.py
       - python3 -B scripts/check_names.py --range origin/master..HEAD
 
+  file-size:
+    desc: Reject growth in the two large source files compared with origin/master
+    cmd: python3 -B scripts/check_file_growth.py --base origin/master
+
   hooks:install:
     desc: Enable commit title and signoff checks in this clone
     preconditions:
@@ -62,6 +66,7 @@ tasks:
     desc: Names, format, dependency licenses, Clippy, tests and benchmark before a commit
     cmds:
       - task: names
+      - task: file-size
       - cargo fmt --all --check
       - task: licenses
       - task: lint
