@@ -424,6 +424,8 @@ struct App {
     /// Whole-pad erasure on Pads outside a pass (98b).
     erase_pads: bool,
     pattern_view: pattern_view::State,
+    /// Pad key presses accepted for editing must stay silent through their release.
+    silent_pad_keys: [bool; PADS_PER_BANK],
     input_sources: input_sources::State,
     pads: pads::Pads,
     /// Output meters for the pads screen: bars, peak hold, the latching overload light.
@@ -1417,6 +1419,8 @@ impl App {
         let from = self.screen;
         self.screen = screen;
         self.pattern_view.overview = false;
+        self.pattern_view.edit = false;
+        self.pattern_view.selected_event = None;
         self.pattern_panel = None;
         self.erase_pads &= screen == Screen::Pads;
         self.edit = false;
@@ -4468,6 +4472,7 @@ fn main() -> std::io::Result<()> {
         pattern_panel: None,
         erase_pads: false,
         pattern_view: pattern_view::State::default(),
+        silent_pad_keys: [false; PADS_PER_BANK],
         input_sources: input_sources::State::default(),
         pads: pads::Pads::default(),
         meters: meters::Meters::default(),
@@ -5049,6 +5054,9 @@ fn graphics_support() -> bool {
 /// The hint line under the help groups; a short-lived message never removes it.
 fn hint_for(app: &App) -> Option<&'static str> {
     match app.screen {
+        Screen::Pads if app.pattern_view.edit => {
+            Some("A1 step edit: pads remove one hit; empty adds none. Ctrl+Z restores.")
+        }
         Screen::Pads if app.pattern_view.overview => Some(if app.pattern_view.hide_empty_banks {
             "A1 table: view only · pads play · Alt+H shows empty banks."
         } else {
@@ -7006,6 +7014,7 @@ fn describe(a: Action) -> String {
         Action::PatternOverviewEmptyToggle => {
             "A1 overview: show or hide empty bank sections.".into()
         }
+        Action::PatternStepEdit => "A1 overview: enter or leave step correction.".into(),
         Action::PatternClear => "clear all of A1 after a question. Ctrl+Z restores.".into(),
         Action::CursorMove { right, .. } => {
             format!(
@@ -7216,6 +7225,7 @@ fn help_section(a: Action) -> usize {
         | Action::PatternViewPrev
         | Action::PatternViewNext
         | Action::PatternOverviewEmptyToggle
+        | Action::PatternStepEdit
         | Action::PatternClear => 5,
         Action::ScreenPads
         | Action::ScreenPattern
@@ -7991,6 +8001,7 @@ mod tests {
             pattern_panel: None,
             erase_pads: false,
             pattern_view: pattern_view::State::default(),
+            silent_pad_keys: [false; PADS_PER_BANK],
             input_sources: input_sources::State::default(),
             pads: pads::Pads::default(),
             meters: meters::Meters::default(),
@@ -8097,6 +8108,7 @@ mod tests {
                 swap_in_hand: true,
                 pattern_pads: false,
                 erase_pads: false,
+                step_edit: false,
             },
         };
         assert_eq!(app.focus(), expected);

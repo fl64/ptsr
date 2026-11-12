@@ -589,6 +589,8 @@ pub struct PatternOverview {
     pub playhead: Option<usize>,
     pub first_cell: usize,
     pub total_cells: usize,
+    pub edit_cursor: Option<usize>,
+    pub event_choice: Option<(usize, usize)>,
 }
 
 /// Row labels `all` and `pad Q` take this many columns; each beat opens with a space (98i).
@@ -2728,8 +2730,22 @@ fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view: &PatternOv
     let bar_cells = 4 * beat_cells;
     let first = view.first_cell;
     let end = (first + count).min(view.total_cells);
-    let mut title = format!("PATTERN · A1 · B{}/8 · {}", pads.bank + 1, view.header);
-    if view.total_cells > 0 {
+    let mut title = if let Some(cursor) = view.edit_cursor {
+        let choice = match view.event_choice {
+            Some((index, count)) => format!("event {index}/{count}"),
+            None => "empty cell".into(),
+        };
+        format!(
+            "STEP EDIT · A1 · B{}/8 · step {}/{} · {choice} · {}",
+            pads.bank + 1,
+            cursor + 1,
+            view.total_cells,
+            view.header
+        )
+    } else {
+        format!("PATTERN · A1 · B{}/8 · {}", pads.bank + 1, view.header)
+    };
+    if view.total_cells > 0 && view.edit_cursor.is_none() {
         title.push_str(&format!(
             " · steps {}-{}/{}",
             first + 1,
@@ -2911,15 +2927,26 @@ fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view: &PatternOv
                 } else {
                     Style::new()
                 };
-                let cell_style = if view.playhead == Some(cell) {
+                let cell_style = if view.edit_cursor == Some(cell) && selected {
+                    Style::new().fg(BG).bg(CYAN).bold()
+                } else if view.edit_cursor == Some(cell) {
+                    Style::new().fg(WHITE).bg(BEAT_BG).bold()
+                } else if view.playhead == Some(cell) {
                     Style::new().fg(BG).bg(PLATE).bold()
                 } else {
                     shade.fg(if glyph == '·' { STEP_EMPTY } else { WHITE })
                 };
                 let left = (cell_width - 1) / 2;
-                spans.push(Span::styled(" ".repeat(left), cell_style));
+                let cursor = view.edit_cursor == Some(cell) && selected;
+                let mut before = " ".repeat(left);
+                let mut after = " ".repeat(cell_width - left - 1);
+                if cursor && cell_width >= 3 {
+                    before.replace_range(..1, "[");
+                    after.replace_range(after.len() - 1.., "]");
+                }
+                spans.push(Span::styled(before, cell_style));
                 spans.push(Span::styled(glyph.to_string(), cell_style));
-                spans.push(Span::styled(" ".repeat(cell_width - left - 1), cell_style));
+                spans.push(Span::styled(after, cell_style));
             }
             spans.push(Span::styled(if current { "┃" } else { "│" }, style));
             frame.render_widget(Line::from(spans), Rect::new(area.x, y, area.width, 1));

@@ -447,8 +447,7 @@ fn pattern_view_empty_state_uses_effective_recording_keys_without_creation() {
     assert_eq!(drive.app.session_dirty, before);
     assert_eq!(
         Action::parse("pattern.step_edit"),
-        None,
-        "no placeholder edit control"
+        Some(Action::PatternStepEdit)
     );
 }
 

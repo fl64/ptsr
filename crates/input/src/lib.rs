@@ -164,6 +164,8 @@ pub struct Mode {
     pub pattern_pads: bool,
     /// Whole-pad erasure outside a pass (98b): pads are silent targets.
     pub erase_pads: bool,
+    /// A1 correction uses pad presses as silent edit targets.
+    pub step_edit: bool,
 }
 
 impl Mode {
@@ -181,6 +183,7 @@ impl Mode {
             self.swap_in_hand,
             self.pattern_pads,
             self.erase_pads,
+            self.step_edit,
         ]
         .into_iter()
         .enumerate()
@@ -201,6 +204,7 @@ impl Mode {
             swap_in_hand: bits & (1 << 9) != 0,
             pattern_pads: bits & (1 << 10) != 0,
             erase_pads: bits & (1 << 11) != 0,
+            step_edit: bits & (1 << 12) != 0,
         }
     }
 }
@@ -235,7 +239,7 @@ impl Focus {
 
     /// Unpacks a snapshot, rejecting unknown screens, banks and reserved bits.
     pub fn unpack(bits: u32) -> Option<Self> {
-        if bits >> 19 != 0 {
+        if bits >> 20 != 0 {
             return None;
         }
         let screen = Screen::from_code(bits & 7)?;
@@ -267,6 +271,7 @@ pub fn route_pad(focus: Focus) -> PadRoute {
         || mode.copy_in_hand
         || mode.swap_in_hand
         || mode.erase_pads
+        || mode.step_edit
     {
         PadRoute::Ui
     } else {
@@ -497,7 +502,7 @@ mod focus_tests {
             .pack(),
             None
         );
-        for bit in 19..32 {
+        for bit in 20..32 {
             assert_eq!(Focus::unpack(1 << bit), None);
         }
         assert_eq!(Focus::unpack(u32::MAX), None);
@@ -746,6 +751,7 @@ pub enum Action {
     PatternViewPrev,
     PatternViewNext,
     PatternOverviewEmptyToggle,
+    PatternStepEdit,
     /// Asks, then empties A1 (98b).
     PatternClear,
     /// Settings screen: row up/down, value back/forward.
@@ -955,6 +961,7 @@ impl Action {
             "pattern.view_prev" => Self::PatternViewPrev,
             "pattern.view_next" => Self::PatternViewNext,
             "pattern.overview_empty_toggle" => Self::PatternOverviewEmptyToggle,
+            "pattern.step_edit" => Self::PatternStepEdit,
             "pattern.clear" => Self::PatternClear,
             "pattern.param_prev" => Self::PatternParamPrev,
             "pattern.param_next" => Self::PatternParamNext,

@@ -149,8 +149,12 @@ impl App {
                 Action::Back => self.ask = None,
                 // a pad pressed before the question must still let go, or a gate pad hangs
                 Action::PadRelease { .. } => {
-                    for cmd in self.pads.apply(a) {
-                        self.send(cmd);
+                    if let Action::PadRelease { pad } = a
+                        && !std::mem::take(&mut self.silent_pad_keys[pad])
+                    {
+                        for cmd in self.pads.apply(a) {
+                            self.send(cmd);
+                        }
                     }
                 }
                 _ => {}
@@ -200,6 +204,10 @@ impl App {
             Action::PatternViewPrev | Action::PatternViewNext => {
                 self.change_pattern_view(action == Action::PatternViewNext);
             }
+            Action::PatternStepEdit => self.toggle_step_edit(),
+            Action::EditValue { up, .. } if self.pattern_view.edit => self.move_step_cursor(up),
+            Action::ParamPrev if self.pattern_view.edit => self.choose_step_event(false),
+            Action::ParamNext if self.pattern_view.edit => self.choose_step_event(true),
             Action::PatternOverviewEmptyToggle
                 if self.screen == Screen::Pads
                     && self.pattern_view.overview
@@ -294,6 +302,7 @@ impl App {
                     None,
                 );
             }
+            Action::PadRelease { pad } if std::mem::take(&mut self.silent_pad_keys[pad]) => {}
             Action::Back if self.screen == Screen::Chop && self.plan.is_some() => self.plan = None,
             Action::ChopPlay if self.screen == Screen::Chop => {
                 // the cursor is the owner's: play starts from it every time, a stop leaves it
@@ -674,6 +683,10 @@ impl App {
             Action::Back if self.learning.is_some() => self.learning = None,
             // the help covers the screen: Esc closes it before the edit mode under it
             Action::Back if self.help_open => self.help_open = false,
+            Action::Back if self.pattern_view.edit => {
+                self.pattern_view.edit = false;
+                self.pattern_view.selected_event = None;
+            }
             Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
             // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
@@ -1009,6 +1022,7 @@ impl App {
                 swap_in_hand: self.pad_in_hand.is_some(),
                 pattern_pads: self.pattern_routes_pads(),
                 erase_pads: self.erase_pads,
+                step_edit: self.pattern_view.edit,
             },
         }
     }
@@ -1069,6 +1083,21 @@ impl App {
             (self.pads.bank * PADS_PER_BANK + pad, pad)
         };
         if self.ask.is_some() {
+            return None;
+        }
+        if sound == midi::PadSound::EditUnattempted && !self.pattern_view.edit {
+            return None;
+        }
+        if self.pattern_view.edit {
+            if !from_midi
+                || sound == midi::PadSound::EditUnattempted
+                || sound == (midi::PadSound::UiUnattempted { deferred: true })
+            {
+                if !from_midi {
+                    self.silent_pad_keys[local] = true;
+                }
+                self.step_pad_hit(abs);
+            }
             return None;
         }
         if self.erase_pads {
@@ -1270,6 +1299,12 @@ impl App {
                 ui_press,
                 sound,
             } => {
+                if self.pattern_view.edit
+                    && let Some(id) = ui_press
+                    && !self.pattern_view.midi_presses.insert((abs, id))
+                {
+                    return;
+                }
                 let tracked = released.and_then(|released| {
                     let Command::PatternRecordEnd { pass } =
                         self.audio.as_ref()?.pattern_capture.finish_for_save()?
@@ -1306,6 +1341,9 @@ impl App {
                 }
             }
             midi::Event::PadRelease { abs, direct } => {
+                self.pattern_view
+                    .midi_presses
+                    .retain(|(pad, _)| *pad != abs);
                 if direct {
                     self.midi_ui_held.retain(|_, pads| {
                         // The older direct release may precede a deferred UI press
@@ -1329,6 +1367,9 @@ impl App {
                 abs: _captured_abs,
                 id,
             } => {
+                self.pattern_view
+                    .midi_presses
+                    .retain(|(_, press)| *press != id);
                 if let Some(pads) = self.midi_ui_held.remove(&id) {
                     for hold in pads {
                         if !hold.deferred || self.audio_held[hold.abs].is_some() {
@@ -1905,8 +1946,12 @@ impl App {
             && held.is_held(pad)
         {
             held.filter(action);
-            for cmd in self.pads.apply(action) {
-                self.send(cmd);
+            if let Action::PadRelease { pad } = action
+                && !std::mem::take(&mut self.silent_pad_keys[pad])
+            {
+                for cmd in self.pads.apply(action) {
+                    self.send(cmd);
+                }
             }
             return false;
         }

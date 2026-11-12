@@ -665,18 +665,32 @@ impl App {
         if self.pattern_view.overview {
             rows.push((
                 "Pattern overview".into(),
-                "Bank sections form one list. Each shown bank has 16 pad rows. Pads still play."
-                    .into(),
+                if self.pattern_view.edit {
+                    "F7 leaves step correction. Pads select or remove one hit without sound."
+                } else {
+                    "Bank sections form one list. Each shown bank has 16 pad rows. Pads still play."
+                }
+                .into(),
             ));
             rows.push((
                 "A1 marks".into(),
-                "Square: hit. Tilde: off-grid hit. Number: several hits. Light plate: playback."
+                "Square: hit. Tilde: off-grid hit. Number: several hits. Light plate: playback. Cyan cell: edit cursor."
                     .into(),
             ));
+            if self.pattern_view.edit {
+                rows.push((
+                    "Step correction".into(),
+                    "J/L select time. I/K select an event. A pad removes its selected hit. Empty cells add nothing. Ctrl+Z restores."
+                        .into(),
+                ));
+            }
             rows.push((
                 "Bank scope".into(),
-                "Bank keys move through sections. The current bank stays visible. The table does not edit A1."
-                    .into(),
+                if self.pattern_view.edit {
+                    "Bank keys move the edit target. The selected time cell stays the same."
+                } else {
+                    "Bank keys move through sections. The current bank stays visible. The table does not edit A1."
+                }.into(),
             ));
             rows.push((
                 self.help_bindings(keymap, Action::PatternOverviewEmptyToggle)
@@ -1148,11 +1162,46 @@ impl App {
                 },
                 "bank".into(),
             );
+            if self.pattern_view.edit {
+                return vec![
+                    tui::HelpGroup {
+                        name: "STEP EDIT",
+                        items: vec![
+                            item(&[Action::PatternStepEdit, Action::Back], "leave"),
+                            item(
+                                &[
+                                    Action::EditValue {
+                                        up: false,
+                                        fine: false,
+                                    },
+                                    Action::EditValue {
+                                        up: true,
+                                        fine: false,
+                                    },
+                                ],
+                                "step",
+                            ),
+                        ],
+                    },
+                    tui::HelpGroup {
+                        name: "TARGET",
+                        items: vec![bank, item(&[Action::ParamPrev, Action::ParamNext], "event")],
+                    },
+                    tui::HelpGroup {
+                        name: "A1",
+                        items: vec![
+                            item(&[Action::Undo], "restore"),
+                            item(&[Action::PatternViewPrev, Action::PatternViewNext], "view"),
+                        ],
+                    },
+                ];
+            }
             return vec![
                 tui::HelpGroup {
                     name: "PATTERN",
                     items: vec![
                         item(&[Action::ScreenPads, Action::Back], "Pads"),
+                        item(&[Action::PatternStepEdit], "edit"),
                         item(&[Action::PatternViewPrev, Action::PatternViewNext], "view"),
                     ],
                 },

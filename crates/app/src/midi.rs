@@ -22,6 +22,7 @@ const SCAN: Duration = Duration::from_secs(1);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadSound {
     UiUnattempted { deferred: bool },
+    EditUnattempted,
     DirectAccepted,
     DirectRejected,
 }
@@ -209,7 +210,7 @@ impl UiSender {
             &event,
             Event::Action(_)
                 | Event::PadHit {
-                    sound: PadSound::UiUnattempted { .. },
+                    sound: PadSound::UiUnattempted { .. } | PadSound::EditUnattempted,
                     ..
                 }
         )
@@ -822,7 +823,11 @@ fn dispatch(
                     Event::PadHit {
                         abs,
                         velocity,
-                        sound: PadSound::UiUnattempted { deferred: waiting },
+                        sound: if focus.mode.step_edit {
+                            PadSound::EditUnattempted
+                        } else {
+                            PadSound::UiUnattempted { deferred: waiting }
+                        },
                         ui_press: ui_press.as_ref().map(|(id, _)| *id),
                     },
                     Some(stamp),
@@ -1023,6 +1028,7 @@ mod tests {
                 pattern_pads: false,
                 screen_learn: false,
                 erase_pads: false,
+                step_edit: false,
             },
         };
         let shared = Arc::new(Shared::default());

@@ -59,6 +59,16 @@ pub(super) struct State {
     pub division: Division,
     pub overview: bool,
     pub hide_empty_banks: bool,
+    pub edit: bool,
+    pub cursor_cell: usize,
+    pub cursor_visited: bool,
+    pub selected_event: Option<SelectedEvent>,
+    pub midi_presses: std::collections::HashSet<(usize, u64)>,
+}
+
+pub(super) struct SelectedEvent {
+    pub event: Event,
+    pub pattern: crate::session::PatternState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +158,17 @@ impl Model {
         cells
     }
 
+    fn events_in_cell(&self, pad: usize, cell: usize) -> Vec<Event> {
+        self.events
+            .iter()
+            .copied()
+            .filter(|event| {
+                event.played.pad() == pad
+                    && (event.played.tick() / self.division.spacing()) as usize == cell
+            })
+            .collect()
+    }
+
     #[cfg(test)]
     pub(super) fn overview_cells(&self, bank: usize) -> Vec<Vec<tui::PatternCell>> {
         let count = (u32::from(self.bars) * self.division.cells_per_bar()) as usize;
@@ -202,6 +223,204 @@ pub(super) fn position(
 }
 
 impl super::App {
+    fn step_model(&self) -> Result<Model, String> {
+        let raw = self
+            .pads
+            .pattern
+            .as_ref()
+            .ok_or("A1 is absent.")?
+            .checked()?;
+        Model::new(
+            &raw,
+            self.pads.pattern_rows.as_deref(),
+            self.pattern_view.division,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn toggle_step_edit(&mut self) {
+        if self.screen != input::Screen::Pads || !self.pattern_view.overview || self.help_open {
+            return;
+        }
+        if self.pattern_view.edit {
+            self.pattern_view.edit = false;
+            self.pattern_view.selected_event = None;
+            return;
+        }
+        self.flush_audio();
+        let refusal = if self.pads.pattern.is_none() {
+            Some("No A1: record A1 before step correction.")
+        } else if self.transport_input_blocked()
+            || self.edit
+            || self.pads.marking
+            || self.pad_in_hand.is_some()
+            || self.copy_in_hand.is_some()
+            || self.browser.in_hand.is_some()
+            || self.erase_pads
+            || self.pattern_panel.is_some()
+            || self.recording.is_some()
+        {
+            Some("Finish the current edit or recording before step correction.")
+        } else {
+            self.pattern_tidy_refusal()
+        };
+        if let Some(text) = refusal {
+            self.post_notice(super::Level::Warn, (text.into(), std::time::Instant::now()));
+            return;
+        }
+        let Ok(model) = self.step_model() else {
+            self.post_notice(
+                super::Level::Error,
+                (
+                    "A1 cannot open for correction.".into(),
+                    std::time::Instant::now(),
+                ),
+            );
+            return;
+        };
+        if !self.pattern_view.cursor_visited {
+            let tick = position(
+                self.pattern_snapshot(),
+                u32::from(model.bars) * TICKS_PER_BAR,
+            );
+            self.pattern_view.cursor_cell =
+                tick.map_or(0, |tick| tick / model.division.spacing()) as usize;
+            self.pattern_view.cursor_visited = true;
+        }
+        self.pattern_view.edit = true;
+        self.pattern_view.selected_event = None;
+    }
+
+    pub(super) fn move_step_cursor(&mut self, right: bool) {
+        if !self.pattern_view.edit || self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        let Ok(model) = self.step_model() else {
+            return;
+        };
+        let count = (u32::from(model.bars) * model.division.cells_per_bar()) as usize;
+        self.pattern_view.cursor_cell = if right {
+            (self.pattern_view.cursor_cell + 1).min(count.saturating_sub(1))
+        } else {
+            self.pattern_view.cursor_cell.saturating_sub(1)
+        };
+        self.pattern_view.selected_event = None;
+    }
+
+    pub(super) fn choose_step_event(&mut self, next: bool) {
+        if !self.pattern_view.edit || self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        let Ok(model) = self.step_model() else {
+            return;
+        };
+        let abs = self.pads.selected_abs();
+        let events = model.events_in_cell(abs, self.pattern_view.cursor_cell);
+        if events.is_empty() {
+            self.pattern_view.selected_event = None;
+            return;
+        }
+        let index = self
+            .pattern_view
+            .selected_event
+            .as_ref()
+            .and_then(|selected| events.iter().position(|event| *event == selected.event));
+        let index = match index {
+            Some(index) if next => (index + 1).min(events.len() - 1),
+            Some(index) => index.saturating_sub(1),
+            None if next => 0,
+            None => events.len() - 1,
+        };
+        self.pattern_view.selected_event = self.pads.pattern.clone().map(|pattern| SelectedEvent {
+            event: events[index],
+            pattern,
+        });
+    }
+
+    pub(super) fn step_pad_hit(&mut self, abs: usize) {
+        if !self.pattern_view.edit
+            || self.transport_input_blocked()
+            || self.help_open
+            || self.pattern_tidy_refusal().is_some()
+            || self.pattern_panel.is_some()
+            || self.erase_pads
+            || self.recording.is_some()
+        {
+            return;
+        }
+        self.pads.selected = abs % super::PADS_PER_BANK;
+        let Ok(model) = self.step_model() else {
+            return;
+        };
+        let events = model.events_in_cell(abs, self.pattern_view.cursor_cell);
+        if self
+            .pattern_view
+            .selected_event
+            .as_ref()
+            .is_some_and(|choice| {
+                choice.event.played.pad() == abs
+                    && (self.pads.pattern.as_ref() != Some(&choice.pattern)
+                        || !events.contains(&choice.event))
+            })
+        {
+            self.pattern_view.selected_event = self.pads.pattern.clone().and_then(|pattern| {
+                events
+                    .first()
+                    .copied()
+                    .map(|event| SelectedEvent { event, pattern })
+            });
+            return;
+        }
+        let selected = self
+            .pattern_view
+            .selected_event
+            .as_ref()
+            .and_then(|choice| {
+                (choice.pattern == *self.pads.pattern.as_ref()?)
+                    .then(|| events.iter().find(|event| **event == choice.event).copied())
+                    .flatten()
+            });
+        let target = match events.as_slice() {
+            [] => {
+                self.pattern_view.selected_event = None;
+                return;
+            }
+            [event] => Some(*event),
+            _ => selected,
+        };
+        let Some(target) = target else {
+            self.pattern_view.selected_event =
+                self.pads.pattern.clone().map(|pattern| SelectedEvent {
+                    event: events[0],
+                    pattern,
+                });
+            return;
+        };
+        let expected = self.pads.pattern.clone().unwrap();
+        let result = self.remove_step_event(target, &expected);
+        self.pattern_view.selected_event = None;
+        match result {
+            Ok(true) => self.post_notice(
+                super::Level::Done,
+                (
+                    format!(
+                        "A1: removed one hit from pad {}. Ctrl+Z restores.",
+                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase()
+                    ),
+                    std::time::Instant::now(),
+                ),
+            ),
+            Ok(false) => self.post_notice(
+                super::Level::Info,
+                (
+                    "A1 changed: select the hit again.".into(),
+                    std::time::Instant::now(),
+                ),
+            ),
+            Err(error) => self.post_notice(super::Level::Error, (error, std::time::Instant::now())),
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn pattern_overview(&self, keymap: &input::Keymap) -> tui::PatternOverview {
         self.pattern_overview_at(keymap, 80)
@@ -230,6 +449,11 @@ impl super::App {
             playhead: None,
             first_cell: 0,
             total_cells: 0,
+            edit_cursor: self
+                .pattern_view
+                .edit
+                .then_some(self.pattern_view.cursor_cell),
+            event_choice: None,
         };
         let Some(raw) = &self.pads.pattern else {
             let keys = self
@@ -283,9 +507,27 @@ impl super::App {
         view.total_cells = (u32::from(model.bars) * model.division.cells_per_bar()) as usize;
         let page =
             tui::pattern_overview_page_cells(width as usize, view.beat_cells, view.total_cells);
-        view.first_cell = view.playhead.unwrap_or(0) / page * page;
+        view.first_cell = if self.pattern_view.edit {
+            self.pattern_view.cursor_cell
+        } else {
+            view.playhead.unwrap_or(0)
+        } / page
+            * page;
         let end = (view.first_cell + page).min(view.total_cells);
         (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
+        if self.pattern_view.edit {
+            let events =
+                model.events_in_cell(self.pads.selected_abs(), self.pattern_view.cursor_cell);
+            if !events.is_empty() {
+                let index = self
+                    .pattern_view
+                    .selected_event
+                    .as_ref()
+                    .and_then(|choice| events.iter().position(|event| *event == choice.event))
+                    .map_or(usize::from(events.len() == 1), |index| index + 1);
+                view.event_choice = Some((index, events.len()));
+            }
+        }
         view
     }
 
@@ -303,7 +545,13 @@ impl super::App {
             );
             return;
         }
+        let old_tick = self.pattern_view.cursor_cell as u32 * self.pattern_view.division.spacing();
         self.pattern_view.division.change(next);
+        if self.pattern_view.edit {
+            self.pattern_view.cursor_cell =
+                (old_tick / self.pattern_view.division.spacing()) as usize;
+            self.pattern_view.selected_event = None;
+        }
     }
 
     /// The current ready project's transport, or nothing while a project changes.

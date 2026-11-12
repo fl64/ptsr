@@ -81,6 +81,13 @@ enum Mode {
     PatternOverviewMultiple,
     PatternOverviewHiddenHit,
     PatternOverviewSafety,
+    PatternStepEmpty,
+    PatternStepStraight,
+    PatternStepTriplet,
+    PatternStepOffGrid,
+    PatternStepMultiple,
+    PatternStepCursor,
+    PatternStepSafety,
     PatternErasePads,
     PitchGateOff,
     PitchGateA1,
@@ -161,6 +168,13 @@ impl Mode {
         Self::PatternOverviewMultiple,
         Self::PatternOverviewHiddenHit,
         Self::PatternOverviewSafety,
+        Self::PatternStepEmpty,
+        Self::PatternStepStraight,
+        Self::PatternStepTriplet,
+        Self::PatternStepOffGrid,
+        Self::PatternStepMultiple,
+        Self::PatternStepCursor,
+        Self::PatternStepSafety,
         Self::PatternErasePads,
         Self::PitchGateOff,
         Self::PitchGateA1,
@@ -241,6 +255,13 @@ impl Mode {
             Self::PatternOverviewMultiple => "pattern-overview-multiple",
             Self::PatternOverviewHiddenHit => "pattern-overview-hidden-hit",
             Self::PatternOverviewSafety => "pattern-overview-safety",
+            Self::PatternStepEmpty => "pattern-step-empty",
+            Self::PatternStepStraight => "pattern-step-straight",
+            Self::PatternStepTriplet => "pattern-step-triplet",
+            Self::PatternStepOffGrid => "pattern-step-off-grid",
+            Self::PatternStepMultiple => "pattern-step-multiple",
+            Self::PatternStepCursor => "pattern-step-cursor",
+            Self::PatternStepSafety => "pattern-step-safety",
             Self::PatternErasePads => "pattern-erase-pads",
             Self::PitchGateOff => "pitch-gate-off",
             Self::PitchGateA1 => "pitch-gate-a1",
@@ -265,6 +286,13 @@ impl Mode {
             | Self::PatternOverviewMultiple
             | Self::PatternOverviewHiddenHit
             | Self::PatternOverviewSafety
+            | Self::PatternStepEmpty
+            | Self::PatternStepStraight
+            | Self::PatternStepTriplet
+            | Self::PatternStepOffGrid
+            | Self::PatternStepMultiple
+            | Self::PatternStepCursor
+            | Self::PatternStepSafety
             | Self::PatternErasePads
             | Self::Tone
             | Self::Envelope
@@ -399,6 +427,13 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-overview-multiple",
                         "pattern-overview-hidden-hit",
                         "pattern-overview-safety",
+                        "pattern-step-empty",
+                        "pattern-step-straight",
+                        "pattern-step-triplet",
+                        "pattern-step-off-grid",
+                        "pattern-step-multiple",
+                        "pattern-step-cursor",
+                        "pattern-step-safety",
                         "pattern-erase-pads",
                         "pitch-gate-off",
                         "pitch-gate-a1",
@@ -735,6 +770,13 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternOverviewMultiple
         | Mode::PatternOverviewHiddenHit
         | Mode::PatternOverviewSafety => add_pattern_overview(&mut app, case.mode),
+        Mode::PatternStepEmpty
+        | Mode::PatternStepStraight
+        | Mode::PatternStepTriplet
+        | Mode::PatternStepOffGrid
+        | Mode::PatternStepMultiple
+        | Mode::PatternStepCursor
+        | Mode::PatternStepSafety => add_pattern_step(&mut app, case.mode),
         Mode::PatternErasePads => {
             add_pattern_view(&mut app, Mode::PatternViewMultiple);
             app.apply(Action::PatternErase);
@@ -858,6 +900,34 @@ fn add_pattern_overview(app: &mut App, mode: Mode) {
     }
 }
 
+fn add_pattern_step(app: &mut App, mode: Mode) {
+    match mode {
+        Mode::PatternStepEmpty => {
+            add_pattern(app, Mode::PatternEmpty);
+            app.pattern_view.overview = true;
+        }
+        Mode::PatternStepTriplet => add_pattern_overview(app, Mode::PatternOverviewTriplet),
+        Mode::PatternStepMultiple => add_pattern_overview(app, Mode::PatternOverviewMultiple),
+        Mode::PatternStepSafety => add_pattern_overview(app, Mode::PatternOverviewSafety),
+        _ => add_pattern_overview(app, Mode::PatternOverviewOffGrid),
+    }
+    app.pattern_view.edit = true;
+    app.pattern_view.cursor_visited = true;
+    app.pattern_view.cursor_cell = match mode {
+        Mode::PatternStepEmpty => 3,
+        Mode::PatternStepCursor => 20,
+        Mode::PatternStepOffGrid => 1,
+        _ => 0,
+    };
+    if mode == Mode::PatternStepMultiple {
+        app.pads.selected = 0;
+    }
+    if mode == Mode::PatternStepSafety {
+        app.pads.bank = 1;
+        app.pads.selected = 4;
+    }
+}
+
 fn add_recording(app: &mut App, mode: Mode) {
     let (audio, mut realtime) = audio::offline(48_000);
     app.audio = Some(audio);
@@ -917,7 +987,7 @@ fn render_app_layers(
     let pattern_recording = app.pattern_record_state();
     let kitty = !matches!(
         case.mode,
-        Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety
+        Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety | Mode::PatternStepSafety
     );
     let help_keys = app.full_help_recording_keys(keymap, kitty, pattern_recording);
     if app.help_open {
@@ -1011,7 +1081,7 @@ fn render_app_layers(
         save: app.save_status(),
         backend: (!matches!(
             case.mode,
-            Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety
+            Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety | Mode::PatternStepSafety
         ))
         .then_some("offline"),
         recording: app.recording.is_some(),
@@ -1020,7 +1090,7 @@ fn render_app_layers(
         load_peak: 15.0,
         xruns: if matches!(
             case.mode,
-            Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety
+            Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety | Mode::PatternStepSafety
         ) {
             3
         } else {
@@ -1167,6 +1237,13 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternOverviewMultiple
         | Mode::PatternOverviewHiddenHit
         | Mode::PatternOverviewSafety => require("PATTERN · A1"),
+        Mode::PatternStepEmpty
+        | Mode::PatternStepStraight
+        | Mode::PatternStepTriplet
+        | Mode::PatternStepOffGrid
+        | Mode::PatternStepMultiple
+        | Mode::PatternStepCursor
+        | Mode::PatternStepSafety => require("STEP EDIT · A1"),
         Mode::Help | Mode::Messages => {
             require("HELP");
             require("MESSAGES");
@@ -1283,6 +1360,11 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("Save failed");
             require("PATTERN · A1");
         }
+        Mode::PatternStepEmpty => require("empty cell"),
+        Mode::PatternStepTriplet => require("triplet"),
+        Mode::PatternStepOffGrid => require("~"),
+        Mode::PatternStepMultiple => require(" 2"),
+        Mode::PatternStepSafety => require("Save failed"),
         Mode::PatternSafety => {
             require("REC A1");
             for label in [
@@ -2154,6 +2236,13 @@ L="none"
                     | Mode::PatternOverviewMultiple
                     | Mode::PatternOverviewHiddenHit
                     | Mode::PatternOverviewSafety
+                    | Mode::PatternStepEmpty
+                    | Mode::PatternStepStraight
+                    | Mode::PatternStepTriplet
+                    | Mode::PatternStepOffGrid
+                    | Mode::PatternStepMultiple
+                    | Mode::PatternStepCursor
+                    | Mode::PatternStepSafety
             ) && !app
                 .pattern_record_state()
                 .is_some_and(|state| state.phase != engine::capture::Phase::Idle)
@@ -2364,6 +2453,73 @@ L="none"
         Mode::PatternOverviewHiddenHit,
         Mode::PatternOverviewSafety,
     ];
+
+    const STEP_MODES: [Mode; 7] = [
+        Mode::PatternStepEmpty,
+        Mode::PatternStepStraight,
+        Mode::PatternStepTriplet,
+        Mode::PatternStepOffGrid,
+        Mode::PatternStepMultiple,
+        Mode::PatternStepCursor,
+        Mode::PatternStepSafety,
+    ];
+
+    /// Scenario "Catalogue covers correction without devices".
+    /// Scenario "Edit screen keeps names, targets and safety visible".
+    /// Scenario "Edit cursor does not follow playback".
+    #[test]
+    fn correction_catalogue_has_both_sizes_and_keeps_the_selected_bank() {
+        let cases = matrix();
+        for mode in STEP_MODES {
+            for size in SIZES {
+                let case = Case {
+                    screen: Screen::Pads,
+                    mode,
+                    size,
+                };
+                assert!(
+                    cases.iter().any(|listed| listed.screen == case.screen
+                        && listed.mode == case.mode
+                        && listed.size == case.size),
+                    "{} is absent",
+                    case.name()
+                );
+                let (bytes, buffer) = render(case, &Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0);
+                assert!(!bytes.is_empty());
+                check_frame(case, &buffer);
+                let rows = buffer
+                    .content()
+                    .chunks(size.0 as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>();
+                assert!(rows.iter().any(|row| row.contains("STEP EDIT · A1")));
+                assert!(
+                    rows.iter()
+                        .any(|row| row.contains("BANKS · pads with A1 hits"))
+                );
+                if mode == Mode::PatternStepSafety {
+                    assert!(
+                        rows.iter().any(|row| row.contains("Q rec-2026")),
+                        "{}: {rows:#?}",
+                        case.name()
+                    );
+                } else {
+                    assert!(
+                        rows.iter().any(|row| row.contains("1 kick")),
+                        "{}: {rows:#?}",
+                        case.name()
+                    );
+                }
+            }
+        }
+        let mut missing = cases.clone();
+        let gone = missing
+            .iter()
+            .position(|case| case.mode == Mode::PatternStepMultiple)
+            .unwrap();
+        let case = missing.remove(gone);
+        assert!(validate(&missing).unwrap_err().contains(&case.name()));
+    }
 
     /// Scenario "Pattern key names its destination".
     #[test]

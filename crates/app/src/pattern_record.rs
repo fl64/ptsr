@@ -1352,7 +1352,7 @@ impl crate::App {
     }
 
     /// Tidy commands leave A1 alone while a pass owns it.
-    fn pattern_tidy_refusal(&self) -> Option<&'static str> {
+    pub(super) fn pattern_tidy_refusal(&self) -> Option<&'static str> {
         let refusal = "A1 edit blocked: end the recording pass first.";
         if self
             .pattern_record_state()
@@ -1365,6 +1365,63 @@ impl crate::App {
             Ok(Some(state)) if state.phase != Phase::Idle => Some(refusal),
             Ok(_) => None,
         }
+    }
+
+    /// Check the complete replacement before changing A1 or its Undo history.
+    pub(super) fn remove_step_event(
+        &mut self,
+        event: crate::pattern_view::Event,
+        expected: &crate::session::PatternState,
+    ) -> Result<bool, String> {
+        self.flush_audio();
+        if let Some(text) = self.pattern_tidy_refusal() {
+            return Err(text.into());
+        }
+        if self.pads.pattern.as_ref() != Some(expected) {
+            return Ok(false);
+        }
+        let rows = match self.pads.pattern_rows.as_ref() {
+            Some(rows) => rows.clone(),
+            None => (0..expected.hits.len())
+                .map(|slot| {
+                    RowId::new(slot, 1)
+                        .map(PlaybackRow::existing)
+                        .map_err(|error| error.to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        };
+        if rows.get(event.source).map(|row| row.id()) != Some(event.id)
+            || expected.hits.get(event.source).copied()
+                != Some([
+                    event.raw.tick(),
+                    event.raw.pad() as u32,
+                    event.raw.velocity() as u32,
+                    event.raw.gate_ticks(),
+                ])
+        {
+            return Ok(false);
+        }
+        let mut replacement = expected.clone();
+        let mut replacement_rows = rows.clone();
+        replacement.hits.remove(event.source);
+        replacement_rows.remove(event.source);
+        replacement
+            .checked()?
+            .compile_recorded(&replacement_rows)
+            .map_err(|error| error.to_string())?;
+        let before = Undo {
+            pattern: expected.clone(),
+            rows,
+        };
+        let command = self
+            .pads
+            .restore_recorded_pattern(&replacement, &replacement_rows)?;
+        if self.audio_alive().is_some() {
+            self.send(command);
+        }
+        self.push_pattern_step_named(before, "remove one A1 hit");
+        self.dirty();
+        Ok(true)
     }
 
     /// Removes the rows `pick` marks as one common-history step and publishes the rest.

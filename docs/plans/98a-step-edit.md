@@ -1,13 +1,14 @@
-# Plan 98a: step edit for A1 (deferred draft)
+# Plan 98a: step edit for A1 (historical draft)
 
 This file is a guide, not a requirement. It does not authorize code.
 Change 98 now covers only the rhythm view. The owner accepted that view on 2026-11-11.
 The step editor below was part of the first 98 proposal. It moves here so that change 98 can close with complete tests.
 The owner chose a full-bank A1 overview first on 2026-11-12. Change 98l adds that read-only screen.
-Review this editor draft after the overview. The current 98l change does not authorize editor code.
-Start a new OpenSpec change (for example `98a-step-edit`) before code. Review each requirement with the owner again.
+Change 98a implements one-hit correction after the overview. Its [archived proposal](../../openspec/changes/archive/2026-11-12-98a-step-edit/proposal.md) and the main specifications contain the accepted requirements.
+This draft records the earlier plan. Use the specifications for current behavior.
 
-Context: [the change 98 design](../../openspec/changes/98-pattern-screen/design.md) keeps the editor decisions, edge cases and open questions.
+Context: [the archived change 98 design](../../openspec/changes/archive/2026-11-12-98-pattern-screen/design.md) keeps the earlier editor decisions and edge cases.
+Its F5 edit key and Pads-grid layout conflict with the accepted 98l overview. The archived 98a change revises those choices.
 Change 98 replaced F7/F8 with Alt+Up/Alt+Down for the view. Read the keyboard requirements below with that change.
 
 ## patterns
