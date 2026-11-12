@@ -10,7 +10,12 @@ use std::{path::PathBuf, sync::Arc};
 enum Target {
     Master,
     Tempo,
+    Pattern(super::pattern_record::Setting),
     Mode {
+        abs: usize,
+        scope: Vec<usize>,
+    },
+    PitchGate {
         abs: usize,
         scope: Vec<usize>,
     },
@@ -115,7 +120,14 @@ impl App {
         let target = match action {
             Action::MasterVolume(_) => Target::Master,
             Action::TempoStep { .. } => Target::Tempo,
+            Action::PatternValueDec | Action::PatternValueInc => {
+                Target::Pattern(*super::pattern_record::Setting::ALL.get(self.pattern_panel?)?)
+            }
             Action::PadModeNext => Target::Mode {
+                abs: self.pads.selected_abs(),
+                scope: self.pads.scope_pads(),
+            },
+            Action::PadPitchGateToggle if self.screen == Screen::Pads => Target::PitchGate {
                 abs: self.pads.selected_abs(),
                 scope: self.pads.scope_pads(),
             },
@@ -189,6 +201,9 @@ impl App {
         let target = match *param {
             Param::MasterVolume => Target::Master,
             Param::Tempo => Target::Tempo,
+            param @ (Param::PatternBars | Param::PatternQuantize | Param::PatternStrength) => {
+                Target::Pattern(super::pattern_record::Setting::from_param(param)?)
+            }
             Param::PadVolume => self.pad_value_target(pads::Param::Volume),
             Param::PadPitch => self.pad_value_target(pads::Param::Pitch),
             Param::PadAttack | Param::PadDecay | Param::PadRelease => {
@@ -232,7 +247,9 @@ impl App {
             Target::Pad { abs, param, scope } if param.slot().is_none() => {
                 Some((*abs, scope, Some(*param)))
             }
-            Target::Mode { abs, scope } => Some((*abs, scope, None)),
+            Target::Mode { abs, scope } | Target::PitchGate { abs, scope } => {
+                Some((*abs, scope, None))
+            }
             _ => None,
         };
         if let Some((abs, scope, param)) = pad_target {
@@ -253,6 +270,10 @@ impl App {
                 Some(param) => Target::Pad {
                     abs: representative,
                     param,
+                    scope: scope.clone(),
+                },
+                None if matches!(before.target, Target::PitchGate { .. }) => Target::PitchGate {
+                    abs: representative,
                     scope: scope.clone(),
                 },
                 None => Target::Mode {
@@ -291,6 +312,14 @@ impl App {
                 c.view.position = Some(self.tempo_position());
                 c.numbers.push(self.transport.bpm);
             }
+            Target::Pattern(setting) => {
+                c.view.object = "A1".into();
+                c.view.parameter = setting.label().into();
+                c.view.formatted = setting.text(&self.pads);
+                c.view.position = Some(setting.position(&self.pads));
+                c.numbers.push(setting.index(&self.pads) as f64);
+                c.generations.push(u64::from(self.pads.pattern.is_some()));
+            }
             Target::Master => {
                 c.view.object = "Master".into();
                 c.view.parameter = "volume".into();
@@ -300,10 +329,13 @@ impl App {
                 );
                 c.numbers.push(self.master_db as f64);
             }
-            Target::Mode { abs, scope } => {
+            Target::Mode { abs, scope } | Target::PitchGate { abs, scope } => {
                 c.view.object = format!("pad {}", bank_key(abs));
-                c.view.parameter = "mode".into();
-                c.view.formatted = if self.pads.gate[abs] {
+                let pitch_gate = matches!(c.target, Target::PitchGate { .. });
+                c.view.parameter = if pitch_gate { "Pitch Gate" } else { "mode" }.into();
+                c.view.formatted = if pitch_gate {
+                    super::view::pitch_gate(&self.pads, abs).description()
+                } else if self.pads.gate[abs] {
                     "gate"
                 } else {
                     "one-shot"

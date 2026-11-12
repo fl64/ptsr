@@ -8,7 +8,7 @@ use std::sync::atomic::{
 };
 
 use engine::rt::{ProjectCommand, ProjectState, Realtime, Stats};
-use engine::{Engine, Sample};
+use engine::{Engine, Retired};
 use jack::PortFlags;
 use serde::{Deserialize, Serialize};
 
@@ -29,9 +29,10 @@ pub struct Audio {
     pub project: Arc<ProjectState>,
     /// Commands from the MIDI thread; taken by it once.
     pub midi_commands: Option<rtrb::Producer<ProjectCommand>>,
-    /// Samples the audio thread let go of; dropped here, outside the audio thread.
-    garbage: rtrb::Consumer<Arc<Sample>>,
+    /// Sample and pattern references dropped outside the audio thread.
+    garbage: rtrb::Consumer<Retired>,
     pub stats: Arc<Stats>,
+    pub pattern_capture: crate::pattern_record::Capture,
     /// Audio stopped on its own: the JACK server went away or the device disappeared.
     pub stopped: Arc<AtomicBool>,
     /// JACK ports appeared or disappeared: connections need to be recomputed.
@@ -211,18 +212,26 @@ const QUEUE: usize = 1024;
 const GARBAGE: usize = 1024;
 
 /// An engine whose released samples come back through the returned queue.
-fn engine(sample_rate: u32) -> (Engine, rtrb::Consumer<Arc<Sample>>, Arc<AtomicUsize>) {
+fn engine(
+    sample_rate: u32,
+) -> (
+    Engine,
+    rtrb::Consumer<Retired>,
+    Arc<AtomicUsize>,
+    crate::pattern_record::Capture,
+) {
     let (tx, rx) = rtrb::RingBuffer::new(GARBAGE);
     let mut engine = Engine::new(sample_rate);
     engine.set_garbage(tx);
     let preview_pos = Arc::new(AtomicUsize::new(usize::MAX));
     engine.set_preview_pos(preview_pos.clone());
-    (engine, rx, preview_pos)
+    let capture = crate::pattern_record::Capture::new(&mut engine);
+    (engine, rx, preview_pos, capture)
 }
 
 #[cfg(test)]
 pub fn offline(sample_rate: u32) -> (Audio, Realtime) {
-    let (engine, garbage, preview_pos) = engine(sample_rate);
+    let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate);
     let (commands, midi_commands, consumers) = queues();
     let stats = Arc::new(Stats::default());
     let project = Arc::new(ProjectState::default());
@@ -235,6 +244,7 @@ pub fn offline(sample_rate: u32) -> (Audio, Realtime) {
     );
     let audio = Audio {
         backend: "offline",
+        pattern_capture,
         project,
         commands,
         midi_commands: Some(midi_commands),
@@ -455,7 +465,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
     let stopped = Arc::new(AtomicBool::new(false));
     let ports_changed = Arc::new(AtomicBool::new(false));
     let (commands, midi_commands, rx) = queues();
-    let (engine, garbage, preview_pos) = engine(sample_rate);
+    let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate);
     let recorder = Arc::new(Recorder::new(sample_rate as usize));
     let project = Arc::new(ProjectState::default());
     let process = JackProcess {
@@ -480,6 +490,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
 
     Ok(Audio {
         backend: "jack",
+        pattern_capture,
         project,
         commands,
         midi_commands: Some(midi_commands),
@@ -524,7 +535,7 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
 
     let build = |buffer: cpal::BufferSize| {
         let (commands, midi_commands, rx) = queues();
-        let (engine, garbage, preview_pos) = engine(sample_rate);
+        let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate);
         let project = Arc::new(ProjectState::default());
         let mut rt =
             Realtime::with_project(engine, rx, stats.clone(), sample_rate, project.clone());
@@ -580,6 +591,7 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
                     preview_pos,
                     recorder,
                     project,
+                    pattern_capture,
                 )
             })
     };
@@ -589,16 +601,18 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
     } else {
         cpal::BufferSize::Default
     };
-    let (stream, commands, midi_commands, garbage, preview_pos, recorder, project) = build(first)
-        .or_else(|e| {
-            log::warn!("cpal: buffer size {buffer_size} rejected ({e}), using system default");
-            build(cpal::BufferSize::Default)
-        })
-        .map_err(err)?;
+    let (stream, commands, midi_commands, garbage, preview_pos, recorder, project, pattern_capture) =
+        build(first)
+            .or_else(|e| {
+                log::warn!("cpal: buffer size {buffer_size} rejected ({e}), using system default");
+                build(cpal::BufferSize::Default)
+            })
+            .map_err(err)?;
     stream.play().map_err(err)?;
     log::info!("cpal: {sample_rate} Hz, {channels} ch, buffer {buffer_size}");
     Ok(Audio {
         backend: "cpal",
+        pattern_capture,
         project,
         commands,
         midi_commands: Some(midi_commands),

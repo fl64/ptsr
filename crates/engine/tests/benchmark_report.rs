@@ -600,6 +600,73 @@ fn benchmark_trace_escapes_csv_errors() {
 }
 
 #[test]
+fn benchmark_active_recording_and_full_erasure_keep_real_capture_and_sound_invariants() {
+    use support::recording::{Kind, Workload};
+    let setup = |send: &mut dyn FnMut(engine::rt::Command)| {
+        use engine::rt::Command;
+        send(Command::SetTempo { bpm: 172.0 });
+        send(Command::TransportPlay);
+        for pad in 0..engine::MAX_VOICES {
+            send(Command::PadPress { pad, velocity: 1.0 });
+            send(Command::SetPadPitch { pad, semitones: 7 });
+        }
+    };
+    for (kind, blocks) in [(Kind::Recording, 130), (Kind::Erasure, 1100)] {
+        let mut workload = Workload::new(kind, blocks, setup).unwrap();
+        for block in 0..blocks {
+            workload.prepare(block);
+            workload.process();
+            workload.collect().unwrap();
+            let snapshot = workload.snapshot();
+            assert_eq!(snapshot.phase, engine::capture::Phase::Recording);
+            if kind == Kind::Erasure {
+                assert_eq!(snapshot.erase_targets, [u64::MAX; 2]);
+            }
+        }
+        workload.release();
+        workload.process();
+        assert_eq!(workload.snapshot().erase_targets, [0, 0]);
+        workload.finish();
+        workload.process();
+        let evidence = workload.validate(blocks).unwrap();
+        assert_eq!(evidence.voices, 32);
+        assert_eq!(
+            (evidence.onsets, evidence.gates, evidence.erased),
+            if kind == Kind::Recording {
+                (4, 1, 0)
+            } else {
+                (0, 0, 4096)
+            }
+        );
+    }
+    assert!(Workload::new(Kind::Recording, 0, setup).is_err());
+    assert_eq!(support::recording::SAMPLE_RATE, 48000);
+    assert_eq!(support::recording::BLOCK, 128);
+}
+
+#[test]
+fn benchmark_active_maximum_check_cannot_hide_a_rare_wall_or_cpu_overrun() {
+    let mut samples = vec![timing(0.0002, 0.0001); 200];
+    assert!(!support::recording::maximum_exceeded(
+        &Report::new(&samples, BUDGET).unwrap()
+    ));
+    for peak in [timing(0.0016, 0.0001), timing(0.0002, 0.0016)] {
+        samples[0] = peak;
+        let report = Report::new(&samples, BUDGET).unwrap();
+        assert!(report.wall.p99 < BUDGET * 0.5 && report.cpu.p99 < BUDGET * 0.5);
+        assert!(support::recording::maximum_exceeded(&report));
+        for kind in [
+            support::recording::Kind::Recording,
+            support::recording::Kind::Erasure,
+        ] {
+            let output = text(kind.label(), &samples);
+            assert!(output.contains("max 80.00 %"));
+            assert!(output.contains("samples 200, >50 % 1"));
+        }
+    }
+}
+
+#[test]
 fn benchmark_rejects_invalid_summary_inputs() {
     assert!(Summary::new(&[], BUDGET).is_err());
     assert!(Report::new(&[], BUDGET).is_err());

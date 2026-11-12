@@ -300,6 +300,25 @@ How to verify:
 3. Controller: repeat target, rate, depth and delay changes through the parameter pages.
 4. Listen for movement and echoes in time, without clicks during tempo changes.
 
+### Self-contained projects (owner decision 2026-11-12, after 98c)
+
+Owner problem: a pad can use a file outside the project folder. When that file moves or the
+owner moves the project, the pad becomes `missing`.
+
+- Copy on load: when a file goes on a pad, the program copies it into `<project>/samples`.
+  One file goes there once. A file with the same name and other content gets `-2`, `-3`.
+  Recordings already go there.
+- Existing projects: on 2026-11-12 the owner's projects in `~/ptsr/projects` got their
+  outside files copied into `samples` by a one-time script, with a `project.toml` backup next
+  to each file. Projects from other places still need the copy on load or on open.
+- Later: a cleanup of files in `samples` that no pad uses, with a question.
+- Export and import: one `.ptsr` file, a tar.gz of the project folder. Import never writes
+  over a project. When the name exists, it asks and offers a name with a suffix, for example
+  `beat (2)`, that the owner can edit. The change needs an archive and a compression library.
+  Check their licenses before the proposal.
+- Project work as a whole (create, open, rename, copy, delete, export, import) needs a UX
+  design pass first. The owner asked to make it clear and easy. Start with user stories.
+
 ## 4. Later, not in this track
 
 Time stretch without a pitch change, multiband distortion and compression (OTT style),

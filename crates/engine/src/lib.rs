@@ -1,12 +1,17 @@
 //! Audio engine: voices and mixing. Knows nothing about the UI or the sound card:
 //! runs the same way in the JACK/cpal callback and in the offline render.
 
+pub mod capture;
 pub mod checks;
 pub mod filter;
 pub mod fx;
 pub mod offline;
+pub mod pattern;
 pub mod rt;
+mod sequencer;
 pub mod transport;
+
+use sequencer::Sequencer;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -100,8 +105,71 @@ pub enum Command {
     TransportPlay,
     TransportStop,
     TransportToggle,
+    /// Explicit pass commands use increasing identities within one project epoch.
+    PatternRecordStart {
+        pass: u64,
+    },
+    PatternRecordEnd {
+        pass: u64,
+    },
+    PatternRecordAck {
+        pass: u64,
+        sequence: u64,
+    },
+    PatternErase {
+        pass: u64,
+        enabled: bool,
+    },
+    /// A pass-owned target, including the one-loop fallback without key releases.
+    PatternEraseTarget {
+        pass: u64,
+        pad: usize,
+        one_loop: bool,
+    },
+    PatternEraseConsumed {
+        pass: u64,
+        slot: usize,
+        sequence: u64,
+    },
+    PatternGateConsumed {
+        pass: u64,
+        slot: usize,
+        sequence: u64,
+    },
+    /// Confirm the UI prefix without losing reservations accepted after its snapshot.
+    PatternRecordRows {
+        pass: u64,
+        sequence: u64,
+        captured_onsets: u32,
+        erased_rows: u64,
+        raw_rows: u32,
+    },
     SetMetronome {
         enabled: bool,
+    },
+    SetPattern {
+        pattern: Option<Arc<pattern::Pattern>>,
+    },
+    /// Publish recorded rows without releasing notes or changing their deadlines.
+    PublishRecordedPattern {
+        pattern: Arc<pattern::Pattern>,
+    },
+    PublishCapturedPattern {
+        pattern: Arc<pattern::Pattern>,
+        pass: u64,
+        sequence: u64,
+    },
+    /// Swap sounds and their compiled hit addresses at one callback boundary.
+    SwapPatternPads {
+        a: usize,
+        b: usize,
+        pattern: Option<Arc<pattern::Pattern>>,
+    },
+    /// Eligibility is captured at each sequenced onset, not on a sounding note.
+    SetPadPitchGate {
+        pad: usize,
+        enabled: bool,
+        linked_slice: bool,
     },
     Click {
         velocity: f32,
@@ -112,6 +180,16 @@ pub enum Command {
     },
     PadRelease {
         pad: usize,
+    },
+    PatternPadPress {
+        pass: u64,
+        pad: usize,
+        velocity: f32,
+        hold: Arc<capture::EraseHold>,
+    },
+    PatternPadRelease {
+        pad: usize,
+        hold: Arc<capture::EraseHold>,
     },
     SetPadMode {
         pad: usize,
@@ -231,6 +309,8 @@ struct Pad {
     sends_from: [f32; FX_SLOTS],
     /// The mute group (70): 0 is off; a hit cuts the other pads of the same group.
     group: u8,
+    pitch_gate: bool,
+    linked_slice: bool,
 }
 
 #[derive(Default)]
@@ -282,6 +362,44 @@ struct Voice {
     /// A preview that plays as this pad does (50); it is not the pad: a hit on the pad does
     /// not cut it.
     as_pad: Option<usize>,
+    sequenced: bool,
+    audible: bool,
+    gate_release: Option<u32>,
+    pitch_gate: bool,
+}
+
+/// References returned to the non-audio thread for destruction.
+#[derive(Debug)]
+pub enum Retired {
+    Sample(Arc<Sample>),
+    Pattern(Arc<pattern::Pattern>),
+    EraseHold(Arc<capture::EraseHold>),
+}
+
+impl From<Arc<Sample>> for Retired {
+    fn from(value: Arc<Sample>) -> Self {
+        Self::Sample(value)
+    }
+}
+
+impl From<Arc<pattern::Pattern>> for Retired {
+    fn from(value: Arc<pattern::Pattern>) -> Self {
+        Self::Pattern(value)
+    }
+}
+
+impl From<Arc<capture::EraseHold>> for Retired {
+    fn from(value: Arc<capture::EraseHold>) -> Self {
+        Self::EraseHold(value)
+    }
+}
+
+struct HeldErasureInput {
+    epoch: u64,
+    pass: u64,
+    pad: usize,
+    hold: Arc<capture::EraseHold>,
+    target: u64,
 }
 
 pub struct Engine {
@@ -289,6 +407,11 @@ pub struct Engine {
     pads: [Pad; PADS],
     click: Arc<Sample>,
     transport: transport::Clock,
+    count_in: transport::Clock,
+    sequencer: Sequencer,
+    capture: capture::Recorder,
+    erase_inputs: Vec<HeldErasureInput>,
+    pattern_hits: [u64; PADS],
     metro_pos: Option<usize>,
     metro_velocity: f32,
     master: f32,
@@ -308,7 +431,7 @@ pub struct Engine {
     preview_as: Option<usize>,
     started: u64,
     /// Samples the audio thread lets go of are sent back here to be freed elsewhere.
-    garbage: Option<rtrb::Producer<Arc<Sample>>>,
+    garbage: Option<rtrb::Producer<Retired>>,
     /// Where the preview plays, in frames; `usize::MAX` when it is silent.
     preview_pos: Option<Arc<AtomicUsize>>,
     /// Where the engine reports its output peaks for the UI meters.
@@ -319,19 +442,18 @@ pub struct Engine {
     switch_fade: Option<u32>,
     switch_clear: Option<(usize, usize)>,
     reset_pad: Option<usize>,
+    reset_pattern: bool,
 }
 
-/// Hands a sample the engine no longer needs to the garbage queue; without a queue
-/// (offline render, tests) it is simply dropped.
-fn retire(garbage: &mut Option<rtrb::Producer<Arc<Sample>>>, sound: Arc<Sample>) {
+/// The caller reserves a queue slot before removing an owned reference.
+fn retire(garbage: &mut Option<rtrb::Producer<Retired>>, value: impl Into<Retired>) {
     if let Some(g) = garbage {
-        // The caller reserves a slot before removing the reference from its owner.
-        assert!(g.push(sound).is_ok());
+        assert!(g.push(value.into()).is_ok());
     }
 }
 
 fn retire_slot(
-    garbage: &mut Option<rtrb::Producer<Arc<Sample>>>,
+    garbage: &mut Option<rtrb::Producer<Retired>>,
     sound: &mut Option<Arc<Sample>>,
 ) -> bool {
     if sound.is_none() {
@@ -377,9 +499,16 @@ impl Engine {
                 sends: [0.0; FX_SLOTS],
                 sends_from: [0.0; FX_SLOTS],
                 group: 0,
+                pitch_gate: true,
+                linked_slice: false,
             }),
             click: Arc::new(Sample::mono(click)),
             transport: transport::Clock::default(),
+            count_in: transport::Clock::default(),
+            sequencer: Sequencer::default(),
+            capture: capture::Recorder::default(),
+            erase_inputs: Vec::with_capacity(pattern::MAX_HITS),
+            pattern_hits: [0; PADS],
             metro_pos: None,
             metro_velocity: 1.0,
             master: 1.0,
@@ -407,11 +536,50 @@ impl Engine {
             switch_fade: None,
             switch_clear: None,
             reset_pad: None,
+            reset_pattern: false,
+        }
+    }
+
+    /// Allocate capture feedback before audio processing. Drain events outside the callback.
+    pub fn enable_capture(&mut self) -> rtrb::Consumer<capture::Event> {
+        self.capture.enable()
+    }
+
+    /// Clone the retained Gate reader during setup, before moving the engine to audio.
+    pub fn capture_recovery(&self) -> Option<Arc<capture::Recovery>> {
+        self.capture.recovery()
+    }
+
+    /// Accepted recording state. Finishing retains the end position until acknowledgement.
+    pub fn recording(&self) -> capture::Snapshot {
+        let mut state = self.capture.snapshot(self.transport.state.ticks);
+        if self.capture.counting() {
+            state.ticks = self.count_in.state.ticks;
+            let beat = ((state.ticks + self.tick_step() * 0.5 + 1e-9)
+                / transport::TICKS_PER_QUARTER)
+                .floor() as u8;
+            state.count_in_beat = 4 - beat.min(3);
+        }
+        state
+    }
+
+    fn begin_after_count_in(&mut self) {
+        if self.capture.counting()
+            && self.count_in.frames_until(
+                4.0 * transport::TICKS_PER_QUARTER,
+                f64::from(self.sample_rate),
+            ) == 0
+        {
+            self.count_in.stop();
+            let run = self.sequencer.restart();
+            self.capture.set_run(run);
+            self.transport.play();
+            self.capture.begin_recording();
         }
     }
 
     /// Where the audio thread sends samples it lets go of; the other end drops them.
-    pub fn set_garbage(&mut self, garbage: rtrb::Producer<Arc<Sample>>) {
+    pub fn set_garbage(&mut self, garbage: rtrb::Producer<Retired>) {
         self.garbage = Some(garbage);
     }
 
@@ -426,9 +594,46 @@ impl Engine {
         self.stats = Some(stats);
     }
 
+    fn close_erasure(&mut self, pass: u64) {
+        if pass == self.recording().pass {
+            self.capture
+                .set_erasing(pass, false, self.transport.state.ticks);
+            self.capture.commit_closed(
+                self.sequencer.pattern.as_deref(),
+                self.transport.state.ticks,
+            );
+        }
+    }
+
+    fn can_start_voice(&self) -> bool {
+        self.garbage.as_ref().is_none_or(|g| g.slots() > 0)
+            || self.voices.iter().any(|voice| voice.sound.is_none())
+    }
+
     /// Whether the garbage queue can accept the references released by a command.
     pub fn can_handle(&self, cmd: &Command) -> bool {
         let needed = match cmd {
+            Command::PatternPadPress { pass, pad, .. } => {
+                if *pad >= PADS || *pass == 0 || *pass != self.recording().pass {
+                    1
+                } else if self.capture.erasing() && self.erase_inputs.len() < pattern::MAX_HITS {
+                    0
+                } else {
+                    1 + usize::from(
+                        !self.capture.erasing() && self.voices.iter().all(|v| v.sound.is_some()),
+                    )
+                }
+            }
+            Command::PatternPadRelease { .. } => 1,
+            Command::PadPress { .. } if self.capture.erasing() => 0,
+            Command::PublishCapturedPattern { .. } => 1,
+            Command::PublishRecordedPattern { .. } if !self.capture.accepts_publication(None) => 1,
+            Command::SwapPatternPads { a, b, pattern } if *a >= PADS || *b >= PADS || a == b => {
+                usize::from(pattern.is_some())
+            }
+            Command::SetPattern { .. }
+            | Command::PublishRecordedPattern { .. }
+            | Command::SwapPatternPads { .. } => usize::from(self.sequencer.pattern.is_some()),
             Command::SetPadSound { pad, sound } => {
                 if *pad < PADS {
                     usize::from(self.pads[*pad].sound.is_some())
@@ -438,9 +643,7 @@ impl Engine {
             }
             Command::Preview { sound: Some(_), .. }
             | Command::Click { .. }
-            | Command::PadPress { .. } => {
-                usize::from(self.voices.iter().all(|v| v.sound.is_some()))
-            }
+            | Command::PadPress { .. } => return self.can_start_voice(),
             _ => 0,
         };
         self.garbage.as_ref().is_none_or(|g| g.slots() >= needed)
@@ -449,14 +652,33 @@ impl Engine {
     pub fn can_discard(&self, cmd: &Command) -> bool {
         let needed = matches!(
             cmd,
-            Command::SetPadSound { sound: Some(_), .. } | Command::Preview { sound: Some(_), .. }
+            Command::SetPadSound { sound: Some(_), .. }
+                | Command::Preview { sound: Some(_), .. }
+                | Command::SetPattern {
+                    pattern: Some(_),
+                    ..
+                }
+                | Command::PublishRecordedPattern { .. }
+                | Command::PublishCapturedPattern { .. }
+                | Command::PatternPadPress { .. }
+                | Command::PatternPadRelease { .. }
+                | Command::SwapPatternPads {
+                    pattern: Some(_),
+                    ..
+                }
         );
         !needed || self.garbage.as_ref().is_none_or(|g| g.slots() > 0)
     }
 
     /// Begin a project transition without releasing samples on the audio thread.
     pub fn switch_project(&mut self) {
+        self.capture.reset(self.recording().epoch);
+        self.count_in.stop();
         self.transport = transport::Clock::default();
+        self.sequencer.reset();
+        self.sequencer.dropped = 0;
+        self.pattern_hits.fill(0);
+        self.reset_pattern = true;
         for v in &mut self.voices {
             if v.sound.is_some() && v.fade.is_none_or(|f| f > self.fade_len) {
                 if let Some(f) = v.fade {
@@ -494,7 +716,13 @@ impl Engine {
             }
             self.reset_pad = (cursor < PADS).then_some(cursor);
         }
-        self.switch_clear.is_none() && self.reset_pad.is_none()
+        if self.reset_pattern && self.garbage.as_ref().is_none_or(|g| g.slots() > 0) {
+            if let Some(pattern) = self.sequencer.pattern.take() {
+                retire(&mut self.garbage, pattern);
+            }
+            self.reset_pattern = false;
+        }
+        self.switch_clear.is_none() && self.reset_pad.is_none() && !self.reset_pattern
     }
 
     fn reset_pad_settings(p: &mut Pad) {
@@ -512,6 +740,8 @@ impl Engine {
         p.sends = [0.0; FX_SLOTS];
         p.sends_from = [0.0; FX_SLOTS];
         p.group = 0;
+        p.pitch_gate = true;
+        p.linked_slice = false;
     }
 
     /// Retire sample references in an obsolete command.
@@ -519,64 +749,257 @@ impl Engine {
         match cmd {
             Command::SetPadSound { sound: Some(s), .. }
             | Command::Preview { sound: Some(s), .. } => retire(&mut self.garbage, s),
+            Command::SetPattern { pattern: Some(p) }
+            | Command::PublishRecordedPattern { pattern: p }
+            | Command::PublishCapturedPattern { pattern: p, .. }
+            | Command::SwapPatternPads {
+                pattern: Some(p), ..
+            } => retire(&mut self.garbage, p),
+            Command::PatternPadPress { hold, .. } | Command::PatternPadRelease { hold, .. } => {
+                hold.reject();
+                retire(&mut self.garbage, hold);
+            }
             _ => {}
         }
     }
 
+    fn poll_erasure_releases(&mut self) {
+        if self.erase_inputs.is_empty() {
+            return;
+        }
+        let state = self.capture.snapshot(self.transport.state.ticks);
+        let mut index = 0;
+        while index < self.erase_inputs.len() {
+            let input = &self.erase_inputs[index];
+            let live = input.epoch == state.epoch
+                && input.pass == state.pass
+                && self.capture.erasing()
+                && self.capture.held_target(input.pad) == Some(input.target);
+            let released = input.hold.released();
+            if live && released {
+                self.capture
+                    .release_target(input.pass, input.pad, self.transport.state.ticks);
+            }
+            if (!live || released) && self.garbage.as_ref().is_none_or(|g| g.slots() > 0) {
+                let input = self.erase_inputs.swap_remove(index);
+                retire(&mut self.garbage, input.hold);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
     pub fn transport(&self) -> transport::Snapshot {
-        self.transport.state
+        transport::Snapshot {
+            pattern_ticks: if self.reset_pattern {
+                0
+            } else {
+                self.sequencer
+                    .pattern
+                    .as_ref()
+                    .map_or(0, |p| p.loop_ticks())
+            },
+            dropped_hits: self.sequencer.dropped,
+            ..self.transport.state
+        }
     }
 
     /// Pad and preview starts use `offset`; transport controls apply at the block boundary.
     pub fn handle(&mut self, offset: usize, cmd: Command) {
+        self.capture.set_step(self.tick_step());
         match cmd {
             Command::SetTempo { bpm } => {
                 if let Some(bpm) = transport::tempo(bpm) {
                     self.transport.state.bpm = bpm;
+                    self.count_in.state.bpm = bpm;
+                    self.capture.set_step(self.tick_step());
                 }
             }
-            Command::TransportPlay => self.transport.play(),
-            Command::TransportStop => self.transport.stop(),
+            Command::TransportPlay => {
+                self.capture.cancel_count_in();
+                self.count_in.stop();
+                if !self.transport.state.playing {
+                    let run = self.sequencer.restart();
+                    self.capture.set_run(run);
+                }
+                self.transport.play();
+            }
+            Command::TransportStop => {
+                self.close_erasure(self.recording().pass);
+                self.capture.stop(self.transport.state.ticks);
+                self.count_in.stop();
+                self.stop_pattern();
+            }
             Command::TransportToggle => {
+                self.capture.cancel_count_in();
+                self.count_in.stop();
                 if self.transport.state.playing {
-                    self.transport.stop();
+                    self.close_erasure(self.recording().pass);
+                    self.capture.stop(self.transport.state.ticks);
+                    self.stop_pattern();
                 } else {
+                    let run = self.sequencer.restart();
+                    self.capture.set_run(run);
                     self.transport.play();
                 }
             }
+            Command::PatternRecordStart { pass } => {
+                let transport = self.transport();
+                let accepted = self.capture.start(
+                    pass,
+                    transport.ticks,
+                    transport.pattern_ticks,
+                    transport.playing,
+                    self.sequencer.pattern.as_ref().map_or(0, |p| p.raw_rows()),
+                );
+                if accepted && !transport.playing {
+                    self.count_in.stop();
+                    self.count_in.state.bpm = transport.bpm;
+                    self.count_in.state.metronome = true;
+                    self.count_in.play();
+                }
+            }
+            Command::PatternRecordEnd { pass } => {
+                self.close_erasure(pass);
+                self.capture.finish(pass, self.transport.state.ticks);
+                if !self.capture.counting() {
+                    self.count_in.stop();
+                }
+            }
+            Command::PatternRecordAck { pass, sequence } => {
+                self.capture.acknowledge(pass, sequence);
+            }
+            Command::PatternErase { pass, enabled } => {
+                if !enabled {
+                    self.close_erasure(pass);
+                } else if self
+                    .sequencer
+                    .pattern
+                    .as_ref()
+                    .is_some_and(|p| p.rows.is_some())
+                {
+                    self.capture
+                        .set_erasing(pass, true, self.transport.state.ticks);
+                }
+            }
+            Command::PatternEraseTarget {
+                pass,
+                pad,
+                one_loop,
+            } => {
+                self.capture
+                    .target(pass, pad, self.transport.state.ticks, one_loop);
+            }
+            Command::PatternEraseConsumed {
+                pass,
+                slot,
+                sequence,
+            } => {
+                self.capture.consume_interval(pass, slot, sequence);
+            }
+            Command::PatternGateConsumed {
+                pass,
+                slot,
+                sequence,
+            } => {
+                self.capture.consume_gate(pass, slot, sequence);
+            }
+            Command::PatternRecordRows {
+                pass,
+                sequence,
+                captured_onsets,
+                erased_rows,
+                raw_rows,
+            } => {
+                self.capture
+                    .confirm_rows(pass, sequence, captured_onsets, erased_rows, raw_rows);
+            }
             Command::SetMetronome { enabled } => self.transport.state.metronome = enabled,
+            Command::SetPattern { pattern } => self.replace_pattern(pattern, true),
+            Command::PublishRecordedPattern { pattern } => {
+                if self.capture.accepts_publication(None) {
+                    self.replace_pattern(Some(pattern), false);
+                } else {
+                    retire(&mut self.garbage, pattern);
+                }
+            }
+            Command::PublishCapturedPattern {
+                pattern,
+                pass,
+                sequence,
+            } => {
+                if self.capture.accepts_publication(Some((pass, sequence))) {
+                    self.replace_pattern(Some(pattern), false);
+                } else {
+                    retire(&mut self.garbage, pattern);
+                }
+            }
+            Command::SwapPatternPads { a, b, pattern } if a < PADS && b < PADS && a != b => {
+                self.handle(0, Command::SwapPads { a, b });
+                self.replace_pattern(pattern, false);
+            }
+            Command::SwapPatternPads {
+                pattern: Some(p), ..
+            } => retire(&mut self.garbage, p),
+            Command::SetPadPitchGate {
+                pad,
+                enabled,
+                linked_slice,
+            } if pad < PADS => {
+                self.pads[pad].pitch_gate = enabled;
+                self.pads[pad].linked_slice = linked_slice;
+            }
             Command::Click { velocity } => {
                 let click = self.click.clone();
                 self.start(click, Region::WHOLE, None, offset, velocity, false);
             }
             Command::PadPress { pad, velocity } if pad < PADS => {
-                // a new hit cuts the previous voice of the same pad, and the other pads of
-                // its mute group with the same short fade (70)
-                self.fade_pad(pad);
-                let group = self.pads[pad].group;
-                if group != 0 {
-                    let fade = self.fade_len;
-                    for v in self.voices.iter_mut() {
-                        if let Some(p) = v.pad
-                            && p != pad
-                            && v.sound.is_some()
-                            && v.fade.is_none()
-                            && self.pads[p].group == group
-                        {
-                            v.fade = Some(fade);
-                            v.fade_total = fade;
-                        }
-                    }
-                }
-                if let Some(sound) = self.pads[pad].sound.clone() {
-                    let region = self.pads[pad].region;
-                    self.start(sound, region, Some(pad), offset, velocity, false);
-                }
+                self.manual_pad_press(offset, pad, velocity);
             }
             Command::PadRelease { pad } if pad < PADS => {
-                if self.pads[pad].mode == PadMode::Gate {
-                    self.release_pad(pad);
+                self.manual_pad_release(offset, pad);
+            }
+            Command::PatternPadPress {
+                pass,
+                pad,
+                velocity,
+                hold,
+            } => {
+                let state = self.recording();
+                if pad >= PADS || pass == 0 || pass != state.pass {
+                    hold.reject();
+                    retire(&mut self.garbage, hold);
+                } else if self.capture.erasing() {
+                    hold.accept(true);
+                    if self.erase_inputs.len() == pattern::MAX_HITS {
+                        self.capture.refuse_target();
+                        retire(&mut self.garbage, hold);
+                    } else {
+                        self.manual_pad_press(offset, pad, velocity);
+                        let target = if velocity.is_finite() && velocity > 0.0 {
+                            self.capture.held_target(pad).unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        self.erase_inputs.push(HeldErasureInput {
+                            epoch: state.epoch,
+                            pass,
+                            pad,
+                            hold,
+                            target,
+                        });
+                    }
+                } else {
+                    hold.accept(false);
+                    self.manual_pad_press(offset, pad, velocity);
+                    retire(&mut self.garbage, hold);
                 }
+            }
+            Command::PatternPadRelease { pad, hold } => {
+                if pad < PADS && hold.ordinary() {
+                    self.manual_pad_release(offset, pad);
+                }
+                retire(&mut self.garbage, hold);
             }
             Command::SetPadMode { pad, mode } if pad < PADS => self.pads[pad].mode = mode,
             Command::SetPadGain { pad, gain } if pad < PADS => self.pads[pad].gain = gain.max(0.0),
@@ -687,14 +1110,67 @@ impl Engine {
         }
     }
 
+    fn manual_pad_press(&mut self, offset: usize, pad: usize, velocity: f32) {
+        let step = self.tick_step();
+        let ticks = self.transport.state.ticks + offset as f64 * step;
+        if self.capture.erasing() {
+            if velocity.is_finite() && velocity > 0.0 {
+                self.capture
+                    .target(self.recording().pass, pad, ticks, false);
+            }
+        } else {
+            self.capture
+                .onset(pad, velocity, self.pads[pad].mode, ticks, step);
+            self.trigger_pad(pad, offset, velocity);
+        }
+    }
+
+    fn manual_pad_release(&mut self, offset: usize, pad: usize) {
+        let ticks = self.transport.state.ticks + offset as f64 * self.tick_step();
+        self.capture.release(pad, ticks);
+        if self.pads[pad].mode == PadMode::Gate {
+            self.release_pad(pad);
+        }
+    }
+
     fn fade_pad(&mut self, pad: usize) {
         let fade = self.fade_len;
         for v in self.voices.iter_mut() {
-            if v.sound.is_some() && v.pad == Some(pad) && v.fade.is_none() {
-                v.fade = Some(fade);
-                v.fade_total = fade;
+            if v.sound.is_some() && v.pad == Some(pad) {
+                self.sequencer.forget(v.started);
+                v.gate_release = None;
+                v.pitch_gate = false;
+                if v.fade.is_none() {
+                    v.fade = Some(fade);
+                    v.fade_total = fade;
+                }
             }
         }
+    }
+
+    fn trigger_pad(&mut self, pad: usize, offset: usize, velocity: f32) -> Option<usize> {
+        self.fade_pad(pad);
+        let group = self.pads[pad].group;
+        if group != 0 {
+            for v in &mut self.voices {
+                if let Some(p) = v.pad
+                    && p != pad
+                    && v.sound.is_some()
+                    && self.pads[p].group == group
+                {
+                    self.sequencer.forget(v.started);
+                    v.gate_release = None;
+                    v.pitch_gate = false;
+                    if v.fade.is_none() {
+                        v.fade = Some(self.fade_len);
+                        v.fade_total = self.fade_len;
+                    }
+                }
+            }
+        }
+        let sound = self.pads[pad].sound.clone()?;
+        let region = self.pads[pad].region;
+        Some(self.start(sound, region, Some(pad), offset, velocity, false))
     }
 
     /// A gate release: the voices fade over the pad's release time, not the short cut.
@@ -703,7 +1179,7 @@ impl Engine {
         let release = self.pads[pad].release_frames;
         let fade = if release == 0 { default_fade } else { release };
         for v in self.voices.iter_mut() {
-            if v.sound.is_some() && v.pad == Some(pad) && v.fade.is_none() {
+            if v.sound.is_some() && v.pad == Some(pad) && !v.sequenced && v.fade.is_none() {
                 v.fade = Some(fade);
                 v.fade_total = fade;
             }
@@ -751,7 +1227,7 @@ impl Engine {
         offset: usize,
         velocity: f32,
         preview: bool,
-    ) {
+    ) -> usize {
         let playing = |v: &&mut Voice| v.sound.is_some() && v.fade.is_none();
         // at most MAX_VOICES sounding voices: the oldest one starts fading
         if self.voices.iter_mut().filter(playing).count() >= MAX_VOICES
@@ -762,6 +1238,9 @@ impl Engine {
                 .min_by_key(|v| v.started)
         {
             let fade = self.fade_len;
+            self.sequencer.forget(oldest.started);
+            oldest.gate_release = None;
+            oldest.pitch_gate = false;
             oldest.fade = Some(fade);
             oldest.fade_total = fade;
         }
@@ -775,6 +1254,7 @@ impl Engine {
                     .min_by_key(|&i| self.voices[i].fade.unwrap_or(u32::MAX))
                     .unwrap_or(0)
             });
+        self.sequencer.forget(self.voices[slot].started);
         self.started += 1;
         if let Some(old) = self.voices[slot].sound.take() {
             retire(&mut self.garbage, old);
@@ -815,16 +1295,22 @@ impl Engine {
             started: self.started,
             fade_in: 0,
             as_pad: None,
+            sequenced: false,
+            audible: false,
+            gate_release: None,
+            pitch_gate: false,
             filter: filter::VoiceFilter::start(
                 pad.map_or(filter::Target::BYPASS, |p| self.pads[p].filter),
                 self.sample_rate,
             ),
         };
+        slot
     }
 
     /// Fills a block. Any block length; left and right have the same length. A block
     /// longer than the send buses is filled in parts.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.poll_erasure_releases();
         let n = left.len().min(right.len());
         let mut at = 0;
         while at < n {
@@ -834,21 +1320,17 @@ impl Engine {
         }
     }
 
-    fn process_part(&mut self, left: &mut [f32], right: &mut [f32]) {
-        let n = left.len().min(right.len());
-        let (left, right) = (&mut left[..n], &mut right[..n]);
-        left.fill(0.0);
-        right.fill(0.0);
+    fn mix_span(&mut self, left: &mut [f32], right: &mut [f32], start: usize, end: usize) {
+        let n = left.len();
         let bus = &mut self.bus[..n];
-        bus.fill([0.0; 2 * FX_SLOTS]);
         let fade_len = self.fade_len as f32;
         let env_step = self.env_step;
         for v in self.voices.iter_mut() {
             let Some(sound) = &v.sound else {
                 continue;
             };
-            if v.delay >= n {
-                v.delay -= n;
+            if v.delay >= end - start {
+                v.delay -= end - start;
                 continue;
             }
             let (l, r) = (&sound.left, sound.right.as_ref().unwrap_or(&sound.left));
@@ -883,8 +1365,8 @@ impl Engine {
             } else {
                 usize::MAX
             };
-            let mut i = v.delay;
-            while i < n && v.fade != Some(0) {
+            let mut i = start + v.delay;
+            while i < end && v.fade != Some(0) {
                 if v.pos >= v.end {
                     // the next turn of the loop takes the region as it is now
                     let Some(r) = looping else {
@@ -934,6 +1416,16 @@ impl Engine {
                     let drive = fixed_drive.unwrap_or_else(|| fx::Drive::new(d));
                     (sl, sr_) = (drive.apply(sl), drive.apply(sr_));
                 }
+                if v.sequenced && !v.audible {
+                    let master = self.master_from + (self.master - self.master_from) * t;
+                    let (l, r) = (sl * g * master, sr_ * g * master);
+                    if l.is_finite() && r.is_finite() && (l != 0.0 || r != 0.0) {
+                        v.audible = true;
+                        if let Some(pad) = v.pad {
+                            self.pattern_hits[pad] = v.started;
+                        }
+                    }
+                }
                 left[i] += sl * g;
                 right[i] += sr_ * g;
                 if sending {
@@ -969,13 +1461,13 @@ impl Engine {
                 retire_slot(&mut self.garbage, &mut v.sound);
             }
         }
-        for p in self.pads.iter_mut() {
-            p.gain_from = p.gain;
-            p.drive_from = p.drive;
-            p.sends_from = p.sends;
-        }
-        for i in 0..n {
-            if let Some(velocity) = self.transport.frame(self.sample_rate as f64) {
+        let clock = if self.capture.counting() {
+            &mut self.count_in
+        } else {
+            &mut self.transport
+        };
+        for i in start..end {
+            if let Some(velocity) = clock.frame(self.sample_rate as f64) {
                 self.metro_pos = Some(0);
                 self.metro_velocity = velocity;
             }
@@ -993,6 +1485,37 @@ impl Engine {
                 }
             }
         }
+    }
+
+    fn process_part(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let n = left.len().min(right.len());
+        let (left, right) = (&mut left[..n], &mut right[..n]);
+        left.fill(0.0);
+        right.fill(0.0);
+        self.bus[..n].fill([0.0; 2 * FX_SLOTS]);
+        let mut at = 0;
+        while at < n {
+            self.begin_after_count_in();
+            self.pattern_due();
+            let mut span = self.pattern_span(n - at);
+            if self.capture.counting() {
+                span = span.min(self.count_in.frames_until(
+                    4.0 * transport::TICKS_PER_QUARTER,
+                    f64::from(self.sample_rate),
+                ));
+            }
+            let end = at + span;
+            self.mix_span(left, right, at, end);
+            at = end;
+        }
+        self.begin_after_count_in();
+        self.capture.expire_targets(self.transport.state.ticks);
+        for p in &mut self.pads {
+            p.gain_from = p.gain;
+            p.drive_from = p.drive;
+            p.sends_from = p.sends;
+        }
+        let bus = &self.bus[..n];
         // the shared slots add their wet sound to the pads' own (56)
         if self.switch_clear.is_none() {
             for (k, slot) in self.slots.iter_mut().enumerate() {

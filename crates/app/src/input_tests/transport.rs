@@ -562,7 +562,7 @@ fn saved_transport_preferences_restore_stopped() {
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("playing") && !text.contains("ticks"));
         let saved = session::load_existing(&path).unwrap();
-        assert_eq!(saved.version, 4);
+        assert_eq!(saved.version, 5);
         assert_eq!((saved.bpm, saved.metronome), (172.3, true));
         let mut restored = Drive::offline();
         restored.app.apply_session(saved);
@@ -585,7 +585,7 @@ fn older_sessions_gain_transport_defaults_without_changing_pads() {
         assert_eq!((old.bpm, old.metronome), (120.0, false));
         session::save(&path, &old).unwrap();
         let new = session::load_existing(&path).unwrap();
-        assert_eq!(new.version, 4);
+        assert_eq!(new.version, 5);
         assert_eq!(new.pads, old.pads);
         assert_eq!(new.chops, old.chops);
         assert_eq!(new.master_db, -6);

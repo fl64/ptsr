@@ -106,14 +106,16 @@ With fewer than four strip rows, the splash SHALL show `ptsr` and the loading li
 
 ### Requirement: First sound ends the splash
 
-The first sounding keyboard/controller pad note, sample preview or started recording SHALL end the splash permanently and show the wave.
-A sound request SHALL end it only when the audio queue accepts it while the project is ready.
-No audio, a full queue, an unready project or a silent pad hit SHALL NOT end it.
-Keys or elapsed time alone SHALL NOT close it.
+The first sounding keyboard/controller pad note, sequenced pad note, sample preview or started recording SHALL end the splash permanently and show the wave. A manual request SHALL end it only when the audio queue accepts it while the project is ready. Rejected requests, absent audio, unready projects and silent events SHALL NOT end it. Keys or elapsed time alone SHALL NOT close it.
 
 #### Scenario: A pad hit during the splash
 - **WHEN** the splash shows and the owner hits pad `Q`
 - **THEN** pad `Q` plays at once and the strip shows the wave from then on
+
+#### Scenario: Sounding pattern notes end the splash without selecting a pad
+- **WHEN** an accepted current-project pattern note starts while the splash shows
+- **THEN** the strip changes to live output without changing the selected pad or input-source identity
+- **AND** an empty pattern, silent event or unready project does not close the splash
 
 ### Requirement: Splash screen and edit scope
 
@@ -185,12 +187,12 @@ Every screen SHALL use shared title composition. Badge colors SHALL remain yello
 
 ### Requirement: Existing mode badge labels
 
-Placement labels SHALL be `IN HAND`, `COPY`, `SWAP` or `ASSIGN`. Marking SHALL show `MARK` or `N MARKED`, editing `EDIT` with its page, learning `LEARN` and questions `ASK`. Recording SHALL show `REC` with elapsed time when space permits. Chop toggles SHALL show `LOOP` and `AS PAD`. Mark and assignment badges SHALL retain counts. Inactive states SHALL NOT produce these mode labels. Transport feedback SHALL remain distinct from pad playback. Patterns and controller panels remain out of scope.
+Placement labels SHALL be `IN HAND`, `COPY`, `SWAP` or `ASSIGN`. Marking SHALL show `MARK` or `N MARKED`, editing `EDIT` with its page, learning `LEARN` and questions `ASK`. Recording SHALL show `REC` with elapsed time when space permits. Chop toggles SHALL show `LOOP` and `AS PAD`. Mark and assignment badges SHALL retain counts. Inactive states SHALL NOT produce these mode labels. Transport feedback SHALL remain distinct from pad playback. Controller panels remain out of scope.
 
 #### Scenario: Every existing mode has its badge
 - **WHEN** each existing placement, marking, edit, learning, question, recording or Chop toggle state is active in a separate fixture
 - **THEN** its badge uses the specified label, page, count or elapsed time
-- **AND** transport feedback remains separate from pad-playback state without advertising patterns or a controller panel
+- **AND** transport feedback remains separate from pad-playback state without advertising a controller panel
 
 #### Scenario: Overlapping placements remain visible
 - **WHEN** more than one of file placement, copy and swap is pending
@@ -445,3 +447,239 @@ Generation SHALL NOT open audio or MIDI devices, change projects or require new 
 - **WHEN** a required screen/mode entry or supported size is absent from the catalogue matrix
 - **THEN** its coverage test fails and names the missing entry
 - **AND** ordinary catalogue generation does not change configuration or session files
+
+### Requirement: Accepted pattern clock feedback
+
+Every screen SHALL identify accepted A1 playback and its loop-relative bar and beat beside the existing transport feedback. It SHALL use one coherent current-project audio snapshot for clock position, pattern presence and length. Transport position SHALL remain distinct when it exceeds the loop length. Pending replacement SHALL NOT show a false accepted length. Without a pattern, no A1 label SHALL appear.
+
+#### Scenario: Pattern title follows the accepted loop across screens
+- **WHEN** A1 repeats while the owner switches screens, tempo changes or a replacement waits for acceptance
+- **THEN** the title follows accepted loop and transport positions without estimating time in the UI
+- **AND** snapshots from an old project cannot show its pattern or loop length
+
+### Requirement: Pattern feedback preserves layout and safety
+
+Pattern feedback SHALL extend the existing transport segment, not create a fourth badge or move rows. At 80 by 26 and 120 by 40, screen identity, clock, questions, active pad mode and save or audio warnings SHALL keep their existing priority. Compact pattern identity SHALL use `A1`. The offline catalogue SHALL cover active, stopped, empty and pending pattern states.
+
+#### Scenario: Pattern titles retain safety and actual playback slots
+- **WHEN** pattern feedback competes with long names, ASK, EDIT, placement, recording or save and audio warnings at either supported size
+- **THEN** the existing priority rules keep required feedback readable inside its bounds
+- **AND** PLAY and LISTEN retain their ten-cell slots and shared rows stay fixed
+
+### Requirement: Visible Pitch Gate state
+
+The selected pad's mode row SHALL distinguish Off, On for A1 only, and On but inapplicable. When On, source or pitch restrictions SHALL have a text reason, not color alone. The Pads help row SHALL explain Pitch Gate only for a linked slice with Pitch Gate On. Scope, popup, edit pages and controls SHALL remain. Feedback SHALL NOT claim a cut from the saved switch, running transport or a manual hit. No top badge, row shift or new pad mode SHALL appear.
+
+#### Scenario: Pitch Gate feedback preserves parameter pages
+- **WHEN** keyboard or raw MIDI toggles Pitch Gate with edit open or closed, hidden or shown pads and eligible or ineligible sources
+- **THEN** the panel, popup and F1 show the saved state, A1-only scope, applicable controls and any source or pitch restriction
+- **AND** every existing page, knob target, safety indicator and input route stays available
+
+#### Scenario: Pitch Gate help row appears only where it applies
+- **WHEN** the selected pad is a whole file or a linked slice with Pitch Gate Off, or a linked slice with Pitch Gate On at zero or positive pitch
+- **THEN** the help row explains Pitch Gate only for the linked slice with Pitch Gate On
+- **AND** the panel shows the Pitch Gate label and F1 gives the reason for every pad
+
+#### Scenario: Pitch Gate reports source and pitch restrictions
+- **WHEN** Pitch Gate is On for an empty pad, a whole file, a detached piece or a linked slice at zero or negative pitch
+- **THEN** feedback keeps the saved On value and identifies the source or pitch restriction in text
+- **AND** a source or pitch change refreshes the explanation without automatically changing the saved switch
+
+#### Scenario: Pitch Gate scope stays explicit during manual play
+- **WHEN** an eligible pad has Pitch Gate On without A1, with stopped transport or during mixed manual and A1 playback
+- **THEN** the indicator identifies the A1-only setting and the visible help states that manual hits stay unchanged
+- **AND** a manual hit or running transport cannot turn that setting into a claim that the current sound has a cut
+
+#### Scenario: Pitch Gate explanations fit the existing frame
+- **WHEN** Pitch Gate states appear at 80×26 and 120×40 with hidden or shown pads, edit open or closed and safety warnings
+- **THEN** the mode, compact Pitch Gate state and applicable text explanation remain readable in the existing panel and help rows
+- **AND** the view adds no top badge and preserves the fixed rows, safety priority and access to existing controls
+
+### Requirement: Sequenced pad feedback uses actual voices
+
+Current-project sequenced voices SHALL count toward PLAY and pad hit feedback under existing actual-voice rules. Silent, dropped, queued and old-project events SHALL NOT count. Sequenced events SHALL NOT change selection, marks, held-input state, bank or keyboard/controller identity. Preview and effect tails alone SHALL retain their existing exclusions.
+
+#### Scenario: Pattern voices light PLAY without pretending to be owner input
+- **WHEN** real callbacks play and end A1 notes with grid hidden or shown and edit open or closed
+- **THEN** PLAY follows current pad voices and applicable pad flashes follow actual starts
+- **AND** selection, marks, bank, held inputs and KB/controller identity stay unchanged
+
+### Requirement: Accepted pattern recording indicators
+
+Every current screen SHALL show accepted count-in, `REC A1`, erasure or Finishing state without confusing it with microphone or output capture. Pending requests SHALL NOT claim an accepted phase. Phase, loop position and target SHALL come from one coherent current-project audio snapshot. Stale feedback SHALL NOT restore another project's recording label.
+
+#### Scenario: Recording indicators follow accepted audio state
+- **WHEN** a recording command waits, count-in advances, recording starts, erasure toggles and the pass finishes
+- **THEN** each screen shows the matching accepted phase and A1 target without premature REC feedback
+- **AND** stale or mixed-project feedback cannot change those shown indicators
+
+### Requirement: Count in and loop position are visible
+
+Count-in SHALL show `COUNT` and descending digits 4, 3, 2, 1 with each accepted beat. A1 recording SHALL show current bar, beat and loop length. Quantize grid and strength SHALL remain available without opening Settings. Feedback SHALL advance without owner input. The full step grid and editable pad rows SHALL NOT appear in 97.
+
+#### Scenario: Count in becomes recording at tick zero
+- **WHEN** stopped recording proceeds through four beats at either supported terminal size
+- **THEN** visible count digits follow the audio beats and change to `REC A1` at the accepted pattern start
+- **AND** position, length, grid and strength remain readable without a new step screen
+
+### Requirement: Pattern work keeps the shared frame
+
+Pattern feedback SHALL keep the fixed title, status, strip, grid and three-row help positions. Compact pattern controls SHALL show Bars, Quantize and Strength with a selected row and applicable edit restrictions. Count digits SHALL use available content space without covering questions or text input. Safety indicators SHALL retain their existing width priority.
+
+#### Scenario: Pattern controls fit without moving the pads
+- **WHEN** pattern controls open and close on each current screen at 80×26 and 120×40
+- **THEN** the selected setting, current values and close controls remain readable
+- **AND** screen identity, pad rows, save failures and audio warnings retain their fixed frame
+
+### Requirement: Erasure has a distinct visible pad role
+
+Erasure SHALL show `ERASE` with the A1 recording state. Its held targets SHALL have a distinct erase marker, not PLAY or ordinary held-note styling. The view SHALL identify the target bank and pad even with a hidden grid. Leaving erasure SHALL clear its target markers without a sounding-pad flash. No-release fallback SHALL name its one-loop target duration.
+
+#### Scenario: Erasure remains distinct from sounding pads
+- **WHEN** erasure targets pads across a bank change with the grid shown or hidden
+- **THEN** ERASE and actual target identities remain visible without implying a manual sounding hit
+- **AND** leaving erasure clears those marks and shows the return to ordinary recording
+
+### Requirement: Recording catalogue covers supported states
+
+The offline screen catalogue SHALL cover CountIn, Recording, Erase, Finishing and PatternControls on every applicable registered screen at both supported sizes. It SHALL include busy, blocked and safety-warning combinations. Missing entries SHALL fail the existing coverage check. Generation SHALL NOT open devices or edit projects.
+
+#### Scenario: Catalogue includes recording states and safety combinations
+- **WHEN** the offline catalogue generates after 97 implementation
+- **THEN** both supported sizes contain every applicable recording phase and controls state
+- **AND** the matrix detects missing entries and keeps save or audio warnings visible in crowded fixtures
+
+### Requirement: Pads pattern event strip
+
+F2 SHALL show three A1 event rows below its live output wave, within the shared strip rectangle. The rows SHALL be a header, an all-pads row and the selected pad's row. A strip of four or more rows SHALL keep at least one wave row. A three-row strip SHALL show only the event rows. Title, bank, pad grid, right column, help and safety status SHALL keep their positions. Other screens SHALL keep their strip contents. No A1 SHALL show a recording instruction without creating a pattern.
+
+#### Scenario: Pattern strip fits the shared frame
+- **WHEN** F2 shows absent, empty or populated A1 at 80x26 and 120x40, with pads shown or hidden
+- **THEN** the event rows fit below the wave or replace it in a three-row strip, and the outer frame and warnings stay
+- **AND** Chop and Files draw no event rows, and hidden pads give the strip more wave rows
+
+### Requirement: Pattern strip identifies time and event density
+
+A word header SHALL name A1, the bar and beat, the loop length, the open bank, the view division as `view`, and the next-hit quantize and strength as `quantize`. The pad row label SHALL be `pad` with the pad key, without the file name. The all row SHALL mark cells with an onset of any pad of the bank. Empty, aligned, off-grid and multiple-event cells SHALL look different, with dim empty cells. Same-tick rows SHALL stay visibly multiple. Drawing SHALL NOT change raw rows or settings.
+
+#### Scenario: Pattern strip distinguishes subdivisions and event density
+- **WHEN** straight and triplet pages contain aligned hits, between-line hits, collisions, empty cells and hits of other pads in the bank
+- **THEN** their forms, beat backgrounds, bar lines, header words and the all-pads row identify the corresponding data
+- **AND** drawing changes no raw row, velocity, duration or setting
+
+#### Scenario: Strip header names view and quantize apart
+- **WHEN** the view is 1/16, the quantize is 1/4 at 100 %, and the owner selects pad Q of bank 4 with a long file name
+- **THEN** the header shows `view 1/16 · quantize 1/4 100 % · bank 4`, and the pad row label is `pad Q`
+- **AND** the file name does not show in the strip
+
+### Requirement: Pattern strip groups beats symmetrically
+
+Each beat SHALL start with one space. Each cell SHALL take its glyph and one space, so every glyph has a space on both sides. Alternate beats SHALL have a darker background. A vertical line SHALL separate bars, and no line SHALL separate beats. Beat groups SHALL follow the straight or triplet division. The playback plate SHALL cover a glyph and its two neighbor spaces.
+
+#### Scenario: Pattern strip centers glyphs in beat groups
+- **WHEN** straight and triplet pages show one or more bars with the playback plate on an onset and on an empty cell
+- **THEN** every glyph has one space on each side, alternate beats have a darker background and only bar lines separate groups
+- **AND** the plate covers exactly three columns centered on the current glyph
+
+### Requirement: Bank row shows where A1 plays
+
+The bank row SHALL underline the number of each bank that has a visible A1 onset. During playback, each closed bank's pad map SHALL light, in white, the pads with an A1 onset in the current 1/16 playback step. The open bank SHALL keep its current flashes. The row SHALL NOT change the open bank. A missing or stale audio position SHALL light no pattern pad.
+
+#### Scenario: Bank row shows pattern banks and their hits
+- **WHEN** A1 has onsets on banks 1 and 3, bank 1 is open, and transport stops, then plays
+- **THEN** the row underlines numbers 1 and 3, and during playback bank 3 lights the pads with an onset in the current step
+- **AND** the open bank does not change, and a missing or stale position lights no pattern pad
+
+### Requirement: Pattern playback plate follows the audio position
+
+The playback plate SHALL use coherent current-project audio position, never a UI timer. It SHALL be a centered three-column light plate in both event rows, without an arrow, frame or extra row. The page SHALL follow the plate. A missing or stale snapshot, or one from an old project, SHALL show no plate and no motion.
+
+#### Scenario: Pattern playback plate follows the audio position
+- **WHEN** playback crosses cells and pages, and then the project epoch changes or the loop length no longer matches
+- **THEN** the plate marks the cell of the audio position and its page
+- **AND** a stale or mismatched position shows no plate
+
+### Requirement: Pattern strip yields to overlays and keeps safety visible
+
+Pad-parameter curves and audio recording SHALL keep their use of the strip, and the event rows SHALL NOT draw then. The splash SHALL use only the wave rows above the event rows. A strip without wave rows SHALL show the event rows and no splash. Save, audio and xrun warnings SHALL stay visible with the event rows at both supported sizes. F2 SHALL keep terminal-cell drawing. Only Chop collects kitty images.
+
+#### Scenario: Pattern strip yields to overlays and keeps safety visible
+- **WHEN** F2 shows A1 with a pad-parameter curve, audio recording, or save and audio warnings
+- **THEN** curves and the recording wave take the strip without event rows
+- **AND** warnings stay visible next to the event rows at 80x26 and 120x40
+
+#### Scenario: The splash leaves the event rows visible
+- **WHEN** the program starts with and without A1 at 80x26 and 120x40
+- **THEN** the event rows or the recording instruction show at both sizes
+- **AND** the splash shows in the wave rows at 120x40, and a three-row strip at 80x26 shows no splash
+
+### Requirement: Pattern view catalogue states
+
+The offline catalogue SHALL cover the pattern view at both supported sizes. It SHALL include straight and triplet views, off-grid and multiple events, the hidden-grid preference and safety warnings. Missing required entries SHALL fail coverage. Generation SHALL NOT open audio or MIDI devices or edit projects.
+
+#### Scenario: Catalogue covers the pattern view
+- **WHEN** the offline catalogue generates
+- **THEN** both sizes contain the required pattern-view entries and a missing entry fails coverage
+- **AND** generation leaves projects and device access untouched
+
+### Requirement: Strip header explains multiple hits
+
+When a visible cell of the selected pad holds two or more hits, the strip header SHALL end with `2-9 = hits in a cell, one plays`. Without such a cell, the header SHALL NOT show it. When the width is too small, the legend SHALL be cut before the bank.
+
+#### Scenario: Strip header explains multiple hits
+- **WHEN** the visible page of the selected pad has a cell with two hits, and then has none
+- **THEN** the header ends with the legend only while such a cell is visible
+- **AND** the bank stays visible at 80 columns
+
+### Requirement: Whole-pad erasure shows hit counts
+
+In whole-pad erasure, the Pads title SHALL show `ERASE`. Each pad of the open bank with A1 rows SHALL show `N hits` on its mode line. N SHALL count every raw row that a press erases, hidden rows included. A pad without rows SHALL show an empty mode line. After an erasure, the count SHALL go away at the next redraw. Leaving erasure SHALL restore the usual mode lines. The counts SHALL fit 80x26 and 120x40.
+
+#### Scenario: Erasure shows what a press erases
+- **WHEN** whole-pad erasure is on with 4 hits on pad Q, 2 hits on pad W and none on pad E, at 80x26 and 120x40
+- **THEN** the title shows `ERASE`, pad Q shows `4 hits`, pad W shows `2 hits`, and pad E shows no count
+- **AND** after a press on pad Q its count goes away, and leaving erasure restores the mode lines
+
+### Requirement: Pattern controls take the side panel
+
+While pattern controls are open, the right column SHALL show only the A1 controls in the style of the pad panel. Block lines SHALL name `A1 PATTERN` and `CLEAR`. Labels SHALL be lowercase, and the selected row SHALL be bright. The keys SHALL show dim at the bottom of the column. The pad panel SHALL NOT show under the controls. Closing SHALL restore the screen's own column. Title, bank, pad grid, strip and help SHALL keep their positions.
+
+#### Scenario: Pattern controls replace the pad panel
+- **WHEN** the owner opens pattern controls on Pads, Chop, Files and FX at 80x26 and 120x40
+- **THEN** the right column shows the A1 PATTERN and CLEAR blocks and the keys, and no pad parameter
+- **AND** closing restores the pad panel and every other position stays
+
+### Requirement: Pattern controls use the pad edit frame
+
+Pattern controls SHALL use the frame of the pad edit: the edit color and the title `EDIT ·` with the block names `PATTERN` and `CLEAR`. The block of the selected row SHALL be lit, as the open page of the pad edit is. A narrow column SHALL drop `EDIT ·` before the block names, as the pad edit does.
+
+#### Scenario: Pattern controls use the pad edit frame
+- **WHEN** the owner opens pattern controls and selects Bars, then Clear A1, at 80x26 and 120x40
+- **THEN** the column has the edit frame with `PATTERN` lit, then with `CLEAR` lit
+- **AND** the frame has the color of the pad edit frame
+
+### Requirement: Pattern controls show restrictions in place
+
+The edit restriction of the selected row SHALL show dim next to its value. A refused edit SHALL show the restriction in the warning color.
+
+#### Scenario: Pattern controls show restrictions in place
+- **WHEN** the owner selects Strength, then tries to change Bars during Recording
+- **THEN** `step 10` shows dim next to Strength, and the Bars refusal shows in the warning color
+
+### Requirement: The Chop slice line keeps each value whole
+
+The Chop slice line SHALL wrap only between its ` · ` parts. A number SHALL stay on one row with its unit. A part wider than the column SHALL wrap by words. While the slice edit is open, the edit frame SHALL take the place of the slice line. "The slice edit uses the pad edit frame" sets that frame.
+
+#### Scenario: The Chop slice line keeps each value whole
+- **WHEN** Chop shows the slice line at 80x26 and 120x40 with the slice edit closed
+- **THEN** each of `start`, `length` and `cursor` stays on one row with its number and unit
+- **AND** no text of the line goes away
+
+### Requirement: Pattern labels and hints stay whole
+
+The A1 strip SHALL show the pad row label `pad` with its key whole at 80x26 and 120x40. In pattern controls, a row hint that does not fit beside its value SHALL take its own line under the value. The key line SHALL name Enter as run and close.
+
+#### Scenario: Pattern labels and hints stay whole
+- **WHEN** the owner selects pad Q with A1 hits, opens pattern controls and selects quantize, strength and clear A1 at 80x26 and 120x40
+- **THEN** the strip shows `pad Q`, and `next hits`, `next hits, step 10` and `Enter` show whole
+- **AND** the key line says `Enter run`

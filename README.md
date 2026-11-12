@@ -64,11 +64,49 @@ Start ptsr from the repository folder. ptsr reads the controller profiles from `
 - `Enter` on the pads screen opens pad edit. `Tab` changes the page. `I` and `K` select a parameter. `J` and `L` change its value.
 - `F4` opens the shared FX screen. `Tab` selects FX 1 or FX 2. The same page knobs control the selected block.
 - `F12` opens the settings: the sound device, the buffer, MIDI and the knob response.
-- `Space` starts or stops the beat clock on Pads, FX and Settings. Chop and Files keep their preview keys.
+- `Space` starts or stops the beat clock and a saved A1 pattern on Pads, FX and Settings. Chop and Files keep their preview keys.
   `Ctrl+Up/Down` changes tempo by 1 BPM. Add Shift for 0.1 BPM. `Alt+M` toggles the metronome.
-  The range is 40–300 BPM. Patterns are not implemented yet.
+  The range is 40–300 BPM. `Ctrl+R` starts or ends A1 recording. A step editor is not implemented.
+- On Pads, `Alt+G` toggles Pitch Gate for the selected scope, with pad edit open or closed.
+  It cuts only pattern notes from linked slices with positive pitch at the next grid line. Manual hits and previews keep their sound.
 
 `docs/USER-STORIES.md` gives each task step by step.
+
+## Record A1
+
+This working branch supports A1 recording. Owner listening, physical controllers and the full live trial still need separate acceptance.
+The [callback maximum requirement](openspec/changes/97-pattern-record/design.md#completion-performance-result-and-limit) remains unsatisfied in additional timing checks.
+Use a disposable project. The [recording trial](docs/LIVE-CHECKS.md#97-record-and-erase-a1) prepares separate folders and generated sounds without a project-file edit.
+
+- Press `Ctrl+R` while stopped. A1 starts with two bars, 1/16 quantize and 100% strength if no pattern exists.
+- Wait for the four count-in beats. Play pads after `REC A1` appears. Press `Ctrl+R` again to end the pass without stopping playback.
+- Press `Ctrl+R` during playback to add a new pass without restarting the loop.
+- Press `Alt+N` for Bars, Quantize and Strength. Use I/K or Up/Down to select a row. Use J/L or Left/Right to change it.
+- Close controls with Esc or Alt+N, or with Enter on a value row. Bars change only while recording is Idle. Quantize and Strength set the next recorded hits. A change does not move saved hits. They can change during Recording.
+- During Recording, press `Alt+E` for silent erasure. Hold a pad while the playhead crosses the notes to erase. Press Alt+E again to play pads.
+- Outside a pass, press `Alt+E` on Pads (F2). Each pad shows its A1 hit count. A pad press erases all hits of that pad without sound. `Ctrl+Z` restores them. Esc or Alt+E plays pads again.
+- In `Alt+N`, select Clear A1 and press Enter. The program asks before it clears all hits.
+- `Alt+Z` cancels or undoes a pattern pass. It cannot cross a newer pad or FX edit. Pads `Ctrl+Z` uses common history.
+- `Ctrl+S` completes the pass before saving. Playback continues. Saving does not create another Undo step.
+
+These are default keys. Owner bindings and explicit `none` take priority. F1 shows the effective keys and current recording state.
+Use Alt+PageUp/PageDown to page the F1 key table. A learned button can use the same help commands.
+Without key releases, erasure lasts one musical loop per pad press. Microphone recording uses Alt+R, independently of pattern recording.
+With key releases, Alt+R is a microphone hold. Without them, it is a microphone toggle. Ctrl+T toggles output recording.
+Chop previews stay outside A1. During pattern work, Chop pad keys play actual pads instead of assigning or previewing slices.
+
+The local file `renders/97-pattern-record.wav` demonstrates a first take, quantized repeats, overdub, erasure and pass Undo.
+Its test compares both channels with an independent reference. This does not establish listening or physical-device acceptance.
+
+When a pass ends, a new hit replaces older hits of the same pad on the same playback step. `Alt+Z` restores them.
+
+## See the A1 rhythm
+
+F2 shows three rows under the output wave: a header, `all` (any pad of the bank) and the selected pad.
+A light plate marks the playback step. Every second beat has a darker background, and a line separates bars.
+`■` is a hit, `~` is a hit between grid lines, and `2`–`9` or `+` count hits in one cell.
+`Alt+Up` selects a finer view and `Alt+Down` a coarser view. The view does not change the sound or the saved pattern.
+The bank row underlines banks with A1 hits. During playback, the pads of closed banks light at their steps.
 
 ## Files
 
@@ -82,9 +120,13 @@ Start ptsr from the repository folder. ptsr reads the controller profiles from `
 
 The `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` variables move these folders. ptsr reads settings and sessions from the current `ptsr` folders only.
 
-Session format 4 saves tempo and metronome preference, but not running state or clock position.
-Formats 1–3 remain readable. Older binaries refuse format 4. Keep a backup before saving with this version.
-The [isolated transport procedure](docs/LIVE-CHECKS.md#95-transport-and-metronome) keeps owner checks separate from existing projects.
+Session format 5 saves tempo, metronome preference, raw A1 hits and each pad's Pitch Gate value.
+It does not save running state or clock position. Formats 1–4 remain readable. Older binaries refuse format 5.
+Keep a backup before saving with this version. To return to an older binary, restore the backup instead of changing the format number.
+The [A1 file contract](openspec/changes/96-pattern-play/design.md#saved-format) describes format 5 and the older file-entry route.
+Recording needs no project-file edit. The [older playback trial](docs/LIVE-CHECKS.md#96-one-looped-pattern-and-slice-pitch-gate) uses a separate copied binary.
+Stop transport on Pads before solo Chop preview. A running pattern continues on Chop in this local trial.
+That Chop interaction remains an open specification question before archive.
 
 ## Controllers
 
@@ -104,8 +146,7 @@ One complete loop, from the keyboard and the SMC-PAD, with no clicks and no cras
 - **0.3 — Deferred sound work:** callback investigation, pitch quality, master safety and recording latency.
   Resume these changes only on a separate owner request, not before patterns by default.
 - **0.4 — Patterns:** transport, recording, quantize, step editing, slots, note repeat and mute. Grids include 1/64.
-  Transport 95 is implemented. Next: 96 pattern playback, then 97 recording and 98 step editing.
-  Change 96 also plans the per-pad slice pitch gate. It needs the pattern clock.
+  Transport 95 and pattern playback 96 are implemented. Recording 97 is under verification. The rhythm view 98 is implemented. Step editing remains a [draft plan](docs/plans/98a-step-edit.md).
 - **0.4b — Glitch kit:** step locks, ratchets, held master stutter, a 4×4 roll matrix and offline PaulStretch.
   Held effects start on the next grid. The pattern runs silently underneath and returns on its next hit after release.
 - **0.5 — Complete the loop:** sample tempo, resampling, serial insert chains, shared sends, pitch envelopes, crossfade loops, sample operations and offline WAV export.
@@ -202,6 +243,16 @@ switches. The full block budget is 2.667 ms. The 50% target is 1.333 ms. Existin
 summary lines remain. New groups cover playback, all switch callbacks, and each switch
 phase: first fade block, second fade block, clearing and restore.
 
+A separate dense-pattern case measures another 20,000 callbacks at 172 BPM with the same block size, shaping and both effects.
+Its two-bar loop contains 4096 hits: 32 pads on every 1/64 line. It reports dropped hits and paired timing.
+The non-audio consumer drains retired references between measured callbacks.
+
+Separate active recording and erasure cases each measure 20,000 callbacks with 32 sounding pads and the same shaping and effects.
+Recording accepts 470 onsets, including 157 completed silent Gates. Erasure holds all 128 pad targets over 4096 compiled rows.
+The erasure case retains raw rows to represent delayed UI removal. It still checks accepted audio-time suppression and zero capture losses.
+Each case also measures release and the accepted Finishing boundary separately. UI reconstruction and acknowledgement are not timed.
+Preparation, feedback reads and reference destruction stay outside the measured callback.
+
 Each group shows mean, p99, maximum, sample count and `>50 %` count for three times:
 
 - `wall`: elapsed callback time, including time when the thread cannot run.
@@ -212,8 +263,11 @@ Each group shows mean, p99, maximum, sample count and `>50 %` count for three ti
 
 `maximum target` says `EXCEEDED` when an observed wall or CPU maximum is above 50%.
 Read that line and the counts even when the command succeeds. Exit status still checks
-only steady wall p99 and per-switch wall peak p99. A value strictly above 50% fails. Equality passes. A successful command does not prove that every block met the target. CPU values
+steady wall p99 and per-switch wall peak p99. A separate check fails for dense-pattern wall p99 above 50% or any dropped hit.
+A value strictly above 50% fails. Equality passes. A successful command does not prove that every block met the target. CPU values
 and maxima do not replace those checks.
+The new active cases additionally fail for any wall or thread CPU maximum above 50%, or a failed workload invariant.
+Their success does not resolve a historical maximum failure from earlier runs.
 
 Before the workload, 2,000 empty calls show timer overhead. The separate
 `measurement-envelope mean` includes sampling and storage. Raw empty-call means are in

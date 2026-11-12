@@ -245,7 +245,7 @@ This change SHALL NOT migrate the saved format or search for replacement samples
 
 ### Requirement: Saved transport preferences
 
-Project and scratch session format 4 SHALL save `bpm` and `metronome`. Tempo SHALL be finite and within 40–300 BPM, rounded to 0.1 BPM. New sessions SHALL use 120 BPM and metronome off. Playback position and running state SHALL NOT be saved. Tempo and metronome edits SHALL use existing dirty-state, manual-save and retry rules.
+Project and scratch session format 5 SHALL save `bpm` and `metronome`. Tempo SHALL be finite and within 40–300 BPM, rounded to 0.1 BPM. New sessions SHALL use 120 BPM and metronome off. Playback position and running state SHALL NOT be saved. Tempo and metronome edits SHALL use existing dirty-state, manual-save and retry rules.
 
 #### Scenario: Project transport preferences survive a restart
 - **WHEN** the owner saves 172.3 BPM with the metronome enabled and restarts
@@ -257,11 +257,11 @@ Project and scratch session format 4 SHALL save `bpm` and `metronome`. Tempo SHA
 
 ### Requirement: Transport session migration
 
-Formats 1–3 SHALL remain readable and use 120 BPM and metronome off when transport fields are absent. Existing pad, chop, group, name, path and effect state SHALL remain intact through migration and saving as format 4. Newer formats and invalid transport values SHALL retain existing load refusal and read protection.
+Formats 1–4 SHALL remain readable and use 120 BPM and metronome off when transport fields are absent. Existing pad, chop, group, name, path and effect state SHALL remain intact through migration and saving as format 5. Newer formats and invalid transport values SHALL retain existing load refusal and read protection.
 
 #### Scenario: Older sessions gain transport defaults without changing pads
 - **WHEN** supported format 1, 2 or 3 sessions load and then save
-- **THEN** format 4 contains transport defaults and preserves the existing migrated pad and chop state
+- **THEN** format 5 contains transport defaults and preserves the existing migrated pad and chop state
 - **AND** groups, effects, copy names and stored paths keep their existing meanings
 
 #### Scenario: Invalid transport settings protect the session file
@@ -284,3 +284,125 @@ A validated project switch SHALL stop and reset the source clock, discard its qu
 #### Scenario: Selecting the current project preserves its running clock
 - **WHEN** the owner selects the already open project or its canonical folder alias
 - **THEN** the picker closes without stopping, resetting or restoring transport
+
+### Requirement: Saved pattern and Pitch Gate state
+
+Format 5 SHALL save zero patterns or one `A1` entry, its raw hits, bars, quantize, strength and selection. It SHALL save the per-pad `pitch_gate` boolean, with true as its absent default. Project and scratch saves SHALL use their existing safe replacement, dirty-state, retry and read-protection rules. Runtime notes, deadlines and running position SHALL NOT be saved.
+
+#### Scenario: Pattern and Pitch Gate survive project and scratch restart
+- **WHEN** project or scratch work saves A1 with raw off-grid and hidden hits, custom playback settings and mixed Pitch Gate values
+- **THEN** reopening restores those exact data with transport stopped at tick zero
+- **AND** the existing tempo, metronome, sounds, sources and mute groups retain their meanings
+
+### Requirement: Pattern migration preserves older work
+
+Formats 1–4 without patterns SHALL restore no pattern. A format 1–4 file with pattern selection or entries SHALL be refused without discarding those data. Format 4 SHALL retain its saved transport preferences. Earlier formats SHALL keep their existing migration rules. Absent Pitch Gate state SHALL default to true without changing manual playback. Saving as format 5 SHALL preserve names, groups, assignments, bounds, paths, chops, effects and ungrouped overlap.
+
+#### Scenario: Format four gains pattern defaults without changing sound
+- **WHEN** a format 4 project with tempo, metronome, linked slices and manual mute groups loads and saves as format 5
+- **THEN** no pattern starts, transport preferences remain and absent Pitch Gate values become true
+- **AND** existing manual renders match their pre-migration sound and ungrouped pads still overlap
+
+#### Scenario: Older format numbers cannot hide pattern data
+- **WHEN** a file declares format 1, 2, 3 or 4 but contains a pattern selection or entry
+- **THEN** startup and project loading refuse it without changing the original bytes
+- **AND** startup read protection and current project work remain intact
+
+#### Scenario: Earlier session migrations remain compatible with patterns
+- **WHEN** fixtures for formats 1, 2 and 3 load and save as format 5
+- **THEN** their existing migrations preserve pad and chop behavior with no pattern and the specified transport defaults
+
+### Requirement: Pattern file validation protects work
+
+Loading SHALL reject invalid pattern ranges, malformed hit rows, duplicate or unsupported slots, mismatched selection and non-boolean Pitch Gate values. Invalid raw data SHALL NOT be silently clamped or discarded. A target refusal SHALL retain the current session and pending work. A startup refusal SHALL protect the file from later saves, including newer format versions.
+
+#### Scenario: Invalid pattern targets do not replace a playing project
+- **WHEN** a selected target contains invalid pattern settings, rows, selection, slots or Pitch Gate values
+- **THEN** target validation refuses it before source saving or replacement
+- **AND** the current rhythm, pending work, undo and picker selection remain unchanged
+
+#### Scenario: Invalid or newer pattern startup files remain protected
+- **WHEN** startup cannot read an invalid pattern session or a session newer than format 5
+- **THEN** later saves explain the refusal and leave the original bytes unchanged
+
+### Requirement: Patterns remain isolated across project transitions
+
+A successful project transition SHALL clear source pattern playback and pending automatic releases before target readiness. The target SHALL open stopped with its own pattern data. Old queued patterns, swaps and releases SHALL NOT change it. A read or required source-save refusal SHALL leave the source rhythm running. Selecting the current folder SHALL NOT reload or reset it.
+
+#### Scenario: Pattern project switches reject stale work under queue pressure
+- **WHEN** projects with different patterns switch while command or retirement queues are full and old messages arrive late
+- **THEN** only the target pattern can start after readiness and no source hit or deadline reaches it
+- **AND** switching to an empty project produces no sequenced sound
+
+#### Scenario: Refused or same-folder selection preserves the pattern
+- **WHEN** a running project transition fails target reading or source saving, or selects its current canonical folder
+- **THEN** its pattern and clock continue without a reset and current work remains available
+
+### Requirement: Recorded patterns reuse format five
+
+Completed pattern passes SHALL save through the existing format 5 raw-hit and settings fields. Runtime capture identity, count-in, erasure, pending gates and active recording SHALL NOT be stored. Load SHALL restore the raw take and settings with stopped transport and Idle recording. This change SHALL add no format migration or owner-project cleanup.
+
+#### Scenario: Save and reopen a recorded rhythm without recording state
+- **WHEN** a recorded and edited A1 saves and its project or scratch session reopens
+- **THEN** raw rows, length, grid and strength match the completed take and transport remains stopped
+- **AND** no recording phase or pending gate resumes and the saved format remains 5
+
+### Requirement: Manual save completes the current pass
+
+During pattern work, manual save SHALL first cancel CountIn or finish Recording and recover accepted capture through that boundary. It SHALL then invoke normal saving. It SHALL NOT report success before write success. Recording completion SHALL leave playback running. Count-in cancellation SHALL leave transport stopped. Refusal SHALL keep the completed take, Undo and pending save state.
+
+#### Scenario: Manual save waits for a complete recording boundary
+- **WHEN** Ctrl+S or a learned save button is pressed with recorded feedback and Gate completion pending
+- **THEN** the pass finishes and saves its complete accepted rows before `Session saved` appears
+- **AND** playback continues without resuming recording or writing runtime-only fields
+
+A pending manual save SHALL keep its original input source and project ownership. Repeated save input SHALL join that request. A new pattern pass SHALL wait until the save attempt completes. Input processing, manual pads and releases SHALL continue while capture finishes. Autosave SHALL NOT replace the pending manual attempt. Project restoration SHALL discard an earlier project's request before it can write or report success.
+
+#### Scenario: Repeated save waits for the same recording boundary
+- **WHEN** the user requests another save while a manual save waits for delayed capture completion or a full command queue
+- **THEN** only one save attempt and one pass Undo step result, with no early success notice
+- **AND** manual pads and releases still work, a new recording pass waits, and the original request keeps its input source
+
+#### Scenario: A delayed manual save cannot write another project
+- **WHEN** project restoration replaces the source state before its pending manual save completes
+- **THEN** the old request cannot write the new project or produce a save-success notice for it
+- **AND** a later explicit save uses only the current project's state
+
+The save request SHALL remove only its own progress notice when it completes or cancels. The progress notice SHALL NOT resume after the result notice expires. Removal of progress SHALL NOT change other notices or their existing display and history policies.
+
+#### Scenario: Save completion removes hidden progress without hiding other notices
+- **WHEN** another warning or error hides the progress notice before the pending manual save completes
+- **THEN** completion removes only that request's progress notice, while other notices follow their existing display and history policies
+- **AND** the success or refusal follows existing priority, while obsolete progress never resumes
+
+#### Scenario: Save refusal retains a completed recording for retry
+- **WHEN** a manual save ends a pass but read protection, a write failure or a missing folder refuses the write
+- **THEN** the completed take, its Undo step and pending status remain and no false success appears
+- **AND** an allowed retry saves the same recoverable work without recreating a missing project folder
+
+### Requirement: Autosave and exit respect recording boundaries
+
+Autosave SHALL wait during CountIn, Recording and Finishing. Quit SHALL complete or cancel that phase before applying existing exit-save policy. Audio loss SHALL permit recovery without waiting for a callback that cannot arrive. A write refusal SHALL retain existing warning and retry semantics. This change SHALL NOT promise recovery of unsaved data after a process crash.
+
+#### Scenario: Autosave cannot write a partial gate take
+- **WHEN** autosave time passes during count-in or recording with unfinished Gate notes
+- **THEN** the last saved file stays unchanged and pending save status remains visible
+- **AND** after the pass finishes ordinary autosave can save complete rows
+
+### Requirement: Quit closes a recoverable pattern prefix
+
+Quit SHALL freeze App capture at its last coherent accepted audio boundary. It SHALL complete recoverable rows without a new callback or acknowledgement. Later events SHALL NOT extend that prefix. Concurrent unavailable reads SHALL retry on normal UI turns without blocking input. Normal quit SHALL NOT set audio loss. A pending manual save SHALL keep its single attempt and source. Existing exit-save policy SHALL apply without an automatic retry after failure.
+
+#### Scenario: Quit finalizes the recoverable pass before exit saving
+- **WHEN** quit is requested during pattern work, with or without a final audio callback
+- **THEN** recoverable capture is complete before existing exit-save policy runs
+- **AND** no pending Gate duration or active recording phase enters the saved session
+
+### Requirement: Project selection waits until pattern work ends
+
+Project picker entry, direct open and creation SHALL refuse active phases, a requested start or pending quit before target validation, source saving or filesystem changes. Refusal SHALL preserve the take and clock and explain how to finish first. After completion, existing Idle transition rules SHALL apply. New-project state SHALL NOT accept capture, releases or controls from an earlier project or pass.
+
+#### Scenario: A project request cannot interrupt an active take
+- **WHEN** keyboard or raw MIDI requests project selection during any active recording phase
+- **THEN** the current take, screen and clock remain and the notice explains how to finish recording
+- **AND** after completion the picker uses existing transition safety without carrying recording state into another project

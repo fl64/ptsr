@@ -10,7 +10,7 @@ use engine::fx::{FEEDBACK_MAX, FxKind, FxSettings};
 use engine::{Command, FX_SLOTS, PADS, PADS_PER_BANK, PITCH_LIMIT, PadMode, Region, Sample};
 use input::{Action, Dir};
 
-use crate::session::{FxState, PadState, Session};
+use crate::session::{FxState, PadState, PatternState, Session};
 
 /// Everything a pad has, as the undo keeps it (61): the sound by reference.
 #[derive(Clone, Debug)]
@@ -19,6 +19,7 @@ pub struct PadSnap {
     pub(crate) name: Option<String>,
     missing: bool,
     gate: bool,
+    pitch_gate: bool,
     volume_db: i8,
     pitch: i8,
     env: [u16; 3],
@@ -43,6 +44,7 @@ impl PartialEq for PadSnap {
         same_sound
             && self.name == o.name
             && self.group == o.group
+            && self.pitch_gate == o.pitch_gate
             && (
                 &self.file,
                 self.missing,
@@ -376,6 +378,10 @@ pub struct Pads {
     /// Selected pad 0..16 of the current bank.
     pub selected: usize,
     pub gate: [bool; PADS],
+    pub pitch_gate: [bool; PADS],
+    /// The saved raw A1 data; playback uses a separate compiled list.
+    pub pattern: Option<PatternState>,
+    pub(crate) pattern_rows: Option<Vec<engine::pattern::PlaybackRow>>,
     pub volume_db: [i8; PADS],
     /// Pad pitch in semitones, −`PITCH_LIMIT`…+`PITCH_LIMIT`.
     pub pitch: [i8; PADS],
@@ -440,6 +446,9 @@ impl Default for Pads {
             bank: 0,
             selected: 0,
             gate: [false; PADS],
+            pitch_gate: [true; PADS],
+            pattern: None,
+            pattern_rows: None,
             volume_db: [0; PADS],
             pitch: [0; PADS],
             attack_ms: [0; PADS],
@@ -597,12 +606,86 @@ impl Pads {
         }
     }
 
-    /// Two pads trade sample, mode, volume and state; returns the engine command.
-    pub fn swap(&mut self, a: usize, b: usize) -> Command {
+    fn compile_pattern(
+        pattern: Option<&PatternState>,
+        descriptors: Option<&[engine::pattern::PlaybackRow]>,
+    ) -> Result<Option<Arc<engine::pattern::Pattern>>, String> {
+        pattern
+            .map(|state| {
+                let raw = state.checked()?;
+                let compiled = match descriptors {
+                    Some(rows) => raw.compile_recorded(rows).map_err(|e| e.to_string())?,
+                    None => raw.compile(),
+                };
+                Ok(Arc::new(compiled))
+            })
+            .transpose()
+    }
+
+    pub fn recorded_pattern_command(&self) -> Result<Command, String> {
+        Ok(Command::PublishRecordedPattern {
+            pattern: Self::compile_pattern(self.pattern.as_ref(), self.pattern_rows.as_deref())?
+                .ok_or("Recording needs A1.")?,
+        })
+    }
+
+    pub fn restore_recorded_pattern(
+        &mut self,
+        pattern: &PatternState,
+        rows: &[engine::pattern::PlaybackRow],
+    ) -> Result<Command, String> {
+        let compiled =
+            Self::compile_pattern(Some(pattern), Some(rows))?.ok_or("Recording needs A1.")?;
+        self.pattern = Some(pattern.clone());
+        self.pattern_rows = Some(rows.to_vec());
+        Ok(Command::PublishRecordedPattern { pattern: compiled })
+    }
+
+    pub fn prepare_pattern_record(&mut self) -> Result<Command, String> {
+        use engine::pattern::{PlaybackRow, RowId};
+        let pattern = self.pattern.clone().unwrap_or_else(|| PatternState {
+            slot: "A1".into(),
+            bars: 2,
+            quantize: "1/16".into(),
+            strength: 100,
+            hits: Vec::new(),
+        });
+        let rows = match &self.pattern_rows {
+            Some(rows) => rows.clone(),
+            None => (0..pattern.hits.len())
+                .map(|slot| RowId::new(slot, 1).map(PlaybackRow::existing))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?,
+        };
+        let compiled =
+            Self::compile_pattern(Some(&pattern), Some(&rows))?.ok_or("Recording needs A1.")?;
+        self.pattern = Some(pattern);
+        self.pattern_rows = Some(rows);
+        Ok(Command::PublishRecordedPattern { pattern: compiled })
+    }
+
+    /// Sounds and all raw hit addresses move in one audio transaction.
+    pub fn swap(&mut self, a: usize, b: usize) -> Result<Command, String> {
+        if a >= PADS || b >= PADS {
+            return Err("Cannot swap an invalid pad address.".into());
+        }
+        let mut pattern = self.pattern.clone();
+        if let Some(state) = &mut pattern {
+            for row in &mut state.hits {
+                if row[1] == a as u32 {
+                    row[1] = b as u32;
+                } else if row[1] == b as u32 {
+                    row[1] = a as u32;
+                }
+            }
+        }
+        let compiled = Self::compile_pattern(pattern.as_ref(), self.pattern_rows.as_deref())?;
+        self.pattern = pattern;
         self.file.swap(a, b);
         self.custom_name.swap(a, b);
         self.missing.swap(a, b);
         self.gate.swap(a, b);
+        self.pitch_gate.swap(a, b);
         self.volume_db.swap(a, b);
         self.pitch.swap(a, b);
         self.attack_ms.swap(a, b);
@@ -620,7 +703,15 @@ impl Pads {
         self.slice.swap(a, b);
         self.link.swap(a, b);
         self.wave_cache.swap(a, b);
-        Command::SwapPads { a, b }
+        Ok(if self.pattern.is_some() {
+            Command::SwapPatternPads {
+                a,
+                b,
+                pattern: compiled,
+            }
+        } else {
+            Command::SwapPads { a, b }
+        })
     }
 
     /// Everything a pad has, for the undo (61).
@@ -630,6 +721,7 @@ impl Pads {
             name: self.custom_name[abs].clone(),
             missing: self.missing[abs],
             gate: self.gate[abs],
+            pitch_gate: self.pitch_gate[abs],
             volume_db: self.volume_db[abs],
             pitch: self.pitch[abs],
             env: [
@@ -682,6 +774,7 @@ impl Pads {
         self.custom_name[abs] = s.name.clone();
         self.missing[abs] = s.missing;
         self.gate[abs] = s.gate;
+        self.pitch_gate[abs] = s.pitch_gate;
         self.volume_db[abs] = s.volume_db;
         self.pitch[abs] = s.pitch;
         [
@@ -716,6 +809,7 @@ impl Pads {
                 pad: abs,
                 semitones: s.pitch,
             },
+            self.pitch_gate_command(abs),
             self.env_command(abs),
             self.filter_command(abs),
             self.drive_command(abs),
@@ -750,6 +844,8 @@ impl Pads {
             browser_dir,
             bank: self.bank as u8,
             fx: self.fx.iter().map(FxSlot::state).collect(),
+            pattern: self.pattern.as_ref().map(|p| p.slot.clone()),
+            patterns: self.pattern.iter().cloned().collect(),
             ..Default::default()
         };
         for abs in 0..PADS {
@@ -759,6 +855,7 @@ impl Pads {
                 file: self.file[abs].clone(),
                 name: self.custom_name[abs].clone(),
                 gate: self.gate[abs],
+                pitch_gate: self.pitch_gate[abs],
                 volume_db: self.volume_db[abs],
                 pitch: self.pitch[abs],
                 attack_ms: self.attack_ms[abs],
@@ -791,12 +888,16 @@ impl Pads {
     pub fn restore(&mut self, s: &Session, rate: u32) -> Vec<Command> {
         let mut cmds = Vec::new();
         self.bank = (s.bank as usize).min(BANKS - 1);
+        self.pattern = s.patterns.first().cloned();
+        self.pattern_rows = None;
+        self.pitch_gate.fill(true);
         for (key, state) in &s.pads {
             let Some(abs) = key.parse::<usize>().ok().filter(|&a| a < PADS) else {
                 log::warn!("session: bad pad {key}");
                 continue;
             };
             self.gate[abs] = state.gate;
+            self.pitch_gate[abs] = state.pitch_gate;
             self.volume_db[abs] = state.volume_db.clamp(MIN_DB, MAX_DB);
             self.pitch[abs] = state.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
             self.attack_ms[abs] = state.attack_ms;
@@ -842,6 +943,7 @@ impl Pads {
                 pad: abs,
                 semitones: self.pitch[abs],
             });
+            cmds.push(self.pitch_gate_command(abs));
             cmds.push(self.env_command(abs));
             cmds.push(self.filter_command(abs));
             cmds.push(self.drive_command(abs));
@@ -854,7 +956,19 @@ impl Pads {
         for k in 0..FX_SLOTS {
             cmds.push(self.fx_command(k));
         }
+        match Self::compile_pattern(self.pattern.as_ref(), None) {
+            Ok(pattern) => cmds.push(Command::SetPattern { pattern }),
+            Err(error) => log::error!("Cannot restore pattern: {error}"),
+        }
         cmds
+    }
+
+    pub fn pitch_gate_command(&self, abs: usize) -> Command {
+        Command::SetPadPitchGate {
+            pad: abs,
+            enabled: self.pitch_gate[abs],
+            linked_slice: matches!(self.source(abs), Source::Slice(_)),
+        }
     }
 
     /// The drive command of a pad (56).
@@ -1374,6 +1488,16 @@ impl Pads {
                 self.selected = row * 4 + col;
                 Vec::new()
             }
+            Action::PadPitchGateToggle => {
+                let enabled = !self.pitch_gate[self.selected_abs()];
+                self.scope_pads()
+                    .into_iter()
+                    .map(|abs| {
+                        self.pitch_gate[abs] = enabled;
+                        self.pitch_gate_command(abs)
+                    })
+                    .collect()
+            }
             Action::PadModeNext => {
                 // every pad of the scope gets the next mode of the selected pad
                 let sel = self.selected_abs();
@@ -1596,7 +1720,7 @@ mod tests {
         restored.restore(&loaded, 48_000);
         assert_eq!(restored.custom_name[0].as_deref(), Some("Бочка"));
         let snapshot = restored.snapshot(0);
-        restored.swap(0, 1);
+        restored.swap(0, 1).unwrap();
         assert_eq!(restored.custom_name[1].as_deref(), Some("Бочка"));
         restored.reset_clean(1);
         assert_eq!(restored.custom_name[1].as_deref(), Some("Бочка"));
@@ -1711,7 +1835,7 @@ mod tests {
             )
         };
         let (at_q, at_v) = (before(&p, q), before(&p, v));
-        p.swap(q, v);
+        p.swap(q, v).unwrap();
         assert_eq!(before(&p, v), at_q, "V has what Q had");
         assert_eq!(before(&p, q), at_v, "Q has what V had");
     }
@@ -1727,7 +1851,10 @@ mod tests {
         // the envelope goes along: the engine swaps the whole pad, the model must too
         (p.attack_ms[0], p.decay_ms[0], p.release_ms[0]) = (10, 5, 200);
         p.group[0] = 2; // and the mute group (70)
-        assert!(matches!(p.swap(0, 3), Command::SwapPads { a: 0, b: 3 }));
+        assert!(matches!(
+            p.swap(0, 3).unwrap(),
+            Command::SwapPads { a: 0, b: 3 }
+        ));
         assert_eq!((p.group[3], p.group[0]), (2, 0));
         assert_eq!(
             (p.attack_ms[3], p.decay_ms[3], p.release_ms[3]),

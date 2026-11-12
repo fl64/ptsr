@@ -36,6 +36,7 @@ pub(super) struct Notice {
     pub origin: Origin,
     pub text: String,
     lifetime: Lifetime,
+    recording_refusal: bool,
 }
 
 impl Notice {
@@ -50,6 +51,14 @@ impl Notice {
             origin,
             text: text.into(),
             lifetime,
+            recording_refusal: false,
+        }
+    }
+
+    pub(super) fn recording_refusal(origin: Origin, text: impl Into<String>) -> Self {
+        Self {
+            recording_refusal: true,
+            ..Self::new(Level::Warn, origin, text)
         }
     }
 
@@ -96,6 +105,12 @@ impl Notices {
             visible: true,
             at: now,
         }
+    }
+
+    pub(super) fn recording_refusal_pending(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.notice.recording_refusal)
     }
 
     pub(super) fn current(&self) -> Option<&Notice> {
@@ -147,6 +162,10 @@ impl Notices {
     }
 
     pub(super) fn push(&mut self, notice: Notice, now: Instant) {
+        self.push_owned(notice, now);
+    }
+
+    pub(super) fn push_owned(&mut self, notice: Notice, now: Instant) -> NoticeToken {
         self.advance(now);
         self.record(notice.clone());
         let current = self
@@ -162,15 +181,31 @@ impl Notices {
         }
         let level = notice.level;
         let i = self.entries.len();
+        let token = NoticeToken(Rc::new(()));
         self.entries.push_back(Entry {
             remaining: notice.lifetime,
             notice,
-            token: NoticeToken(Rc::new(())),
+            token: token.clone(),
         });
         if current.is_none_or(|old| level > old || (level == old && !startup)) {
             self.active = Some(i);
         }
         self.bound_pending();
+        token
+    }
+
+    pub(super) fn cancel_owned(&mut self, token: &NoticeToken, now: Instant) {
+        self.advance(now);
+        if let Some(i) = self
+            .entries
+            .iter()
+            .position(|e| Rc::ptr_eq(&e.token.0, &token.0))
+        {
+            self.remove(i);
+            if self.active.is_none() {
+                self.select_next();
+            }
+        }
     }
 
     pub(super) fn advance(&mut self, now: Instant) {
@@ -273,5 +308,136 @@ impl Notices {
             std::cmp::Ordering::Equal => None,
             std::cmp::Ordering::Greater => Some(active - 1),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recording_refusal_marker_preserves_hidden_error_priority_and_expires_with_its_notice() {
+        let now = Instant::now();
+        let mut notices = Notices::new(now);
+        notices.push(
+            Notice::new(Level::Error, Origin::System, "earlier error"),
+            now,
+        );
+        notices.set_visible(false, now);
+        notices.push(
+            Notice::recording_refusal(Origin::Keyboard, "target refused"),
+            now,
+        );
+        assert!(notices.recording_refusal_pending());
+        assert!(notices.current().is_none());
+        notices.set_visible(true, now);
+        assert_eq!(notices.current().unwrap().text, "earlier error");
+        let shown = notices.error_token();
+        notices.acknowledge_shown(shown.as_ref(), now);
+        assert_eq!(notices.current().unwrap().text, "target refused");
+        assert_eq!(notices.deadline(), Some(now + Duration::from_secs(6)));
+        notices.advance(now + Duration::from_secs(6));
+        assert!(!notices.recording_refusal_pending());
+        assert!(notices.current().is_none());
+        let later = now + Duration::from_secs(7);
+        notices.push(
+            Notice::recording_refusal(Origin::Keyboard, "same text"),
+            later,
+        );
+        assert!(notices.recording_refusal_pending());
+        notices.push(Notice::new(Level::Warn, Origin::System, "same text"), later);
+        assert!(
+            !notices.recording_refusal_pending(),
+            "text alone cannot classify a refusal"
+        );
+        assert_eq!(notices.current().unwrap().text, "same text");
+        assert_eq!(notices.history().len(), 4);
+    }
+
+    #[test]
+    fn pattern_manual_save_notice_cancellation_preserves_hidden_errors_and_history() {
+        for visible in [false, true] {
+            let now = Instant::now();
+            let mut notices = Notices::new(now);
+            let text = "Finishing A1 before saving.";
+            let owned = notices.push_owned(Notice::new(Level::Info, Origin::Keyboard, text), now);
+            notices.push(Notice::new(Level::Error, Origin::Keyboard, text), now);
+            let error = notices.error_token().unwrap();
+            notices.set_visible(visible, now);
+            let history = notices.history().clone();
+            notices.cancel_owned(&owned, now + Duration::from_secs(1));
+            assert_eq!(notices.history(), &history);
+            assert_eq!(notices.pending_len(), 0);
+            assert_eq!(notices.current().is_some(), visible);
+            notices.set_visible(true, now + Duration::from_secs(1));
+            assert_eq!(notices.current().unwrap().level, Level::Error);
+            notices.acknowledge_shown(Some(&error), now + Duration::from_secs(1));
+            assert!(notices.current().is_none());
+            notices.cancel_owned(&owned, now + Duration::from_secs(2));
+            assert!(notices.current().is_none());
+        }
+    }
+
+    #[test]
+    fn pattern_manual_save_notice_cancellation_keeps_other_deadlines_and_stale_identities() {
+        let now = Instant::now();
+        let mut notices = Notices::new(now);
+        let info = Notice::new(Level::Info, Origin::Keyboard, "Finishing A1 before saving.");
+        let old = notices.push_owned(info.clone(), now);
+        notices.push(info.clone(), now);
+        let deadline = notices.deadline();
+        let history = notices.history().clone();
+        notices.cancel_owned(&old, now + Duration::from_secs(1));
+        assert_eq!(notices.current(), Some(&info));
+        assert_eq!(notices.deadline(), deadline);
+        assert_eq!(notices.history(), &history);
+        notices.advance(deadline.unwrap());
+        assert!(notices.current().is_none());
+
+        let at = now + Duration::from_secs(4);
+        let owned = notices.push_owned(info, at);
+        notices.push(
+            Notice::new(Level::Warn, Origin::System, "Other warning"),
+            at,
+        );
+        let deadline = notices.deadline().unwrap();
+        notices.cancel_owned(&owned, at + Duration::from_secs(1));
+        assert_eq!(notices.current().unwrap().text, "Other warning");
+        assert_eq!(notices.deadline(), Some(deadline));
+        notices.advance(deadline);
+        assert!(notices.current().is_none());
+
+        let expired = notices.push_owned(
+            Notice::new(Level::Info, Origin::Keyboard, "Expired"),
+            deadline,
+        );
+        notices.cancel_owned(&expired, deadline + Duration::from_secs(4));
+        assert!(notices.current().is_none());
+    }
+
+    #[test]
+    fn pattern_manual_save_notice_eviction_and_active_cancellation_keep_unrelated_entries() {
+        let now = Instant::now();
+        let mut notices = Notices::new(now);
+        let owned = notices.push_owned(Notice::new(Level::Info, Origin::Keyboard, "Owned"), now);
+        notices.cancel_owned(&owned, now);
+        assert!(notices.current().is_none());
+        let owned = notices.push_owned(Notice::new(Level::Info, Origin::Keyboard, "Evicted"), now);
+        notices.push(Notice::new(Level::Error, Origin::System, "Keep error"), now);
+        let error = notices.error_token().unwrap();
+        for i in 0..=LIMIT {
+            notices.push(
+                Notice::new(Level::Info, Origin::System, format!("Other {i}")),
+                now,
+            );
+        }
+        let history = notices.history().clone();
+        assert_eq!(notices.pending_len(), LIMIT);
+        notices.cancel_owned(&owned, now);
+        assert_eq!(notices.pending_len(), LIMIT);
+        assert_eq!(notices.history(), &history);
+        assert_eq!(notices.current().unwrap().text, "Keep error");
+        notices.acknowledge_shown(Some(&error), now);
+        assert_eq!(notices.current().unwrap().text, "Other 1");
     }
 }

@@ -19,6 +19,9 @@ pub struct Snapshot {
     pub playing: bool,
     pub metronome: bool,
     pub ticks: f64,
+    /// Zero means no accepted pattern; a present empty pattern still has a length.
+    pub pattern_ticks: u32,
+    pub dropped_hits: u64,
 }
 
 impl Default for Snapshot {
@@ -28,6 +31,8 @@ impl Default for Snapshot {
             playing: false,
             metronome: false,
             ticks: 0.0,
+            pattern_ticks: 0,
+            dropped_hits: 0,
         }
     }
 }
@@ -60,6 +65,14 @@ impl Clock {
         self.next_beat = 0;
     }
 
+    /// Split before this tick's nearest output frame, including a buffer-end boundary.
+    pub fn frames_until(&self, ticks: f64, sample_rate: f64) -> usize {
+        let step = self.state.bpm * TICKS_PER_QUARTER / (60.0 * sample_rate);
+        ((ticks - self.state.ticks - 1e-9) / step - 0.5)
+            .ceil()
+            .max(0.0) as usize
+    }
+
     /// Returns a beat's accent at its nearest output frame, including the first beat.
     pub fn frame(&mut self, sample_rate: f64) -> Option<f32> {
         if !self.state.playing {
@@ -90,6 +103,8 @@ pub(crate) struct Published {
     bpm: AtomicU64,
     ticks: AtomicU64,
     flags: AtomicU64,
+    pattern_ticks: AtomicU64,
+    dropped_hits: AtomicU64,
 }
 
 impl Default for Published {
@@ -100,6 +115,8 @@ impl Default for Published {
             bpm: AtomicU64::new(DEFAULT_BPM.to_bits()),
             ticks: AtomicU64::new(0.0_f64.to_bits()),
             flags: AtomicU64::new(0),
+            pattern_ticks: AtomicU64::new(0),
+            dropped_hits: AtomicU64::new(0),
         }
     }
 }
@@ -110,6 +127,9 @@ impl Published {
         self.epoch.store(epoch, SeqCst);
         self.bpm.store(state.bpm.to_bits(), SeqCst);
         self.ticks.store(state.ticks.to_bits(), SeqCst);
+        self.pattern_ticks
+            .store(u64::from(state.pattern_ticks), SeqCst);
+        self.dropped_hits.store(state.dropped_hits, SeqCst);
         self.flags.store(
             u64::from(state.playing) | (u64::from(state.metronome) << 1),
             SeqCst,
@@ -130,6 +150,8 @@ impl Published {
             ticks,
             playing: flags & 1 != 0,
             metronome: flags & 2 != 0,
+            pattern_ticks: self.pattern_ticks.load(SeqCst) as u32,
+            dropped_hits: self.dropped_hits.load(SeqCst),
         };
         (self.revision.load(SeqCst) == revision).then_some(state)
     }
@@ -148,12 +170,16 @@ mod tests {
             ticks: 123.0,
             playing: true,
             metronome: false,
+            pattern_ticks: 3840,
+            dropped_hits: 7,
         };
         let b = Snapshot {
             bpm: 172.0,
             ticks: 456.0,
             playing: false,
             metronome: true,
+            pattern_ticks: 0,
+            dropped_hits: 19,
         };
         writer.record(a, 7);
         let thread = std::thread::spawn(move || {

@@ -1,4 +1,5 @@
 pub mod attribution;
+pub mod recording;
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};

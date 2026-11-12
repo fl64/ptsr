@@ -27,9 +27,11 @@ pub struct Stats {
     buffer_size: AtomicU32,
     sample_rate: AtomicU32,
     transport: crate::transport::Published,
+    recording: crate::capture::Published,
     pad_revision: AtomicU64,
     pad_epoch: AtomicU64,
     pad_positions: [PadPosition; crate::SLOTS],
+    pattern_hits: [AtomicU64; crate::PADS],
 }
 
 #[derive(Default)]
@@ -90,9 +92,11 @@ impl Default for Stats {
             buffer_size: AtomicU32::new(0),
             sample_rate: AtomicU32::new(0),
             transport: crate::transport::Published::default(),
+            recording: crate::capture::Published::default(),
             pad_revision: AtomicU64::new(0),
             pad_epoch: AtomicU64::new(0),
             pad_positions: std::array::from_fn(|_| PadPosition::default()),
+            pattern_hits: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
 }
@@ -103,16 +107,25 @@ impl Stats {
         self.transport.read(epoch)
     }
 
+    /// Accepted recording phase and boundary, or no snapshot during a concurrent write.
+    pub fn recording(&self, epoch: u64) -> Option<crate::capture::Snapshot> {
+        self.recording.read(epoch)
+    }
+
     // One writer, bounded stores, no waiting. SeqCst orders the fields with the revision
     // so a reader cannot combine an old voice identity with a new position or epoch.
-    fn record_pad_positions(&self, voices: &[crate::Voice], epoch: u64) {
+    fn record_pad_positions(&self, voices: &[crate::Voice], hits: &[u64; crate::PADS], epoch: u64) {
         self.pad_revision.fetch_add(1, SeqCst);
         self.pad_epoch.store(epoch, SeqCst);
         for (slot, voice) in self.pad_positions.iter().zip(voices) {
             if let Some((pad, sound)) = voice.pad.zip(voice.sound.as_ref())
                 && voice.fade != Some(0)
                 && voice.delay == 0
-                && voice.pos > voice.pos0
+                && if voice.sequenced {
+                    voice.audible
+                } else {
+                    voice.pos > voice.pos0
+                }
             {
                 slot.sound.store(Arc::as_ptr(sound) as usize, SeqCst);
                 slot.pad.store(pad, SeqCst);
@@ -122,7 +135,21 @@ impl Stats {
                 slot.started.store(0, SeqCst);
             }
         }
+        for (published, hit) in self.pattern_hits.iter().zip(hits) {
+            published.store(*hit, SeqCst);
+        }
         self.pad_revision.fetch_add(1, SeqCst);
+    }
+
+    /// Last audible sequenced note per pad, including notes that ended within a callback.
+    /// No snapshot is returned during a write or for another project.
+    pub fn pattern_hits(&self, epoch: u64) -> Option<[u64; crate::PADS]> {
+        let revision = self.pad_revision.load(SeqCst);
+        if revision & 1 != 0 || self.pad_epoch.load(SeqCst) != epoch {
+            return None;
+        }
+        let hits = std::array::from_fn(|pad| self.pattern_hits[pad].load(SeqCst));
+        (self.pad_revision.load(SeqCst) == revision).then_some(hits)
     }
 
     /// Sample-frame position of the newest sounding voice of an accepted pad and sample
@@ -317,6 +344,7 @@ impl Realtime {
     /// Called from the audio callback: no allocation, no locks, no I/O.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let started = Instant::now();
+        self.engine.poll_erasure_releases();
         for queue in self.commands.iter_mut() {
             for _ in 0..256 {
                 let Ok(cmd) = queue.peek() else { break };
@@ -334,6 +362,7 @@ impl Realtime {
                 self.epoch = epoch;
                 self.marker = false;
                 self.engine.switch_project();
+                self.engine.capture.reset(epoch);
             }
             let transition_done = self.engine.project_transition_step();
             for (index, queue) in self.project_commands.iter_mut().enumerate() {
@@ -345,9 +374,21 @@ impl Realtime {
                             cmd,
                             Command::PadPress { .. }
                                 | Command::PadRelease { .. }
+                                | Command::PatternPadPress { .. }
+                                | Command::PatternPadRelease { .. }
                                 | Command::TransportPlay
                                 | Command::TransportStop
                                 | Command::TransportToggle
+                                | Command::PatternRecordStart { .. }
+                                | Command::PatternRecordEnd { .. }
+                                | Command::PatternRecordAck { .. }
+                                | Command::PatternErase { .. }
+                                | Command::PatternEraseTarget { .. }
+                                | Command::PatternEraseConsumed { .. }
+                                | Command::PatternGateConsumed { .. }
+                                | Command::PatternRecordRows { .. }
+                                | Command::PublishRecordedPattern { .. }
+                                | Command::PublishCapturedPattern { .. }
                         );
                         let discard = msg.epoch != epoch
                             || (hit
@@ -378,9 +419,21 @@ impl Realtime {
                         ProjectMessage::Command(
                             Command::PadPress { .. }
                                 | Command::PadRelease { .. }
+                                | Command::PatternPadPress { .. }
+                                | Command::PatternPadRelease { .. }
                                 | Command::TransportPlay
                                 | Command::TransportStop
                                 | Command::TransportToggle
+                                | Command::PatternRecordStart { .. }
+                                | Command::PatternRecordEnd { .. }
+                                | Command::PatternRecordAck { .. }
+                                | Command::PatternErase { .. }
+                                | Command::PatternEraseTarget { .. }
+                                | Command::PatternEraseConsumed { .. }
+                                | Command::PatternGateConsumed { .. }
+                                | Command::PatternRecordRows { .. }
+                                | Command::PublishRecordedPattern { .. }
+                                | Command::PublishCapturedPattern { .. }
                         )
                     );
                     if !transition_done && !hit {
@@ -410,10 +463,11 @@ impl Realtime {
         }
         self.engine.process(left, right);
         self.stats
-            .record_pad_positions(&self.engine.voices, self.epoch);
+            .record_pad_positions(&self.engine.voices, &self.engine.pattern_hits, self.epoch);
         self.stats
             .transport
             .record(self.engine.transport(), self.epoch);
+        self.stats.recording.record(self.engine.recording());
 
         let budget = left.len() as f32 / self.sample_rate as f32;
         let permille = (started.elapsed().as_secs_f32() / budget * 1000.0) as u32;
@@ -424,6 +478,78 @@ impl Realtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recorded_publication_preserves_gate_and_pitch_gate_deadlines() {
+        use crate::pattern::{Grid, Hit, RawPattern};
+        for pitch_gate in [false, true] {
+            let render = |publish| {
+                let mut engine = Engine::with_sounds(48_000, vec![], vec![vec![0.02; 96_000]]);
+                engine.handle(
+                    0,
+                    Command::SetPadMode {
+                        pad: 0,
+                        mode: crate::PadMode::Gate,
+                    },
+                );
+                engine.handle(
+                    0,
+                    Command::SetPadPitch {
+                        pad: 0,
+                        semitones: if pitch_gate { 12 } else { 0 },
+                    },
+                );
+                engine.handle(
+                    0,
+                    Command::SetPadPitchGate {
+                        pad: 0,
+                        enabled: pitch_gate,
+                        linked_slice: true,
+                    },
+                );
+                let pattern = |grid, gate| {
+                    Arc::new(
+                        RawPattern::new(1, grid, 100, vec![Hit::new(0, 0, 127, gate).unwrap()])
+                            .unwrap()
+                            .compile(),
+                    )
+                };
+                engine.handle(
+                    0,
+                    Command::SetPattern {
+                        pattern: Some(pattern(Grid::Sixteenth, 960)),
+                    },
+                );
+                engine.handle(0, Command::TransportPlay);
+                let (mut tx, rx) = rtrb::RingBuffer::new(4);
+                let (garbage, mut trash) = rtrb::RingBuffer::new(4);
+                engine.set_garbage(garbage);
+                let mut rt = Realtime::new(engine, vec![rx], Arc::new(Stats::default()), 48_000);
+                let (mut left, mut right) = (vec![0.0; 30_000], vec![0.0; 30_000]);
+                rt.process(&mut left[..128], &mut right[..128]);
+                if publish {
+                    tx.push(Command::PublishRecordedPattern {
+                        pattern: pattern(Grid::Quarter, 1),
+                    })
+                    .unwrap();
+                }
+                for start in (128..30_000).step_by(128) {
+                    let end = (start + 128).min(30_000);
+                    rt.process(&mut left[start..end], &mut right[start..end]);
+                    while trash.pop().is_ok() {}
+                }
+                (left, right)
+            };
+            let control = render(false);
+            let published = render(true);
+            assert_eq!(published, control, "pitch gate {pitch_gate}");
+            let cut = if pitch_gate { 6000 } else { 24_000 };
+            for channel in [&published.0, &published.1] {
+                assert!(channel[..cut].iter().all(|&v| v == 0.02));
+                assert!(channel[cut + 240..].iter().all(|&v| v == 0.0));
+            }
+        }
+    }
 
     #[test]
     fn project_switch_rejects_queued_hits_and_restores_in_order() {
@@ -557,13 +683,16 @@ mod tests {
     fn pads_playing_reads_only_a_coherent_current_project_snapshot() {
         let stats = Stats::default();
         assert!(!stats.pads_playing(0));
+        assert_eq!(stats.pattern_hits(0), Some([0; crate::PADS]));
         stats.pad_positions[crate::SLOTS - 1]
             .started
             .store(1, SeqCst);
         assert!(stats.pads_playing(0), "include every pad slot");
         assert!(!stats.pads_playing(1), "old project");
+        assert!(stats.pattern_hits(1).is_none());
         stats.pad_revision.store(1, SeqCst);
         assert!(!stats.pads_playing(0), "writer is in progress");
+        assert!(stats.pattern_hits(0).is_none());
         stats.pad_epoch.store(1, SeqCst);
         stats.pad_revision.store(2, SeqCst);
         assert!(!stats.pads_playing(0));
@@ -572,6 +701,42 @@ mod tests {
             .started
             .store(0, SeqCst);
         assert!(!stats.pads_playing(1), "last voice ended");
+    }
+
+    #[test]
+    fn pattern_play_feedback_includes_the_first_frame_at_low_pitch() {
+        use crate::pattern::{Grid, Hit, RawPattern};
+        let mut engine = Engine::with_sounds(48_000, vec![], vec![vec![0.02; 4096]]);
+        engine.handle(
+            0,
+            Command::SetPadPitch {
+                pad: 0,
+                semitones: -48,
+            },
+        );
+        engine.handle(
+            0,
+            Command::SetPattern {
+                pattern: Some(Arc::new(
+                    RawPattern::new(1, Grid::Off, 100, vec![Hit::new(0, 0, 127, 0).unwrap()])
+                        .unwrap()
+                        .compile(),
+                )),
+            },
+        );
+        engine.handle(0, Command::TransportPlay);
+        let stats = Arc::new(Stats::default());
+        let mut rt = Realtime::new(engine, vec![], stats.clone(), 48_000);
+        let (mut left, mut right) = ([0.0], [0.0]);
+        rt.process(&mut left, &mut right);
+        assert_eq!(left, [0.02]);
+        assert_eq!(right, [0.02]);
+        assert!(stats.pads_playing(0));
+        assert!(stats.pattern_hits(0).unwrap()[0] > 0);
+        assert_eq!(
+            rt.engine.voices[0].pos, 0,
+            "source position is still fractional"
+        );
     }
 
     #[test]
@@ -645,7 +810,7 @@ mod tests {
                 voices[0].pad = Some(pad);
                 voices[0].pos = frame;
                 voices[0].started = turn + 1;
-                writer.record_pad_positions(&voices, 0);
+                writer.record_pad_positions(&voices, &[turn + 1; crate::PADS], 0);
             }
         });
         for _ in 0..10_000 {
@@ -655,8 +820,12 @@ mod tests {
             if let Some(frame) = stats.pad_position(&b, 0, |pad| pad == 2) {
                 assert_eq!(frame, 2222);
             }
+            if let Some(hits) = stats.pattern_hits(0) {
+                assert!(hits.iter().all(|hit| *hit == hits[0]));
+            }
         }
         thread.join().unwrap();
+        assert_eq!(stats.pattern_hits(0), Some([10_000; crate::PADS]));
         assert_eq!(stats.pad_position(&b, 0, |pad| pad == 2), Some(2222));
         assert_eq!(stats.pad_position(&a, 0, |_| true), None);
     }

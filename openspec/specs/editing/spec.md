@@ -230,7 +230,7 @@ F1 SHALL name `✱`.
 
 #### Scenario: A fresh pad has no mark
 - **WHEN** a sample is loaded on a fresh pad
-- **THEN** its mode line is `⇢` alone
+- **THEN** its mode line is empty
 
 #### Scenario: The mark goes with the setting
 - **WHEN** the pitch of a pad is +2 and the owner turns it back to 0
@@ -253,7 +253,7 @@ An off filter's cutoff and reso SHALL remain dim and SHALL NOT mark the FILTER b
 
 #### Scenario: Volume and group are not counted twice
 - **WHEN** pad Q is at -6 dB in mute group 2 with nothing else changed
-- **THEN** its mode line is `⇢ -6 mute 2`, with no `✱`
+- **THEN** its mode line is `-6 mute 2`, with no `✱`
 
 #### Scenario: A send marks the pad
 - **WHEN** the owner turns send 2 of pad Q to 20 %

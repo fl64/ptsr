@@ -130,6 +130,8 @@ fn main() -> io::Result<()> {
     );
     report.write("steady playback", &mut io::stdout().lock())?;
     let switch_p99 = bench_switch(budget, &mut trace)?;
+    let (pattern_p99, dropped) = bench_pattern(budget, &mut trace)?;
+    let recording_exceeded = bench_recording(budget, &mut trace)?;
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/bench-diagnostics");
     let (path, exceeded) = trace.finish(&directory, pct(p99), switch_p99)?;
@@ -138,7 +140,124 @@ fn main() -> io::Result<()> {
         eprintln!("EXCEEDED: steady callback p99 or switch peak p99 is over 50 % of the budget");
         std::process::exit(1);
     }
+    if pattern_p99 > 50.0 || dropped != 0 {
+        eprintln!("EXCEEDED: dense pattern wall p99 is over 50 % or pattern hits were dropped");
+        std::process::exit(1);
+    }
+    if recording_exceeded {
+        eprintln!("EXCEEDED: active recording or erasure maximum is over 50 % of the budget");
+        std::process::exit(1);
+    }
     Ok(())
+}
+
+fn bench_recording(budget: f64, trace: &mut Trace) -> io::Result<bool> {
+    use support::recording::{Kind, Workload, maximum_exceeded};
+    let mut exceeded = false;
+    for kind in [Kind::Recording, Kind::Erasure] {
+        let mut workload = Workload::new(kind, BLOCKS, |send| setup(send))?;
+        let mut samples = Vec::with_capacity(BLOCKS);
+        for block in 0..BLOCKS {
+            workload.prepare(block);
+            samples.push(trace.measure(kind.label(), 0, block, || workload.process())?);
+            workload.collect()?;
+        }
+        let report = Report::new(&samples, budget)?;
+        report.write(kind.label(), &mut io::stdout().lock())?;
+        exceeded |= maximum_exceeded(&report);
+        workload.release();
+        let release = trace.measure(
+            match kind {
+                Kind::Recording => "recording release",
+                Kind::Erasure => "erasure release",
+            },
+            0,
+            BLOCKS,
+            || workload.process(),
+        )?;
+        let report = Report::new(&[release], budget)?;
+        report.write(
+            &format!("{} release", kind.label()),
+            &mut io::stdout().lock(),
+        )?;
+        exceeded |= maximum_exceeded(&report);
+        workload.finish();
+        let finishing = trace.measure(
+            match kind {
+                Kind::Recording => "recording finishing",
+                Kind::Erasure => "erasure finishing",
+            },
+            0,
+            BLOCKS + 1,
+            || workload.process(),
+        )?;
+        let report = Report::new(&[finishing], budget)?;
+        report.write(
+            &format!("{} finishing", kind.label()),
+            &mut io::stdout().lock(),
+        )?;
+        exceeded |= maximum_exceeded(&report);
+        let evidence = workload.validate(BLOCKS)?;
+        println!(
+            "{}: {} callbacks, {} voices, {} accepted onsets, {} completed Gates, {} erased rows; no capture losses, no dropped playback hits. Accepted Finishing boundary; UI reconstruction and acknowledgement are not measured.",
+            kind.label(),
+            BLOCKS,
+            evidence.voices,
+            evidence.onsets,
+            evidence.gates,
+            evidence.erased
+        );
+    }
+    Ok(exceeded)
+}
+
+fn bench_pattern(budget: f64, trace: &mut Trace) -> io::Result<(f64, u64)> {
+    use engine::pattern::{Grid, Hit, RawPattern};
+    let sound = (0..SR as usize * 4)
+        .map(|i| (i as f32 * 0.01).sin() * 0.001)
+        .collect();
+    let mut engine = Engine::with_sounds(SR, engine::click(SR), vec![sound]);
+    let (garbage, mut retired) = rtrb::RingBuffer::new(1024);
+    engine.set_garbage(garbage);
+    setup(|command| {
+        if !matches!(command, Command::PadPress { .. }) {
+            engine.handle(0, command);
+        }
+    });
+    // Exactly 4096 events: 32 pads at every 1/64 line of a two-bar loop.
+    let hits = (0..128)
+        .flat_map(|step| (0..MAX_VOICES).map(move |pad| Hit::new(step * 60, pad, 127, 0).unwrap()))
+        .collect();
+    let pattern = RawPattern::new(2, Grid::SixtyFourth, 100, hits)
+        .unwrap()
+        .compile();
+    engine.handle(
+        0,
+        Command::SetPattern {
+            pattern: Some(Arc::new(pattern)),
+        },
+    );
+    let stats = Arc::new(Stats::default());
+    let mut rt = Realtime::new(engine, vec![], stats.clone(), SR);
+    let (mut left, mut right) = ([0.0; BLOCK], [0.0; BLOCK]);
+    let mut samples = Vec::with_capacity(BLOCKS);
+    for block in 0..BLOCKS {
+        samples.push(trace.measure("dense pattern playback", 0, block, || {
+            rt.process(&mut left, &mut right)
+        })?);
+        while retired.pop().is_ok() {}
+    }
+    let report = Report::new(&samples, budget)?;
+    let p99 = report.wall.p99 / budget * 100.0;
+    let dropped = stats
+        .transport(0)
+        .expect("completed callback snapshot")
+        .dropped_hits;
+    println!(
+        "dense pattern: 4096 hits, {MAX_VOICES} voices, 172 BPM, block {BLOCK} @ {SR} Hz, dropped hits {dropped}"
+    );
+    report.write("dense pattern playback", &mut io::stdout().lock())?;
+    Ok((p99, dropped))
 }
 
 fn bench_switch(budget: f64, trace: &mut Trace) -> io::Result<f64> {

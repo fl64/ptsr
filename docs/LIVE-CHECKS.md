@@ -2138,8 +2138,8 @@ Folder: `changes/archive/2026-11-08-95-transport`
 The owner accepted 95 and authorized archive and checks on 2026-11-08.
 Overall acceptance does not establish individual keyboard, physical-controller or listening results. Their checkboxes remain open.
 The agent did not open live audio or MIDI. This procedure is for the owner.
-Transport does not play patterns. Space keeps preview playback on Chop and Files.
-Saving writes session format 4. Older binaries refuse it. Keep existing projects outside this isolated run.
+Change 96 adds saved A1 playback to this transport. Space keeps preview playback on Chop and Files.
+The current build saves format 5. Section 96 gives its backup and trial procedure. Keep existing projects outside this isolated run.
 
 ### Prepare an isolated owner run
 
@@ -2205,3 +2205,511 @@ The SMC-PAD example remains an incomplete template. Do not infer controller-only
 The callback benchmark includes 32 voices, effects, transport and metronome at 172 BPM.
 Keep its existing budget limits. The p99 exit checks pass. Earlier maximum-target failures remain unresolved.
 See [verification limits](../openspec/changes/archive/2026-11-08-95-transport/tasks.md#implementation-verification). A later passing run does not close maximum-budget or slow-core investigations.
+
+## 96: One looped pattern and slice Pitch Gate
+
+Folder: `changes/96-pattern-play`
+
+The copied 96 trial binary plays one saved A1 pattern across all eight banks. That older binary does not record patterns.
+Use the current [97 recording trial](#97-record-and-erase-a1) for recording. A step editor remains planned.
+The temporary file-entry route requires a closed program. There is no file watcher or slot selector.
+Owner keyboard, physical-controller and listening acceptance remain separate from automated checks.
+Earlier callback maximum-target failures remain open, even when a command's p99 gate passes.
+
+### Ready local owner trial
+
+**Owner only.** This command opens normal audio and MIDI. The agent must not run it without device isolation.
+The prepared copy is local and ignored by Git. It is not a repository sample or an attached recording.
+Run this command from the repository root:
+
+```sh
+./target/96-owner-trial/start.sh
+```
+
+Save and close any existing ptsr instance before this trial. Do not run both copies for the comparison.
+The project `96-slices` opens stopped, in bank 1, with a two-bar A1 at 92 BPM.
+It contains eight copied slice pads from an owner project and one copied recording.
+External downloads and unrelated sample assignments are absent. The retained older chop states stay with the copied recording.
+Master starts at -12 dB. Metronome starts off. Pad `W` has pitch +12 and the name `PG +12`.
+These are trial-only settings. The original project and recording remain unchanged.
+The start script uses a copied binary and separate config, scratch, project, sample and log folders.
+It checks that startup paths remain inside the trial folder. It does not copy saved owner MIDI bindings.
+Do not change the trial's roots or load external files for these checks.
+
+`start.sh --check` checks paths without starting sound or MIDI. It does not establish a live-device or listening result.
+If the local trial is absent, prepare a disposable project with the developer procedure below.
+Do not substitute an existing owner project for a missing trial.
+
+### Keyboard pass
+
+Use the prepared trial. Start at a comfortable listening level. The keys below are defaults.
+
+- [ ] Check `96-slices`, stopped transport and A1 at bar 1, beat 1.
+  Press `Space` on Pads. Check the two-bar rhythm and repeating A1 position.
+  Check that the absolute transport continues while A1 returns to bar 1.
+- [ ] Leave a different pad selected while the pattern plays. Change banks with `Ctrl+2`, then `Ctrl+1`.
+  Check that notes retain their sounds and absolute addresses. Playback must not select pads or simulate held input.
+  Check PLAY, brief hit flashes and the existing keyboard/controller identity.
+- [ ] Press `Ctrl+Up`, then `Ctrl+Down`. Check one-BPM changes.
+  Add Shift for 0.1 BPM. Check the same beat for pattern and metronome after enabling it with `Alt+M`.
+  Disable the metronome again before comparing tails.
+- [ ] Hit `W`. Check `PG +12` and its linked slice.
+  The 96 trial copy shows `PG on`. A binary with the 97 feedback clarification shows `PG A1`.
+  Press `Alt+G`. Check `PG off` and the value popup. Compare subsequent automatic tails.
+  Press it again. Check the return to On. The cut uses the next grid line, including an empty step.
+- [ ] Hit `W` manually with On, then Off. Check unchanged manual sound without an imposed step cut.
+  For solo preview, stop transport on Pads before opening its slice on `F3`.
+  Check that preview remains independent of Pitch Gate. Return with `F2` and restart the pattern if necessary.
+  Do not infer a whole-file or zero-pitch cut from the saved On label.
+- [ ] On Pads, open edit with `Enter`. Toggle Pitch Gate again.
+  Check the same mode-row label without a new page or changed knob targets. Close edit with `Esc`.
+  Open `F1`. Check effective keys and the explanation of positive-pitch linked slices. Close help with `F1`.
+- [ ] Keep `W` selected. Press `Ctrl+X`. Hit `E` as the swap target.
+  Check the moved complete pad state and the same future rhythm with its sounds.
+  The existing short swap fade can affect a sounding voice. No delayed or doubled hit should follow.
+  Press `Ctrl+Z`. Check that both pads and all hit addresses return together.
+- [ ] Press `Space` on Pads to stop. Check stopped transport and loop position at bar 1, beat 1.
+  Ordinary one-shot and shared-effect tails can finish. Gate and Pitch Gate notes use their required releases.
+  Press `Space` again. Check one first hit, without an old release cutting a new note.
+- [ ] Open `F4` and `F12` separately. Check the same accepted A1 clock. Space controls transport there.
+  On Chop and Files, Space keeps its preview role. Return to Pads before the next transport command.
+- [ ] Stop. Press `Ctrl+S`. Check the save result. Quit with `Ctrl+Q`.
+  Run the same start script. Check retained tempo, A1, pad state and Pitch Gate, with playback stopped at the beginning.
+
+The Chop interaction remains an open specification question before archive.
+The local trial fades current pad voices on entry, but future pattern hits continue on Chop while transport runs.
+Space previews there instead of stopping transport. Use Pads to stop first when solo listening is necessary.
+This observed behavior is not listening acceptance or an agreed future suppression policy.
+
+### Physical-controller pass
+
+Use only available controls in the isolated trial. Do not reset a factory map or replace performance bindings.
+The SMC-PAD example is not a verified profile. Controller layers, holds and physical comfort remain work for their own changes.
+Use keyboard fallback where a binding is absent. Record that dependence rather than claiming controller-only reach.
+
+- [ ] Open F12 MIDI. Learn an unused button for GLOBAL transport toggle.
+  Press Enter to save it. Learn another button for PADS Pitch Gate toggle.
+  A knob is not a button. Check pending confirmation and cancellation before retaining a binding.
+- [ ] On Pads, press the transport button. Check one start. Release it. Check no second toggle.
+  Select `W` with a physical pad if available. Press the Pitch Gate button.
+  Check its target, mode-row state, applied-value popup and future sequenced tail.
+- [ ] Repeat with pad edit open and closed. Check the same intended PADS binding.
+  Save and restart. Check retained trial bindings, without changing the owner's saved map outside the trial.
+- [ ] Use existing learned swap and undo commands for the keyboard swap check.
+  A swap needs its command and target hit. An extra bank change is necessary only for a cross-bank target.
+  Do not count keyboard fallback as an implemented SMC-PAD control.
+- [ ] Compare a manual physical pad hit with its equivalent keyboard hit at matching velocity.
+  Pitch Gate must not impose an automatic step cut on either manual hit.
+  Record the device, preset, message form and unavailable controls.
+
+With a selected target, a learned Pitch Gate button needs one press and no page change.
+Keyboard Alt+G uses one modifier chord. F10 and F12 are setup routes, not repeated performance steps.
+No physical action-count result establishes comfort on an unmeasured SMC-PAD.
+
+### Closed-program entry and backup procedure
+
+This route is for developer review or an owner who explicitly wants to enter raw events.
+The ready local trial above does not require it.
+
+1. Use a disposable project with two loaded pads. Save it with `Ctrl+S`.
+2. Quit with `Ctrl+Q`. Keep the program closed during every file edit.
+3. Copy the complete project folder to a separate backup folder before the first format-5 save on valuable work.
+4. Open only the disposable `project.toml`. Keep its existing version, tempo, pads, chops, paths and effect tables.
+5. Add `pattern = "A1"` before the first table header. Do not add a second version or tempo field.
+6. Append the pattern table below. Do not append a second A1 entry to a file that already has one.
+7. Reopen the same project. Check the stopped A1 label. Follow the playback, swap, undo and save checks above.
+
+```toml
+[[patterns]]
+slot = "A1"
+bars = 2
+quantize = "1/16"
+strength = 100
+hits = [[0, 0, 100, 0], [1920, 1, 110, 0], [3840, 0, 100, 0], [5760, 1, 110, 0]]
+```
+
+Each hit is `[raw tick, absolute pad, velocity, gate ticks]`. A quarter note has 960 ticks. A bar has 3840 ticks.
+Pad 0 is bank 1 key `1`. Pad 1 is bank 1 key `2`. A one-shot ignores gate ticks. A zero-length Gate note is silent.
+To replace an existing pattern, edit its one table instead of appending another.
+[The format contract](../openspec/changes/96-pattern-play/design.md#saved-format) gives grids, ranges and hidden-hit rules.
+Quantize changes playback, not saved raw timing. Off uses a 1/16 boundary for Pitch Gate.
+
+An older binary refuses format 5. To return to it, close ptsr and restore the complete pre-upgrade backup.
+Do not lower only the version number or remove new fields to force a downgrade.
+The local trial's original source is unchanged, but it is not a universal backup of the owner's other work.
+Never edit a protected, invalid or newer file while ptsr keeps that session open.
+
+### Independent device-free workflow review
+
+A reviewer must keep the owner's current sound and MIDI inaccessible.
+A nonexistent JACK server alone does not isolate MIDI. Keep the forced JACK backend, 1024-frame setting and isolation variables from AGENTS.md.
+The local review helper `target/96-implementation/isolate_terminal.py` additionally restricts device files, network connections and writes through kernel Landlock.
+Its preflight must pass before any terminal start. Failure means no start, not a fallback to ordinary ptsr.
+Container namespace attempts on this host failed, so their commands provide no isolation evidence.
+
+Check the owner's graph without changing it. If another ptsr node exists, do not start a second live sampler.
+Use recorded production keyboard/MIDI dispatch, offline callbacks and saved-file round trips for the workflow instead.
+Report the interactive terminal pass as blocked. Keep simulated input, terminal observations, hardware and listening results distinct.
+Do not stop or reconfigure the owner's existing process to finish a review.
+
+### Listening and automated evidence
+
+Regenerate the required generated-sound WAVs without opening a device:
+
+```sh
+cargo test -p engine --test pattern_renders -- --nocapture
+```
+
+| Local file | Time in seconds | Listen for |
+| --- | --- | --- |
+| `renders/96-pattern-play.wav` | 0–8 | Two two-bar loops at 120 BPM with short percussion and released gate bass |
+| Same file | 8–11.2 | Third loop at 150 BPM without drift or a doubled first hit |
+| Same file | 11.2–14.4 | Fourth loop with later snare events after accepted pattern replacement |
+| Same file | 14.4–14.9 | Intentional silence |
+| `renders/96-pitch-gate.wav` | 0–2.5 | Pitch Gate On: first cut at 0.125, a later note and the loop seam at 2 seconds |
+| Same file | 2.5–5 | Matching pattern with Off, allowing the tone to continue |
+| Same file | 5–7.5 | Manual hits with On, matching the Off control |
+
+- [ ] Listen to both files. Check stable timing, intended short tails and unchanged attacks.
+- [ ] Compare On, Off and manual sections. Check the cut at an empty step and the seam without an unintended extra attack.
+- [ ] Listen to the copied owner-slice trial. Report unwanted clicks with the pad, Pitch Gate state, exact action and time.
+- [ ] Report keyboard, physical-controller and listening results separately. Leave unavailable checks open.
+
+Both files are local, not recordings of live hardware. Their tests check finite samples, no clipping, levels, silence and timing.
+Manual references also check both channels within 0.000001 per sample and the existing short-cut envelope.
+The separate dense benchmark uses 4096 events, 32 voices, shaping, both effects and the 172 BPM clock.
+Read maxima and counts above 50%, not only command success. Earlier maximum-budget and slow-core failures remain open.
+[The active task record](../openspec/changes/96-pattern-play/tasks.md#required-listening-files) keeps literal commands and measured limits.
+
+## 97: Pitch Gate setting and applicability
+
+This feedback boundary changes no sound. The [recording trial below](#97-record-and-erase-a1) covers the later completion of the active change.
+Use the newly built `target/release/ptsr` in a disposable project, not an owner project.
+The 96 trial script uses a copied binary. Do not assume that copy includes the new feedback.
+Keep keyboard, physical-controller, live-terminal and listening results separate.
+Automated tests use recorded input and offline audio. They do not establish hardware or listening acceptance.
+
+### Keyboard feedback check
+
+1. Open Pads with F2.
+2. Select a linked slice pad with a manual hit.
+3. Open edit with Enter.
+4. Select TONE with Tab or Shift+Tab.
+5. Select Pitch with I or K.
+6. Use J or L to set Pitch above zero.
+7. Press Alt+G until the mode row shows `PG A1`.
+8. Check `PG on: A1 only, manual unchanged` in the last help row.
+9. Hit the pad manually.
+10. Check unchanged manual sound and the same A1-only explanation.
+11. Press Alt+G once.
+12. Check `PG off` and the popup's target pad.
+13. Press Alt+G again.
+14. Check `PG on: A1 only` in the popup.
+15. Set Pitch to zero, then below zero, with J/L.
+16. Check `PG n/a` and `needs Pitch > 0` without another toggle.
+17. Select a whole-file pad, a detached piece and an empty pad in turn.
+18. Keep Pitch Gate On for each pad.
+19. Check `PG n/a` and `needs linked slice`, including at zero pitch.
+20. Return to the linked slice with positive pitch.
+21. Check `PG A1` without changing the saved switch.
+22. Open F1.
+23. Check A1-only scope, positive pitch, linked slices and the next-grid cut, including empty steps.
+24. Check unchanged manual hits and previews, plus the effective toggle key.
+25. Close F1.
+
+Use the effective owner key instead of Alt+G if its binding differs.
+Repeat with edit closed, each edit page, hidden pads and both 80x26 and 120x40 terminals.
+Check the unchanged mode, scope and parameter-row positions within each configuration.
+Check the pad identity in every popup. No new top badge or parameter page must appear.
+The first two Pads help rows contain compact commands. F1 retains commands that no longer fit there.
+Learning keeps its existing help priority. Save and audio warnings keep their existing positions and priority.
+Do not create a real save or audio failure for this check. Offline fixtures cover those combinations.
+
+With a prepared A1, compare stopped transport, playback and simultaneous manual hits.
+The label describes the saved setting and applicability, not a report that the current sound has a cut.
+An absent A1 also keeps `PG A1` for an eligible On setting.
+Manual hits remain unchanged in all three cases. Short slices need not produce an audible On/Off difference.
+
+### Learned-controller feedback check
+
+1. Use the disposable project's existing learned Pitch Gate button.
+2. Select the same pad with a physical pad if available.
+3. Press the learned button once.
+4. Check one saved-state change and the popup's target pad.
+5. Check the same source or pitch explanation as the keyboard path.
+6. Repeat with edit open and closed.
+7. Open F1.
+8. Check the actual learned button and effective keyboard key.
+
+If no button exists, follow the F12 learning procedure in the 96 controller check.
+Do not reset a device profile or replace the owner's saved performance bindings.
+Raw note and CC tests do not establish physical SMC-PAD support or comfort.
+
+### Sound and local screen evidence
+
+No new sound render is necessary for this feedback-only change.
+Use `renders/96-pitch-gate.wav`: 0–2.5 seconds is On, 2.5–5 seconds is Off, and 5–7.5 seconds is manual On.
+Listen for the existing automatic cut and unchanged manual section. Do not expect a pitch change.
+Owner listening, physical-controller use and a live terminal check remain unverified.
+
+`task screens` generates the local ANSI frames without devices or owner-project writes.
+The base catalogue includes `pads-pitch-gate-{off,a1,source,pitch}-{80x26,120x40}.ansi` in `renders/screens/`.
+Additional frames cross those states with every edit page, hidden pads and safety warnings.
+For example, compare `pads-pitch-gate-source-hidden-TONE-safety-80x26.ansi` with its `a1` variant.
+ANSI frames are not evidence of kitty image composition or live-device behavior.
+
+## 97: Record and erase A1
+
+Folder: `changes/97-pattern-record`
+
+Use the current `target/release/ptsr`, not the copied 96 trial binary.
+These procedures describe the implemented software paths. They do not claim completed owner, hardware or listening acceptance.
+Leave every untested box open. Keep callback maximum acceptance separate from a successful p99 result.
+Do not use a valuable project for this trial. No project-file edit is necessary.
+
+### Prepare a disposable trial
+
+**Owner only.** The final command opens normal audio and MIDI. It does not isolate devices.
+Save and close another ptsr instance before this trial. The agent must not execute the final command without separate device isolation.
+The preparation uses Python's standard library and generated sounds. It leaves the owner's saved files unchanged.
+Run this block from the repository root after `task build` succeeds:
+
+```sh
+trial="$(mktemp -d "$PWD/target/97-owner-XXXXXX")"
+python3 - "$trial" <<'PY'
+import json
+import math
+from pathlib import Path
+import struct
+import sys
+import wave
+
+root = Path(sys.argv[1]).resolve()
+for name in ("config/ptsr", "data", "state", "projects", "samples"):
+    (root / name).mkdir(parents=True, exist_ok=True)
+config = "[paths]\nprojects = " + json.dumps(str(root / "projects"))
+config += "\nsamples = " + json.dumps(str(root / "samples"))
+config += '\n[audio]\nbackend = "auto"\nbuffer_size = 1024\n'
+(root / "config/ptsr/config.toml").write_text(config)
+for name, frequency, count in (("low", 55.0, 2400), ("high", 110.0, 2400),
+                                ("gate", 165.0, 192000)):
+    frames = []
+    for i in range(count):
+        envelope = (0.1 * math.sin(math.pi * i / (count - 1)) ** 2 if count == 2400
+                    else 0.1 * min(1.0, i / 480, (count - 1 - i) / 480))
+        samples = [round(32767 * envelope * math.sin(2 * math.pi * frequency * ratio * i / 48000))
+                   for ratio in (1.0, 1.5)]
+        frames.append(struct.pack("<hh", *samples))
+    with wave.open(str(root / "samples" / (name + ".wav")), "wb") as output:
+        output.setparams((2, 2, 48000, 0, "NONE", "not compressed"))
+        output.writeframes(b"".join(frames))
+print("Disposable trial:", root)
+PY
+XDG_CONFIG_HOME="$trial/config" XDG_DATA_HOME="$trial/data" \
+XDG_STATE_HOME="$trial/state" ./target/release/ptsr
+```
+
+The generated sounds have different left and right frequencies. A plain hit is quieter than a Shift hit.
+The files use no third-party recording. Keep the printed trial path for the restart check.
+The trial has separate config, session, project, sample and log folders. Factory profiles still come from this repository.
+The setup does not copy the owner's learned controls. It does not add a factory SMC-PAD assignment.
+
+### Keyboard pass
+
+Use the default keys below only if F1 shows them. Use the effective key if an owner override replaces it.
+
+- [ ] Open F12 Paths. Check that both roots are inside the printed trial folder.
+  Do not continue if either root points to an owner folder.
+- [ ] Press Ctrl+P. Type `97-record`. Press Enter to create the disposable project.
+  Open F6. Load `low.wav` on pad `1`, then `high.wav` on pad `2`, with Enter and the target pad.
+  Load `gate.wav` on pad `3`. This four-second tone makes held-release checks audible.
+  Open F2. Select pad 3 with the arrows. Use H to set its mode to Gate.
+- [ ] Open F2. Press Ctrl+R while stopped. Check COUNT 4, 3, 2, 1, then REC A1.
+  End this empty pass with Ctrl+R. Stop with Space. Start another count-in with Ctrl+R.
+  Hold pad 3 and press Esc. Check stopped transport, no recorded warm-up row and a working original release.
+- [ ] Start again. After REC A1 appears, play a two-bar rhythm with pads 1 and 2.
+  Include plain and Shift hits. Press Ctrl+R once to end the pass.
+  Check continuing playback, one quantized repeat and no extra hit immediately after a manual hit.
+- [ ] Press Ctrl+R during playback. Add a new high hit on another beat. End with Ctrl+R.
+  Check the original clock, old rhythm and new hit. Press Alt+Z once.
+  Check that only the latest pass disappears. Record it again for the next steps.
+- [ ] Open Alt+N. Change Quantize among all grids. Check Strength at 0, 50 and 100.
+  Check the later repeats, not a rewritten raw take. Close with Enter, Esc or Alt+N.
+  With recording Idle, change Bars at both limits, then return to two bars.
+- [ ] Start recording during playback. Try Bars. Check an instruction to finish the pass first.
+  End with Ctrl+R. Stop with Space on Pads. Start with Ctrl+R.
+  While COUNT is visible, try Quantize and Strength. Check a refusal that names count-in.
+  Close controls. End or cancel with Ctrl+R. If transport stopped, start playback with Space on Pads.
+  Do not create a real audio or save failure. Offline tests cover Finishing and recovery pressure.
+- [ ] Start recording during playback. Press Alt+E. Hold the low pad across one of its notes.
+  Check ERASE A1, the accepted absolute target and silence for that erased note.
+  Release before another note. Check that the release excludes its boundary.
+- [ ] Press Alt+E again. Add a new low hit. Change the grid and strength during the same pass.
+  End the pass. Press Alt+Z once. Check restoration of the old rhythm and settings together.
+  Start and end an empty pass. Check the unchanged restored rhythm.
+  Alt+Z must then undo the earlier overdub, not an empty-pass step.
+- [ ] Make a pad-volume edit after a completed pass. Press Alt+Z.
+  Check a refusal to cross the newer edit. Use normal Undo on Pads first.
+  Do not accept a pattern Undo that changes that pad volume.
+- [ ] On Pads, select pad 3 with the arrows. Press H until its mode is Gate. Hold pad 3.
+  Change bank or screen before release. Check that release still ends the original pad.
+  Repeat across record end and erasure toggles. With no key releases, check the stated one-loop erasure fallback instead of a hold.
+- [ ] Repeat recording controls on F6, F3, F4 and F12. Keep earlier notes playing.
+  On Chop, check actual pads and linked slice selection during pattern work.
+  Check that Space and cursor preview do not enter A1. Stop on Pads before solo preview outside pattern work.
+- [ ] Open a name or filter line, picker, question or learning mode. Try the recording commands.
+  Check the original input owner and no underlying record, erase or controls toggle.
+  Check that an earlier permitted pad release still works.
+  Close each blocking mode through its normal action before the next check.
+- [ ] Open F1 while recording. Check the live phase on Keys and Messages.
+  Page Keys with Alt+PageDown and Alt+PageUp. Check the final rows and the last-page clamp.
+  Change terminal size between 80x26 and 120x40. Check readable controls and unchanged save/audio status positions.
+  Close F1 with Esc.
+- [ ] Repeat the command keys in Russian and with pad edit open. Check effective owner overrides and `none` where applicable.
+  Holding a recording, erasure or controls key must not toggle repeatedly. Releasing it must not toggle.
+- [ ] Press Ctrl+S during a pass with a Gate held. Check pass completion before the save result and continuing playback.
+  Close with Ctrl+Q. Restart with the same XDG variables and trial path.
+  Check the saved take and settings, stopped transport and clock zero. Earlier physical holds must not return.
+
+Alt+R remains microphone recording. It is a hold with key releases and a toggle without them.
+Ctrl+T remains output recording. A conflicting recording target must refuse without stopping the active target.
+Input gain, noise removal, a step editor and wider Pitch Gate sound behavior are not part of this trial.
+
+### Learned-controller pass
+
+Use only unused controls in the disposable trial. Do not replace the owner's saved performance map.
+Keep unavailable hardware checks open. Raw note and CC tests do not establish physical SMC-PAD support or comfort.
+
+1. Open F12. Use Tab to select MIDI.
+2. Select GLOBAL with the arrows. Press Enter to open it.
+3. Select `record pattern`. Press Enter to start learning.
+4. Press the unused controller button. Check its pending assignment.
+5. Press Enter to accept that assignment.
+6. Repeat steps 3–5 for the other button labels below.
+7. Repeat the first-take, overdub, erasure, settings and Undo steps with those buttons and physical pads.
+8. Check that release does not toggle a command again.
+9. Repeat on every current screen and across bank changes with a pad held.
+10. Repeat blocked-input and F1 paging checks.
+11. Save the trial. Restart with the same XDG variables.
+12. Check retained trial assignments and stopped transport.
+
+| F12 label | Physical control |
+| --- | --- |
+| `record pattern` | Button |
+| `pattern controls` | Button |
+| `erase pattern under held pads` | Button |
+| `undo pattern pass` | Button |
+| `previous pattern parameter` | Button |
+| `next pattern parameter` | Button |
+| `decrease pattern value` | Button |
+| `increase pattern value` | Button |
+| `previous help page` | Optional button |
+| `next help page` | Optional button |
+| `pattern bars` | Optional absolute knob |
+| `pattern quantize` | Optional absolute knob |
+| `pattern strength` | Optional absolute knob |
+
+If absolute knobs are available, learn the three knob labels above.
+Check jump, pickup and scale separately. Check each device and knob's own pickup state.
+A refusal during count-in or finishing must not show a changed value or create A1 accidentally.
+Record the device, preset, actual messages and keyboard fallback. Do not infer factory assignments from learned test routes.
+
+### Listening file
+
+Regenerate the file without opening a device:
+
+```sh
+cargo test -p ptsr --bin ptsr complete_recording_workflow -- --nocapture
+```
+
+Listen to `renders/97-pattern-record.wav`. It is a local generated-sound render, not attached live hardware audio.
+Count-in precedes the captured file. The file starts at accepted A1 tick zero and lasts 28 seconds.
+
+| Time in seconds | Listen for |
+| --- | --- |
+| 0–4 | Manual low hit at 0.105 and high hit at 0.750 |
+| 4–8 | Quantized low hit at 4.125 and high hit at 4.750, without an extra raw repeat |
+| 8–16 | Existing rhythm plus a new manual high hit at 8.500 and its repeat at 12.500 |
+| 16–20 | No old low hit at 16.125, then the new manual low hit at approximately 16.667 |
+| 20–21 | New high hit at 20.500, new low at approximately 20.708 and old high at 20.750 |
+| 21–24 | One pass Undo restores the previous pattern while the clock continues |
+| 24–28 | Original low returns at 24.125, high hits at 24.500 and 24.750, then silence after 24.800 |
+
+- [ ] Listen to both channels. Check clear attacks, intended silences and no unintended clicks or doubled hits.
+- [ ] Compare the last restored loop with the rhythm before erasure. Check that the overdub remains.
+- [ ] Report keyboard, physical controller, terminal reporting and listening results separately.
+
+The test checks every sample against an independent manual reference in both channels within 0.000001.
+It checks 19 onsets within one frame, finite values, no clipping and the required silence windows.
+Each onset's RMS matches the independent reference within 0.01 dB. Adjacent-sample changes stay within the generated reference envelope.
+These automated checks do not prove listening quality, physical latency, kitty image composition or terminal key reporting.
+
+### Callback acceptance
+
+Run `task bench` separately from live audio. Do not run another build or test workload during a timing comparison.
+Read the separate active recording and erasure groups, their release and Finishing boundaries, and their maximum/count lines.
+The new groups fail for any measured wall or thread CPU maximum above 50 percent.
+Original playback and switching checks retain their existing exit rules.
+Keep every historical overrun visible. A later passing maximum or p99 does not resolve an earlier missed target.
+
+## 96-98h: Patterns and edit frames
+
+Folders: `changes/archive/2026-11-12-96-pattern-play` to `changes/archive/2026-11-12-98h-empty-pad-tone`
+
+Use a disposable project or a copy. Run `task build`, then start `target/release/ptsr`.
+These steps describe the implemented software paths. Leave every untested box open.
+
+### Record and quantize
+
+- [ ] Open Alt+N. Set quantize 1/4. Press Esc. Press Ctrl+R, wait for the count-in and play a kick on two beats. Press Ctrl+R.
+- [ ] Set quantize 1/16 in Alt+N. Check that the kicks stay on their beats.
+- [ ] Record a snare between beats. Check that it lands on the nearest 1/16 cell.
+- [ ] Hit one pad twice in one 1/16 cell in one pass. Check that one hit stays.
+
+### The A1 view
+
+- [ ] Start the program. Check that the A1 rows show at once, under the splash at 120x40.
+- [ ] Check the header: `view 1/16 · quantize 1/4 100 % · bank N`, and the pad row label `pad Q`.
+
+### Erase and clear
+
+- [ ] Outside a pass, press Alt+E on F2. Check `ERASE` and `N hits` on the pads.
+- [ ] Press a pad. Check that it makes no sound and its hits go. Press Ctrl+Z, then Esc.
+- [ ] During playback, press Alt+E and a pad. Check that it stops in the next loop without a click.
+- [ ] In Alt+N, select clear A1 and press Enter. Answer keep with Esc, then repeat and answer yes. Press Ctrl+Z.
+
+### Edit frames
+
+- [ ] Alt+N: check the `EDIT · PATTERN CLEAR` frame and that H and Backspace do not change the pad.
+- [ ] F4: check one frame `EDIT · FX 1 FX 2`. Press Tab: FX 2 is lit.
+- [ ] F3, Enter on a slice: check the frame `EDIT · BOUNDS` with start, end, length and cursor. Press K, then J/L.
+- [ ] F12: check the frame `SETTINGS · AUDIO INPUT MIDI PATHS` and the `▸` row on every tab.
+- [ ] F2, Enter on an empty pad: check its test tone with the envelope line in the strip.
+
+### Listen
+
+- [ ] `renders/98b-erase-pad-playback.wav`: low and high tones. In the second loop the eraser takes the low tone while it sounds, and the tone rings out. The third loop has only the high tone.
+- [ ] `renders/98c-quantize-on-input.wav`: a low tone on beat 2 and a high tone on a 1/16 line between beats. Both loops sound the same.
+
+## 98j: Controller map
+
+Folder: `changes/archive/2026-11-12-98j-controller-map`
+
+Connect the X-Session Pro. Run `task build`, then start `target/release/ptsr`.
+These steps describe the implemented software paths. Leave every untested box open.
+
+- [ ] Turn a knob. On F2, press F1, then Tab two times. Check the `CONTROLLER` tab and `[X-Session Pro]` on the top line.
+- [ ] Check the drawing: deck A on the left, deck B on the right, four faders in the middle, the crossfader `<->` at the bottom.
+- [ ] Check that each label agrees with the device: k1 `(volume)`, the left headphone button `[files]`, the right one `[fx]`.
+- [ ] Move the selection with the arrows. Check that the bottom line names each control and its action.
+- [ ] Press Esc, open F3 and open the tab again. Check the Chop labels: k1 `(start)`, k12 `(zoom)`.
+- [ ] On F2, press Enter on a pad, then open the tab. Check the edit labels: k1 `(knob1)`, left LOAD `[back]`.
+- [ ] Disconnect the device while the tab is open. Check `No MIDI device is connected.` and `X-Session Pro` under `Known profiles:`.
+- [ ] Connect it again. Check that it comes back on the top line.
+
+## 98k: Selected pad frame
+
+Folder: `changes/archive/2026-11-12-98k-selected-pad-frame`
+
+- [ ] Record A1 with hits on the selected pad and press Space. Check that the selected pad keeps its cyan frame on each hit, and only its inside flashes white.
+- [ ] Turn marking on and mark the selected pad. Check the cyan frame around the yellow fill.

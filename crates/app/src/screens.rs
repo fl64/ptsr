@@ -57,6 +57,27 @@ enum Mode {
     Slices128,
     Loop,
     AsPad,
+    PatternActive,
+    PatternStopped,
+    PatternEmpty,
+    PatternPending,
+    PatternControls,
+    PatternCountIn,
+    PatternRecording,
+    PatternErase,
+    PatternFinishing,
+    PatternSafety,
+    PatternViewFine,
+    PatternViewTriplet,
+    PatternViewOffGrid,
+    PatternViewMultiple,
+    PatternViewHidden,
+    PatternViewSafety,
+    PatternErasePads,
+    PitchGateOff,
+    PitchGateA1,
+    PitchGateSource,
+    PitchGatePitch,
 }
 
 impl Mode {
@@ -108,6 +129,27 @@ impl Mode {
         Self::Slices128,
         Self::Loop,
         Self::AsPad,
+        Self::PatternActive,
+        Self::PatternStopped,
+        Self::PatternEmpty,
+        Self::PatternPending,
+        Self::PatternControls,
+        Self::PatternCountIn,
+        Self::PatternRecording,
+        Self::PatternErase,
+        Self::PatternFinishing,
+        Self::PatternSafety,
+        Self::PatternViewFine,
+        Self::PatternViewTriplet,
+        Self::PatternViewOffGrid,
+        Self::PatternViewMultiple,
+        Self::PatternViewHidden,
+        Self::PatternViewSafety,
+        Self::PatternErasePads,
+        Self::PitchGateOff,
+        Self::PitchGateA1,
+        Self::PitchGateSource,
+        Self::PitchGatePitch,
     ];
 
     fn name(self) -> &'static str {
@@ -159,14 +201,48 @@ impl Mode {
             Self::Slices128 => "128-slices",
             Self::Loop => "loop",
             Self::AsPad => "as-pad",
+            Self::PatternActive => "pattern-active",
+            Self::PatternStopped => "pattern-stopped",
+            Self::PatternEmpty => "pattern-empty",
+            Self::PatternPending => "pattern-pending",
+            Self::PatternControls => "pattern-controls",
+            Self::PatternCountIn => "pattern-count-in",
+            Self::PatternRecording => "pattern-recording",
+            Self::PatternErase => "pattern-erase",
+            Self::PatternFinishing => "pattern-finishing",
+            Self::PatternSafety => "pattern-safety",
+            Self::PatternViewFine => "pattern-view-fine",
+            Self::PatternViewTriplet => "pattern-view-triplet",
+            Self::PatternViewOffGrid => "pattern-view-off-grid",
+            Self::PatternViewMultiple => "pattern-view-multiple",
+            Self::PatternViewHidden => "pattern-view-hidden",
+            Self::PatternViewSafety => "pattern-view-safety",
+            Self::PatternErasePads => "pattern-erase-pads",
+            Self::PitchGateOff => "pitch-gate-off",
+            Self::PitchGateA1 => "pitch-gate-a1",
+            Self::PitchGateSource => "pitch-gate-source",
+            Self::PitchGatePitch => "pitch-gate-pitch",
         }
     }
 
     fn applies(self, screen: Screen) -> bool {
         match self {
-            Self::Tone | Self::Envelope | Self::Filter | Self::Source | Self::Sends => {
-                screen == Screen::Pads
-            }
+            Self::PatternViewFine
+            | Self::PatternViewTriplet
+            | Self::PatternViewOffGrid
+            | Self::PatternViewMultiple
+            | Self::PatternViewHidden
+            | Self::PatternViewSafety
+            | Self::PatternErasePads
+            | Self::Tone
+            | Self::Envelope
+            | Self::Filter
+            | Self::Source
+            | Self::Sends
+            | Self::PitchGateOff
+            | Self::PitchGateA1
+            | Self::PitchGateSource
+            | Self::PitchGatePitch => screen == Screen::Pads,
             Self::Bounds
             | Self::Assign
             | Self::AssignOrder
@@ -251,6 +327,16 @@ fn validate(cases: &[Case]) -> Result<(), String> {
             "input-device",
             "project-picker",
             "project-name",
+            "pattern-active",
+            "pattern-stopped",
+            "pattern-empty",
+            "pattern-pending",
+            "pattern-controls",
+            "pattern-count-in",
+            "pattern-recording",
+            "pattern-erase",
+            "pattern-finishing",
+            "pattern-safety",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -259,11 +345,29 @@ fn validate(cases: &[Case]) -> Result<(), String> {
             modes.push("learn".into());
         }
         match screen {
-            Screen::Pads => modes.extend(
-                pads::page_names()
-                    .into_iter()
-                    .map(|page| format!("edit-{}", page.to_lowercase())),
-            ),
+            Screen::Pads => {
+                modes.extend(
+                    pads::page_names()
+                        .into_iter()
+                        .map(|page| format!("edit-{}", page.to_lowercase())),
+                );
+                modes.extend(
+                    [
+                        "pattern-view-fine",
+                        "pattern-view-triplet",
+                        "pattern-view-off-grid",
+                        "pattern-view-multiple",
+                        "pattern-view-hidden",
+                        "pattern-view-safety",
+                        "pattern-erase-pads",
+                        "pitch-gate-off",
+                        "pitch-gate-a1",
+                        "pitch-gate-source",
+                        "pitch-gate-pitch",
+                    ]
+                    .map(str::to_owned),
+                );
+            }
             Screen::Chop => modes.extend(
                 [
                     "edit-bounds",
@@ -496,7 +600,11 @@ fn fixture(case: Case, now: Instant) -> App {
         }
         Mode::Help | Mode::Messages => {
             app.help_open = true;
-            app.help_overlay.messages = case.mode == Mode::Messages;
+            app.help_overlay.page = if case.mode == Mode::Messages {
+                crate::help::Page::Messages
+            } else {
+                crate::help::Page::Help
+            };
             for (level, origin, text) in [
                 (
                     Level::Info,
@@ -549,6 +657,35 @@ fn fixture(case: Case, now: Instant) -> App {
         Mode::Loop => app.chop.as_mut().unwrap().looping = true,
         Mode::AsPad => app.chop.as_mut().unwrap().as_pad = true,
         Mode::Normal | Mode::Value | Mode::Device => {}
+        Mode::PatternCountIn
+        | Mode::PatternRecording
+        | Mode::PatternErase
+        | Mode::PatternFinishing => add_recording(&mut app, case.mode),
+        Mode::PatternSafety => {
+            add_recording(&mut app, Mode::PatternRecording);
+            app.session_write_failed = true;
+        }
+        Mode::PatternControls => {
+            app.apply(Action::PatternControls);
+            app.apply(Action::PatternParamNext);
+        }
+        Mode::PitchGateOff | Mode::PitchGateA1 | Mode::PitchGateSource | Mode::PitchGatePitch => {
+            set_pitch_gate_fixture(&mut app, case.mode);
+        }
+        Mode::PatternActive | Mode::PatternStopped | Mode::PatternEmpty | Mode::PatternPending => {
+            add_pattern(&mut app, case.mode);
+        }
+        Mode::PatternViewFine
+        | Mode::PatternViewTriplet
+        | Mode::PatternViewOffGrid
+        | Mode::PatternViewMultiple
+        | Mode::PatternViewHidden
+        | Mode::PatternViewSafety => add_pattern_view(&mut app, case.mode),
+        Mode::PatternErasePads => {
+            add_pattern_view(&mut app, Mode::PatternViewMultiple);
+            app.apply(Action::PatternErase);
+            assert!(app.erase_pads);
+        }
     }
     if case.mode == Mode::Safety {
         app.session_write_failed = true;
@@ -556,9 +693,157 @@ fn fixture(case: Case, now: Instant) -> App {
     app
 }
 
+fn set_pitch_gate_fixture(app: &mut App, mode: Mode) {
+    app.pads.pitch_gate[0] = mode != Mode::PitchGateOff;
+    app.pads.pitch[0] = if mode == Mode::PitchGatePitch { 0 } else { 12 };
+    app.pads.link[0] = (mode != Mode::PitchGateSource).then_some((0, 0));
+    app.pads.slice[0] = Some(1);
+}
+
+fn add_pattern(app: &mut App, mode: Mode) {
+    let (audio, mut realtime) = audio::offline(48_000);
+    app.audio = Some(audio);
+    let raw = session::PatternState {
+        slot: "A1".into(),
+        bars: 1,
+        quantize: "1/16".into(),
+        strength: 100,
+        hits: if mode == Mode::PatternEmpty {
+            Vec::new()
+        } else {
+            vec![[0, 0, 100, 0]]
+        },
+    };
+    app.send(Command::SetPadSound {
+        pad: 0,
+        sound: app.pads.sound[0].clone(),
+    });
+    app.send(Command::SetPattern {
+        pattern: Some(Arc::new(raw.checked().unwrap().compile())),
+    });
+    app.pads.pattern = Some(raw.clone());
+    if mode != Mode::PatternStopped {
+        app.send(Command::TransportPlay);
+    }
+    realtime.process(&mut [0.0; 128], &mut [0.0; 128]);
+    assert_eq!(app.transport_state().pattern_ticks, 3840);
+    if mode == Mode::PatternPending {
+        let mut next = raw;
+        next.bars = 4;
+        app.send(Command::SetPattern {
+            pattern: Some(Arc::new(next.checked().unwrap().compile())),
+        });
+        app.pads.pattern = Some(next);
+        assert_eq!(app.transport_state().pattern_ticks, 3840);
+    }
+}
+
+fn add_pattern_view(app: &mut App, mode: Mode) {
+    let (audio, mut rt) = audio::offline(48_000);
+    app.audio = Some(audio);
+    let raw = session::PatternState {
+        slot: "A1".into(),
+        bars: 2,
+        quantize: "off".into(),
+        strength: 100,
+        hits: if mode == Mode::PatternViewMultiple {
+            vec![[0, 0, 80, 0], [1, 0, 100, 960], [240, 0, 70, 0]]
+        } else {
+            vec![
+                [1, 0, 100, 0],
+                [241, 0, 80, 0],
+                [1920, 0, 100, 0],
+                [2001, 0, 80, 0],
+            ]
+        },
+    };
+    app.send(Command::SetPattern {
+        pattern: Some(Arc::new(raw.checked().unwrap().compile())),
+    });
+    app.pads.pattern = Some(raw);
+    let changes = match mode {
+        Mode::PatternViewFine => 4,
+        Mode::PatternViewTriplet => 1,
+        _ => 0,
+    };
+    for _ in 0..changes {
+        app.pattern_view.division.change(true);
+    }
+    app.ui.hide_pads = mode == Mode::PatternViewHidden;
+    app.session_write_failed = mode == Mode::PatternViewSafety;
+    if matches!(mode, Mode::PatternViewFine | Mode::PatternViewTriplet) {
+        app.send(Command::TransportPlay);
+        rt.process(&mut vec![0.0; 48_001], &mut vec![0.0; 48_001]);
+    } else {
+        rt.process(&mut [], &mut []);
+    }
+}
+
+fn add_recording(app: &mut App, mode: Mode) {
+    let (audio, mut realtime) = audio::offline(48_000);
+    app.audio = Some(audio);
+    app.apply(Action::PatternRecord);
+    realtime.process(&mut [], &mut []);
+    assert_eq!(
+        app.pattern_record_state().unwrap().phase,
+        engine::capture::Phase::CountIn
+    );
+    if mode == Mode::PatternCountIn {
+        return;
+    }
+    realtime.process(&mut vec![0.0; 96_000], &mut vec![0.0; 96_000]);
+    assert_eq!(
+        app.pattern_record_state().unwrap().phase,
+        engine::capture::Phase::Recording
+    );
+    if mode == Mode::PatternErase {
+        app.apply(Action::PatternErase);
+        let pass = app.pattern_record_state().unwrap().pass;
+        for pad in [0, 18] {
+            app.send(Command::PatternEraseTarget {
+                pass,
+                pad,
+                one_loop: false,
+            });
+        }
+        realtime.process(&mut [], &mut []);
+        assert!(app.pattern_record_state().unwrap().erasing);
+    } else if mode == Mode::PatternFinishing {
+        app.apply(Action::PatternRecord);
+        realtime.process(&mut [], &mut []);
+        assert_eq!(
+            app.pattern_record_state().unwrap().phase,
+            engine::capture::Phase::Finishing
+        );
+    }
+}
+
 fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
     let now = Instant::now();
-    let mut app = fixture(case, now);
+    render_app(case, keymap, fixture(case, now), now)
+}
+
+fn render_app(case: Case, keymap: &Keymap, app: App, now: Instant) -> (Vec<u8>, Buffer) {
+    render_app_layers(case, keymap, app, now, true)
+}
+
+fn render_app_layers(
+    case: Case,
+    keymap: &Keymap,
+    mut app: App,
+    now: Instant,
+    show_pattern_controls: bool,
+) -> (Vec<u8>, Buffer) {
+    app.resize_help(case.size.0, case.size.1);
+    let pattern_recording = app.pattern_record_state();
+    let kitty = !matches!(
+        case.mode,
+        Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety
+    );
+    let help_keys = app.full_help_recording_keys(keymap, kitty, pattern_recording);
+    if app.help_open {
+        app.prepare_key_help(keymap, &help_keys, pattern_recording);
+    }
     let notice = app.frame_notice_at(now);
     let mut pads = pads_view(
         &mut app.pads,
@@ -570,14 +855,17 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
     );
     preview_pad_name(&mut pads, app.pads.bank, app.pad_naming.as_ref());
     pads.edit_key = keys(keymap, Screen::Pads, &[Action::PadEdit]);
-    let pads = app.mark_pads(pads);
-    let mut chop = app.chop_display(app.chop.as_ref().unwrap());
+    let mut pads = app.mark_pads_recording(pads, pattern_recording);
+    pads.bank_pattern = app.bank_pattern();
+    if app.screen == Screen::Pads {
+        pads.pattern = Some(app.pattern_strip(keymap));
+    }
+    let mut chop = app.chop_display_recording(app.chop.as_ref().unwrap(), pattern_recording);
     if chop.slice_keys.is_none() {
         bank_waves(&mut chop.pads, &mut app.pads, app.rate);
     }
     chop.which = app.which_chop();
     app.learn_grid(&mut chop.pads.pads);
-    let history = app.message_history();
     let learning = app.learning_view(keymap);
     let question = app.question_view(keymap);
     let groups = if app.screen_learn.is_some() {
@@ -589,15 +877,20 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
                 .is_some_and(|picker| picker.naming.is_some()),
         )
     } else {
-        without_modifiers(help_groups(keymap, app.screen, &app.help_state()))
+        without_modifiers(app.pattern_help_groups(
+            keymap,
+            help_groups(keymap, app.screen, &app.help_state()),
+            pattern_recording,
+            kitty,
+        ))
     };
-    let keys = full_help(keymap, app.screen, true);
+    let history = app.message_history();
     let help = tui::Help {
         groups: &groups,
         hint: hint_for(&app),
         full: app
             .help_open
-            .then(|| app.full_help_view(&keys, &history))
+            .then(|| app.full_help_view(&help_keys, &history))
             .flatten(),
         question: question.as_ref(),
         learn: learning.as_ref(),
@@ -624,14 +917,27 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
         recording_seconds: app.recording.map(|_| 12),
     };
     let status = tui::Status {
-        badges: app.title_badges_at(now),
+        badges: view::FrameText::default()
+            .badges_for(&app, now, pattern_recording)
+            .to_vec(),
         save: app.save_status(),
-        backend: (case.mode != Mode::Safety).then_some("offline"),
+        backend: (!matches!(
+            case.mode,
+            Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety
+        ))
+        .then_some("offline"),
         recording: app.recording.is_some(),
         buffer_size: 128,
         sample_rate: 48_000,
         load_peak: 15.0,
-        xruns: if case.mode == Mode::Safety { 3 } else { 0 },
+        xruns: if matches!(
+            case.mode,
+            Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety
+        ) {
+            3
+        } else {
+            0
+        },
         master_db: 0,
         meters: ([-18.0, -12.0], [-20.0, -16.0], false),
         notice: notice.as_deref().map(|text| tui::NoticeLine {
@@ -643,8 +949,12 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
                 Level::Error => tui::NoticeLevel::Error,
             }),
         }),
-        no_releases: case.mode == Mode::Safety,
-        project: Some("offline catalogue"),
+        no_releases: !kitty,
+        project: Some(
+            app.project
+                .as_ref()
+                .map_or("offline catalogue", |project| project.name.as_str()),
+        ),
     };
     let midi_rows = app.midi_screen();
     let midi_learning = app.learning_line();
@@ -655,7 +965,11 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
         match case.screen {
             Screen::Pads => tui::Screen::Pads(pads),
             Screen::Fx => tui::Screen::Fx(app.fx_view()),
-            Screen::Chop => tui::Screen::Chop(Box::new(app.mark_chop(chop, None))),
+            Screen::Chop => tui::Screen::Chop(Box::new(app.mark_chop_recording(
+                chop,
+                None,
+                pattern_recording,
+            ))),
             Screen::Files => tui::Screen::Files(tui::Files {
                 dir: "/offline/samples",
                 entries: app
@@ -700,6 +1014,9 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
             }),
         }
     };
+    let pattern_controls = show_pattern_controls
+        .then(|| app.pattern_controls_view(keymap))
+        .flatten();
     let value = (case.mode == Mode::Value).then(|| tui::Value {
         object: "Master".into(),
         parameter: "volume".into(),
@@ -724,6 +1041,9 @@ fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
                 tui::draw_cached(frame, &status, &screen, &help, &feedback, &mut cache, None);
                 if let Some(value) = &value {
                     tui::value_popup(frame, value);
+                }
+                if let Some(controls) = &pattern_controls {
+                    tui::pattern_controls(frame, &screen, controls);
                 }
             })
             .unwrap()
@@ -754,6 +1074,11 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::Help | Mode::Messages => {
             require("HELP");
             require("MESSAGES");
+            if case.mode == Mode::Help && case.screen == Screen::Pads {
+                require("PITCH GATE");
+                require("PG n/a (PG on: needs linked slice)");
+                require("linked slices with pitch above zero");
+            }
         }
         _ => assert!(
             rows[1].contains(case.screen.title()),
@@ -763,10 +1088,36 @@ fn check_frame(case: Case, buffer: &Buffer) {
         ),
     }
     match case.mode {
-        Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends | Mode::Bounds => {
-            require("EDIT")
+        Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => require("EDIT"),
+        Mode::Bounds => {
+            require("EDIT · BOUNDS");
+            require("─ SLICE");
+            require("cursor");
         }
-        Mode::Fx2 => require("FX 2 · selected"),
+        Mode::PitchGateOff | Mode::PitchGateA1 | Mode::PitchGateSource | Mode::PitchGatePitch => {
+            let (label, explanation) = match case.mode {
+                Mode::PitchGateOff => ("PG off", "PG off, manual unchanged"),
+                Mode::PitchGateA1 => ("PG A1", "PG on: A1 only, manual unchanged"),
+                Mode::PitchGateSource => ("PG n/a", "PG on: needs linked slice, manual unchanged"),
+                Mode::PitchGatePitch => ("PG n/a", "PG on: needs Pitch > 0, manual unchanged"),
+                _ => unreachable!(),
+            };
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains("mode ") && row.contains(label)),
+                "{text}"
+            );
+            // the help row explains Pitch Gate only for a linked slice with it on
+            let applies = matches!(case.mode, Mode::PitchGateA1 | Mode::PitchGatePitch);
+            let last = &rows[case.size.1 as usize - 1];
+            assert_eq!(last.contains(explanation), applies, "{text}");
+            assert_eq!(last.contains("PG "), applies, "{text}");
+        }
+        // the lit slot is checked by colour in the tui tests (98e)
+        Mode::Fx2 => {
+            require("EDIT · FX 1 FX 2");
+            require("─ FX 2 ·");
+        }
         Mode::Mark => require("MARK"),
         Mode::Marked => require("2 MARKED"),
         Mode::File => require("IN HAND"),
@@ -799,6 +1150,56 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("rec 12s");
         }
         Mode::Value => require("volume · Master"),
+        Mode::PatternCountIn => require("COUNT 4"),
+        Mode::PatternRecording => require("REC A1"),
+        Mode::PatternErase => {
+            require("ERASE A1");
+            require("1-1");
+        }
+        Mode::PatternFinishing => require("Finishing A1"),
+        Mode::PatternErasePads => {
+            require("ERASE");
+            require(" hits");
+        }
+        Mode::PatternViewFine => {
+            require("view 1/64");
+            require("A1 · bar 1/2 beat 3");
+        }
+        Mode::PatternViewTriplet => {
+            require("view 1/16 triplet");
+            require("A1 · bar 1/2 beat 3");
+        }
+        Mode::PatternViewOffGrid | Mode::PatternViewHidden => require("~"),
+        Mode::PatternViewMultiple => require(" 2"),
+        Mode::PatternViewSafety => {
+            require("Save failed");
+            require("no audio");
+            require("xruns 3");
+            require("~");
+        }
+        Mode::PatternSafety => {
+            require("REC A1");
+            for label in [
+                "Save failed",
+                "no audio",
+                "xruns 3",
+                "no key releases: gate pads play one-shot",
+            ] {
+                assert!(rows[0].contains(label), "{text}");
+            }
+        }
+        Mode::PatternControls => {
+            for label in [
+                "A1 PATTERN",
+                "bars",
+                "▸ quantize",
+                "strength",
+                "CLEAR",
+                "close",
+            ] {
+                require(label);
+            }
+        }
         Mode::Info => require("Offline fixture: the target is unchanged"),
         Mode::Done => require("Offline fixture: operation complete"),
         Mode::Warn => require("Offline fixture: wait for loading"),
@@ -832,7 +1233,63 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::Slices128 => require("128 slices"),
         Mode::Loop => require("LOOP"),
         Mode::AsPad => require("AS PAD"),
+        Mode::PatternActive | Mode::PatternStopped | Mode::PatternEmpty | Mode::PatternPending => {
+            require("A1");
+            require("120.0");
+            let compact = rows[1].replace(' ', "");
+            assert!(compact.contains("A11:1"), "{}: {}", case.name(), rows[1]);
+        }
         _ => {}
+    }
+    if matches!(case.mode, Mode::PatternViewFine | Mode::PatternViewTriplet) {
+        let header = rows
+            .iter()
+            .position(|row| row.contains("A1 · bar"))
+            .expect("pattern header");
+        let dark = ratatui::style::Color::Rgb(0x07, 0x08, 0x0A);
+        let plate = ratatui::style::Color::Rgb(0xBC, 0xBC, 0xBC);
+        let width = case.size.0 as usize;
+        let mut columns = Vec::new();
+        // the all-pads row and the selected pad's row carry the same centred plate
+        for row in [header + 1, header + 2] {
+            let events = &buffer.content()[row * width..(row + 1) * width];
+            let lit: Vec<usize> = (0..width).filter(|&x| events[x].bg == plate).collect();
+            assert_eq!(lit.len(), 3, "{} needs one three-column plate", case.name());
+            assert_eq!(lit[2] - lit[0], 2, "{} splits its plate", case.name());
+            assert_eq!(events[lit[0]].symbol(), " ");
+            assert_eq!(events[lit[2]].symbol(), " ");
+            for &x in &lit {
+                assert_eq!(events[x].fg, dark, "{} loses its plate text", case.name());
+            }
+            assert!(
+                !events.iter().any(|cell| cell.symbol() == ">"),
+                "playback has no arrow"
+            );
+            columns.push((lit[1], events[lit[1]].symbol().to_string()));
+        }
+        assert_eq!(columns[0].0, columns[1].0, "{} plates differ", case.name());
+        // the bank row underlines bank 1, which holds the A1 onsets
+        let bank_row = rows
+            .iter()
+            .position(|row| row.starts_with("bank"))
+            .expect("bank row");
+        let underlined: String = buffer.content()[bank_row * width..(bank_row + 1) * width]
+            .iter()
+            .filter(|cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
+            .map(|cell| cell.symbol())
+            .collect();
+        assert_eq!(underlined, "1", "{} bank row", case.name());
+        assert_eq!(columns[0].1, "■", "{} all-pads row", case.name());
+        assert_eq!(
+            columns[1].1,
+            if case.mode == Mode::PatternViewFine {
+                "■"
+            } else {
+                "2"
+            },
+            "{} pad row",
+            case.name()
+        );
     }
     for (index, cell) in buffer.content().iter().enumerate() {
         let x = index % case.size.0 as usize;
@@ -862,6 +1319,686 @@ fn check_frame(case: Case, buffer: &Buffer) {
 mod tests {
     use super::*;
 
+    /// Scenario "Pattern warnings explain limits without claiming success".
+    #[test]
+    fn pattern_warning_recovery_and_safety_remain_visible_with_long_project_names() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for screen in Screen::ALL {
+            for size in SIZES {
+                for cause in ["phase", "newer", "full", "overflow"] {
+                    for controls in [false, true] {
+                        let case = Case {
+                            screen,
+                            size,
+                            mode: Mode::PatternSafety,
+                        };
+                        let now = Instant::now();
+                        let mut app = fixture(case, now);
+                        app.project = Some(Project {
+                            name: "very long owner project ".repeat(12),
+                            folder: "/offline/project".into(),
+                        });
+                        let (audio, mut rt) = audio::offline(48000);
+                        app.audio = Some(audio);
+                        let raw = session::PatternState {
+                            slot: "A1".into(),
+                            bars: 1,
+                            quantize: "off".into(),
+                            strength: 100,
+                            hits: if cause == "full" {
+                                vec![[5000, 127, 1, 0]; 4096]
+                            } else {
+                                vec![]
+                            },
+                        };
+                        let rows = (0..raw.hits.len())
+                            .map(|slot| {
+                                engine::pattern::PlaybackRow::existing(
+                                    engine::pattern::RowId::new(slot, 1).unwrap(),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        let pattern = app.pads.restore_recorded_pattern(&raw, &rows).unwrap();
+                        app.send(pattern);
+                        rt.process(&mut [], &mut []);
+                        app.send(Command::TransportPlay);
+                        assert!(
+                            app.try_send(Command::PatternRecordStart { pass: 1 }),
+                            "{screen:?}/{cause}/{controls}: pending {}, recording {:?}, accepted {:?}",
+                            app.pending_audio.len(),
+                            app.recording,
+                            app.pattern_record_state()
+                        );
+                        rt.process(&mut [], &mut []);
+                        if matches!(cause, "newer" | "full" | "overflow") {
+                            for _ in 0..if cause == "overflow" { 640 } else { 1 } {
+                                assert!(app.try_send(Command::PadPress {
+                                    pad: 0,
+                                    velocity: 1.0
+                                }));
+                            }
+                            for _ in 0..3 {
+                                rt.process(&mut [0.0; 128], &mut [0.0; 128]);
+                            }
+                            app.flush_audio();
+                        }
+                        if cause == "newer" {
+                            app.send(Command::PatternRecordEnd { pass: 1 });
+                            rt.process(&mut [], &mut []);
+                            app.flush_audio();
+                            rt.process(&mut [], &mut []);
+                            assert_eq!(app.history.len(), 1);
+                            let before = app.before();
+                            app.pads.volume_db[5] -= 1;
+                            app.note_step(before, "pad.5.volume".into());
+                            assert_eq!(app.history.len(), 2);
+                            app.apply(Action::PatternUndo);
+                            assert_eq!(app.history.len(), 2);
+                        } else if cause == "phase" {
+                            app.apply(Action::PatternControls);
+                            app.apply(Action::PatternValueInc);
+                        }
+                        // the newest notice: a pass that ended first has its own Done notice
+                        let warning = app.notices.history().front().unwrap().clone();
+                        assert_eq!(warning.level, Level::Warn, "{cause}: {warning:?}");
+                        assert!(warning.text.contains(match cause {
+                            "phase" => "Idle",
+                            "newer" => "newer",
+                            "full" => "row-limit refusals",
+                            _ => "omitted onsets",
+                        }));
+                        if cause == "full" {
+                            assert_eq!(app.pads.pattern.as_ref().unwrap().hits.len(), 4096);
+                            assert_eq!(app.pattern_record_state().unwrap().captured_onsets, 0);
+                        }
+                        if cause == "overflow" {
+                            assert_eq!(app.pads.pattern.as_ref().unwrap().hits.len(), 512);
+                            assert_eq!(app.pattern_record_state().unwrap().dropped_onsets, 128);
+                        }
+                        if app.pattern_panel.is_some() != controls {
+                            app.apply(Action::PatternControls);
+                        }
+                        let (_, frame) =
+                            render_app(case, &keymap, app, now + Duration::from_millis(1));
+                        let rows = frame
+                            .content()
+                            .chunks(size.0 as usize)
+                            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                            .collect::<Vec<_>>();
+                        let text = rows.join("\n");
+                        for safety in [
+                            "Save failed",
+                            "no audio",
+                            "xruns 3",
+                            "no key releases: gate pads play one-shot",
+                        ] {
+                            assert!(
+                                rows[0].contains(safety),
+                                "{screen:?}/{cause}/{controls}: {text}"
+                            );
+                        }
+                        assert!(
+                            rows[size.1 as usize - 4].contains(&warning.text),
+                            "{screen:?}/{cause}/{controls}: {text}"
+                        );
+                        assert!(
+                            rows[1].contains(if cause == "newer" { "A1" } else { "REC A1" }),
+                            "{text}"
+                        );
+                        assert!(
+                            text.contains(if controls {
+                                "close"
+                            } else if cause == "newer" {
+                                "record A1"
+                            } else {
+                                "end A1"
+                            }),
+                            "{text}"
+                        );
+                        check_frame(
+                            Case {
+                                mode: Mode::Normal,
+                                ..case
+                            },
+                            &frame,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pattern_short_help_uses_effective_edit_keys_none_and_visible_arrow_bindings() {
+        for screen in Screen::ALL {
+            for size in SIZES {
+                for removed in [false, true] {
+                    let (mut keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+                    keymap
+                        .overlay(if removed {
+                            r#"[edit]
+"Ctrl+R"="none"
+"Alt+E"="none"
+"Alt+Z"="none"
+I="none"
+K="none"
+Up="none"
+Down="none"
+J="none"
+L="none"
+Left="none"
+Right="none"
+"#
+                        } else {
+                            r#"[edit]
+"Ctrl+R"="none"
+"Alt+E"="pattern.record"
+"Alt+Z"="none"
+"Ctrl+J"="pattern.erase"
+"Ctrl+U"="pattern.undo"
+I="none"
+K="none"
+J="none"
+L="none"
+"#
+                        })
+                        .unwrap();
+                    let case = Case {
+                        screen,
+                        size,
+                        mode: Mode::PatternRecording,
+                    };
+                    let now = Instant::now();
+                    let mut app = fixture(case, now);
+                    app.edit = true;
+                    let groups =
+                        app.pattern_help_groups(&keymap, vec![], app.pattern_record_state(), true);
+                    assert_eq!(
+                        groups[0].items,
+                        vec![
+                            (
+                                if removed { "none" } else { "Alt E" }.into(),
+                                "end A1".into()
+                            ),
+                            (
+                                if removed { "none" } else { "Ctrl J" }.into(),
+                                "erase pads".into()
+                            ),
+                            (
+                                if removed { "none" } else { "Ctrl U" }.into(),
+                                "pass undo".into()
+                            )
+                        ]
+                    );
+                    let (_, frame) = render_app(case, &keymap, app, now);
+                    let text = frame
+                        .content()
+                        .chunks(size.0 as usize)
+                        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    for role in ["end A1", "erase pads", "pass undo"] {
+                        assert!(text.contains(role), "{screen:?}/{removed}: {text}");
+                    }
+                    if removed {
+                        assert!(text.matches("none").count() >= 3, "{text}");
+                    } else {
+                        for key in ["Alt E", "Ctrl J", "Ctrl U"] {
+                            assert!(text.contains(key), "{text}");
+                        }
+                    }
+                    let mut app = fixture(case, now);
+                    app.apply(Action::PatternControls);
+                    let controls = app.pattern_controls_view(&keymap).unwrap();
+                    if removed {
+                        assert_eq!(controls.controls[0], "none select  none change");
+                    } else {
+                        for key in ["↑", "↓", "←", "→"] {
+                            assert!(controls.controls[0].contains(key));
+                        }
+                    }
+                    let (_, frame) = render_app(case, &keymap, app, now);
+                    let text = frame
+                        .content()
+                        .chunks(size.0 as usize)
+                        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    assert!(
+                        text.contains(if removed {
+                            "none select  none change"
+                        } else {
+                            "↑/↓ select  ←/→ change"
+                        }),
+                        "{text}"
+                    );
+                    check_frame(
+                        Case {
+                            mode: Mode::Normal,
+                            ..case
+                        },
+                        &frame,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Scenario "Catalogue includes recording states and safety combinations".
+    #[test]
+    fn recording_feedback_catalogue_has_phases_controls_blockers_and_safety() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/screens/recording");
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut count = 0;
+        for screen in Screen::ALL {
+            for size in SIZES {
+                for mode in [
+                    Mode::PatternCountIn,
+                    Mode::PatternRecording,
+                    Mode::PatternErase,
+                    Mode::PatternFinishing,
+                ] {
+                    let case = Case { screen, size, mode };
+                    let label = match mode {
+                        Mode::PatternCountIn => "COUNT 4",
+                        Mode::PatternRecording => "REC A1",
+                        Mode::PatternErase => "ERASE A1",
+                        _ => "Finishing A1",
+                    };
+                    for layer in ["hidden", "edit", "controls", "question"] {
+                        let now = Instant::now();
+                        let mut app = fixture(case, now);
+                        match layer {
+                            "hidden" => app.ui.hide_pads = true,
+                            "edit" => app.edit = true,
+                            "controls" => {
+                                app.apply(Action::PatternControls);
+                            }
+                            "question" => {
+                                app.ask = Some(Ask::ResetPads {
+                                    pads: vec![0],
+                                    lines: vec![
+                                        "Reset this pad?".into(),
+                                        "Enter: reset · Esc: keep".into(),
+                                    ],
+                                })
+                            }
+                            _ => unreachable!(),
+                        }
+                        let overlay = (layer == "controls").then(|| {
+                            let model = match screen {
+                                Screen::Pads | Screen::Files | Screen::Chop => {
+                                    let pads =
+                                        pads_view(&mut app.pads, None, None, vec![], None, 48_000);
+                                    tui::Screen::Pads(app.mark_pads(pads))
+                                }
+                                _ => tui::Screen::Fx(app.fx_view()),
+                            };
+                            tui::pattern_controls_area(Rect::new(0, 0, size.0, size.1), &model)
+                        });
+                        let mut reference = fixture(case, now);
+                        reference.ui.hide_pads = app.ui.hide_pads;
+                        reference.edit = app.edit;
+                        let (_, baseline) = render_app(case, &keymap, reference, now);
+                        let (bytes, frame) = render_app(case, &keymap, app, now);
+                        check_frame(
+                            Case {
+                                mode: Mode::Normal,
+                                ..case
+                            },
+                            &frame,
+                        );
+                        let rows: Vec<String> = frame
+                            .content()
+                            .chunks(size.0 as usize)
+                            .map(|r| r.iter().map(|c| c.symbol()).collect())
+                            .collect();
+                        assert!(
+                            rows[1].contains(label),
+                            "{screen:?}/{mode:?}/{layer}: {}",
+                            rows.join("\n")
+                        );
+                        if layer == "controls" {
+                            assert!(rows.iter().any(|r| r.contains("A1 PATTERN")));
+                        }
+                        if layer == "question" {
+                            assert!(rows[1].contains("ASK"), "{}", rows[1]);
+                            assert!(rows.iter().any(|r| r.contains("Reset this pad?")));
+                        }
+                        for y in [0, 2, 3] {
+                            for x in 0..size.0 {
+                                if overlay.is_some_and(|area| {
+                                    x >= area.x
+                                        && x < area.right()
+                                        && y >= area.y
+                                        && y < area.bottom()
+                                }) {
+                                    continue;
+                                }
+                                assert_eq!(
+                                    frame[(x, y)],
+                                    baseline[(x, y)],
+                                    "{screen:?}/{mode:?}/{layer}: fixed cell {x},{y} outside the controls"
+                                );
+                            }
+                        }
+                        std::fs::write(
+                            directory.join(format!("{}-{layer}.ansi", case.name())),
+                            bytes,
+                        )
+                        .unwrap();
+                        count += 1;
+                    }
+                }
+                let case = Case {
+                    screen,
+                    size,
+                    mode: Mode::PatternSafety,
+                };
+                let (bytes, frame) = render(case, &keymap);
+                check_frame(case, &frame);
+                std::fs::write(directory.join(case.name()), bytes).unwrap();
+            }
+        }
+        assert_eq!(count, Screen::ALL.len() * SIZES.len() * 4 * 4);
+        println!("Recording: {count} additional phase/overlay frames and 10 safety frames");
+    }
+
+    /// Scenario "Pattern controls fit without moving the pads".
+    #[test]
+    fn pattern_panel_preserves_grid_cells_and_safety_at_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for screen in Screen::ALL {
+            for size in SIZES {
+                for hidden in [false, true] {
+                    for safety in [false, true] {
+                        let case = Case {
+                            screen,
+                            size,
+                            mode: if safety { Mode::Safety } else { Mode::Normal },
+                        };
+                        let now = Instant::now();
+                        let make_app = || {
+                            let mut app = fixture(case, now);
+                            app.ui.hide_pads = hidden;
+                            if screen == Screen::Chop {
+                                let chop = app.chop.as_ref().unwrap();
+                                app.pads.file[0] = Some(chop.file.clone());
+                                app.pads.sound[0] = Some(chop.sound.clone());
+                                app.pads.region[0] = chop.slices()[0];
+                                app.pads.link[0] = Some((chop.start_id(0), chop.epoch));
+                                app.pads.slice[0] = Some(1);
+                            }
+                            app.apply(Action::PatternControls);
+                            app.apply(Action::Back);
+                            if screen == Screen::Chop {
+                                assert!(
+                                    app.chop_display(app.chop.as_ref().unwrap())
+                                        .slice_keys
+                                        .is_none(),
+                                    "the reference fixture must show real pads"
+                                );
+                            }
+                            app
+                        };
+                        let (_, closed) = render_app(case, &keymap, make_app(), now);
+                        check_frame(case, &closed);
+                        // Opening controls intentionally changes Chop's pad selection and dimming.
+                        // Isolate the overlay from that input-role change, with full cell equality.
+                        let mut base = make_app();
+                        base.apply(Action::PatternControls);
+                        let (_, reference) = render_app_layers(case, &keymap, base, now, false);
+                        check_frame(case, &reference);
+                        for selected in 0..3 {
+                            let mut app = make_app();
+                            app.apply(Action::PatternControls);
+                            for _ in 0..selected {
+                                app.apply(Action::PatternParamNext);
+                            }
+                            let controls = app.pattern_controls_view(&keymap).unwrap();
+                            assert_eq!(controls.selected, selected);
+                            let (_, actual) = render_app(case, &keymap, app, now);
+                            check_frame(case, &actual);
+                            let text = actual
+                                .content()
+                                .chunks(size.0 as usize)
+                                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            for label in [
+                                "A1 PATTERN",
+                                "bars",
+                                "quantize",
+                                "strength",
+                                "CLEAR",
+                                "close",
+                            ] {
+                                assert!(text.contains(label), "{text}");
+                            }
+                            let area = match screen {
+                                Screen::Pads | Screen::Files | Screen::Chop => {
+                                    // The same frame geometry is used by the production overlay.
+                                    let mut app = make_app();
+                                    let pads =
+                                        pads_view(&mut app.pads, None, None, vec![], None, 48000);
+                                    let pads = app.mark_pads(pads);
+                                    tui::pattern_controls_area(
+                                        Rect::new(0, 0, size.0, size.1),
+                                        &tui::Screen::Pads(pads),
+                                    )
+                                }
+                                _ => tui::pattern_controls_area(
+                                    Rect::new(0, 0, size.0, size.1),
+                                    &tui::Screen::Fx(make_app().fx_view()),
+                                ),
+                            };
+                            for y in 0..size.1 {
+                                for x in 0..size.0 {
+                                    if !area.contains((x, y).into()) {
+                                        assert_eq!(
+                                            actual[(x, y)],
+                                            reference[(x, y)],
+                                            "{screen:?} {size:?} hidden={hidden} safety={safety} outside panel at {x},{y}"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scenario "Pattern labels and hints stay whole".
+    #[test]
+    fn pattern_labels_and_hints_stay_whole() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                size,
+                mode: Mode::Normal,
+            };
+            let now = Instant::now();
+            let text = |app: App| -> String {
+                let (_, frame) = render_app(case, &keymap, app, now);
+                frame
+                    .content()
+                    .chunks(size.0 as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            let make = || {
+                let mut app = fixture(case, now);
+                app.pads.pattern = Some(session::PatternState {
+                    slot: "A1".into(),
+                    bars: 1,
+                    quantize: "1/4".into(),
+                    strength: 100,
+                    hits: vec![[0, 4, 90, 0], [960, 4, 90, 0], [1920, 5, 90, 0]],
+                });
+                app.pads.selected = 4;
+                app
+            };
+            let shown = text(make());
+            assert!(
+                shown.contains("pad Q "),
+                "{size:?}: the whole label\n{shown}"
+            );
+            for (rows, hint) in [(1, "next hits"), (2, "next hits, step 10"), (3, "Enter")] {
+                let mut app = make();
+                app.apply(Action::PatternControls);
+                for _ in 0..rows {
+                    app.apply(Action::PatternParamNext);
+                }
+                let shown = text(app);
+                assert!(shown.contains(hint), "{size:?}: {hint}\n{shown}");
+                assert!(shown.contains("Enter run"), "{size:?}\n{shown}");
+            }
+        }
+    }
+
+    /// Scenario "Pattern controls replace the pad panel".
+    #[test]
+    fn pattern_controls_replace_the_pad_panel() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let rows = |buffer: &Buffer, area: Rect| -> String {
+            (area.y..area.bottom())
+                .map(|y| {
+                    (area.x..area.right())
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        for screen in [Screen::Pads, Screen::Chop, Screen::Files, Screen::Fx] {
+            for size in SIZES {
+                let case = Case {
+                    screen,
+                    size,
+                    mode: Mode::Normal,
+                };
+                let now = Instant::now();
+                let mut closed = fixture(case, now);
+                closed.apply(Action::PatternControls);
+                closed.apply(Action::Back);
+                let (_, closed) = render_app(case, &keymap, closed, now);
+                let mut app = fixture(case, now);
+                app.apply(Action::PatternControls);
+                let area = {
+                    let screen_view = match screen {
+                        Screen::Fx => tui::Screen::Fx(app.fx_view()),
+                        _ => {
+                            let pads = pads_view(&mut app.pads, None, None, vec![], None, 48000);
+                            tui::Screen::Pads(app.mark_pads(pads))
+                        }
+                    };
+                    tui::pattern_controls_area(Rect::new(0, 0, size.0, size.1), &screen_view)
+                };
+                let (_, open) = render_app(case, &keymap, app, now);
+                check_frame(case, &open);
+                let text = rows(&open, area);
+                for label in [
+                    "A1 PATTERN",
+                    "bars",
+                    "quantize",
+                    "strength",
+                    "CLEAR",
+                    "close",
+                ] {
+                    assert!(text.contains(label), "{screen:?} {size:?}:\n{text}");
+                }
+                for pad in ["volume", "attack", "cutoff", "TONE", "ENV"] {
+                    assert!(!text.contains(pad), "{screen:?} {size:?} {pad}:\n{text}");
+                }
+                if screen == Screen::Pads {
+                    assert!(
+                        rows(&closed, area).contains("volume"),
+                        "closing restores the pad panel"
+                    );
+                }
+                // every cell outside the column stays; the help rows name the controls keys
+                for y in 0..size.1 - 3 {
+                    for x in 0..size.0 {
+                        if !area.contains((x, y).into()) && screen != Screen::Chop {
+                            assert_eq!(open[(x, y)], closed[(x, y)], "{screen:?} {size:?} {x},{y}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scenario "Pattern controls use the pad edit frame".
+    #[test]
+    fn pattern_controls_use_the_pad_edit_frame() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                size,
+                mode: Mode::Normal,
+            };
+            let now = Instant::now();
+            let mut edit = fixture(case, now);
+            edit.edit = true;
+            let (_, edit) = render_app(case, &keymap, edit, now);
+            let mut app = fixture(case, now);
+            app.apply(Action::PatternControls);
+            let area = {
+                let pads = pads_view(&mut app.pads, None, None, vec![], None, 48000);
+                tui::pattern_controls_area(
+                    Rect::new(0, 0, size.0, size.1),
+                    &tui::Screen::Pads(app.mark_pads(pads)),
+                )
+            };
+            let title = |buffer: &Buffer| -> String {
+                (area.x..area.right())
+                    .map(|x| buffer[(x, area.y)].symbol())
+                    .collect()
+            };
+            let lit = |buffer: &Buffer, word: &str| {
+                let row = title(buffer);
+                let x = row.find(word).unwrap_or_else(|| panic!("{word} in {row}"));
+                let x = area.x + row[..x].chars().count() as u16;
+                buffer[(x, area.y)].bg
+            };
+            let frame_fg = |buffer: &Buffer| buffer[(area.x, area.y)].fg;
+            let (_, bars) = render_app(case, &keymap, app, now);
+            assert!(
+                title(&bars).contains("PATTERN"),
+                "{size:?}: {}",
+                title(&bars)
+            );
+            assert_ne!(lit(&bars, "PATTERN"), lit(&bars, "CLEAR"), "{size:?}");
+            // the pad edit frame: the same colour on its own panel corner
+            let edit_corner = (0..size.1)
+                .flat_map(|y| (0..size.0).map(move |x| (x, y)))
+                .find(|&(x, y)| edit[(x, y)].symbol() == "┌" && edit[(x, y)].fg == frame_fg(&bars));
+            assert!(
+                edit_corner.is_some(),
+                "{size:?}: the pad edit frame has the same colour"
+            );
+            let mut app = fixture(case, now);
+            app.apply(Action::PatternControls);
+            for _ in 0..3 {
+                app.apply(Action::PatternParamNext);
+            }
+            let (_, clear) = render_app(case, &keymap, app, now);
+            assert_eq!(
+                lit(&clear, "CLEAR"),
+                lit(&bars, "PATTERN"),
+                "{size:?}: CLEAR lit"
+            );
+            assert_eq!(lit(&clear, "PATTERN"), lit(&bars, "CLEAR"), "{size:?}");
+        }
+    }
+
     #[test]
     fn long_assignment_target_names_stay_in_the_sidebar() {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
@@ -883,6 +2020,305 @@ mod tests {
                 assert!(
                     text.contains(name),
                     "a target name disappeared: {name}\n{text}"
+                );
+            }
+        }
+    }
+
+    /// Scenario "Pattern titles retain safety and actual playback slots".
+    #[test]
+    fn pattern_titles_retain_safety_and_actual_playback_slots() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for case in matrix() {
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            if !matches!(
+                case.mode,
+                Mode::PatternViewFine
+                    | Mode::PatternViewTriplet
+                    | Mode::PatternViewOffGrid
+                    | Mode::PatternViewMultiple
+                    | Mode::PatternViewHidden
+                    | Mode::PatternViewSafety
+            ) && !app
+                .pattern_record_state()
+                .is_some_and(|state| state.phase != engine::capture::Phase::Idle)
+            {
+                add_pattern(&mut app, Mode::PatternActive);
+            }
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            check_frame(case, &buffer);
+            if !matches!(
+                case.mode,
+                Mode::Help | Mode::Messages | Mode::Picker | Mode::PickerName
+            ) {
+                let title = buffer.content()[case.size.0 as usize..2 * case.size.0 as usize]
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(
+                    title.contains("A1"),
+                    "{} loses pattern identity: {title}",
+                    case.name()
+                );
+            }
+            if case.screen == Screen::Pads && case.mode == Mode::Normal {
+                let title = &buffer.content()[case.size.0 as usize..2 * case.size.0 as usize];
+                let text = title.iter().map(|cell| cell.symbol()).collect::<String>();
+                let start = text.find(" PLAY").unwrap();
+                assert_eq!(
+                    title[start..start + 10]
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>(),
+                    " PLAY ▶   "
+                );
+            }
+        }
+    }
+
+    /// Scenario "Pitch Gate explanations fit the existing frame".
+    /// Scenario "Pitch Gate help row appears only where it applies".
+    #[test]
+    fn pitch_gate_explanations_fit_the_existing_frame() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/screens");
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut count = 0;
+        for size in SIZES {
+            for mode in [
+                Mode::PitchGateOff,
+                Mode::PitchGateA1,
+                Mode::PitchGateSource,
+                Mode::PitchGatePitch,
+            ] {
+                for hidden in [false, true] {
+                    for page in
+                        std::iter::once(None).chain(pads::page_names().into_iter().map(Some))
+                    {
+                        for safety in [false, true] {
+                            let case = Case {
+                                screen: Screen::Pads,
+                                mode: if safety { Mode::Safety } else { Mode::Normal },
+                                size,
+                            };
+                            let now = Instant::now();
+                            let make_app = || {
+                                let mut app = fixture(case, now);
+                                app.ui.hide_pads = hidden;
+                                app.edit = page.is_some();
+                                if let Some(page) = page {
+                                    let index =
+                                        pads::page_names().iter().position(|p| *p == page).unwrap();
+                                    app.pads.set_page_pos(
+                                        (index as f32 + 0.5) / pads::page_names().len() as f32,
+                                    );
+                                }
+                                app
+                            };
+                            let mut app = make_app();
+                            set_pitch_gate_fixture(&mut app, mode);
+                            // F1 gives the state and its reason for every pad
+                            let f1 = app
+                                .full_help_recording_keys(&keymap, true, None)
+                                .into_iter()
+                                .map(|(_, text)| text)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            let description = match mode {
+                                Mode::PitchGateOff => "PG off",
+                                Mode::PitchGateA1 => "PG on: A1 only",
+                                Mode::PitchGateSource => "PG on: needs linked slice",
+                                _ => "PG on: needs Pitch > 0",
+                            };
+                            assert!(f1.contains(description), "{mode:?}: {f1}");
+                            let (bytes, before) = render_app(case, &keymap, app, now);
+                            check_frame(case, &before);
+                            let rows = before
+                                .content()
+                                .chunks(size.0 as usize)
+                                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                                .collect::<Vec<_>>();
+                            let (label, reason) = match mode {
+                                Mode::PitchGateOff => ("PG off", "PG off, manual unchanged"),
+                                Mode::PitchGateA1 => ("PG A1", "PG on: A1 only, manual unchanged"),
+                                Mode::PitchGateSource => {
+                                    ("PG n/a", "PG on: needs linked slice, manual unchanged")
+                                }
+                                Mode::PitchGatePitch => {
+                                    ("PG n/a", "PG on: needs Pitch > 0, manual unchanged")
+                                }
+                                _ => unreachable!(),
+                            };
+                            assert!(
+                                rows.iter()
+                                    .any(|row| row.contains("mode ") && row.contains(label)),
+                                "{rows:?}"
+                            );
+                            let applies = matches!(mode, Mode::PitchGateA1 | Mode::PitchGatePitch);
+                            assert_eq!(
+                                rows[size.1 as usize - 1].contains(reason),
+                                applies,
+                                "{rows:?}"
+                            );
+                            assert!(!rows[1].contains("PG"));
+                            let (_, reference) = render_app(case, &keymap, make_app(), now);
+                            let reference_rows = reference
+                                .content()
+                                .chunks(size.0 as usize)
+                                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                                .collect::<Vec<_>>();
+                            for word in ["mode ", "scope ", "volume ", "pitch "] {
+                                assert_eq!(
+                                    rows.iter().position(|row| row.contains(word)),
+                                    reference_rows.iter().position(|row| row.contains(word)),
+                                    "fixed {word} row"
+                                );
+                            }
+                            if let Some(page) = page {
+                                assert!(rows.join("\n").contains(&format!("EDIT · {page}")));
+                            }
+                            let name = format!(
+                                "pads-{}-{}-{}-{}-{}x{}.ansi",
+                                mode.name(),
+                                if hidden { "hidden" } else { "shown" },
+                                page.unwrap_or("closed"),
+                                if safety { "safety" } else { "normal" },
+                                size.0,
+                                size.1
+                            );
+                            std::fs::write(directory.join(name), bytes).unwrap();
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        println!("Pitch Gate: {count} additional ANSI frames with fixed rows and safety checks");
+    }
+
+    const PATTERN_VIEW_MODES: [Mode; 6] = [
+        Mode::PatternViewFine,
+        Mode::PatternViewTriplet,
+        Mode::PatternViewOffGrid,
+        Mode::PatternViewMultiple,
+        Mode::PatternViewHidden,
+        Mode::PatternViewSafety,
+    ];
+
+    /// Scenario "Catalogue covers the pattern view".
+    #[test]
+    fn catalogue_covers_the_pattern_view() {
+        let cases = matrix();
+        for mode in PATTERN_VIEW_MODES {
+            for size in SIZES {
+                assert!(
+                    cases.iter().any(|case| case.screen == Screen::Pads
+                        && case.mode == mode
+                        && case.size == size),
+                    "{mode:?} at {size:?}"
+                );
+            }
+        }
+        // a missing pattern-view entry fails coverage
+        let mut missing = cases.clone();
+        let gone = missing
+            .iter()
+            .position(|case| case.mode == Mode::PatternViewTriplet)
+            .unwrap();
+        let case = missing.remove(gone);
+        assert!(validate(&missing).unwrap_err().contains(&case.name()));
+        // offline fixtures: repeatable bytes, no devices, no project writes
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for case in cases
+            .iter()
+            .filter(|case| PATTERN_VIEW_MODES.contains(&case.mode))
+        {
+            let app = fixture(*case, Instant::now());
+            assert!(app.session_path.starts_with("/offline"));
+            assert_eq!(render(*case, &keymap).0, render(*case, &keymap).0);
+        }
+    }
+
+    /// Scenario "Pattern strip distinguishes subdivisions and event density".
+    #[test]
+    fn pattern_strip_distinguishes_subdivisions_and_event_density() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let case = Case {
+            screen: Screen::Pads,
+            mode: Mode::Normal,
+            size: (120, 40),
+        };
+        let raw = session::PatternState {
+            slot: "A1".into(),
+            bars: 2,
+            quantize: "off".into(),
+            strength: 100,
+            // pad 1 on a line, between lines, twice on one tick; pad 6 of the bank alone
+            hits: vec![
+                [0, 0, 100, 0],
+                [250, 0, 90, 480],
+                [480, 0, 80, 0],
+                [480, 0, 70, 0],
+                [720, 5, 60, 0],
+            ],
+        };
+        let shade = ratatui::style::Color::Rgb(0x1E, 0x22, 0x2A);
+        for (finer, label, beat, pad, all) in [
+            (
+                0,
+                "view 1/16",
+                4,
+                ["■", "~", "2", "·", "·"],
+                ["■", "■", "■", "■", "·"],
+            ),
+            (
+                1,
+                "view 1/16 triplet",
+                6,
+                ["■", "~", "·", "2", "·"],
+                ["■", "■", "·", "■", "■"],
+            ),
+        ] {
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.pads.bank = 0;
+            app.pads.selected = 0;
+            app.pads.pattern = Some(raw.clone());
+            for _ in 0..finer {
+                app.pattern_view.division.change(true);
+            }
+            let header = app.pattern_strip(&keymap).header;
+            assert!(header.contains(label), "{header}");
+            assert_eq!(
+                app.pads.pattern.as_ref(),
+                Some(&raw),
+                "drawing changes no raw row"
+            );
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let width = case.size.0 as usize;
+            let rows: Vec<&[ratatui::buffer::Cell]> = buffer.content().chunks(width).collect();
+            let text =
+                |row: &[ratatui::buffer::Cell]| row.iter().map(|c| c.symbol()).collect::<String>();
+            let at = rows
+                .iter()
+                .position(|row| text(row).starts_with("all  "))
+                .expect("all-pads row");
+            assert!(text(rows[at - 1]).contains(label));
+            for (row, expected) in [(rows[at], all), (rows[at + 1], pad)] {
+                let glyphs: Vec<usize> = (5..width)
+                    .filter(|&x| !matches!(row[x].symbol(), " " | "│"))
+                    .collect();
+                let shown: Vec<&str> = glyphs[..5].iter().map(|&x| row[x].symbol()).collect();
+                assert_eq!(shown, expected, "{label}");
+                // the second beat lies on the darker plate, the first does not
+                assert_ne!(row[glyphs[0]].bg, shade, "{label}");
+                assert_eq!(row[glyphs[beat]].bg, shade, "{label}");
+                // a two-bar page has one bar line and no line between beats
+                assert_eq!(
+                    row.iter().filter(|c| c.symbol() == "│").count(),
+                    1,
+                    "{label}"
                 );
             }
         }

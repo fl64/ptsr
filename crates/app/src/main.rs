@@ -2,6 +2,7 @@ mod audio;
 mod browser;
 mod chop;
 mod config;
+mod controller_map;
 mod dispatch;
 mod graphics;
 mod help;
@@ -12,6 +13,8 @@ mod meters;
 mod midi;
 mod notices;
 mod pads;
+mod pattern_record;
+mod pattern_view;
 mod saving;
 mod session;
 mod transport;
@@ -77,6 +80,8 @@ struct Step {
     what: String,
     pads: Vec<(usize, pads::PadSnap)>,
     fx: Option<[pads::FxSlot; engine::FX_SLOTS]>,
+    swap: Option<(usize, usize)>,
+    pattern: Option<pattern_record::Undo>,
     at: Instant,
 }
 
@@ -146,6 +151,10 @@ enum Ask {
     /// A copy in hand replaces a pad that holds something (83a).
     CopyPad {
         source: usize,
+        lines: Vec<String>,
+    },
+    /// Clear A1 from pattern controls: every hit goes, the settings stay (98b).
+    ClearPattern {
         lines: Vec<String>,
     },
 }
@@ -376,21 +385,25 @@ impl Ask {
             | Ask::ResetProfile { lines, .. }
             | Ask::ResetPads { lines, .. }
             | Ask::ClearPads { lines, .. }
-            | Ask::CopyPad { lines, .. } => lines,
+            | Ask::CopyPad { lines, .. }
+            | Ask::ClearPattern { lines } => lines,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct UiPadHold {
     abs: usize,
     deferred: bool,
+    pattern: Option<Arc<engine::capture::EraseHold>>,
 }
 
 struct App {
     transport: transport::State,
     audio: Option<Audio>,
     pending_audio: std::collections::VecDeque<ProjectCommand>,
+    pending_manual_save: Option<saving::PendingSave>,
+    quit_requested: bool,
     audio_held: [Option<u64>; PADS],
     midi_ui_held: std::collections::HashMap<u64, Vec<UiPadHold>>,
     restoring_project: bool,
@@ -407,6 +420,10 @@ struct App {
     help_open: bool,
     help_overlay: help::State,
     value_popup: Option<values::Shown>,
+    pattern_panel: Option<usize>,
+    /// Whole-pad erasure on Pads outside a pass (98b).
+    erase_pads: bool,
+    pattern_view: pattern_view::State,
     input_sources: input_sources::State,
     pads: pads::Pads,
     /// Output meters for the pads screen: bars, peak hold, the latching overload light.
@@ -599,12 +616,18 @@ impl App {
     /// pads, the chops. The start and the project open/switch both come here; everything
     /// of the previous state is dropped — nothing leaks between projects.
     fn apply_session(&mut self, sess: session::Session) {
+        self.cancel_manual_save();
+        self.quit_requested = false;
         self.value_popup = None;
+        self.pattern_panel = None;
+        self.erase_pads = false;
+        self.pattern_view = pattern_view::State::default();
         self.pending_audio.clear();
         self.audio_held.fill(None);
         self.midi_ui_held.clear();
         self.restoring_project = false;
-        if let Some(audio) = &self.audio {
+        if let Some(audio) = &mut self.audio {
+            audio.pattern_capture.reset();
             audio
                 .project
                 .epoch
@@ -634,6 +657,7 @@ impl App {
         self.transport.bpm = sess.bpm;
         self.transport.metronome = sess.metronome;
         self.takeover.reset_target(transport::TEMPO_TARGET);
+        self.reset_pattern_takeover();
         self.send(Command::SetTempo { bpm: sess.bpm });
         self.send(Command::SetMetronome {
             enabled: sess.metronome,
@@ -802,6 +826,9 @@ impl App {
     /// Validate the target before saving or replacing current work. Startup keeps its
     /// separate empty-session fallback for an absent session file.
     fn open_project(&mut self, folder: PathBuf) -> bool {
+        if self.refuse_pattern_project_change() {
+            return false;
+        }
         let same = self.project.as_ref().is_some_and(|p| {
             p.folder == folder
                 || std::fs::canonicalize(&p.folder)
@@ -843,6 +870,9 @@ impl App {
     /// Save pending source work before creating any target files. Existing project
     /// names use the same guarded open path; refusals keep the picker name available.
     fn create_project(&mut self, name: String) -> bool {
+        if self.refuse_pattern_project_change() {
+            return false;
+        }
         if name.trim().is_empty() {
             return false;
         }
@@ -872,9 +902,63 @@ impl App {
     }
 
     fn try_send(&mut self, cmd: Command) -> bool {
+        if let Command::PatternRecordStart { pass } = &cmd {
+            use std::sync::atomic::Ordering::Acquire;
+            if self.quit_requested {
+                return false;
+            }
+            if self.pending_manual_save.is_some() {
+                self.flush_audio();
+                if self.pending_manual_save.is_some() {
+                    return false;
+                }
+            }
+            let can_start = self.audio.as_ref().is_some_and(|audio| {
+                let epoch = audio.project.epoch.load(Acquire);
+                !audio.stopped.load(Relaxed)
+                    && self.recording.is_none()
+                    && audio.pattern_capture.available()
+                    && audio.project.ready.load(Acquire) == epoch
+                    && self.pending_audio.is_empty()
+                    && audio.stats.recording(epoch).is_some_and(|snapshot| {
+                        snapshot.phase == engine::capture::Phase::Idle
+                            && *pass != 0
+                            && *pass > snapshot.pass
+                    })
+            });
+            if !can_start {
+                return false;
+            }
+            let created = self.pads.pattern.is_none();
+            match self.pads.prepare_pattern_record() {
+                Ok(pattern) => {
+                    if created {
+                        self.dirty();
+                    }
+                    let audio = self.audio.as_mut().unwrap();
+                    let epoch = audio.project.epoch.load(Acquire);
+                    if let Err(error) = audio.pattern_capture.begin(epoch, *pass, &self.pads) {
+                        self.post_notice(Level::Error, (error, Instant::now()));
+                        return false;
+                    }
+                    self.send(pattern);
+                }
+                Err(error) => {
+                    self.post_notice(Level::Error, (error, Instant::now()));
+                    return false;
+                }
+            }
+        }
+        if let Command::PatternRecordEnd { pass } = &cmd {
+            self.pattern_end_requested(*pass);
+        } else if matches!(&cmd, Command::TransportStop) {
+            self.pattern_stop_requested();
+        }
         // the first sound ends the splash (73): a note that can sound, or a preview
         let sounds = match &cmd {
-            Command::PadPress { pad, .. } => self.pad_sounds(*pad),
+            Command::PadPress { pad, .. } | Command::PatternPadPress { pad, .. } => {
+                self.pad_sounds(*pad)
+            }
             Command::Preview { sound: Some(_), .. } => true,
             _ => false,
         };
@@ -891,7 +975,7 @@ impl App {
                 return false;
             }
             match &cmd {
-                Command::PadPress { pad, .. } => {
+                Command::PadPress { pad, .. } | Command::PatternPadPress { pad, .. } => {
                     if !ready || !self.pending_audio.is_empty() || *pad >= PADS {
                         return false;
                     }
@@ -901,12 +985,19 @@ impl App {
                         return false;
                     }
                 }
+                Command::PatternPadRelease { pad, hold } => {
+                    if *pad >= PADS || !ready {
+                        return false;
+                    }
+                    if hold.may_release_sound() && self.audio_held[*pad].take() != Some(epoch) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
-            let press = if let Command::PadPress { pad, .. } = &cmd {
-                Some(*pad)
-            } else {
-                None
+            let press = match &cmd {
+                Command::PadPress { pad, .. } | Command::PatternPadPress { pad, .. } => Some(*pad),
+                _ => None,
             };
             let message = ProjectCommand {
                 epoch,
@@ -931,7 +1022,64 @@ impl App {
     }
 
     fn flush_audio(&mut self) {
-        let Some(audio) = &mut self.audio else { return };
+        use std::sync::atomic::Ordering::Acquire;
+        let previous_settings = self.pattern_setting_indexes();
+        let Some(audio) = &mut self.audio else {
+            self.finish_manual_save();
+            return;
+        };
+        let epoch = audio.project.epoch.load(Acquire);
+        let ready = audio.project.ready.load(Acquire) == epoch;
+        let snapshot = audio.stats.recording(epoch);
+        let stopped = audio.stopped.load(Relaxed);
+        let update = if self.quit_requested {
+            audio
+                .pattern_capture
+                .poll_for_exit(epoch, snapshot, stopped, &mut self.pads)
+        } else {
+            audio
+                .pattern_capture
+                .poll(epoch, snapshot, stopped, &mut self.pads)
+        };
+        match update {
+            Ok(update) => {
+                if update.changed {
+                    self.dirty();
+                }
+                for command in update.commands {
+                    #[cfg(test)]
+                    self.sent.push(command.clone());
+                    self.pending_audio.push_back(ProjectCommand {
+                        epoch,
+                        ready_at_send: ready,
+                        command: ProjectMessage::Command(command),
+                    });
+                }
+                if let Some(before) = update.undo {
+                    self.push_pattern_step(before);
+                }
+                // a pass that a manual save or quit ends keeps the save notice
+                if let Some((new, replaced)) = update
+                    .finished
+                    .filter(|_| self.pending_manual_save.is_none() && !self.quit_requested)
+                {
+                    let text = match (new, replaced) {
+                        (0, _) => "A1 pass: no new hits.".to_string(),
+                        (new, 0) => format!("A1 pass: {new} new hits."),
+                        (new, replaced) => format!("A1 pass: {new} new hits, {replaced} replaced."),
+                    };
+                    self.post_notice(Level::Done, (text, Instant::now()));
+                }
+                if let Some(notice) = update.notice {
+                    self.post_notice(Level::Warn, (notice, Instant::now()));
+                }
+            }
+            Err(error) => self.post_notice(Level::Error, (error, Instant::now())),
+        }
+        if self.pattern_setting_indexes() != previous_settings {
+            self.reset_pattern_takeover();
+        }
+        let audio = self.audio.as_mut().unwrap();
         while let Some(cmd) = self.pending_audio.pop_front() {
             let preview = cmd.ready_at_send
                 && cmd.epoch
@@ -956,6 +1104,7 @@ impl App {
                 self.splash = false;
             }
         }
+        self.finish_manual_save();
     }
 
     fn set_master(&mut self, db: i8) {
@@ -1104,6 +1253,9 @@ impl App {
 
     /// Starts recording from `source`; the status counts the seconds.
     fn record_start(&mut self, source: u8) {
+        if self.refuse_audio_during_pattern() {
+            return;
+        }
         if self.recording.is_some() {
             return;
         }
@@ -1264,6 +1416,8 @@ impl App {
     fn goto(&mut self, screen: Screen) {
         let from = self.screen;
         self.screen = screen;
+        self.pattern_panel = None;
+        self.erase_pads &= screen == Screen::Pads;
         self.edit = false;
         self.midi_run = None;
         // a file saved in the folder while the program runs shows on the next visit (66)
@@ -1355,6 +1509,9 @@ impl App {
     /// The chop screen opens on the bank that holds slices of this chop when the bank shown
     /// holds none (36): the grid shows the real pads, where the slices lie.
     fn show_bank_of_chop(&mut self) {
+        if self.pattern_owns_pads() {
+            return;
+        }
         let Some(c) = &self.chop else {
             return;
         };
@@ -1744,6 +1901,8 @@ impl App {
         let (range, file) = (c.range, c.file.clone());
         let mut changed = Vec::new();
         let mut left_out = Vec::new();
+        let linked: [bool; PADS] =
+            std::array::from_fn(|abs| matches!(self.pads.source(abs), pads::Source::Slice(_)));
         for abs in 0..PADS {
             let Some((id, epoch)) = self.pads.link[abs] else {
                 continue;
@@ -1780,6 +1939,11 @@ impl App {
                 (self.pads.link[a], self.pads.slice[a]) = (None, None);
             }
             self.range_unlinks.push((file, left_out.clone()));
+        }
+        for (abs, was_linked) in linked.into_iter().enumerate() {
+            if was_linked != matches!(self.pads.source(abs), pads::Source::Slice(_)) {
+                self.send(self.pads.pitch_gate_command(abs));
+            }
         }
         if !changed.is_empty() || !left_out.is_empty() {
             self.dirty();
@@ -2048,6 +2212,7 @@ impl App {
                 sound: Some(sound.clone()),
             });
             self.send(Command::SetPadRegion { pad: abs, region });
+            self.send(self.pads.pitch_gate_command(abs));
         }
         self.post_notice(
             Level::Done,
@@ -2249,6 +2414,7 @@ impl App {
 
     /// Swaps the pad in hand with `abs`.
     fn swap_with(&mut self, abs: usize) {
+        self.flush_audio();
         let Some(from) = self.pad_in_hand.take() else {
             return;
         };
@@ -2266,7 +2432,23 @@ impl App {
             );
             return;
         }
-        let cmd = self.pads.swap(from, abs);
+        let before = vec![
+            (from, self.pads.snapshot(from)),
+            (abs, self.pads.snapshot(abs)),
+        ];
+        let cmd = match self.pads.swap(from, abs) {
+            Ok(cmd) => cmd,
+            Err(error) => {
+                self.post_notice(Level::Error, (error, Instant::now()));
+                return;
+            }
+        };
+        if self.pads.pattern.is_some() {
+            self.push_step(before, None, "swap".into());
+            if let Some(step) = self.history.last_mut() {
+                step.swap = Some((from, abs));
+            }
+        }
         self.send(cmd);
         self.dirty();
     }
@@ -2447,6 +2629,7 @@ impl App {
                 path,
                 sound,
             } if generation == self.load_gen[pad] => {
+                let before = (!self.restoring_project).then(|| self.pads.snapshot(pad));
                 self.pads.loading[pad] = None;
                 self.pads.missing[pad] = false;
                 if self.pads.file[pad].as_ref() != Some(&path)
@@ -2468,6 +2651,12 @@ impl App {
                 });
                 if region != Region::WHOLE {
                     self.send(Command::SetPadRegion { pad, region });
+                }
+                self.send(self.pads.pitch_gate_command(pad));
+                if let Some(before) = before
+                    && before != self.pads.snapshot(pad)
+                {
+                    self.push_step(vec![(pad, before)], None, "file".into());
                 }
                 self.dirty();
             }
@@ -2878,7 +3067,7 @@ impl App {
             }
             _ => {}
         }
-        match keymap.resolve_in(self.screen, false, k) {
+        match keymap.resolve_in(self.screen, self.edit_keys(), k) {
             Some(Action::PadPress { pad, .. }) => {
                 let key = PAD_KEYS[pad].to_ascii_uppercase();
                 self.learn_pick(
@@ -3553,6 +3742,7 @@ impl App {
         for (_, pads) in back {
             for (a, link, slice) in pads {
                 (self.pads.link[a], self.pads.slice[a]) = (link, slice);
+                self.send(self.pads.pitch_gate_command(a));
                 relinked += 1;
             }
         }
@@ -3681,6 +3871,7 @@ impl App {
             self.load_gen[abs] += 1;
             let cmd = self.pads.clear(abs);
             self.send(cmd);
+            self.send(self.pads.pitch_gate_command(abs));
         }
         self.dirty();
     }
@@ -3714,9 +3905,11 @@ impl App {
                 self.param_step_name(p)
             }
             Action::PadModeNext => "mode".into(),
+            Action::PadPitchGateToggle => "Pitch Gate".into(),
             Action::PadClear => "clear".into(),
             Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
             Action::PadEdit if matches!(self.ask, Some(Ask::ClearPads { .. })) => "clear".into(),
+            Action::PadEdit if matches!(self.ask, Some(Ask::ClearPattern { .. })) => "clear".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),
             _ if self.copy_in_hand.is_some() => "copy".into(),
@@ -3727,6 +3920,10 @@ impl App {
     /// Keeps what an action changed of the pads as a step (61); a change of the same thing
     /// on the same pads within a second joins the step before, so a knob turn is one step.
     fn note_step(&mut self, b: Before, what: String) {
+        // A pattern swap keeps its own inverse transaction, including identical sounds.
+        if what == "swap" && self.pads.pattern.is_some() {
+            return;
+        }
         let pads: Vec<(usize, pads::PadSnap)> = b
             .pads
             .into_iter()
@@ -3746,10 +3943,14 @@ impl App {
         fx: Option<[pads::FxSlot; engine::FX_SLOTS]>,
         what: String,
     ) {
+        self.flush_audio();
         let now = Instant::now();
         let touched: Vec<usize> = pads.iter().map(|(a, _)| *a).collect();
         if let Some(last) = self.history.last_mut()
             && last.what == what
+            && last.pattern.is_none()
+            && what != "Pitch Gate"
+            && !(what == "swap" && self.pads.pattern.is_some())
             && now.duration_since(last.at) < UNDO_JOIN
             && last
                 .pads
@@ -3768,21 +3969,79 @@ impl App {
             what,
             pads,
             fx,
+            swap: None,
+            pattern: None,
             at: now,
+        });
+    }
+
+    fn push_pattern_step(&mut self, before: pattern_record::Undo) {
+        self.push_pattern_step_named(before, "pattern pass");
+    }
+
+    fn push_pattern_step_named(&mut self, before: pattern_record::Undo, what: &str) {
+        if self.history.len() == UNDO_STEPS {
+            self.history.remove(0);
+        }
+        self.history.push(Step {
+            what: what.into(),
+            pads: Vec::new(),
+            fx: None,
+            swap: None,
+            pattern: Some(before),
+            at: Instant::now(),
         });
     }
 
     /// `Ctrl+Z` on the pads (61): the last step comes back, every pad of it sounds as before.
     fn undo_pads(&mut self) {
+        self.flush_audio();
+        if let Some((before, what)) = self
+            .history
+            .last()
+            .and_then(|step| Some((step.pattern.as_ref()?, step.what.clone())))
+        {
+            match before.restore(&mut self.pads) {
+                Ok(command) => {
+                    self.reset_pattern_takeover();
+                    self.history.pop();
+                    if self.audio.as_ref().is_some_and(|audio| {
+                        !audio.stopped.load(Relaxed) && audio.pattern_capture.available()
+                    }) {
+                        self.send(command);
+                    }
+                    self.dirty();
+                    // the step names itself: a pass, an erased pad or a clear (98i)
+                    self.post_notice(Level::Done, (format!("undo: {what} on A1"), Instant::now()));
+                }
+                Err(error) => self.post_notice(Level::Error, (error, Instant::now())),
+            }
+            return;
+        }
         let Some(step) = self.history.pop() else {
             self.post_notice(Level::Info, ("nothing to undo".into(), Instant::now()));
             return;
         };
-        for (abs, snap) in &step.pads {
-            // a file still loading for the pad would land over the undone one
-            self.load_gen[*abs] += 1;
-            for cmd in self.pads.put_back(*abs, snap) {
-                self.send(cmd);
+        if let Some((a, b)) = step.swap {
+            match self.pads.swap(a, b) {
+                Ok(cmd) => {
+                    self.load_gen[a] += 1;
+                    self.load_gen[b] += 1;
+                    self.send(cmd);
+                }
+                Err(error) => {
+                    self.history.push(step);
+                    self.post_notice(Level::Error, (error, Instant::now()));
+                    return;
+                }
+            }
+        } else {
+            for (abs, snap) in &step.pads {
+                // a file still loading for the pad would land over the undone one
+                self.load_gen[*abs] += 1;
+                for cmd in self.pads.put_back(*abs, snap) {
+                    self.send(cmd);
+                }
             }
         }
         if let Some(fx) = step.fx {
@@ -3807,6 +4066,7 @@ impl App {
     fn set_pad_region(&mut self, abs: usize, region: Region) {
         self.pads.region[abs] = region;
         self.send(Command::SetPadRegion { pad: abs, region });
+        self.send(self.pads.pitch_gate_command(abs));
         self.dirty();
     }
 
@@ -4184,6 +4444,8 @@ fn main() -> std::io::Result<()> {
         transport: transport::State::default(),
         audio,
         pending_audio: Default::default(),
+        pending_manual_save: None,
+        quit_requested: false,
         audio_held: [None; PADS],
         midi_ui_held: Default::default(),
         restoring_project: false,
@@ -4202,6 +4464,9 @@ fn main() -> std::io::Result<()> {
         help_open: false,
         help_overlay: help::State::default(),
         value_popup: None,
+        pattern_panel: None,
+        erase_pads: false,
+        pattern_view: pattern_view::State::default(),
         input_sources: input_sources::State::default(),
         pads: pads::Pads::default(),
         meters: meters::Meters::default(),
@@ -4375,6 +4640,9 @@ fn main() -> std::io::Result<()> {
     let result = loop {
         app.finish_project_restore();
         app.flush_audio();
+        if app.quit_ready() {
+            break Ok(());
+        }
         let events: Vec<_> = app
             .midi
             .as_ref()
@@ -4451,8 +4719,21 @@ fn main() -> std::io::Result<()> {
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let text_at = Instant::now();
+        let pattern_recording = app.pattern_record_state();
+        let full = app.help_open.then(|| {
+            let mut rows = app.full_help_recording_keys(&keymap, kitty, pattern_recording);
+            if app.screen == Screen::Fx {
+                rows.push((String::new(), format!("{} selected", app.help_state().page)));
+            }
+            rows
+        });
+        if let Some(rows) = &full {
+            app.prepare_key_help(&keymap, rows, pattern_recording);
+        }
         let status = tui::Status {
-            badges: frame_text.badges_at(&app, text_at).to_vec(),
+            badges: frame_text
+                .badges_for(&app, text_at, pattern_recording)
+                .to_vec(),
             save: app.save_status(),
             backend: app.audio_alive().map(|a| a.backend),
             recording: app.recording.is_some(),
@@ -4504,14 +4785,18 @@ fn main() -> std::io::Result<()> {
             Some(p) => tui::Screen::ProjectPicker(p),
             None => match (app.screen, &app.chop) {
                 (Screen::Chop, Some(c)) => {
-                    let mut view = app.chop_display(c);
+                    let mut view = app.chop_display_recording(c, pattern_recording);
                     // the keyboard of slices draws the slices' own waves
                     if view.slice_keys.is_none() {
                         bank_waves(&mut view.pads, &mut app.pads, app.rate);
                     }
                     view.which = app.which_chop();
                     app.learn_grid(&mut view.pads.pads);
-                    tui::Screen::Chop(Box::new(app.mark_chop(view, mods.get())))
+                    tui::Screen::Chop(Box::new(app.mark_chop_recording(
+                        view,
+                        mods.get(),
+                        pattern_recording,
+                    )))
                 }
                 (Screen::Fx, _) => tui::Screen::Fx(app.fx_view()),
                 (Screen::Files, _) => tui::Screen::Files(tui::Files {
@@ -4532,6 +4817,8 @@ fn main() -> std::io::Result<()> {
                             ..pads_view(&mut app.pads, None, app.pad_in_hand, out, None, app.rate)
                         };
                         app.learn_grid(&mut v.pads);
+                        app.erase_pad_marks(&mut v, pattern_recording);
+                        v.bank_pattern = app.bank_pattern();
                         v
                     },
                     filter: &app.browser.filter,
@@ -4557,7 +4844,12 @@ fn main() -> std::io::Result<()> {
                     if app.screen == Screen::Pads {
                         view.edit_key = keys(&keymap, Screen::Pads, &[Action::PadEdit]);
                     }
-                    tui::Screen::Pads(app.mark_pads(view))
+                    let mut view = app.mark_pads_recording(view, pattern_recording);
+                    view.bank_pattern = app.bank_pattern();
+                    if app.screen == Screen::Pads {
+                        view.pattern = Some(app.pattern_strip(&keymap));
+                    }
+                    tui::Screen::Pads(view)
                 }
                 (Screen::Settings, _) => tui::Screen::Settings(tui::Settings {
                     row: app.settings_row,
@@ -4603,7 +4895,12 @@ fn main() -> std::io::Result<()> {
                 }),
             },
         };
-        let groups = help_groups(&keymap, app.screen, &app.help_state());
+        let groups = app.pattern_help_groups(
+            &keymap,
+            help_groups(&keymap, app.screen, &app.help_state()),
+            pattern_recording,
+            kitty,
+        );
         let groups = match (&app.project_picker, mods.get()) {
             // the learn mode speaks in its own lines, the columns step aside (52)
             _ if app.screen_learn.is_some() => Vec::new(),
@@ -4613,13 +4910,6 @@ fn main() -> std::io::Result<()> {
             (None, None) if kitty => without_modifiers(groups),
             (None, None) => as_combos(groups),
         };
-        let full = app.help_open.then(|| {
-            let mut rows = full_help(&keymap, app.screen, kitty);
-            if app.screen == Screen::Fx {
-                rows.push((String::new(), format!("{} selected", app.help_state().page)));
-            }
-            rows
-        });
         let messages = app.message_history();
         let learn_lines = app.learning_view(&keymap);
         let question = app.question_view(&keymap);
@@ -4634,6 +4924,7 @@ fn main() -> std::io::Result<()> {
             learn: learn_lines.as_ref(),
         };
         let value = app.current_value_at(Instant::now());
+        let pattern_controls = app.pattern_controls_view(&keymap);
         let cell_px = if graphics {
             match terminal::window_size() {
                 Ok(s) if s.columns > 0 && s.rows > 0 => (s.width / s.columns, s.height / s.rows),
@@ -4646,6 +4937,9 @@ fn main() -> std::io::Result<()> {
         let mut blockers = Vec::new();
         let drawn = term.try_draw(|f| -> std::io::Result<()> {
             blockers = tui::overlay_areas(f.area(), &screen, &help, value);
+            if pattern_controls.is_some() {
+                blockers.push(tui::pattern_controls_area(f.area(), &screen));
+            }
             let commands = shown.before(graphics, app.screen, f.area(), cell_px, &blockers);
             graphics::send(&mut std::io::stdout(), &commands)?;
             tui::draw_cached(
@@ -4659,6 +4953,9 @@ fn main() -> std::io::Result<()> {
             );
             if let Some(value) = value {
                 tui::value_popup(f, value);
+            }
+            if let Some(controls) = &pattern_controls {
+                tui::pattern_controls(f, &screen, controls);
             }
             Ok(())
         });
@@ -4780,9 +5077,8 @@ fn hint_for(app: &App) -> Option<&'static str> {
     }
 }
 
-// Temporary migration hints: remove Ctrl+R when 97 binds it, the rest after version 0.2.
+// Temporary migration hints: remove after version 0.2.
 const MOVED_KEYS: &[(Option<Screen>, &str, &str)] = &[
-    (None, "Ctrl+R", "microphone moved to Alt+R"),
     (Some(Screen::Chop), "Ctrl+N", "normalize moved to Ctrl+G"),
     (Some(Screen::Chop), "Ctrl+Y", "chop by hits moved to H"),
     (Some(Screen::Pads), "J", "previous bank moved to U"),
@@ -4797,11 +5093,18 @@ const CLEANUP_DEFAULTS: &[(Option<Screen>, &str, &str)] = &[
     (None, "Ctrl+Shift+Down", "transport.tempo_down_fine"),
     (None, "Alt+M", "metronome.toggle"),
     (None, "Alt+R", "record.mic"),
+    (None, "Ctrl+R", "pattern.record"),
+    (None, "Alt+E", "pattern.erase"),
+    (None, "Alt+N", "pattern.controls"),
+    (None, "Alt+Z", "pattern.undo"),
     (Some(Screen::Chop), "Ctrl+G", "chop.normalize"),
     (Some(Screen::Chop), "H", "chop.hits"),
     (Some(Screen::Chop), "Shift+H", "chop.hits_back"),
     (Some(Screen::Pads), "U", "bank.prev"),
     (Some(Screen::Pads), "O", "bank.next"),
+    (Some(Screen::Pads), "Alt+G", "pad.pitch_gate_toggle"),
+    (Some(Screen::Pads), "Alt+Down", "pattern.view_prev"),
+    (Some(Screen::Pads), "Alt+Up", "pattern.view_next"),
     (Some(Screen::Pads), "Ctrl+C", "pad.copy"),
     (Some(Screen::Pads), "J", "edit.value_dec"),
     (Some(Screen::Pads), "L", "edit.value_inc"),
@@ -5012,6 +5315,7 @@ fn pads_view(
             tui::PadView {
                 naming: false,
                 glyphs: pad_glyphs(&changed),
+                pitch_gate: view::pitch_gate(p, abs),
                 changed,
                 dim: false,
                 dashed: false,
@@ -5070,6 +5374,7 @@ fn pads_view(
         .collect();
     tui::Pads {
         feedback: tui::PadFeedback::default(),
+        pattern: None,
         playing: false,
         fx,
         bank: p.bank,
@@ -5080,6 +5385,7 @@ fn pads_view(
         scope: p.scope_name(),
         bank_fill: bank_fill(p),
         bank_marks: bank_marks(p),
+        bank_pattern: tui::BankPattern::default(),
         out_wave,
         splash,
         big: big_view(p, rate),
@@ -5103,10 +5409,18 @@ const BIG_COLS: usize = 1200;
 /// pad is empty.
 fn big_view(p: &pads::Pads, rate: u32) -> Option<tui::BigView> {
     let abs = p.bank * PADS_PER_BANK + p.selected;
-    let sound = p.sound[abs].as_deref()?;
+    // an empty pad plays its test tone: the edit shows that piece (98h)
+    let tone;
+    let (sound, region) = match p.sound[abs].as_deref() {
+        Some(sound) => (sound, p.region[abs]),
+        None => {
+            tone = Sample::mono(engine::test_tone(rate, abs));
+            (&tone, Region::WHOLE)
+        }
+    };
     let (wave, env, dur_ms) = pads::piece(
         sound,
-        p.region[abs],
+        region,
         rate,
         p.attack_ms[abs],
         p.decay_ms[abs],
@@ -5424,12 +5738,24 @@ fn bank_waves(view: &mut tui::Pads, p: &mut pads::Pads, rate: u32) {
     }
 }
 
+#[cfg(test)]
 fn chop_view<'a>(
     c: &'a chop::Chop,
     plan: Option<&chop::Plan>,
     playhead: Option<usize>,
     rate: u32,
     p: &pads::Pads,
+) -> tui::Chop<'a> {
+    chop_view_routed(c, plan, playhead, rate, p, false)
+}
+
+fn chop_view_routed<'a>(
+    c: &'a chop::Chop,
+    plan: Option<&chop::Plan>,
+    playhead: Option<usize>,
+    rate: u32,
+    p: &pads::Pads,
+    pattern_pads: bool,
 ) -> tui::Chop<'a> {
     let (start, end) = (c.view.start, c.view.end);
     let len = (end - start).max(1) as f32;
@@ -5462,7 +5788,7 @@ fn chop_view<'a>(
         .any(|a| p.file[a].as_ref() == Some(&c.file) && p.link[a].is_some_and(|l| l.1 == c.epoch));
     let mut slice_keys = None;
     let (mode, side, banks, pads) = match plan {
-        None if !laid => {
+        None if !laid && !pattern_pads => {
             let page = slice_page(p.bank, slices.len());
             let pads = (0..PADS_PER_BANK)
                 .map(|i| {
@@ -5473,6 +5799,7 @@ fn chop_view<'a>(
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: slice.is_none(),
+                        pitch_gate: tui::PitchGate::NeedsSlice,
                         dashed: false,
                         source: String::new(),
                         bounds: (0.0, 0.0),
@@ -5513,6 +5840,7 @@ fn chop_view<'a>(
                 ],
                 None,
                 tui::Pads {
+                    pattern: None,
                     feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: page,
@@ -5527,6 +5855,7 @@ fn chop_view<'a>(
                     scope: String::new(),
                     bank_fill: [0; tui::BANKS],
                     bank_marks: [0; tui::BANKS],
+                    bank_pattern: tui::BankPattern::default(),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -5566,7 +5895,8 @@ fn chop_view<'a>(
                         naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
-                        dim: !ours(abs) && !whole(abs),
+                        dim: !pattern_pads && !ours(abs) && !whole(abs),
+                        pitch_gate: view::pitch_gate(p, abs),
                         // the source stands apart from its slices (46)
                         dashed: whole(abs),
                         source: String::new(),
@@ -5618,29 +5948,42 @@ fn chop_view<'a>(
             (
                 "LISTEN".to_string(),
                 vec![
-                    first,
-                    // the keys of 21 and 36: the banks turn, P lays the slices out
+                    if pattern_pads {
+                        "A1: real pads".into()
+                    } else {
+                        first
+                    },
                     "Ctrl+1…8: banks".into(),
-                    "P: put them on pads".into(),
+                    if pattern_pads {
+                        "end pattern work to assign".into()
+                    } else {
+                        "P: put them on pads".into()
+                    },
                 ],
                 Some(marks),
                 tui::Pads {
+                    pattern: None,
                     playing: false,
                     bank: p.bank,
                     pads,
                     feedback: tui::PadFeedback::default(),
                     // the pad of the selected slice, when it is in this bank
-                    selected: (0..PADS_PER_BANK)
-                        .find(|&i| {
-                            let abs = p.bank * PADS_PER_BANK + i;
-                            ours(abs) && p.slice[abs] == Some(c.selected as u16 + 1)
-                        })
-                        .unwrap_or(usize::MAX),
+                    selected: if pattern_pads {
+                        p.selected
+                    } else {
+                        (0..PADS_PER_BANK)
+                            .find(|&i| {
+                                let abs = p.bank * PADS_PER_BANK + i;
+                                ours(abs) && p.slice[abs] == Some(c.selected as u16 + 1)
+                            })
+                            .unwrap_or(usize::MAX)
+                    },
                     pickup: None,
                     param: tui::PadParam::Volume,
                     scope: String::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
+                    bank_pattern: tui::BankPattern::default(),
                     out_wave: Vec::new(),
                     splash: None,
                     big: None,
@@ -5672,6 +6015,7 @@ fn chop_view<'a>(
                     let abs = p.bank * PADS_PER_BANK + i;
                     let planned = targets.iter().find(|t| t.1 == abs).map(|t| t.0);
                     tui::PadView {
+                        pitch_gate: view::pitch_gate(p, abs),
                         naming: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
@@ -5748,6 +6092,7 @@ fn chop_view<'a>(
                 side,
                 Some(marks),
                 tui::Pads {
+                    pattern: None,
                     feedback: tui::PadFeedback::default(),
                     playing: false,
                     bank: p.bank,
@@ -5763,6 +6108,7 @@ fn chop_view<'a>(
                     learn: Vec::new(),
                     bank_fill: bank_fill(p),
                     bank_marks: bank_marks(p),
+                    bank_pattern: tui::BankPattern::default(),
                     edit: None,
                     pages: Vec::new(),
                     knobs: Vec::new(),
@@ -5840,6 +6186,13 @@ fn chop_view<'a>(
         },
         playhead: playhead.filter(|p| (start..end).contains(p)).map(at),
         info,
+        bounds_slice: c.selected + 1,
+        edit_rows: [
+            format!("{:.3} s", secs(sel.start)),
+            format!("{:.3} s", secs(sel.end)),
+            format!("{:.0} ms", secs(sel.end - sel.start) * 1000.0),
+            format!("{:.3} s", secs(c.cursor)),
+        ],
         side,
         banks,
         pads,
@@ -6281,11 +6634,20 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                             ],
                             "cursor".into(),
                         ),
-                        item(
-                            &[
-                                Action::ChopZoom { zoom_in: true },
-                                Action::ChopZoom { zoom_in: false },
-                            ],
+                        // Modified zoom aliases live in modifier help and F1, not this short row.
+                        (
+                            keys(
+                                keymap,
+                                screen,
+                                &[
+                                    Action::ChopZoom { zoom_in: true },
+                                    Action::ChopZoom { zoom_in: false },
+                                ],
+                            )
+                            .split_whitespace()
+                            .filter(|key| !key.contains('+'))
+                            .collect::<Vec<_>>()
+                            .join(" "),
                             "zoom".into(),
                         ),
                         item(&[Action::ChopPlay], "play".into()),
@@ -6473,11 +6835,16 @@ fn modifier_groups(
     m: input::Modifier,
     pads_hidden: bool,
 ) -> Vec<tui::HelpGroup> {
+    // Page-only controls stay in F1's table and footer, not ordinary modifier help.
+    let bindings = keymap
+        .bindings(screen)
+        .into_iter()
+        .filter(|(_, action)| !matches!(action, Action::HelpPagePrev | Action::HelpPageNext));
     if m == input::Modifier::Shift {
         // 83a: a Shift command (as Shift+H on Chop) joins the full-velocity pads;
         // its text names what the shifted key does, not the unshifted command
         let mut items = vec![("1-4 Q-R A-F Z-V".into(), "pads at full velocity".into())];
-        for (k, a) in keymap.bindings(screen) {
+        for (k, a) in bindings {
             let Some(rest) = k.strip_prefix("Shift+") else {
                 continue;
             };
@@ -6499,7 +6866,7 @@ fn modifier_groups(
         _ => ("Ctrl+", "CTRL"),
     };
     let mut items: Vec<(String, String)> = Vec::new();
-    for (k, a) in keymap.bindings(screen) {
+    for (k, a) in bindings {
         let Some(key) = k.strip_prefix(prefix) else {
             continue;
         };
@@ -6539,6 +6906,10 @@ fn ctrl_text(a: Action) -> String {
     match a {
         Action::RecordMic(_) => "mic: hold".into(),
         Action::RecordOutputToggle => "output".into(),
+        Action::PatternRecord => "pattern record".into(),
+        Action::PatternErase => "pattern erase".into(),
+        Action::PatternUndo => "pattern undo".into(),
+        Action::PatternControls => "pattern controls".into(),
         Action::PadTake => "take pad".into(),
         Action::PadCopy => "copy pad".into(),
         Action::Undo => "undo".into(),
@@ -6595,6 +6966,28 @@ fn describe(a: Action) -> String {
         Action::PadPress { .. } | Action::PadRelease { .. } => "play pad".into(),
         Action::RecordMic(_) => "record the microphone: hold".into(),
         Action::RecordOutputToggle => "record the output: on / off".into(),
+        Action::PatternRecord => {
+            "record A1: count-in when stopped, overdub when playing. Press again to finish.".into()
+        }
+        Action::PatternErase => {
+            "in a pass, held pads erase under the playhead; on Pads, a pad erases all its hits"
+                .into()
+        }
+        Action::PatternUndo => "undo the A1 pass. Finish an active pass first. No redo.".into(),
+        Action::PatternControls => {
+            "A1 controls. Quantize and Strength set the next hits, not saved hits.".into()
+        }
+        Action::PatternParamPrev => "select the previous A1 control".into(),
+        Action::PatternParamNext => "select the next A1 control".into(),
+        Action::PatternValueDec => "decrease the selected A1 value with controls open".into(),
+        Action::PatternValueInc => "increase the selected A1 value with controls open".into(),
+        Action::PatternViewPrev => {
+            "Pads: previous view division. Recorded timing stays unchanged.".into()
+        }
+        Action::PatternViewNext => {
+            "Pads: next view division. Recorded timing stays unchanged.".into()
+        }
+        Action::PatternClear => "clear all of A1 after a question. Ctrl+Z restores.".into(),
         Action::CursorMove { right, .. } => {
             format!(
                 "chop: move the cursor {}",
@@ -6611,6 +7004,7 @@ fn describe(a: Action) -> String {
         Action::PadRename => "pads: name the selected pad".into(),
         Action::PadSelect(d) => format!("select pad {}", format!("{d:?}").to_lowercase()),
         Action::PadModeNext => "pad mode: one-shot / gate".into(),
+        Action::PadPitchGateToggle => "Pitch Gate: on / off for sequenced pitched slices".into(),
         Action::PadEdit => "pads: edit the selected pad; Esc closes".into(),
         Action::PadEditOnly => "pads: open edit only; do not place or confirm".into(),
         Action::PadParamNext => "pads: the next parameter".into(),
@@ -6692,6 +7086,8 @@ fn describe(a: Action) -> String {
         Action::BrowserFilter => "filter the list by name".into(),
         Action::BrowserFavorite => "the selected folder: favorite on / off".into(),
         Action::HelpToggle => "this help".into(),
+        Action::HelpPagePrev => "F1: previous key-table page".into(),
+        Action::HelpPageNext => "F1: next key-table page".into(),
         Action::LearnToggle => "bind controller knobs and buttons to what the screen shows".into(),
         Action::ProjectPick => "open the project picker".into(),
         Action::PadsToggle => "hide / show the pads".into(),
@@ -6721,6 +7117,7 @@ fn help_section(a: Action) -> usize {
         | Action::PadRelease { .. }
         | Action::PadSelect(_)
         | Action::PadModeNext
+        | Action::PadPitchGateToggle
         | Action::PadEdit
         | Action::PadEditOnly
         | Action::PadParamNext
@@ -6786,13 +7183,27 @@ fn help_section(a: Action) -> usize {
         | Action::TransportToggle
         | Action::MetronomeToggle
         | Action::TempoStep { .. } => 5,
-        Action::RecordMic(_) | Action::RecordOutputToggle => 5,
+        Action::RecordMic(_)
+        | Action::RecordOutputToggle
+        | Action::PatternRecord
+        | Action::PatternErase
+        | Action::PatternUndo
+        | Action::PatternControls
+        | Action::PatternParamPrev
+        | Action::PatternParamNext
+        | Action::PatternValueDec
+        | Action::PatternValueInc
+        | Action::PatternViewPrev
+        | Action::PatternViewNext
+        | Action::PatternClear => 5,
         Action::ScreenPads
         | Action::ScreenSettings
         | Action::ScreenFiles
         | Action::ScreenChop
         | Action::ScreenFx
         | Action::HelpToggle
+        | Action::HelpPagePrev
+        | Action::HelpPageNext
         | Action::ProjectPick
         | Action::PadsToggle
         | Action::Back
@@ -6860,6 +7271,10 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
     for (k, a) in keymap.bindings(screen) {
         let section = &mut sections[help_section(a)];
         let (key, text) = match a {
+            Action::RecordMic(_) if !kitty => (
+                (0, k),
+                "record the microphone: toggle on / off (no key releases)".into(),
+            ),
             Action::PageNext | Action::PagePrev if screen == Screen::Fx => {
                 ((0, k), "select the next / previous shared FX block".into())
             }
@@ -6907,8 +7322,8 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
                 "mute N",
                 "its group: a hit stops the other pads of the group",
             ),
-            ("⇢", "one-shot: pressed, it goes on to the end"),
             ("⇥", "gate: plays until the release stops it"),
+            ("no mark", "one-shot: pressed, it goes on to the end"),
             (
                 "●",
                 "in the panel: a block with a change; changed values are bright",
@@ -6996,9 +7411,10 @@ mod tests {
         p.attack_ms[0] = 0;
         let big = big_view(&p, 48_000).unwrap();
         assert!(big.env[0] > 0.99, "no attack: the start is full");
-        // an empty pad draws nothing
+        // an empty pad draws its test tone, whole (98h)
         p.sound[0] = None;
-        assert!(big_view(&p, 48_000).is_none());
+        let tone = big_view(&p, 48_000).expect("the test tone piece");
+        assert!(tone.wave[0] > tone.wave[BIG_COLS - 1], "the tone decays");
     }
 
     #[test]
@@ -7530,6 +7946,8 @@ mod tests {
             transport: transport::State::default(),
             audio: None,
             pending_audio: Default::default(),
+            pending_manual_save: None,
+            quit_requested: false,
             audio_held: [None; PADS],
             midi_ui_held: Default::default(),
             restoring_project: false,
@@ -7548,6 +7966,9 @@ mod tests {
             help_open: false,
             help_overlay: help::State::default(),
             value_popup: None,
+            pattern_panel: None,
+            erase_pads: false,
+            pattern_view: pattern_view::State::default(),
             input_sources: input_sources::State::default(),
             pads: pads::Pads::default(),
             meters: meters::Meters::default(),
@@ -7652,6 +8073,8 @@ mod tests {
                 file_in_hand: true,
                 copy_in_hand: true,
                 swap_in_hand: true,
+                pattern_pads: false,
+                erase_pads: false,
             },
         };
         assert_eq!(app.focus(), expected);
@@ -8401,14 +8824,25 @@ Enter = "browser.hold"
 
     #[test]
     fn old_microphone_key_names_its_replacement() {
-        for screen in [
-            Screen::Pads,
-            Screen::Chop,
-            Screen::Files,
-            Screen::Settings,
-            Screen::Fx,
-        ] {
-            assert_moved_notice(screen, 'r', 'к', true, "microphone moved to Alt+R");
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let keymap = notice_map(super::DEFAULT_KEYMAP, "[global]\n\"Ctrl+R\" = \"none\"\n");
+        for screen in Screen::ALL {
+            for kitty in [false, true] {
+                for c in ['r', 'к'] {
+                    let mut app = test_app();
+                    app.screen = screen;
+                    NoticeInput::default().event(
+                        &mut app,
+                        &keymap,
+                        KeyEvent::new(KeyCode::Char(c), M::CONTROL),
+                        kitty,
+                    );
+                    assert_eq!(flash(&app), "");
+                    assert!(app.recording.is_none());
+                    assert!(app.pads.pattern.is_none());
+                    assert!(app.sent.is_empty());
+                }
+            }
         }
     }
 
@@ -9517,7 +9951,7 @@ Enter = "browser.hold"
         let mut app = test_app();
         app.pads.file[0] = Some("kick.wav".into());
         app.pads.custom_name[0] = Some("Бочка".into());
-        app.pads.swap(0, 1);
+        app.pads.swap(0, 1).unwrap();
         assert_eq!(app.pads.custom_name[1].as_deref(), Some("Бочка"));
         let before = app.before();
         app.pads.clear(1);
@@ -11440,12 +11874,17 @@ Enter = "browser.hold"
             items,
             [
                 ("Bksp".to_string(), "delete right".to_string()),
+                ("E".to_string(), "pattern erase".to_string()),
+                ("I".to_string(), "zoom in".to_string()),
                 ("J L".to_string(), "right bound".to_string()),
+                ("K".to_string(), "zoom out".to_string()),
                 ("M".to_string(), "metro".to_string()),
+                ("N".to_string(), "pattern controls".to_string()),
                 // 49: the loop of the play; 50: play as the pad
                 ("O".to_string(), "loop".to_string()),
                 ("P".to_string(), "as pad".to_string()),
-                ("R".to_string(), "mic: hold".to_string())
+                ("R".to_string(), "mic: hold".to_string()),
+                ("Z".to_string(), "pattern undo".to_string())
             ],
             "the Alt combos of the chop screen and nothing else"
         );
@@ -13491,6 +13930,233 @@ Enter = "browser.hold"
         assert_eq!(moved[7], view / 32, "the top step after the ramp");
     }
 
+    /// Scenario "Zoom between bound edits with the modifier held".
+    #[test]
+    fn bound_zoom_keeps_held_modifier_bounds_cursor_and_slice() {
+        use ratatui::crossterm::event::{
+            KeyCode, KeyEvent, KeyEventKind as Kind, KeyModifiers as M,
+        };
+        let (map, warnings) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        for (modifier, end, indicator) in [
+            (M::CONTROL, false, input::Modifier::Ctrl),
+            (M::ALT, true, input::Modifier::Alt),
+        ] {
+            for editing in [false, true] {
+                for [zoom_in, zoom_out, right] in [['i', 'k', 'l'], ['ш', 'л', 'д']] {
+                    let mut app = test_app();
+                    app.screen = input::Screen::Chop;
+                    let mut chop = chop_with_parts(2);
+                    chop.select_slice(1);
+                    app.chop = Some(chop);
+                    app.edit = editing;
+                    let mut held = input::HeldPads::default();
+                    let mut mods = input::HeldModifiers::default();
+                    let mut keys = input::HeldKeys::default();
+                    let modifier_code = KeyCode::Modifier(if end {
+                        ratatui::crossterm::event::ModifierKeyCode::LeftAlt
+                    } else {
+                        ratatui::crossterm::event::ModifierKeyCode::LeftControl
+                    });
+                    let down = KeyEvent::new(modifier_code, modifier);
+                    assert!(
+                        !app.keyboard_event(&map, &down, true, &mut keys, &mut held, &mut mods)
+                    );
+                    let mut send = |app: &mut super::App, letter, kind| {
+                        let key = KeyEvent::new_with_kind(KeyCode::Char(letter), modifier, kind);
+                        assert!(
+                            !app.keyboard_event(&map, &key, true, &mut keys, &mut held, &mut mods)
+                        );
+                        assert_eq!(mods.get(), Some(indicator));
+                    };
+                    let bounds = |app: &super::App| app.chop.as_ref().unwrap().slices()[1];
+                    let width = |app: &super::App| {
+                        let v = app.chop.as_ref().unwrap().view;
+                        v.end - v.start
+                    };
+                    let initial = bounds(&app);
+                    send(&mut app, right, Kind::Press);
+                    send(&mut app, right, Kind::Release);
+                    let moved = bounds(&app);
+                    if end {
+                        assert!(moved.end > initial.end);
+                        assert_eq!(moved.start, initial.start);
+                    } else {
+                        assert!(moved.start > initial.start);
+                        assert_eq!(moved.end, initial.end);
+                    }
+                    let snapshot = |app: &super::App| {
+                        let c = app.chop.as_ref().unwrap();
+                        (c.saved(), c.slices(), c.cursor, c.selected, app.slice_end)
+                    };
+                    let before = snapshot(&app);
+                    let whole = width(&app);
+                    send(&mut app, zoom_in, Kind::Press);
+                    let once = width(&app);
+                    assert!(once < whole);
+                    send(&mut app, zoom_in, Kind::Repeat);
+                    let twice = width(&app);
+                    assert!(twice < once);
+                    send(&mut app, zoom_in, Kind::Release);
+                    assert_eq!(width(&app), twice);
+                    send(&mut app, zoom_out, Kind::Press);
+                    assert_eq!(width(&app), once);
+                    send(&mut app, zoom_out, Kind::Release);
+                    assert_eq!(width(&app), once);
+                    assert_eq!(
+                        snapshot(&app),
+                        before,
+                        "zoom must not edit bounds or move the cursor"
+                    );
+                    send(&mut app, right, Kind::Press);
+                    send(&mut app, right, Kind::Release);
+                    let after = bounds(&app);
+                    if end {
+                        assert!(after.end > moved.end);
+                        assert_eq!(after.start, moved.start);
+                    } else {
+                        assert!(after.start > moved.start);
+                        assert_eq!(after.end, moved.end);
+                    }
+                    assert_eq!(app.edit, editing);
+                    let up = KeyEvent::new_with_kind(modifier_code, M::NONE, Kind::Release);
+                    assert!(!app.keyboard_event(&map, &up, true, &mut keys, &mut held, &mut mods));
+                    assert_eq!(mods.get(), None);
+                }
+            }
+        }
+    }
+
+    /// Legacy terminals can send Tab instead of a distinct Ctrl+I event.
+    #[test]
+    fn bound_zoom_legacy_alt_keeps_tab_and_slice_edit_roles() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let (map, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        for editing in [false, true] {
+            for [zoom_in, zoom_out] in [['i', 'k'], ['ш', 'л']] {
+                let mut app = test_app();
+                app.screen = input::Screen::Chop;
+                app.chop = Some(chop_with_parts(2));
+                app.edit = editing;
+                let mut held = input::HeldPads::default();
+                let mut mods = input::HeldModifiers::default();
+                let mut keys = input::HeldKeys::default();
+                let width = |app: &super::App| {
+                    let v = app.chop.as_ref().unwrap().view;
+                    v.end - v.start
+                };
+                let whole = width(&app);
+                let tab = KeyEvent::new(KeyCode::Tab, M::NONE);
+                assert!(!app.keyboard_event(&map, &tab, false, &mut keys, &mut held, &mut mods));
+                assert_eq!(width(&app), whole);
+                let saved = app.chop.as_ref().unwrap().saved();
+                let cursor = app.chop.as_ref().unwrap().cursor;
+                for (letter, expected) in [(zoom_in, whole / 2), (zoom_out, whole)] {
+                    let key = KeyEvent::new(KeyCode::Char(letter), M::ALT);
+                    assert!(
+                        !app.keyboard_event(&map, &key, false, &mut keys, &mut held, &mut mods)
+                    );
+                    assert_eq!(width(&app), expected);
+                    assert_eq!(app.chop.as_ref().unwrap().saved(), saved);
+                    assert_eq!(app.chop.as_ref().unwrap().cursor, cursor);
+                    assert_eq!(app.edit, editing);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bound_zoom_respects_assignment_naming_and_learning() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers as M};
+        let (map, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        for blocker in ["assign", "name", "learn"] {
+            for modifier in [M::CONTROL, M::ALT] {
+                let mut app = test_app();
+                app.screen = input::Screen::Chop;
+                app.chop = Some(chop_with_parts(2));
+                match blocker {
+                    "assign" => app.plan = Some(super::chop::Plan::ByHand(vec![])),
+                    "name" => app.pad_naming = Some((0, String::new())),
+                    "learn" => app.screen_learn = Some(app.learn_open()),
+                    _ => unreachable!(),
+                }
+                let before = app.chop.as_ref().unwrap().view;
+                let mut held = input::HeldPads::default();
+                let mut mods = input::HeldModifiers::default();
+                let mut keys = input::HeldKeys::default();
+                for letter in ['i', 'k'] {
+                    let key = KeyEvent::new(KeyCode::Char(letter), modifier);
+                    assert!(!app.keyboard_event(&map, &key, true, &mut keys, &mut held, &mut mods));
+                    assert_eq!(app.chop.as_ref().unwrap().view, before, "{blocker}");
+                }
+            }
+        }
+    }
+
+    /// Scenario "Held bound modifiers show working zoom keys".
+    #[test]
+    fn bound_zoom_help_names_only_effective_modified_bindings() {
+        let (mut map, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
+        let help = |map: &input::Keymap, modifier| {
+            super::modifier_groups(map, input::Screen::Chop, modifier, false)
+                .into_iter()
+                .flat_map(|g| g.items)
+                .collect::<Vec<_>>()
+        };
+        for modifier in [input::Modifier::Ctrl, input::Modifier::Alt] {
+            let rows = help(&map, modifier);
+            assert!(rows.contains(&("I".into(), "zoom in".into())));
+            assert!(rows.contains(&("K".into(), "zoom out".into())));
+            assert!(
+                rows.iter()
+                    .any(|(keys, text)| keys == "J L" && text.ends_with("bound"))
+            );
+        }
+        for kitty in [false, true] {
+            let rows = super::full_help(&map, input::Screen::Chop, kitty);
+            for chord in ["Ctrl+I", "Ctrl+K", "Alt+I", "Alt+K"] {
+                assert!(
+                    rows.iter()
+                        .any(|(keys, text)| keys.split_whitespace().any(|k| k == chord)
+                            && text.starts_with("chop: zoom")),
+                    "{rows:?}"
+                );
+            }
+        }
+        assert!(
+            map.overlay("[screens.chop]\n'Ctrl+I' = 'none'\n'Alt+K' = 'chop.cut'\n")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !help(&map, input::Modifier::Ctrl)
+                .iter()
+                .any(|(_, text)| text == "zoom in")
+        );
+        assert!(
+            help(&map, input::Modifier::Alt)
+                .contains(&("K".into(), "chop: cut at the cursor".into()))
+        );
+        assert!(
+            !help(&map, input::Modifier::Alt)
+                .iter()
+                .any(|(_, text)| text == "zoom out")
+        );
+        for kitty in [false, true] {
+            let rows = super::full_help(&map, input::Screen::Chop, kitty);
+            assert!(
+                !rows
+                    .iter()
+                    .any(|(keys, _)| keys.split_whitespace().any(|k| k == "Ctrl+I"))
+            );
+            assert!(
+                rows.iter()
+                    .any(|(keys, text)| keys.split_whitespace().any(|k| k == "Alt+K")
+                        && text.contains("cut"))
+            );
+        }
+    }
+
     /// Recorded: I I K on the chop screen. 21: "Zoom on I and K".
     #[test]
     fn zoom_on_i_and_k() {
@@ -14176,7 +14842,11 @@ Enter = "browser.hold"
     fn f1_names_the_mark() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
         let rows = super::full_help(&keymap, input::Screen::Pads, true);
-        for (glyph, word) in [("✱", "more settings"), ("⇢", "one-shot"), ("⇥", "gate")] {
+        for (glyph, word) in [
+            ("✱", "more settings"),
+            ("no mark", "one-shot"),
+            ("⇥", "gate"),
+        ] {
             assert!(
                 rows.iter().any(|(k, t)| k == glyph && t.contains(word)),
                 "{glyph}: {rows:?}"
@@ -16765,7 +17435,7 @@ Enter = "browser.hold"
             f1.iter()
                 .any(|(k, t)| k == "mute N" && t.contains("its group"))
         );
-        for (k, word) in [("⇢", "one-shot"), ("⇥", "gate")] {
+        for (k, word) in [("no mark", "one-shot"), ("⇥", "gate")] {
             assert!(f1.iter().any(|(g, t)| g == k && t.contains(word)), "{k}");
         }
     }
@@ -17104,8 +17774,8 @@ Enter = "browser.hold"
         v.pads[abs].glyphs.clone()
     }
 
-    /// 77 "A filter marks the pad", "A fresh pad has no mark", "The mark goes with the
-    /// setting".
+    /// 77 "A filter marks the pad", "A fresh pad has no mark".
+    /// Scenario "The mark goes with the setting".
     #[test]
     fn a_filter_marks_the_pad() {
         use engine::filter::FilterKind;
@@ -18263,8 +18933,8 @@ Enter = "browser.hold"
         );
     }
 
-    /// 83a keyboard "Future commands stay unbound": Ctrl+R, Ctrl+Y and Ctrl+.` run no
-    /// action on the shipped map, and Ctrl+B keeps the Files favorite.
+    /// Keyboard "Future commands stay unbound": Ctrl+R records A1, Ctrl+Y and
+    /// Ctrl+. stay free, and Ctrl+B keeps the Files favorite.
     #[test]
     fn future_commands_stay_unbound() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -18282,7 +18952,11 @@ Enter = "browser.hold"
             Screen::Fx,
             Screen::Settings,
         ] {
-            assert_eq!(ctrl('r', screen), None, "Ctrl+R stays free ({screen:?})");
+            assert_eq!(
+                ctrl('r', screen),
+                Some(Action::PatternRecord),
+                "Ctrl+R records A1 ({screen:?})"
+            );
             assert_eq!(ctrl('y', screen), None, "Ctrl+Y stays free ({screen:?})");
             assert_eq!(ctrl('.', screen), None, "Ctrl+. stays free ({screen:?})");
         }

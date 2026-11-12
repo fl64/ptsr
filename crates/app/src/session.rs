@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 /// 3: the cuts of each chopped file (`chops`) and pads linked to them (`link`, `epoch`);
 /// version 2 slices are turned into chops when read.
 // 4: project tempo and metronome preference; playback always opens stopped.
-const VERSION: u32 = 4;
+// 5: raw pattern A1 and the per-pad Pitch Gate switch.
+const VERSION: u32 = 5;
 
 fn default_bpm() -> f64 {
     engine::transport::DEFAULT_BPM
@@ -28,6 +29,10 @@ pub struct Session {
     pub bpm: f64,
     #[serde(default)]
     pub metronome: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub patterns: Vec<PatternState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_dir: Option<PathBuf>,
     /// Pad index (0..128) as text, TOML keys are strings; pads at defaults are left out.
@@ -50,6 +55,72 @@ pub struct Session {
     /// in FX 1 and a delay in FX 2.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fx: Vec<FxState>,
+}
+
+/// Raw rows stay in file order, including hits outside the current loop.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PatternState {
+    pub slot: String,
+    pub bars: u8,
+    #[serde(default = "default_quantize")]
+    pub quantize: String,
+    #[serde(default = "default_strength")]
+    pub strength: u8,
+    #[serde(deserialize_with = "hit_rows")]
+    pub hits: Vec<[u32; 4]>,
+}
+
+fn hit_rows<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<[u32; 4]>, D::Error> {
+    // This TOML reader can leave extra fixed-array elements unread. Check full rows.
+    Vec::<Vec<u32>>::deserialize(d)?
+        .into_iter()
+        .map(|row| {
+            row.try_into().map_err(|_| {
+                serde::de::Error::custom("Each pattern hit must have exactly four integers.")
+            })
+        })
+        .collect()
+}
+
+fn default_quantize() -> String {
+    engine::pattern::Grid::default().to_string()
+}
+
+fn default_strength() -> u8 {
+    engine::pattern::DEFAULT_STRENGTH
+}
+
+impl PatternState {
+    pub fn checked(&self) -> Result<engine::pattern::RawPattern, String> {
+        use engine::pattern::{Error, Hit, MAX_HITS, RawPattern};
+
+        if self.hits.len() > MAX_HITS {
+            return Err(Error::HitCount.to_string());
+        }
+        let grid = self.quantize.parse().map_err(|e: Error| e.to_string())?;
+        let hits = self
+            .hits
+            .iter()
+            .map(|&[tick, pad, velocity, gate]| {
+                let velocity = u8::try_from(velocity).map_err(|_| Error::Velocity)?;
+                Hit::new(tick, pad as usize, velocity, gate)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        // Quantize and Strength set the next captured hits (98c): playback plays saved ticks
+        RawPattern::saved(self.bars, grid, self.strength, hits).map_err(|e| e.to_string())
+    }
+}
+
+impl Session {
+    fn validate_patterns(&self) -> Result<(), String> {
+        match (self.pattern.as_deref(), self.patterns.as_slice()) {
+            (None, []) => Ok(()),
+            (Some("A1"), [pattern]) if pattern.slot == "A1" => pattern.checked().map(|_| ()),
+            _ => Err("Use no pattern and no selection, or one A1 pattern selected as A1.".into()),
+        }
+    }
 }
 
 /// A shared effect slot in the project file (56): its kind and the parameters of each kind.
@@ -82,6 +153,8 @@ impl Default for Session {
             version: VERSION,
             bpm: default_bpm(),
             metronome: false,
+            pattern: None,
+            patterns: Vec::new(),
             browser_dir: None,
             pads: BTreeMap::new(),
             master_db: 0,
@@ -93,7 +166,7 @@ impl Default for Session {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct PadState {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,6 +174,7 @@ pub struct PadState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub gate: bool,
+    pub pitch_gate: bool,
     pub volume_db: i8,
     /// Pad pitch in semitones; absent in older sessions, which reads as 0.
     pub pitch: i8,
@@ -141,6 +215,33 @@ pub struct PadState {
     pub link: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epoch: Option<u32>,
+}
+
+impl Default for PadState {
+    fn default() -> Self {
+        Self {
+            file: None,
+            name: None,
+            gate: false,
+            pitch_gate: true,
+            volume_db: 0,
+            pitch: 0,
+            attack_ms: 0,
+            decay_ms: 0,
+            release_ms: 0,
+            filter: String::new(),
+            cutoff_hz: None,
+            reso: 0,
+            drive: 0,
+            sends: [0, 0],
+            group: 0,
+            start: None,
+            end: None,
+            slice: None,
+            link: None,
+            epoch: None,
+        }
+    }
 }
 
 fn is_zero(n: &u8) -> bool {
@@ -195,6 +296,14 @@ fn load_from(path: &Path, missing_is_empty: bool) -> Result<Session, String> {
             path.display()
         ));
     }
+    if s.version < 5 && (s.pattern.is_some() || !s.patterns.is_empty()) {
+        return Err(format!(
+            "{}: pattern data requires session format 5",
+            path.display()
+        ));
+    }
+    s.validate_patterns()
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     s.bpm = engine::transport::tempo(s.bpm).unwrap();
     if s.version < 3 {
         chops_from_slices(&mut s);
@@ -262,6 +371,9 @@ fn save_to(path: &Path, session: &Session, create_parent: bool) -> Result<(), St
             path.display()
         ));
     }
+    session
+        .validate_patterns()
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     let mut value = toml::Value::try_from(session).map_err(|e| e.to_string())?;
     value["version"] = toml::Value::Integer(VERSION.into());
     value["bpm"] = toml::Value::Float(engine::transport::tempo(session.bpm).unwrap());
@@ -310,6 +422,9 @@ pub fn from_stored_path(project: &Path, stored: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
+mod pattern_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -331,6 +446,7 @@ mod tests {
                 file: Some("/music/amen.wav".into()),
                 name: None,
                 gate: true,
+                pitch_gate: true,
                 volume_db: -6,
                 pitch: 0,
                 attack_ms: 0,

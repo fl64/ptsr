@@ -7,10 +7,11 @@ Pads: 16 pads in 8 banks played from the keyboard, one-shot and gate modes, velo
 
 ### Requirement: Shared FX screen
 
-A separate FX screen SHALL show both shared blocks, their types and parameters, and identify the selected block.
+A separate FX screen SHALL show both shared blocks with their types and parameters in one edit frame titled `EDIT · FX 1 FX 2`.
+The selected block SHALL be lit in the title and on its block line.
 The same three learned knobs SHALL control its type and two parameters.
 Block selection SHALL NOT change effects.
-Configured takeover SHALL be independent per device, block and control.
+Takeover SHALL be separate per device, block and control.
 Changes SHALL be smooth, project-saved and undoable with `Ctrl+Z`.
 Existing projects and learned bindings SHALL keep their behavior.
 
@@ -31,10 +32,9 @@ Existing projects and learned bindings SHALL keep their behavior.
 - **THEN** the previous effect setting returns
 
 #### Scenario: Compact shared effect cards
-- **WHEN** the owner opens F4 in a large or small terminal
-- **THEN** each effect card contains only its title and three parameter rows
-- **AND** the cards are beside each other when they fit, or stacked in a narrow terminal
-- **AND** neither card expands to fill unused rows
+- **WHEN** the owner opens F4 at 80x26 and 120x40, then presses Tab
+- **THEN** one frame titled `EDIT · FX 1 FX 2` holds both blocks with their block lines and three rows each
+- **AND** FX 1 is lit first and FX 2 after Tab, and the frame does not fill unused rows
 
 #### Scenario: Clear a shared effect knob assignment
 - **WHEN** the owner clears a page knob assignment on F4 and restarts the program
@@ -850,18 +850,19 @@ Reset SHALL ask in the question box, naming `Reset pad Q to clean?` or `Reset 17
 - **THEN** only the selected pad is cleared, as before, and nothing asks
 
 ### Requirement: The mode line of a pad
-Below the pad name, its mode line SHALL show `⇢` one-shot (play to end) or `⇥` gate (play until release).
+Below the pad name, its mode line SHALL show `⇥` for a gate pad (play until release).
+A one-shot pad (play to end) is the default and SHALL show no mode glyph.
 It SHALL append nonzero volume, active `mute N`, then `✱` for extra settings per editing, "The pad marks its settings".
-No separators SHALL appear, so `⇢ -24 mute 8 ✱` fits 13 cells.
-The panel SHALL name the mode in words (`mode    one-shot`), and F1 SHALL name both glyphs.
+No separators SHALL appear, so `⇥ -24 mute 8 ✱` fits 13 cells.
+The panel SHALL name the mode in words (`mode    one-shot`), and F1 SHALL name `⇥` and state that one-shot has no mark.
 
 #### Scenario: The mode as a glyph
 - **WHEN** pad Q is one-shot at +1 dB and pad W is gate at 0 dB
-- **THEN** the mode line of pad Q says `⇢ +1` and the one of pad W says `⇥`
+- **THEN** the mode line of pad Q says `+1` and the one of pad W says `⇥`
 
 #### Scenario: F1 names the mode glyphs
 - **WHEN** the owner opens the full help (F1) on the pads screen
-- **THEN** it names `⇢` one-shot and `⇥` gate
+- **THEN** it names `⇥` gate and states that a one-shot pad has no mark
 
 ### Requirement: Name a pad
 
@@ -1077,3 +1078,78 @@ Mode feedback SHALL NOT move the help band, value area, status or right column.
 - **WHEN** the owner hides the grid and starts marking or a pending file, copy or swap operation
 - **THEN** its mode remains visible in the title while the pad line and hidden layout remain intact
 - **AND** starting and closing assignment temporarily shows the grid, then restores the hidden state
+
+### Requirement: Per-pad slice Pitch Gate
+
+Each pad SHALL have a saved Pitch Gate boolean, true by default. It SHALL act only on sequenced notes whose onset uses a linked slice and positive pitch. Manual hits, Chop previews, whole-file sources, detached pad pieces and non-positive pitch SHALL NOT receive its cut. Changes SHALL affect future note eligibility, not deadlines of sounding notes.
+
+#### Scenario: Pattern Pitch Gate eligibility preserves manual sound
+- **WHEN** equivalent linked slices, whole files and detached pieces play manually and through A1 at negative, zero and positive pitch
+- **THEN** only positively pitched linked slices with Pitch Gate On receive an automatic step cut
+- **AND** manual hits and previews sound the same with the switch On or Off
+
+#### Scenario: Pitch Gate changes apply to future note eligibility
+- **WHEN** pitch, source or Pitch Gate changes after a note starts
+- **THEN** that note retains its existing deadline and the next note uses the new eligibility
+
+### Requirement: Pitch Gate uses the next grid boundary
+
+An eligible note SHALL start its existing short cut at the first pattern grid line strictly after its compiled onset. Empty steps SHALL supply boundaries. Quantize Off SHALL use 1/16 for this gate. Strength SHALL NOT move grid lines. Straight and triplet grids SHALL retain their exact spacing. The loop end SHALL also be a boundary.
+
+#### Scenario: Pitch Gate cuts at empty straight and triplet steps
+- **WHEN** eligible notes play before empty steps on every supported straight or triplet grid
+- **THEN** each cut starts within one output frame of the next grid line, even with no hit on that line
+- **AND** Quantize Off uses 1/16 and changing strength does not move the gate grid
+
+#### Scenario: Pitch Gate respects off-grid onsets and the loop end
+- **WHEN** eligible hits lie on a line, between lines or just before the loop seam
+- **THEN** each gate uses the strictly later line or the loop end
+- **AND** seam releases precede new tick-zero notes without cutting those new notes
+
+### Requirement: Pitch Gate preserves the source and cut path
+
+Pitch Gate SHALL use the existing 5 ms short fade, not the pad's gate-release duration. The cut SHALL NOT move source bounds, extend playback, insert a universal attack or change mute groups. Natural source end SHALL remain authoritative. An earlier ordinary release SHALL start its envelope, but Pitch Gate SHALL still cap that fading voice. A short cut SHALL preserve current fade gain.
+
+#### Scenario: Pitch Gate cuts without extending a slice or changing attack
+- **WHEN** eligible slices end before or after their step boundary, including a gate pad with a long release
+- **THEN** short slices end naturally and longer slices use the existing short fade at the boundary
+- **AND** source bounds, attack, group membership and unrelated voices stay unchanged
+
+#### Scenario: Pitch Gate caps an ordinary release tail
+- **WHEN** an eligible gate note has its saved release before, on or after the Pitch Gate boundary
+- **THEN** an earlier ordinary release starts its envelope and the Pitch Gate boundary still starts its short cut if that note remains
+- **AND** coincident deadlines use the short cut without raising the current fade gain
+
+### Requirement: Pitch Gate follows pad state and undo
+
+Pitch Gate SHALL follow the existing pad change scope, save, swap, copy snapshot and undo rules. Reset to clean SHALL set it to true without changing the source. Clear SHALL retain it like other retained pad parameters. Cancelled or refused operations SHALL leave it unchanged. A scope toggle SHALL set every scope pad to the selected pad's inverse value in one undo step.
+
+#### Scenario: Pitch Gate scope reset copy and undo preserve pad state
+- **WHEN** keyboard and raw MIDI toggle mixed scope values, copy a snapshot, reset to clean, clear and undo
+- **THEN** each operation follows the specified Pitch Gate state and existing source and undo rules
+- **AND** unrelated pads and cancelled operations stay unchanged
+
+### Requirement: The pad edit of an empty pad shows its test tone
+
+In the pad edit of an empty pad, the strip SHALL show the pad's test tone as its piece, with the envelope line over it. The live output SHALL NOT show then.
+
+#### Scenario: The pad edit of an empty pad shows its test tone
+- **WHEN** the owner opens the pad edit on an empty pad and raises its attack
+- **THEN** the strip shows the decaying test tone with the envelope line, not the live output
+- **AND** the attack part of the line grows with the attack
+
+### Requirement: Selected pad keeps its frame
+
+The selected pad SHALL keep its cyan frame while it flashes, while it is held and while it is marked.
+A flash SHALL fill only its inside with white. The frame cells SHALL keep the panel background.
+A marked and selected pad SHALL keep its dark yellow fill. A pad in hand SHALL keep its magenta frame.
+Other pads SHALL flash and show marks as before.
+
+#### Scenario: Selected pad keeps its frame on a hit
+- **WHEN** A1 plays and a hit of the selected pad flashes, and another pad flashes at the same time
+- **THEN** the selected pad has a cyan frame on the panel background and a white inside
+- **AND** the other pad has a white frame and a white inside
+
+#### Scenario: Selected marked pad keeps its frame
+- **WHEN** marking is on and the selected pad is marked
+- **THEN** the selected pad has a cyan frame and a dark yellow inside, and another marked pad has a yellow frame

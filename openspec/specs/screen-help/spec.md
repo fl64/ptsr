@@ -269,9 +269,7 @@ Help SHALL NOT advertise unbound old chords as former actions.
 
 ### Requirement: Recording help follows effective keys
 
-Default recording help SHALL name Alt+R microphone hold and Ctrl+T output.
-Without key releases, it SHALL name microphone toggle instead of hold.
-Owner recording keys SHALL override defaults in help.
+Default recording help SHALL name Ctrl+R pattern recording, Alt+R microphone hold and Ctrl+T output. Without releases, microphone help SHALL name toggle. Owner recording keys SHALL override defaults in help. Pattern recording SHALL remain distinct from audio capture. No help SHALL advertise an unimplemented SMC-PAD hold or factory role.
 
 #### Scenario: Microphone help follows release support
 - **WHEN** the owner views microphone help or records with the default key
@@ -279,7 +277,12 @@ Owner recording keys SHALL override defaults in help.
 
 #### Scenario: Help respects an owner recording key
 - **WHEN** the owner explicitly maps Ctrl+R to microphone recording
-- **THEN** help names that effective key and does not claim it only shows a move notice
+- **THEN** help names that effective key and does not claim it only shows a move notice or records A1
+
+#### Scenario: Full help distinguishes the three recording targets
+- **WHEN** F1 opens with default keys on each current screen
+- **THEN** Ctrl+R names A1 recording, Alt+R names microphone and Ctrl+T names output
+- **AND** owner overrides and `none` change those labels without an obsolete move notice
 
 ### Requirement: Copy help stays distinct from swap
 
@@ -494,10 +497,10 @@ Leaving help SHALL reveal the underlying screen without editing work, dirtying t
 
 ### Requirement: Stable F1 window
 
-Help and Messages SHALL use the same frame across the available body between status, notice and bottom help rows.
+Help, Messages and Controller SHALL use the same frame across the available body between status, notice and bottom help rows.
 At a fixed terminal size, frame position and size SHALL NOT depend on the page, help rows or message count.
-Both page labels and the shared page/close hints SHALL retain their positions. Only Messages SHALL advertise its scroll controls.
-Terminal resizing SHALL adapt both pages to the same body without changing existing message scroll rules or input behavior.
+All page labels and the shared page/close hints SHALL retain their positions. Only Messages SHALL advertise its scroll controls.
+Terminal resizing SHALL adapt all pages to the same body without changing existing message scroll rules or input behavior.
 
 #### Scenario: F1 pages keep stable geometry
 - **WHEN** the owner switches between Help and empty or populated Messages at 80×26 or 120×40
@@ -513,6 +516,11 @@ Terminal resizing SHALL adapt both pages to the same body without changing exist
 - **WHEN** the owner enlarges and reduces the terminal with either F1 page open
 - **THEN** both pages use the same current body and keep their frame within the terminal
 - **AND** Messages retains its existing wrapping, page height and bounded scrolling
+
+#### Scenario: Controller page keeps the F1 frame
+- **WHEN** the owner switches to and from the Controller page at 80×26 or 120×40
+- **THEN** the frame corners, the page labels and the Tab/Shift+Tab hint stay at the same positions as on Help and Messages
+- **AND** the F1/Esc hint stays at its position on Help
 
 ### Requirement: F1 history view lifecycle
 
@@ -533,8 +541,8 @@ The view SHALL retain its screen-row offset and clamp it after content or termin
 
 ### Requirement: Local F1 page controls
 
-Within F1, Tab/Shift+Tab SHALL select Help or Messages.
-On Messages, Up/Down and PageUp/PageDown SHALL scroll entries. F1/Esc SHALL close help.
+Within F1, Tab SHALL select the next page and Shift+Tab the previous page of Help, Messages and Controller.
+On Messages, Up/Down and PageUp/PageDown SHALL scroll entries. On Controller, the arrows SHALL select controls. F1/Esc SHALL close help.
 These local controls SHALL NOT change global bindings or values behind the overlay.
 Existing pad press/release behavior under help SHALL remain.
 This change SHALL NOT invent a factory controller binding for history navigation.
@@ -590,3 +598,232 @@ This view SHALL NOT change the stored target or the comparison that asks again w
 - **THEN** its target summary, safety warnings and keyboard answers stay inside the question
 - **AND** omitted rows have a visible count
 - **AND** the stored confirmation target and its refusal checks stay unchanged
+
+### Requirement: Full help remains readable across pages
+
+F1 SHALL wrap long keys and descriptions without lost text at 80x26 and 120x40 on every current screen.
+The current position and effective page keys SHALL remain visible.
+Tabs SHALL retain independent offsets. Reopening SHALL start at the first key-table row.
+Resize and content changes SHALL clamp to the last full viewport.
+The frame's accepted recording caption SHALL remain visible on either tab.
+Fixed safety rows, compact-help rows and audio behavior SHALL remain unchanged.
+
+#### Scenario: Every full help row is reachable
+- **WHEN** the owner pages through F1 on each current screen at either supported size
+- **THEN** long keys, descriptions, recording instructions and cross-bank erasure identities remain readable without lost text
+- **AND** the visible page controls follow effective bindings rather than disabled defaults
+- **AND** ordinary modifier help does not advertise commands that require the F1 key table
+
+#### Scenario: Full help retains accepted recording feedback
+- **WHEN** accepted CountIn, Recording, erasure, Finishing or Idle changes while either F1 tab is open
+- **THEN** the visible caption follows that accepted phase and position without a premature queued state
+- **AND** the complete target list remains reachable without hiding fixed safety rows
+
+#### Scenario: Help page offsets follow local lifecycle
+- **WHEN** the owner changes help tabs, resizes, changes the key-table content or reopens F1
+- **THEN** tab offsets remain independent, content changes clamp to a valid viewport and reopening starts at the first key-table row
+- **AND** the underlying screen, bank, selection and recording state remain unchanged by page navigation
+
+### Requirement: Bound modifier help includes zoom
+
+Chop Ctrl and Alt help SHALL name effective I/K zoom controls beside their existing J/L bound controls.
+F1 SHALL include the effective modified zoom bindings.
+Removed or rebound keys SHALL NOT appear as zoom controls.
+
+#### Scenario: Held bound modifiers show working zoom keys
+- **WHEN** Chop shows Ctrl, Alt or full help with default or overridden zoom bindings
+- **THEN** the help identifies working zoom and bound keys without changing their actions
+- **AND** an explicit owner removal or different action changes the shown zoom controls
+
+### Requirement: Pitch Gate help separates settings from sound
+
+Pads help SHALL state that Pitch Gate acts only on A1 notes, not manual hits or previews. On but inapplicable feedback SHALL explain the source or pitch restriction in text. F1 SHALL explain linked slices, positive pitch and the next-grid cut. Toggle popups SHALL retain pad identity, saved state and applicability. Help SHALL use effective keyboard and learned-button controls without new bindings or audio behavior.
+
+#### Scenario: Pitch Gate help explains an inaudible manual toggle
+- **WHEN** keyboard or raw MIDI toggles Pitch Gate while the owner plays manual pads with edit open or closed
+- **THEN** visible help explains unchanged manual sound and the popup identifies the pad, saved setting and applicability
+- **AND** F1 explains A1-only linked-slice positive-pitch cuts with effective controls and the source or pitch reason when inapplicable
+
+### Requirement: Pattern help names the current next step
+
+Count-in help SHALL name cancellation and state that pad hits are not recorded yet. With A1 and no active pass, help SHALL name recording and pass Undo. Recording help SHALL name end, erasure and pass Undo. Erasure help SHALL name silent pad targets and the return to playing. Pattern controls SHALL name selection, value changes and closing. F1 SHALL include actions omitted from compact help. Existing effective-key, modifier and fixed three-row rules SHALL remain.
+
+#### Scenario: Recording help changes with the accepted phase
+- **WHEN** count-in, recording, erasure and pattern controls appear in separate fixtures
+- **THEN** help names the working next step and effective keys for that phase
+- **AND** closing a panel or erasure returns to the applicable previous help without moving screen rows
+
+#### Scenario: Count-in and idle help name hidden rules
+- **WHEN** count-in runs, then the pass ends and A1 stays without an active pass
+- **THEN** count-in help says that pad hits are not recorded yet, and idle help names recording and pass Undo with effective keys
+- **AND** a `none` binding for pass Undo removes that item without a fallback
+
+### Requirement: A completed pass reports its result
+
+When a pass ends, App SHALL post a Done notice with the count of new hits and of replaced older hits. A pass without new hits SHALL say that it added nothing. The notice SHALL NOT replace save or audio warnings.
+
+#### Scenario: A completed pass reports new and replaced hits
+- **WHEN** a pass adds three hits, one of them replaces an older hit, and a later pass adds no hits
+- **THEN** the first notice reports three new hits and one replaced hit, and the second reports that the pass added nothing
+- **AND** save and audio warnings keep their priority over the notice
+
+### Requirement: Pattern refusals explain recovery
+
+Refused recording, length edits, erasure and pattern Undo SHALL name the actual blocking state and a working next step. Manual-save help SHALL state that saving completes the pass while playback continues. Capture overflow and the raw-hit limit SHALL use Warn notices without replacing persistent save or audio status. No-release erasure help SHALL state one loop per pad press.
+
+#### Scenario: Pattern warnings explain limits without claiming success
+- **WHEN** a phase, newer Undo step, full pattern or capture overflow prevents an operation
+- **THEN** the notice identifies the actual limit and keeps applicable recovery controls visible
+- **AND** it does not show a success result or hide save and audio warnings
+
+#### Scenario: Save and erase fallbacks are stated before use
+- **WHEN** F1 shows pattern recording help with or without key-release support
+- **THEN** it explains pass completion on manual save and the applicable erase hold or one-loop fallback
+- **AND** microphone hold or toggle remains a separate instruction
+
+### Requirement: Pattern view help names its keys and marks
+
+When A1 exists, ordinary Pads help SHALL show the effective view keys. F1 SHALL explain the onset, between-line and multiple-hit marks, the playback plate, the all-pads row and the underlined banks. Owner overrides and `none` SHALL stay effective in help.
+
+#### Scenario: Pattern view help names view keys and marks
+- **WHEN** Pads shows A1 with default or owner-moved view keys, and the owner opens F1
+- **THEN** the help line shows the effective view keys, and F1 explains each mark of the strip and the bank row
+- **AND** a `none` binding removes the key from help without an invented fallback
+
+### Requirement: Pattern tidy help and results
+
+Pattern controls SHALL show a Clear A1 row with the count of A1 hits and the key that runs it. An empty A1 SHALL show the row dim. A result SHALL post a Done notice with its count, for example `A1: pad Q kick erased, 5 hits. Ctrl+Z restores.` or `A1 cleared: 12 hits.`. A command that changes nothing SHALL post an Info notice.
+
+#### Scenario: Pattern tidy results name their counts
+- **WHEN** the owner erases a pad with hits, clears A1, and then erases a pad without hits
+- **THEN** each change posts a Done notice with its count, and the empty erase posts an Info notice
+- **AND** pattern controls name the effective Clear A1 key
+
+### Requirement: Erasure help names both forms
+
+In whole-pad erasure, the help line SHALL say that a pad erases all its A1 hits. It SHALL name Undo and the exit keys. F1 SHALL explain both erasure forms: under the playhead in a pass, whole pads outside a pass.
+
+#### Scenario: Erasure help names both forms
+- **WHEN** the owner turns on erasure on Pads outside a pass and opens F1
+- **THEN** the help line names the whole-pad erasure, Ctrl+Z and Esc
+- **AND** F1 explains held erasure in a pass and whole-pad erasure outside a pass
+
+#### Scenario: Erasure outside Pads names Pads
+- **WHEN** no pass is active, the owner is on Chop and presses Alt+E
+- **THEN** erasure stays off and an Info notice says to erase pads on Pads (F2)
+
+### Requirement: Quantize help names the next hits
+
+When the owner selects Quantize or Strength in pattern controls, the row hint SHALL start with `next hits`. Strength SHALL keep its step after it: `next hits, step 10`. F1 SHALL say that Quantize and Strength set the next recorded hits and do not move saved hits.
+
+#### Scenario: Quantize help names the next hits
+- **WHEN** the owner selects Quantize, then Strength in pattern controls, then opens F1
+- **THEN** each selected row shows `next hits`
+- **AND** F1 says that a change does not move saved hits
+
+### Requirement: Counts and undo name what they mean
+
+A count of one hit SHALL say `1 hit`. Other counts SHALL say `N hits`. This SHALL apply to pad counts, notices and questions. The undo notice of a pattern step SHALL name that step: `erase pad <key>`, `clear` or `pattern pass`.
+
+#### Scenario: Counts and undo name what they mean
+- **WHEN** the owner erases a pad with one hit, presses Ctrl+Z, clears A1 and presses Ctrl+Z
+- **THEN** the pad count and notice say `1 hit`, and the undo notices say `undo: erase pad W on A1` and `undo: clear on A1`
+
+### Requirement: The pad edit help comes first
+
+While the pad edit is open, the help row SHALL show the edit group before the A1 group.
+If the A1 group does not fit, it SHALL drop whole, as other groups do. F1 SHALL show it.
+
+#### Scenario: The pad edit help comes first
+- **WHEN** the owner opens the pad edit at 80x26
+- **THEN** the help row shows the edit keys before the A1 keys
+- **AND** the A1 group drops whole when it does not fit, and F1 shows it
+
+### Requirement: F1 wraps whole words
+
+F1 SHALL wrap descriptions and keys at spaces. A word wider than its column SHALL wrap inside the word.
+
+#### Scenario: F1 wraps whole words
+- **WHEN** the owner opens F1 at 80x26
+- **THEN** no line ends inside a word that fits its column
+
+### Requirement: F1 controller tab
+
+F1 SHALL have a `Controller` tab after `Messages`. It SHALL draw the `[layout]` of one connected device inside the F1 frame.
+Each control SHALL show a label of not more than 6 cells. The label SHALL be the action that the control does now on the screen under F1, with the open edit layer and the learned bindings.
+A free control SHALL show `-`. A binding to an action that the program does not have does nothing, so it SHALL show `-` too. Each control kind SHALL have its own brackets.
+
+#### Scenario: Controller tab draws the device top
+- **WHEN** the X-Session Pro is connected and the owner opens the F1 `Controller` tab at 80x26 or 120x40
+- **THEN** the tab draws each control of its layout at its place with its kind
+- **AND** each label is the short label of the action that the same control does through the MIDI dispatch
+
+#### Scenario: Controller labels follow the screen and the edit
+- **WHEN** the owner opens the `Controller` tab on F2, on F3, and on F2 with the pad edit open
+- **THEN** each label shows the action of that screen and layer
+- **AND** a learned binding shows over the profile action, and a free control shows `-`
+
+#### Scenario: Every action has a short label
+- **WHEN** the program lists all its actions
+- **THEN** each action has an ASCII short label of 1 to 6 cells
+
+### Requirement: Controller tab selection
+
+On the `Controller` tab, the arrows SHALL select the nearest control in their direction. Empty places SHALL be skipped.
+A line under the drawing SHALL give the control name, its kind, its action and the action's full label.
+The selection SHALL NOT send an action or change a value. Pad presses and releases under F1 SHALL keep their route.
+
+#### Scenario: Arrows select controls on the drawing
+- **WHEN** the owner moves the selection with the arrows across the X-Session layout
+- **THEN** the selection skips empty places and stops at the edges
+- **AND** the line under the drawing names the selected control and its action
+
+#### Scenario: Selection does not act
+- **WHEN** the owner moves the selection while a controller pad is held
+- **THEN** no action, value change or sound command comes from the selection
+- **AND** the pad release reaches its pad
+
+### Requirement: Controller device pages
+
+The `Controller` tab SHALL show one device. A top line SHALL name each connected device and mark the current one.
+The ports of one ALSA client with one profile SHALL be one device. Two devices of one profile SHALL show as `<name> 1` and `<name> 2` in the order of connection.
+On `Controller`, the help page actions SHALL change the device. The tab SHALL start on the device of the last MIDI event, or on the first connected device.
+
+#### Scenario: Help page keys change the device
+- **WHEN** two devices are connected and the owner presses Alt+PgDn on the `Controller` tab
+- **THEN** the tab shows the other device and the top line marks it
+- **AND** Alt+PgDn on the `Help` tab still pages the key table
+
+#### Scenario: Tab starts on the last used device
+- **WHEN** the owner turns a knob on the second device and then opens the `Controller` tab
+- **THEN** the tab shows the second device
+
+#### Scenario: Two devices of one profile have numbers
+- **WHEN** two devices with the same profile are connected
+- **THEN** the top line names them with the numbers 1 and 2 in the order of connection
+
+#### Scenario: Ports of one device share a page
+- **WHEN** the X-Session Pro connects with its ports `MIDI 1` and `MIDI 2`
+- **THEN** the top line names one X-Session Pro without a number
+
+#### Scenario: Device disconnects while its page is open
+- **WHEN** the shown device disconnects while the `Controller` tab is open
+- **THEN** the tab shows the next connected device, or the empty state when no device is left
+- **AND** a device that connects later gets a place on the top line without a change of the current page
+
+### Requirement: Controller tab without a drawing
+
+A device without a valid layout that fits the frame SHALL show a list of its controls and their actions. Up and Down SHALL move the selection, and the list SHALL scroll with it.
+Without a connected device, the tab SHALL show `No MIDI device is connected.` and the names of the loaded profiles.
+
+#### Scenario: Profile without a layout shows a list
+- **WHEN** a device without `[layout]` is connected and the owner opens the `Controller` tab
+- **THEN** the tab lists each control with its action, and the selection scrolls the list
+
+#### Scenario: Layout too wide for the frame shows a list
+- **WHEN** a layout row has more places than the frame width allows
+- **THEN** the tab shows the list for that device
+
+#### Scenario: No device shows the known profiles
+- **WHEN** no MIDI device is connected and the owner opens the `Controller` tab
+- **THEN** the tab shows `No MIDI device is connected.` and the names of the loaded profiles

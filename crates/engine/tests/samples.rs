@@ -159,7 +159,10 @@ fn released_samples_go_to_the_garbage_queue() {
         back.push(s);
     }
     assert!(weak.upgrade().is_some(), "freed inside the engine");
-    assert!(back.iter().any(|s| s.left[0] == 0.2));
+    assert!(
+        back.iter()
+            .any(|s| matches!(s, engine::Retired::Sample(s) if s.left[0] == 0.2))
+    );
     drop(back);
     assert!(weak.upgrade().is_none());
 }

@@ -109,42 +109,49 @@ pub fn known(name: &str) -> bool {
     param_of(name).is_some() || crate::Action::parse(name).is_some()
 }
 
+/// Every knob action and its parameter, in one table for both directions.
+pub const PARAMS: &[(&str, Param)] = &[
+    ("pad.volume", Param::PadVolume),
+    ("pad.pitch", Param::PadPitch),
+    // every pad parameter on a knob of its own (52)
+    ("pad.attack", Param::PadAttack),
+    ("pad.decay", Param::PadDecay),
+    ("pad.release", Param::PadRelease),
+    ("pad.filter", Param::PadFilter),
+    ("pad.cutoff", Param::PadCutoff),
+    ("pad.reso", Param::PadReso),
+    ("pad.start", Param::PadStart),
+    ("pad.end", Param::PadEnd),
+    ("master.volume", Param::MasterVolume),
+    ("transport.tempo", Param::Tempo),
+    ("pattern.bars", Param::PatternBars),
+    ("pattern.quantize", Param::PatternQuantize),
+    ("pattern.strength", Param::PatternStrength),
+    ("slice.start", Param::SliceStart),
+    ("slice.end", Param::SliceEnd),
+    ("chop.zoom", Param::Zoom),
+    ("chop.cursor_pos", Param::Cursor),
+    ("chop.region_start_pos", Param::RegionStart),
+    ("chop.region_end_pos", Param::RegionEnd),
+    ("chop.threshold", Param::Threshold),
+    ("edit.param_1", Param::Slot(0)),
+    ("edit.param_2", Param::Slot(1)),
+    ("edit.param_3", Param::Slot(2)),
+    ("edit.page", Param::Page),
+    // Keep the direct shared FX names from the former pad edit (82).
+    ("pad.fx1_type", Param::PadEffect(3)),
+    ("pad.fx1_size", Param::PadEffect(4)),
+    ("pad.fx1_tone", Param::PadEffect(5)),
+    ("pad.fx2_type", Param::PadEffect(6)),
+    ("pad.fx2_size", Param::PadEffect(7)),
+    ("pad.fx2_tone", Param::PadEffect(8)),
+];
+
 /// The parameter a knob action drives.
 pub fn param_of(action: &str) -> Option<Param> {
-    match action {
-        "pad.volume" => Some(Param::PadVolume),
-        "pad.pitch" => Some(Param::PadPitch),
-        // every pad parameter on a knob of its own (52)
-        "pad.attack" => Some(Param::PadAttack),
-        "pad.decay" => Some(Param::PadDecay),
-        "pad.release" => Some(Param::PadRelease),
-        "pad.filter" => Some(Param::PadFilter),
-        "pad.cutoff" => Some(Param::PadCutoff),
-        "pad.reso" => Some(Param::PadReso),
-        "pad.start" => Some(Param::PadStart),
-        "pad.end" => Some(Param::PadEnd),
-        "master.volume" => Some(Param::MasterVolume),
-        "transport.tempo" => Some(Param::Tempo),
-        "slice.start" => Some(Param::SliceStart),
-        "slice.end" => Some(Param::SliceEnd),
-        "chop.zoom" => Some(Param::Zoom),
-        "chop.cursor_pos" => Some(Param::Cursor),
-        "chop.region_start_pos" => Some(Param::RegionStart),
-        "chop.region_end_pos" => Some(Param::RegionEnd),
-        "chop.threshold" => Some(Param::Threshold),
-        "edit.param_1" => Some(Param::Slot(0)),
-        "edit.param_2" => Some(Param::Slot(1)),
-        "edit.param_3" => Some(Param::Slot(2)),
-        "edit.page" => Some(Param::Page),
-        // Keep the direct shared FX names from the former pad edit (82).
-        "pad.fx1_type" => Some(Param::PadEffect(3)),
-        "pad.fx1_size" => Some(Param::PadEffect(4)),
-        "pad.fx1_tone" => Some(Param::PadEffect(5)),
-        "pad.fx2_type" => Some(Param::PadEffect(6)),
-        "pad.fx2_size" => Some(Param::PadEffect(7)),
-        "pad.fx2_tone" => Some(Param::PadEffect(8)),
-        _ => None,
-    }
+    PARAMS
+        .iter()
+        .find_map(|(name, param)| (*name == action).then_some(*param))
 }
 
 /// Parameters a knob or fader can set.
@@ -154,6 +161,9 @@ pub enum Param {
     PadPitch,
     MasterVolume,
     Tempo,
+    PatternBars,
+    PatternQuantize,
+    PatternStrength,
     /// Chop screen: start and end of the selected slice.
     SliceStart,
     SliceEnd,
@@ -206,6 +216,31 @@ pub enum Activity {
     Movement,
 }
 
+/// What a control is on the device top: the drawing gives each kind its own form (98j).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlKind {
+    Pad,
+    Button,
+    Knob,
+    Fader,
+    Crossfader,
+}
+
+impl ControlKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            ControlKind::Pad => "pad",
+            ControlKind::Button => "button",
+            ControlKind::Knob => "knob",
+            ControlKind::Fader => "fader",
+            ControlKind::Crossfader => "crossfader",
+        }
+    }
+}
+
+/// One row of the device top: a control name, or `None` for an empty place.
+pub type LayoutRow = Vec<Option<String>>;
+
 #[derive(Clone, Debug)]
 enum Control {
     Pad(usize),
@@ -242,6 +277,45 @@ pub struct Profile {
     /// The roles were copied into the user config (59): only `learned` acts, the profile
     /// still names the controls.
     seeded: bool,
+    /// Every named control and its kind: pads, knobs, faders, crossfaders, buttons, each
+    /// by name with its number in order (`k2` before `k10`).
+    kinds: Vec<(String, ControlKind)>,
+    /// `[layout]` (98j): `Err` keeps the device working and the drawing off.
+    layout: Option<Result<Vec<LayoutRow>, String>>,
+}
+
+/// `[layout] rows`: each name once, each a control of the profile; `""` is an empty place.
+fn parse_layout(
+    section: &toml::Value,
+    kinds: &[(String, ControlKind)],
+) -> Result<Vec<LayoutRow>, String> {
+    let rows = section
+        .get("rows")
+        .and_then(|r| r.as_array())
+        .filter(|r| !r.is_empty())
+        .ok_or("no rows")?;
+    let mut seen = std::collections::HashSet::new();
+    rows.iter()
+        .map(|row| {
+            row.as_array()
+                .ok_or("a row is not a list")?
+                .iter()
+                .map(|place| {
+                    let name = place.as_str().ok_or("a place is not a string")?;
+                    if name.is_empty() {
+                        return Ok(None);
+                    }
+                    if !kinds.iter().any(|(n, _)| n == name) {
+                        return Err(format!("unknown control {name}"));
+                    }
+                    if !seen.insert(name.to_string()) {
+                        return Err(format!("{name} is there two times"));
+                    }
+                    Ok(Some(name.to_string()))
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Notes 36..51 play pads 1..16, as on most pad controllers.
@@ -264,6 +338,10 @@ impl Profile {
             edit: HashMap::new(),
             learned: HashMap::new(),
             seeded: false,
+            kinds: (1..=16)
+                .map(|n| (format!("p{n}"), ControlKind::Pad))
+                .collect(),
+            layout: None,
         }
     }
 
@@ -303,6 +381,7 @@ impl Profile {
 
         let mut notes = HashMap::new();
         let mut ccs = HashMap::new();
+        let mut kinds = Vec::new();
         let controls = t.get("controls").and_then(|c| c.as_table());
         for (group, items) in controls.into_iter().flatten() {
             for (name, spec) in items.as_table().into_iter().flatten() {
@@ -311,6 +390,13 @@ impl Profile {
                         .and_then(|v| v.as_integer())
                         .filter(|n| (0..128).contains(n))
                         .map(|n| n as u8)
+                };
+                let kind = match group.as_str() {
+                    "pads" => ControlKind::Pad,
+                    "buttons" => ControlKind::Button,
+                    "faders" => ControlKind::Fader,
+                    "crossfaders" => ControlKind::Crossfader,
+                    _ => ControlKind::Knob,
                 };
                 let control = match group.as_str() {
                     // pads: p1..p16
@@ -329,6 +415,7 @@ impl Profile {
                         Control::Knob { name: name.clone() }
                     }
                 };
+                kinds.push((name.clone(), kind));
                 match (num("note"), num("cc")) {
                     (Some(n), _) => notes.insert(n, control),
                     (None, Some(c)) => ccs.insert(c, control),
@@ -336,6 +423,20 @@ impl Profile {
                 };
             }
         }
+
+        // the TOML table keeps no file order: `p10` would stand before `p2`
+        kinds.sort_by_cached_key(|(name, kind)| {
+            let digits = name.trim_end_matches(|c: char| c.is_ascii_digit());
+            let number = name[digits.len()..].parse::<u32>().unwrap_or(0);
+            let rank = match kind {
+                ControlKind::Pad => 0,
+                ControlKind::Knob => 1,
+                ControlKind::Fader => 2,
+                ControlKind::Crossfader => 3,
+                ControlKind::Button => 4,
+            };
+            (rank, digits.to_string(), number)
+        });
 
         let mut screens = HashMap::new();
         for (key, section) in t
@@ -378,7 +479,75 @@ impl Profile {
             edit,
             learned: HashMap::new(),
             seeded: false,
+            layout: t
+                .get("layout")
+                .map(|l| parse_layout(l, &kinds).map_err(|m| err(&format!("[layout]: {m}")))),
+            kinds,
         })
+    }
+
+    /// The named controls and their kinds, by kind and then by name.
+    pub fn controls(&self) -> &[(String, ControlKind)] {
+        &self.kinds
+    }
+
+    pub fn kind_of(&self, control: &str) -> Option<ControlKind> {
+        self.kinds
+            .iter()
+            .find_map(|(n, k)| (n == control).then_some(*k))
+    }
+
+    /// The device top of `[layout]`; `None` without a valid one.
+    pub fn layout(&self) -> Option<&[LayoutRow]> {
+        self.layout.as_ref()?.as_deref().ok()
+    }
+
+    /// Why `[layout]` is not used, with the file name.
+    pub fn layout_error(&self) -> Option<&str> {
+        self.layout.as_ref()?.as_ref().err().map(String::as_str)
+    }
+
+    /// The action a press or a turn of `control` gives now (98j): the same resolution as a
+    /// message from the device, so the drawing cannot name an action the control does not do.
+    pub fn control_action(
+        &self,
+        screen: Screen,
+        edit: bool,
+        control: &str,
+    ) -> Option<&'static str> {
+        let ch = self.channel.unwrap_or(1);
+        let key = self.key_of(control).or_else(|| {
+            let pad = control
+                .strip_prefix('p')?
+                .parse::<usize>()
+                .ok()?
+                .checked_sub(1)?;
+            self.notes.iter().find_map(|(n, c)| {
+                matches!(c, Control::Pad(p) if *p == pad).then_some(Key::Note(*n))
+            })
+        })?;
+        let msg = match key {
+            Key::Note(note) => Msg::NoteOn {
+                ch,
+                note,
+                velocity: 127,
+            },
+            Key::Cc(cc) => Msg::Cc { ch, cc, value: 127 },
+        };
+        match self.resolve_in(screen, edit, msg)? {
+            Resolved::Param { param, .. } => PARAMS
+                .iter()
+                .find_map(|(name, p)| (*p == param).then_some(*name)),
+            Resolved::Action(action) => crate::ACTIONS.iter().map(|i| i.name).find(|name| {
+                match (Action::parse(name), action) {
+                    (Some(Action::PadPress { pad: a, .. }), Action::PadPress { pad: b, .. }) => {
+                        a == b
+                    }
+                    (Some(a), b) => a == b,
+                    (None, _) => false,
+                }
+            }),
+        }
     }
 
     /// The roles copied into the user config (59): from now on only the learned act.
@@ -946,6 +1115,62 @@ mod tests {
 
     fn xsession() -> Profile {
         Profile::from_toml("xsession-pro.toml", XSESSION).unwrap()
+    }
+
+    #[test]
+    fn help_pages_use_global_learned_notes_and_cc_without_release_actions() {
+        let mut profile = Profile::from_toml(
+            "help.toml",
+            "[device]\nname = 'Help'\nmatch_port = 'Help'\n",
+        )
+        .unwrap();
+        for key in [Key::Note as fn(u8) -> Key, Key::Cc] {
+            profile.set_learned(
+                Scope::Global,
+                [
+                    (key(90), "help.page_prev".into()),
+                    (key(91), "help.page_next".into()),
+                ]
+                .into(),
+            );
+            for screen in Screen::ALL {
+                for edit in [false, true] {
+                    for (number, action) in [(90, Action::HelpPagePrev), (91, Action::HelpPageNext)]
+                    {
+                        let press = if key(number) == Key::Note(number) {
+                            Msg::NoteOn {
+                                ch: 1,
+                                note: number,
+                                velocity: 127,
+                            }
+                        } else {
+                            Msg::Cc {
+                                ch: 1,
+                                cc: number,
+                                value: 127,
+                            }
+                        };
+                        let release = if key(number) == Key::Note(number) {
+                            Msg::NoteOff {
+                                ch: 1,
+                                note: number,
+                            }
+                        } else {
+                            Msg::Cc {
+                                ch: 1,
+                                cc: number,
+                                value: 0,
+                            }
+                        };
+                        assert_eq!(
+                            profile.resolve_in(screen, edit, press),
+                            Some(Resolved::Action(action))
+                        );
+                        assert_eq!(profile.resolve_in(screen, edit, release), None);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -2466,5 +2691,94 @@ mod tests {
         assert_eq!(t.apply("x", "k1", 6, 0.005, 0.0), Ok(0.005));
         // knob below the value asks to turn up
         assert_eq!(t.apply("y", "k1", 1, 0.1, 0.5), Err(Move::Up));
+    }
+
+    const LAYOUT: &str = "[device]\nname = 'L'\nmatch_port = 'L'\n\
+        [controls.knobs]\nk1 = { cc = 1 }\n[controls.faders]\nf1 = { cc = 2 }\n\
+        [controls.crossfaders]\nx = { cc = 3 }\n[controls.buttons]\nb1 = { note = 4 }\n\
+        [controls.pads]\np1 = { note = 36 }\n";
+
+    #[test]
+    fn profile_layout_gives_places_and_kinds() {
+        let text = format!("{LAYOUT}[layout]\nrows = [['k1', '', 'b1'], ['f1', 'x', 'p1']]\n");
+        let p = Profile::from_toml("l.toml", &text).unwrap();
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(
+            p.layout().unwrap(),
+            [
+                vec![some("k1"), None, some("b1")],
+                vec![some("f1"), some("x"), some("p1")]
+            ]
+        );
+        let kinds: Vec<_> = ["k1", "b1", "f1", "x", "p1"]
+            .into_iter()
+            .map(|n| p.kind_of(n).unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ControlKind::Knob,
+                ControlKind::Button,
+                ControlKind::Fader,
+                ControlKind::Crossfader,
+                ControlKind::Pad
+            ]
+        );
+        assert_eq!(p.layout_error(), None);
+    }
+
+    #[test]
+    fn invalid_layout_keeps_the_device_working() {
+        for (rows, error) in [
+            ("[['k1', 'k9']]", "unknown control k9"),
+            ("[['k1'], ['k1']]", "k1 is there two times"),
+            ("[]", "no rows"),
+        ] {
+            let text = format!(
+                "{LAYOUT}[screens.global]\nk1 = 'master.volume'\n[layout]\nrows = {rows}\n"
+            );
+            let p = Profile::from_toml("l.toml", &text).unwrap();
+            assert!(p.layout().is_none(), "{rows}");
+            assert_eq!(
+                p.layout_error(),
+                Some(format!("l.toml: [layout]: {error}").as_str())
+            );
+            // the controls still act
+            assert_eq!(
+                p.control_action(Screen::Pads, false, "k1"),
+                Some("master.volume")
+            );
+            assert_eq!(p.control_action(Screen::Pads, false, "p1"), Some("pad.1"));
+        }
+    }
+
+    #[test]
+    fn crossfader_group_acts_as_a_fader() {
+        let now = xsession();
+        assert_eq!(now.kind_of("crossfade"), Some(ControlKind::Crossfader));
+        let before = Profile::from_toml(
+            "xsession-pro.toml",
+            &XSESSION.replace("[controls.crossfaders]\n", ""),
+        )
+        .unwrap();
+        assert_eq!(before.kind_of("crossfade"), Some(ControlKind::Fader));
+        for screen in Screen::ALL {
+            for edit in [false, true] {
+                for value in [0, 64, 127] {
+                    let msg = Msg::Cc {
+                        ch: 1,
+                        cc: 17,
+                        value,
+                    };
+                    assert_eq!(
+                        now.resolve_in(screen, edit, msg),
+                        before.resolve_in(screen, edit, msg)
+                    );
+                }
+            }
+        }
+        // the shipped layout names every control of the device once
+        let placed: Vec<_> = now.layout().unwrap().iter().flatten().flatten().collect();
+        assert_eq!(placed.len(), now.controls().len());
     }
 }

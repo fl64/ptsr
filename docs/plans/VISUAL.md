@@ -165,6 +165,20 @@ connected. With only the keyboard, nothing changes in the help.
 A question shows the `ASK` badge, its lines as now, and the answer controls for every connected
 input: `Enter / STOP+Apply: yes · Esc / STOP: no`.
 
+### 2.9 One look for every edit panel (owner decision 2026-11-12, a change after 98b)
+
+The owner asked for one look and one behavior for every edit element. The pad edit and the
+A1 pattern controls (98b) already share it:
+
+- the edit frame in the edit color, with `EDIT ·` and the pages in the title, the open page lit.
+- block lines inside, lowercase labels, the selected row bright.
+- the keys dim at the bottom.
+- the same I/K, J/L, Enter and Esc, and knobs that turn the shown page.
+
+Steps of the change: write this rule as a requirement, then compare FX (F4), Settings (F12)
+and the Chop slice edit (F3) with it. Show the owner a table of the differences before a
+code edit. Then change the screens one at a time.
+
 ## 3. The changes
 
 ### Change 87 — `87-status-badges` (after 86, before 88)

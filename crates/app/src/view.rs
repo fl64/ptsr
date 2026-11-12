@@ -9,9 +9,21 @@ use engine::{PADS, PADS_PER_BANK};
 use input::Screen;
 
 use super::{
-    App, EFFECT_PARAMS, HelpState, LIT_FOR, Level, Lit, Notice, Origin, audio, chop, chop_view,
-    file_name, filter_curve, pads, same_whole_sound, tui_param,
+    App, EFFECT_PARAMS, HelpState, LIT_FOR, Level, Lit, Notice, Origin, audio, chop,
+    chop_view_routed, file_name, filter_curve, pads, same_whole_sound, tui_param,
 };
+
+pub(super) fn pitch_gate(pads: &pads::Pads, abs: usize) -> tui::PitchGate {
+    if !pads.pitch_gate[abs] {
+        tui::PitchGate::Off
+    } else if !matches!(pads.source(abs), pads::Source::Slice(_)) {
+        tui::PitchGate::NeedsSlice
+    } else if pads.pitch[abs] <= 0 {
+        tui::PitchGate::NeedsPitch
+    } else {
+        tui::PitchGate::A1
+    }
+}
 
 fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
     use super::Ask;
@@ -30,6 +42,86 @@ fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
 }
 
 #[derive(PartialEq, Eq)]
+struct RecordingKey {
+    epoch: u64,
+    pass: u64,
+    phase: engine::capture::Phase,
+    count: u8,
+    bar: u64,
+    beat: u64,
+    bars: u32,
+    erasing: bool,
+    targets: Vec<String>,
+    grid: String,
+    strength: u8,
+}
+
+impl RecordingKey {
+    fn new(app: &App, state: engine::capture::Snapshot) -> Option<Self> {
+        use engine::capture::Phase;
+        if state.phase == Phase::Idle {
+            return None;
+        }
+        let bars = (state.loop_ticks / engine::pattern::TICKS_PER_BAR).max(1);
+        let beat = ((state.ticks.max(0.0) / engine::transport::TICKS_PER_QUARTER + 1e-9).floor()
+            as u64)
+            % (u64::from(bars) * 4);
+        Some(Self {
+            epoch: state.epoch,
+            pass: state.pass,
+            phase: state.phase,
+            count: state.count_in_beat,
+            bar: beat / 4 + 1,
+            beat: beat % 4 + 1,
+            bars,
+            erasing: state.phase == Phase::Recording && state.erasing,
+            targets: (0..PADS)
+                .filter(|&pad| {
+                    state.erasing && state.erase_targets[pad / 64] & (1 << (pad % 64)) != 0
+                })
+                .map(super::bank_key)
+                .collect(),
+            grid: app
+                .pads
+                .pattern
+                .as_ref()
+                .map_or("1/16", |p| p.quantize.as_str())
+                .into(),
+            strength: app.pads.pattern.as_ref().map_or(100, |p| p.strength),
+        })
+    }
+
+    fn badge(&self) -> tui::Badge {
+        use engine::capture::Phase;
+        let (normal, compact) = match self.phase {
+            Phase::CountIn => {
+                let text = format!("COUNT {} A1", self.count);
+                (text.clone(), text)
+            }
+            Phase::Recording => {
+                let position = format!("{}:{}/{}", self.bar, self.beat, self.bars);
+                let label = if self.erasing { "ERASE A1" } else { "REC A1" };
+                let targets = self.targets.first().map_or(String::new(), |first| {
+                    if self.targets.len() > 1 {
+                        format!(" {first}+{}", self.targets.len() - 1)
+                    } else {
+                        format!(" {first}")
+                    }
+                });
+                let compact = format!("{label} {position}{targets}");
+                (
+                    format!("{compact} {} {}%", self.grid, self.strength),
+                    compact,
+                )
+            }
+            Phase::Finishing => ("Finishing A1".into(), "Finishing A1".into()),
+            Phase::Idle => unreachable!(),
+        };
+        tui::Badge::new(tui::BadgeKind::Attention, normal, compact)
+    }
+}
+
+#[derive(PartialEq, Eq)]
 struct BadgeKey {
     screen: Screen,
     mode: input::Mode,
@@ -40,6 +132,8 @@ struct BadgeKey {
     looping: bool,
     as_pad: bool,
     transport: (u16, bool, bool, u64, u8),
+    pattern: Option<(u64, u8)>,
+    recording: Option<RecordingKey>,
 }
 
 impl BadgeKey {
@@ -75,6 +169,13 @@ impl BadgeKey {
                 placements.join("/"),
             ));
         }
+        if mode.erase_pads {
+            pad_modes.push(Badge::new(
+                PadMode,
+                "ERASE · hit a pad · all its A1 hits",
+                "ERASE",
+            ));
+        }
         let count = self.marked;
         if mode.marking {
             pad_modes.push(Badge::new(
@@ -90,7 +191,7 @@ impl BadgeKey {
             ));
         }
         let (tempo, playing, metro, bar, beat) = self.transport;
-        let clock = format!(
+        let mut clock = format!(
             "{} {:.1}{}{}",
             if playing { "▶" } else { "■" },
             tempo as f64 / 10.0,
@@ -101,6 +202,9 @@ impl BadgeKey {
                 String::new()
             }
         );
+        if let Some((bar, beat)) = self.pattern {
+            clock.push_str(&format!(" · A1 {bar}:{beat}"));
+        }
         let compact_clock = clock.replace(' ', "");
         let mut badges = Vec::new();
         let mut pad_modes = pad_modes.into_iter();
@@ -132,6 +236,22 @@ impl BadgeKey {
         if self.as_pad {
             badges.push(Badge::new(On, "AS PAD", "AS PAD"));
         }
+        if let Some(recording) = &self.recording {
+            let mut badge = recording.badge();
+            if mode.question {
+                if let Some(index) = badges.iter().position(|b| b.normal == "ASK") {
+                    let ask = badges.remove(index);
+                    badges.insert(0, ask);
+                }
+                badge.compact = match recording.phase {
+                    engine::capture::Phase::CountIn => format!("COUNT {} A1", recording.count),
+                    engine::capture::Phase::Finishing => "Finishing A1".into(),
+                    _ if recording.erasing => "ERASE A1".into(),
+                    _ => "REC A1".into(),
+                };
+            }
+            badges.insert(usize::from(mode.question), badge);
+        }
         badges
     }
 }
@@ -156,8 +276,18 @@ pub(super) struct FrameText {
 }
 
 impl FrameText {
+    #[cfg(test)]
     pub(super) fn badges_at(&mut self, app: &App, now: Instant) -> &[tui::Badge] {
-        let key = app.badge_key_at(now);
+        self.badges_for(app, now, app.pattern_record_state())
+    }
+
+    pub(super) fn badges_for(
+        &mut self,
+        app: &App,
+        now: Instant,
+        recording: Option<engine::capture::Snapshot>,
+    ) -> &[tui::Badge] {
+        let key = app.badge_key_at(now, recording);
         if self.badge_key.as_ref() != Some(&key) {
             self.badges = key.format();
             self.badge_key = Some(key);
@@ -225,7 +355,7 @@ impl App {
         let verb = match ask {
             Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
             Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
-            Ask::ClearPads { .. } => "clear",
+            Ask::ClearPads { .. } | Ask::ClearPattern { .. } => "clear",
         };
         let focus = self.focus();
         let keyboard_blocked = focus.mode.text || focus.mode.picker || focus.mode.screen_learn;
@@ -396,7 +526,93 @@ impl App {
         })
     }
 
+    pub(super) fn pattern_controls_view(
+        &self,
+        keymap: &input::Keymap,
+    ) -> Option<tui::PatternControls> {
+        use input::Action;
+        let selected = self.pattern_panel?;
+        if self.key_notice_blocked() || self.help_open || self.midi_run.is_some() {
+            return None;
+        }
+        let keys = |actions: &[Action]| {
+            let mut keys = actions
+                .iter()
+                .flat_map(|action| self.help_bindings(keymap, *action))
+                .collect::<Vec<_>>();
+            keys.sort();
+            keys.dedup();
+            let keys = super::letters_first(keys).join("/");
+            if keys.is_empty() { "none".into() } else { keys }
+        };
+        let (restriction, refused) = self.pattern_controls_restriction(selected);
+        let hits = self.pads.pattern.as_ref().map_or(0, |p| p.hits.len());
+        Some(tui::PatternControls {
+            selected,
+            dim: (0..super::pattern_record::PANEL_ROWS)
+                .map(|row| row == super::pattern_record::CLEAR_ROW && hits == 0)
+                .collect(),
+            values: super::pattern_record::Setting::ALL
+                .map(|setting| (setting.label().to_lowercase(), setting.text(&self.pads)))
+                .into_iter()
+                .chain(std::iter::once((
+                    "clear A1".into(),
+                    if hits == 0 {
+                        "no hits".into()
+                    } else {
+                        super::pattern_record::hits(hits)
+                    },
+                )))
+                .collect(),
+            restriction: restriction.into(),
+            refused,
+            controls: [
+                format!(
+                    "{} select  {} change",
+                    keys(&[
+                        Action::ParamPrev,
+                        Action::ParamNext,
+                        Action::PatternParamPrev,
+                        Action::PatternParamNext,
+                    ]),
+                    keys(&[
+                        Action::EditValue {
+                            up: false,
+                            fine: false
+                        },
+                        Action::EditValue {
+                            up: true,
+                            fine: false
+                        },
+                        Action::EditValue {
+                            up: false,
+                            fine: true
+                        },
+                        Action::EditValue {
+                            up: true,
+                            fine: true
+                        },
+                        Action::PatternValueDec,
+                        Action::PatternValueInc,
+                    ]),
+                ),
+                // Enter runs the clear row and closes from a value row (98i)
+                format!(
+                    "{} close · Enter run",
+                    keys(&[Action::Back, Action::PatternControls])
+                        .split('/')
+                        .filter(|key| *key != "Enter")
+                        .collect::<Vec<_>>()
+                        .join("/")
+                ),
+            ],
+        })
+    }
+
     pub(super) fn current_value_at(&self, now: Instant) -> Option<&tui::Value> {
+        if self.pattern_panel.is_some() {
+            return None;
+        }
         let shown = self.value_popup.as_ref()?;
         if now.saturating_duration_since(shown.at) >= LIT_FOR
             || self.key_notice_blocked()
@@ -428,18 +644,206 @@ impl App {
             .collect()
     }
 
-    pub(super) fn full_help_view<'a>(
+    #[cfg(test)]
+    pub(super) fn full_help_keys(
         &self,
+        keymap: &input::Keymap,
+        kitty: bool,
+    ) -> Vec<(String, String)> {
+        self.full_help_recording_keys(keymap, kitty, self.pattern_record_state())
+    }
+
+    pub(super) fn full_help_recording_keys(
+        &self,
+        keymap: &input::Keymap,
+        kitty: bool,
+        recording: Option<engine::capture::Snapshot>,
+    ) -> Vec<(String, String)> {
+        use input::Action;
+        use input::midi::{Activity, Msg, Resolved};
+        let mut rows = super::full_help(keymap, self.screen, kitty);
+        for action in [
+            Action::HelpPagePrev,
+            Action::HelpPageNext,
+            Action::PatternRecord,
+            Action::RecordMic(true),
+            Action::RecordOutputToggle,
+        ] {
+            let description = if action == Action::RecordMic(true) && !kitty {
+                "record the microphone: toggle on / off (no key releases)".into()
+            } else {
+                super::describe(action)
+            };
+            rows.retain(|(_, text)| text != &description);
+            let keys = self.help_bindings(keymap, action);
+            rows.push((
+                if keys.is_empty() {
+                    "none".into()
+                } else {
+                    keys.join(" ")
+                },
+                description,
+            ));
+        }
+        rows.push((
+            "A1 save".into(),
+            "Manual save finishes the pass and keeps playback running.".into(),
+        ));
+        rows.push((
+            "A1 erase".into(),
+            if kitty {
+                "Hold pad targets silently. Release to stop erasing them."
+            } else {
+                "Keyboard: one loop per pad press. MIDI targets use press and release."
+            }
+            .into(),
+        ));
+        rows.push((
+            "A1 settings".into(),
+            super::pattern_record::Setting::ALL
+                .into_iter()
+                .map(|setting| format!("{} {}", setting.label(), setting.text(&self.pads)))
+                .collect::<Vec<_>>()
+                .join(" · "),
+        ));
+        if let Some(key) = recording.and_then(|s| RecordingKey::new(self, s)) {
+            rows.push(("A1 state".into(), key.badge().normal));
+            if !key.targets.is_empty() {
+                rows.push(("Erase targets".into(), key.targets.join(" ")));
+            }
+        }
+        if self.screen != Screen::Pads {
+            return rows;
+        }
+        rows.retain(|(_, text)| !text.starts_with("Pitch Gate:"));
+        let mut keys = keymap.keys_for(self.screen, Action::PadPitchGateToggle);
+        if self.edit_keys() {
+            keys.extend(keymap.edit_keys_for(Action::PadPitchGateToggle));
+        }
+        keys.retain(|key| {
+            keymap.binding_for(self.screen, self.edit_keys(), key)
+                == Some(Some(Action::PadPitchGateToggle))
+        });
+        keys.sort();
+        keys.dedup();
+        rows.push((
+            "A1 view".into(),
+            "■ hit; ~ off grid; 2..9/+ hits in one cell; light plate: playback. No quantize."
+                .into(),
+        ));
+        rows.push((
+            "A1 rows".into(),
+            "all: any pad of this bank. Underlined bank number: that bank has A1 hits.".into(),
+        ));
+        let other_rows = std::mem::take(&mut rows);
+        rows.push((String::new(), "PITCH GATE".into()));
+        let pad = self.pads.selected_abs();
+        rows.push((
+            keys.join(" "),
+            format!(
+                "pad {}: {} ({})",
+                super::bank_key(pad),
+                pitch_gate(&self.pads, pad).label(),
+                pitch_gate(&self.pads, pad).description()
+            ),
+        ));
+        rows.push((
+            String::new(),
+            "Only A1 notes: linked slices with pitch above zero.".into(),
+        ));
+        rows.push((
+            String::new(),
+            "Manual hits and previews stay unchanged.".into(),
+        ));
+        rows.push((
+            String::new(),
+            "Cut at the next grid line, even an empty step.".into(),
+        ));
+        rows.push((
+            String::new(),
+            "Quantize Off uses 1/16. Pitch Gate does not extend short slices.".into(),
+        ));
+        for profile in self.live_profiles() {
+            let mut controls = std::collections::BTreeSet::new();
+            for ch in 1..=16 {
+                for number in 0..=127 {
+                    for msg in [
+                        Msg::Cc {
+                            ch,
+                            cc: number,
+                            value: 127,
+                        },
+                        Msg::NoteOn {
+                            ch,
+                            note: number,
+                            velocity: 127,
+                        },
+                    ] {
+                        if matches!(
+                            profile.resolve_input_in(self.screen, self.edit_keys(), msg),
+                            (
+                                Some(Resolved::Action(Action::PadPitchGateToggle)),
+                                Activity::Press
+                            )
+                        ) {
+                            controls.insert(msg.key().to_string());
+                        }
+                    }
+                }
+            }
+            if !controls.is_empty() {
+                rows.push((
+                    profile.name,
+                    controls.into_iter().collect::<Vec<_>>().join(", "),
+                ));
+            }
+        }
+        rows.extend(other_rows);
+        rows
+    }
+
+    pub(super) fn help_recording_caption(
+        &self,
+        recording: Option<engine::capture::Snapshot>,
+    ) -> Option<String> {
+        recording
+            .and_then(|state| RecordingKey::new(self, state))
+            .map(|key| key.badge().normal)
+    }
+
+    pub(super) fn full_help_view<'a>(
+        &'a self,
         keys: &'a [(String, String)],
         entries: &'a [tui::Message<'a>],
     ) -> Option<tui::FullHelp<'a>> {
-        self.help_open.then_some(if self.help_overlay.messages {
-            tui::FullHelp::Messages {
-                entries,
-                scroll: self.help_overlay.scroll,
+        if !self.help_open {
+            return None;
+        }
+        if self.help_overlay.page == super::help::Page::Controller
+            && let Some(view) = self.help_overlay.controller_view.as_ref()
+        {
+            return Some(tui::FullHelp::Controller(view));
+        }
+        Some(if self.help_overlay.messages() {
+            if let Some(caption) = self.help_overlay.caption.as_deref() {
+                tui::FullHelp::MessagesWithCaption {
+                    entries,
+                    scroll: self.help_overlay.scroll,
+                    caption,
+                }
+            } else {
+                tui::FullHelp::Messages {
+                    entries,
+                    scroll: self.help_overlay.scroll,
+                }
             }
         } else {
-            tui::FullHelp::Keys(keys)
+            tui::FullHelp::KeyPage {
+                rows: keys,
+                scroll: self.help_overlay.keys_scroll,
+                caption: self.help_overlay.caption.as_deref(),
+                navigation: &self.help_overlay.navigation,
+            }
         })
     }
 
@@ -479,9 +883,13 @@ impl App {
         self.post_notice(level, (text, Instant::now()));
     }
 
+    fn recording_warning(&self) -> bool {
+        self.notices.recording_refusal_pending()
+    }
+
     fn notice_hidden(&self) -> bool {
         self.key_notice_blocked()
-            || self.recording.is_some()
+            || (self.recording.is_some() && !self.recording_warning())
             || self
                 .audio
                 .as_ref()
@@ -496,7 +904,7 @@ impl App {
         self.shown_error = None;
     }
 
-    fn badge_key_at(&self, now: Instant) -> BadgeKey {
+    fn badge_key_at(&self, now: Instant, recording: Option<engine::capture::Snapshot>) -> BadgeKey {
         let assignment = match (self.screen, &self.plan, &self.chop) {
             (Screen::Chop, Some(plan), Some(chop)) => {
                 let total = chop.slices().len();
@@ -512,7 +920,14 @@ impl App {
         };
         let transport = self.transport_state();
         let (bar, beat) = transport.bar_beat();
+        let pattern = (transport.pattern_ticks > 0).then(|| {
+            let mut relative = transport;
+            relative.ticks %= f64::from(transport.pattern_ticks);
+            relative.bar_beat()
+        });
         BadgeKey {
+            recording: recording.and_then(|s| RecordingKey::new(self, s)),
+            pattern,
             transport: (
                 (transport.bpm * 10.0).round() as u16,
                 transport.playing,
@@ -543,7 +958,7 @@ impl App {
 
     #[cfg(test)]
     pub(super) fn title_badges_at(&self, now: Instant) -> Vec<tui::Badge> {
-        self.badge_key_at(now).format()
+        self.badge_key_at(now, self.pattern_record_state()).format()
     }
 
     /// Existing target rules, observed without applying a placement or changing focus.
@@ -633,9 +1048,208 @@ impl App {
             .map(|(l, _)| l)
     }
 
+    pub(super) fn erase_pad_marks(
+        &self,
+        pads: &mut tui::Pads,
+        recording: Option<engine::capture::Snapshot>,
+    ) {
+        if self.erase_pads {
+            // what a press erases, hidden rows too, in place of the mode line (98b)
+            let counts = self.pattern_pad_hits();
+            for (index, pad) in pads.pads.iter_mut().enumerate() {
+                let abs = pads.bank * PADS_PER_BANK + index;
+                pad.note = Some(match counts.get(abs) {
+                    Some(&n) if n > 0 => super::pattern_record::hits(usize::from(n)),
+                    _ => String::new(),
+                });
+            }
+            return;
+        }
+        let Some(state) =
+            recording.filter(|s| s.phase == engine::capture::Phase::Recording && s.erasing)
+        else {
+            return;
+        };
+        for (index, pad) in pads.pads.iter_mut().enumerate() {
+            let abs = pads.bank * PADS_PER_BANK + index;
+            if abs < PADS && state.erase_targets[abs / 64] & (1 << (abs % 64)) != 0 {
+                pads.feedback.corners[index] = Some(tui::PadCorner::Erase);
+                pad.flash = false;
+            }
+        }
+    }
+
+    pub(super) fn pattern_help_groups(
+        &self,
+        keymap: &input::Keymap,
+        mut groups: Vec<tui::HelpGroup>,
+        recording: Option<engine::capture::Snapshot>,
+        kitty: bool,
+    ) -> Vec<tui::HelpGroup> {
+        use engine::capture::Phase;
+        use input::Action;
+        if self.key_notice_blocked() {
+            return groups;
+        }
+        let item = |action, text: &str| {
+            let keys = super::letters_first(self.help_bindings(keymap, action))
+                .into_iter()
+                .map(|k| k.replace('+', " "))
+                .collect::<Vec<_>>()
+                .join("/");
+            (
+                if keys.is_empty() { "none".into() } else { keys },
+                text.to_string(),
+            )
+        };
+        let items = if self.pattern_panel.is_some() {
+            let keys = |actions: &[Action]| {
+                let mut keys = actions
+                    .iter()
+                    .flat_map(|action| self.help_bindings(keymap, *action))
+                    .collect::<Vec<_>>();
+                keys.sort();
+                keys.dedup();
+                let keys = super::letters_first(keys)
+                    .into_iter()
+                    .map(|k| k.replace('+', " "))
+                    .collect::<Vec<_>>()
+                    .join("/");
+                if keys.is_empty() { "none".into() } else { keys }
+            };
+            vec![
+                (
+                    keys(&[
+                        Action::ParamPrev,
+                        Action::ParamNext,
+                        Action::PatternParamPrev,
+                        Action::PatternParamNext,
+                    ]),
+                    "select".into(),
+                ),
+                (
+                    keys(&[
+                        Action::EditValue {
+                            up: false,
+                            fine: false,
+                        },
+                        Action::EditValue {
+                            up: true,
+                            fine: false,
+                        },
+                        Action::PatternValueDec,
+                        Action::PatternValueInc,
+                    ]),
+                    "change".into(),
+                ),
+                (
+                    keys(&[Action::Back, Action::PatternControls])
+                        .split('/')
+                        .filter(|key| *key != "Enter")
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                    "close controls".into(),
+                ),
+                ("Enter".into(), "run / close".into()),
+            ]
+        } else {
+            match recording.map(|s| (s.phase, s.erasing)) {
+                _ if self.erase_pads => vec![
+                    ("pads".into(), "erase all A1 hits".into()),
+                    item(Action::Undo, "undo"),
+                    (
+                        format!(
+                            "{}/{}",
+                            item(Action::Back, "").0,
+                            item(Action::PatternErase, "").0
+                        ),
+                        "exit".into(),
+                    ),
+                ],
+                Some((Phase::CountIn, _)) => vec![
+                    item(Action::Back, "cancel count"),
+                    item(Action::PatternRecord, "cancel count"),
+                    ("pads".into(), "not recorded yet".into()),
+                ],
+                Some((Phase::Recording, true)) => vec![
+                    (
+                        "pads".into(),
+                        if kitty {
+                            "erase: hold"
+                        } else {
+                            "erase: 1 loop"
+                        }
+                        .into(),
+                    ),
+                    item(Action::PatternErase, "play pads"),
+                    item(Action::PatternRecord, "end A1"),
+                ],
+                Some((Phase::Recording, false)) => vec![
+                    item(Action::PatternRecord, "end A1"),
+                    item(Action::PatternErase, "erase pads"),
+                    item(Action::PatternUndo, "pass undo"),
+                ],
+                Some((Phase::Finishing, _)) => vec![("A1".into(), "finishing: wait".into())],
+                // idle with A1: pass Undo is the hidden next step; an unbound one is left out
+                _ if self.pads.pattern.is_some() => [
+                    item(Action::PatternRecord, "record A1"),
+                    item(Action::PatternUndo, "pass undo"),
+                    item(Action::PatternControls, "controls"),
+                ]
+                .into_iter()
+                .filter(|(keys, text)| !(text == "pass undo" && keys == "none"))
+                .collect(),
+                _ => vec![
+                    item(Action::PatternRecord, "record A1"),
+                    item(Action::PatternControls, "controls"),
+                ],
+            }
+        };
+        let mut items = items;
+        if self.screen == Screen::Pads
+            && self.pads.pattern.is_some()
+            && self.pattern_panel.is_none()
+            && recording.is_none_or(|state| state.phase == Phase::Idle)
+        {
+            let previous = item(Action::PatternViewPrev, "view");
+            let next = item(Action::PatternViewNext, "view");
+            items.push((format!("{}/{}", previous.0, next.0), "view".into()));
+        }
+        // in an edit, its own keys come first; A1 follows them (98i)
+        let at = if self.edit {
+            groups
+                .iter()
+                .position(|group| group.name == "EDIT")
+                .map_or(0, |edit| edit + 1)
+        } else {
+            0
+        };
+        groups.insert(
+            at,
+            tui::HelpGroup {
+                name: "A1",
+                items: items
+                    .into_iter()
+                    .filter(|(key, _)| !key.is_empty())
+                    .collect(),
+            },
+        );
+        groups
+    }
+
     /// The pad panel's marks: the edit frame with its page and knobs, the lit parameter.
-    pub(super) fn mark_pads(&self, mut v: tui::Pads) -> tui::Pads {
+    #[cfg(test)]
+    pub(super) fn mark_pads(&self, v: tui::Pads) -> tui::Pads {
+        self.mark_pads_recording(v, self.pattern_record_state())
+    }
+
+    pub(super) fn mark_pads_recording(
+        &self,
+        mut v: tui::Pads,
+        recording: Option<engine::capture::Snapshot>,
+    ) -> tui::Pads {
         v.feedback = self.pad_feedback();
+        self.erase_pad_marks(&mut v, recording);
         if let Some(audio) = &self.audio {
             use std::sync::atomic::Ordering::Acquire;
             let epoch = audio.project.epoch.load(Acquire);
@@ -668,13 +1282,24 @@ impl App {
     /// The chop screen's marks: the edit name on the slice line and the bound in play — a
     /// held modifier's (Ctrl the start, Alt the end), the picked one in the edit, the one
     /// that just moved.
+    #[cfg(test)]
     pub(super) fn mark_chop<'a>(
+        &self,
+        v: tui::Chop<'a>,
+        held: Option<input::Modifier>,
+    ) -> tui::Chop<'a> {
+        self.mark_chop_recording(v, held, self.pattern_record_state())
+    }
+
+    pub(super) fn mark_chop_recording<'a>(
         &self,
         mut v: tui::Chop<'a>,
         held: Option<input::Modifier>,
+        recording: Option<engine::capture::Snapshot>,
     ) -> tui::Chop<'a> {
         v.edit = self.edit;
         v.pads.feedback = self.pad_feedback();
+        self.erase_pad_marks(&mut v.pads, recording);
         // the plan is checked on the grid: the assign mode shows it even with the pads hidden (32)
         v.pads.hidden = self.ui.hide_pads && self.plan.is_none();
         v.hot = match (held, self.lit_now()) {
@@ -773,9 +1398,25 @@ impl App {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn chop_display<'a>(&self, chop: &'a chop::Chop) -> tui::Chop<'a> {
+        self.chop_display_recording(chop, self.pattern_record_state())
+    }
+
+    pub(super) fn chop_display_recording<'a>(
+        &self,
+        chop: &'a chop::Chop,
+        recording: Option<engine::capture::Snapshot>,
+    ) -> tui::Chop<'a> {
         let preview = self.playhead();
-        let mut view = chop_view(chop, self.plan.as_ref(), preview, self.rate, &self.pads);
+        let mut view = chop_view_routed(
+            chop,
+            self.plan.as_ref(),
+            preview,
+            self.rate,
+            &self.pads,
+            self.pattern_routes_pads_for(recording),
+        );
         // Only the line and badge use pad positions. Space and M still use the
         // preview position, so observing a pad cannot change transport or edits.
         if preview.is_none()
@@ -815,6 +1456,11 @@ impl App {
 
     pub(super) fn notice_at(&self, now: Instant) -> Option<String> {
         if let Some((source, at)) = &self.recording {
+            if self.recording_warning()
+                && let Some(notice) = self.notices.current_at(now)
+            {
+                return Some(notice.text.clone());
+            }
             let elapsed = now.saturating_duration_since(*at);
             return Some(format!(
                 "Recording {} {}.{:01} s… {}",
@@ -862,11 +1508,58 @@ impl App {
             .flatten()
     }
 
+    fn pattern_feedback(&mut self, now: Instant) {
+        use std::sync::atomic::Ordering::Acquire;
+        let snapshot = self.audio_alive().and_then(|audio| {
+            let epoch = audio.project.epoch.load(Acquire);
+            if audio.project.ready.load(Acquire) != epoch {
+                return None;
+            }
+            let hits = audio.stats.pattern_hits(epoch)?;
+            let dropped = audio.stats.transport(epoch)?.dropped_hits;
+            if audio.project.epoch.load(Acquire) != epoch
+                || audio.project.ready.load(Acquire) != epoch
+            {
+                return None;
+            }
+            Some(((Arc::as_ptr(&audio.stats) as usize, epoch), hits, dropped))
+        });
+        let Some((identity, hits, dropped)) = snapshot else {
+            return;
+        };
+        if self.transport.feedback != Some(identity) {
+            self.transport.feedback = Some(identity);
+            self.transport.pattern_hits.fill(0);
+            self.transport.dropped_hits = 0;
+        }
+        for (pad, hit) in hits.into_iter().enumerate() {
+            if hit != 0 && hit != self.transport.pattern_hits[pad] {
+                self.pads.hit_at[pad] = Some(now);
+                self.splash = false;
+            }
+        }
+        self.transport.pattern_hits = hits;
+        if dropped > self.transport.dropped_hits {
+            self.post_system_notice(
+                Level::Warn,
+                (
+                    format!(
+                        "Pattern skipped {} hits: audio resources are busy.",
+                        dropped - self.transport.dropped_hits
+                    ),
+                    now,
+                ),
+            );
+        }
+        self.transport.dropped_hits = dropped;
+    }
+
     pub(super) fn frame_notice(&mut self) -> Option<String> {
         self.frame_notice_at(Instant::now())
     }
 
     pub(super) fn frame_notice_at(&mut self, now: Instant) -> Option<String> {
+        self.pattern_feedback(now);
         if self
             .value_popup
             .as_ref()
@@ -875,6 +1568,7 @@ impl App {
             // Release sample snapshots on the UI thread, even without another input.
             self.value_popup = None;
         }
+        self.notices.advance(now);
         self.notices.set_visible(!self.notice_hidden(), now);
         let notice = self
             .pad_naming
@@ -884,7 +1578,9 @@ impl App {
         self.keymap_warning_shown = !self.key_notice_blocked()
             && self.keymap_warnings.front().is_some()
             && notice.as_ref() == self.keymap_warnings.front();
-        self.frame_notice_level = if self.pad_naming.is_some() || self.recording.is_some() {
+        self.frame_notice_level = if self.pad_naming.is_some()
+            || (self.recording.is_some() && !self.recording_warning())
+        {
             None
         } else if self
             .audio

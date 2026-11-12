@@ -397,3 +397,110 @@ Adding transport SHALL NOT reset, seed again, reassign or rewrite existing X-Ses
 #### Scenario: Late transport commands stay in their original project
 - **WHEN** a queued transport or tempo command belongs to the old project and a new project opens
 - **THEN** that command does not start, stop or change the new project's clock
+
+### Requirement: Learn the Pitch Gate command
+
+F12 MIDI SHALL list `pad.pitch_gate_toggle` as a PADS button action. F10 SHALL select it by its effective key without changing a pad. Existing pending confirmation, cancellation, clear and layer precedence SHALL apply. Screen learn SHALL refuse knobs or faders for this command. A learned press SHALL act once, with no action on release.
+
+#### Scenario: Raw MIDI Pitch Gate button matches the keyboard
+- **WHEN** learned note buttons and CC buttons send raw presses and releases through the production profile and dispatch on Pads
+- **THEN** each press applies the same scope toggle and undo result as the keyboard
+- **AND** release does not toggle again, while a PADS-only assignment does not execute on another screen
+
+#### Scenario: Pitch Gate learning retains confirmation and control types
+- **WHEN** F10 or F12 selects Pitch Gate and the owner moves, replaces, confirms, cancels or clears its pending control
+- **THEN** existing learn rules retain their pending and saved states without executing Pitch Gate
+- **AND** screen learn rejects an absolute knob or fader for the button command
+
+### Requirement: Pitch Gate bindings preserve controller state
+
+New bindings SHALL survive restart without reseeding devices or changing existing owner and factory roles. Playback and the toggle SHALL use current learned transport and PADS routes. The unfinished SMC-PAD example SHALL remain unverified. This change SHALL NOT require a hold, relative encoder or command panel.
+
+#### Scenario: Pitch Gate binding survives restart without a controller reset
+- **WHEN** the owner saves a learned Pitch Gate button alongside transport and existing X-Session assignments, then restarts
+- **THEN** all those assignments keep their saved roles without profile reset or reseeding
+- **AND** the SMC-PAD example gains no claimed factory mapping or physical acceptance
+
+### Requirement: Learn pattern recording commands
+
+F12 MIDI SHALL list `pattern.record`, `pattern.controls`, `pattern.erase` and `pattern.undo` as GLOBAL button actions. It SHALL list `pattern.param_prev`, `pattern.param_next`, `pattern.value_dec` and `pattern.value_inc` as buttons. Existing confirmation, clearing, persistence and layer precedence SHALL apply. Presses SHALL execute once. Releases SHALL NOT toggle commands or trigger pad sound.
+
+#### Scenario: Learn and retain recording command buttons
+- **WHEN** separate note or CC buttons are learned for all new pattern commands, confirmed and the program restarts
+- **THEN** those commands retain their controls without changing existing owner or X-Session bindings
+- **AND** pending assignments, Esc cancellation and Backspace clearing keep their existing rules
+
+#### Scenario: Pattern recording buttons work on every screen
+- **WHEN** learned pattern buttons send raw MIDI through production profiles and dispatch on every current screen
+- **THEN** they match keyboard recording, controls, erasure and pass Undo behavior without changing screens
+- **AND** each release produces no second command or extra hit
+
+### Requirement: Learn absolute pattern parameters
+
+F12 MIDI SHALL list `pattern.bars`, `pattern.quantize` and `pattern.strength` as GLOBAL knob parameters. Values 0–127 SHALL map to each permitted value list by nearest index, with ties later. Existing jump, pickup and scale response SHALL apply separately per device and control. Phase restrictions SHALL match keyboard controls.
+
+#### Scenario: Absolute pattern knobs use their complete ranges
+- **WHEN** learned knobs send 0, 64 and 127 in jump mode
+- **THEN** bars become 1, 33 and 64, quantize becomes Off, 1/32 and 1/32T, and strength becomes 0, 50 and 100
+- **AND** changes show the applied pattern parameter without changing raw timing
+
+#### Scenario: Pattern takeover follows the current value and device
+- **WHEN** two controllers use pickup or scale and the keyboard changes a pattern setting between their movements
+- **THEN** each control follows its own current takeover state and parameter value
+- **AND** pickup waiting and phase refusal do not report an unapplied value
+
+### Requirement: Pattern controller input retains causal order
+
+A recording or erasure command SHALL take effect before a following pad event from the same ordered production input stream. Deferred hits SHALL keep their original velocity, source, project and release. Commands or capture from an old project SHALL NOT change the new project's recording. Invalid shared focus SHALL reject new actions without losing old releases.
+
+#### Scenario: Raw recording command precedes its following hit
+- **WHEN** raw MIDI starts recording during playback and sends a pad press and release before the next UI update
+- **THEN** the accepted hit belongs to that recording pass with its actual velocity and duration
+- **AND** ending recording before another hit keeps that later hit out of the pass
+
+#### Scenario: Raw erasure command precedes its target hold
+- **WHEN** raw MIDI enables erasure and sends a target press, release and erasure-off command before a redraw
+- **THEN** the target remains silent and erases only its accepted interval
+- **AND** delayed notifications cannot convert it into a sounding or recorded pad
+
+#### Scenario: Stale controller work cannot enter another recording pass
+- **WHEN** old-project commands, capture or deferred notifications arrive after another project or pass becomes current
+- **THEN** they cannot add rows, change phase or erase the new pattern
+- **AND** releases still complete their original permitted sound ownership
+
+### Requirement: Pattern learning does not imply factory support
+
+New pattern actions SHALL use existing MIDI learning without resetting device bindings. The incomplete SMC-PAD example SHALL remain unverified. Pattern recording SHALL NOT silently select microphone capture by screen or transport state. This change SHALL NOT introduce factory RECORD holds, STOP layers or a tap-and-hold dispatcher.
+
+#### Scenario: Learned pattern recording never changes into microphone capture
+- **WHEN** a learned record button is used while stopped or playing on Pads, Files, Chop, FX and Settings
+- **THEN** it always addresses A1 recording and never the microphone
+- **AND** existing microphone controls remain separate without an invented SMC-PAD factory assignment
+
+### Requirement: Learn pattern view commands
+
+F12 MIDI SHALL list `pattern.view_prev` and `pattern.view_next` as GLOBAL button actions. A learned button SHALL change the view through the same App action as the keyboard keys. It SHALL use existing confirmation, clearing, persistence and layer precedence. No factory device binding SHALL be introduced.
+
+#### Scenario: Learned pattern view buttons change only the view
+- **WHEN** a learned CC button for `pattern.view_next` arrives through raw MIDI profile routing on Pads
+- **THEN** the view becomes finer, as with Alt+Up
+- **AND** raw rows, history and dirty state stay unchanged, and a following MIDI pad note still plays its pad
+
+### Requirement: Learn pattern tidy commands
+
+F12 MIDI SHALL list `pattern.clear` as a GLOBAL button action. A learned button SHALL run the same App action as the keyboard path and SHALL still ask first. A learned `pattern.erase` button SHALL toggle whole-pad erasure on Pads outside a pass, as Alt+E does. In that mode, MIDI pad notes SHALL erase whole pads as keyboard pads do. No factory device binding SHALL be introduced.
+
+#### Scenario: Learned erase and clear buttons match the keys
+- **WHEN** learned CC buttons toggle erasure on Pads and run Clear A1 through raw MIDI profile routing
+- **AND** a MIDI pad note arrives in erasure
+- **THEN** the note erases its whole pad without sound, as a keyboard pad does
+- **AND** Clear A1 asks before it clears, and each result is one Undo step
+
+### Requirement: Knobs turn pattern controls while they are open
+
+While pattern controls are open, edit knobs 1, 2 and 3 SHALL turn Bars, Quantize and Strength. Other learned knobs that change a pad, a slice or an effect SHALL change nothing. Master volume, tempo and the learned pattern knobs SHALL keep their roles. MIDI pad notes SHALL still play pads.
+
+#### Scenario: Knobs turn A1 while pattern controls are open
+- **WHEN** pattern controls are open on Pads and raw MIDI turns edit knobs 1–3 and a learned pad volume knob
+- **THEN** Bars, Quantize and Strength change, and the pad volume stays unchanged
+- **AND** a MIDI pad note plays its pad

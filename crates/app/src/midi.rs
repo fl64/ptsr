@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -122,11 +122,12 @@ enum Raw {
     Fence(Sender<()>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct UiHold {
     abs: usize,
     epoch: u64,
     id: u64,
+    released: Arc<AtomicBool>,
 }
 
 type DirectHolds = HashMap<(String, u8, Key), Vec<(usize, u64)>>;
@@ -183,6 +184,7 @@ pub struct UiEvent {
     sequence: Option<u64>,
     origin: Option<Provenance>,
     owner_input: bool,
+    released: Option<Arc<AtomicBool>>,
 }
 
 struct UiSender {
@@ -193,10 +195,16 @@ struct UiSender {
 
 impl UiSender {
     fn send(&mut self, event: Event, stamp: Option<Stamp>) {
-        self.send_input(event, stamp, false);
+        self.send_input(event, stamp, false, None);
     }
 
-    fn send_input(&mut self, event: Event, stamp: Option<Stamp>, owner_input: bool) {
+    fn send_input(
+        &mut self,
+        event: Event,
+        stamp: Option<Stamp>,
+        owner_input: bool,
+        released: Option<Arc<AtomicBool>>,
+    ) {
         let sequence = matches!(
             &event,
             Event::Action(_)
@@ -214,6 +222,7 @@ impl UiSender {
                 sequence,
                 origin: self.origin.clone(),
                 owner_input,
+                released,
             })
             .is_ok()
             && let Some(sequence) = sequence
@@ -232,7 +241,12 @@ impl UiEvent {
             sequence: None,
             origin: None,
             owner_input: false,
+            released: None,
         }
+    }
+
+    pub fn release_signal(&self) -> Option<Arc<AtomicBool>> {
+        self.released.clone()
     }
 
     pub fn origin(&self) -> Option<&str> {
@@ -661,6 +675,8 @@ fn dispatch(
                 ui_pressed.retain(|(p, _, _), held| {
                     if *p == port {
                         for hold in held.iter() {
+                            hold.released
+                                .store(true, std::sync::atomic::Ordering::SeqCst);
                             ui.send(
                                 Event::UiPadRelease {
                                     abs: hold.abs,
@@ -757,6 +773,7 @@ fn dispatch(
             },
             Some(stamp),
             owner_input,
+            None,
         );
         let channel = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
@@ -788,25 +805,29 @@ fn dispatch(
                         .iter()
                         .find(|hold| hold.abs == abs && hold.epoch == stamp.epoch)
                     {
-                        return hold.id;
+                        return (hold.id, hold.released.clone());
                     }
                     let id = next_ui_press;
                     next_ui_press = next_ui_press.wrapping_add(1);
+                    let released = Arc::new(AtomicBool::new(false));
                     held.push(UiHold {
                         abs,
                         epoch: stamp.epoch,
                         id,
+                        released: released.clone(),
                     });
-                    id
+                    (id, released)
                 });
-                ui.send(
+                ui.send_input(
                     Event::PadHit {
                         abs,
                         velocity,
                         sound: PadSound::UiUnattempted { deferred: waiting },
-                        ui_press,
+                        ui_press: ui_press.as_ref().map(|(id, _)| *id),
                     },
                     Some(stamp),
+                    false,
+                    ui_press.map(|(_, released)| released),
                 );
             }
             Some(Resolved::Action(Action::PadPress { pad, velocity })) => {
@@ -898,6 +919,8 @@ fn release_tracked(
     }
     if let Some(held) = held_ui {
         for hold in held {
+            hold.released
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             ui.send(
                 Event::UiPadRelease {
                     abs: hold.abs,
@@ -997,7 +1020,9 @@ mod tests {
                 file_in_hand: true,
                 copy_in_hand: true,
                 swap_in_hand: true,
+                pattern_pads: false,
                 screen_learn: false,
+                erase_pads: false,
             },
         };
         let shared = Arc::new(Shared::default());

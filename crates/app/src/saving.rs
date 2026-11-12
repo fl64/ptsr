@@ -1,8 +1,120 @@
 //! Session saving and retry scheduling on the UI thread.
 
-use super::{App, Instant, PADS, PathBuf, SESSION_SAVE, session, tilde, with_stored_paths};
+use super::{
+    App, Instant, Level, Notice, NoticeToken, Origin, PADS, PathBuf, SESSION_SAVE, session, tilde,
+    with_stored_paths,
+};
+use std::sync::{Arc, atomic::Ordering::Acquire};
+
+pub(super) struct PendingSave {
+    project: Arc<engine::rt::ProjectState>,
+    epoch: u64,
+    origin: Origin,
+    progress: NoticeToken,
+}
 
 impl App {
+    pub(super) fn request_quit(&mut self) -> bool {
+        self.quit_requested = true;
+        self.flush_audio();
+        self.quit_ready()
+    }
+
+    pub(super) fn quit_ready(&self) -> bool {
+        self.quit_requested
+            && self
+                .audio
+                .as_ref()
+                .is_none_or(|audio| !audio.pattern_capture.blocks_autosave())
+    }
+
+    pub(super) fn refuse_pattern_project_change(&mut self) -> bool {
+        self.flush_audio();
+        let phase = if self.quit_requested {
+            Some("exit pending")
+        } else {
+            self.audio
+                .as_ref()
+                .and_then(|audio| audio.pattern_capture.blocking_phase())
+        };
+        if let Some(phase) = phase {
+            self.post_notice(
+                Level::Warn,
+                (
+                    format!("A1 {phase}: finish pattern work before opening projects."),
+                    Instant::now(),
+                ),
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn request_manual_save(&mut self) {
+        let waiting = self.pending_manual_save.is_some();
+        self.flush_audio();
+        if waiting {
+            return;
+        }
+        let origin = self.notice_origin.clone();
+        if let Some(audio) = self
+            .audio
+            .as_ref()
+            .filter(|a| a.pattern_capture.blocks_autosave())
+        {
+            let end = audio.pattern_capture.finish_for_save();
+            let progress = self.notices.push_owned(
+                Notice::new(Level::Info, origin.clone(), "Finishing A1 before saving."),
+                Instant::now(),
+            );
+            self.pending_manual_save = Some(PendingSave {
+                project: audio.project.clone(),
+                epoch: audio.project.epoch.load(Acquire),
+                origin,
+                progress,
+            });
+            if let Some(end) = end {
+                self.send(end);
+            }
+        } else {
+            self.manual_save_now(origin);
+        }
+    }
+
+    pub(super) fn finish_manual_save(&mut self) {
+        let Some(pending) = self.pending_manual_save.as_ref() else {
+            return;
+        };
+        let Some(audio) = self.audio.as_ref().filter(|a| {
+            Arc::ptr_eq(&a.project, &pending.project)
+                && a.project.epoch.load(Acquire) == pending.epoch
+        }) else {
+            self.cancel_manual_save();
+            return;
+        };
+        if audio.pattern_capture.blocks_autosave() {
+            return;
+        }
+        let pending = self.pending_manual_save.take().unwrap();
+        self.notices.cancel_owned(&pending.progress, Instant::now());
+        self.manual_save_now(pending.origin);
+    }
+
+    pub(super) fn cancel_manual_save(&mut self) {
+        if let Some(pending) = self.pending_manual_save.take() {
+            self.notices.cancel_owned(&pending.progress, Instant::now());
+        }
+    }
+
+    fn manual_save_now(&mut self, origin: Origin) {
+        let previous = std::mem::replace(&mut self.notice_origin, origin.clone());
+        if self.save_session().is_ok() {
+            self.produce_notice(Notice::manual_save_success(origin), Instant::now());
+        }
+        self.notice_origin = previous;
+    }
+
     pub(super) fn dirty(&mut self) {
         self.session_dirty.get_or_insert_with(Instant::now);
     }
@@ -31,6 +143,17 @@ impl App {
     }
 
     pub(super) fn autosave(&mut self, now: Instant) {
+        self.flush_audio();
+        if self.pending_manual_save.is_some() {
+            return;
+        }
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(|audio| audio.pattern_capture.blocks_autosave())
+        {
+            return;
+        }
         if self.automatic_save_allowed()
             && self
                 .session_dirty
@@ -41,7 +164,8 @@ impl App {
     }
 
     pub(super) fn save_on_exit(&mut self) {
-        if self.automatic_save_allowed() {
+        self.request_quit();
+        if self.quit_ready() && self.automatic_save_allowed() {
             let _ = self.save_session();
         }
     }

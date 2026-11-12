@@ -161,6 +161,9 @@ pub struct Mode {
     pub file_in_hand: bool,
     pub copy_in_hand: bool,
     pub swap_in_hand: bool,
+    pub pattern_pads: bool,
+    /// Whole-pad erasure outside a pass (98b): pads are silent targets.
+    pub erase_pads: bool,
 }
 
 impl Mode {
@@ -176,6 +179,8 @@ impl Mode {
             self.file_in_hand,
             self.copy_in_hand,
             self.swap_in_hand,
+            self.pattern_pads,
+            self.erase_pads,
         ]
         .into_iter()
         .enumerate()
@@ -194,6 +199,8 @@ impl Mode {
             file_in_hand: bits & (1 << 7) != 0,
             copy_in_hand: bits & (1 << 8) != 0,
             swap_in_hand: bits & (1 << 9) != 0,
+            pattern_pads: bits & (1 << 10) != 0,
+            erase_pads: bits & (1 << 11) != 0,
         }
     }
 }
@@ -228,7 +235,7 @@ impl Focus {
 
     /// Unpacks a snapshot, rejecting unknown screens, banks and reserved bits.
     pub fn unpack(bits: u32) -> Option<Self> {
-        if bits >> 17 != 0 {
+        if bits >> 19 != 0 {
             return None;
         }
         let screen = Screen::from_code(bits & 7)?;
@@ -254,11 +261,12 @@ pub fn route_pad(focus: Focus) -> PadRoute {
     let mode = focus.mode;
     if mode.screen_learn {
         PadRoute::Ignore
-    } else if focus.screen == Screen::Chop
+    } else if (focus.screen == Screen::Chop && !mode.pattern_pads)
         || mode.question
         || mode.file_in_hand
         || mode.copy_in_hand
         || mode.swap_in_hand
+        || mode.erase_pads
     {
         PadRoute::Ui
     } else {
@@ -434,7 +442,7 @@ mod focus_tests {
             Screen::Fx,
         ] {
             for bank in 0..8 {
-                for bits in 0..1 << 10 {
+                for bits in 0..1 << 11 {
                     let focus = Focus {
                         screen,
                         bank,
@@ -445,7 +453,9 @@ mod focus_tests {
                     assert_eq!(Focus::unpack(packed), Some(focus));
                     let expected = if bits & (1 << 4) != 0 {
                         PadRoute::Ignore
-                    } else if screen == Screen::Chop || bits & (0b1111 << 6) != 0 {
+                    } else if (screen == Screen::Chop && bits & (1 << 10) == 0)
+                        || bits & (0b1111 << 6) != 0
+                    {
                         PadRoute::Ui
                     } else {
                         PadRoute::Sound
@@ -487,7 +497,7 @@ mod focus_tests {
             .pack(),
             None
         );
-        for bit in 17..32 {
+        for bit in 19..32 {
             assert_eq!(Focus::unpack(1 << bit), None);
         }
         assert_eq!(Focus::unpack(u32::MAX), None);
@@ -536,6 +546,14 @@ mod focus_tests {
                 swap_in_hand: true,
                 ..Mode::default()
             },
+            Mode {
+                pattern_pads: true,
+                ..Mode::default()
+            },
+            Mode {
+                erase_pads: true,
+                ..Mode::default()
+            },
         ];
         for (shift, mode) in flags.into_iter().enumerate() {
             assert_eq!(mode.bits(), 1 << shift);
@@ -573,6 +591,7 @@ pub enum Action {
     PadRename,
     PadSelect(Dir),
     PadModeNext,
+    PadPitchGateToggle,
     /// Pads screen: the edit mode of the selected pad opens; `Esc` closes it.
     PadEdit,
     PadEditOnly,
@@ -699,6 +718,8 @@ pub enum Action {
     /// The screens with pads: hide the grid or show it again (32).
     PadsToggle,
     HelpToggle,
+    HelpPagePrev,
+    HelpPageNext,
     Back,
     Quit,
     /// Save the session now; the manual save says that it did (22).
@@ -708,6 +729,23 @@ pub enum Action {
     RecordMic(bool),
     /// Recording: toggles the program's output recording.
     RecordOutputToggle,
+    /// Start or finish A1 capture without changing screens.
+    PatternRecord,
+    /// Toggle erasure for the active recording pass.
+    PatternErase,
+    /// Finish and undo the active A1 pass, or undo the latest common pattern step.
+    PatternUndo,
+    /// Show or close compact A1 controls on the current screen.
+    PatternControls,
+    PatternParamPrev,
+    PatternParamNext,
+    PatternValueDec,
+    PatternValueInc,
+    /// Change only the pattern display division on Pads.
+    PatternViewPrev,
+    PatternViewNext,
+    /// Asks, then empties A1 (98b).
+    PatternClear,
     /// Settings screen: row up/down, value back/forward.
     SettingsRow(i8),
     SettingsValue(i8),
@@ -745,6 +783,7 @@ impl Action {
             "pad.select_left" => Self::PadSelect(Dir::Left),
             "pad.select_right" => Self::PadSelect(Dir::Right),
             "pad.mode_next" => Self::PadModeNext,
+            "pad.pitch_gate_toggle" => Self::PadPitchGateToggle,
             "pad.edit" => Self::PadEdit,
             "pad.edit_only" => Self::PadEditOnly,
             "pad.param_next" => Self::PadParamNext,
@@ -899,12 +938,25 @@ impl Action {
             "project.pick" => Self::ProjectPick,
             "ui.pads_toggle" => Self::PadsToggle,
             "help.toggle" => Self::HelpToggle,
+            "help.page_prev" => Self::HelpPagePrev,
+            "help.page_next" => Self::HelpPageNext,
             "ui.back" => Self::Back,
             "app.quit" => Self::Quit,
             "session.save" => Self::SessionSave,
             "metronome.click" => Self::Click,
             "record.mic" => Self::RecordMic(true),
             "record.output" => Self::RecordOutputToggle,
+            "pattern.record" => Self::PatternRecord,
+            "pattern.erase" => Self::PatternErase,
+            "pattern.controls" => Self::PatternControls,
+            "pattern.view_prev" => Self::PatternViewPrev,
+            "pattern.view_next" => Self::PatternViewNext,
+            "pattern.clear" => Self::PatternClear,
+            "pattern.param_prev" => Self::PatternParamPrev,
+            "pattern.param_next" => Self::PatternParamNext,
+            "pattern.value_dec" => Self::PatternValueDec,
+            "pattern.value_inc" => Self::PatternValueInc,
+            "pattern.undo" => Self::PatternUndo,
             "settings.row_prev" => Self::SettingsRow(-1),
             "settings.row_next" => Self::SettingsRow(1),
             "settings.value_prev" => Self::SettingsValue(-1),
@@ -999,6 +1051,186 @@ pub struct ActionInfo {
     pub knob: bool,
 }
 
+/// The label of an action on a device drawing (98j): ASCII, 1 to 6 cells. `?` for a name
+/// the program does not have.
+pub fn short_label(action: &str) -> &'static str {
+    match action {
+        "transport.toggle" => "play",
+        "metronome.toggle" => "metro",
+        "transport.tempo_up" => "bpm+",
+        "transport.tempo_down" => "bpm-",
+        "transport.tempo_up_fine" => "bpm+.1",
+        "transport.tempo_down_fine" => "bpm-.1",
+        "transport.tempo" => "tempo",
+        "screen.pads" => "pads",
+        "screen.settings" => "setup",
+        "screen.files" => "files",
+        "screen.chop" => "chop",
+        "screen.fx" => "fx",
+        "help.toggle" => "help",
+        "help.page_prev" => "help<",
+        "help.page_next" => "help>",
+        "ui.back" => "back",
+        "bank.prev" => "bank<",
+        "bank.next" => "bank>",
+        "bank.1" => "bank1",
+        "bank.2" => "bank2",
+        "bank.3" => "bank3",
+        "bank.4" => "bank4",
+        "bank.5" => "bank5",
+        "bank.6" => "bank6",
+        "bank.7" => "bank7",
+        "bank.8" => "bank8",
+        "pad.1" => "pad1",
+        "pad.2" => "pad2",
+        "pad.3" => "pad3",
+        "pad.4" => "pad4",
+        "pad.5" => "pad5",
+        "pad.6" => "pad6",
+        "pad.7" => "pad7",
+        "pad.8" => "pad8",
+        "pad.9" => "pad9",
+        "pad.10" => "pad10",
+        "pad.11" => "pad11",
+        "pad.12" => "pad12",
+        "pad.13" => "pad13",
+        "pad.14" => "pad14",
+        "pad.15" => "pad15",
+        "pad.16" => "pad16",
+        "metronome.click" => "click",
+        "record.mic" => "recmic",
+        "record.output" => "recout",
+        "pattern.record" => "rec A1",
+        "pattern.erase" => "erase",
+        "pattern.undo" => "undoA1",
+        "pattern.controls" => "A1 set",
+        "pattern.param_prev" => "A1 p<",
+        "pattern.param_next" => "A1 p>",
+        "pattern.value_dec" => "A1 v-",
+        "pattern.value_inc" => "A1 v+",
+        "pattern.view_prev" => "view<",
+        "pattern.view_next" => "view>",
+        "pattern.clear" => "clrA1",
+        "pattern.bars" => "bars",
+        "pattern.quantize" => "quant",
+        "pattern.strength" => "streng",
+        "project.pick" => "projct",
+        "session.save" => "save",
+        "ui.pads_toggle" => "hide",
+        "pad.take" => "take",
+        "master.volume_down" => "mvol-",
+        "master.volume_up" => "mvol+",
+        "master.volume" => "m vol",
+        "edit.param_next" => "param>",
+        "edit.param_prev" => "param<",
+        "edit.page_next" => "page>",
+        "edit.page_prev" => "page<",
+        "edit.value_dec" => "val-",
+        "edit.value_inc" => "val+",
+        "edit.value_dec_fine" => "val-.",
+        "edit.value_inc_fine" => "val+.",
+        "pad.select_left" => "sel<",
+        "pad.select_right" => "sel>",
+        "pad.select_up" => "sel^",
+        "pad.select_down" => "selv",
+        "pad.copy" => "copy",
+        "pad.mode_next" => "mode",
+        "pad.pitch_gate_toggle" => "gate",
+        "pad.edit" => "edit",
+        "pad.edit_only" => "edit",
+        "pad.param_next" => "param>",
+        "pad.param_dec" => "param-",
+        "pad.param_inc" => "param+",
+        "pad.mark_bank" => "markbk",
+        "pad.mark_toggle" => "mark",
+        "pad.rename" => "name",
+        "pad.clear" => "clear",
+        "pad.volume" => "volume",
+        "pad.pitch" => "pitch",
+        "pad.attack" => "attack",
+        "pad.decay" => "decay",
+        "pad.release" => "releas",
+        "pad.filter" => "filter",
+        "pad.cutoff" => "cutoff",
+        "pad.reso" => "reso",
+        "pad.start" => "start",
+        "pad.end" => "end",
+        "edit.param_1" => "knob1",
+        "edit.param_2" => "knob2",
+        "edit.param_3" => "knob3",
+        "edit.page" => "page",
+        "settings.row_prev" => "row^",
+        "settings.row_next" => "rowv",
+        "settings.value_prev" => "val<",
+        "settings.value_next" => "val>",
+        "settings.tab_next" => "tab>",
+        "settings.learn" => "learn",
+        "settings.clear" => "clear",
+        "browser.up" => "file^",
+        "browser.down" => "filev",
+        "browser.enter" => "open",
+        "browser.parent" => "parent",
+        "browser.hold" => "take",
+        "browser.take_only" => "take",
+        "browser.load" => "load",
+        "browser.preview_toggle" => "prevw",
+        "browser.filter" => "filter",
+        "browser.favorite_toggle" => "fav",
+        "transport.play_stop" => "play",
+        "chop.cursor_next_cut" => "cut>",
+        "chop.cursor_prev_cut" => "cut<",
+        "chop.play_mode" => "plmode",
+        "chop.loop_toggle" => "loop",
+        "chop.as_pad_toggle" => "as pad",
+        "chop.cut" => "cut",
+        "chop.auto_mode_next" => "parts",
+        "chop.parts" => "parts",
+        "chop.hits" => "hits",
+        "chop.hits_back" => "hits<",
+        "chop.assign_order" => "order",
+        "slice.start_left" => "start<",
+        "slice.start_right" => "start>",
+        "slice.end_left" => "end<",
+        "slice.end_right" => "end>",
+        "marker.prev" => "slice<",
+        "chop.region_start" => "reg[",
+        "chop.region_end" => "reg]",
+        "chop.region_clear" => "regclr",
+        "chop.cursor_left" => "cur<",
+        "chop.cursor_right" => "cur>",
+        "chop.cursor_left_fine" => "cur<.",
+        "chop.cursor_right_fine" => "cur>.",
+        "chop.snap_toggle" => "snap",
+        "marker.next" => "slice>",
+        "marker.nudge_left" => "nudge<",
+        "marker.nudge_right" => "nudge>",
+        "marker.nudge_left_fine" => "nudg<.",
+        "marker.nudge_right_fine" => "nudg>.",
+        "slice.start" => "start",
+        "slice.end" => "end",
+        "chop.zoom" => "zoom",
+        "chop.cursor_pos" => "cursor",
+        "chop.region_start_pos" => "reg[",
+        "chop.region_end_pos" => "reg]",
+        "chop.threshold" => "thresh",
+        "marker.delete" => "delcut",
+        "slice.end_delete" => "delend",
+        "edit.undo" => "undo",
+        "chop.commit" => "apply",
+        "chop.edit" => "edit",
+        "chop.edit_only" => "edit",
+        "chop.assign" => "assign",
+        "chop.normalize" => "normal",
+        "pad.fx1_type" => "fx1typ",
+        "pad.fx1_size" => "fx1siz",
+        "pad.fx1_tone" => "fx1ton",
+        "pad.fx2_type" => "fx2typ",
+        "pad.fx2_size" => "fx2siz",
+        "pad.fx2_tone" => "fx2ton",
+        _ => "?",
+    }
+}
+
 /// Every action a key or a controller can drive, by group. Quitting is left out on purpose:
 /// a stray controller press must not close the program during a set.
 pub const ACTIONS: &[ActionInfo] = &[
@@ -1077,6 +1309,18 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "help.toggle",
         label: "help",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "help.page_prev",
+        label: "previous help page",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "help.page_next",
+        label: "next help page",
         group: Group::Global,
         knob: false,
     },
@@ -1262,6 +1506,90 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "pattern.record",
+        label: "record pattern",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.erase",
+        label: "erase pattern under held pads",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.undo",
+        label: "undo pattern pass",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.controls",
+        label: "pattern controls",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.param_prev",
+        label: "previous pattern parameter",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.param_next",
+        label: "next pattern parameter",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.value_dec",
+        label: "decrease pattern value",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.value_inc",
+        label: "increase pattern value",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.view_prev",
+        label: "previous pattern view division",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.view_next",
+        label: "next pattern view division",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.clear",
+        label: "clear A1 (asks first)",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pattern.bars",
+        label: "pattern bars",
+        group: Group::Global,
+        knob: true,
+    },
+    ActionInfo {
+        name: "pattern.quantize",
+        label: "pattern quantize",
+        group: Group::Global,
+        knob: true,
+    },
+    ActionInfo {
+        name: "pattern.strength",
+        label: "pattern strength",
+        group: Group::Global,
+        knob: true,
+    },
+    ActionInfo {
         name: "project.pick",
         label: "project picker",
         group: Group::Global,
@@ -1384,6 +1712,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "pad.mode_next",
         label: "pad mode",
+        group: Group::Pads,
+        knob: false,
+    },
+    ActionInfo {
+        name: "pad.pitch_gate_toggle",
+        label: "Pitch Gate on / off",
         group: Group::Pads,
         knob: false,
     },
@@ -2429,6 +2763,8 @@ impl Keymap {
                             | Action::BrowserUp
                             | Action::BrowserDown
                             | Action::SettingsRow(_)
+                            | Action::HelpPagePrev
+                            | Action::HelpPageNext
                     )
                 })
                 .map(|a| with_step(a, false));
@@ -2713,6 +3049,22 @@ fn chord_name(c: &Chord) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_action_has_a_short_label() {
+        let names = ACTIONS
+            .iter()
+            .map(|i| i.name)
+            .chain(midi::PARAMS.iter().map(|(n, _)| *n));
+        for name in names {
+            let short = short_label(name);
+            assert!(
+                short != "?" && (1..=6).contains(&short.len()) && short.is_ascii(),
+                "{name}: {short:?}"
+            );
+        }
+        assert_eq!(short_label("pad.flyaway"), "?");
+    }
     use crossterm::event::KeyEventState;
 
     const PADS_RU: [char; 16] = [
@@ -2720,6 +3072,150 @@ mod tests {
     ];
 
     const KEYMAP: &str = include_str!("../../../config/keymap.toml");
+
+    #[test]
+    fn help_pages_resolve_repeats_releases_and_edit_owner_entries() {
+        let mut map = keymap();
+        for (name, code, action) in [
+            ("help.page_prev", KeyCode::PageUp, Action::HelpPagePrev),
+            ("help.page_next", KeyCode::PageDown, Action::HelpPageNext),
+        ] {
+            assert_eq!(Action::parse(name), Some(action));
+            assert!(
+                ACTIONS
+                    .iter()
+                    .any(|info| info.name == name && info.group == Group::Global && !info.knob)
+            );
+            for screen in Screen::ALL {
+                for edit in [false, true] {
+                    for kind in [
+                        KeyEventKind::Press,
+                        KeyEventKind::Repeat,
+                        KeyEventKind::Release,
+                    ] {
+                        assert_eq!(
+                            map.resolve_in(screen, edit, &ev(code, KeyModifiers::ALT, kind)),
+                            (kind != KeyEventKind::Release).then_some(action)
+                        );
+                    }
+                    assert_eq!(
+                        map.resolve_in(
+                            screen,
+                            edit,
+                            &ev(code, KeyModifiers::NONE, KeyEventKind::Press)
+                        ),
+                        Some(if code == KeyCode::PageUp {
+                            Action::BankPrev
+                        } else {
+                            Action::BankNext
+                        })
+                    );
+                }
+            }
+        }
+        map.overlay("[global]\n'Alt+PageDown' = 'none'\n'Alt+H' = 'help.page_next'\n[edit]\n'Alt+PageUp' = 'none'\n'Alt+H' = 'help.page_prev'\n").unwrap();
+        for screen in Screen::ALL {
+            for edit in [false, true] {
+                for c in ['h', 'H', 'р', 'Р'] {
+                    assert_eq!(
+                        map.resolve_in(
+                            screen,
+                            edit,
+                            &ev(KeyCode::Char(c), KeyModifiers::ALT, KeyEventKind::Press)
+                        ),
+                        Some(if edit {
+                            Action::HelpPagePrev
+                        } else {
+                            Action::HelpPageNext
+                        })
+                    );
+                }
+                assert_eq!(
+                    map.resolve_in(
+                        screen,
+                        edit,
+                        &ev(KeyCode::PageDown, KeyModifiers::ALT, KeyEventKind::Press)
+                    ),
+                    None
+                );
+                assert_eq!(
+                    map.resolve_in(
+                        screen,
+                        edit,
+                        &ev(KeyCode::PageUp, KeyModifiers::ALT, KeyEventKind::Press)
+                    ),
+                    (!edit).then_some(Action::HelpPagePrev)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pitch_gate_key_respects_layout_layers_press_kind_and_owner_entries() {
+        let mut k = keymap();
+        assert_eq!(
+            Action::parse("pad.pitch_gate_toggle"),
+            Some(Action::PadPitchGateToggle)
+        );
+        assert!(ACTIONS.iter().any(|row| row.name == "pad.pitch_gate_toggle"
+            && row.group == Group::Pads
+            && !row.knob));
+        for editing in [false, true] {
+            for c in ['g', 'п'] {
+                for kind in [
+                    KeyEventKind::Press,
+                    KeyEventKind::Repeat,
+                    KeyEventKind::Release,
+                ] {
+                    let event = ev(KeyCode::Char(c), KeyModifiers::ALT, kind);
+                    assert_eq!(
+                        k.resolve_in(Screen::Pads, editing, &event),
+                        (kind == KeyEventKind::Press).then_some(Action::PadPitchGateToggle)
+                    );
+                    for screen in [Screen::Chop, Screen::Files, Screen::Fx, Screen::Settings] {
+                        assert_eq!(k.resolve_in(screen, editing, &event), None);
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            k.keys_for(Screen::Pads, Action::PadPitchGateToggle),
+            ["Alt+G"]
+        );
+        k.overlay("[screens.pads]\n\"Alt+G\" = \"none\"\n\"Alt+H\" = \"pad.pitch_gate_toggle\"\n")
+            .unwrap();
+        for editing in [false, true] {
+            assert_eq!(
+                k.resolve_in(
+                    Screen::Pads,
+                    editing,
+                    &ev(KeyCode::Char('п'), KeyModifiers::ALT, KeyEventKind::Press)
+                ),
+                None
+            );
+            assert_eq!(
+                k.resolve_in(
+                    Screen::Pads,
+                    editing,
+                    &ev(KeyCode::Char('р'), KeyModifiers::ALT, KeyEventKind::Press)
+                ),
+                Some(Action::PadPitchGateToggle)
+            );
+        }
+        assert_eq!(
+            k.keys_for(Screen::Pads, Action::PadPitchGateToggle),
+            ["Alt+H"]
+        );
+        k.overlay("[edit]\n\"Alt+H\" = \"none\"\n").unwrap();
+        assert_eq!(
+            k.resolve_in(
+                Screen::Pads,
+                true,
+                &ev(KeyCode::Char('h'), KeyModifiers::ALT, KeyEventKind::Press)
+            ),
+            None
+        );
+    }
 
     #[test]
     fn open_the_shared_fx_screen() {
@@ -3162,6 +3658,151 @@ mod tests {
         // the actions are listed for MIDI learn
         let names: Vec<&str> = ACTIONS.iter().map(|a| a.name).collect();
         assert!(names.contains(&"record.mic") && names.contains(&"record.output"));
+    }
+
+    #[test]
+    fn pattern_undo_respects_layouts_releases_repeats_and_owner_entries() {
+        let mut k = keymap();
+        assert_eq!(Action::parse("pattern.undo"), Some(Action::PatternUndo));
+        assert!(
+            ACTIONS
+                .iter()
+                .any(|row| row.name == "pattern.undo" && row.group == Group::Global && !row.knob)
+        );
+        for screen in Screen::ALL {
+            for editing in [false, true] {
+                for c in ['z', 'Z', 'я', 'Я'] {
+                    for kind in [
+                        KeyEventKind::Press,
+                        KeyEventKind::Repeat,
+                        KeyEventKind::Release,
+                    ] {
+                        let e = ev(KeyCode::Char(c), KeyModifiers::ALT, kind);
+                        assert_eq!(
+                            k.resolve_in(screen, editing, &e),
+                            (kind == KeyEventKind::Press).then_some(Action::PatternUndo),
+                            "{screen:?}/{editing}: {e:?}"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            k.overlay("[global]\n\"Alt+Z\" = \"none\"\n")
+                .unwrap()
+                .is_empty()
+        );
+        for screen in Screen::ALL {
+            assert_eq!(
+                k.resolve(
+                    screen,
+                    &ev(KeyCode::Char('я'), KeyModifiers::ALT, KeyEventKind::Press)
+                ),
+                None
+            );
+        }
+        assert!(
+            k.overlay("[global]\n\"Alt+Z\" = \"help.toggle\"\n")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            k.resolve(
+                Screen::Chop,
+                &ev(KeyCode::Char('z'), KeyModifiers::ALT, KeyEventKind::Press)
+            ),
+            Some(Action::HelpToggle)
+        );
+    }
+
+    #[test]
+    fn pattern_record_and_erase_keep_layouts_events_and_owner_overrides() {
+        for (name, action, key, letters, modifier) in [
+            (
+                "pattern.record",
+                Action::PatternRecord,
+                "Ctrl+R",
+                ['r', 'R', 'к', 'К'],
+                KeyModifiers::CONTROL,
+            ),
+            (
+                "pattern.erase",
+                Action::PatternErase,
+                "Alt+E",
+                ['e', 'E', 'у', 'У'],
+                KeyModifiers::ALT,
+            ),
+            (
+                "pattern.controls",
+                Action::PatternControls,
+                "Alt+N",
+                ['n', 'N', 'т', 'Т'],
+                KeyModifiers::ALT,
+            ),
+        ] {
+            let mut map = keymap();
+            assert_eq!(Action::parse(name), Some(action));
+            assert!(
+                ACTIONS
+                    .iter()
+                    .any(|a| a.name == name && a.group == Group::Global && !a.knob)
+            );
+            for screen in Screen::ALL {
+                for edit in [false, true] {
+                    for letter in letters {
+                        for kind in [
+                            KeyEventKind::Press,
+                            KeyEventKind::Repeat,
+                            KeyEventKind::Release,
+                        ] {
+                            assert_eq!(
+                                map.resolve_in(
+                                    screen,
+                                    edit,
+                                    &ev(KeyCode::Char(letter), modifier, kind)
+                                ),
+                                (kind == KeyEventKind::Press).then_some(action)
+                            );
+                        }
+                    }
+                }
+            }
+            assert!(
+                map.overlay(&format!("[global]\n\"{key}\" = \"none\"\n"))
+                    .unwrap()
+                    .is_empty()
+            );
+            for screen in Screen::ALL {
+                assert_eq!(
+                    map.resolve(
+                        screen,
+                        &ev(KeyCode::Char(letters[0]), modifier, KeyEventKind::Press)
+                    ),
+                    None
+                );
+            }
+            assert!(
+                map.overlay(&format!("[global]\n\"{key}\" = \"record.mic\"\n"))
+                    .unwrap()
+                    .is_empty()
+            );
+            for screen in Screen::ALL {
+                assert_eq!(
+                    map.resolve(
+                        screen,
+                        &ev(KeyCode::Char(letters[2]), modifier, KeyEventKind::Press)
+                    ),
+                    Some(Action::RecordMic(true))
+                );
+                assert_eq!(
+                    map.resolve(
+                        screen,
+                        &ev(KeyCode::Char(letters[2]), modifier, KeyEventKind::Release)
+                    ),
+                    Some(Action::RecordMic(false))
+                );
+            }
+        }
     }
 
     #[test]
@@ -3876,6 +4517,109 @@ mod tests {
             ));
             assert_eq!(edit(KeyCode::Esc), Some(Action::Back));
         }
+    }
+
+    /// Scenario "Modified zoom keys preserve routing and owner overrides".
+    #[test]
+    fn bound_zoom_aliases_keep_layouts_repeats_tempo_tab_and_owner_entries() {
+        let mut map = keymap();
+        for modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            for edit in [false, true] {
+                for (letters, zoom_in) in
+                    [(['i', 'I', 'ш', 'Ш'], true), (['k', 'K', 'л', 'Л'], false)]
+                {
+                    for letter in letters {
+                        for kind in [
+                            KeyEventKind::Press,
+                            KeyEventKind::Repeat,
+                            KeyEventKind::Release,
+                        ] {
+                            let event = ev(KeyCode::Char(letter), modifier, kind);
+                            assert_eq!(
+                                map.resolve_in(Screen::Chop, edit, &event),
+                                (kind != KeyEventKind::Release)
+                                    .then_some(Action::ChopZoom { zoom_in })
+                            );
+                            for screen in Screen::ALL.into_iter().filter(|s| *s != Screen::Chop) {
+                                assert_eq!(map.resolve_in(screen, edit, &event), None);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for screen in Screen::ALL {
+            for (code, up) in [(KeyCode::Up, true), (KeyCode::Down, false)] {
+                for fine in [false, true] {
+                    let modifiers = KeyModifiers::CONTROL
+                        | if fine {
+                            KeyModifiers::SHIFT
+                        } else {
+                            KeyModifiers::NONE
+                        };
+                    assert_eq!(
+                        map.resolve(screen, &ev(code, modifiers, KeyEventKind::Press)),
+                        Some(Action::TempoStep { up, fine })
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            map.resolve_in(
+                Screen::Chop,
+                false,
+                &ev(KeyCode::Tab, KeyModifiers::NONE, KeyEventKind::Press)
+            ),
+            Some(Action::ChopAssignOrder)
+        );
+        assert_eq!(
+            map.resolve_in(
+                Screen::Chop,
+                true,
+                &ev(KeyCode::Tab, KeyModifiers::NONE, KeyEventKind::Press)
+            ),
+            Some(Action::PageNext)
+        );
+        for chord in ["Ctrl+I", "Ctrl+K", "Alt+I", "Alt+K"] {
+            assert!(
+                map.overlay(&format!("[screens.chop]\n'{chord}' = 'none'\n"))
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        for edit in [false, true] {
+            for modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+                for letter in ['i', 'k', 'ш', 'л'] {
+                    assert_eq!(
+                        map.resolve_in(
+                            Screen::Chop,
+                            edit,
+                            &ev(KeyCode::Char(letter), modifier, KeyEventKind::Press)
+                        ),
+                        None
+                    );
+                }
+            }
+        }
+        assert!(
+            map.overlay("[screens.chop]\n'Ctrl+I' = 'transport.tempo_up'\n")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            map.resolve(
+                Screen::Chop,
+                &ev(
+                    KeyCode::Char('ш'),
+                    KeyModifiers::CONTROL,
+                    KeyEventKind::Press
+                )
+            ),
+            Some(Action::TempoStep {
+                up: true,
+                fine: false
+            })
+        );
     }
 
     /// Scenario "Minus and equal do not zoom" (chopping).

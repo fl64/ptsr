@@ -73,9 +73,34 @@ impl Drive {
         if self.mix == 0.0 {
             return x;
         }
-        let shaped = (self.k * x).tanh() * self.scale;
+        let shaped = drive_shape(self.k * x) * self.scale;
         x + (shaped - x) * self.mix
     }
+}
+
+fn drive_shape(x: f32) -> f32 {
+    if x.abs() >= 9.0 {
+        return 1.0_f32.copysign(x);
+    }
+    // Degree-13/12 Pade form of the thirteen-term tanh continued fraction.
+    // Beyond nine, signed unity differs from tanh by less than one f32 ulp.
+    let z = x * x;
+    let p = (((((1.264_885_6e-13 * z + 5.179_706_4e-10) * z + 3.228_683_7e-7) * z + 6.625_259e-5)
+        * z
+        + 0.005_217_391_5)
+        * z
+        + 0.146_666_66)
+        * z
+        + 1.0;
+    let q = (((((1.151_045_9e-11 * z + 1.519_380_5e-8) * z + 5.230_467_7e-6) * z
+        + 0.000_662_525_9)
+        * z
+        + 0.031_884_06)
+        * z
+        + 0.48)
+        * z
+        + 1.0;
+    (x * p / q).clamp(-1.0, 1.0)
 }
 
 /// A stereo delay line: the wet echo only, the dry sound is the pad's own.
@@ -394,47 +419,230 @@ impl Slot {
 mod tests {
     use super::*;
 
+    fn previous_drive(x: f32, drive: f32) -> f32 {
+        if drive <= 0.0 {
+            return x;
+        }
+        let k = 1.0 + 24.0 * drive * drive;
+        let shaped = (k * x).tanh() * (0.3 / (k * 0.3).tanh());
+        let mix = (drive * 4.0).min(1.0);
+        x + (shaped - x) * mix
+    }
+
     #[test]
     fn the_optimized_drive_matches_the_previous_sound() {
-        fn previous(x: f32, drive: f32) -> f32 {
-            if drive <= 0.0 {
-                return x;
-            }
-            let k = 1.0 + 24.0 * drive * drive;
-            let shaped = (k * x).tanh() * (0.3 / (k * 0.3).tanh());
-            let mix = (drive * 4.0).min(1.0);
-            x + (shaped - x) * mix
-        }
         let rate = 48_000;
         let frames = rate * 2;
-        let mut old = Vec::with_capacity(frames);
-        let mut new = Vec::with_capacity(frames);
+        let mut old = [Vec::with_capacity(frames), Vec::with_capacity(frames)];
+        let mut new = [Vec::with_capacity(frames), Vec::with_capacity(frames)];
         for i in 0..frames {
-            let x = (i as f32 * 0.031).sin() * 0.15;
+            let input = [
+                (i as f32 * 0.031).sin() * 0.15,
+                (i as f32 * 0.047).sin() * 0.12,
+            ];
             let d = if i < rate {
                 0.6
             } else {
                 (i - rate) as f32 / rate as f32
             };
-            let a = previous(x, d);
-            let b = super::Drive::new(d).apply(x);
-            assert!((a - b).abs() <= 0.000001);
-            assert!(a.is_finite() && b.is_finite() && a.abs() < 1.0 && b.abs() < 1.0);
-            old.push(a);
-            new.push(b);
+            let drive = Drive::new(d);
+            for (channel, x) in input.into_iter().enumerate() {
+                let a = previous_drive(x, d);
+                let b = drive.apply(x);
+                assert!((a - b).abs() <= 0.000001);
+                assert!(a.is_finite() && b.is_finite() && a.abs() < 1.0 && b.abs() < 1.0);
+                old[channel].push(a);
+                new[channel].push(b);
+            }
         }
-        let mut both = old;
-        both.extend(std::iter::repeat_n(0.0, rate / 2));
-        both.extend(new);
+        let mut both = [Vec::new(), Vec::new()];
+        for channel in 0..2 {
+            let expected = &old[channel];
+            let actual = &new[channel];
+            let rms = |sound: &[f32]| {
+                (sound.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>() / sound.len() as f64)
+                    .sqrt()
+            };
+            let db = 20.0 * (rms(actual) / rms(expected)).log10();
+            assert!(db.abs() < 0.0001);
+            assert!(
+                crate::checks::max_step(actual) <= crate::checks::max_step(expected) + 0.000002
+            );
+            assert_eq!(actual.iter().position(|x| x.abs() > 0.000001), Some(1));
+            both[channel].extend(expected);
+            both[channel].extend(std::iter::repeat_n(0.0, rate / 2));
+            both[channel].extend(actual);
+            assert!(
+                both[channel][frames..frames + rate / 2]
+                    .iter()
+                    .all(|x| *x == 0.0)
+            );
+            assert_eq!(
+                both[channel][frames + rate / 2..]
+                    .iter()
+                    .position(|x| x.abs() > 0.000001),
+                Some(1)
+            );
+        }
+        assert_ne!(both[0], both[1]);
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../renders/81-drive-comparison.wav");
-        crate::offline::write_wav(&path, rate as u32, &both, &both).unwrap();
+        crate::offline::write_wav(&path, rate as u32, &both[0], &both[1]).unwrap();
+    }
+
+    #[test]
+    fn drive_shape_matches_the_standard_function_across_its_domain() {
+        for i in 0..=2_000_000 {
+            let x = -9.0 + i as f32 * (18.0 / 2_000_000.0);
+            let actual = drive_shape(x);
+            assert!(actual.is_finite() && actual.abs() <= 1.0);
+            assert!((actual - x.tanh()).abs() <= 0.000001, "{x}: {actual}");
+            assert_eq!(actual.to_bits() ^ drive_shape(-x).to_bits(), 1 << 31);
+        }
+        for bits in [
+            0,
+            1,
+            2,
+            0x007f_ffff,
+            0x0080_0000,
+            9.0_f32.to_bits() - 1,
+            9.0_f32.to_bits(),
+            9.0_f32.to_bits() + 1,
+            f32::MAX.to_bits(),
+            f32::INFINITY.to_bits(),
+        ] {
+            for sign in [0, 1 << 31] {
+                let x = f32::from_bits(bits | sign);
+                assert!((drive_shape(x) - x.tanh()).abs() <= 0.000001);
+                if x.abs() < f32::MIN_POSITIVE {
+                    assert_eq!(drive_shape(x).to_bits(), x.to_bits());
+                }
+            }
+        }
+        assert!(drive_shape(f32::NAN).is_nan());
+    }
+
+    #[test]
+    fn complete_drive_output_matches_the_previous_curve_and_limits() {
+        for step in 0..=1_024 {
+            let amount = step as f32 / 1_024.0;
+            let drive = Drive::new(amount);
+            for i in 0..=8_192 {
+                let x = -4.0 + i as f32 / 1_024.0;
+                let expected = previous_drive(x, amount);
+                let actual = drive.apply(x);
+                assert!(actual.is_finite());
+                assert!(
+                    (actual - expected).abs() <= 0.000001,
+                    "x {x}, amount {amount}"
+                );
+            }
+        }
+        for amount in [
+            f32::from_bits(1),
+            f32::from_bits(0.25_f32.to_bits() - 1),
+            0.25,
+            f32::from_bits(0.25_f32.to_bits() + 1),
+            f32::from_bits(1.0_f32.to_bits() - 1),
+            1.0,
+        ] {
+            for x in [
+                -f32::MAX,
+                -32.0,
+                -9.0,
+                -1.0,
+                -0.0,
+                0.0,
+                f32::from_bits(1),
+                1.0,
+                9.0,
+                32.0,
+                f32::MAX,
+            ] {
+                let actual = Drive::new(amount).apply(x);
+                let expected = previous_drive(x, amount);
+                assert!(actual.is_finite());
+                assert!(
+                    (actual - expected).abs() <= 0.000001,
+                    "x {x}, amount {amount}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn drive_ramps_and_repeated_amount_changes_keep_the_previous_sound() {
+        let mut previous = [0.0; 2];
+        let mut actual = [0.0; 2];
+        for frame in 0..128 * 2_000 {
+            let block = frame / 128;
+            let phase = (frame % 128) as f32 / 128.0;
+            let (from, to) = match block % 5 {
+                0 => (0.0, 1.0),
+                1 => (1.0, 0.0),
+                2 => (0.25, 0.25),
+                3 => (0.5, 0.8),
+                _ => (0.8, 0.5),
+            };
+            let amount = from + (to - from) * phase;
+            let drive = Drive::new(amount);
+            for (channel, frequency) in [0.017, 0.043].into_iter().enumerate() {
+                let x = (frame as f32 * frequency).sin() * 0.2;
+                let expected = previous_drive(x, amount);
+                let output = drive.apply(x);
+                assert!((expected - output).abs() <= 0.000001);
+                assert!(output.is_finite() && output.abs() < 1.0);
+                assert!(
+                    (output - actual[channel]).abs()
+                        <= (expected - previous[channel]).abs() + 0.000002
+                );
+                previous[channel] = expected;
+                actual[channel] = output;
+            }
+        }
+    }
+
+    #[test]
+    fn drive_zero_half_and_full_keep_reference_level_and_silence() {
+        for amount in [0.0, 0.5, 1.0] {
+            let drive = Drive::new(amount);
+            let mut expected_energy = 0.0;
+            let mut actual_energy = 0.0;
+            for frame in 0..48_000 {
+                let x = (frame as f32 * 0.031).sin() * 0.15;
+                let expected = previous_drive(x, amount);
+                let actual = drive.apply(x);
+                expected_energy += f64::from(expected).powi(2);
+                actual_energy += f64::from(actual).powi(2);
+                assert!((expected - actual).abs() <= 0.000001);
+                assert!(actual.is_finite() && actual.abs() < 1.0);
+            }
+            let db = 10.0 * (actual_energy / expected_energy).log10();
+            assert!(db.abs() < 0.0001);
+            for zero in [0.0_f32, -0.0] {
+                assert_eq!(
+                    drive.apply(zero).to_bits(),
+                    previous_drive(zero, amount).to_bits()
+                );
+            }
+        }
     }
 
     #[test]
     fn drive_off_is_the_sample_itself() {
-        for x in [-0.9f32, -0.1, 0.0, 0.25, 1.0] {
+        for x in [
+            -f32::MAX,
+            -0.9f32,
+            -0.1,
+            -0.0,
+            0.0,
+            f32::from_bits(1),
+            0.25,
+            1.0,
+            f32::MAX,
+        ] {
             assert_eq!(drive(x, 0.0), x);
+            assert_eq!(drive(x, 0.0).to_bits(), x.to_bits());
         }
     }
 

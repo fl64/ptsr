@@ -1,5 +1,8 @@
 //! Recorded input through the production keyboard and MIDI routes. No device or sound card.
 
+mod controller_map;
+mod pattern_view;
+mod patterns;
 mod transport;
 
 use super::*;
@@ -3142,7 +3145,7 @@ fn f1_retains_recent_results_in_order() {
         drive.app.project.as_ref().unwrap().folder.clone(),
     );
     drive.tap(KeyCode::F(1), M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.tap(KeyCode::Tab, M::NONE);
     let entries = drive.app.message_history();
     assert_eq!(entries.len(), 50);
@@ -3209,8 +3212,8 @@ fn f1_history_handles_empty_and_changing_content() {
     drive.tap(KeyCode::F(1), M::NONE);
     let keys = f1_message_screen(&mut drive, 80, 26).join("\n");
     assert!(keys.contains("[HELP]"));
-    drive.tap(KeyCode::BackTab, M::SHIFT);
-    assert!(drive.app.help_overlay.messages);
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert!(drive.app.help_overlay.messages());
     assert!(
         f1_message_screen(&mut drive, 80, 26)
             .join("\n")
@@ -3246,13 +3249,14 @@ fn f1_history_handles_empty_and_changing_content() {
         2 + tui::messages_page_height(26)
     );
     let at = drive.app.help_overlay.scroll;
-    for code in [KeyCode::Tab, KeyCode::Tab] {
+    // a full round of the three tabs ends on Messages again
+    for code in [KeyCode::Tab, KeyCode::Tab, KeyCode::Tab] {
         drive.key(code, M::NONE, KeyEventKind::Press);
         drive.frame();
-        let page = drive.app.help_overlay.messages;
+        let page = drive.app.help_overlay.messages();
         drive.key(code, M::NONE, KeyEventKind::Repeat);
         drive.frame();
-        assert_eq!(drive.app.help_overlay.messages, page);
+        assert_eq!(drive.app.help_overlay.messages(), page);
         drive.key(code, M::NONE, KeyEventKind::Release);
         drive.frame();
         assert_eq!(drive.app.help_overlay.scroll, at);
@@ -3299,7 +3303,7 @@ fn f1_history_handles_empty_and_changing_content() {
     assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
     drive.key(KeyCode::F(1), M::NONE, KeyEventKind::Release);
     drive.tap(KeyCode::F(1), M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     assert_eq!(drive.app.help_overlay.scroll, 0);
     assert_eq!(drive.app.notices.history(), &history);
     drive.tap(KeyCode::Tab, M::NONE);
@@ -3318,7 +3322,7 @@ fn f1_controls_retain_input_priority_and_bindings() {
     drive.tap(KeyCode::Char('n'), M::CONTROL);
     assert!(drive.app.pad_naming.is_some());
     drive.tap(KeyCode::Tab, M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.key(KeyCode::Char('q'), M::NONE, KeyEventKind::Press);
     assert!(drive.frame().commands().is_empty());
     assert!(drive.app.pad_naming.as_ref().unwrap().1.ends_with('q'));
@@ -3330,28 +3334,28 @@ fn f1_controls_retain_input_priority_and_bindings() {
     drive.tap(KeyCode::Char('p'), M::CONTROL);
     assert!(drive.app.project_picker.is_some());
     drive.tap(KeyCode::Tab, M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.tap(KeyCode::Esc, M::NONE);
     assert!(drive.app.project_picker.is_none() && drive.app.help_open);
     drive.tap(KeyCode::F(6), M::NONE);
     drive.tap(KeyCode::Char('/'), M::NONE);
     assert!(drive.app.browser.editing);
     drive.tap(KeyCode::Tab, M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.tap(KeyCode::Esc, M::NONE);
     assert!(!drive.app.browser.editing && drive.app.help_open);
     drive.tap(KeyCode::F(2), M::NONE);
     drive.tap(KeyCode::F(10), M::NONE);
     assert!(drive.app.screen_learn.is_some());
     drive.tap(KeyCode::Tab, M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.tap(KeyCode::Esc, M::NONE);
     assert!(drive.app.screen_learn.is_none() && drive.app.help_open);
     drive.tap(KeyCode::Char('a'), M::CONTROL);
     drive.tap(KeyCode::Backspace, M::NONE);
     assert!(drive.app.ask.is_some());
     drive.tap(KeyCode::Tab, M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.tap(KeyCode::Esc, M::NONE);
     assert!(drive.app.ask.is_none() && drive.app.help_open);
     drive.tap(KeyCode::Esc, M::NONE);
@@ -3369,7 +3373,7 @@ fn f1_controls_retain_input_priority_and_bindings() {
     drive.tap(KeyCode::F(9), M::NONE);
     assert!(!drive.app.help_open);
     drive.tap(KeyCode::F(9), M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
 }
 
 /// Scenario "F1 controls retain input priority and bindings" for settings pickers and MIDI learning.
@@ -3389,7 +3393,7 @@ fn f1_keeps_settings_picker_and_learning_priority() {
     drive.tap(KeyCode::Enter, M::NONE);
     assert!(drive.app.path_picker.is_some() && drive.app.help_open);
     drive.tap(KeyCode::Tab, M::NONE);
-    assert!(!drive.app.help_overlay.messages);
+    assert!(!drive.app.help_overlay.messages());
     drive.tap(KeyCode::Esc, M::NONE);
     assert!(drive.app.path_picker.is_none() && drive.app.help_open);
     drive.tap(KeyCode::Esc, M::NONE);
@@ -4748,7 +4752,7 @@ fn other_invalid_midi_state_has_no_fallback() {
         let bits = (drive.app.focus().pack().unwrap() & !(15 << 3)) | (bank << 3);
         drive.assert_invalid_input_rejected(bits);
     }
-    for bit in 17..32 {
+    for bit in 19..32 {
         let mut drive = Drive::invalid_state_checks();
         let bits = drive.app.focus().pack().unwrap() | (1 << bit);
         drive.assert_invalid_input_rejected(bits);
@@ -6745,7 +6749,7 @@ fn restored_copy_names_determine_the_next_available_number() {
                     drive.app.session_path.clone()
                 };
                 let stored = session::load(&saved).unwrap();
-                assert_eq!(stored.version, 4);
+                assert_eq!(stored.version, 5);
                 assert_eq!(stored.pads["0"].name.as_deref(), Some(base));
                 assert_eq!(stored.pads["1"].name, Some(format!("{base} (copy 1)")));
                 let mut again = numbered_copy_drive();
@@ -11076,7 +11080,7 @@ impl PortableProject {
             &self.file
         };
         let key = stored.to_string_lossy();
-        assert_eq!(sess.version, 4);
+        assert_eq!(sess.version, 5);
         assert_eq!(sess.chops.len(), 1);
         assert_eq!(sess.kept.len(), 1);
         assert_eq!(sess.chops[key.as_ref()], self.states[2]);
@@ -11239,7 +11243,7 @@ fn portable_chops_keep_old_project_compatibility() {
             assert_eq!(drive.app.pads.link[0], Some((4, 3)));
             assert_eq!(drive.app.pads.pitch[0], 3);
             assert_eq!(drive.app.pads.volume_db[0], -6);
-            assert_eq!(session::load_existing(&path).unwrap().version, 4);
+            assert_eq!(session::load_existing(&path).unwrap().version, 5);
         }
     }
 }
@@ -12720,4 +12724,31 @@ fn chop_listen_badge_lights_only_while_playback_runs() {
         drive.render_blocks(4);
         assert_eq!(mode(&drive), "LISTEN");
     }
+}
+
+/// Scenario "The pad edit of an empty pad shows its test tone".
+#[test]
+fn the_pad_edit_of_an_empty_pad_shows_its_test_tone() {
+    let mut drive = Drive::new();
+    drive.app.goto(Screen::Pads);
+    drive.app.pads.selected = 8;
+    assert!(drive.app.pads.sound[8].is_none(), "pad A is empty");
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.edit);
+    let view = crate::big_view(&drive.app.pads, 48_000).expect("the test tone piece");
+    // the decaying tone: loud at the start, quiet at the end
+    let head = view.wave[..4].iter().copied().fold(0.0f32, f32::max);
+    let tail = view.wave[view.wave.len() - 4..]
+        .iter()
+        .copied()
+        .fold(0.0f32, f32::max);
+    assert!(head > 0.1 && tail < head / 4.0, "{head} {tail}");
+    let short = view.attack;
+    drive.app.pads.attack_ms[8] = 300;
+    let longer = crate::big_view(&drive.app.pads, 48_000).unwrap().attack;
+    assert!(longer > short, "{short} -> {longer}");
+    // the view hands that piece to the strip, which draws it in the edit in place of the
+    // live output
+    let pads = pads_view(&mut drive.app.pads, None, None, vec![0.9; 64], None, 48_000);
+    assert!(pads.big.is_some());
 }

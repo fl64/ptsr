@@ -108,40 +108,33 @@ An explicit `none` SHALL block either fallback and run nothing.
 
 ### Requirement: Recording key roles
 
-Alt+R SHALL record the microphone and Ctrl+T the output.
-Ctrl+R SHALL stay reserved for pattern recording until change 97.
+Alt+R SHALL record the microphone and Ctrl+T the output. Ctrl+R SHALL toggle pattern recording through `pattern.record` on every current screen. The commands SHALL remain distinct and explicit owner bindings SHALL retain priority.
 
 #### Scenario: Ctrl C copies instead of quitting
 - **WHEN** Pads receives Ctrl+C in raw mode, with or without the extended keyboard protocol
 - **THEN** `pad.copy` is resolved, no quit is requested and Ctrl+Q remains the quit command
 
+#### Scenario: Ctrl R records the pattern on every screen
+- **WHEN** default Ctrl+R arrives on Pads, Files, Chop, FX or Settings outside a blocking input mode
+- **THEN** it starts count-in when stopped, starts overdub when playing or ends the current recording
+- **AND** no microphone recording starts and no screen changes
+
 ### Requirement: Reserved keyboard chords
 
-The shipped map SHALL leave Ctrl+R free until pattern recording in 97 and Ctrl+Y and
-Ctrl+. free until redo and panic in 93a. They SHALL NOT run future placeholder actions.
-The moved-key notice for Ctrl+R and Chop Ctrl+Y MAY explain their former roles. Ctrl+B
-SHALL keep the Files favorite action; bake SHALL NOT take it in this change. Owner
-bindings SHALL still be allowed to use reserved chords.
+The shipped map SHALL leave Ctrl+Y and Ctrl+. free until redo and panic in 93a. Ctrl+R SHALL run pattern recording in 97. Chop Ctrl+Y MAY explain its former role. Ctrl+B SHALL keep the Files favorite action. Bake SHALL NOT take it in this change. Owner bindings SHALL remain allowed to use reserved chords.
 
 #### Scenario: Future commands stay unbound
-- **WHEN** the default map is loaded before transport, redo and panic ship
-- **THEN** Ctrl+R, Ctrl+Y and Ctrl+. execute no action, except a moved-key notice where defined
-- **AND** Ctrl+B still changes the favorite on Files
+- **WHEN** the default map is loaded after pattern recording ships but before redo and panic
+- **THEN** Ctrl+Y and Ctrl+. execute no action, except a moved-key notice where defined
+- **AND** Ctrl+R records patterns and Ctrl+B still changes the favorite on Files
 
 ### Requirement: Moved key notices
 
-The App SHALL keep these moved-key notices:
-- Global Ctrl+R -> Alt+R: microphone.
-- Chop Ctrl+N -> Ctrl+G: normalize.
-- Chop Ctrl+Y -> H: hits.
-- Pads J/L -> U/O: banks.
-Only an old press without an applicable shipped binding or explicit owner entry SHALL show an Info flash naming the new key.
-It SHALL NOT run the former action.
-Bound J/L SHALL change a value without a bank-move flash.
+The App SHALL keep Chop Ctrl+N to Ctrl+G, Chop Ctrl+Y to H, and Pads J/L to U/O move notices. Only an old press without an applicable shipped binding or explicit owner entry SHALL show its Info notice. It SHALL NOT run the former action. Bound J/L SHALL change a value without a move notice. Ctrl+R SHALL no longer produce the microphone move notice.
 
 #### Scenario: Old microphone key names its replacement
-- **WHEN** Ctrl+R is unbound and the owner presses it outside text, questions and learn
-- **THEN** the flash says `microphone moved to Alt+R` and no recording starts
+- **WHEN** Ctrl+R is unbound through an explicit owner removal after pattern recording ships
+- **THEN** no recording or microphone move notice appears
 
 #### Scenario: Old normalize key names its replacement
 - **WHEN** Ctrl+N is unbound on Chop and the owner presses it
@@ -269,3 +262,140 @@ Bottom hints and F1 SHALL name effective transport, tempo and metronome controls
 #### Scenario: Help follows effective transport bindings
 - **WHEN** shipped or owner transport keys are effective on the current screen
 - **THEN** the bottom hints and F1 name those controls without replacing the screen's preview hints
+
+### Requirement: Pitch Gate keyboard toggle
+
+Shipped Alt+G on Pads SHALL run `pad.pitch_gate_toggle` with edit open or closed. It SHALL toggle once per press, not on repeat or release. It SHALL work in English and Russian layouts with extended and legacy keyboard input. Existing pad keys, pages, knobs, transport and preview bindings SHALL remain unchanged. Other screens SHALL gain no shipped Alt+G action.
+
+#### Scenario: Pitch Gate keyboard toggle works in both layouts
+- **WHEN** Pads receives Alt+G presses, repeats and releases in both supported layouts and input forms, with edit open or closed
+- **THEN** each press changes Pitch Gate once for the existing scope and one undo restores that scope
+- **AND** repeats and releases do not toggle it again or play a pad
+
+### Requirement: Pitch Gate keys preserve input priorities
+
+Text, questions, pickers and learning SHALL retain their existing input priorities. F10 SHALL select the effective Pitch Gate command without executing it. Owner keymap entries, including `none`, SHALL win without file rewriting. A hidden shipped Alt+G SHALL use the existing startup warning queue. Hints and F1 SHALL use effective bindings.
+
+#### Scenario: Pitch Gate input cannot bypass overlays or owner keys
+- **WHEN** Alt+G reaches text, a question, picker or learning, or an owner entry changes or removes its shipped action
+- **THEN** existing input priority or that owner entry wins without an underlying Pitch Gate toggle
+- **AND** applicable startup warnings name the hidden default without rewriting the keymap
+
+#### Scenario: Pitch Gate help and screen learn follow effective keys
+- **WHEN** the owner rebinds Pitch Gate on Pads, opens help or selects its command in F10
+- **THEN** help names the effective key and screen learn selects the command without executing it
+- **AND** existing EDIT-only bottom hints keep their layout with the command available in F1
+
+### Requirement: Full help page controls preserve ordinary input
+
+Alt+PageUp/PageDown SHALL page the F1 key table through GLOBAL `help.page_prev` and `help.page_next` commands.
+The commands SHALL support learned buttons without factory assignments.
+Presses and keyboard repeats SHALL navigate, but releases SHALL NOT.
+Owner bindings, `none`, input ownership, ordinary controls and Messages SHALL retain priority.
+Outside the key table, the commands SHALL NOT change the screen, bank, selection or recording state.
+
+#### Scenario: Help page keys preserve ordinary roles
+- **WHEN** default or owner page keys arrive on each current screen with either keyboard protocol and edit state
+- **THEN** only the open F1 key table changes page on presses or repeats, and releases do not navigate
+- **AND** owner bindings and `none` in the global or active edit layer retain priority, while ordinary bank keys, pads and Messages controls retain their behavior
+
+#### Scenario: Help page commands keep first-frame order
+- **WHEN** keyboard or learned page commands follow help opening before its first drawn frame
+- **THEN** the first frame applies those commands in order with the current wrapped bounds
+- **AND** a tab change preserves the key-table offset, while closing and reopening discards old page requests
+
+#### Scenario: Learned help pages retain input ownership
+- **WHEN** raw MIDI uses learned page buttons with F1 open, closed or blocked by text, questions, pickers or learning
+- **THEN** only an unblocked F1 key table changes page, without changing recording or the underlying screen
+- **AND** button releases and earlier pad releases retain their original ownership
+
+### Requirement: Zoom while holding a bound modifier
+
+Chop SHALL support repeating Ctrl/Alt+I/K zoom in either layout, with slice edit open or closed.
+Releases SHALL NOT zoom or move bounds.
+Tempo chords, other screens, blocking modes, explicit owner bindings and `none` SHALL retain their behavior.
+Legacy Tab SHALL retain its action. Alt+I SHALL replace Ctrl+I when the terminal cannot distinguish Ctrl+I from Tab.
+
+#### Scenario: Modified zoom keys preserve routing and owner overrides
+- **WHEN** Chop receives Ctrl/Alt+I/K in either layout, including repeats and releases
+- **THEN** it resolves zoom presses and repeats without changing tempo bindings or other screens
+- **AND** owner overrides and `none` remain effective, while legacy Tab retains its previous action
+
+### Requirement: Pattern control keys
+
+Alt+N SHALL toggle compact pattern controls. I/K and Up/Down SHALL select a row. J/L and Left/Right SHALL change a value row and do nothing on Clear A1. Enter SHALL run Clear A1, and Enter on a value row, Esc or Alt+N SHALL close controls. Alt+E SHALL toggle erasure in a pass and on Pads outside a pass. Esc SHALL first turn off erasure, then finish Recording or cancel CountIn. Alt+Z SHALL undo the pattern pass globally. Ctrl+Z on Pads SHALL use common history. Pad keys SHALL remain pads.
+
+#### Scenario: Adjust a pattern without opening a step grid
+- **WHEN** Alt+N opens controls on any current screen and direction keys change each parameter
+- **THEN** those keys edit the shown pattern parameter without changing underlying screen parameters
+- **AND** closing controls restores the original screen, bank, selection and edit page
+
+#### Scenario: Pattern keys work in both layouts and protocols
+- **WHEN** recording, controls, erasure and pattern Undo keys arrive in English or Russian with extended or legacy key input
+- **THEN** their logical actions agree and plain or Shift pad keys never execute those commands
+- **AND** repeats or releases do not toggle recording, controls or erasure again
+
+#### Scenario: Enter runs Clear A1 from pattern controls
+- **WHEN** the owner selects Clear A1 in pattern controls, presses L, then presses Enter
+- **THEN** L changes nothing, and Enter shows the Clear A1 question without clearing
+- **AND** Enter on Bars closes controls
+
+#### Scenario: Esc leaves erasure first
+- **WHEN** erasure is on during Recording and the owner presses Esc twice
+- **THEN** the first Esc turns off erasure and recording continues
+- **AND** the second Esc finishes Recording
+
+### Requirement: Pattern defaults preserve owner keys
+
+Explicit owner entries and `none` SHALL override new defaults without rewriting files. Hidden recording defaults SHALL use existing startup shadow warnings. Owner Ctrl+R mapped to `record.mic` SHALL keep microphone hold or toggle behavior. Effective help SHALL name the actual recording keys or `none`.
+
+#### Scenario: Owner recording overrides retain their old meaning
+- **WHEN** an owner binds Ctrl+R to microphone or `none` and overrides another new pattern key
+- **THEN** those entries remain effective and startup names each hidden default once
+- **AND** the owner file stays unchanged and Ctrl+R shows no obsolete move notice
+
+### Requirement: Pattern commands respect active input ownership
+
+Text, pickers, questions and learning SHALL retain their existing source-specific priorities. Selecting a pattern command for learning SHALL NOT execute it. Pending placement, marking, Chop assignment and project restoration SHALL refuse recording start. Recording SHALL refuse entry into pad-consuming placement and marking modes. Earlier releases SHALL keep their original pad addresses.
+
+#### Scenario: Pattern commands cannot escape a blocking input mode
+- **WHEN** pattern commands arrive during text, pickers, questions, learning or project restoration
+- **THEN** existing input ownership remains and no underlying recording command executes
+- **AND** permitted original releases still finish their sounds
+
+#### Scenario: Placement and recording cannot consume the same pad
+- **WHEN** recording starts with placement, marking or Chop assignment active, or those modes are requested during recording
+- **THEN** the incompatible request refuses with a next-step instruction
+- **AND** no pad is replaced, marked or accidentally recorded by that request
+
+#### Scenario: A recording pad release keeps its original bank and screen
+- **WHEN** a held pad crosses a bank change, screen change, record end or erasure toggle before release
+- **THEN** the release reaches its original sound ownership and cannot create a new onset
+- **AND** neither the new bank nor a newer recording pass receives the old captured release
+
+### Requirement: Pattern view keys
+
+Pads SHALL bind Alt+Up to `pattern.view_next` and Alt+Down to `pattern.view_prev`. Alt+Up SHALL select a finer view and Alt+Down a coarser view, and both SHALL stop at the ends. The keys SHALL change only the view. Pad parameters, raw rows, history, dirty state and sound routing SHALL stay unchanged. The keys SHALL work in both supported layouts and input protocols.
+
+#### Scenario: Pattern view keys change only the view
+- **WHEN** the owner presses Alt+Up and Alt+Down on Pads in extended and legacy input, then plays a pad in either layout
+- **THEN** the view becomes finer or coarser and stops at 1/64 and 1/4
+- **AND** raw rows, history and dirty state stay unchanged, and the pad press still plays its pad
+
+### Requirement: Pattern view keys preserve owner input rules
+
+New view defaults SHALL keep explicit owner bindings, `none`, active edit-layer precedence and existing shadow warnings. Text, pickers, questions, F1 and learning SHALL keep their input priority. Outside Pads, a view command SHALL explain that it needs Pads. Pad-block keys SHALL remain pads.
+
+#### Scenario: Pattern view keys preserve owner input rules
+- **WHEN** owner overrides hide or move a view key, the edit layer or help is open, or a view command arrives on another screen
+- **THEN** effective bindings keep priority, a hidden default gives a startup warning, and blocked commands change nothing
+- **AND** a view command outside Pads gives an instruction to open Pads
+
+### Requirement: Pattern controls own the edit controls
+
+While pattern controls are open, keyboard commands that change a pad, a slice or an effect SHALL change nothing. These include the pad mode, Pitch Gate, pad clear, rename, marks and edit pages. Pad keys SHALL still play pads. Screen, bank, transport, recording, erasure and Undo keys SHALL keep their roles.
+
+#### Scenario: Pad commands wait while pattern controls are open
+- **WHEN** pattern controls are open on Pads and the owner presses H, Alt+G, Backspace and Tab, then a pad key
+- **THEN** the pad mode, Pitch Gate, sound and panel page stay unchanged
+- **AND** the pad key plays its pad

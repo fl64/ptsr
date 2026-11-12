@@ -11,6 +11,9 @@ pub(super) struct State {
     pub bpm: f64,
     pub metronome: bool,
     accepted: Cell<(u64, Snapshot)>,
+    pub(super) feedback: Option<(usize, u64)>,
+    pub(super) pattern_hits: [u64; engine::PADS],
+    pub(super) dropped_hits: u64,
 }
 
 impl Default for State {
@@ -19,6 +22,9 @@ impl Default for State {
             bpm: DEFAULT_BPM,
             metronome: false,
             accepted: Cell::new((0, Snapshot::default())),
+            feedback: None,
+            pattern_hits: [0; engine::PADS],
+            dropped_hits: 0,
         }
     }
 }

@@ -1,21 +1,24 @@
 use super::{
     Action, App, Ask, CLICK_VELOCITY, Command, EFFECT_PARAMS, HeldPads, INPUT_LOG, Instant, Keymap,
-    Level, Lit, MidiListRow, Move, NUDGE_FINE_MS, NUDGE_MS, Notice, Origin, PADS, PADS_PER_BANK,
-    Param, PathPicker, ProjectPicker, Rec, SETTINGS_ROWS, Screen, UiPadHold, action_info,
-    assign_deaf, bank_key, chop, config, event, group_jump, held_repeats, learn, midi, pad_env,
-    pad_filter, pad_name, pads, record_step,
+    Level, Lit, MidiListRow, Move, NUDGE_FINE_MS, NUDGE_MS, Origin, PADS, PADS_PER_BANK, Param,
+    PathPicker, ProjectPicker, SETTINGS_ROWS, Screen, UiPadHold, action_info, assign_deaf,
+    bank_key, chop, config, event, group_jump, held_repeats, learn, midi, pad_env, pad_filter,
+    pad_name, pads,
 };
 
 impl App {
     /// Runs an action; returns `true` to quit.
     pub(super) fn apply(&mut self, action: Action) -> bool {
+        let Some(action) = self.pattern_controls_own(action) else {
+            return false;
+        };
         let value_before = self.value_before_action(action);
         let was = self.screen;
         let cuts = self.chop.as_ref().map(|c| c.saved());
         self.note_done(action);
         // a change of the pads made on the pads or files screen is a step of the undo (61)
         let undoable = matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx)
-            && action != Action::Undo;
+            && !matches!(action, Action::Undo | Action::PatternUndo);
         let what = self.step_name(action);
         let before = undoable.then(|| self.before());
         let quit = self.run(action);
@@ -41,7 +44,7 @@ impl App {
             self.reroute();
         }
         // the chop screen opens on silence: sounding pads fade out without a click (24)
-        if was != self.screen && self.screen == Screen::Chop {
+        if was != self.screen && self.screen == Screen::Chop && !self.pattern_owns_pads() {
             self.send(Command::HushPads);
         }
         if self.screen != Screen::Chop {
@@ -63,8 +66,32 @@ impl App {
             self.picker_key(action);
             return false;
         }
+        if self.ask.is_none()
+            && self.pattern_owns_pads()
+            && (matches!(
+                action,
+                Action::PadTake
+                    | Action::PadCopy
+                    | Action::PadMarkToggle
+                    | Action::PadMarkBank
+                    | Action::ChopAssign
+                    | Action::ChopCommit
+            ) || (matches!(action, Action::BrowserHold | Action::BrowserTakeOnly)
+                && self.screen == Screen::Files
+                && self.browser.selected_file().is_some()))
+        {
+            self.post_notice(
+                Level::Warn,
+                (
+                    "A1 recording owns the pads: finish the pass before placement or marking."
+                        .into(),
+                    Instant::now(),
+                ),
+            );
+            return false;
+        }
         match action {
-            Action::Quit => return true,
+            Action::Quit => return self.request_quit(),
             // a question waits for Enter (the key of the step itself) or Esc only
             a if self.ask.is_some() => match a {
                 // the settings Enter answers the reset question (59)
@@ -90,6 +117,10 @@ impl App {
                             let pads = pads.clone();
                             self.ask = None;
                             self.clear_pads(&pads);
+                        }
+                        Some(Ask::ClearPattern { .. }) => {
+                            self.ask = None;
+                            self.clear_pattern_confirmed();
                         }
                         Some(Ask::PutFile { abs, path, .. }) => {
                             let (abs, path) = (*abs, path.clone());
@@ -161,6 +192,20 @@ impl App {
                     ),
                 );
             }
+            Action::PatternControls
+            | Action::PatternParamPrev
+            | Action::PatternParamNext
+            | Action::PatternValueDec
+            | Action::PatternValueInc => self.pattern_panel_action(action),
+            Action::PatternViewPrev | Action::PatternViewNext => {
+                self.change_pattern_view(action == Action::PatternViewNext);
+            }
+            Action::PatternClear => self.ask_clear_pattern(),
+            Action::PatternRecord => self.toggle_pattern_record(),
+            Action::PatternErase => self.toggle_pattern_erase(),
+            Action::PatternUndo if self.transport_input_blocked() => {}
+            Action::PatternUndo => self.undo_pattern(),
+            Action::Undo if self.screen == Screen::Pads && self.request_active_pattern_undo() => {}
             Action::TransportToggle | Action::TempoStep { .. } | Action::MetronomeToggle
                 if self.transport_input_blocked() => {}
             Action::TransportToggle => self.send(Command::TransportToggle),
@@ -178,23 +223,11 @@ impl App {
             Action::Click => self.send(Command::Click {
                 velocity: CLICK_VELOCITY,
             }),
-            Action::SessionSave => {
-                // the manual save speaks (22); an error flash from the save wins
-                if self.save_session().is_ok() {
-                    self.produce_notice(
-                        Notice::manual_save_success(self.notice_origin.clone()),
-                        Instant::now(),
-                    );
-                }
-            }
-            Action::RecordMic(_) | Action::RecordOutputToggle => {
-                match record_step(action, self.recording.map(|(s, _)| s)) {
-                    Some(Rec::Start(source)) => self.record_start(source),
-                    Some(Rec::Stop) => self.record_stop(),
-                    None => {}
-                }
-            }
+            Action::SessionSave => self.request_manual_save(),
+            Action::RecordMic(_) | Action::RecordOutputToggle => self.audio_record_action(action),
             Action::HelpToggle => self.toggle_help(),
+            Action::HelpPagePrev => self.help_page(false),
+            Action::HelpPageNext => self.help_page(true),
             Action::LearnToggle if self.screen.rules().screen_learn => {
                 self.screen_learn = match self.screen_learn {
                     Some(_) => None,
@@ -217,8 +250,11 @@ impl App {
                 }
             }
             Action::PadRename => {}
+            Action::PadPitchGateToggle if self.screen != Screen::Pads => {}
             Action::ProjectPick => {
-                self.project_picker = Some(ProjectPicker::new(&self.paths.projects));
+                if !self.refuse_pattern_project_change() {
+                    self.project_picker = Some(ProjectPicker::new(&self.paths.projects));
+                }
             }
             Action::PadsToggle => {
                 self.ui.hide_pads = !self.ui.hide_pads;
@@ -242,6 +278,7 @@ impl App {
                     velocity,
                     pads::HitSource::Keyboard,
                     midi::PadSound::UiUnattempted { deferred: false },
+                    None,
                 );
             }
             Action::Back if self.screen == Screen::Chop && self.plan.is_some() => self.plan = None,
@@ -624,10 +661,15 @@ impl App {
             Action::Back if self.learning.is_some() => self.learning = None,
             // the help covers the screen: Esc closes it before the edit mode under it
             Action::Back if self.help_open => self.help_open = false,
+            Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
+            // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
+            Action::Back if self.erase_pads => self.erase_pads = false,
+            Action::Back if self.pattern_erasing() => self.toggle_pattern_erase(),
             // the edit mode is the innermost layer of the screen: Esc closes it, the screen stays
             Action::Back if self.edit => self.edit = false,
             // Esc drops the marks first, then goes back as now
             Action::Back if self.pads.drop_marks() => {}
+            Action::Back if self.finish_pattern_record() => {}
             Action::Back => self.goto(Screen::Pads),
             // MIDI tab: the bank keys jump between group rows
             Action::BankNext | Action::BankPrev
@@ -854,7 +896,7 @@ impl App {
                     self.send(cmd);
                 }
                 let value = matches!(pad_action, Action::PadParam(_) | Action::EditValue { .. });
-                if value || pad_action == Action::PadModeNext {
+                if value || matches!(pad_action, Action::PadModeNext | Action::PadPitchGateToggle) {
                     self.dirty();
                 }
                 if value {
@@ -878,6 +920,59 @@ impl App {
         false
     }
 
+    /// Open pattern controls own the edit keys and buttons: they change A1, and commands
+    /// that change a pad, a slice or an effect wait (98b). Pads still play.
+    fn pattern_controls_own(&self, action: Action) -> Option<Action> {
+        if self.pattern_panel.is_none() || self.transport_input_blocked() {
+            return Some(action);
+        }
+        match action {
+            Action::ParamPrev => Some(Action::PatternParamPrev),
+            Action::ParamNext => Some(Action::PatternParamNext),
+            Action::EditValue { up: false, .. } => Some(Action::PatternValueDec),
+            Action::EditValue { up: true, .. } => Some(Action::PatternValueInc),
+            Action::PadClear
+            | Action::PadCopy
+            | Action::PadEdit
+            | Action::PadEditOnly
+            | Action::PadMarkBank
+            | Action::PadMarkToggle
+            | Action::PadModeNext
+            | Action::PadParam(_)
+            | Action::PadParamNext
+            | Action::PadPitchGateToggle
+            | Action::PadRename
+            | Action::PadTake
+            | Action::PageNext
+            | Action::PagePrev
+            | Action::BrowserHold
+            | Action::BrowserLoad
+            | Action::BrowserTakeOnly
+            | Action::ChopAsPadToggle
+            | Action::ChopAssign
+            | Action::ChopAssignOrder
+            | Action::ChopCommit
+            | Action::ChopCut
+            | Action::ChopEdit
+            | Action::ChopEditOnly
+            | Action::ChopEqualParts
+            | Action::ChopHits
+            | Action::ChopHitsBack
+            | Action::ChopNormalize
+            | Action::ChopParts
+            | Action::ChopPlayMode
+            | Action::ChopRegionClear
+            | Action::ChopRegionEnd
+            | Action::ChopRegionStart
+            | Action::ChopSnapToggle
+            | Action::MarkerDelete
+            | Action::MarkerNudge { .. }
+            | Action::SliceBound { .. }
+            | Action::SliceEndDelete => None,
+            action => Some(action),
+        }
+    }
+
     pub(super) fn focus(&self) -> input::Focus {
         input::Focus {
             screen: self.screen,
@@ -898,6 +993,8 @@ impl App {
                 file_in_hand: self.browser.in_hand.is_some(),
                 copy_in_hand: self.copy_in_hand.is_some(),
                 swap_in_hand: self.pad_in_hand.is_some(),
+                pattern_pads: self.pattern_routes_pads(),
+                erase_pads: self.erase_pads,
             },
         }
     }
@@ -914,13 +1011,14 @@ impl App {
             .origin()
             .map_or(Origin::System, |port| Origin::Device(port.into()));
         let owner_input = ev.owner_input();
+        let released = ev.release_signal();
         if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
             let old = std::mem::replace(&mut self.notice_origin, origin);
             if owner_input {
                 self.acknowledge_notice();
             }
             self.midi_preview_blocked = !preview_ready;
-            self.midi_event(ev);
+            self.midi_event_with_release(ev, released);
             self.midi_preview_blocked = false;
             self.notice_origin = old;
         }
@@ -937,6 +1035,7 @@ impl App {
         velocity: f32,
         source: pads::HitSource,
         sound: midi::PadSound,
+        hold: Option<&(u64, std::sync::Arc<engine::capture::EraseHold>)>,
     ) -> Option<usize> {
         let from_midi = matches!(source, pads::HitSource::Midi);
         let deferred =
@@ -958,7 +1057,26 @@ impl App {
         if self.ask.is_some() {
             return None;
         }
-        if self.screen == Screen::Chop {
+        if self.erase_pads {
+            // a silent target: the press erases the pad's hits, a late direct sound is not
+            // a new erasure
+            if !matches!(sound, midi::PadSound::DirectAccepted) {
+                self.pads.selected = local;
+                self.erase_whole_pad(abs);
+            }
+            return None;
+        }
+        let pattern_pads = self.pattern_routes_pads();
+        if self.screen == Screen::Chop
+            && pattern_pads
+            && let Some(c) = self.chop.as_mut()
+            && self.pads.file[abs].as_ref() == Some(&c.file)
+            && let Some((id, epoch)) = self.pads.link[abs]
+            && epoch == c.epoch
+        {
+            c.select_slice(c.slice_of(id));
+        }
+        if self.screen == Screen::Chop && !pattern_pads {
             if matches!(sound, midi::PadSound::UiUnattempted { .. }) {
                 return self.chop_pad(local, velocity, source);
             }
@@ -998,12 +1116,25 @@ impl App {
             if deferred {
                 self.meters.hit(Instant::now());
                 self.pads.hit(abs);
-                return self
-                    .try_send(Command::PadPress { pad: abs, velocity })
-                    .then_some(abs);
+                let command = match hold {
+                    Some((pass, hold)) => Command::PatternPadPress {
+                        pass: *pass,
+                        pad: abs,
+                        velocity,
+                        hold: hold.clone(),
+                    },
+                    None => Command::PadPress { pad: abs, velocity },
+                };
+                return self.try_send(command).then_some(abs);
             }
             if !from_midi {
                 self.meters.hit(Instant::now());
+                if let Some(command) = self.keyboard_erase_target(abs) {
+                    self.pads.selected = local;
+                    self.pads.hit(abs);
+                    self.try_send(command);
+                    return None;
+                }
                 let mut accepted = None;
                 for cmd in self.pads.press(local, velocity, source) {
                     if self.try_send(cmd) {
@@ -1022,6 +1153,14 @@ impl App {
     }
 
     pub(super) fn midi_event(&mut self, ev: midi::Event) {
+        self.midi_event_with_release(ev, None);
+    }
+
+    fn midi_event_with_release(
+        &mut self,
+        ev: midi::Event,
+        released: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    ) {
         let value_before = self.value_before_midi(&ev);
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
@@ -1029,7 +1168,7 @@ impl App {
         let before = (matches!(self.screen, Screen::Pads | Screen::Fx)
             && matches!(ev, midi::Event::Param { .. }))
         .then(|| self.before());
-        self.midi_event_inner(ev);
+        self.midi_event_inner(ev, released);
         if let Some(b) = before {
             let what = match self.lit_now() {
                 Some(Lit::Pad(p)) => self.param_step_name(p),
@@ -1042,7 +1181,11 @@ impl App {
         self.value_after(value_before, Instant::now());
     }
 
-    fn midi_event_inner(&mut self, ev: midi::Event) {
+    fn midi_event_inner(
+        &mut self,
+        ev: midi::Event,
+        released: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    ) {
         let now = Instant::now();
         // the learn mode takes the controls to bind them; nothing acts (47)
         if self.screen_learn.is_some()
@@ -1072,6 +1215,7 @@ impl App {
                 msg,
                 meaning,
             } => {
+                self.help_overlay.controller.last_port = Some(port.clone());
                 // a run takes every new control for the next pad or bank; a control
                 // already taken in the run waits for another (28)
                 if let Some(r) = self.midi_run.as_mut()
@@ -1112,16 +1256,38 @@ impl App {
                 ui_press,
                 sound,
             } => {
-                if let Some(pad) = self.pad_hit(abs, velocity, pads::HitSource::Midi, sound)
-                    && let Some(id) = ui_press
+                let tracked = released.and_then(|released| {
+                    let Command::PatternRecordEnd { pass } =
+                        self.audio.as_ref()?.pattern_capture.finish_for_save()?
+                    else {
+                        return None;
+                    };
+                    Some((
+                        pass,
+                        std::sync::Arc::new(engine::capture::EraseHold::new(released)),
+                    ))
+                });
+                if let Some(pad) = self.pad_hit(
+                    abs,
+                    velocity,
+                    pads::HitSource::Midi,
+                    sound,
+                    tracked.as_ref(),
+                ) && let Some(id) = ui_press
                 {
                     let deferred =
                         matches!(sound, midi::PadSound::UiUnattempted { deferred: true });
+                    let pattern = tracked.map(|(_, hold)| hold);
                     let held = self.midi_ui_held.entry(id).or_default();
                     if let Some(hold) = held.iter_mut().find(|hold| hold.abs == pad) {
                         hold.deferred |= deferred;
+                        hold.pattern = pattern;
                     } else {
-                        held.push(UiPadHold { abs: pad, deferred });
+                        held.push(UiPadHold {
+                            abs: pad,
+                            deferred,
+                            pattern,
+                        });
                     }
                 }
             }
@@ -1152,7 +1318,14 @@ impl App {
                 if let Some(pads) = self.midi_ui_held.remove(&id) {
                     for hold in pads {
                         if !hold.deferred || self.audio_held[hold.abs].is_some() {
-                            self.send(Command::PadRelease { pad: hold.abs });
+                            let command = match hold.pattern {
+                                Some(pattern) => Command::PatternPadRelease {
+                                    pad: hold.abs,
+                                    hold: pattern,
+                                },
+                                None => Command::PadRelease { pad: hold.abs },
+                            };
+                            self.send(command);
                             self.pads.release(hold.abs);
                         }
                     }
@@ -1161,6 +1334,42 @@ impl App {
             midi::Event::Action(action) => {
                 // quitting from a controller is not offered
                 self.apply(action);
+            }
+            // open pattern controls: edit knobs 1-3 turn A1, other edit knobs wait (98b)
+            midi::Event::Param {
+                port,
+                control,
+                param,
+                value,
+                takeover,
+            } if self.pattern_panel.is_some()
+                && !self.transport_input_blocked()
+                && !matches!(
+                    param,
+                    Param::MasterVolume
+                        | Param::Tempo
+                        | Param::PatternBars
+                        | Param::PatternQuantize
+                        | Param::PatternStrength
+                ) =>
+            {
+                if let Param::Slot(k) = param
+                    && let Some(&setting) = super::pattern_record::Setting::ALL.get(k as usize)
+                {
+                    self.pattern_knob(setting, &port, &control, value, takeover);
+                }
+            }
+            midi::Event::Param {
+                port,
+                control,
+                param:
+                    param @ (Param::PatternBars | Param::PatternQuantize | Param::PatternStrength),
+                value,
+                takeover,
+            } => {
+                if let Some(setting) = super::pattern_record::Setting::from_param(param) {
+                    self.pattern_knob(setting, &port, &control, value, takeover);
+                }
             }
             midi::Event::Param {
                 port,
@@ -1499,6 +1708,9 @@ impl App {
                     | Param::PadEnd
                     | Param::Slot(_)
                     | Param::Page
+                    | Param::PatternBars
+                    | Param::PatternQuantize
+                    | Param::PatternStrength
                     | Param::PadEffect(_) => return,
                 };
                 let value = if takeover {
@@ -1571,6 +1783,9 @@ impl App {
                         | Param::PadEnd
                         | Param::Slot(_)
                         | Param::Page
+                        | Param::PatternBars
+                        | Param::PatternQuantize
+                        | Param::PatternStrength
                         | Param::PadEffect(_),
                     ) => {}
                     (Ok(v), Param::MasterVolume) => {
@@ -1611,6 +1826,9 @@ impl App {
                             | Param::PadEnd
                             | Param::Slot(_)
                             | Param::Page
+                            | Param::PatternBars
+                            | Param::PatternQuantize
+                            | Param::PatternStrength
                             | Param::PadEffect(_) => {}
                         }
                     }
@@ -1697,9 +1915,28 @@ impl App {
         {
             self.keymap_warnings.pop_front();
         }
-        let Some(action) = keymap.resolve_in(self.screen, self.edit_keys(), &k) else {
+        let panel = self.pattern_panel.is_some() && !self.transport_input_blocked();
+        let Some(action) = keymap.resolve_in(self.screen, self.edit_keys() || panel, &k) else {
             self.moved_key_notice(keymap, &k);
             return false;
+        };
+        let action = if panel {
+            match action {
+                Action::ParamPrev => Action::PatternParamPrev,
+                Action::ParamNext => Action::PatternParamNext,
+                Action::EditValue { up: false, .. } => Action::PatternValueDec,
+                Action::EditValue { up: true, .. } => Action::PatternValueInc,
+                // Enter on the Clear A1 row runs it; on a value row it closes controls (98b)
+                Action::Back
+                    if k.code == event::KeyCode::Enter
+                        && self.pattern_panel == Some(super::pattern_record::CLEAR_ROW) =>
+                {
+                    Action::PatternClear
+                }
+                action => action,
+            }
+        } else {
+            action
         };
         let action = if kitty {
             held.filter(action)

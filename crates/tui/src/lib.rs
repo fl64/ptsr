@@ -30,6 +30,11 @@ const AMBER: Color = Color::Rgb(0xFF, 0xC8, 0x3D);
 const MARK: Color = Color::Rgb(0xFF, 0xE0, 0x3A);
 const MARK_BG: Color = Color::Rgb(0x3D, 0x33, 0x05);
 const METER: Color = Color::Rgb(0x86, 0xC4, 0x7E);
+/// Pattern strip: every second beat on a darker plate, dim empty steps, and the playback
+/// plate in light gray with a dark glyph.
+const BEAT_BG: Color = Color::Rgb(0x1E, 0x22, 0x2A);
+const STEP_EMPTY: Color = Color::Rgb(0x5A, 0x62, 0x6E);
+const PLATE: Color = Color::Rgb(0xBC, 0xBC, 0xBC);
 /// The meters' display floor, dB.
 const METER_FLOOR: f32 = -60.0;
 /// The meters: L, R and the overload light.
@@ -320,6 +325,43 @@ pub struct ProjectPickerView {
     pub naming: Option<String>,
 }
 
+/// Saved setting and current applicability, not a report of a sounding cut.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PitchGate {
+    Off,
+    A1,
+    NeedsSlice,
+    NeedsPitch,
+}
+
+impl PitchGate {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "PG off",
+            Self::A1 => "PG A1",
+            Self::NeedsSlice | Self::NeedsPitch => "PG n/a",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Off => "PG off",
+            Self::A1 => "PG on: A1 only",
+            Self::NeedsSlice => "PG on: needs linked slice",
+            Self::NeedsPitch => "PG on: needs Pitch > 0",
+        }
+    }
+
+    pub fn help(self) -> &'static str {
+        match self {
+            Self::Off => "PG off, manual unchanged",
+            Self::A1 => "PG on: A1 only, manual unchanged",
+            Self::NeedsSlice => "PG on: needs linked slice, manual unchanged",
+            Self::NeedsPitch => "PG on: needs Pitch > 0, manual unchanged",
+        }
+    }
+}
+
 pub struct PadView {
     pub naming: bool,
     /// `✱` when the pad has more settings than its mode line shows (77), or empty.
@@ -330,6 +372,7 @@ pub struct PadView {
     pub key: char,
     pub name: String,
     pub gate: bool,
+    pub pitch_gate: PitchGate,
     pub volume_db: f32,
     /// Pitch in semitones, shown in the panel.
     pub pitch: i8,
@@ -392,6 +435,10 @@ pub struct Chop<'a> {
     pub play: Option<(f32, f32)>,
     /// "slice 3 · 0.548 s · 261 ms".
     pub info: String,
+    /// The slice edit (98f): the slice number and its rows `start`, `end`, `length` and
+    /// `cursor` with their values.
+    pub bounds_slice: usize,
+    pub edit_rows: [String; 4],
     /// Lines next to the grid: what the pads do now, the plan summary.
     pub side: Vec<String>,
     /// Per bank, (something lies there, the plan writes there / slices of this chop lie
@@ -491,6 +538,7 @@ pub enum PadCorner {
     Available,
     Replace,
     Slice(u16),
+    Erase,
 }
 
 /// Read-only feedback for the sixteen cells of the visible bank.
@@ -500,7 +548,59 @@ pub struct PadFeedback {
     pub corners: [Option<PadCorner>; 16],
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternCell {
+    pub count: usize,
+    pub off_grid: bool,
+}
+
+/// Where A1 has onsets in the bank row (98): banks with any visible onset, and per bank
+/// the pads with an onset in the current 1/16 playback step.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BankPattern {
+    pub recorded: [bool; BANKS],
+    pub hits: [u16; BANKS],
+}
+
+/// The rhythm of the whole loop; the drawing picks the page that fits its width.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternStrip {
+    pub header: String,
+    /// The selected pad's row label.
+    pub label: String,
+    /// The selected pad, one cell per view step of the loop.
+    pub cells: Vec<PatternCell>,
+    /// Any onset of a pad in the visible bank, per cell.
+    pub all: Vec<bool>,
+    pub beat_cells: usize,
+    /// The playback cell in the loop.
+    pub playhead: Option<usize>,
+}
+
+/// Row labels `all` and `pad Q` take this many columns; each beat opens with a space (98i).
+const PATTERN_LABEL: usize = 5;
+
+/// Cells on one page at `width` columns: the most whole bars that fit (4/4), then half a
+/// bar, then one beat. Each beat takes a leading space and two columns per cell, and each
+/// line between bars one column.
+pub fn pattern_page_cells(width: usize, beat_cells: usize, total: usize) -> usize {
+    let beat_cells = beat_cells.max(1);
+    let bar_cells = 4 * beat_cells;
+    let beat_width = 1 + 2 * beat_cells;
+    let bar_width = 4 * beat_width;
+    let room = width.saturating_sub(PATTERN_LABEL);
+    let bars = (room + 1) / (bar_width + 1);
+    if bars > 0 {
+        (bars * bar_cells).min(total.max(bar_cells))
+    } else if 2 * beat_width <= room {
+        2 * beat_cells
+    } else {
+        beat_cells
+    }
+}
+
 pub struct Pads {
+    pub pattern: Option<PatternStrip>,
     pub feedback: PadFeedback,
     /// Any real pad voice in the current ready project, across all banks; not hit flashes or FX tails.
     pub playing: bool,
@@ -515,6 +615,8 @@ pub struct Pads {
     pub bank_fill: [u16; BANKS],
     /// Per bank, its marked pads (76); a bank with marks shows them in the bank row.
     pub bank_marks: [u16; BANKS],
+    /// Per bank, A1 onsets: underlined numbers and pads lit at the current step.
+    pub bank_pattern: BankPattern,
     /// Live envelope of the master output, oldest first (the newest value is last).
     pub out_wave: Vec<f32>,
     /// The splash at start (73): while it is `Some`, the strip shows it instead of the
@@ -602,10 +704,78 @@ pub struct Message<'a> {
 #[derive(Clone, Copy)]
 pub enum FullHelp<'a> {
     Keys(&'a [(String, String)]),
+    KeyPage {
+        rows: &'a [(String, String)],
+        scroll: usize,
+        caption: Option<&'a str>,
+        navigation: &'a str,
+    },
     Messages {
         entries: &'a [Message<'a>],
         scroll: usize,
     },
+    MessagesWithCaption {
+        entries: &'a [Message<'a>],
+        scroll: usize,
+        caption: &'a str,
+    },
+    Controller(&'a Controller),
+}
+
+/// One control on a device drawing (98j).
+pub struct ControlCell {
+    pub name: String,
+    /// The short label in the brackets of the control kind: `(volume)`.
+    pub label: String,
+    pub free: bool,
+}
+
+/// What the F1 Controller tab shows of the current device.
+pub enum ControllerBody {
+    /// Without a connected device: the names of the loaded profiles.
+    Empty { profiles: Vec<String> },
+    /// The device top: `None` is an empty place; `selected` is (row, place).
+    Drawing {
+        rows: Vec<Vec<Option<ControlCell>>>,
+        selected: (usize, usize),
+    },
+    /// Control and action, for a device without a drawing that fits.
+    List {
+        rows: Vec<(String, String)>,
+        selected: usize,
+        scroll: usize,
+    },
+}
+
+/// The F1 Controller tab (98j).
+pub struct Controller {
+    /// Connected devices; one is current.
+    pub devices: Vec<String>,
+    pub current: usize,
+    pub body: ControllerBody,
+    /// The selected control in full: name, kind, action and its help.
+    pub detail: String,
+    pub navigation: String,
+    /// The accepted recording state, as on the other tabs.
+    pub caption: Option<String>,
+}
+
+/// Columns of one place on a device drawing.
+const PLACE_W: u16 = 8;
+/// Rows above and below a drawing: the device line, a gap, a gap and the detail line.
+const CONTROLLER_FRAME_ROWS: u16 = 4;
+
+/// The drawing of `places` x `rows` fits the F1 frame of a terminal of `size`.
+pub fn controller_fits(places: usize, rows: usize, size: (u16, u16), caption: bool) -> bool {
+    let width = usize::from(size.0.saturating_sub(2));
+    let height = help_page_height(size.1, caption);
+    places * usize::from(PLACE_W) <= width
+        && rows * 2 + usize::from(CONTROLLER_FRAME_ROWS) <= height
+}
+
+/// List rows that fit the F1 frame under the device line and over the detail line.
+pub fn controller_list_rows(terminal_height: u16, caption: bool) -> usize {
+    help_page_height(terminal_height, caption).saturating_sub(usize::from(CONTROLLER_FRAME_ROWS))
 }
 
 /// A drawing snapshot. Stored confirmation targets remain in the application.
@@ -710,6 +880,146 @@ pub fn value_popup(frame: &mut Frame, value: &Value) {
             Rect::new(area.x + 1, area.y + 1, width as u16, 1),
         );
     }
+}
+
+/// Compact A1 controls, independent of the current screen's edit state.
+pub struct PatternControls {
+    /// bars, quantize and strength, then the clear A1 command row (98b).
+    pub values: Vec<(String, String)>,
+    /// Rows with nothing to do, such as clear A1 of an empty A1: drawn dim.
+    pub dim: Vec<bool>,
+    pub selected: usize,
+    /// What limits the selected row, beside its value: dim, or amber when it refuses.
+    pub restriction: String,
+    pub refused: bool,
+    pub controls: [String; 2],
+}
+
+/// The column under the meters: the pad panel's place, which the controls take whole (98b).
+pub fn pattern_controls_area(area: Rect, screen: &Screen) -> Rect {
+    let [_, body, _, _] = frame_areas(area);
+    let side = match screen {
+        Screen::Pads(pads) => pad_frame(body, pads.hidden).side,
+        Screen::Files(files) => pad_frame(body, files.pads.hidden).side,
+        Screen::Chop(chop) => pad_frame(body, chop.pads.hidden).side,
+        _ => Rect::new(
+            body.right().saturating_sub(body.width.min(SIDE_W)),
+            body.y.saturating_add(1),
+            body.width.min(SIDE_W),
+            body.height.saturating_sub(1),
+        ),
+    };
+    let top = (METER_ROWS + 1).min(side.height);
+    Rect {
+        y: side.y + top,
+        height: side.height - top,
+        ..side
+    }
+}
+
+/// Draw after the screen and exclude this area from terminal wave pictures.
+pub fn pattern_controls(frame: &mut Frame, screen: &Screen, controls: &PatternControls) {
+    let area = pattern_controls_area(frame.area(), screen);
+    if area.width < 3 || area.height == 0 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    frame.render_widget(Block::new().bg(BG).fg(TEXT), area);
+    // the frame of the pad edit: its colour, `EDIT ·` and the blocks as its pages (98b)
+    let lit = if controls.selected >= 3 {
+        "CLEAR"
+    } else {
+        "PATTERN"
+    };
+    let pages = ["PATTERN", "CLEAR"];
+    let pages_len: usize = pages.iter().map(|n| n.chars().count() + 1).sum::<usize>() + 1;
+    let mut title = Vec::new();
+    if pages_len + 7 <= usize::from(area.width.saturating_sub(2)) {
+        title.push(Span::styled(" EDIT ·", Style::new().fg(MAGENTA).bold()));
+    }
+    for name in pages {
+        title.push(" ".into());
+        title.push(if name == lit {
+            Span::styled(name, Style::new().fg(BG).bg(MAGENTA).bold())
+        } else {
+            name.fg(DIM)
+        });
+    }
+    title.push(" ".into());
+    let framed = Block::bordered()
+        .border_style(Style::new().fg(MAGENTA))
+        .title(Line::from(title));
+    let inner = framed.inner(area);
+    frame.render_widget(framed, area);
+    let area = inner;
+    let width = usize::from(area.width);
+    // the block lines of the pad edit: the open one lit, the other dim
+    let block = |name: &str| {
+        let rule = "─".repeat(width.saturating_sub(name.chars().count() + 3));
+        let open = name.ends_with(lit);
+        Line::from(format!("─ {name} {rule}")).style(if open {
+            Style::new().fg(MAGENTA).bold()
+        } else {
+            Style::new().fg(DIM)
+        })
+    };
+    let mut lines = vec![block("A1 PATTERN")];
+    for (index, (label, value)) in controls.values.iter().enumerate() {
+        if index == 3 {
+            lines.push(block("CLEAR"));
+        }
+        let selected = index == controls.selected;
+        let style = if controls.dim.get(index) == Some(&true) {
+            Style::new().fg(DIM)
+        } else if selected {
+            Style::new().fg(CYAN).bold()
+        } else {
+            Style::new().fg(WHITE)
+        };
+        let mut spans = vec![
+            Span::raw(if selected { "▸ " } else { "  " }),
+            Span::styled(format!("{label:<10}"), Style::new().fg(DIM)),
+            Span::styled(value.clone(), style),
+        ];
+        let hint = Style::new().fg(if controls.refused { AMBER } else { DIM });
+        let beside = 12
+            + Span::raw(value.as_str()).width()
+            + 2
+            + Span::raw(controls.restriction.as_str()).width();
+        if selected && !controls.restriction.is_empty() && beside <= width {
+            spans.push(Span::styled(format!("  {}", controls.restriction), hint));
+            lines.push(Line::from(spans));
+        } else if selected && !controls.restriction.is_empty() {
+            // a narrow column keeps the hint whole on its own line under the value (98i)
+            lines.push(Line::from(spans));
+            let size = Span::raw(controls.restriction.as_str()).width();
+            let indent = 12.min(width.saturating_sub(size));
+            lines.push(Line::from(Span::styled(
+                format!("{:indent$}{}", "", controls.restriction),
+                hint,
+            )));
+        } else {
+            lines.push(Line::from(spans));
+        }
+    }
+    // a key line wider than the column splits at its ` · ` parts (98i)
+    let keys: Vec<Line> = controls
+        .controls
+        .iter()
+        .flat_map(|line| {
+            if Span::raw(line.as_str()).width() <= width {
+                vec![line.clone()]
+            } else {
+                line.split(" · ").map(str::to_owned).collect()
+            }
+        })
+        .map(|line| Line::from(line).fg(DIM))
+        .collect();
+    let room = usize::from(area.height);
+    let filler = room.saturating_sub(lines.len() + keys.len());
+    lines.extend(std::iter::repeat_n(Line::default(), filler));
+    lines.extend(keys);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 /// The logo of the splash (73), byte-exact: 4 lines of 10 characters, trailing spaces
@@ -834,7 +1144,25 @@ fn draw_inner(
     images: Option<&mut Vec<WaveImage>>,
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
-    let help_rows = help_lines(help.groups, frame.area().width);
+    // the help row explains Pitch Gate only where it acts: a linked slice with it on;
+    // elsewhere the panel and F1 keep the state and the row goes back to ordinary help
+    let pitch_gate = match screen {
+        Screen::Pads(pads) => pads
+            .pads
+            .get(pads.selected)
+            .map(|pad| pad.pitch_gate)
+            .filter(|state| matches!(state, PitchGate::A1 | PitchGate::NeedsPitch)),
+        _ => None,
+    };
+    let mut help_rows = help_lines_at(
+        help.groups,
+        frame.area().width,
+        HELP_ROWS as usize - usize::from(pitch_gate.is_some()),
+    );
+    if let Some(pitch_gate) = pitch_gate {
+        help_rows.resize(HELP_ROWS as usize - 1, Line::default());
+        help_rows.push(Line::from(format!(" {}", pitch_gate.help())).fg(DIM));
+    }
     let [top, body, notice, help_area] = frame_areas(frame.area());
 
     match cache {
@@ -890,9 +1218,25 @@ fn draw_inner(
     }
     match help.full {
         Some(FullHelp::Keys(rows)) => full_help(frame, body, rows),
+        Some(FullHelp::KeyPage {
+            rows,
+            scroll,
+            caption,
+            navigation,
+        }) => {
+            full_help_paged(frame, body, rows, scroll, caption, navigation);
+        }
         Some(FullHelp::Messages { entries, scroll }) => {
             message_history(frame, body, entries, scroll);
         }
+        Some(FullHelp::MessagesWithCaption {
+            entries,
+            scroll,
+            caption,
+        }) => {
+            message_history_caption(frame, body, entries, scroll, Some(caption));
+        }
+        Some(FullHelp::Controller(c)) => controller(frame, body, c),
         None => {}
     }
     if let Some(q) = help.question {
@@ -997,7 +1341,10 @@ pub fn help_dropped(groups: &[HelpGroup], width: u16) -> usize {
 /// `key text`, its name beside the first row; a longer group takes more columns under the
 /// same name. Groups that do not fit drop off whole from the end (the screens, then REC).
 fn help_lines(groups: &[HelpGroup], width: u16) -> Vec<Line<'static>> {
-    let rows = HELP_ROWS as usize;
+    help_lines_at(groups, width, HELP_ROWS as usize)
+}
+
+fn help_lines_at(groups: &[HelpGroup], width: u16, rows: usize) -> Vec<Line<'static>> {
     let mut blocks: Vec<Vec<Vec<Span<'static>>>> = groups
         .iter()
         .filter(|g| !g.items.is_empty())
@@ -1104,24 +1451,38 @@ fn help_block(g: &HelpGroup, rows: usize) -> Vec<Vec<Span<'static>>> {
     out
 }
 
-fn full_help_block(message_count: Option<usize>) -> Block<'static> {
-    let messages = message_count.is_some();
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Help,
+    Messages,
+    Controller,
+}
+
+fn full_help_block(tab: Tab, message_count: Option<usize>, navigation: &str) -> Block<'static> {
     let selected = Style::new().fg(CYAN).bold();
     let idle = Style::new().fg(DIM);
-    // Equal-width labels keep both tab names at the same cell on either page.
+    // Equal-width labels keep every tab name at the same cell on each page.
+    let label = |name: &str, this: Tab| {
+        if tab == this {
+            Span::styled(format!("[{name}]"), selected)
+        } else {
+            Span::styled(format!(" {name} "), idle)
+        }
+    };
     let mut title = vec![
         " ".into(),
-        Span::styled(
-            if messages { " HELP " } else { "[HELP]" },
-            if messages { idle } else { selected },
-        ),
+        label("HELP", Tab::Help),
         " ".into(),
-        Span::styled(
-            if messages { "[MESSAGES]" } else { " MESSAGES " },
-            if messages { selected } else { idle },
-        ),
+        label("MESSAGES", Tab::Messages),
+        " ".into(),
+        label("CONTROLLER", Tab::Controller),
     ];
     let mut footer = vec![Span::raw(" Tab/Shift+Tab page · F1/Esc close ")];
+    if !navigation.is_empty() {
+        footer = vec![Span::raw(format!(
+            " Tab/Shift+Tab · F1/Esc · {navigation} "
+        ))];
+    }
     if let Some(count) = message_count {
         title.push(format!(" · {count} / 50 ").into());
         footer.push("· ↑↓ scroll · PgUp/PgDn page ".into());
@@ -1133,30 +1494,144 @@ fn full_help_block(message_count: Option<usize>) -> Block<'static> {
         .bg(PANEL)
 }
 
-fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
-    let keys_width = rows
-        .iter()
-        .map(|(k, _)| k.chars().count())
-        .max()
-        .unwrap_or(0);
-    let lines: Vec<Line> = rows
-        .iter()
-        .map(|(k, d)| {
-            // a row without keys is a heading
-            if k.is_empty() {
-                return Line::from(format!(" {d}")).fg(DIM).bold();
+fn wrap_help_text(text: &str, width: usize) -> Vec<String> {
+    let mut rows = Vec::new();
+    if width == 0 {
+        return rows;
+    }
+    let cells = |s: &str| Span::raw(s).width();
+    for part in text.split('\n') {
+        let mut line = String::new();
+        // whole words first (98i); a word wider than the column breaks by graphemes
+        for word in part.split(' ') {
+            let gap = usize::from(!line.is_empty());
+            if !line.is_empty() && cells(&line) + gap + cells(word) > width {
+                rows.push(std::mem::take(&mut line));
+            } else if gap == 1 {
+                line.push(' ');
             }
-            let pad = keys_width - k.chars().count();
-            Line::from(vec![
+            if cells(word) <= width.saturating_sub(cells(&line)) {
+                line.push_str(word);
+                continue;
+            }
+            for grapheme in Span::raw(word).styled_graphemes(Style::default()) {
+                let size = cells(grapheme.symbol);
+                if size > width {
+                    continue;
+                }
+                if cells(&line) + size > width {
+                    rows.push(std::mem::take(&mut line));
+                }
+                line.push_str(grapheme.symbol);
+            }
+        }
+        rows.push(line);
+    }
+    rows
+}
+
+/// Wrapped key and description columns shared by drawing and page bounds.
+pub fn help_key_lines(rows: &[(String, String)], width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(width);
+    if width == 0 {
+        return Vec::new();
+    }
+    let key_width = rows
+        .iter()
+        .map(|(k, _)| Span::raw(k).width())
+        .max()
+        .unwrap_or(0)
+        .min(width / 3);
+    let mut lines = Vec::new();
+    for (keys, description) in rows {
+        if keys.is_empty() || width < 8 {
+            if !keys.is_empty() {
+                lines.extend(wrap_help_text(keys, width).into_iter().map(|text| {
+                    Line::from(Span::styled(text, Style::new().fg(BRIGHT).bg(BORDER)))
+                }));
+            }
+            lines.extend(
+                wrap_help_text(description, width)
+                    .into_iter()
+                    .map(|text| Line::from(text).fg(DIM).bold()),
+            );
+            continue;
+        }
+        let keys = wrap_help_text(keys, key_width);
+        let descriptions = wrap_help_text(description, width - key_width - 3);
+        for index in 0..keys.len().max(descriptions.len()) {
+            let keys = keys.get(index).map_or("", String::as_str);
+            let pad = key_width - Span::raw(keys).width();
+            lines.push(Line::from(vec![
                 " ".into(),
-                key(k),
+                Span::styled(keys.to_owned(), Style::new().fg(BRIGHT).bg(BORDER)),
                 format!("{:pad$}  ", "").into(),
-                d.clone().into(),
-            ])
-        })
-        .collect();
+                descriptions.get(index).cloned().unwrap_or_default().into(),
+            ]));
+        }
+    }
+    lines
+}
+
+/// Visible text rows in either help tab, after an optional recording caption.
+pub fn help_page_height(terminal_height: u16, caption: bool) -> usize {
+    messages_page_height(terminal_height).saturating_sub(usize::from(caption))
+}
+
+fn help_caption(frame: &mut Frame, inner: Rect, caption: Option<&str>) -> Rect {
+    let Some(caption) = caption else { return inner };
+    let height = inner.height.min(1);
+    frame.render_widget(
+        Paragraph::new(caption).fg(MAGENTA).bold(),
+        Rect { height, ..inner },
+    );
+    Rect {
+        y: inner.y.saturating_add(height),
+        height: inner.height - height,
+        ..inner
+    }
+}
+
+fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
+    full_help_paged(frame, area, rows, 0, None, "");
+}
+
+fn full_help_paged(
+    frame: &mut Frame,
+    area: Rect,
+    rows: &[(String, String)],
+    scroll: usize,
+    caption: Option<&str>,
+    navigation: &str,
+) {
+    let block = full_help_block(Tab::Help, None, navigation);
+    let inner = block.inner(area);
+    let lines = help_key_lines(rows, inner.width);
+    let height = usize::from(inner.height).saturating_sub(usize::from(caption.is_some()));
+    let start = scroll.min(lines.len().saturating_sub(height));
+    let end = (start + height).min(lines.len());
+    let block = block.title_top(
+        Line::from(format!(
+            " {}-{}/{} ",
+            if lines.is_empty() { 0 } else { start + 1 },
+            end,
+            lines.len()
+        ))
+        .right_aligned(),
+    );
     frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines).block(full_help_block(None)), area);
+    frame.render_widget(block, area);
+    let inner = help_caption(frame, inner, caption);
+    frame.render_widget(
+        Paragraph::new(
+            lines
+                .into_iter()
+                .skip(start)
+                .take(height)
+                .collect::<Vec<_>>(),
+        ),
+        inner,
+    );
 }
 
 /// Visible message rows after status, notice, compact help and frame borders.
@@ -1217,13 +1692,126 @@ pub fn message_lines(entries: &[Message<'_>], width: u16) -> Vec<Line<'static>> 
     rows
 }
 
-fn message_history(frame: &mut Frame, area: Rect, entries: &[Message<'_>], scroll: usize) {
-    let block = full_help_block(Some(entries.len()));
+fn controller(frame: &mut Frame, area: Rect, c: &Controller) {
+    let block = full_help_block(Tab::Controller, None, &c.navigation);
     let inner = block.inner(area);
-    let lines = message_lines(entries, inner.width);
-    let start = scroll.min(lines.len().saturating_sub(inner.height as usize));
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
+    let inner = help_caption(frame, inner, c.caption.as_deref());
+    let width = usize::from(inner.width);
+    let mut devices = Vec::new();
+    for (i, name) in c.devices.iter().enumerate() {
+        if i > 0 {
+            devices.push(Span::raw(" · ").fg(DIM));
+        }
+        devices.push(if i == c.current {
+            Span::styled(format!("[{name}]"), Style::new().fg(CYAN).bold())
+        } else {
+            Span::styled(name.clone(), Style::new().fg(DIM))
+        });
+    }
+    let mut lines = vec![Line::from(devices), Line::default()];
+    match &c.body {
+        ControllerBody::Empty { profiles } => {
+            lines.push(Line::from("No MIDI device is connected."));
+            lines.push(Line::default());
+            lines.push(Line::from("Known profiles:").fg(DIM));
+            for name in profiles {
+                lines.push(Line::from(format!(
+                    "  {}",
+                    clip_label(name, width.saturating_sub(2))
+                )));
+            }
+        }
+        ControllerBody::Drawing { rows, selected } => {
+            let w = usize::from(PLACE_W);
+            let places = rows.iter().map(Vec::len).max().unwrap_or(0);
+            let indent = " ".repeat(width.saturating_sub(places * w) / 2);
+            for (r, row) in rows.iter().enumerate() {
+                let mut names = vec![Span::raw(indent.clone())];
+                let mut labels = vec![Span::raw(indent.clone())];
+                for (i, place) in row.iter().enumerate() {
+                    let Some(cell) = place else {
+                        names.push(Span::raw(" ".repeat(w)));
+                        labels.push(Span::raw(" ".repeat(w)));
+                        continue;
+                    };
+                    let picked = *selected == (r, i);
+                    let style = match (picked, cell.free) {
+                        (true, _) => Style::new().fg(BG).bg(CYAN).bold(),
+                        (false, true) => Style::new().fg(DIM),
+                        (false, false) => Style::new().fg(TEXT),
+                    };
+                    names.push(Span::styled(
+                        format!("{:^w$}", clip_label(&cell.name, w)),
+                        Style::new().fg(DIM),
+                    ));
+                    labels.push(Span::styled(
+                        format!("{:^w$}", clip_label(&cell.label, w)),
+                        style,
+                    ));
+                }
+                lines.push(Line::from(names));
+                lines.push(Line::from(labels));
+            }
+        }
+        ControllerBody::List {
+            rows,
+            selected,
+            scroll,
+        } => {
+            let name_w = rows
+                .iter()
+                .map(|(n, _)| n.len())
+                .max()
+                .unwrap_or(0)
+                .min(width / 2);
+            for (i, (name, action)) in rows.iter().enumerate().skip(*scroll) {
+                let text = format!("{:name_w$}  {action}", clip_label(name, name_w));
+                let line = Line::from(clip_label(&text, width));
+                lines.push(if i == *selected {
+                    line.style(Style::new().fg(BG).bg(CYAN).bold())
+                } else {
+                    line
+                });
+                if lines.len() >= usize::from(inner.height.saturating_sub(2)) {
+                    break;
+                }
+            }
+        }
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
+    if inner.height > 0 {
+        let detail = Rect {
+            y: inner.y + inner.height - 1,
+            height: 1,
+            ..inner
+        };
+        frame.render_widget(
+            Paragraph::new(clip_label(&c.detail, width)).fg(CYAN),
+            detail,
+        );
+    }
+}
+
+fn message_history(frame: &mut Frame, area: Rect, entries: &[Message<'_>], scroll: usize) {
+    message_history_caption(frame, area, entries, scroll, None);
+}
+
+fn message_history_caption(
+    frame: &mut Frame,
+    area: Rect,
+    entries: &[Message<'_>],
+    scroll: usize,
+    caption: Option<&str>,
+) {
+    let block = full_help_block(Tab::Messages, Some(entries.len()), "");
+    let inner = block.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    let inner = help_caption(frame, inner, caption);
+    let lines = message_lines(entries, inner.width);
+    let start = scroll.min(lines.len().saturating_sub(inner.height as usize));
     frame.render_widget(
         Paragraph::new(lines.into_iter().skip(start).collect::<Vec<_>>()),
         inner,
@@ -1262,8 +1850,12 @@ fn banks(p: &Pads) -> Vec<Span<'static>> {
         let b = i + 1;
         // one glyph cell has one colour, so a bank shows one thing at a time: the pads
         // held or flashing (white, 62), else its marks (yellow, 76), else its fill
+        // a closed bank lights the pads its A1 onsets hit now (98); the open bank keeps
+        // its own flashes
         let (mask, dots) = if i == p.bank && hits != 0 {
             (hits, Some(WHITE))
+        } else if i != p.bank && p.bank_pattern.hits[i] != 0 {
+            (p.bank_pattern.hits[i], Some(WHITE))
         } else if p.bank_marks[i] != 0 {
             (p.bank_marks[i], Some(MARK))
         } else {
@@ -1273,8 +1865,24 @@ fn banks(p: &Pads) -> Vec<Span<'static>> {
         let dots = dots.map(|c| Style::new().fg(c).bold());
         // the closed banks keep their number and glyphs together: the row fits a narrow
         // window
-        if i == p.bank {
-            let style = Style::new().fg(color).bold();
+        let open = i == p.bank;
+        let style = if open {
+            Style::new().fg(color).bold()
+        } else {
+            Style::new().fg(color)
+        };
+        if p.bank_pattern.recorded[i] {
+            // an underlined number: the bank holds A1 onsets (98)
+            spans.push(Span::styled(if open { " [" } else { " " }, style));
+            spans.push(Span::styled(b.to_string(), style.underlined()));
+            if open {
+                spans.push(Span::styled(" ", style));
+            }
+            spans.push(Span::styled(glyphs, dots.unwrap_or(style)));
+            if open {
+                spans.push(Span::styled("]", style));
+            }
+        } else if open {
             match dots {
                 // the space before the bracket, as before a closed bank: no `1⣿⣿[2`
                 Some(dots) => {
@@ -1285,7 +1893,6 @@ fn banks(p: &Pads) -> Vec<Span<'static>> {
                 None => spans.push(Span::styled(format!(" [{b} {glyphs}]"), style)),
             }
         } else {
-            let style = Style::new().fg(color);
             match dots {
                 Some(dots) => {
                     spans.push(Span::styled(format!(" {b}"), style));
@@ -1539,6 +2146,25 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     }
     // a recording takes the strip in the rec colour (25), `out_wave` then holds what goes
     // into the file; the pad edit draws the pad's envelope over its piece; else the output
+    // the splash keeps only the wave rows: the rhythm shows from the start (98b)
+    let show_pattern =
+        p.pattern.is_some() && p.edit.is_none() && !s.recording && f.strip.height >= 3;
+    // a three-row strip holds only the rhythm; the L/R meters still show the level
+    let wave = if show_pattern {
+        let wave = Rect {
+            height: f.strip.height - 3,
+            ..f.strip
+        };
+        let events = Rect {
+            y: wave.bottom(),
+            height: 3,
+            ..f.strip
+        };
+        pattern_strip(frame, events, p.pattern.as_ref().unwrap());
+        wave
+    } else {
+        f.strip
+    };
     match (p.edit, &p.big) {
         _ if s.recording => envelope_strip(frame, f.strip, &p.out_wave, MAGENTA),
         (Some(_), _) if p.curve.is_some() => filter_strip(
@@ -1550,8 +2176,9 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
             let gate = p.pads.get(p.selected).is_some_and(|v| v.gate);
             pad_envelope_strip(frame, f.strip, big, p.param, gate)
         }
-        _ if p.splash.is_some() => splash_strip(frame, f.strip, p.splash.as_ref().unwrap()),
-        _ => envelope_strip(frame, f.strip, &p.out_wave, DIM),
+        _ if wave.height == 0 => {}
+        _ if p.splash.is_some() => splash_strip(frame, wave, p.splash.as_ref().unwrap()),
+        _ => envelope_strip(frame, wave, &p.out_wave, DIM),
     }
     let [meters_area, _, info] = Layout::vertical([
         Constraint::Length(METER_ROWS),
@@ -1586,7 +2213,24 @@ fn pads(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
             // last one (70); the same word as the help line (68)
             Line::from(vec!["  scope   ".fg(DIM), p.scope.clone().fg(CYAN)]),
             Line::from(sel.detail.clone().unwrap_or_else(|| sel.name.clone())),
-            Line::from(vec!["  mode    ".fg(DIM), mode(sel.gate).into()]),
+            Line::from(vec![
+                if panel.width < 28 {
+                    "  mode   "
+                } else {
+                    "  mode    "
+                }
+                .fg(DIM),
+                mode(sel.gate).into(),
+                " ".fg(DIM),
+                Span::styled(
+                    sel.pitch_gate.label(),
+                    Style::new().fg(if sel.pitch_gate == PitchGate::A1 {
+                        TEXT
+                    } else {
+                        DIM
+                    }),
+                ),
+            ]),
             param_line(
                 p,
                 PadParam::Volume,
@@ -1926,6 +2570,104 @@ fn param_line(p: &Pads, which: PadParam, label: &'static str, value: String) -> 
     Line::from(spans)
 }
 
+fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStrip) {
+    let total = pattern.cells.len().min(pattern.all.len());
+    let beat_cells = pattern.beat_cells.max(1);
+    let page = pattern_page_cells(area.width as usize, beat_cells, total.max(1));
+    let first = pattern.playhead.filter(|&cell| cell < total).unwrap_or(0) / page * page;
+    let range = first..(first + page).min(total);
+    // the legend for a count in a cell comes last, so a narrow strip cuts it before the
+    // pad name (98b)
+    let header = if pattern.cells[range.clone()]
+        .iter()
+        .any(|cell| cell.count > 1)
+    {
+        format!("{} · 2-9 = hits in a cell, one plays", pattern.header)
+    } else {
+        pattern.header.clone()
+    };
+    frame.render_widget(
+        Line::from(clip_label(&header, area.width as usize)).fg(CYAN),
+        Rect { height: 1, ..area },
+    );
+    if total == 0 {
+        return;
+    }
+    let pad_glyph = |cell: &PatternCell| match cell.count {
+        0 => '·',
+        1 if cell.off_grid => '~',
+        1 => '■',
+        count @ 2..=9 => char::from(b'0' + count as u8),
+        _ => '+',
+    };
+    let all: Vec<char> = pattern
+        .all
+        .iter()
+        .map(|&hit| if hit { '■' } else { '·' })
+        .collect();
+    let pad: Vec<char> = pattern.cells.iter().map(pad_glyph).collect();
+    let rows = [
+        (
+            Span::styled(format!("{:<5}", "all"), Style::new().fg(DIM)),
+            all,
+            TEXT,
+        ),
+        (
+            Span::styled(
+                format!("{:<5}", clip_label(&pattern.label, PATTERN_LABEL)),
+                Style::new().fg(TEXT),
+            ),
+            pad,
+            WHITE,
+        ),
+    ];
+    for (row, (label, glyphs, hit_color)) in rows.into_iter().enumerate() {
+        // a beat is " g g g g ": every glyph has a space on both sides, so the playback
+        // plate over a glyph and its two neighbour spaces stays centred
+        let mut columns: Vec<(char, Style)> = Vec::new();
+        let mut plate = None;
+        for index in range.clone() {
+            let shade = if (index / beat_cells) % 2 == 1 {
+                Style::new().bg(BEAT_BG)
+            } else {
+                Style::new()
+            };
+            if index != first && index.is_multiple_of(4 * beat_cells) {
+                columns.push(('│', Style::new().fg(DIM)));
+            }
+            if index.is_multiple_of(beat_cells) {
+                columns.push((' ', shade));
+            }
+            let glyph = glyphs[index];
+            if pattern.playhead == Some(index) {
+                plate = Some(columns.len());
+            }
+            let color = if glyph == '·' { STEP_EMPTY } else { hit_color };
+            columns.push((glyph, shade.fg(color)));
+            columns.push((' ', shade));
+        }
+        if let Some(at) = plate {
+            for column in &mut columns[at - 1..=at + 1] {
+                column.1 = Style::new().fg(BG).bg(PLATE).bold();
+            }
+        }
+        let mut spans = vec![label];
+        spans.extend(
+            columns
+                .into_iter()
+                .map(|(glyph, style)| Span::styled(glyph.to_string(), style)),
+        );
+        frame.render_widget(
+            Line::from(spans),
+            Rect {
+                y: area.y + 1 + row as u16,
+                height: 1,
+                ..area
+            },
+        );
+    }
+}
+
 /// The live strip above the grid: the last seconds of the master output as a wave,
 /// the newest sound at the right; silence is a thin middle line.
 fn envelope_strip(frame: &mut Frame, area: Rect, out_wave: &[f32], color: Color) {
@@ -2194,9 +2936,15 @@ fn pad_cell(
         (false, false, false) if pad.dim => (BORDER, PANEL, DIM),
         (false, false, false) => (bank, PANEL, TEXT),
     };
+    // the selected pad keeps its cyan frame over a hit or a mark (98k); its frame cells stay
+    // dark, as cyan lines on a white fill are hard to see
+    let keep = selected && !pad.in_hand;
+    let border = if keep { CYAN } else { border };
     let key = Span::styled(
         pad.key.to_uppercase().to_string(),
-        Style::new().fg(if pad.flash {
+        Style::new().fg(if keep {
+            border
+        } else if pad.flash {
             BG
         } else if outline && !pad.in_hand && !pad.marked && !selected {
             bank
@@ -2204,19 +2952,25 @@ fn pad_cell(
             border
         }),
     );
+    let frame_style = if keep {
+        Style::new().fg(border).bg(PANEL)
+    } else {
+        Style::new().fg(border)
+    };
     let mut block = Block::bordered()
         .title(key)
-        .border_style(Style::new().fg(border))
+        .border_style(frame_style)
         .style(Style::new().bg(bg).fg(fg));
     if let Some(corner) = corner {
         let text = match corner {
             PadCorner::Available => "◎".to_string(),
             PadCorner::Replace => "!".to_string(),
             PadCorner::Slice(n) => n.to_string(),
+            PadCorner::Erase => "E".into(),
         };
         block = block.title_top(
             Line::from(text)
-                .fg(if pad.flash { BG } else { MARK })
+                .fg(if pad.flash && !keep { BG } else { MARK })
                 .right_aligned(),
         );
     }
@@ -2229,19 +2983,24 @@ fn pad_cell(
             ..ratatui::symbols::border::PLAIN
         });
     }
-    // the mode as a glyph, the volume, the mute group (77): `⇢ +1 mute 2`; no separator,
-    // so `⇢ -24 mute 8` fits the 13 cells of the narrowest pad
-    let mut second = if pad.gate { "⇥" } else { "⇢" }.to_string();
+    // gate as a glyph, the volume, the mute group (77): `⇥ +1 mute 2`; no separator, so
+    // `⇥ -24 mute 8` fits the 13 cells of the narrowest pad. One-shot is the default and
+    // has no mark (98b): an arrow on every pad read as a position
+    let mut parts: Vec<String> = Vec::new();
+    if pad.gate {
+        parts.push("⇥".into());
+    }
     if pad.volume_db != 0.0 {
-        second = format!("{second} {:+.0}", pad.volume_db);
+        parts.push(format!("{:+.0}", pad.volume_db));
     }
     if pad.group > 0 {
-        second = format!("{second} mute {}", pad.group);
+        parts.push(format!("mute {}", pad.group));
     }
     // `✱`: the pad has more settings, the panel names them (77); the frame stays clean
     if !pad.glyphs.is_empty() {
-        second = format!("{second} {}", pad.glyphs);
+        parts.push(pad.glyphs.clone());
     }
+    let second = parts.join(" ");
     let second = match (pad.missing, pad.loading, &pad.note) {
         (_, Some(p), _) => Line::from(format!(" load {p}%")).fg(CYAN),
         (true, None, _) => Line::from(" missing").fg(MAGENTA),
@@ -2310,83 +3069,99 @@ fn fx(frame: &mut Frame, area: Rect, f: &Fx, s: &Status) {
         .map(|(label, _)| Line::from(label.trim()).width())
         .max()
         .unwrap_or(0);
-    let widths: [u16; 2] = std::array::from_fn(|i| {
-        f.blocks[i]
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(param, (label, value))| {
-                let mut line = Line::from(format!(
-                    " {} {:label_width$} {value}",
-                    param + 1,
-                    label.trim(),
-                ));
-                if i == f.selected.min(1)
-                    && let Some((_, control)) = f.learn.iter().find(|(p, _)| *p == param)
-                {
-                    line.spans.push(Span::raw(format!(" ◀ {control}")));
-                }
-                (line.width() + 2).min(u16::MAX as usize) as u16
-            })
-            .max()
-            .unwrap_or(0)
-            .max(34)
-    });
-    let beside = widths[0].saturating_add(widths[1]).saturating_add(2) <= body.width;
-    let framed = body.height >= if beside { 5 } else { 10 };
-    let height = if framed {
-        5
-    } else if beside {
-        body.height.min(3)
+    // one edit frame for both slots, as the pad edit: the slots are its pages (98e)
+    let selected = f.selected.min(1);
+    let row_width = f
+        .blocks
+        .iter()
+        .enumerate()
+        .flat_map(|(i, block)| block.rows.iter().enumerate().map(move |r| (i, r)))
+        .map(|(i, (param, (label, value)))| {
+            let mut line = Line::from(format!(
+                " {} {:label_width$} {value}",
+                param + 1,
+                label.trim()
+            ));
+            if i == selected
+                && let Some((_, control)) = f.learn.iter().find(|(p, _)| *p == param)
+            {
+                line.spans.push(Span::raw(format!(" ◀ {control}")));
+            }
+            line.width()
+        })
+        .max()
+        .unwrap_or(0);
+    let width = (row_width.max(34) as u16 + 2).min(body.width);
+    let framed = body.height >= 10;
+    // a low terminal drops the frame and the block lines, and names the slot before its
+    // first row, so both slots fit
+    let width = if framed {
+        width
     } else {
-        (body.height / 2).min(3)
+        body.width.min(width + 7)
     };
-    let gap = u16::from(!beside && framed && body.height >= 11);
-    for (i, view) in f.blocks.iter().enumerate() {
-        let area = Rect::new(
-            body.x + if beside && i == 1 { widths[0] + 2 } else { 0 },
-            body.y + if beside { 0 } else { i as u16 * (height + gap) },
-            if framed || beside {
-                widths[i].min(body.width)
+    let area = Rect::new(
+        body.x,
+        body.y,
+        width,
+        body.height.min(if framed { 10 } else { 6 }),
+    );
+    let text_area = if framed {
+        let pages = ["FX 1", "FX 2"];
+        let pages_len: usize = pages.iter().map(|n| n.chars().count() + 1).sum::<usize>() + 1;
+        let mut title = Vec::new();
+        if pages_len + 7 <= usize::from(width.saturating_sub(2)) {
+            title.push(Span::styled(" EDIT ·", Style::new().fg(MAGENTA).bold()));
+        }
+        for (i, name) in pages.into_iter().enumerate() {
+            title.push(" ".into());
+            title.push(if i == selected {
+                Span::styled(name, Style::new().fg(BG).bg(MAGENTA).bold())
             } else {
-                body.width.min(widths[i].saturating_add(6))
-            },
-            height,
-        );
-        let selected = i == f.selected.min(1);
-        let color = if selected { MAGENTA } else { BORDER };
-        let heading = format!(
-            "{} FX {}{} ",
-            if selected { "▶" } else { " " },
-            i + 1,
-            if selected { " · selected" } else { "" },
-        );
-        let text_area = if framed {
-            let block = Block::bordered()
-                .border_style(Style::new().fg(color))
-                .title(Span::styled(heading, Style::new().fg(color).bold()));
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            inner
-        } else {
-            area
-        };
-        let mut lines = Vec::new();
+                name.fg(DIM)
+            });
+        }
+        title.push(" ".into());
+        let block = Block::bordered()
+            .border_style(Style::new().fg(MAGENTA))
+            .title(Line::from(title));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        inner
+    } else {
+        area
+    };
+    let inner_width = usize::from(text_area.width);
+    let mut lines = Vec::new();
+    for (i, view) in f.blocks.iter().enumerate() {
+        let is_selected = i == selected;
+        let color = if is_selected { MAGENTA } else { DIM };
+        if framed {
+            let name = format!("FX {} · {}", i + 1, view.rows[0].1);
+            let rule = "─".repeat(inner_width.saturating_sub(name.chars().count() + 3));
+            lines.push(
+                Line::from(format!("─ {name} {rule}")).style(if is_selected {
+                    Style::new().fg(MAGENTA).bold()
+                } else {
+                    Style::new().fg(DIM)
+                }),
+            );
+        }
         for (param, (label, value)) in view.rows.iter().enumerate() {
-            let style = if selected && f.lit == Some(param) {
+            let style = if !is_selected {
+                Style::new().fg(DIM)
+            } else if f.lit == Some(param) {
                 Style::new().fg(BG).bg(CYAN).bold()
-            } else if selected && f.param.min(2) == param {
+            } else if f.param.min(2) == param {
                 Style::new().fg(CYAN).bold()
             } else {
                 Style::new().fg(TEXT)
             };
             let mut spans = Vec::new();
-            if framed {
-                spans.push(Span::raw(" "));
-            } else {
+            if !framed {
                 spans.push(if param == 0 {
                     Span::styled(
-                        format!("{} FX {} ", if selected { "▶" } else { " " }, i + 1),
+                        format!("{} FX {} ", if is_selected { "▶" } else { " " }, i + 1),
                         Style::new().fg(color).bold(),
                     )
                 } else {
@@ -2395,20 +3170,20 @@ fn fx(frame: &mut Frame, area: Rect, f: &Fx, s: &Status) {
             }
             spans.push(Span::styled(
                 format!("{} ", param + 1),
-                Style::new().fg(if selected { MAGENTA } else { DIM }),
+                Style::new().fg(color),
             ));
             spans.push(Span::styled(
                 format!("{:label_width$} ", label.trim()),
                 style,
             ));
             spans.push(Span::styled(value.clone(), style));
-            if selected && let Some((_, control)) = f.learn.iter().find(|(p, _)| *p == param) {
+            if is_selected && let Some((_, control)) = f.learn.iter().find(|(p, _)| *p == param) {
                 spans.extend(learn_spans(&format!(" ◀ {control}")));
             }
             lines.push(Line::from(spans));
         }
-        frame.render_widget(Paragraph::new(lines), text_area);
     }
+    frame.render_widget(Paragraph::new(lines), text_area);
 }
 
 fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> Paragraph<'static> {
@@ -2447,54 +3222,63 @@ fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> Paragraph<'s
 }
 
 fn settings(frame: &mut Frame, area: Rect, st: &Settings, s: &Status) {
-    let [header, diagnostics, body] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Fill(1),
-    ])
-    .areas(area);
-    let tab = |i: usize, name: &str| {
-        if st.tab == i {
-            Span::styled(format!("[{name}]"), Style::new().fg(CYAN).bold())
-        } else {
-            format!(" {name} ").fg(DIM)
-        }
-    };
-    let names = ["Audio", "Input", "MIDI", "Paths"];
-    let mut heading = title(
+    let [header, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+    let heading = title(
         vec![Span::styled(" F12 SETTINGS ", Style::new().fg(BG).bg(TEXT))],
         &s.badges,
         header.width,
-        11,
+        0,
     );
-    let mut tabs = vec![Span::raw("   ")];
-    for (i, name) in names.iter().enumerate() {
-        if i > 0 {
-            tabs.push(" ".into());
+    frame.render_widget(heading, header);
+    // the body in the edit frame, the tabs as its pages, the open one lit (98g)
+    let names = ["AUDIO", "INPUT", "MIDI", "PATHS"];
+    let page = |name: &'static str, open: bool| {
+        if open {
+            Span::styled(name, Style::new().fg(BG).bg(MAGENTA).bold())
+        } else {
+            name.fg(DIM)
         }
-        tabs.push(tab(i, name));
+    };
+    let mut tabs = vec![Span::styled(" SETTINGS ·", Style::new().fg(MAGENTA).bold())];
+    for (i, name) in names.iter().enumerate() {
+        tabs.push(" ".into());
+        tabs.push(page(name, st.tab == i));
     }
-    let room = (header.width as usize).saturating_sub(heading.width());
-    if tabs.iter().map(Span::width).sum::<usize>() > room {
+    tabs.push(" ".into());
+    if tabs.iter().map(Span::width).sum::<usize>() + 2 > usize::from(body.width) {
         tabs = vec![
-            "   ".into(),
-            tab(st.tab, names.get(st.tab).copied().unwrap_or("Settings")),
+            " ".into(),
+            page(names.get(st.tab).copied().unwrap_or("SETTINGS"), true),
+            " ".into(),
         ];
     }
-    heading.spans.extend(tabs);
-    frame.render_widget(heading, header);
-    if st.tab == 0 {
+    let block = Block::bordered()
+        .border_style(Style::new().fg(MAGENTA))
+        .title(Line::from(tabs));
+    let inner = block.inner(body);
+    frame.render_widget(block, body);
+    let inner = if st.tab == 0 && inner.height > 0 {
+        let [diagnostics, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
         let text = format!(" CPU {:.0} % · xruns {}", s.load_peak, s.xruns);
         frame.render_widget(Line::from(text).fg(DIM), diagnostics);
-    }
-    frame.render_widget(settings_body(st, body.height), body);
+        rest
+    } else {
+        inner
+    };
+    frame.render_widget(settings_body(st, inner.height), inner);
 }
 
 fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
+    // the selected row of an edit frame: bright with a marker, not inverse (98g)
     let label = |row: usize, name: &str| {
-        let text = format!(" {name:<8}");
+        let text = format!(
+            "{} {:<8}",
+            if st.row == row { "▸" } else { " " },
+            name.to_lowercase()
+        );
         if st.row == row {
-            Span::styled(text, Style::new().fg(BG).bg(CYAN))
+            Span::styled(text, Style::new().fg(CYAN).bold())
         } else {
             text.fg(DIM)
         }
@@ -2559,12 +3343,11 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
             match row {
                 MidiRow::Group { name, counts } => {
                     lines.push(Line::default());
-                    let row = format!(" {name} · {counts}");
                     lines.push(Line::from(if i == st.midi_row {
                         selected_line = lines.len();
-                        Span::styled(row, Style::new().fg(BG).bg(CYAN))
+                        Span::styled(format!("▸{name} · {counts}"), Style::new().fg(CYAN).bold())
                     } else {
-                        row.bold()
+                        format!(" {name} · {counts}").bold()
                     }));
                 }
                 MidiRow::Action {
@@ -2573,11 +3356,14 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                     taken,
                     stays,
                 } => {
-                    let label = format!("   {label:<width$} ");
+                    let label = format!(
+                        "{}  {label:<width$} ",
+                        if i == st.midi_row { "▸" } else { " " }
+                    );
                     let label = match (i == st.midi_row, taken) {
                         (true, _) => {
                             selected_line = lines.len();
-                            Span::styled(label, Style::new().fg(BG).bg(CYAN))
+                            Span::styled(label, Style::new().fg(CYAN).bold())
                         }
                         (false, true) => label.fg(MAGENTA),
                         (false, false) => label.fg(DIM),
@@ -3196,6 +3982,11 @@ fn chop(
         pad_grid(frame, pf.grid, &c.pads, pf.waves);
     }
 
+    // the slice edit takes the right column in the frame of the pad edit (98f)
+    if c.edit {
+        slice_edit(frame, pf.side, c);
+        return;
+    }
     // the right column: the slice line on top, wrapped with the side list, not cut
     let mut slice_line = Vec::new();
     if c.edit {
@@ -3204,8 +3995,8 @@ fn chop(
             Style::new().fg(BG).bg(MAGENTA).bold(),
         ));
     }
-    slice_line.push(format!(" {}", c.info).fg(CYAN));
-    let lines: Vec<Line> = std::iter::once(Line::from(slice_line))
+    let lines: Vec<Line> = slice_rows(slice_line, &c.info, pf.side.width)
+        .into_iter()
         .chain(c.side.iter().enumerate().flat_map(|(i, line)| {
             side_rows(line, pf.side.width)
                 .into_iter()
@@ -3213,6 +4004,86 @@ fn chop(
         }))
         .collect();
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), pf.side);
+}
+
+/// The slice edit in the right column: the frame and title of the pad edit, the slice as
+/// its block, the two bounds that I/K selects and two dim information rows.
+fn slice_edit(frame: &mut Frame, area: Rect, c: &Chop) {
+    let area = Rect {
+        height: area.height.min(7),
+        ..area
+    };
+    if area.width < 3 || area.height < 3 {
+        return;
+    }
+    let mut title = Vec::new();
+    if usize::from(area.width.saturating_sub(2)) >= " EDIT · BOUNDS ".len() {
+        title.push(Span::styled(" EDIT ·", Style::new().fg(MAGENTA).bold()));
+    }
+    title.push(" ".into());
+    title.push(Span::styled(
+        "BOUNDS",
+        Style::new().fg(BG).bg(MAGENTA).bold(),
+    ));
+    title.push(" ".into());
+    let block = Block::bordered()
+        .border_style(Style::new().fg(MAGENTA))
+        .title(Line::from(title));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let name = format!("SLICE {}", c.bounds_slice);
+    let rule = "─".repeat(usize::from(inner.width).saturating_sub(name.chars().count() + 3));
+    let mut lines =
+        vec![Line::from(format!("─ {name} {rule}")).style(Style::new().fg(MAGENTA).bold())];
+    let end = c.hot == Some(true);
+    for (row, (label, value)) in ["start", "end", "length", "cursor"]
+        .into_iter()
+        .zip(&c.edit_rows)
+        .enumerate()
+    {
+        let selected = row == usize::from(end);
+        let style = if selected {
+            Style::new().fg(CYAN).bold()
+        } else if row < 2 {
+            Style::new().fg(TEXT)
+        } else {
+            Style::new().fg(DIM)
+        };
+        lines.push(Line::from(vec![
+            Span::raw(if selected { "▸ " } else { "  " }),
+            Span::styled(format!("{label:<8}"), Style::new().fg(DIM)),
+            Span::styled(value.clone(), style),
+        ]));
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The Chop slice line in rows of `width`: it wraps between its ` · ` parts, so a number
+/// stays with its unit (98d). A part wider than the column wraps by words later.
+fn slice_rows(first: Vec<Span<'static>>, info: &str, width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(width);
+    let mut rows = Vec::new();
+    let mut row = first;
+    let mut used: usize = row.iter().map(Span::width).sum();
+    for (index, part) in info.split(" · ").enumerate() {
+        let text = if index == 0 || used == 0 {
+            format!(" {part}")
+        } else {
+            format!(" · {part}")
+        };
+        let cells = Span::raw(text.as_str()).width();
+        if used > 0 && used + cells > width && index > 0 {
+            // the separator opens the next row, so no text of the line goes away
+            rows.push(Line::from(std::mem::take(&mut row)));
+            used = cells;
+            row.push(text.fg(CYAN));
+            continue;
+        }
+        used += cells;
+        row.push(text.fg(CYAN));
+    }
+    rows.push(Line::from(row));
+    rows
 }
 
 /// A color without its hue, at its brightness: the slices that are not selected (40).
@@ -3451,11 +4322,592 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
+    fn pattern_page_fits_whole_bars_then_half_a_bar_then_a_beat() {
+        // (cells per beat, cells per page at 80 and at 120 columns) for a 64-bar loop
+        for (beat_cells, at_80, at_120) in [
+            (1, 20, 32),
+            (2, 24, 40),
+            (4, 32, 48),
+            (8, 32, 32),
+            (16, 32, 32),
+            (3, 24, 48),
+            (6, 24, 48),
+            (12, 24, 48),
+        ] {
+            let total = 64 * 4 * beat_cells;
+            assert_eq!(
+                pattern_page_cells(80, beat_cells, total),
+                at_80,
+                "{beat_cells}"
+            );
+            assert_eq!(
+                pattern_page_cells(120, beat_cells, total),
+                at_120,
+                "{beat_cells}"
+            );
+            // a page never runs past the loop
+            assert_eq!(
+                pattern_page_cells(120, beat_cells, 4 * beat_cells),
+                (4 * beat_cells).min(at_120)
+            );
+        }
+        // a two-bar 1/16 loop is one page on both sizes
+        assert_eq!(pattern_page_cells(80, 4, 32), 32);
+        assert_eq!(pattern_page_cells(120, 4, 32), 32);
+        // too narrow for half a bar: one beat
+        assert_eq!(pattern_page_cells(20, 4, 32), 4);
+    }
+
+    fn strip_rows(screen: &Screen, status: &Status, w: u16, h: u16) -> Vec<String> {
+        let groups = [HelpGroup {
+            name: "PAD",
+            items: vec![("Enter".into(), "mode: gate".into())],
+        }];
+        let help = Help {
+            groups: &groups,
+            hint: None,
+            full: None,
+            question: None,
+            learn: None,
+        };
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| draw(f, status, screen, &help)).unwrap();
+        term.backend()
+            .buffer()
+            .content()
+            .chunks(w as usize)
+            .map(|row| row.iter().map(|c| c.symbol()).collect())
+            .collect()
+    }
+
+    fn quiet_status(recording: bool) -> Status<'static> {
+        Status {
+            badges: Vec::new(),
+            save: SaveStatus::Clean,
+            backend: Some("jack"),
+            recording,
+            buffer_size: 128,
+            sample_rate: 48_000,
+            load_peak: 0.0,
+            xruns: 0,
+            master_db: 0,
+            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            no_releases: false,
+            notice: None,
+            project: None,
+        }
+    }
+
+    fn sample_strip(cells: usize) -> PatternStrip {
+        PatternStrip {
+            header: if cells == 0 {
+                "No A1 · Ctrl+R record A1".into()
+            } else {
+                "A1 · 2 bars · view 1/16 · quantize 1/16 100 % · bank 1".into()
+            },
+            label: "kick".into(),
+            cells: (0..cells)
+                .map(|index| PatternCell {
+                    count: usize::from(index % 4 == 0),
+                    off_grid: false,
+                })
+                .collect(),
+            all: (0..cells).map(|index| index % 2 == 0).collect(),
+            beat_cells: 4,
+            playhead: None,
+        }
+    }
+
+    fn is_braille(row: &str) -> bool {
+        row.chars()
+            .next()
+            .is_some_and(|c| ('\u{2800}'..='\u{28FF}').contains(&c))
+    }
+
+    /// Scenario "Pattern strip fits the shared frame".
+    #[test]
+    fn pattern_strip_fits_the_shared_frame() {
+        let status = quiet_status(false);
+        for (w, h) in [(80u16, 26u16), (120, 40)] {
+            let mut strip_heights = Vec::new();
+            for hidden in [false, true] {
+                let pads = |pattern: Option<PatternStrip>| {
+                    let mut p = idle_pads();
+                    p.hidden = hidden;
+                    p.pattern = pattern;
+                    p
+                };
+                let baseline = strip_rows(&Screen::Pads(pads(None)), &status, w, h);
+                // the strip: the wave rows from the third row down
+                let bottom = (2..baseline.len())
+                    .take_while(|&y| is_braille(&baseline[y]))
+                    .last()
+                    .expect("a wave strip");
+                let height = bottom - 1;
+                strip_heights.push(height);
+                for (cells, populated) in [(0, false), (32, false), (32, true)] {
+                    let mut strip = sample_strip(cells);
+                    if !populated {
+                        strip.cells.iter_mut().for_each(|cell| cell.count = 0);
+                        strip.all.iter_mut().for_each(|hit| *hit = false);
+                    }
+                    let rows = strip_rows(&Screen::Pads(pads(Some(strip))), &status, w, h);
+                    let case =
+                        format!("{w}x{h} hidden {hidden} cells {cells} populated {populated}");
+                    // outside the strip nothing moves
+                    for y in (0..rows.len()).filter(|&y| y < 2 || y > bottom) {
+                        assert_eq!(rows[y], baseline[y], "{case}: row {y}");
+                    }
+                    assert!(
+                        rows[bottom - 2].starts_with(if cells == 0 { "No A1" } else { "A1 · " }),
+                        "{case}"
+                    );
+                    if cells > 0 {
+                        assert!(rows[bottom - 1].starts_with("all  "), "{case}");
+                        assert!(rows[bottom].starts_with("kick "), "{case}");
+                    }
+                    // a strip of four or more rows keeps a wave row; three rows hold only events
+                    assert_eq!(is_braille(&rows[2]), height >= 4, "{case}");
+                }
+            }
+            assert!(
+                strip_heights[1] > strip_heights[0],
+                "hidden pads give the wave more rows"
+            );
+        }
+        // Chop and Files keep their layout: no event rows
+        let wave: Vec<f32> = (0..4000).map(|i| (i % 1000) as f32 / 1000.0).collect();
+        let with_strip = || {
+            let mut p = idle_pads();
+            p.pattern = Some(sample_strip(32));
+            p
+        };
+        let mut chop = chop_demo(&wave);
+        chop.pads = with_strip();
+        let screens = [
+            Screen::Chop(Box::new(chop)),
+            Screen::Files(Files {
+                dir: "~/Music",
+                entries: vec![("amen.wav", false, false)],
+                selected: 0,
+                in_hand: None,
+                error: None,
+                pads: with_strip(),
+                filter: "",
+                editing: false,
+                preview: Some((1.0, &wave)),
+                playhead: None,
+            }),
+        ];
+        for screen in &screens {
+            let rows = strip_rows(screen, &status, 120, 40);
+            assert!(
+                !rows
+                    .iter()
+                    .any(|row| row.starts_with("all  ") || row.contains("A1 · 2 bars"))
+            );
+        }
+    }
+
+    /// Scenario "Pattern strip yields to overlays and keeps safety visible".
+    #[test]
+    fn pattern_strip_yields_to_overlays_and_keeps_safety_visible() {
+        for (w, h) in [(80u16, 26u16), (120, 40)] {
+            let shows_events = |rows: &[String]| rows.iter().any(|row| row.starts_with("all  "));
+            let with_strip = || {
+                let mut p = idle_pads();
+                p.pattern = Some(sample_strip(32));
+                p
+            };
+            // warnings stay next to the event rows
+            let mut unsafe_status = quiet_status(false);
+            unsafe_status.save = SaveStatus::Failed;
+            unsafe_status.backend = None;
+            unsafe_status.xruns = 3;
+            let rows = strip_rows(&Screen::Pads(with_strip()), &unsafe_status, w, h);
+            let text = rows.join("\n");
+            assert!(shows_events(&rows), "{w}x{h}");
+            for warning in ["Save failed", "no audio", "xruns 3"] {
+                assert!(text.contains(warning), "{w}x{h}: {warning}\n{text}");
+            }
+            // a parameter curve and audio recording take the strip
+            let mut curve = with_strip();
+            curve.edit = Some("FILTER");
+            curve.curve = Some(FilterCurve {
+                caption: "lowpass 1.0 kHz".into(),
+                levels: vec![1.0; 64],
+                span: (20.0, 20_000.0),
+            });
+            let mut envelope = with_strip();
+            envelope.edit = Some("ENV");
+            let quiet = quiet_status(false);
+            for (name, pads, status) in [("curve", curve, &quiet), ("envelope", envelope, &quiet)] {
+                let rows = strip_rows(&Screen::Pads(pads), status, w, h);
+                assert!(!shows_events(&rows), "{w}x{h} {name}");
+            }
+            let recording = quiet_status(true);
+            let rows = strip_rows(&Screen::Pads(with_strip()), &recording, w, h);
+            assert!(!shows_events(&rows), "{w}x{h} recording");
+        }
+    }
+
+    /// Scenario "The slice edit uses the pad edit frame".
+    #[test]
+    fn the_slice_edit_uses_the_pad_edit_frame() {
+        let wave = vec![0.5; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for end in [false, true] {
+                let mut chop = chop_demo(&wave);
+                chop.edit = true;
+                chop.hot = Some(end);
+                chop.bounds_slice = 4;
+                chop.edit_rows = [
+                    "0.750 s".into(),
+                    "1.000 s".into(),
+                    "250 ms".into(),
+                    "0.000 s".into(),
+                ];
+                let rows = draw_rows(&Screen::Chop(Box::new(chop)), w, h);
+                let side = frame_at(w, h).side;
+                let column = |y: usize| -> String {
+                    rows[y][side.x as usize..side.right() as usize]
+                        .iter()
+                        .map(|(s, _, _)| s.as_str())
+                        .collect()
+                };
+                let top = side.y as usize;
+                assert!(
+                    column(top).contains("EDIT · BOUNDS"),
+                    "{w}x{h}: {}",
+                    column(top)
+                );
+                assert_eq!(rows[top][side.x as usize].1, MAGENTA, "the edit colour");
+                assert!(column(top + 1).contains("─ SLICE 4 ─"));
+                for (i, (label, value)) in [
+                    ("start", "0.750 s"),
+                    ("end", "1.000 s"),
+                    ("length", "250 ms"),
+                    ("cursor", "0.000 s"),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let y = top + 2 + i;
+                    let text = column(y);
+                    assert!(text.contains(label) && text.contains(value), "{text}");
+                    let colours: Vec<Color> = rows[y][side.x as usize..side.right() as usize]
+                        .iter()
+                        .filter(|(s, _, _)| {
+                            s.trim().len() == 1 && s.chars().all(|c| c.is_ascii_digit())
+                        })
+                        .map(|(_, fg, _)| *fg)
+                        .collect();
+                    let selected = i == usize::from(end);
+                    assert_eq!(text.contains('▸'), selected, "{w}x{h}: {text}");
+                    if selected {
+                        assert!(colours.iter().all(|c| *c == CYAN), "{label} bright");
+                    } else if i >= 2 {
+                        assert!(colours.iter().all(|c| *c == DIM), "{label} dim");
+                    }
+                }
+            }
+            // closed: the slice line returns
+            let mut chop = chop_demo(&wave);
+            chop.info = "slice 4 · start 0.750 s".into();
+            let rows = draw_rows(&Screen::Chop(Box::new(chop)), w, h);
+            let text = (0..rows.len())
+                .map(|y| row_text(&rows, y))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(!text.contains("EDIT · BOUNDS") && text.contains("slice 4 · start 0.750 s"));
+        }
+    }
+
+    /// Scenario "The Chop slice line keeps each value whole".
+    #[test]
+    fn the_chop_slice_line_keeps_each_value_whole() {
+        let wave = vec![0.5; 400];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for edit in [false] {
+                let mut chop = chop_demo(&wave);
+                chop.edit = edit;
+                chop.info = "slice 4 · start 0.750 s · length 250 ms · cursor 0.000 s".into();
+                let rows = strip_rows(&Screen::Chop(Box::new(chop)), &quiet_status(false), w, h);
+                let side = frame_at(w, h).side;
+                let column: Vec<String> = rows[side.y as usize..side.bottom() as usize]
+                    .iter()
+                    .map(|r| r.chars().skip(side.x as usize).collect::<String>())
+                    .collect();
+                for value in [
+                    "slice 4",
+                    "start 0.750 s",
+                    "length 250 ms",
+                    "cursor 0.000 s",
+                ] {
+                    assert!(
+                        column.iter().any(|row| row.contains(value)),
+                        "{w}x{h} edit {edit}: {value} on one row\n{}",
+                        column.join("\n")
+                    );
+                }
+                assert_eq!(
+                    column.iter().any(|row| row.contains("EDIT · BOUNDS")),
+                    edit,
+                    "{w}x{h}"
+                );
+                // no text of the line goes away, separators included
+                let words = column
+                    .join(" ")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                assert!(
+                    words.contains("slice 4 · start 0.750 s · length 250 ms · cursor 0.000 s"),
+                    "{w}x{h}: {words}"
+                );
+            }
+        }
+    }
+
+    /// Scenario "The splash leaves the event rows visible".
+    #[test]
+    fn the_splash_leaves_the_event_rows_visible() {
+        for (w, h) in [(80, 26), (120, 40)] {
+            for no_a1 in [false, true] {
+                let mut pads = idle_pads();
+                pads.pattern = Some(sample_strip(32));
+                if no_a1 {
+                    let strip = pads.pattern.as_mut().unwrap();
+                    strip.header = "No A1 · Ctrl+R record A1".into();
+                    strip.cells.clear();
+                    strip.all.clear();
+                }
+                pads.splash = Some(Splash {
+                    version: "0.1.0",
+                    loading: "ready".into(),
+                });
+                let rows = strip_rows(&Screen::Pads(pads), &quiet_status(false), w, h);
+                let text = rows.join("\n");
+                // a three-row strip has no wave rows: the rhythm wins over the splash
+                assert_eq!(
+                    text.contains("ptsr"),
+                    h == 40,
+                    "{w}x{h} the splash:\n{text}"
+                );
+                if no_a1 {
+                    assert!(
+                        text.contains("No A1 · Ctrl+R record A1"),
+                        "{w}x{h}:\n{text}"
+                    );
+                } else {
+                    assert!(
+                        text.contains("A1 ·") && text.contains("all"),
+                        "{w}x{h}:\n{text}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Scenario "Strip header explains multiple hits".
+    #[test]
+    fn strip_header_explains_multiple_hits() {
+        let header = |pattern: &PatternStrip, width: u16| {
+            let mut term = Terminal::new(TestBackend::new(width, 4)).unwrap();
+            term.draw(|frame| pattern_strip(frame, Rect::new(0, 0, width, 3), pattern))
+                .unwrap();
+            (0..width)
+                .map(|x| term.backend().buffer()[(x, 0)].symbol().to_string())
+                .collect::<String>()
+        };
+        let mut pattern = sample_strip(32);
+        pattern.header =
+            "A1 · bar 1/2 beat 3 · view 1/16 triplet · quantize 1/16 100 % · bank 1".into();
+        let legend = "2-9 = hits in a cell, one plays";
+        assert!(!header(&pattern, 120).contains(legend), "no multiple cell");
+        pattern.cells[5].count = 2;
+        assert!(header(&pattern, 120).contains(legend));
+        // a narrow strip cuts the legend before the pad name
+        let narrow = header(&pattern, 80);
+        assert!(narrow.contains("bank 1"), "{narrow}");
+        assert!(!narrow.contains(legend), "{narrow}");
+        // a multiple cell on another page does not count
+        pattern.playhead = Some(20);
+        let mut term_width = 40;
+        let page = pattern_page_cells(term_width as usize, 4, 32);
+        assert!(page <= 16, "{page}");
+        pattern.header = "A1".into();
+        assert!(!header(&pattern, term_width).contains("2-9"));
+        term_width = 120;
+        assert!(header(&pattern, term_width).contains("2-9"));
+    }
+
+    /// Scenario "Pattern pages cover straight and triplet bars".
+    #[test]
+    fn pattern_pages_cover_straight_and_triplet_bars() {
+        for width in [80usize, 120] {
+            for beat_cells in [1, 2, 3, 4, 6, 8, 12, 16] {
+                let bar = 4 * beat_cells;
+                for bars in [1, 2, 64] {
+                    let total = bars * bar;
+                    let page = pattern_page_cells(width, beat_cells, total);
+                    assert_eq!(page % beat_cells, 0, "complete beats");
+                    if page >= bar {
+                        assert_eq!(page % bar, 0, "whole bars");
+                    }
+                    // the pages, starting where a playhead puts them, cover each cell once
+                    let mut seen = vec![0; total];
+                    let mut first = 0;
+                    while first < total {
+                        let end = (first + page).min(total);
+                        for (cell, count) in seen.iter_mut().enumerate().take(end).skip(first) {
+                            assert_eq!(cell / page * page, first, "the playhead picks this page");
+                            *count += 1;
+                        }
+                        first += page;
+                    }
+                    assert!(seen.iter().all(|&n| n == 1), "{width} {beat_cells} {bars}");
+                    if beat_cells == 4 && bars == 2 {
+                        assert_eq!(page, 32, "a two-bar 1/16 loop is one page");
+                    }
+                }
+            }
+        }
+        // stopped: the first page; playing: the page of the playback cell
+        let mut pattern = PatternStrip {
+            header: "A1".into(),
+            label: "kick".into(),
+            cells: (0..256)
+                .map(|index| PatternCell {
+                    count: usize::from(index % 64 == 40),
+                    off_grid: false,
+                })
+                .collect(),
+            all: vec![false; 256],
+            beat_cells: 4,
+            playhead: None,
+        };
+        for (playhead, hit_shown) in [
+            (None, true),
+            (Some(60), false),
+            (Some(100), true),
+            (Some(250), false),
+        ] {
+            pattern.playhead = playhead;
+            let mut term = Terminal::new(TestBackend::new(120, 4)).unwrap();
+            term.draw(|frame| pattern_strip(frame, Rect::new(0, 0, 120, 3), &pattern))
+                .unwrap();
+            let row: String = (0..120)
+                .map(|x| term.backend().buffer()[(x, 2)].symbol().to_string())
+                .collect();
+            // 120 columns hold three 1/16 bars, pages of 48 cells; hits are cells 40, 104, 168
+            // and 232: pages 0..48 and 96..144 show one, pages 48..96 and 240..256 none
+            assert_eq!(row.contains('■'), hit_shown, "{playhead:?}: {row}");
+        }
+    }
+
+    /// Scenario "Pattern strip centers glyphs in beat groups".
+    #[test]
+    fn pattern_strip_centers_glyphs_in_beat_groups() {
+        for width in [80u16, 120] {
+            for beat_cells in [1, 2, 4, 8, 16, 3, 6, 12] {
+                for bars in [1, 2] {
+                    let total = bars * 4 * beat_cells;
+                    let mut pattern = PatternStrip {
+                        header: "A1 · bar 1/2 beat 3 · 1/16 · bank 2 pad Q hat".into(),
+                        label: "hat long name".into(),
+                        cells: (0..total)
+                            .map(|index| PatternCell {
+                                count: index % 3,
+                                off_grid: index % 5 == 4,
+                            })
+                            .collect(),
+                        all: (0..total).map(|index| index % 2 == 0).collect(),
+                        beat_cells,
+                        playhead: None,
+                    };
+                    let page = pattern_page_cells(width.into(), beat_cells, total);
+                    for playhead in [
+                        None,
+                        Some(0),
+                        Some(1),
+                        Some(beat_cells),
+                        Some(total - 1),
+                        Some(total),
+                    ] {
+                        pattern.playhead = playhead;
+                        let area = Rect::new(0, 0, width, 3);
+                        let mut term = Terminal::new(TestBackend::new(width, 4)).unwrap();
+                        term.draw(|frame| pattern_strip(frame, area, &pattern))
+                            .unwrap();
+                        let buffer = term.backend().buffer();
+                        let first =
+                            playhead.filter(|&cell| cell < total).unwrap_or(0) / page * page;
+                        let shown = page.min(total - first);
+                        let case = format!("{width} {beat_cells} {bars} {playhead:?}");
+                        for y in [1u16, 2] {
+                            let row: Vec<_> = (0..width).map(|x| buffer[(x, y)].clone()).collect();
+                            let text: String = row.iter().map(|cell| cell.symbol()).collect();
+                            assert!(Span::raw(text.as_str()).width() <= width.into(), "{case}");
+                            let glyphs: Vec<usize> = (PATTERN_LABEL..width as usize)
+                                .filter(|&x| !matches!(row[x].symbol(), " " | "│"))
+                                .collect();
+                            assert_eq!(glyphs.len(), shown, "{case}: {text}");
+                            for (k, &x) in glyphs.iter().enumerate() {
+                                assert_eq!(row[x - 1].symbol(), " ", "{case}: space before {k}");
+                                assert_eq!(row[x + 1].symbol(), " ", "{case}: space after {k}");
+                                let index = first + k;
+                                if playhead != Some(index) {
+                                    let shaded = (index / beat_cells) % 2 == 1;
+                                    assert_eq!(
+                                        row[x].bg == BEAT_BG,
+                                        shaded,
+                                        "{case}: shade of {index}"
+                                    );
+                                }
+                            }
+                            let lines = row.iter().filter(|cell| cell.symbol() == "│").count();
+                            assert_eq!(
+                                lines,
+                                shown.div_ceil(4 * beat_cells) - 1,
+                                "{case}: bar lines only"
+                            );
+                            let plate: Vec<usize> = (0..width as usize)
+                                .filter(|&x| row[x].bg == PLATE)
+                                .collect();
+                            match playhead.filter(|&cell| cell < total) {
+                                Some(cell) => {
+                                    let centre = glyphs[cell - first];
+                                    assert_eq!(plate, [centre - 1, centre, centre + 1], "{case}");
+                                    for &x in &plate {
+                                        assert_eq!(row[x].fg, BG, "{case}");
+                                        assert!(
+                                            row[x]
+                                                .modifier
+                                                .contains(ratatui::style::Modifier::BOLD),
+                                            "{case}"
+                                        );
+                                    }
+                                }
+                                None => assert!(plate.is_empty(), "{case}: no false plate"),
+                            }
+                        }
+                        // the label takes five columns, `pad Q` whole; the first beat opens
+                        // with a space (98i)
+                        assert_eq!(buffer[(5, 2)].symbol(), " ");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn pads_screen_shows_grid_bank_and_selection() {
         let keys = [
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         let pads = Pads {
+            pattern: None,
             bank: 1,
             pads: keys
                 .iter()
@@ -3473,6 +4925,7 @@ mod tests {
                     key,
                     name: format!("N{i}"),
                     gate: i == 5,
+                    pitch_gate: PitchGate::NeedsSlice,
                     volume_db: if i == 5 { -3.0 } else { 0.0 },
                     pitch: 0,
                     attack_ms: 0,
@@ -3497,6 +4950,7 @@ mod tests {
             feedback: PadFeedback::default(),
             bank_fill: [0, 0b0000_0000_0010_0001, 0, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -3994,6 +5448,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         let pads = Pads {
+            pattern: None,
             bank: 2,
             pads: keys
                 .iter()
@@ -4014,6 +5469,7 @@ mod tests {
                         "A2".into()
                     },
                     gate: false,
+                    pitch_gate: PitchGate::NeedsSlice,
                     volume_db: 0.0,
                     pitch: 0,
                     attack_ms: 0,
@@ -4037,6 +5493,7 @@ mod tests {
             feedback: PadFeedback::default(),
             bank_fill: [0, 0, 1 << 5, 0, 0, 0, 0, 0],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -4250,7 +5707,7 @@ mod tests {
             for want in [
                 "F4 FX",
                 "shared project",
-                "▶ FX 1",
+                "FX 1",
                 "FX 2",
                 "1 type reverb",
                 "2 size 65 %",
@@ -4264,7 +5721,31 @@ mod tests {
             let first = text.find("FX 1").unwrap();
             let second = text.find("FX 2").unwrap();
             assert!(first < second, "the blocks keep their order");
+            assert_eq!(fx_lit(&rows), Some(0), "{w}x{h}: FX 1 is selected");
         }
+    }
+
+    /// The selected FX slot as the screen shows it: lit in the frame title, or marked `▶`
+    /// before its first row in a low terminal (98e).
+    fn fx_lit(rows: &[Vec<(String, Color, Color)>]) -> Option<usize> {
+        for (y, row) in rows.iter().enumerate() {
+            let text = row_text(rows, y);
+            if let Some(x) = text.find("▶ FX ") {
+                let at = text[..x].chars().count() + 5;
+                return row[at].0.parse::<usize>().ok().map(|n| n - 1);
+            }
+            if text.contains("EDIT · FX 1") || text.contains("┌ FX 1") {
+                let lit: Vec<usize> = (1..=2)
+                    .filter(|n| {
+                        let name = format!("FX {n}");
+                        let x = text.find(&name).map(|x| text[..x].chars().count());
+                        x.is_some_and(|x| row[x].2 == MAGENTA)
+                    })
+                    .collect();
+                return (lit.len() == 1).then(|| lit[0] - 1);
+            }
+        }
+        None
     }
 
     /// 82 "Select the next shared effect": moving the pick does not change row values.
@@ -4281,8 +5762,7 @@ mod tests {
                         .map(|y| row_text(&rows, y))
                         .collect::<Vec<_>>()
                         .join("\n");
-                    assert!(text.contains(&format!("▶ FX {}", selected + 1)));
-                    assert_eq!(text.matches('▶').count(), 1, "one selected block");
+                    assert_eq!(fx_lit(&rows), Some(selected), "{w}x{h}:\n{text}");
                     for value in ["reverb", "65 %", "80 %", "delay", "250 ms", "40 %"] {
                         assert!(text.contains(value), "{value}:\n{text}");
                     }
@@ -4305,58 +5785,69 @@ mod tests {
         }
     }
 
+    /// Scenario "Compact shared effect cards": one edit frame holds both slots (98e).
     #[test]
     fn compact_shared_effect_cards() {
-        for (w, h, beside) in [
-            (160, 50, true),
-            (80, 24, true),
-            (70, 16, true),
-            (69, 50, false),
-            (40, 50, false),
-            (40, 16, false),
-        ] {
-            let rows = draw_rows(&Screen::Fx(shared_fx()), w, h);
-            let positions = |symbol: &str| {
-                rows.iter()
-                    .enumerate()
-                    .flat_map(|(y, row)| {
-                        row.iter()
-                            .enumerate()
-                            .filter(move |(_, (s, _, _))| s == symbol)
-                            .map(move |(x, _)| (x, y))
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let tops = positions("┌");
-            let bottoms = positions("└");
-            let rights = positions("┘");
-            assert_eq!(tops.len(), 2, "{w}x{h}: two framed cards");
-            assert_eq!(bottoms.len(), 2);
-            assert_eq!(rights.len(), 2);
-            for i in 0..2 {
-                assert_eq!(bottoms[i], (tops[i].0, tops[i].1 + 4));
-                assert_eq!(rights[i], (tops[i].0 + 33, tops[i].1 + 4));
-                assert!(bottoms[i].1 <= 12, "{w}x{h}: compact card height");
-            }
-            assert_eq!(tops[0].1 == tops[1].1, beside, "{w}x{h}");
-            assert_eq!(tops[0].0 == tops[1].0, !beside, "{w}x{h}");
-            assert_eq!(rows[tops[0].1][tops[0].0].1, MAGENTA);
-            assert_eq!(rows[tops[1].1][tops[1].0].1, BORDER);
-            let values = [["reverb", "65 %", "80 %"], ["delay", "250 ms", "40 %"]];
-            for (i, values) in values.iter().enumerate() {
-                for (param, value) in values.iter().enumerate() {
-                    let line = row_text(&rows, tops[i].1 + param + 1);
-                    assert!(line.contains(value), "{w}x{h}: {value}: {line}");
-                    let x = tops[i].0 + 13;
-                    assert_eq!(rows[tops[i].1 + param + 1][x].0, &value[..1]);
+        for (w, h) in [(160, 50), (120, 40), (80, 26), (80, 24), (40, 16)] {
+            for selected in 0..2 {
+                let mut f = shared_fx();
+                f.selected = selected;
+                let rows = draw_rows(&Screen::Fx(f), w, h);
+                let positions = |symbol: &str| {
+                    rows.iter()
+                        .enumerate()
+                        .flat_map(|(y, row)| {
+                            row.iter()
+                                .enumerate()
+                                .filter(move |(_, (s, _, _))| s == symbol)
+                                .map(move |(x, _)| (x, y))
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let tops = positions("┌");
+                let bottoms = positions("└");
+                assert_eq!(tops.len(), 1, "{w}x{h}: one frame");
+                assert_eq!(bottoms.len(), 1);
+                let (x, top) = tops[0];
+                assert_eq!(
+                    bottoms[0],
+                    (x, top + 9),
+                    "{w}x{h}: the frame fits its content"
+                );
+                assert_eq!(rows[top][x].1, MAGENTA, "the edit colour");
+                let title = row_text(&rows, top);
+                assert!(title.contains("FX 1") && title.contains("FX 2"), "{title}");
+                if w >= 80 {
+                    assert!(title.contains("EDIT · FX 1 FX 2"), "{w}x{h}: {title}");
+                }
+                assert_eq!(fx_lit(&rows), Some(selected), "{w}x{h}");
+                let block_lines = [top + 1, top + 5];
+                for (i, y) in block_lines.into_iter().enumerate() {
+                    let line = row_text(&rows, y);
+                    assert!(line.contains(&format!("─ FX {} ·", i + 1)), "{line}");
+                    // inside the frame: its sides have the edit colour too
+                    let right = positions("┐")[0].0;
+                    let lit = rows[y][x + 1..right]
+                        .iter()
+                        .any(|(_, fg, _)| *fg == MAGENTA);
+                    assert_eq!(lit, i == selected, "{w}x{h}: the block line of the slot");
+                }
+                let values = [["reverb", "65 %", "80 %"], ["delay", "250 ms", "40 %"]];
+                for (i, values) in values.iter().enumerate() {
+                    for (param, value) in values.iter().enumerate() {
+                        let line = row_text(&rows, block_lines[i] + param + 1);
+                        assert!(line.contains(value), "{w}x{h}: {value}: {line}");
+                    }
+                }
+                for row in &rows[bottoms[0].1 + 1..h as usize - 3] {
+                    assert!(row.iter().all(|(s, _, _)| s == " "), "no filled rows");
                 }
             }
-            for row in &rows[bottoms[1].1 + 1..h as usize - 3] {
-                assert!(row.iter().all(|(s, _, _)| s == " "));
-            }
         }
+        // a low terminal keeps both slots without the frame
         let rows = draw_rows(&Screen::Fx(shared_fx()), 40, 12);
         assert!(rows.iter().flatten().all(|(s, _, _)| s != "┌"));
+        assert_eq!(fx_lit(&rows), Some(0));
     }
 
     #[test]
@@ -4892,10 +6383,13 @@ mod tests {
             );
             let header = row_text(&rows, 1);
             assert!(
-                header.contains("F12 SETTINGS")
-                    && header.contains("LEARN")
-                    && header.contains("[MIDI]"),
+                header.contains("F12 SETTINGS") && header.contains("LEARN"),
                 "{header}"
+            );
+            let frame = row_text(&rows, 2);
+            assert!(
+                frame.contains("SETTINGS · AUDIO INPUT MIDI PATHS"),
+                "{frame}"
             );
             assert!(rows[3..h as usize - 4].iter().any(|row| {
                 row.iter()
@@ -5000,6 +6494,7 @@ mod tests {
                 PadCorner::Available,
                 PadCorner::Replace,
                 PadCorner::Slice(128),
+                PadCorner::Erase,
             ] {
                 for state in ["idle", "selected", "hit", "marked", "hand"] {
                     let mut pad = idle_pads().pads.remove(0);
@@ -5025,6 +6520,7 @@ mod tests {
                         PadCorner::Available => "◎".to_string(),
                         PadCorner::Replace => "!".to_string(),
                         PadCorner::Slice(n) => n.to_string(),
+                        PadCorner::Erase => "E".into(),
                     };
                     let (fg, bg) = match state {
                         "selected" => (CYAN, PANEL),
@@ -5152,9 +6648,9 @@ mod tests {
         }
     }
 
-    /// 77 "The mode as a glyph" and "The group on the pad": `⇢ +1 mute 2` under the
-    /// name of a one-shot pad at +1 dB in group 2, `⇥` for a gate pad at 0 dB; no digit on
-    /// the frame.
+    /// 77 "The mode as a glyph" and "The group on the pad": `+1 mute 2` under the name
+    /// of a one-shot pad at +1 dB in group 2 (no mode mark, 98b), `⇥` for a gate pad at
+    /// 0 dB; no digit on the frame.
     #[test]
     fn the_mode_as_a_glyph() {
         let mut p = idle_pads();
@@ -5167,8 +6663,9 @@ mod tests {
         let rows = draw_rows(&Screen::Pads(p), 100, 30);
         let all: Vec<String> = (0..rows.len()).map(|y| row_text(&rows, y)).collect();
         let text = all.join("\n");
-        assert!(text.contains("│ ⇢ +1 mute 2"), "{text}");
+        assert!(text.contains("│ +1 mute 2"), "{text}");
         assert!(text.contains("│ ⇥ "), "{text}");
+        assert!(!text.contains('⇢'), "one-shot has no mark: {text}");
         assert!(!text.contains("one-shot +"), "{text}");
         assert!(
             !all.iter().any(|l| l.contains("2┐")),
@@ -5888,6 +7385,49 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pitch_gate_mode_row_keeps_state_and_inactive_style() {
+        for size in [(80, 26), (120, 40)] {
+            for state in [
+                PitchGate::Off,
+                PitchGate::A1,
+                PitchGate::NeedsSlice,
+                PitchGate::NeedsPitch,
+            ] {
+                for hidden in [false, true] {
+                    let mut pads = idle_pads();
+                    pads.hidden = hidden;
+                    pads.pads[pads.selected].pitch_gate = state;
+                    let rows = render_pads_at(pads, size.0, size.1);
+                    let row = rows
+                        .iter()
+                        .find(|row| {
+                            row.iter()
+                                .map(|cell| cell.0.as_str())
+                                .collect::<String>()
+                                .contains("mode ")
+                        })
+                        .unwrap();
+                    let text = row.iter().map(|cell| cell.0.as_str()).collect::<String>();
+                    let word = state.label();
+                    assert!(text.contains(word), "{text}");
+                    let start = row.iter().position(|cell| cell.0 == "P").unwrap();
+                    for cell in &row[start..start + word.len()] {
+                        assert_eq!(cell.1, if state == PitchGate::A1 { TEXT } else { DIM });
+                    }
+                    let help = rows[size.1 as usize - 1]
+                        .iter()
+                        .map(|cell| cell.0.as_str())
+                        .collect::<String>();
+                    // only a linked slice with Pitch Gate on keeps the help row
+                    let applies = matches!(state, PitchGate::A1 | PitchGate::NeedsPitch);
+                    assert_eq!(help.contains(state.help()), applies, "{state:?}: {help}");
+                    assert_eq!(help.contains("PG "), applies, "{state:?}: {help}");
+                }
+            }
+        }
+    }
+
     /// 43 "Every row in sight" and "The title shows where Tab leads": on every page the
     /// panel shows all rows; only the knob numbers and the lit page in the title move.
     /// The window is tall enough for every row: a shorter one folds (70).
@@ -6067,7 +7607,7 @@ mod tests {
         assert!(has("─ FILTER ● ─"));
         assert!(has("─ ENV ─") && !has("ENV ●"));
         assert!(has("─ SOURCE ─") && !has("SOURCE ●"));
-        assert!(has("│ ⇢ ✱"), "the mark on the mode line");
+        assert!(has("│ ✱"), "the mark on the mode line");
         let color = |name: &str, value: &str| {
             let line = text.iter().position(|r| r.contains(name)).unwrap();
             let x = text[line].find(value).unwrap();
@@ -6323,6 +7863,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         let pads = Pads {
+            pattern: None,
             bank: 0,
             pads: keys
                 .iter()
@@ -6344,6 +7885,7 @@ mod tests {
                         "-".into()
                     },
                     gate: false,
+                    pitch_gate: PitchGate::NeedsSlice,
                     volume_db: 0.0,
                     pitch: 0,
                     attack_ms: 0,
@@ -6365,6 +7907,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -6400,6 +7943,8 @@ mod tests {
             playhead: None,
             play: None,
             info: "slice 2 · 0.653 s".into(),
+            bounds_slice: 2,
+            edit_rows: Default::default(),
             side: vec!["pads play the slices".into(), "Enter: assign".into()],
             banks: Some({
                 let mut b = [(false, false); BANKS];
@@ -7030,6 +8575,7 @@ mod tests {
             project: None,
         };
         let pads = Pads {
+            pattern: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -7038,6 +8584,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -7073,6 +8620,91 @@ mod tests {
             .collect();
         for line in q.body.iter().chain(&q.answers) {
             assert!(text.contains(line.trim()), "{line} missing");
+        }
+    }
+
+    /// Scenario "F1 wraps whole words".
+    #[test]
+    fn f1_wraps_whole_words() {
+        let description = "take the sound off the selected pad; in the edit, reset its settings. Press again to finish.";
+        let long = "a".repeat(70);
+        for width in [78u16, 118] {
+            let rows = help_key_lines(&[("Bksp".into(), description.into())], width);
+            let lines: Vec<String> = rows
+                .iter()
+                .map(|line| line.spans[3].content.to_string())
+                .collect();
+            for line in &lines {
+                let last = line.split(' ').next_back().unwrap_or("");
+                assert!(
+                    description.split(' ').any(|word| word == last) || last.is_empty(),
+                    "{width}: a word broken at the end of {line:?}"
+                );
+            }
+            // a word wider than its column still wraps inside the word
+            let rows = help_key_lines(&[("Bksp".into(), long.clone())], 40);
+            let text: String = rows
+                .iter()
+                .map(|l| l.spans[3].content.to_string())
+                .collect();
+            assert_eq!(text, long);
+            assert!(rows.len() > 1);
+        }
+        let rows = help_key_lines(&[("Bksp".into(), description.into())], 40);
+        let text: Vec<String> = rows
+            .iter()
+            .map(|l| l.spans[3].content.to_string())
+            .collect();
+        assert!(
+            text.iter()
+                .all(|l| !l.ends_with("rese") && !l.starts_with("t its")),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn help_key_lines_preserve_long_columns_and_graphemes() {
+        let keys = "Ctrl+Alt+Shift+PgDn Alt+Й ".repeat(9);
+        let description = format!(
+            "{}\n{}",
+            "sample-界-e\u{0301}-й.wav ".repeat(35),
+            "End of description."
+        );
+        for width in [78, 118] {
+            let rows = help_key_lines(&[(keys.clone(), description.clone())], width);
+            assert!(rows.len() > 3);
+            // rows break at spaces since 98i: the words come back whole and in order
+            let words = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let joined = |span: usize| {
+                rows.iter()
+                    .map(|line| line.spans[span].content.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            assert_eq!(words(&joined(1)), words(&keys));
+            assert_eq!(words(&joined(3)), words(&description.replace('\n', " ")));
+            assert!(rows.iter().all(|line| line.width() <= usize::from(width)));
+            let headings = help_key_lines(&[(String::new(), description.clone())], width);
+            assert_eq!(
+                words(
+                    &headings
+                        .iter()
+                        .map(|line| line.spans[0].content.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                words(&description.replace('\n', " "))
+            );
+            assert!(
+                headings
+                    .iter()
+                    .all(|line| line.width() <= usize::from(width))
+            );
+        }
+        assert!(help_key_lines(&[(keys, description)], 0).is_empty());
+        for height in [26, 40] {
+            assert_eq!(help_page_height(height, false), usize::from(height - 7));
+            assert_eq!(help_page_height(height, true), usize::from(height - 8));
         }
     }
 
@@ -7173,6 +8805,34 @@ mod tests {
                     }
                     term.draw(|f| draw(f, &status, screen, &help)).unwrap();
                     assert_eq!(term.backend().buffer(), &baseline);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pitch_gate_popup_keeps_full_setting_reason_and_pad_identity() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            for state in [
+                PitchGate::Off,
+                PitchGate::A1,
+                PitchGate::NeedsSlice,
+                PitchGate::NeedsPitch,
+            ] {
+                let value = Value {
+                    object: "pad 8-V".into(),
+                    parameter: "Pitch Gate".into(),
+                    formatted: state.description().into(),
+                    position: None,
+                };
+                let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+                term.draw(|frame| value_popup(frame, &value)).unwrap();
+                let buffer = term.backend().buffer();
+                let text = (0..width)
+                    .map(|x| buffer[(x, 2)].symbol())
+                    .collect::<String>();
+                for expected in ["Pitch Gate", "pad 8-V", value.formatted.as_str()] {
+                    assert!(text.contains(expected), "{width}x{height}: {text}");
                 }
             }
         }
@@ -7626,6 +9286,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         Pads {
+            pattern: None,
             bank: 0,
             pads: keys
                 .iter()
@@ -7643,6 +9304,7 @@ mod tests {
                     key,
                     name: format!("N{i}"),
                     gate: false,
+                    pitch_gate: PitchGate::NeedsSlice,
                     volume_db: 0.0,
                     pitch: 0,
                     attack_ms: 0,
@@ -7664,6 +9326,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -7773,6 +9436,43 @@ mod tests {
     }
 
     #[test]
+    fn bank_row_underlines_pattern_banks_and_lights_closed_bank_hits() {
+        let plain = idle_pads();
+        let text = |spans: &[Span]| spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+        let mut p = idle_pads();
+        p.bank_pattern.recorded = [true, false, true, false, false, false, false, false];
+        p.bank_pattern.hits[0] = 0b1;
+        p.bank_pattern.hits[2] = 0b1_0000;
+        let spans = banks(&p);
+        // the same characters: an underline and white dots only
+        let lit = bank_glyphs(0b1_0000);
+        let mut expected = text(&banks(&plain));
+        let closed = format!(" 3{}", bank_glyphs(plain.bank_fill[2]));
+        assert!(expected.contains(&closed));
+        expected = expected.replace(&closed, &format!(" 3{lit}"));
+        assert_eq!(text(&spans), expected);
+        let underlined: Vec<&str> = spans
+            .iter()
+            .filter(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(underlined, ["1", "3"]);
+        let three = spans.iter().position(|s| s.content == "3").unwrap();
+        assert_eq!(spans[three + 1].content, lit);
+        assert_eq!(spans[three + 1].style.fg, Some(WHITE));
+        // the open bank keeps its own flashes: pattern hits do not light it
+        let open = spans.iter().position(|s| s.content == "1").unwrap();
+        assert_ne!(spans[open + 2].style.fg, Some(WHITE));
+        assert_eq!(spans[open + 2].content, bank_glyphs(plain.bank_fill[0]));
+        // a hit in the open bank still flashes white
+        p.pads[0].flash = true;
+        let spans = banks(&p);
+        let open = spans.iter().position(|s| s.content == "1").unwrap();
+        assert_eq!(spans[open + 2].style.fg, Some(WHITE));
+        assert_eq!(spans[open + 2].content, bank_glyphs(1));
+    }
+
+    #[test]
     fn bank_colors_frames_and_row_follow_the_open_bank() {
         let p = idle_pads();
         // the bank row: every bank in its own color, the open one bold in brackets
@@ -7836,6 +9536,70 @@ mod tests {
         assert_eq!(key.1, BANK_COLORS[1]);
     }
 
+    /// The top left frame corner and one inside cell of the pad with key `key`.
+    fn pad_corner_and_inside(
+        rows: &[Vec<(String, Color, Color)>],
+        key: char,
+    ) -> ((Color, Color), (Color, Color)) {
+        let key = key.to_uppercase().to_string();
+        for (y, row) in rows.iter().enumerate() {
+            for x in 1..row.len() {
+                if row[x].0 == key && row[x - 1].0 == "┌" {
+                    let corner = (row[x - 1].1, row[x - 1].2);
+                    let inside = (rows[y + 1][x].1, rows[y + 1][x].2);
+                    return (corner, inside);
+                }
+            }
+        }
+        panic!("no pad {key}");
+    }
+
+    #[test]
+    fn selected_pad_keeps_its_frame_on_a_hit() {
+        let mut p = idle_pads();
+        let selected = p.selected;
+        let other = (selected + 1) % 16;
+        p.pads[selected].flash = true;
+        p.pads[other].flash = true;
+        let key = |i: usize| p.pads[i].key;
+        let (sel_key, other_key) = (key(selected), key(other));
+        let rows = render_pads(p);
+        let (corner, inside) = pad_corner_and_inside(&rows, sel_key);
+        assert_eq!(
+            corner,
+            (CYAN, PANEL),
+            "the cyan frame stays on the dark panel"
+        );
+        assert_eq!(inside.1, WHITE, "the hit fills the inside");
+        let (corner, inside) = pad_corner_and_inside(&rows, other_key);
+        assert_eq!(corner, (WHITE, WHITE));
+        assert_eq!(inside.1, WHITE);
+        // the key letter of the selected pad stays readable in its frame
+        let letter = rows
+            .iter()
+            .flatten()
+            .find(|(s, _, _)| *s == sel_key.to_uppercase().to_string())
+            .unwrap();
+        assert_eq!((letter.1, letter.2), (CYAN, PANEL));
+    }
+
+    #[test]
+    fn selected_marked_pad_keeps_its_frame() {
+        let mut p = idle_pads();
+        let selected = p.selected;
+        let other = (selected + 1) % 16;
+        p.pads[selected].marked = true;
+        p.pads[other].marked = true;
+        let (sel_key, other_key) = (p.pads[selected].key, p.pads[other].key);
+        let rows = render_pads(p);
+        let (corner, inside) = pad_corner_and_inside(&rows, sel_key);
+        assert_eq!(corner.0, CYAN);
+        assert_eq!(inside.1, MARK_BG);
+        let (corner, inside) = pad_corner_and_inside(&rows, other_key);
+        assert_eq!(corner.0, MARK);
+        assert_eq!(inside.1, MARK_BG);
+    }
+
     #[test]
     fn meanings_stay_above_the_bank_color() {
         let mut p = idle_pads();
@@ -7880,6 +9644,7 @@ mod tests {
     /// The file's wave fills the shared strip (31), over the full width.
     fn files_preview_fills_the_strip() {
         let pads = Pads {
+            pattern: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -7888,6 +9653,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -7980,6 +9746,7 @@ mod tests {
     #[test]
     fn one_slice_is_said_in_plain_words() {
         let pads = Pads {
+            pattern: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -7988,6 +9755,7 @@ mod tests {
             param: PadParam::Volume,
             bank_fill: [0; BANKS],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,
@@ -8024,6 +9792,8 @@ mod tests {
             playhead: None,
             play: None,
             info: "slice 1 · start 0.000 s · length 2610 ms".into(),
+            bounds_slice: 1,
+            edit_rows: Default::default(),
             side: vec!["Enter: assign".into()],
             banks: None,
             pads,
@@ -8558,7 +10328,8 @@ mod tests {
                 );
                 status.load_peak += 1.0;
                 let after = draw(&mut term, &status);
-                let controls = (3 * width as usize)..;
+                // the diagnostics row stands inside the settings frame since 98g
+                let controls = (4 * width as usize)..;
                 assert_eq!(
                     &before.content()[controls.clone()],
                     &after.content()[controls]
@@ -8978,6 +10749,77 @@ mod tests {
     }
 
     /// The settings screen on the given tab, as the tests read it back.
+    /// Scenario "Settings use the edit frame".
+    #[test]
+    fn settings_use_the_edit_frame() {
+        static MIDI: [MidiRow; 2] = [
+            MidiRow::Group {
+                name: "GLOBAL",
+                counts: String::new(),
+            },
+            MidiRow::Action {
+                label: String::new(),
+                who: String::new(),
+                taken: false,
+                stays: Vec::new(),
+            },
+        ];
+        let names = ["AUDIO", "INPUT", "MIDI", "PATHS"];
+        for (w, h) in [(80, 26), (120, 40)] {
+            for tab in 0..4 {
+                let mut st = settings_view(tab, 1);
+                st.paths = Some(("~/p", "~/s"));
+                st.midi_rows = &MIDI;
+                st.midi_row = 1;
+                let rows = draw_rows(&Screen::Settings(st), w, h);
+                let frame = row_text(&rows, 2);
+                assert!(
+                    frame.contains("SETTINGS · AUDIO INPUT MIDI PATHS"),
+                    "{w}x{h}: {frame}"
+                );
+                for (i, name) in names.iter().enumerate() {
+                    let x = frame
+                        .find(name)
+                        .map(|x| frame[..x].chars().count())
+                        .unwrap();
+                    assert_eq!(rows[2][x].2 == MAGENTA, i == tab, "{w}x{h}: {name} lit");
+                }
+                assert_eq!(rows[2][0].1, MAGENTA, "the edit colour");
+                let text = (0..rows.len())
+                    .map(|y| row_text(&rows, y))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let labels: &[&str] = match tab {
+                    0 => &["output", "input", "buffer", "wave"],
+                    3 => &["projects root", "samples root"],
+                    _ => &[],
+                };
+                for label in labels {
+                    assert!(text.contains(label), "{w}x{h}: {label}\n{text}");
+                }
+                if tab != 1 {
+                    let marked: Vec<usize> = (0..rows.len())
+                        .filter(|&y| row_text(&rows, y).contains('▸'))
+                        .collect();
+                    assert_eq!(
+                        marked.len(),
+                        1,
+                        "{w}x{h} tab {tab}: one selected row\n{text}"
+                    );
+                    let y = marked[0];
+                    assert!(rows[y].iter().any(|(_, fg, _)| *fg == CYAN), "bright");
+                }
+                assert!(
+                    rows[3..h as usize - 3]
+                        .iter()
+                        .flatten()
+                        .all(|(_, _, bg)| *bg != CYAN),
+                    "{w}x{h} tab {tab}: no inverse row"
+                );
+            }
+        }
+    }
+
     fn settings_view(tab: usize, row: usize) -> Settings<'static> {
         Settings {
             row,
@@ -9045,9 +10887,9 @@ mod tests {
             ..settings_view(3, 0)
         };
         let text = settings_text(st);
-        assert!(text.contains("[Paths]"), "{text}");
-        assert!(text.contains("Projects root ~/beats/projects"), "{text}");
-        assert!(text.contains("Samples root ~/beats/samples"), "{text}");
+        assert!(text.contains("SETTINGS · AUDIO INPUT MIDI PATHS"), "{text}");
+        assert!(text.contains("projects root ~/beats/projects"), "{text}");
+        assert!(text.contains("samples root ~/beats/samples"), "{text}");
     }
 
     /// The project picker (11) as the screen body shows it, as the tests read it back.
@@ -9151,6 +10993,7 @@ mod tests {
     #[test]
     fn bank_row_with_fill_fits_narrow_terminals() {
         let p = Pads {
+            pattern: None,
             bank: 0,
             pads: Vec::new(),
             selected: 0,
@@ -9161,6 +11004,7 @@ mod tests {
             feedback: PadFeedback::default(),
             bank_fill: [0xFFFF; BANKS],
             bank_marks: [0; BANKS],
+            bank_pattern: BankPattern::default(),
             out_wave: Vec::new(),
             splash: None,
             big: None,

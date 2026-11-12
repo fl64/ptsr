@@ -378,6 +378,30 @@ How to verify: make a one-bar beat through the keyboard, then through the contro
 Switch the view to 1/32. Add ghost snares and accents on both pages.
 Listen to the render for the quiet hits and the fill.
 
+### Change 98c — `98c-quantize-on-input` (owner decision 2026-11-12, after 98b)
+
+Owner problem: a quantize change moves every saved hit, also the hits that were already in
+the correct place. Owner decision: quantize as on an MPC or SP-404. This replaces the
+non-destructive quantize of section 2.3 for recorded hits.
+
+- A hit gets the quantize and strength of the moment of its capture. The pass stores the
+  quantized tick. The saved format stays the same.
+- A change of Quantize or Strength applies only to the next hits. Saved hits stay in place.
+- The raw played time is not kept after the pass. Pass Undo still restores the earlier rows.
+- One pad in one quantized cell keeps one hit (owner decision 2026-11-12). The last
+  captured hit replaces the earlier one, in one pass and across passes. The `2-9` cells then stay
+  only for quantize Off, strength below 100 % and old projects. A flam of one pad in one
+  cell needs a finer grid or quantize Off.
+- A later explicit command can quantize all of A1 with a question. It is not part of 98c.
+- Show the quantize of the next hits in the strip header: `view 1/16 · quantize 1/4 100 %`.
+  Proposed, not yet accepted by the owner.
+
+Spec deltas: `patterns` (96 compile, 97 capture and settings), `screen-layout` (header),
+`screen-help`. Open questions for the design:
+- old projects with raw ticks (default: load them as they are, no migration).
+- Gate lengths.
+- the controls text for Quantize and Strength.
+
 ### Change 99 — `99-pattern-slots`
 
 Goal: 16 pattern slots, musical switch boundaries, a one-pass fill, copy and clear.
