@@ -4,7 +4,7 @@
 
 - [x] 1.1 Draft this proposal, design, and task list for owner review.
 - [x] 1.2 Run `task openspec:check`, STE lint, and `task check`. Commit the artifacts separately.
-- [ ] 1.3 Ask the owner to accept this source-only scope before code moves.
+- [x] 1.3 Ask the owner to accept this source-only scope before code moves. On 2026-11-13 the owner asked to continue after the choice between this change and pattern slots.
 
 ## 2. Freeze the comparison base
 
