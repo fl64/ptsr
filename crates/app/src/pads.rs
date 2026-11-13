@@ -2581,6 +2581,46 @@ impl App {
             }
         }
     }
+    pub(super) fn pad_name_key(&mut self, k: &event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+        if k.kind == KeyEventKind::Release {
+            return false;
+        }
+        let Some((abs, mut name)) = self.pad_naming.take() else {
+            return false;
+        };
+        match k.code {
+            KeyCode::Esc => return true,
+            KeyCode::Enter => {
+                let before = self.before();
+                self.pads.custom_name[abs] = (!name.is_empty()).then_some(name);
+                self.note_step(before, "name".into());
+                self.dirty();
+                return true;
+            }
+            KeyCode::Backspace => {
+                name.pop();
+            }
+            KeyCode::Char(c)
+                if !k
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                name.push(c)
+            }
+            _ => {}
+        }
+        self.pad_naming = Some((abs, name));
+        true
+    }
+
+    /// A pad that can sound now: a loaded sample, not still loading, not failed (73).
+    pub(super) fn pad_sounds(&self, pad: usize) -> bool {
+        pad < PADS
+            && self.pads.file[pad].is_some()
+            && !self.pads.missing[pad]
+            && self.pads.loading[pad].is_none()
+    }
 }
 
 #[cfg(test)]

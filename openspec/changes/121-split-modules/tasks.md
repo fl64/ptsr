@@ -21,7 +21,7 @@
 
 ## 4. Move application code and tests
 
-- [ ] 4.1 Move each screen's App methods near its existing module. Keep method bodies, input priority, and keys. Run format, Clippy, and recorded input tests before each remaining commit.
+- [x] 4.1 Move each screen's App methods near its existing module. Keep method bodies, input priority, and keys. Run format, Clippy, and recorded input tests before each remaining commit.
 - [ ] 4.2 Split `input_tests.rs` by topic without changing test bodies or names. Run format, Clippy, and focused input tests before each topic commit.
 
 ## 5. Check and hand over
@@ -74,3 +74,5 @@ The FX selection and MIDI slot App method move passed `task check`. Its method t
 The settings App method move passed `task check`. Its method tokens match the old blocks after we remove the new module visibility and whitespace.
 
 The remaining Files App method move passed format, Clippy, 448 recorded input tests, and the browser unit test. Its method tokens match the old blocks after we remove the new module visibility and whitespace.
+
+The final pad input App method move passed format, Clippy, and 448 recorded input tests. Its method tokens match the old blocks after we remove the new module visibility and whitespace. Screen-specific App methods now live near their modules. Shared session, recording, routing, and process methods remain in `main.rs`.
