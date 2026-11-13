@@ -76,3 +76,5 @@ The settings App method move passed `task check`. Its method tokens match the ol
 The remaining Files App method move passed format, Clippy, 448 recorded input tests, and the browser unit test. Its method tokens match the old blocks after we remove the new module visibility and whitespace.
 
 The final pad input App method move passed format, Clippy, and 448 recorded input tests. Its method tokens match the old blocks after we remove the new module visibility and whitespace. Screen-specific App methods now live near their modules. Shared session, recording, routing, and process methods remain in `main.rs`.
+
+The feedback test move passed format and Clippy. A first targeted command used a stale test binary from the shared target and ran one old test. We did not count that result. With a branch-only target directory, 35 feedback tests, 22 transport tests, 192 pattern tests, and 3 scenario-audit tests passed. The moved test tokens match the old block after we remove module visibility and whitespace. The final full check will also use this target directory.
