@@ -86,3 +86,5 @@ The badge and pad view test move passed format, Clippy, 24 local tests, and 3 sc
 The save and project test move passed format, Clippy, 13 local tests, and 3 scenario-audit tests with the branch-only target. The shared `TransitionFiles` fixture stays in the parent module for other test topics. The moved tests and fixture match the old tokens after we remove whitespace.
 
 The screen registry test move passed format, Clippy, 5 local tests, and 3 scenario-audit tests with the branch-only target. The moved test tokens match the old block after we remove whitespace.
+
+The invalid MIDI state test move passed format, Clippy, 10 local tests, and 3 scenario-audit tests with the branch-only target. The moved test and fixture tokens match the old block after we remove whitespace.
