@@ -17,7 +17,7 @@
 - [x] 3.2a Move the shared pad frame, bank row, grid, and title into a widget module. Compare the catalogue. Run `task check` and commit.
 - [x] 3.2b Move shared badges, status, and meters into a widget module. Compare the catalogue. Run `task check` and commit.
 - [x] 3.2c Move shared wave drawing into a widget module. Compare the catalogue. Run `task check` and commit.
-- [ ] 3.3 Move Help, Files, FX, Chop, Pads, and pattern drawing into screen modules. Compare the catalogue after each move. Run `task check` and commit each screen move.
+- [x] 3.3 Move Help, Files, FX, Chop, Pads, and pattern drawing into screen modules. Compare the catalogue after each move. Run `task check` and commit each screen move.
 
 ## 4. Move application code and tests
 
@@ -52,3 +52,5 @@ The Files screen and project picker move passed 148 TUI tests and `task check`. 
 The Chop screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
 
 The Pads screen and pad cell move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
+
+The pattern strip and overview move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base. The screen drawing moves are complete.
