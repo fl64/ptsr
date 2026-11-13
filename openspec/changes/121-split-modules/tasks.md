@@ -15,7 +15,7 @@
 
 - [x] 3.1 Move Settings drawing as a pilot. Compare both catalogue sizes. Run `task check` and commit.
 - [x] 3.2a Move the shared pad frame, bank row, grid, and title into a widget module. Compare the catalogue. Run `task check` and commit.
-- [ ] 3.2b Move shared badges, status, and meters into a widget module. Compare the catalogue. Run `task check` and commit.
+- [x] 3.2b Move shared badges, status, and meters into a widget module. Compare the catalogue. Run `task check` and commit.
 - [ ] 3.2c Move shared wave drawing into a widget module. Compare the catalogue. Run `task check` and commit.
 - [ ] 3.3 Move Help, Files, FX, Chop, Pads, and pattern drawing into screen modules. Compare the catalogue after each move. Run `task check` and commit each screen move.
 
@@ -38,3 +38,5 @@ The first post-move `task check` failed in the callback benchmark. Active erasur
 The next full `task check` passed. In active erasure, wall time reached 10.84 % and no callback exceeded 50 %. This result does not resolve the earlier maximum-budget failures.
 
 The shared pad-frame widget move passed `cargo test -p tui --lib` and `task check`. All 820 ANSI file names and bytes still match the base.
+
+The shared status and meter move passed the same TUI tests and `task check`. All 820 ANSI file names and bytes still match the base. The existing title widget draws badges. This move leaves that code in `widgets.rs`.
