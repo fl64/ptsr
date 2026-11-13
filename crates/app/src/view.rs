@@ -674,7 +674,7 @@ impl App {
             ));
             rows.push((
                 "A1 marks".into(),
-                "Square: hit. Tilde: off-grid hit. Number: several hits. Light plate: playback. Cyan cell: edit cursor."
+                "Square: hit. Tilde: off-grid hit. Number: several hits. Dim/normal/bright: velocity 1-42/43-84/85-127. Light plate: playback. Cyan cell: edit cursor."
                     .into(),
             ));
             if self.pattern_view.edit {

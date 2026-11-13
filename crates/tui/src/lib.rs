@@ -585,6 +585,7 @@ pub struct PadFeedback {
 pub struct PatternCell {
     pub count: usize,
     pub off_grid: bool,
+    pub max_velocity: u8,
 }
 
 /// Where A1 has onsets in the bank row (98): banks with any visible onset, and per bank
@@ -624,6 +625,7 @@ pub struct PatternOverview {
     pub total_cells: usize,
     pub edit_cursor: Option<usize>,
     pub event_choice: Option<(usize, usize)>,
+    pub event_velocity: Option<u8>,
 }
 
 /// Row labels `all` and `pad Q` take this many columns; each beat opens with a space (98i).
@@ -1459,6 +1461,7 @@ mod tests {
                 .map(|index| PatternCell {
                     count: usize::from(index % 4 == 0),
                     off_grid: false,
+                    max_velocity: 127,
                 })
                 .collect(),
             all: (0..cells).map(|index| index % 2 == 0).collect(),
@@ -1830,6 +1833,7 @@ mod tests {
                 .map(|index| PatternCell {
                     count: usize::from(index % 64 == 40),
                     off_grid: false,
+                    max_velocity: 127,
                 })
                 .collect(),
             all: vec![false; 256],
@@ -1869,6 +1873,7 @@ mod tests {
                             .map(|index| PatternCell {
                                 count: index % 3,
                                 off_grid: index % 5 == 4,
+                                max_velocity: 127,
                             })
                             .collect(),
                         all: (0..total).map(|index| index % 2 == 0).collect(),

@@ -143,7 +143,10 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     let end = (first + count).min(view.total_cells);
     let mut title = if let Some(cursor) = view.edit_cursor {
         let choice = match view.event_choice {
-            Some((index, count)) => format!("event {index}/{count}"),
+            Some((index, count)) => match view.event_velocity {
+                Some(velocity) => format!("event {index}/{count} · vel {velocity}"),
+                None => format!("event {index}/{count}"),
+            },
             None => "empty cell".into(),
         };
         format!(
@@ -375,7 +378,13 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 } else if view.playhead == Some(cell) {
                     Style::new().fg(BG).bg(PLATE).bold()
                 } else {
-                    shade.fg(if glyph == '·' { STEP_EMPTY } else { WHITE })
+                    let color = match mark.map_or(0, |mark| mark.max_velocity) {
+                        0 => STEP_EMPTY,
+                        1..=42 => DIM,
+                        43..=84 => TEXT,
+                        _ => WHITE,
+                    };
+                    shade.fg(color)
                 };
                 let left = (cell_width - 1) / 2;
                 let cursor = view.edit_cursor == Some(cell) && selected;

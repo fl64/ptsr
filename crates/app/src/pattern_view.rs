@@ -216,6 +216,7 @@ impl Model {
             if let Some(mark) = rows[pad].get_mut(cell - first) {
                 mark.count += 1;
                 mark.off_grid |= !event.played.tick().is_multiple_of(spacing);
+                mark.max_velocity = mark.max_velocity.max(event.raw.velocity());
             }
         }
         (rows, active)
@@ -468,6 +469,7 @@ impl super::App {
                 .edit
                 .then_some(self.pattern_view.cursor_cell),
             event_choice: None,
+            event_velocity: None,
         };
         let Some(raw) = &self.pads.pattern else {
             let keys = self
@@ -540,6 +542,7 @@ impl super::App {
                     .and_then(|choice| events.iter().position(|event| *event == choice.event))
                     .map_or(usize::from(events.len() == 1), |index| index + 1);
                 view.event_choice = Some((index, events.len()));
+                view.event_velocity = (index > 0).then(|| events[index - 1].raw.velocity());
             }
         }
         view
@@ -695,6 +698,11 @@ impl super::App {
                 off_grid: events
                     .iter()
                     .any(|event| !event.played.tick().is_multiple_of(spacing)),
+                max_velocity: events
+                    .iter()
+                    .map(|event| event.raw.velocity())
+                    .max()
+                    .unwrap_or(0),
             })
             .collect();
         strip.all = cells.bank;
@@ -705,6 +713,39 @@ impl super::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Overview velocity levels keep event marks".
+    #[test]
+    fn overview_velocity_levels_keep_event_marks() {
+        let hits = [
+            (0, 1),
+            (240, 42),
+            (480, 43),
+            (720, 84),
+            (961, 85),
+            (1200, 20),
+            (1201, 127),
+        ]
+        .map(|(tick, velocity)| Hit::new(tick, 0, velocity, 0).unwrap());
+        let raw = RawPattern::new(1, Grid::Off, 100, hits.to_vec()).unwrap();
+        let before = raw.clone();
+        let model = Model::new(&raw, None, Division::default()).unwrap();
+        let (rows, _) = model.overview_page_cells(0, 6);
+        assert_eq!(
+            rows[0]
+                .iter()
+                .map(|cell| cell.max_velocity)
+                .collect::<Vec<_>>(),
+            [1, 42, 43, 84, 85, 127]
+        );
+        assert_eq!(
+            rows[0].iter().map(|cell| cell.count).collect::<Vec<_>>(),
+            [1, 1, 1, 1, 1, 2]
+        );
+        assert!(rows[0][4].off_grid);
+        assert!(rows[0][5].off_grid);
+        assert_eq!(raw, before);
+    }
 
     /// Scenario "Overview shows all pad rows and source events".
     #[test]

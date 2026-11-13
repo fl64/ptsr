@@ -23,6 +23,7 @@ fn overview_fixed_cells_align_every_division() {
                 total_cells: total,
                 edit_cursor: Some(0),
                 event_choice: None,
+                event_velocity: None,
             };
             let mut pads = idle_pads();
             pads.selected = 0;
@@ -59,6 +60,61 @@ fn overview_fixed_cells_align_every_division() {
             }
             assert!(x < width as usize);
             assert_eq!(buffer[(width - 1, 4)].symbol(), "┃");
+        }
+    }
+}
+
+/// Scenario "Overview velocity levels keep event marks".
+#[test]
+fn overview_velocity_levels_keep_event_marks() {
+    for (width, height) in [(80u16, 26u16), (120, 40)] {
+        let (page, label_width) = overview_page_layout(width as usize, 4, 16);
+        let mut rows = vec![vec![PatternCell::default(); page]; 128];
+        for (index, velocity) in [1, 42, 43, 84, 85, 127].into_iter().enumerate() {
+            rows[0][index] = PatternCell {
+                count: if index == 5 { 2 } else { 1 },
+                off_grid: index == 4,
+                max_velocity: velocity,
+            };
+        }
+        let view = PatternOverview {
+            header: "view 1/16".into(),
+            rows,
+            names: vec!["sample".into(); 128],
+            active_pads: [1, 0, 0, 0, 0, 0, 0, 0],
+            hide_empty: true,
+            beat_cells: 4,
+            playhead: None,
+            first_cell: 0,
+            total_cells: 16,
+            edit_cursor: Some(6),
+            event_choice: Some((1, 1)),
+            event_velocity: Some(85),
+        };
+        let pads = idle_pads();
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|frame| pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &view))
+            .unwrap();
+        let buffer = term.backend().buffer();
+        let title = (0..width)
+            .map(|x| buffer[(x, 0)].symbol())
+            .collect::<String>();
+        assert!(title.contains("vel 85"), "{width}x{height}: {title}");
+        for (index, (glyph, color)) in [
+            ("■", DIM),
+            ("■", DIM),
+            ("■", TEXT),
+            ("■", TEXT),
+            ("~", WHITE),
+            ("2", WHITE),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let x = label_width + 2 + 3 * index + usize::from(index >= 4);
+            let cell = &buffer[(x as u16, 4)];
+            assert_eq!(cell.symbol(), glyph, "{width}x{height}, cell {index}");
+            assert_eq!(cell.fg, color, "{width}x{height}, cell {index}");
         }
     }
 }

@@ -314,6 +314,7 @@ fn overview_help_follows_effective_bindings() {
         .join("\n");
     assert!(
         text.contains("Square: hit")
+            && text.contains("velocity 1-42/43-84/85-127")
             && text.contains("current bank")
             && text.contains("Empty rows: hidden")
     );
