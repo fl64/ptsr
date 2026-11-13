@@ -1336,6 +1336,7 @@ fn key(k: &str) -> Span<'static> {
 #[cfg(test)]
 mod tests {
     mod meter;
+    mod names;
     use super::*;
 
     #[test]

@@ -13,6 +13,7 @@ enum Mode {
     Normal,
     QuietEmpty,
     ClipEvent,
+    LongLabels,
     Tone,
     Envelope,
     Filter,
@@ -102,6 +103,7 @@ impl Mode {
         Self::Normal,
         Self::QuietEmpty,
         Self::ClipEvent,
+        Self::LongLabels,
         Self::Tone,
         Self::Envelope,
         Self::Filter,
@@ -191,6 +193,7 @@ impl Mode {
             Self::Normal => "normal",
             Self::QuietEmpty => "quiet-empty",
             Self::ClipEvent => "clip-event",
+            Self::LongLabels => "long-labels",
             Self::Tone => "edit-tone",
             Self::Envelope => "edit-env",
             Self::Filter => "edit-filter",
@@ -310,7 +313,8 @@ impl Mode {
             | Self::PitchGateSource
             | Self::PitchGatePitch
             | Self::QuietEmpty
-            | Self::ClipEvent => screen == Screen::Pads,
+            | Self::ClipEvent
+            | Self::LongLabels => screen == Screen::Pads,
             Self::Bounds
             | Self::Assign
             | Self::AssignOrder
@@ -423,6 +427,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                     [
                         "quiet-empty",
                         "clip-event",
+                        "long-labels",
                         "pattern-view-fine",
                         "pattern-view-triplet",
                         "pattern-view-off-grid",
@@ -745,6 +750,15 @@ fn fixture(case: Case, now: Instant) -> App {
         Mode::ClipEvent => {
             app.meters = meters::Meters::new(now - Duration::from_secs(3_723));
             app.meters.update((1.0, 0.7), now);
+        }
+        Mode::LongLabels => {
+            app.pads.custom_name[0] = Some("warm dusty snare sample with 音 e\u{301}".into());
+            app.pads.file[0] = Some("/offline/samples/warm dusty snare sample.wav".into());
+            app.project = Some(Project {
+                name: "warm dusty project collection".into(),
+                folder: "/offline/project".into(),
+            });
+            app.session_write_failed = true;
         }
         Mode::Normal | Mode::Value | Mode::Device => {}
         Mode::PatternCountIn
@@ -1286,6 +1300,15 @@ fn check_frame(case: Case, buffer: &Buffer) {
     match case.mode {
         Mode::QuietEmpty => require("—"),
         Mode::ClipEvent => require("CLIP +01:02:03"),
+        Mode::LongLabels => {
+            require("whole file");
+            require(if case.size.0 == 80 {
+                "warm…"
+            } else {
+                "warm dusty snare…"
+            });
+            require("Save failed");
+        }
         Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => require("EDIT"),
         Mode::Bounds => {
             require("EDIT · BOUNDS");
@@ -1540,6 +1563,68 @@ fn check_frame(case: Case, buffer: &Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Long names stay readable at both sizes".
+    #[test]
+    fn long_names_stay_readable_at_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let pads = Case {
+                screen: Screen::Pads,
+                mode: Mode::LongLabels,
+                size,
+            };
+            let (_, frame) = render(pads, &keymap);
+            check_frame(pads, &frame);
+
+            let files = Case {
+                screen: Screen::Files,
+                mode: Mode::Normal,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(files, now);
+            app.browser.dir = "/offline/warm dusty folder with 音 e\u{301}".into();
+            let name = "warm dusty sample with 音 e\u{301} and more words.wav";
+            app.browser.entries = vec![browser::Entry {
+                name: name.into(),
+                is_dir: false,
+                favorite: None,
+            }];
+            app.browser.selected = 0;
+            app.browser.in_hand = Some(format!("/offline/{name}").into());
+            let (_, frame) = render_app(files, &keymap, app, now);
+            let text = frame
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("← in hand"), "{text}");
+            assert!(text.contains("warm dusty"), "{text}");
+            assert!(text.contains('…'), "{text}");
+
+            let picker = Case {
+                screen: Screen::Pads,
+                mode: Mode::Picker,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(picker, now);
+            app.project_picker.as_mut().unwrap().entries = vec![
+                "warm dusty project with 音 e\u{301} and many more words repeated to fill the screen and another long sequence of project words"
+                    .into(),
+            ];
+            let (_, frame) = render_app(picker, &keymap, app, now);
+            let text = frame
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(text.contains("warm dusty project"), "{text}");
+            assert!(text.contains('…'), "{text}");
+        }
+    }
 
     /// Scenario "Screen words name the same concepts".
     #[test]

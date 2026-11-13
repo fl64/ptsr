@@ -20,8 +20,8 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 ## 3. Clip feedback and long labels
 
 - [x] 3.1 Capture the latest clip time on the UI side. Hide the idle label. Test latch, clean hit, repeated clip, and restart with a controlled clock.
-- [ ] 3.2 Shorten long names at word boundaries. Test narrow fields, wide graphemes, and safety priority.
-- [ ] 3.3 Add the new catalogue entries and compare unchanged areas with the base.
+- [x] 3.2 Shorten long names at word boundaries. Test narrow fields, wide graphemes, and safety priority.
+- [x] 3.3 Add the new catalogue entries and compare unchanged areas with the base.
 
 ## 4. Check and hand over
 
@@ -39,3 +39,5 @@ The idle PLAY step passed format, Clippy, 148 TUI tests, recorded keyboard and M
 The CLIP step passed controlled-clock meter tests, 148 TUI tests, Clippy, the file-size gate, and all 23 screen tests. The catalogue has 824 files with no missing base name. It adds `pads-clip-event` at both sizes. The UI-side meter records the latest observed clipped output. The audio callback does no new work.
 
 The Pitch Gate step passed keyboard, raw MIDI, popup, panel, F1, and parameter-page tests. It passed 148 TUI tests, Clippy, the file-size gate, and all 23 screen tests. The catalogue still has 824 files and no missing base name. The detail row stays inside the pad panel at both sizes.
+
+The long-name step passed format, Clippy, 150 TUI tests, the named app scenario, and the active scenario audit. All 24 screen tests passed. The catalogue has 826 files: 820 base names and six new cases at both sizes. No base name is missing. Of the base frames, 714 changed. The new cases cover empty pads, clip feedback, and long names. The old frames changed where the visible words or name clipping changed. The pattern strip keeps five display cells for a wide pad label. Save failure and file-in-hand messages stay visible.

@@ -99,6 +99,27 @@ pub(super) fn clip_label(text: &str, width: usize) -> String {
     clipped
 }
 
+/// Shorten a user name at a complete word when one fits; keep graphemes whole otherwise.
+pub(super) fn clip_name(text: &str, width: usize) -> String {
+    let clean = clip_label(text, usize::MAX);
+    if Span::raw(clean.as_str()).width() <= width {
+        return clean;
+    }
+    let budget = width.saturating_sub(1);
+    let boundary = clean
+        .char_indices()
+        .rev()
+        .filter(|(_, c)| c.is_whitespace())
+        .find_map(|(index, _)| {
+            let prefix = clean[..index].trim_end();
+            (!prefix.is_empty() && Span::raw(prefix).width() <= budget).then_some(prefix)
+        });
+    match boundary {
+        Some(prefix) => format!("{prefix}…"),
+        None => clip_label(&clean, width),
+    }
+}
+
 pub(super) fn status_inputs(inputs: &[InputSource], stage: u8) -> Vec<Span<'static>> {
     if stage >= 6 {
         return Vec::new();
