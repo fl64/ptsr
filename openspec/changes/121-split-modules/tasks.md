@@ -54,3 +54,5 @@ The Chop screen move passed 148 TUI tests and `task check`. All 820 ANSI file na
 The Pads screen and pad cell move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
 
 The pattern strip and overview move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base. The screen drawing moves are complete.
+
+The Chop App method move passed `task check`. The method tokens match the old block after we remove the new module visibility and the two commas that Rustfmt added to function signatures. The first full run found an item after the test module. The next run found an empty line after a doc comment. Both layout fixes passed the final full run.
