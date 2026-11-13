@@ -4,7 +4,11 @@
 
 - [x] 1.1 Record the display changes, conflicting requirements, default decisions, and owner checks in the proposal, design, and spec deltas.
 - [x] 1.2 Run OpenSpec validation and STE lint. Commit the specification artifacts before code.
-- [ ] 1.3 Save the current 80x26 and 120x40 catalogue names and bytes as the comparison base.
+- [x] 1.3 Save the current 80x26 and 120x40 catalogue names and bytes as the comparison base.
+
+## Baseline evidence
+
+The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 820 ANSI files. Their names and bytes match the final catalogue of change 121. The manifest stays outside Git at `/tmp/ptsr-122-base-screens.sha256`.
 
 ## 2. Quiet cells and clear words
 
