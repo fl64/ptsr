@@ -7,7 +7,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let (badge, badge_style) = if p.playing {
         (" PLAY ▶   ", Style::new().fg(BG).bg(CYAN))
     } else {
-        (" PLAY     ", Style::new().fg(DIM).bg(BG))
+        ("          ", Style::new().fg(DIM).bg(BG))
     };
     frame.render_widget(
         title(

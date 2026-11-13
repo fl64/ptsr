@@ -3359,25 +3359,28 @@ mod tests {
                                     .unwrap();
                                     let cells = term.backend().buffer().content();
                                     let row = &cells[w as usize..2 * w as usize];
-                                    let needle = if chop { "LISTEN" } else { "PLAY" };
-                                    let at = row
-                                        .windows(needle.len())
-                                        .position(|cells| {
-                                            cells
-                                                .iter()
-                                                .map(|cell| cell.symbol())
-                                                .collect::<String>()
-                                                == needle
-                                        })
-                                        .unwrap();
-                                    let slot = at - 1..at + 9;
+                                    let slot = if chop {
+                                        let at = row
+                                            .windows(6)
+                                            .position(|cells| {
+                                                cells
+                                                    .iter()
+                                                    .map(|cell| cell.symbol())
+                                                    .collect::<String>()
+                                                    == "LISTEN"
+                                            })
+                                            .unwrap();
+                                        at - 1..at + 9
+                                    } else {
+                                        10..20
+                                    };
                                     // Assignment audition keeps the existing idle LISTEN slot.
                                     let active = playing && name != "ASSIGN";
                                     let expected = match (chop, active) {
                                         (true, true) => " LISTEN ▶ ",
                                         (true, false) => " LISTEN   ",
                                         (false, true) => " PLAY ▶   ",
-                                        (false, false) => " PLAY     ",
+                                        (false, false) => "          ",
                                     };
                                     assert_eq!(
                                         row[slot.clone()]
@@ -3739,7 +3742,7 @@ mod tests {
         );
     }
 
-    /// Scenario "Pads PLAY badge has fixed width".
+    /// Scenarios "Pads PLAY badge has fixed width" and "Idle playback keeps its space without text".
     #[test]
     fn pads_play_badge_has_fixed_width() {
         for (width, height) in [(60, 24), (80, 30), (100, 40)] {
@@ -3774,14 +3777,8 @@ mod tests {
                                 .find(|&y| row_text(&rows, y).contains("F2 PADS"))
                                 .unwrap();
                             let row = &rows[y];
-                            let badge = row
-                                .windows(4)
-                                .position(|cells| {
-                                    cells.iter().map(|cell| cell.0.as_str()).collect::<String>()
-                                        == "PLAY"
-                                })
-                                .expect("PLAY badge");
-                            let text: String = row[badge - 1..badge + 9]
+                            let slot = 10..20;
+                            let text: String = row[slot.clone()]
                                 .iter()
                                 .map(|cell| cell.0.as_str())
                                 .collect();
@@ -3790,10 +3787,10 @@ mod tests {
                                 if playing {
                                     " PLAY ▶   "
                                 } else {
-                                    " PLAY     "
+                                    "          "
                                 }
                             );
-                            for cell in &row[badge - 1..badge + 9] {
+                            for cell in &row[slot] {
                                 assert_eq!(
                                     (cell.1, cell.2),
                                     if playing { (BG, CYAN) } else { (DIM, BG) }
@@ -3857,7 +3854,7 @@ mod tests {
             .expect("the title line");
         let title = row_text(&rows, y);
         assert!(
-            title.contains("F2 PADS   PLAY       MARK · hit pads · 3 marked "),
+            title.contains("F2 PADS              MARK · hit pads · 3 marked "),
             "{title}"
         );
         assert!(

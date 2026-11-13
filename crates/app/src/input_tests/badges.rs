@@ -768,8 +768,12 @@ fn pads_play_badge(drive: &mut Drive) -> bool {
         .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
         .find(|row| row.contains("F2 PADS"))
         .unwrap();
-    assert!(header.contains("PLAY"), "missing PLAY badge: {header}");
-    header.contains("PLAY ▶")
+    let slot = header.chars().skip(10).take(10).collect::<String>();
+    assert!(
+        matches!(slot.as_str(), " PLAY ▶   " | "          "),
+        "{header}"
+    );
+    slot.contains("PLAY ▶")
 }
 
 /// Scenario "Pads PLAY badge follows keyboard and MIDI playback".

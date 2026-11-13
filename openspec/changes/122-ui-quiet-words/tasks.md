@@ -14,7 +14,8 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 
 - [x] 2.1 Make empty pad cells quiet. Keep corner marks and the empty-pad test tone. Add keyboard and raw MIDI state tests and catalogue cases.
 - [x] 2.2 Change visible scope, source, pattern, help, and MIDI learn words. Keep action IDs, saved groups, and controls. Add scenario tests.
-- [ ] 2.3 Keep fixed title slots while blanking idle PLAY. Make the compact Pitch Gate summary conditional. Test all states at both sizes.
+- [x] 2.3 Keep the fixed ten-cell PLAY slot blank while idle. Test active and idle states at both sizes.
+- [ ] 2.4 Make the compact Pitch Gate summary conditional. Test all states at both sizes.
 
 ## 3. Clip feedback and long labels
 
@@ -32,3 +33,5 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 The quiet empty-pad step passed format, Clippy, the file-size gate, 148 TUI tests, two New pad tests, and the empty-wave test. The catalogue test passed and added `pads-quiet-empty` at both sizes. It changed 180 prior frames with empty cells. The existing corner-mark tests passed. The paired New pad test used keyboard events and raw MIDI. The sound path and test-tone view did not change.
 
 The word step passed format, Clippy, and the file-size gate. The source, scope, binding, saved MIDI, 22 prior screen, and new glossary tests passed. A broad app test run found four stale checks. Each passed after correction. The screen catalogue still has 822 files. It changes 712 prior frames because PATTERN help appears on many screens. The controller map uses `ptrn` in six cells, and MIDI learn uses `pattern` with the old action ID.
+
+The idle PLAY step passed format, Clippy, 148 TUI tests, recorded keyboard and MIDI playback tests, and all 23 screen tests. The ten-cell slot keeps its position at both sizes. The screen catalogue still has 822 files and no missing base name.
