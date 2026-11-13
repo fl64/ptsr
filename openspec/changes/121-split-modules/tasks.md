@@ -60,3 +60,5 @@ The Chop App method move passed `task check`. The method tokens match the old bl
 The folder and project picker App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.
 
 The pad load, copy, swap, and placement App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.
+
+The screen learn App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility, whitespace, and Rustfmt signature commas.

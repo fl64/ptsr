@@ -241,6 +241,622 @@ pub fn group_map(learned: &Learned, profile: &str, group: Group) -> HashMap<Key,
         .collect()
 }
 
+use crate::*;
+
+impl App {
+    /// The group a binding of the learn mode goes to (53): the group of the layer in sight,
+    /// the edit group while the edit is open; the page knobs of the edit are learned in F12.
+    pub(super) fn learn_group(&self) -> input::Group {
+        match &self.screen_learn {
+            Some(l) => l.group,
+            None => self.layer_group(),
+        }
+    }
+
+    /// The group of the layer in sight (57): the edit group with the edit open.
+    pub(super) fn layer_group(&self) -> input::Group {
+        if self.edit
+            && let Some(group) = self.screen.rules().ui_edit_group
+        {
+            return group;
+        }
+        self.screen_group()
+    }
+
+    /// The screen's own group, under its edit group.
+    pub(super) fn screen_group(&self) -> input::Group {
+        // Keep the existing Settings helper result, not its registry identity.
+        if self.screen == Screen::Settings {
+            input::Group::Files
+        } else {
+            self.screen.group()
+        }
+    }
+
+    /// The learn mode as `F10` opens it (57): with the action done in the last 5 s picked,
+    /// in its layer and page, or with nothing picked in the layer in sight.
+    pub(super) fn learn_open(&mut self) -> ScreenLearn {
+        let last = self
+            .last_done
+            .take()
+            .filter(|d| d.at.elapsed() <= LAST_DONE && d.group == self.layer_group());
+        let mut l = ScreenLearn {
+            picked: None,
+            pending: None,
+            clearing: false,
+            learner: None,
+            ignore: None,
+            refused: false,
+            group: self.layer_group(),
+            page: (self.edit && self.screen == Screen::Pads).then(|| self.pads.page().0),
+            once: false,
+        };
+        if let Some(d) = last {
+            l.learner = Some(learn::Learning::new(action_info(d.name)));
+            l.picked = Some((d.name, d.label));
+            l.page = d.page;
+            l.once = true;
+        }
+        l
+    }
+
+    /// Notes what an action did, for "do, then F10" (57): a pad hit its pad, a value step
+    /// the parameter it changed, a command its entry of the learn list.
+    pub(super) fn note_done(&mut self, action: Action) {
+        if self.screen_learn.is_some() || action == Action::LearnToggle {
+            return;
+        }
+        let group = self.layer_group();
+        let page = (self.edit && self.screen == Screen::Pads).then(|| self.pads.page().0);
+        let found: Option<(&'static str, String)> = match action {
+            Action::PadPress { pad, .. } => {
+                let key = PAD_KEYS[pad].to_ascii_uppercase();
+                Some((
+                    action_info(&format!("pad.{}", pad + 1)).name,
+                    format!("pad {key}"),
+                ))
+            }
+            Action::EditValue { .. } | Action::PadParam(_) if self.screen == Screen::Pads => {
+                let label = pads::name_of(self.pads.param);
+                self.learn_params()
+                    .iter()
+                    .find(|(_, l)| *l == label)
+                    .map(|&(n, l)| (n, l.to_string()))
+            }
+            Action::EditValue { .. } | Action::PadParam(_) if self.screen == Screen::Fx => {
+                let (name, _) = self.learn_params()[self.fx_param];
+                Some((name, self.pads.name(self.fx_selected_param()).into()))
+            }
+            Action::EditValue { .. } if self.screen == Screen::Chop => Some(if self.slice_end {
+                ("slice.end", "slice end".into())
+            } else {
+                ("slice.start", "slice start".into())
+            }),
+            a => {
+                let groups = [group, self.screen_group(), input::Group::Global];
+                input::ACTIONS
+                    .iter()
+                    .find(|i| {
+                        !i.knob && groups.contains(&i.group) && Action::parse(i.name) == Some(a)
+                    })
+                    .map(|i| (i.name, i.label.to_string()))
+            }
+        };
+        if let Some((name, label)) = found {
+            self.last_done = Some(LastDone {
+                at: Instant::now(),
+                name,
+                label,
+                group,
+                page,
+            });
+        }
+    }
+
+    /// The parameters the learn mode walks with `I` `K` (52): they have no key of their own.
+    pub(super) fn learn_params(&self) -> &'static [(&'static str, &'static str)] {
+        match self.screen {
+            Screen::Fx => &[
+                ("edit.param_1", "effect type"),
+                ("edit.param_2", "first parameter"),
+                ("edit.param_3", "second parameter"),
+                ("edit.page", "effect block"),
+            ],
+            Screen::Pads => &[
+                ("pad.volume", "volume"),
+                ("pad.pitch", "pitch"),
+                ("pad.attack", "attack"),
+                ("pad.decay", "decay"),
+                ("pad.release", "release"),
+                ("pad.filter", "filter"),
+                ("pad.cutoff", "cutoff"),
+                ("pad.reso", "reso"),
+                ("pad.start", "start"),
+                ("pad.end", "end"),
+            ],
+            Screen::Chop => &[
+                ("slice.start", "slice start"),
+                ("slice.end", "slice end"),
+                ("chop.cursor_pos", "cursor"),
+                ("chop.zoom", "zoom"),
+                ("chop.region_start_pos", "region start"),
+                ("chop.region_end_pos", "region end"),
+                ("chop.threshold", "threshold"),
+            ],
+            _ => &[],
+        }
+    }
+
+    /// Picks `name` in the learn mode: it lights and waits for a control.
+    pub(super) fn learn_pick(&mut self, name: &'static str, label: String) {
+        // a pick by a key hears every control again; the move after a binding sets `ignore`
+        let (group, page, once) = match &self.screen_learn {
+            Some(l) => (l.group, l.page, l.once),
+            None => (self.layer_group(), None, false),
+        };
+        self.screen_learn = Some(ScreenLearn {
+            picked: Some((name, label)),
+            pending: None,
+            clearing: false,
+            learner: Some(learn::Learning::new(action_info(name))),
+            ignore: None,
+            refused: false,
+            group,
+            page,
+            once,
+        });
+    }
+
+    /// The element after `name` (53): the next pad, the next parameter, the next command of
+    /// the screen's learn list; `None` past the last.
+    pub(super) fn learn_next(&self, name: &str) -> Option<(&'static str, String)> {
+        if let Some(n) = name
+            .strip_prefix("pad.")
+            .and_then(|n| n.parse::<usize>().ok())
+        {
+            return (n < PADS_PER_BANK).then(|| {
+                let key = PAD_KEYS[n].to_ascii_uppercase();
+                (
+                    action_info(&format!("pad.{}", n + 1)).name,
+                    format!("pad {key}"),
+                )
+            });
+        }
+        let params = self.learn_params();
+        if let Some(i) = params.iter().position(|(n, _)| *n == name) {
+            return params.get(i + 1).map(|&(n, l)| (n, l.to_string()));
+        }
+        let group = self.learn_group();
+        let list: Vec<_> = input::ACTIONS
+            .iter()
+            .filter(|i| !i.knob && (i.group == group || i.group == input::Group::Global))
+            .collect();
+        let at = list.iter().position(|i| i.name == name)?;
+        list.get(at + 1).map(|i| (i.name, i.label.to_string()))
+    }
+
+    /// Binds the waiting or given control to the picked element and moves on (53).
+    pub(super) fn learn_save(&mut self, profile: String, key: input::midi::Key) {
+        let group = self.learn_group();
+        let Some((name, label)) = self.learn_picked() else {
+            return;
+        };
+        learn::assign(&mut self.learned, &profile, group, key, name);
+        self.sync_learned(&profile, group);
+        self.save_midi();
+        log::info!("MIDI learn on screen: {profile} {key} -> {name}");
+        self.post_notice(Level::Done, (format!("{key} → {label}"), Instant::now()));
+        // "do, then F10" binds one element: nothing to walk on to (57)
+        if self.screen_learn.as_ref().is_some_and(|l| l.once) {
+            self.screen_learn = None;
+            return;
+        }
+        match self.learn_next(name) {
+            Some((next, next_label)) => self.learn_pick(next, next_label),
+            None => self.learn_pick(name, label),
+        }
+        if let Some(l) = self.screen_learn.as_mut() {
+            l.ignore = Some(key);
+        }
+    }
+
+    /// `I` `K` in the learn mode: the next or previous parameter of the screen.
+    pub(super) fn learn_walk(&mut self, step: isize) {
+        let params = self.learn_params();
+        if params.is_empty() {
+            return;
+        }
+        let at = self
+            .learn_picked()
+            .and_then(|(name, _)| params.iter().position(|(n, _)| *n == name));
+        let next = match at {
+            Some(i) => (i as isize + step).rem_euclid(params.len() as isize) as usize,
+            None if step > 0 => 0,
+            None => params.len() - 1,
+        };
+        let (name, label) = params[next];
+        self.learn_pick(name, label.into());
+    }
+
+    /// The picked element of the learn mode: (action, what the screen calls it).
+    pub(super) fn learn_picked(&self) -> Option<(&'static str, String)> {
+        self.screen_learn.as_ref()?.picked.clone()
+    }
+
+    /// A control moved in the learn mode (53): a free one is bound at once and the pick moves
+    /// on; one that drives something else waits for `Enter`; the control just bound is not
+    /// heard; a knob does not drive a command.
+    pub(super) fn learn_bind(&mut self, profile: String, key: input::midi::Key) {
+        let Some((name, _)) = self.learn_picked() else {
+            return;
+        };
+        let renew = |l: &mut ScreenLearn| l.learner = Some(learn::Learning::new(action_info(name)));
+        if self
+            .screen_learn
+            .as_ref()
+            .is_some_and(|l| l.ignore == Some(key))
+        {
+            if let Some(l) = self.screen_learn.as_mut() {
+                renew(l);
+            }
+            return;
+        }
+        let knob = self
+            .live_profiles()
+            .iter()
+            .find(|p| p.name == profile)
+            .is_none_or(|p| p.is_knob(key));
+        if knob != action_info(name).knob {
+            if let Some(l) = self.screen_learn.as_mut() {
+                l.refused = true;
+                renew(l);
+            }
+            return;
+        }
+        // every control waits for Enter next to the old one (57); another control moved
+        // before the answer takes its place, so the learner starts over
+        if let Some(l) = self.screen_learn.as_mut() {
+            l.pending = Some((profile, key));
+            l.clearing = false;
+            l.ignore = None;
+            l.refused = false;
+            renew(l);
+        }
+    }
+
+    /// What the label of `name` says in the learn mode (57): its control, and for the
+    /// picked element with a control waiting `old → new` (`none` when there is none).
+    pub(super) fn learn_shown(&self, profiles: &[Profile], name: &str) -> Option<String> {
+        let now = self.learn_label(profiles, name);
+        let l = self.screen_learn.as_ref()?;
+        let picked = l.picked.as_ref().is_some_and(|(n, _)| *n == name);
+        let new = match (&l.pending, l.clearing) {
+            _ if !picked => return now,
+            (Some((profile, key)), _) => control_name(profiles, profile, *key),
+            (None, true) => "none".into(),
+            // the picked element says what drives it, "none" too (57)
+            (None, false) => return now.or_else(|| Some("none".into())),
+        };
+        Some(format!("{} → {new}", now.as_deref().unwrap_or("none")))
+    }
+
+    /// `Enter` in the learn mode: the waiting control drives the picked element, or the
+    /// asked clear is done; `false` when nothing waited.
+    pub(super) fn learn_confirm(&mut self) -> bool {
+        let group = self.learn_group();
+        let Some(l) = self.screen_learn.as_mut() else {
+            return false;
+        };
+        let Some((name, label)) = l.picked.clone() else {
+            return false;
+        };
+        if let Some((profile, key)) = l.pending.take() {
+            self.learn_save(profile, key);
+            return true;
+        }
+        if std::mem::take(&mut l.clearing) {
+            for profile in learn::clear(&mut self.learned, group, name) {
+                self.sync_learned(&profile, group);
+            }
+            self.save_midi();
+            self.post_notice(Level::Done, (format!("cleared: {label}"), Instant::now()));
+            return true;
+        }
+        false
+    }
+
+    /// A key while the learn mode is open; every key stays in the mode (52): it picks the
+    /// element it drives outside the mode, `I` `K` walk the parameters, `Enter` saves,
+    /// `Esc` drops, `Backspace` asks to clear, the learn key (`F10`, 57) leaves.
+    pub(super) fn learn_key(&mut self, keymap: &Keymap, k: &event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEventKind};
+        if k.kind == KeyEventKind::Release {
+            return true;
+        }
+        let waiting = self
+            .screen_learn
+            .as_ref()
+            .is_some_and(|l| l.pending.is_some() || l.clearing);
+        // the key of `learn.toggle` in the keymap leaves the mode
+        if keymap.resolve_in(self.screen, false, k) == Some(Action::LearnToggle) {
+            self.screen_learn = None;
+            return true;
+        }
+        match k.code {
+            KeyCode::Esc if waiting => {
+                if let Some(l) = self.screen_learn.as_mut() {
+                    (l.pending, l.clearing) = (None, false);
+                }
+                return true;
+            }
+            KeyCode::Esc => {
+                self.screen_learn = None;
+                return true;
+            }
+            KeyCode::Enter if waiting => {
+                self.learn_confirm();
+                return true;
+            }
+            KeyCode::Backspace => {
+                let bound = self.learn_picked().is_some_and(|(name, _)| {
+                    self.learn_label(&self.live_profiles(), name).is_some()
+                });
+                if let Some(l) = self.screen_learn.as_mut().filter(|_| bound) {
+                    (l.pending, l.clearing) = (None, true);
+                }
+                return true;
+            }
+            _ => {}
+        }
+        if waiting {
+            return true;
+        }
+        // the parameters have no key of their own: the edit layer's I K walk them
+        match keymap.resolve_in(self.screen, true, k) {
+            Some(Action::ParamNext) => {
+                self.learn_walk(1);
+                return true;
+            }
+            Some(Action::ParamPrev) => {
+                self.learn_walk(-1);
+                return true;
+            }
+            _ => {}
+        }
+        match keymap.resolve_in(self.screen, self.edit_keys(), k) {
+            Some(Action::PadPress { pad, .. }) => {
+                let key = PAD_KEYS[pad].to_ascii_uppercase();
+                self.learn_pick(
+                    action_info(&format!("pad.{}", pad + 1)).name,
+                    format!("pad {key}"),
+                );
+            }
+            Some(action) => {
+                // the action of the learn list this key drives, in this screen's group or
+                // the global one
+                let groups = [
+                    self.learn_group(),
+                    self.screen_group(),
+                    input::Group::Global,
+                ];
+                let found = input::ACTIONS.iter().find(|i| {
+                    !i.knob && groups.contains(&i.group) && Action::parse(i.name) == Some(action)
+                });
+                if let Some(info) = found {
+                    self.learn_pick(info.name, info.label.into());
+                }
+            }
+            None => {}
+        }
+        true
+    }
+
+    /// The control that drives `name` in the layer in sight, short: `k5`, `cc 28`,
+    /// `note 36`; `None` when none does.
+    pub(super) fn learn_label(&self, profiles: &[Profile], name: &str) -> Option<String> {
+        let scope = self.learn_group().scope();
+        profiles
+            .iter()
+            .find_map(|p| p.assignment(scope, name))
+            .map(|a| a.split(" (").next().unwrap_or_default().to_string())
+    }
+
+    /// The element a waiting control drives now on this screen, which would lose it:
+    /// (action, label).
+    pub(super) fn learn_taken(&self) -> Option<(&'static str, String)> {
+        let l = self.screen_learn.as_ref()?;
+        let (_, key) = l.pending.as_ref()?;
+        let (picked, _) = l.picked.clone()?;
+        self.taken_by(*key, picked)
+    }
+
+    /// The element other than `picked` that control `key` drives now on this screen.
+    pub(super) fn taken_by(
+        &self,
+        key: input::midi::Key,
+        picked: &str,
+    ) -> Option<(&'static str, String)> {
+        self.taken_in(self.learn_group(), key, picked)
+    }
+
+    /// The action other than `picked` that control `key` drives now in `group`.
+    pub(super) fn taken_in(
+        &self,
+        group: input::Group,
+        key: input::midi::Key,
+        picked: &str,
+    ) -> Option<(&'static str, String)> {
+        let scope = group.scope();
+        let profiles = self.live_profiles();
+        // "cc 28" or "k5 (cc 28)": no "(learned)" mark since 59
+        let (learned, named) = (key.to_string(), format!("({key})"));
+        input::ACTIONS
+            .iter()
+            .filter(|i| i.name != picked)
+            .find(|i| {
+                profiles.iter().any(|p| {
+                    p.assignment(scope, i.name)
+                        .is_some_and(|a| a == learned || a.ends_with(&named))
+                })
+            })
+            .map(|i| (i.name, i.label.to_string()))
+    }
+
+    /// The grid cells in the learn mode: a bound pad carries its control, the picked one
+    /// stands out, the one a waiting control would leave is marked (52).
+    pub(super) fn learn_grid(&self, cells: &mut [tui::PadView]) {
+        if self.screen_learn.is_none() {
+            return;
+        }
+        let profiles = self.live_profiles();
+        let picked = self.learn_picked().map(|(n, _)| n);
+        let taken = self.learn_taken().map(|(n, _)| n);
+        for (i, cell) in cells.iter_mut().enumerate().take(PADS_PER_BANK) {
+            let name = format!("pad.{}", i + 1);
+            cell.note = self.learn_shown(&profiles, &name).map(|c| format!("◀ {c}"));
+            cell.in_hand = picked == Some(action_info(&name).name);
+            cell.marked = taken == Some(action_info(&name).name);
+        }
+    }
+
+    /// The panel in the learn mode: the bound parameters carry their control, the picked
+    /// one is lit, the one a waiting control would leave says so.
+    pub(super) fn learn_panel(&self, v: &mut tui::Pads) {
+        if self.screen_learn.is_none() || self.screen != Screen::Pads {
+            return;
+        }
+        let profiles = self.live_profiles();
+        let picked = self.learn_picked().map(|(n, _)| n);
+        let taken = self.learn_taken().map(|(n, _)| n);
+        for &(name, label) in self.learn_params() {
+            let Some(p) = pads::ORDER_ALL
+                .into_iter()
+                .find(|&p| pads::name_of(p) == label)
+            else {
+                continue;
+            };
+            let control = self.learn_shown(&profiles, name);
+            if picked == Some(name) {
+                v.lit = Some(tui_param(p));
+            }
+            match (control, taken == Some(name)) {
+                (Some(c), true) => v.learn.push((tui_param(p), format!("{c}  ✗ leaves"))),
+                (Some(c), false) => v.learn.push((tui_param(p), c)),
+                (None, _) => {}
+            }
+        }
+    }
+
+    /// Learning messages and confirmation details before the fixed-band view arranges them.
+    pub(super) fn learn_lines(&self) -> Option<Vec<String>> {
+        let l = self.screen_learn.as_ref()?;
+        let profiles = self.live_profiles();
+        let picked = l.picked.clone();
+        // where the binding goes (57): the layer and the page of the edit
+        let place = match l.page {
+            Some(page) => format!("{} · {page}", l.group.title()),
+            None => l.group.title().to_string(),
+        };
+        // "do, then F10": say where the pick came from and how to pick another (57)
+        let from = if l.once {
+            " (the last thing you did)"
+        } else {
+            ""
+        };
+        let other = " · I K pick a parameter, a pad or a command key picks another";
+        let lines = match (&picked, &l.pending, l.clearing) {
+            (Some((name, label)), Some((profile, key)), _) => {
+                let shown = self.learn_shown(&profiles, name).unwrap_or_default();
+                let first = format!(" LEARN · {label} · {place} · {shown} · Enter bind · Esc keep");
+                let second = match self.learn_taken() {
+                    Some((_, other)) => format!(
+                        " ✗ {key} is taken on this layer: \"{other}\" is marked and loses it"
+                    ),
+                    None => match self.bound_elsewhere(profile, *key) {
+                        Some(note) => format!(" {note} · that layer keeps it"),
+                        None => " another control takes its place".to_string(),
+                    },
+                };
+                vec![first, second]
+            }
+            (Some((name, label)), None, true) => {
+                let shown = self.learn_shown(&profiles, name).unwrap_or_default();
+                vec![
+                    format!(" LEARN · {label} · {place} · {shown} · Enter clear · Esc keep"),
+                    " Backspace removes the control of the picked element".into(),
+                ]
+            }
+            (Some((name, label)), None, false) if l.refused && action_info(name).knob => vec![
+                format!(" LEARN · \"{label}\"{from} needs a knob or a fader, not a button"),
+                format!(
+                    " it has a value to turn, a button only presses · turn a knob{other} · F10 done"
+                ),
+            ],
+            (Some((_, label)), None, false) if l.refused => vec![
+                format!(" LEARN · \"{label}\"{from} needs a button or a pad, not a knob"),
+                format!(
+                    " it acts once per press, a knob would repeat it on every tick · press a button{other} · F10 done"
+                ),
+            ],
+            (Some((name, label)), None, false) => {
+                let now = match self.learn_label(&profiles, name) {
+                    Some(c) => format!("now {c}"),
+                    None => "now none".into(),
+                };
+                vec![
+                    format!(" LEARN · picked: {label}{from} · {place} · {now} · move a control on the controller"),
+                    " a pad or a command key picks another · I K the parameters · Backspace clear · F10 done".into(),
+                ]
+            }
+            (None, ..) => vec![
+                format!(
+                    " LEARN · {place} · press what to bind: a pad, a command key, PgUp PgDn; I K the parameters"
+                ),
+                " then move a control on the controller · F10 done".into(),
+            ],
+        };
+        Some(lines)
+    }
+
+    /// Where else on this screen a control is bound, outside the layer of the binding (57):
+    /// `k5 on PADS: volume`.
+    pub(super) fn bound_elsewhere(&self, profile: &str, key: input::midi::Key) -> Option<String> {
+        let groups = [
+            self.screen_group(),
+            self.layer_group(),
+            input::Group::Global,
+        ];
+        self.bound_in(profile, key, self.learn_group(), &groups)
+            .into_iter()
+            .next()
+    }
+
+    /// Each action control `key` keeps in `groups` other than `here`:
+    /// `b9 on GLOBAL: bank next`.
+    pub(super) fn bound_in(
+        &self,
+        profile: &str,
+        key: input::midi::Key,
+        here: input::Group,
+        groups: &[input::Group],
+    ) -> Vec<String> {
+        let named = control_name(&self.live_profiles(), profile, key);
+        groups
+            .iter()
+            .filter(|g| **g != here)
+            .filter_map(|&g| {
+                let map = learn::group_map(&self.learned, profile, g);
+                let action = map.get(&key)?;
+                let label = input::ACTIONS
+                    .iter()
+                    .find(|i| i.name == *action)
+                    .map_or(action.as_str(), |i| i.label);
+                Some(format!("{named} on {}: {label}", g.title()))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
