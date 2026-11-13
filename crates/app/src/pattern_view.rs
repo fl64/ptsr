@@ -63,6 +63,7 @@ pub(super) struct State {
     pub cursor_visited: bool,
     pub selected_event: Option<SelectedEvent>,
     pub midi_presses: std::collections::HashSet<(usize, u64)>,
+    pub step_generations: Vec<u64>,
 }
 
 impl Default for State {
@@ -76,6 +77,7 @@ impl Default for State {
             cursor_visited: false,
             selected_event: None,
             midi_presses: std::collections::HashSet::new(),
+            step_generations: vec![0; MAX_HITS],
         }
     }
 }
@@ -352,7 +354,22 @@ impl super::App {
         });
     }
 
-    pub(super) fn step_pad_hit(&mut self, abs: usize) {
+    pub(super) fn step_pad_hit(&mut self, abs: usize, velocity: f32) {
+        if self.edit
+            || self.pads.marking
+            || self.pad_in_hand.is_some()
+            || self.copy_in_hand.is_some()
+            || self.browser.in_hand.is_some()
+        {
+            self.post_notice(
+                super::Level::Warn,
+                (
+                    "Finish the current edit before step correction.".into(),
+                    std::time::Instant::now(),
+                ),
+            );
+            return;
+        }
         if !self.pattern_view.edit
             || self.transport_input_blocked()
             || self.help_open
@@ -398,6 +415,39 @@ impl super::App {
         let target = match events.as_slice() {
             [] => {
                 self.pattern_view.selected_event = None;
+                let expected = self.pads.pattern.clone().unwrap();
+                let tick =
+                    self.pattern_view.cursor_cell as u32 * self.pattern_view.division.spacing();
+                let velocity = (velocity * 127.0).round().clamp(1.0, 127.0) as u8;
+                let gate_ticks = if self.pads.gate[abs] {
+                    self.pattern_view.division.spacing()
+                } else {
+                    0
+                };
+                let result = self.add_step_event(abs, tick, velocity, gate_ticks, &expected);
+                match result {
+                    Ok(true) => self.post_notice(
+                        super::Level::Done,
+                        (
+                            format!(
+                                "A1: added one hit on pad {}. Undo removes it.",
+                                super::pads::PAD_KEYS[abs % super::PADS_PER_BANK]
+                                    .to_ascii_uppercase()
+                            ),
+                            std::time::Instant::now(),
+                        ),
+                    ),
+                    Ok(false) => self.post_notice(
+                        super::Level::Info,
+                        (
+                            "A1 changed: select the cell again.".into(),
+                            std::time::Instant::now(),
+                        ),
+                    ),
+                    Err(error) => {
+                        self.post_notice(super::Level::Error, (error, std::time::Instant::now()))
+                    }
+                }
                 return;
             }
             [event] => Some(*event),
@@ -419,7 +469,7 @@ impl super::App {
                 super::Level::Done,
                 (
                     format!(
-                        "A1: removed one hit from pad {}. Ctrl+Z restores.",
+                        "A1: removed one hit from pad {}. Undo restores it.",
                         super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase()
                     ),
                     std::time::Instant::now(),

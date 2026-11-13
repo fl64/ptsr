@@ -26,6 +26,8 @@ Store the first tick of the selected view cell. Saved ticks already play at thei
 
 An occupied cell keeps the current removal rule. The first pad press removes one event when the cell has one event. Several events require an explicit event choice. Repeats and releases do not edit or sound. A project or pattern change invalidates an old choice.
 
+The edit handler does not receive the current keymap. A success notice names the Undo action without a fixed key. The help band shows the effective Undo key, including `none`. This keeps the notice accurate when the owner changes a binding.
+
 ## Rejected options
 
 - Do not spread leftover columns across steps. This makes the positions depend on the page width.
@@ -36,3 +38,4 @@ An occupied cell keeps the current removal rule. The first pad press removes one
 
 - Should a new Gate event last one view cell, until the edit pad releases, or act as a one-shot? Default: one view cell. The owner has not answered this choice yet.
 - Should the three velocity levels use equal thirds? Default: 1–42, 43–84, and 85–127.
+- Should an edit notice show the Undo key itself? Default: name Undo in the notice and show the effective key in the help band. The owner has not answered this choice yet.

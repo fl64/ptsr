@@ -668,7 +668,7 @@ impl App {
                 if self.pattern_view.edit {
                     "F7 leaves step correction. Pads select or remove one hit without sound."
                 } else {
-                    "Bank sections form one list. Each shown bank has 16 pad rows. Pads still play."
+                    "Rows with hits and the selected pad show by default. The row toggle shows all rows. Pads still play."
                 }
                 .into(),
             ));
@@ -680,7 +680,7 @@ impl App {
             if self.pattern_view.edit {
                 rows.push((
                     "Step correction".into(),
-                    "J/L select time. I/K select an event. A pad removes its selected hit. Empty cells add nothing. Ctrl+Z restores."
+                    "Use the listed controls to select a step and an event. A pad adds at an empty cell or removes its selected hit. Edit pads stay silent. Undo restores."
                         .into(),
                 ));
             }

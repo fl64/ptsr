@@ -10,6 +10,7 @@ The A1 overview spends most of its rows on pads without hits. Its step widths va
 - Give each step a fixed three-cell width. Align each step number with its cell and keep straight and triplet beat groups clear.
 - Show soft, medium, and loud hits with three brightness levels. Keep off-grid and multiple-hit marks. Keep the live playhead.
 - Add an empty step with a silent keyboard or MIDI pad hit. Keep the incoming velocity. A hit on an occupied step removes one identified event under the existing choice rule. Give each accepted edit one Undo step.
+- Name Undo in edit feedback. Show its effective key in the help band.
 
 The change SHALL keep saved format 5, logical action IDs, the sound engine, and ordinary pad playback. It SHALL add no dependency.
 

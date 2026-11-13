@@ -82,6 +82,7 @@ enum Mode {
     PatternOverviewTriplet,
     PatternOverviewOffGrid,
     PatternOverviewMultiple,
+    PatternOverviewVelocity,
     PatternOverviewHiddenHit,
     PatternOverviewSafety,
     PatternStepEmpty,
@@ -90,6 +91,7 @@ enum Mode {
     PatternStepOffGrid,
     PatternStepMultiple,
     PatternStepCursor,
+    PatternStepAdd,
     PatternStepSafety,
     PatternErasePads,
     PitchGateOff,
@@ -172,6 +174,7 @@ impl Mode {
         Self::PatternOverviewTriplet,
         Self::PatternOverviewOffGrid,
         Self::PatternOverviewMultiple,
+        Self::PatternOverviewVelocity,
         Self::PatternOverviewHiddenHit,
         Self::PatternOverviewSafety,
         Self::PatternStepEmpty,
@@ -180,6 +183,7 @@ impl Mode {
         Self::PatternStepOffGrid,
         Self::PatternStepMultiple,
         Self::PatternStepCursor,
+        Self::PatternStepAdd,
         Self::PatternStepSafety,
         Self::PatternErasePads,
         Self::PitchGateOff,
@@ -262,6 +266,7 @@ impl Mode {
             Self::PatternOverviewTriplet => "pattern-overview-triplet",
             Self::PatternOverviewOffGrid => "pattern-overview-off-grid",
             Self::PatternOverviewMultiple => "pattern-overview-multiple",
+            Self::PatternOverviewVelocity => "pattern-overview-velocity",
             Self::PatternOverviewHiddenHit => "pattern-overview-hidden-hit",
             Self::PatternOverviewSafety => "pattern-overview-safety",
             Self::PatternStepEmpty => "pattern-step-empty",
@@ -270,6 +275,7 @@ impl Mode {
             Self::PatternStepOffGrid => "pattern-step-off-grid",
             Self::PatternStepMultiple => "pattern-step-multiple",
             Self::PatternStepCursor => "pattern-step-cursor",
+            Self::PatternStepAdd => "pattern-step-add",
             Self::PatternStepSafety => "pattern-step-safety",
             Self::PatternErasePads => "pattern-erase-pads",
             Self::PitchGateOff => "pitch-gate-off",
@@ -293,6 +299,7 @@ impl Mode {
             | Self::PatternOverviewTriplet
             | Self::PatternOverviewOffGrid
             | Self::PatternOverviewMultiple
+            | Self::PatternOverviewVelocity
             | Self::PatternOverviewHiddenHit
             | Self::PatternOverviewSafety
             | Self::PatternStepEmpty
@@ -301,6 +308,7 @@ impl Mode {
             | Self::PatternStepOffGrid
             | Self::PatternStepMultiple
             | Self::PatternStepCursor
+            | Self::PatternStepAdd
             | Self::PatternStepSafety
             | Self::PatternErasePads
             | Self::Tone
@@ -440,6 +448,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-overview-triplet",
                         "pattern-overview-off-grid",
                         "pattern-overview-multiple",
+                        "pattern-overview-velocity",
                         "pattern-overview-hidden-hit",
                         "pattern-overview-safety",
                         "pattern-step-empty",
@@ -448,6 +457,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-step-off-grid",
                         "pattern-step-multiple",
                         "pattern-step-cursor",
+                        "pattern-step-add",
                         "pattern-step-safety",
                         "pattern-erase-pads",
                         "pitch-gate-off",
@@ -797,6 +807,7 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternOverviewTriplet
         | Mode::PatternOverviewOffGrid
         | Mode::PatternOverviewMultiple
+        | Mode::PatternOverviewVelocity
         | Mode::PatternOverviewHiddenHit
         | Mode::PatternOverviewSafety => add_pattern_overview(&mut app, case.mode),
         Mode::PatternStepEmpty
@@ -805,6 +816,7 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternStepOffGrid
         | Mode::PatternStepMultiple
         | Mode::PatternStepCursor
+        | Mode::PatternStepAdd
         | Mode::PatternStepSafety => add_pattern_step(&mut app, case.mode),
         Mode::PatternErasePads => {
             add_pattern_view(&mut app, Mode::PatternViewMultiple);
@@ -930,6 +942,11 @@ fn add_pattern_overview(app: &mut App, mode: Mode) {
         raw.bars = 1;
         raw.hits.push([5000, 20, 100, 0]);
     }
+    if mode == Mode::PatternOverviewVelocity {
+        raw.hits.retain(|row| row[1] != 0);
+        raw.hits
+            .extend([[0, 0, 30, 0], [240, 0, 60, 0], [480, 0, 110, 0]]);
+    }
 }
 
 fn add_pattern_step(app: &mut App, mode: Mode) {
@@ -948,9 +965,13 @@ fn add_pattern_step(app: &mut App, mode: Mode) {
     app.pattern_view.cursor_cell = match mode {
         Mode::PatternStepEmpty => 3,
         Mode::PatternStepCursor => 20,
+        Mode::PatternStepAdd => 3,
         Mode::PatternStepOffGrid => 1,
         _ => 0,
     };
+    if mode == Mode::PatternStepAdd {
+        app.step_pad_hit(0, 80.0 / 127.0);
+    }
     if mode == Mode::PatternStepMultiple {
         app.pads.selected = 0;
     }
@@ -1284,6 +1305,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternOverviewTriplet
         | Mode::PatternOverviewOffGrid
         | Mode::PatternOverviewMultiple
+        | Mode::PatternOverviewVelocity
         | Mode::PatternOverviewHiddenHit
         | Mode::PatternOverviewSafety => require("PATTERN · A1"),
         Mode::PatternStepEmpty
@@ -1292,6 +1314,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternStepOffGrid
         | Mode::PatternStepMultiple
         | Mode::PatternStepCursor
+        | Mode::PatternStepAdd
         | Mode::PatternStepSafety => require("STEP EDIT · A1"),
         Mode::Help | Mode::Messages => {
             require("HELP");
@@ -1425,11 +1448,16 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::PatternOverviewTriplet => require("view 1/16 triplet"),
         Mode::PatternOverviewOffGrid | Mode::PatternOverviewHiddenHit => require("~"),
         Mode::PatternOverviewMultiple => require(" 2"),
+        Mode::PatternOverviewVelocity => require("PATTERN · A1"),
         Mode::PatternOverviewSafety => {
             require("Save failed");
             require("PATTERN · A1");
         }
         Mode::PatternStepEmpty => require("empty cell"),
+        Mode::PatternStepAdd => {
+            require("vel 80");
+            require("added one hit");
+        }
         Mode::PatternStepTriplet => require("triplet"),
         Mode::PatternStepOffGrid => require("~"),
         Mode::PatternStepMultiple => require(" 2"),
@@ -2405,6 +2433,7 @@ L="none"
                     | Mode::PatternOverviewTriplet
                     | Mode::PatternOverviewOffGrid
                     | Mode::PatternOverviewMultiple
+                    | Mode::PatternOverviewVelocity
                     | Mode::PatternOverviewHiddenHit
                     | Mode::PatternOverviewSafety
                     | Mode::PatternStepEmpty
@@ -2413,6 +2442,7 @@ L="none"
                     | Mode::PatternStepOffGrid
                     | Mode::PatternStepMultiple
                     | Mode::PatternStepCursor
+                    | Mode::PatternStepAdd
                     | Mode::PatternStepSafety
             ) && !app
                 .pattern_record_state()
@@ -2640,24 +2670,26 @@ L="none"
         }
     }
 
-    const OVERVIEW_MODES: [Mode; 8] = [
+    const OVERVIEW_MODES: [Mode; 9] = [
         Mode::PatternOverviewAbsent,
         Mode::PatternOverviewEmpty,
         Mode::PatternOverviewStraight,
         Mode::PatternOverviewTriplet,
         Mode::PatternOverviewOffGrid,
         Mode::PatternOverviewMultiple,
+        Mode::PatternOverviewVelocity,
         Mode::PatternOverviewHiddenHit,
         Mode::PatternOverviewSafety,
     ];
 
-    const STEP_MODES: [Mode; 7] = [
+    const STEP_MODES: [Mode; 8] = [
         Mode::PatternStepEmpty,
         Mode::PatternStepStraight,
         Mode::PatternStepTriplet,
         Mode::PatternStepOffGrid,
         Mode::PatternStepMultiple,
         Mode::PatternStepCursor,
+        Mode::PatternStepAdd,
         Mode::PatternStepSafety,
     ];
 
@@ -2827,7 +2859,7 @@ L="none"
                 assert!(help.contains(text), "{text}: {help}");
             }
             assert!(
-                rows[size.1 as usize - 4].contains("Alt+H hides empty rows."),
+                rows[size.1 as usize - 4].contains("row toggle hides empty rows."),
                 "{}",
                 rows[size.1 as usize - 4]
             );

@@ -14,9 +14,9 @@
 
 ## 3. Step edit
 
-- [ ] 3.1 Add a silent pad hit to an empty cell with keyboard and raw MIDI velocity. Keep Gate and OneShot lengths, repeat and release behavior, and original sound ownership.
-- [ ] 3.2 Keep explicit choice for multiple hits. Give each add or remove one Undo step and verified ordered publication. Test full capacity, stale work, project change, save refusal, and reload.
-- [ ] 3.3 Add the named catalogue fixtures and a verified offline step-add render. Compare the unchanged catalogue areas with the base.
+- [x] 3.1 Add a silent pad hit to an empty cell with keyboard and raw MIDI velocity. Keep Gate and OneShot lengths, repeat and release behavior, and original sound ownership.
+- [x] 3.2 Keep explicit choice for multiple hits. Give each add or remove one Undo step and verified ordered publication. Test full capacity, stale work, project change, save refusal, and reload.
+- [x] 3.3 Add the named catalogue fixtures and a verified offline step-add render. Compare the unchanged catalogue areas with the base.
 
 ## 4. Publish and hand over
 
@@ -30,3 +30,5 @@ The row-filter step passed the 16 recorded pattern-view input tests, including t
 The fixed-cell step passed 151 TUI tests, the focused app screen test, Clippy, the file-growth gate, and all 25 screen tests. All 826 catalogue names remain. The 30 changed frames are A1 overview or step frames.
 
 The velocity step passed 152 TUI tests, 25 pattern-view tests, Clippy, and the file-growth gate. The 80-column title first clipped `triplet`. The `vel` label fixed it. All 25 screen tests then passed. The catalogue still has 826 names, and its 30 changed frames are A1 overview or step frames.
+
+The addition step passed keyboard and raw MIDI tests for velocity, repeats, release, Gate length, stale edits, and the 4096-row limit. Undo, save refusal, reload, and ordered audio publication passed. The offline render test covers silence, level, timing within one sample, finite output, and clicks. The callback benchmark stayed below 50 % at 32 voices. The catalogue has 830 frames. Four new frames show velocity and addition at both sizes. No old frame is missing. The 30 changed old frames are A1 overview or step frames.

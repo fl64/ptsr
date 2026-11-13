@@ -22,7 +22,7 @@ The overview help SHALL show the effective F7 entry key. In correction it SHALL 
 
 ### Requirement: A1 correction feedback states one-hit scope
 
-Only a successful addition, removal, or Undo SHALL report a changed event. The result SHALL name its pad, one-hit scope, and effective Undo key. A refusal SHALL name absent A1, a conflicting owner, full capacity, or stale event as applicable and give a safe next action. Save and audio warnings SHALL keep their existing priority.
+Only a successful addition, removal, or Undo SHALL report a changed event. The result SHALL name its pad and one-hit scope and direct the owner to Undo. The help band SHALL show the effective Undo key, including `none`. A refusal SHALL name absent A1, a conflicting owner, full capacity, or stale event as applicable and give a safe next action. Save and audio warnings SHALL keep their existing priority.
 
 #### Scenario: Correction feedback separates focus from edits
 - **WHEN** an empty-cell addition, multiple-event focus, removal, Undo, and stale selection occur in order

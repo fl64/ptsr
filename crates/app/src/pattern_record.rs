@@ -1367,6 +1367,81 @@ impl crate::App {
         }
     }
 
+    /// Check one new row and its playback data before changing A1 or Undo.
+    pub(super) fn add_step_event(
+        &mut self,
+        pad: usize,
+        tick: u32,
+        velocity: u8,
+        gate_ticks: u32,
+        expected: &crate::session::PatternState,
+    ) -> Result<bool, String> {
+        self.flush_audio();
+        if let Some(text) = self.pattern_tidy_refusal() {
+            return Err(text.into());
+        }
+        if self.pads.pattern.as_ref() != Some(expected) {
+            return Ok(false);
+        }
+        if expected.hits.len() >= MAX_HITS {
+            return Err("A1 has 4096 hits: remove one hit before adding.".into());
+        }
+        let rows = match self.pads.pattern_rows.as_ref() {
+            Some(rows) => rows.clone(),
+            None => (0..expected.hits.len())
+                .map(|slot| {
+                    RowId::new(slot, 1)
+                        .map(PlaybackRow::existing)
+                        .map_err(|error| error.to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        };
+        let mut occupied = [false; MAX_HITS];
+        for row in &rows {
+            occupied[row.id().slot()] = true;
+        }
+        let slot = occupied
+            .iter()
+            .position(|used| !used)
+            .ok_or("A1 has 4096 hits: remove one hit before adding.")?;
+        let capture_generation = self
+            .audio
+            .as_ref()
+            .map_or(0, |audio| audio.pattern_capture.generations[slot]);
+        let generation = self.pattern_view.step_generations[slot]
+            .max(capture_generation)
+            .checked_add(1)
+            .ok_or("A1 row identity is exhausted.")?;
+        let id = RowId::new(slot, generation).map_err(|error| error.to_string())?;
+        let mut replacement = expected.clone();
+        let mut replacement_rows = rows.clone();
+        replacement
+            .hits
+            .push([tick, pad as u32, u32::from(velocity), gate_ticks]);
+        replacement_rows.push(PlaybackRow::existing(id));
+        replacement
+            .checked()?
+            .compile_recorded(&replacement_rows)
+            .map_err(|error| error.to_string())?;
+        let before = Undo {
+            pattern: expected.clone(),
+            rows,
+        };
+        let command = self
+            .pads
+            .restore_recorded_pattern(&replacement, &replacement_rows)?;
+        self.pattern_view.step_generations[slot] = generation;
+        if let Some(audio) = self.audio.as_mut() {
+            audio.pattern_capture.generations[slot] = generation;
+        }
+        if self.audio_alive().is_some() {
+            self.send(command);
+        }
+        self.push_pattern_step_named(before, "add one A1 hit");
+        self.dirty();
+        Ok(true)
+    }
+
     /// Check the complete replacement before changing A1 or its Undo history.
     pub(super) fn remove_step_event(
         &mut self,
