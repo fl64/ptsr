@@ -63,7 +63,7 @@ tasks:
     cmd: git config --local core.hooksPath .githooks
 
   check:
-    desc: Names, format, dependency licenses, Clippy, tests and benchmark before a commit
+    desc: Check names, format, dependency licenses, Clippy, tests and benchmark before publication
     cmds:
       - task: names
       - task: file-size
