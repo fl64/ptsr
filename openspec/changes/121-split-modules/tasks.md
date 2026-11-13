@@ -44,3 +44,5 @@ The shared status and meter move passed the same TUI tests and `task check`. All
 The shared wave move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base. The active erasure wall maximum was 19.88 % of the buffer budget in this run.
 
 The Help screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base. The first full run found an unused import. The second run passed after we limited the import to tests.
+
+The FX screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
