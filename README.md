@@ -194,11 +194,13 @@ Write the summary in English. Start it with a lowercase ASCII letter or digit.
 Existing `master` history stays unchanged.
 
 Development checks need Python 3.10 or newer and Git 2.30 or newer. No Python packages are necessary.
-Enable the commit hook once in each clone:
+Enable the Git hooks once in each clone:
 
 ```sh
 task hooks:install
 ```
+
+The pre-push hook checks Rust formatting and Clippy. Run `task check` before each commit.
 
 Fetch the base branch. Check the new branch commits. Then make a commit with a signoff:
 
