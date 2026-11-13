@@ -68,7 +68,7 @@ Pattern feedback SHALL extend the existing transport segment. It SHALL NOT creat
 
 ### Requirement: Visible Pitch Gate state
 
-The pad panel, popup, and F1 SHALL show the saved Pitch Gate state and its A1-only scope. When Pitch Gate is On but cannot act, they SHALL give the source or pitch reason in text. The compact mode-row summary SHALL appear only when pad pitch differs from zero. The Pads help row SHALL explain Pitch Gate only for a linked slice with Pitch Gate On. Scope, edit pages, and controls SHALL remain. Feedback SHALL NOT claim a cut from a saved switch, running transport, or manual hit. No top badge, row shift, or new pad mode SHALL appear.
+The pad panel, popup, and F1 SHALL show the saved Pitch Gate state and its A1-only scope. When Pitch Gate is On but cannot act, they SHALL give the source or pitch reason in text. The panel SHALL use a dedicated Pitch Gate detail row inside its current bounds. At 80 columns, this row MAY say `PG on: needs slice` for a source restriction. The popup and F1 SHALL keep the full `PG on: needs linked slice` text. The compact mode-row summary SHALL appear only when pad pitch differs from zero. The Pads help row SHALL explain Pitch Gate only for a linked slice with Pitch Gate On. Scope, edit pages, and controls SHALL remain. Feedback SHALL NOT claim a cut from a saved switch, running transport, or manual hit. No top badge, shared screen row shift, or new pad mode SHALL appear.
 
 #### Scenario: Pitch Gate summary stays quiet at zero pitch
 - **WHEN** the selected pad has zero pitch and the owner toggles Pitch Gate with keyboard or raw MIDI

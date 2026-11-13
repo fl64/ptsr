@@ -14,7 +14,9 @@ The idle PLAY text becomes blank inside its existing ten-cell slot. Active PLAY 
 
 ### Keep full Pitch Gate state available
 
-The compact Pitch Gate summary appears only when pad pitch differs from zero. The pad panel, popup, and F1 continue to show the saved state and any reason it cannot act. A zero-pitch pad does not lose access to its Pitch Gate setting.
+The compact Pitch Gate summary appears only when pad pitch differs from zero. A separate line inside the existing pad panel shows the saved state and any reason it cannot act. The panel can fold lower parameter blocks to keep the selected page in view. At 80 columns, `PG on: needs slice` fits this line. The popup and F1 keep the full source reason. A zero-pitch pad does not lose access to its Pitch Gate setting. The shared screen rows stay fixed.
+
+On 2026-11-13, the owner asked us to continue after we proposed this separate panel line. We use this line for change 122.
 
 ### Use a session-relative clip time
 
