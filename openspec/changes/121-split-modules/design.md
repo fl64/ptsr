@@ -10,7 +10,7 @@ The change has no spec delta because it defines no new behavior. The main specif
 
 Generate the ANSI catalogue from a clean worktree at the base commit. Generate it again after each terminal drawing move. Compare the file names and bytes at both supported sizes. Keep both worktrees' ignored output local. Do not add generated ANSI files to Git.
 
-Run the existing recorded keyboard and raw MIDI tests after application or test moves. Run the existing offline sound tests and callback benchmark through `task check` before each commit.
+Run the existing recorded keyboard and raw MIDI tests after application or test moves. Run format, Clippy, and affected tests before each remaining code commit. Run the existing offline sound tests and callback benchmark through `task check` after the final code and test state, before publication.
 
 ### Move one area at a time
 
@@ -22,8 +22,8 @@ If a move exposes a behavior defect, stop that move. Do not include the repair i
 
 ### Keep commits atomic
 
-One commit moves one logical area. Each commit includes only its own imports and visibility changes. Run `task check` before each commit. The two large files must lose lines against the PR base.
+One commit moves one logical area. Each commit includes only its own imports and visibility changes. Run focused checks before each remaining commit. Run `task check` before publication and again if code or tests change after it. The two large files must lose lines against the PR base.
 
 ## Open questions
 
-None. This design uses the source-only scope above.
+None. This design uses the source-only scope above. On 2026-11-13, the owner asked for focused checks before intermediate commits and the full check before code publication. The owner required the same test coverage.
