@@ -22,7 +22,7 @@
 ## 4. Move application code and tests
 
 - [x] 4.1 Move each screen's App methods near its existing module. Keep method bodies, input priority, and keys. Run format, Clippy, and recorded input tests before each remaining commit.
-- [ ] 4.2 Split `input_tests.rs` by topic without changing test bodies or names. Run format, Clippy, and focused input tests before each topic commit.
+- [x] 4.2 Split `input_tests.rs` by topic without changing test bodies or names. Run format, Clippy, and focused input tests before each topic commit.
 
 ## 5. Check and hand over
 
