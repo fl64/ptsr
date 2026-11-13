@@ -72,3 +72,5 @@ The pad edit App method move passed `task check`. Its method tokens match the ol
 The FX selection and MIDI slot App method move passed `task check`. Its method tokens match the old blocks after we remove the new module visibility and whitespace.
 
 The settings App method move passed `task check`. Its method tokens match the old blocks after we remove the new module visibility and whitespace.
+
+The remaining Files App method move passed format, Clippy, 448 recorded input tests, and the browser unit test. Its method tokens match the old blocks after we remove the new module visibility and whitespace.
