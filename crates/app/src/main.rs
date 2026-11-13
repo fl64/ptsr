@@ -568,42 +568,6 @@ impl App {
         self.audio.as_ref().filter(|a| !a.stopped.load(Relaxed))
     }
 
-    /// The microphone is linked only while it is used (26): a microphone recording runs or
-    /// the settings screen shows its meter.
-    fn mic_wanted(&self) -> bool {
-        self.screen == Screen::Settings || matches!(self.recording, Some((audio::SOURCE_MIC, _)))
-    }
-
-    fn reroute(&mut self) {
-        let Some(a) = self.audio_alive() else {
-            return;
-        };
-        let routed = a.route(
-            self.cfg.output.as_deref(),
-            self.cfg.input.as_deref(),
-            self.mic_wanted(),
-        );
-        if routed != self.routed {
-            log::info!(
-                "route: output {:?}, input {:?}",
-                routed.output,
-                routed.input
-            );
-        }
-        self.routed = routed;
-    }
-
-    fn save(&mut self) {
-        let result = match &self.user_path {
-            Some(p) => config::save_section(p, "audio", &self.cfg),
-            None => Err("settings are not saved: fix the config file first".into()),
-        };
-        if let Err(e) = result {
-            log::error!("{e}");
-            self.post_notice(Level::Error, (e, Instant::now()));
-        }
-    }
-
     /// (11) Where the material of the program lives and the files screen starts: with a
     /// project open — its `samples/` folder (if it is suddenly gone, the browser survives
     /// the same way it survives `~/Music`), otherwise — the samples root of the settings.
@@ -747,35 +711,6 @@ impl App {
                 command: ProjectMessage::Ready,
             });
             self.flush_audio();
-        }
-    }
-
-    fn paths_set(&mut self, which: usize, at: PathBuf) {
-        let what = if which == 0 {
-            self.paths.projects = at.clone();
-            "Projects root"
-        } else {
-            self.paths.samples = at.clone();
-            "Samples root"
-        };
-        let result = match &self.user_path {
-            Some(p) => config::save_section(p, "paths", &self.paths),
-            None => Err("settings are not saved: fix the config file first".into()),
-        };
-        let shown = tilde(&at.display().to_string());
-        self.result_notice(result, format!("{what}: {shown}"));
-    }
-
-    /// (11) The config's `[project]` section: the last opened project's name. An error
-    /// speaks in the flash; the project itself stays open.
-    fn save_project_cfg(&mut self) {
-        let result = match &self.user_path {
-            Some(p) => config::save_section(p, "project", &self.project_cfg),
-            None => Err("settings are not saved: fix the config file first".into()),
-        };
-        if let Err(e) = result {
-            log::error!("{e}");
-            self.post_notice(Level::Error, (e, Instant::now()));
         }
     }
 
@@ -1301,60 +1236,6 @@ impl App {
         }
     }
 
-    /// Left/Right on the settings screen: apply at once and save.
-    fn change(&mut self, row: usize, step: isize) {
-        if row == 3 {
-            // the wave as a picture or Braille (04b), from the next start
-            self.ui.graphics = !self.ui.graphics;
-            let result = match &self.user_path {
-                Some(p) => config::save_section(p, "ui", &self.ui),
-                None => Err("settings are not saved: fix the config file first".into()),
-            };
-            let what = if self.ui.graphics {
-                "picture"
-            } else {
-                "Braille"
-            };
-            self.result_notice(result, format!("wave: {what} from the next start"));
-            return;
-        }
-        if row == 2 {
-            let size = next_buffer_choice(self.cfg.buffer_size, step);
-            if size == 0 {
-                // auto: follow the server, nothing to ask for
-                self.cfg.buffer_size = 0;
-                self.save();
-                return;
-            }
-            match self.audio_alive().map(|a| a.set_buffer_size(size)) {
-                Some(Ok(())) => {
-                    self.cfg.buffer_size = size;
-                    self.save();
-                }
-                Some(Err(e)) => self.post_notice(Level::Error, (e, Instant::now())),
-                None => {}
-            }
-            return;
-        }
-        let Some(devices) = self.audio_alive().and_then(|a| a.devices()) else {
-            return;
-        };
-        let (list, current) = if row == 0 {
-            (devices.outputs, &self.routed.output)
-        } else {
-            (devices.inputs, &self.routed.input)
-        };
-        let Some(next) = step_in(&list, current.as_deref(), step) else {
-            return;
-        };
-        if row == 0 {
-            self.cfg.output = Some(next);
-        } else {
-            self.cfg.input = Some(next);
-        }
-        self.reroute();
-        self.save();
-    }
     fn key_notice_blocked(&self) -> bool {
         self.pad_naming.is_some()
             || self.project_picker.is_some()
