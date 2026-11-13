@@ -565,6 +565,20 @@ impl Pads {
         }
     }
 
+    /// The next edit target named in the Pads help line.
+    pub fn edit_scope_name(&self) -> String {
+        if self.marked.is_empty() {
+            "this pad".into()
+        } else if self.marked.len() == PADS_PER_BANK
+            && (self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK)
+                .all(|abs| self.marked.contains(&abs))
+        {
+            "bank".into()
+        } else {
+            format!("marked ({})", self.marked.len())
+        }
+    }
+
     /// Esc: drops the marks and turns marking off. `true` when there was something to drop
     /// and Esc is consumed.
     pub fn drop_marks(&mut self) -> bool {

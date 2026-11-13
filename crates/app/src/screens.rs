@@ -1357,7 +1357,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("xruns 3");
             require("~");
         }
-        Mode::PatternOverviewAbsent => require("No A1"),
+        Mode::PatternOverviewAbsent => require("pattern A1 is empty"),
         Mode::PatternOverviewEmpty => require("view 1/16"),
         Mode::PatternOverviewStraight => require("steps 1-"),
         Mode::PatternOverviewTriplet => require("view 1/16 triplet"),
@@ -1513,6 +1513,46 @@ fn check_frame(case: Case, buffer: &Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Screen words name the same concepts".
+    #[test]
+    fn screen_words_name_the_same_concepts() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for screen in Screen::ALL {
+                let case = Case {
+                    screen,
+                    size,
+                    mode: Mode::Normal,
+                };
+                let (_, buffer) = render(case, &keymap);
+                let text = buffer
+                    .content()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(!text.contains("rhythm"), "{}", case.name());
+                assert!(text.contains("PATTERN"), "{}", case.name());
+            }
+            let case = Case {
+                screen: Screen::Settings,
+                size,
+                mode: Mode::MidiLearn,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.learning = Some(learn::Learning::new(action_info("screen.pattern")));
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let text = buffer
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(text.contains("pattern"), "{}", case.name());
+            assert!(!text.contains("rhythm"), "{}", case.name());
+            assert_eq!(action_info("screen.pattern").group, input::Group::Global);
+        }
+    }
 
     /// Scenario "Pattern warnings explain limits without claiming success".
     #[test]

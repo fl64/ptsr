@@ -161,7 +161,7 @@ fn overview_opens_absent_empty_and_playing_a1_without_mutation() {
     let dirty = drive.app.session_dirty;
     drive.tap(KeyCode::F(5), M::NONE);
     let absent = drive.app.pattern_overview(&drive.keymap);
-    assert!(absent.header.contains("No A1"));
+    assert!(absent.header.contains("pattern A1 is empty"));
     assert_eq!(absent.rows.len(), 128);
     assert!(absent.rows.iter().all(Vec::is_empty));
     assert!(drive.app.pads.pattern.is_none());

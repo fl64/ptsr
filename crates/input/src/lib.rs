@@ -1074,7 +1074,7 @@ pub fn short_label(action: &str) -> &'static str {
         "transport.tempo_down_fine" => "bpm-.1",
         "transport.tempo" => "tempo",
         "screen.pads" => "pads",
-        "screen.pattern" => "rhythm",
+        "screen.pattern" => "ptrn",
         "screen.settings" => "setup",
         "screen.files" => "files",
         "screen.chop" => "chop",
@@ -1297,7 +1297,7 @@ pub const ACTIONS: &[ActionInfo] = &[
     },
     ActionInfo {
         name: "screen.pattern",
-        label: "pattern overview",
+        label: "pattern",
         group: Group::Global,
         knob: false,
     },

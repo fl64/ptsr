@@ -12737,6 +12737,64 @@ fn counts_and_undo_name_what_they_mean() {
     assert_eq!(drive.last_notice().text, "undo: clear on A1");
 }
 
+/// Scenario "Pattern keys follow the effective binding".
+#[test]
+fn pattern_keys_follow_the_effective_binding() {
+    let mut drive = Drive::new();
+    let shown = |drive: &Drive| {
+        let groups = drive.app.pattern_help_groups(
+            &drive.keymap,
+            crate::help_groups(&drive.keymap, Screen::Pads, &drive.app.help_state()),
+            None,
+            true,
+        );
+        let group = groups.iter().find(|group| group.name == "PATTERN").unwrap();
+        group
+            .items
+            .iter()
+            .find(|(_, text)| text == "pattern keys")
+            .cloned()
+    };
+    assert_eq!(shown(&drive), Some(("Alt N".into(), "pattern keys".into())));
+    assert!(
+        drive
+            .app
+            .full_help_keys(&drive.keymap, true)
+            .iter()
+            .any(|(key, text)| key.contains("Alt+N") && text.starts_with("pattern keys"))
+    );
+    drive
+        .keymap
+        .overlay("[global]\n'Alt+N' = 'none'\n'Alt+U' = 'pattern.controls'\n")
+        .unwrap();
+    assert_eq!(shown(&drive), Some(("Alt U".into(), "pattern keys".into())));
+    drive
+        .keymap
+        .overlay("[global]\n'Alt+U' = 'none'\n")
+        .unwrap();
+    assert_eq!(shown(&drive), None);
+    let info = action_info("screen.pattern");
+    assert_eq!(
+        (info.name, info.label, info.group),
+        ("screen.pattern", "pattern", input::Group::Global)
+    );
+    drive.bind_action(94, "screen.pattern");
+    let path = drive.save_registry_bindings();
+    let mut restored = Drive::with_saved_bindings(false, Some(&path));
+    restored.bytes(PAD_PORT, &[0xb0, 94, 127]);
+    restored.bytes(PAD_PORT, &[0xb0, 94, 0]);
+    restored.frame();
+    assert!(restored.app.pattern_view.overview);
+}
+
+/// Scenario "Controller map names pattern in six cells".
+#[test]
+fn controller_map_names_pattern_in_six_cells() {
+    let info = action_info("screen.pattern");
+    assert_eq!((info.name, info.label), ("screen.pattern", "pattern"));
+    assert_eq!(input::short_label(info.name), "ptrn");
+}
+
 /// Scenario "The pad edit help comes first".
 #[test]
 fn the_pad_edit_help_comes_first() {
@@ -12755,7 +12813,10 @@ fn the_pad_edit_help_comes_first() {
         .iter()
         .position(|n| *n == "EDIT")
         .expect("an edit group");
-    let a1 = names.iter().position(|n| *n == "A1").expect("an A1 group");
+    let a1 = names
+        .iter()
+        .position(|n| *n == "PATTERN")
+        .expect("a PATTERN group");
     assert!(edit < a1, "{names:?}");
     // At 80 columns A1 drops whole after the edit keys; F1 lists every group.
     let shown = groups.len() - tui::help_dropped(&groups, 80);
@@ -12775,5 +12836,5 @@ fn the_pad_edit_help_comes_first() {
         None,
         true,
     );
-    assert_eq!(groups[0].name, "A1");
+    assert_eq!(groups[0].name, "PATTERN");
 }

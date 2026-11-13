@@ -2497,10 +2497,10 @@ fn bank_key(abs: usize) -> String {
     format!("{}-{key}", abs / PADS_PER_BANK + 1)
 }
 
-/// The pad source in the words of an MPC pad layer (27): `all`, `slice 3`, `pad`.
+/// The pad source shown to the owner: `whole file`, `slice 3`, or `pad`.
 fn source_word(s: pads::Source) -> String {
     match s {
-        pads::Source::All => "all".into(),
+        pads::Source::All => "whole file".into(),
         pads::Source::Slice(n) => format!("slice {n}"),
         pads::Source::Own => "pad".into(),
     }
@@ -3344,7 +3344,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                     item(
                         &[Action::PadMarkToggle],
                         format!(
-                            "{} · scope: {}",
+                            "{} · edit: {}",
                             if st.marking {
                                 "mark: on, hit pads"
                             } else {
@@ -3712,7 +3712,7 @@ fn ctrl_text(a: Action) -> String {
         Action::PatternRecord => "pattern record".into(),
         Action::PatternErase => "pattern erase".into(),
         Action::PatternUndo => "pattern undo".into(),
-        Action::PatternControls => "pattern controls".into(),
+        Action::PatternControls => "pattern keys".into(),
         Action::PadTake => "take pad".into(),
         Action::PadCopy => "copy pad".into(),
         Action::Undo => "undo".into(),
@@ -3778,7 +3778,8 @@ fn describe(a: Action) -> String {
         }
         Action::PatternUndo => "undo the A1 pass. Finish an active pass first. No redo.".into(),
         Action::PatternControls => {
-            "A1 controls. Quantize and Strength set the next hits, not saved hits.".into()
+            "pattern keys: A1 controls. Quantize and Strength set the next hits, not saved hits."
+                .into()
         }
         Action::PatternParamPrev => "select the previous A1 control".into(),
         Action::PatternParamNext => "select the next A1 control".into(),
@@ -8692,7 +8693,7 @@ Enter = "browser.hold"
                 ("J L".to_string(), "right bound".to_string()),
                 ("K".to_string(), "zoom out".to_string()),
                 ("M".to_string(), "metro".to_string()),
-                ("N".to_string(), "pattern controls".to_string()),
+                ("N".to_string(), "pattern keys".to_string()),
                 // 49: the loop of the play; 50: play as the pad
                 ("O".to_string(), "loop".to_string()),
                 ("P".to_string(), "as pad".to_string()),
@@ -14665,7 +14666,7 @@ Enter = "browser.hold"
     #[test]
     fn the_whole_file() {
         let mut app = laid_out_break();
-        assert_eq!(panel_line(&mut app, 0), "break.wav · all");
+        assert_eq!(panel_line(&mut app, 0), "break.wav · whole file");
     }
 
     /// 27 task 1: the slice number follows the cuts — a delete renumbers the later pads;
@@ -14707,9 +14708,7 @@ Enter = "browser.hold"
         assert_eq!(app.chop.as_ref().unwrap().markers, cuts, "the old cuts");
     }
 
-    /// 68/76 screen-help "Scope in the help line": `Ctrl+A` on bank 2 shows
-    /// `mark: on, hit pads · scope: 16 marked` at the mark key, also with the Ctrl combos
-    /// hidden (kitty); after `Esc`, `mark: off · scope: pad 1`.
+    /// Scenario "Scope in the help line": the mark key names bank and this pad.
     #[test]
     fn scope_in_the_help_line() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -14723,13 +14722,13 @@ Enter = "browser.hold"
         };
         pads_key(&mut app, KeyCode::Char('a'), M::CONTROL);
         assert!(
-            said(&app).contains(&("M".into(), "mark: on, hit pads · scope: 16 marked".into())),
+            said(&app).contains(&("M".into(), "mark: on, hit pads · edit: bank".into())),
             "{:?}",
             said(&app)
         );
         app.apply(Action::Back);
         assert!(
-            said(&app).contains(&("M".into(), "mark: off · scope: pad 1".into())),
+            said(&app).contains(&("M".into(), "mark: off · edit: this pad".into())),
             "{:?}",
             said(&app)
         );
@@ -17327,12 +17326,12 @@ Enter = "browser.hold"
         assert!(p[4].in_hand, "kick would be replaced");
         assert_eq!(
             (p[5].name.as_str(), p[5].note.as_deref()),
-            ("empty", Some("→ 2"))
+            ("—", Some("→ 2"))
         );
         assert!(!p[5].in_hand);
         assert_eq!((p[7].name.as_str(), p[7].note.as_deref()), ("snare", None));
         assert!(!p[7].in_hand, "not planned: not replaced");
-        assert_eq!(p[0].name, "empty");
+        assert_eq!(p[0].name, "—");
         assert_eq!(v.side[0], "2 slices → bank 1 · replaces 1 · 6 left out");
     }
 
@@ -18503,7 +18502,7 @@ Enter = "browser.hold"
             assert_eq!(app.pads.page().0, page);
             assert_eq!(app.pads.param, param);
             assert_eq!(panel_now(&mut app).edit, Some(page));
-            assert_eq!(app.help_state().scope, "pad Q");
+            assert_eq!(app.help_state().scope, "this pad");
             if page != "FX" {
                 recorded_workflow_key(&mut app, K::Tab, M::NONE);
             }
