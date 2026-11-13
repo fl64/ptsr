@@ -68,3 +68,5 @@ The MIDI tab App method move passed `task check`. Its method tokens match the ol
 The remaining Chop App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.
 
 The pad edit App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace. The first build found that the pad and MIDI modules both define `Param`. We kept the MIDI value method and settings method in `main.rs` for their own moves.
+
+The FX selection and MIDI slot App method move passed `task check`. Its method tokens match the old blocks after we remove the new module visibility and whitespace.

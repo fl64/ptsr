@@ -1275,25 +1275,6 @@ impl App {
         }
     }
 
-    fn fx_selected_param(&self) -> pads::Param {
-        EFFECT_PARAMS[3 + self.fx_slot * 3 + self.fx_param]
-    }
-
-    fn select_fx(&mut self, slot: usize) {
-        if self.fx_slot != slot {
-            self.fx_slot = slot;
-            self.fx_param = 0;
-            self.pickup = None;
-        }
-    }
-
-    fn param_step_name(&self, p: pads::Param) -> String {
-        match p.slot() {
-            Some(k) => format!("FX {} {}", k + 1, self.pads.name(p)),
-            None => self.pads.name(p).into(),
-        }
-    }
-
     /// Switches the screen; the edit mode does not survive the switch.
     fn goto(&mut self, screen: Screen) {
         let from = self.screen;
@@ -1320,35 +1301,6 @@ impl App {
         }
     }
 
-    /// The parameter in knob slot `k` of the open edit page; `None` outside an edit mode
-    /// or past the page.
-    fn slot_param(&self, k: u8) -> Option<Param> {
-        if self.screen == Screen::Fx {
-            return (k < 3).then(|| Param::PadEffect(3 + self.fx_slot as u8 * 3 + k));
-        }
-        if !self.edit {
-            return None;
-        }
-        let k = k as usize;
-        match self.screen {
-            Screen::Pads => Some(match self.pads.page().1.get(k)? {
-                pads::Param::Volume => Param::PadVolume,
-                pads::Param::Pitch => Param::PadPitch,
-                pads::Param::Attack => Param::PadAttack,
-                pads::Param::Decay => Param::PadDecay,
-                pads::Param::Release => Param::PadRelease,
-                pads::Param::Source => Param::PadSource,
-                pads::Param::Start => Param::PadStart,
-                pads::Param::End => Param::PadEnd,
-                pads::Param::Filter => Param::PadFilter,
-                pads::Param::Cutoff => Param::PadCutoff,
-                pads::Param::Reso => Param::PadReso,
-                p => Param::PadEffect(EFFECT_PARAMS.iter().position(|e| e == p)? as u8),
-            }),
-            Screen::Chop => [Param::SliceStart, Param::SliceEnd].get(k).copied(),
-            _ => None,
-        }
-    }
     /// Left/Right on the settings screen: apply at once and save.
     fn change(&mut self, row: usize, step: isize) {
         if row == 3 {
