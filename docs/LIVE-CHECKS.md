@@ -2813,3 +2813,29 @@ These checks need the owner's keyboard, controller, eyes, and ears. Leave a box 
 
 Review `renders/screens/pads-quiet-empty-80x26.ansi`, `pads-clip-event-80x26.ansi`, and `pads-long-labels-80x26.ansi`.
 Review the matching `120x40` files. Compare `pads-normal`, `chop-normal`, `files-normal`, `fx-normal`, `settings-normal`, and `pads-help` at both sizes.
+
+## 123: Pattern overview and step addition
+
+Folder: `changes/123-pattern-view-polish`
+
+Use a disposable project. Run `task build`, then start `target/release/ptsr`.
+Leave each box open until you check it with your keyboard, controller, eyes, or ears.
+
+### Keyboard and screen
+
+- [ ] Record A1 hits on pads in two banks. Open F5. Check that the list shows pads with visible hits and the selected pad. Use Alt+H to show all rows. Use it again to hide empty rows.
+- [ ] Select an empty bank. Check that its selected pad stays visible. Change the view from 1/4 through 1/64. At 80x26 and 120x40, check that each number stays over its step and that the step width stays fixed. Check straight and triplet views.
+- [ ] Check low, medium, and high hit brightness. Check that `~` still marks one off-grid hit and a number still marks several hits. Check the moving playback plate.
+- [ ] Open F7. Use J/L to select an empty cell. Press a pad. Check that one hit appears with no immediate pad sound. Press the same pad again to remove it. Use Undo after each edit. Check the numeric velocity of the selected hit.
+- [ ] Add a hit with Shift and check velocity 127. Check a OneShot pad and a Gate pad. Save the project, reopen it, and check the hits. Check that playback stops, step edit closes, and the view returns to 1/16.
+
+### Controller and sound
+
+- [ ] Use learned controller actions to open the overview and step edit, change the view, and select a row. Use raw MIDI pad hits at low, medium, and high velocities. Check that edit presses and releases are silent and that normal pad play returns after exit.
+- [ ] While a Gate pad plays, add and remove another step. Check that the held tail continues without a click or a repeated hit.
+- [ ] Listen to local `renders/123-step-add.wav`. The first bar is silent. One hit starts in the next bar. The third bar is silent after Undo. Compare local `renders/97-pattern-record.wav`.
+
+### Offline screen catalogue
+
+Review `renders/screens/pads-pattern-overview-velocity-80x26.ansi` and `pads-pattern-step-add-80x26.ansi`.
+Review the matching `120x40` files. Compare the other A1 overview and step frames at both sizes.
