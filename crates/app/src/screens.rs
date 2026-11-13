@@ -11,6 +11,7 @@ const SIZES: [(u16, u16); 2] = [(120, 40), (80, 26)];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     Normal,
+    QuietEmpty,
     Tone,
     Envelope,
     Filter,
@@ -98,6 +99,7 @@ enum Mode {
 impl Mode {
     const ALL: &'static [Self] = &[
         Self::Normal,
+        Self::QuietEmpty,
         Self::Tone,
         Self::Envelope,
         Self::Filter,
@@ -185,6 +187,7 @@ impl Mode {
     fn name(self) -> &'static str {
         match self {
             Self::Normal => "normal",
+            Self::QuietEmpty => "quiet-empty",
             Self::Tone => "edit-tone",
             Self::Envelope => "edit-env",
             Self::Filter => "edit-filter",
@@ -302,7 +305,8 @@ impl Mode {
             | Self::PitchGateOff
             | Self::PitchGateA1
             | Self::PitchGateSource
-            | Self::PitchGatePitch => screen == Screen::Pads,
+            | Self::PitchGatePitch
+            | Self::QuietEmpty => screen == Screen::Pads,
             Self::Bounds
             | Self::Assign
             | Self::AssignOrder
@@ -413,6 +417,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                 );
                 modes.extend(
                     [
+                        "quiet-empty",
                         "pattern-view-fine",
                         "pattern-view-triplet",
                         "pattern-view-off-grid",
@@ -731,6 +736,7 @@ fn fixture(case: Case, now: Instant) -> App {
         }
         Mode::Loop => app.chop.as_mut().unwrap().looping = true,
         Mode::AsPad => app.chop.as_mut().unwrap().as_pad = true,
+        Mode::QuietEmpty => app.pads = pads::Pads::default(),
         Mode::Normal | Mode::Value | Mode::Device => {}
         Mode::PatternCountIn
         | Mode::PatternRecording
@@ -1261,6 +1267,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         ),
     }
     match case.mode {
+        Mode::QuietEmpty => require("—"),
         Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => require("EDIT"),
         Mode::Bounds => {
             require("EDIT · BOUNDS");

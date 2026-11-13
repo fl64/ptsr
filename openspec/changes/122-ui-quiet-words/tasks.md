@@ -12,7 +12,7 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 
 ## 2. Quiet cells and clear words
 
-- [ ] 2.1 Make empty pad cells quiet. Keep corner marks and the empty-pad test tone. Add keyboard and raw MIDI state tests and catalogue cases.
+- [x] 2.1 Make empty pad cells quiet. Keep corner marks and the empty-pad test tone. Add keyboard and raw MIDI state tests and catalogue cases.
 - [ ] 2.2 Change visible scope, source, pattern, help, and MIDI learn words. Keep action IDs, saved groups, and controls. Add scenario tests.
 - [ ] 2.3 Keep fixed title slots while blanking idle PLAY. Make the compact Pitch Gate summary conditional. Test all states at both sizes.
 
@@ -26,3 +26,7 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 
 - [ ] 4.1 Run focused checks before each code commit. Run `task screens`, `task openspec:check`, `task check`, and `task build` on the final code state.
 - [ ] 4.2 Review the diff for sound, input, saved-format, and large-file changes. Give the owner the keyboard, controller, view, and listening checks. Keep unreported hardware and listening results open.
+
+## Implementation evidence
+
+The quiet empty-pad step passed format, Clippy, the file-size gate, 148 TUI tests, two New pad tests, and the empty-wave test. The catalogue test passed and added `pads-quiet-empty` at both sizes. It changed 180 prior frames with empty cells. The existing corner-mark tests passed. The paired New pad test used keyboard events and raw MIDI. The sound path and test-tone view did not change.

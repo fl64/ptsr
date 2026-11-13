@@ -2,6 +2,25 @@
 
 use super::*;
 
+/// Scenario "New pad": keyboard and raw MIDI keep an empty cell quiet.
+#[test]
+fn new_pad_stays_quiet_with_keyboard_and_raw_midi() {
+    let mut states = Vec::new();
+    for source in [Source::Keyboard, Source::Notes] {
+        let mut drive = Drive::new();
+        for frame in [drive.pad_press(source, 0), drive.pad_release(source, 0)] {
+            assert_eq!(frame.commands().len(), 1);
+            let view = pads_view(&mut drive.app.pads, None, None, Vec::new(), None, 48_000);
+            assert!(view.pads[0].empty);
+            assert_eq!(view.pads[0].name, "—");
+            assert!(view.pads[0].wave.is_empty());
+            assert_eq!(view.pads[0].detail.as_deref(), Some("empty · test tone A2"));
+        }
+        states.push(drive.seen());
+    }
+    assert_eq!(states[0], states[1]);
+}
+
 fn badge_labels(drive: &Drive) -> Vec<String> {
     let before = drive.seen();
     let badges = drive.app.title_badges();

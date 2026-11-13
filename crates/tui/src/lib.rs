@@ -394,6 +394,8 @@ impl PitchGate {
 
 pub struct PadView {
     pub naming: bool,
+    /// No sample is assigned to this pad. This does not include an absent Chop slice.
+    pub empty: bool,
     /// `✱` when the pad has more settings than its mode line shows (77), or empty.
     pub glyphs: String,
     /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
@@ -432,8 +434,8 @@ pub struct PadView {
     pub bounds: (f32, f32),
     /// The FILTER page as the panel says it (44): kind, cutoff, resonance.
     pub filter: [String; 3],
-    /// The wave the pad plays with its envelope (29): peaks 0..1. Empty means no wave
-    /// (a missing file), one zero a flat line (an empty pad).
+    /// The wave the pad plays with its envelope (29): peaks 0..1.
+    /// An empty pad or missing file has no wave.
     pub wave: Vec<f32>,
     /// Drawn dim: on the chop screen a pad that plays no slice of the open chop (36).
     pub dim: bool,
@@ -1984,6 +1986,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, &key)| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -2333,21 +2336,18 @@ mod tests {
         );
     }
 
-    /// Scenario "Every pad draws its wave" (29): in a terminal tall enough for three wave
-    /// rows (44 since 31) every pad with a sample shows its wave in three rows under its
-    /// mode line, an empty pad a flat middle line.
+    /// Scenario "Every pad draws its wave": loaded pads show waves; empty pads do not.
     #[test]
     fn every_pad_draws_its_wave() {
         let mut p = idle_pads();
         for (i, pad) in p.pads.iter_mut().enumerate() {
-            // pad 2 is empty: a flat line; the rest sound at full scale
-            pad.wave = if i == 1 { vec![0.0] } else { vec![1.0; 1200] };
+            pad.empty = i == 1;
+            pad.wave = if i == 1 { Vec::new() } else { vec![1.0; 1200] };
         }
         p.selected = 5;
         let rows = render_pads_at(p, 100, 44);
         let f = frame_at(100, 44);
         assert_eq!(f.waves, 3);
-        // a cell is 4+3 rows: frame, name, mode, waves, frame; 15 columns wide at 100
         let top = f.grid.y as usize;
         let has_dots = |r: usize, from: usize, to: usize| {
             rows[r][from..to]
@@ -2365,15 +2365,9 @@ mod tests {
                 "the frame follows the three wave rows"
             );
         }
-        // the empty pad: a flat line only in the middle of its three rows
-        assert!(
-            !has_dots(top + 3, 16, 29) && !has_dots(top + 5, 16, 29),
-            "an empty pad draws no dots above and below the middle"
-        );
-        assert!(
-            has_dots(top + 4, 16, 29),
-            "the flat line sits in the middle row"
-        );
+        for r in top + 3..top + 6 {
+            assert!(!has_dots(r, 16, 29), "empty pad wave row {r} is blank");
+        }
         // the selected pad's wave wears the pad's text colour, the rest are dim
         let color_of = |r: usize, from: usize, to: usize| {
             rows[r][from..to]
@@ -2525,6 +2519,7 @@ mod tests {
                 .iter()
                 .map(|&key| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -4942,6 +4937,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, &key)| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -6367,6 +6363,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, &key)| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,

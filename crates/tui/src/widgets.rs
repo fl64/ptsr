@@ -419,7 +419,9 @@ pub(super) fn pad_cell(
     } else {
         pad.name.clone()
     };
-    let text = vec![Line::from(format!(" {name}")), second];
+    let name = Line::from(format!(" {name}"));
+    let name = if pad.empty { name.fg(DIM) } else { name };
+    let text = vec![name, second];
     frame.render_widget(Paragraph::new(text).block(block), area);
     // the wave sits between the mode line and the bottom frame (29); the selected pad's
     // wave wears the pad's text colour, the rest is dim

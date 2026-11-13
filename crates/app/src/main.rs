@@ -2112,6 +2112,7 @@ fn pads_view(
             let changed = pad_changes(p, abs);
             tui::PadView {
                 naming: false,
+                empty: p.file[abs].is_none(),
                 glyphs: pad_glyphs(&changed),
                 pitch_gate: view::pitch_gate(p, abs),
                 changed,
@@ -2125,11 +2126,9 @@ fn pads_view(
                 }),
                 wave: p.wave(abs, rate, BIG_COLS),
                 key: PAD_KEYS[i],
-                name: if p.file[abs].is_some() {
-                    pad_name(p, abs)
-                } else {
-                    "empty".into()
-                },
+                name: p.file[abs]
+                    .as_ref()
+                    .map_or("—".into(), |_| pad_name(p, abs)),
                 detail: Some(match p.file[abs].as_deref() {
                     None => format!("empty · test tone {}", test_tone_name(abs)),
                     Some(f) => format!("{} · {}", file_name(f), source_word(p.source(abs))),
@@ -2595,6 +2594,7 @@ fn chop_view_routed<'a>(
                     let slice = slices.get(n);
                     tui::PadView {
                         naming: false,
+                        empty: false,
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: slice.is_none(),
@@ -2693,6 +2693,7 @@ fn chop_view_routed<'a>(
                     let abs = p.bank * PADS_PER_BANK + i;
                     tui::PadView {
                         naming: false,
+                        empty: p.file[abs].is_none(),
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: !pattern_pads && !ours(abs) && !whole(abs),
@@ -2704,11 +2705,9 @@ fn chop_view_routed<'a>(
                         filter: Default::default(),
                         wave: Vec::new(),
                         key: PAD_KEYS[i],
-                        name: if p.file[abs].is_some() {
-                            pad_name(p, abs)
-                        } else {
-                            "empty".into()
-                        },
+                        name: p.file[abs]
+                            .as_ref()
+                            .map_or("—".into(), |_| pad_name(p, abs)),
                         gate: p.gate[abs],
                         volume_db: p.volume_db[abs] as f32,
                         pitch: p.pitch[abs],
@@ -2818,6 +2817,7 @@ fn chop_view_routed<'a>(
                     tui::PadView {
                         pitch_gate: view::pitch_gate(p, abs),
                         naming: false,
+                        empty: !taken(abs),
                         glyphs: String::new(),
                         changed: Vec::new(),
                         dim: false,
@@ -2830,7 +2830,7 @@ fn chop_view_routed<'a>(
                         name: if taken(abs) {
                             pad_name(p, abs)
                         } else {
-                            "empty".into()
+                            "—".into()
                         },
                         gate: p.gate[abs],
                         volume_db: p.volume_db[abs] as f32,
@@ -2848,7 +2848,7 @@ fn chop_view_routed<'a>(
                         detail: None,
                         note: match planned {
                             Some(s) => Some(format!("→ {}", s + 1)),
-                            // an empty pad: no mode line, "empty" says it all
+                            // an empty pad: no mode line, the quiet mark says it all
                             None if !taken(abs) => Some(String::new()),
                             None => None,
                         },
@@ -15565,13 +15565,13 @@ Enter = "browser.hold"
         assert_eq!(flash(&app), "Wait until loading finishes, then swap.");
     }
 
-    /// pad-playback "New pad": a pad without a sample says "empty", its info names the
-    /// test tone.
+    /// Scenario "New pad": the grid is quiet and the info names its test tone.
     #[test]
     fn new_pad() {
         let mut app = test_app();
         let v = super::pads_view(&mut app.pads, None, None, Vec::new(), None, 48_000);
-        assert_eq!(v.pads[0].name, "empty");
+        assert_eq!(v.pads[0].name, "—");
+        assert!(v.pads[0].empty && v.pads[0].wave.is_empty());
         assert_eq!(v.pads[0].detail.as_deref(), Some("empty · test tone A2"));
     }
 
