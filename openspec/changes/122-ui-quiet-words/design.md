@@ -24,6 +24,8 @@ The UI meter records the latest clipped block time on the UI thread. The label u
 
 `all`, action IDs, saved MIDI group IDs, project fields, and key bindings stay unchanged. Only their shown names change. The visible terms are `transport`, `pattern`, `pad`, `slice`, `sample`, `bank`, `send`, `FX 1`, and `FX 2`.
 
+The controller map has a six-cell action label. On 2026-11-13, the owner chose `ptrn` for this map. MIDI learn keeps the full `pattern` label.
+
 ### Clip words without hiding required text
 
 Long names lose complete words before `…` when a word fits the field. If one word is wider than the field, clip at grapheme boundaries. Safety warnings, key caps, numeric values, and units keep their current priority.
