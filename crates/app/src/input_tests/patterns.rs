@@ -10426,7 +10426,17 @@ fn pitch_gate_feedback_preserves_parameter_pages() {
                                 .iter()
                                 .find(|row| row.contains("mode "))
                                 .expect("mode row");
-                            assert!(mode.contains(word), "{width}x{height}: {mode}");
+                            assert_eq!(mode.contains(word), pitch != 0, "{width}x{height}: {mode}");
+                            let panel_detail = if width == 80 && state == tui::PitchGate::NeedsSlice
+                            {
+                                "PG on: needs slice"
+                            } else {
+                                description
+                            };
+                            assert!(
+                                rows.iter().any(|row| row.contains(panel_detail)),
+                                "{rows:?}"
+                            );
                             // the help row explains only a linked slice with Pitch Gate on
                             let applies = explanation.starts_with("PG on: A1 only")
                                 || explanation.starts_with("PG on: needs Pitch");
@@ -10505,11 +10515,18 @@ fn pitch_gate_reports_source_and_pitch_restrictions() {
                         ("PG A1", "PG on: A1 only, manual unchanged")
                     };
                     let rows = shared_feedback_rows(&mut drive, 80, 26, Instant::now());
-                    assert!(
-                        rows.iter()
-                            .any(|row| row.contains("mode ") && row.contains(state)),
+                    let mode = rows.iter().find(|row| row.contains("mode ")).unwrap();
+                    assert_eq!(
+                        mode.contains(state),
+                        pitch != 0,
                         "{kind}, {pitch}: {rows:?}"
                     );
+                    let detail = if kind != "linked" && enabled {
+                        "PG on: needs slice"
+                    } else {
+                        reason.trim_end_matches(", manual unchanged")
+                    };
+                    assert!(rows.iter().any(|row| row.contains(detail)), "{rows:?}");
                     // the help row explains only a linked slice with Pitch Gate on; F1 gives
                     // the restriction for every pad
                     let applies = reason.starts_with("PG on: A1 only")

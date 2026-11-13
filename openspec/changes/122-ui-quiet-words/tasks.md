@@ -15,7 +15,7 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 - [x] 2.1 Make empty pad cells quiet. Keep corner marks and the empty-pad test tone. Add keyboard and raw MIDI state tests and catalogue cases.
 - [x] 2.2 Change visible scope, source, pattern, help, and MIDI learn words. Keep action IDs, saved groups, and controls. Add scenario tests.
 - [x] 2.3 Keep the fixed ten-cell PLAY slot blank while idle. Test active and idle states at both sizes.
-- [ ] 2.4 Make the compact Pitch Gate summary conditional. Test all states at both sizes.
+- [x] 2.4 Make the compact Pitch Gate summary conditional. Test all states at both sizes.
 
 ## 3. Clip feedback and long labels
 
@@ -37,3 +37,5 @@ The word step passed format, Clippy, and the file-size gate. The source, scope, 
 The idle PLAY step passed format, Clippy, 148 TUI tests, recorded keyboard and MIDI playback tests, and all 23 screen tests. The ten-cell slot keeps its position at both sizes. The screen catalogue still has 822 files and no missing base name.
 
 The CLIP step passed controlled-clock meter tests, 148 TUI tests, Clippy, the file-size gate, and all 23 screen tests. The catalogue has 824 files with no missing base name. It adds `pads-clip-event` at both sizes. The UI-side meter records the latest observed clipped output. The audio callback does no new work.
+
+The Pitch Gate step passed keyboard, raw MIDI, popup, panel, F1, and parameter-page tests. It passed 148 TUI tests, Clippy, the file-size gate, and all 23 screen tests. The catalogue still has 824 files and no missing base name. The detail row stays inside the pad panel at both sizes.

@@ -1300,11 +1300,20 @@ fn check_frame(case: Case, buffer: &Buffer) {
                 Mode::PitchGatePitch => ("PG n/a", "PG on: needs Pitch > 0, manual unchanged"),
                 _ => unreachable!(),
             };
-            assert!(
-                rows.iter()
-                    .any(|row| row.contains("mode ") && row.contains(label)),
+            let mode = rows.iter().find(|row| row.contains("mode ")).unwrap();
+            assert_eq!(
+                mode.contains(label),
+                case.mode != Mode::PitchGatePitch,
                 "{text}"
             );
+            let detail = match (case.size.0, case.mode) {
+                (80, Mode::PitchGateSource) => "PG on: needs slice",
+                (_, Mode::PitchGateSource) => "PG on: needs linked slice",
+                (_, Mode::PitchGatePitch) => "PG on: needs Pitch > 0",
+                (_, Mode::PitchGateA1) => "PG on: A1 only",
+                _ => "PG off",
+            };
+            assert!(rows.iter().any(|row| row.contains(detail)), "{text}");
             // the help row explains Pitch Gate only for a linked slice with it on
             let applies = matches!(case.mode, Mode::PitchGateA1 | Mode::PitchGatePitch);
             let last = &rows[case.size.1 as usize - 1];
@@ -2418,9 +2427,19 @@ L="none"
                                 }
                                 _ => unreachable!(),
                             };
+                            let mode_row = rows.iter().find(|row| row.contains("mode ")).unwrap();
+                            assert_eq!(
+                                mode_row.contains(label),
+                                mode != Mode::PitchGatePitch,
+                                "{rows:?}"
+                            );
+                            let panel_detail = if size.0 == 80 && mode == Mode::PitchGateSource {
+                                "PG on: needs slice"
+                            } else {
+                                description
+                            };
                             assert!(
-                                rows.iter()
-                                    .any(|row| row.contains("mode ") && row.contains(label)),
+                                rows.iter().any(|row| row.contains(panel_detail)),
                                 "{rows:?}"
                             );
                             let applies = matches!(mode, Mode::PitchGateA1 | Mode::PitchGatePitch);

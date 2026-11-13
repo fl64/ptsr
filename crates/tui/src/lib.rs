@@ -4451,6 +4451,7 @@ mod tests {
         );
     }
 
+    /// Scenario "Pitch Gate summary stays quiet at zero pitch".
     #[test]
     fn pitch_gate_mode_row_keeps_state_and_inactive_style() {
         for size in [(80, 26), (120, 40)] {
@@ -4460,10 +4461,11 @@ mod tests {
                 PitchGate::NeedsSlice,
                 PitchGate::NeedsPitch,
             ] {
-                for hidden in [false, true] {
+                for (hidden, pitch) in [(false, 0), (true, 0), (false, 12), (true, 12)] {
                     let mut pads = idle_pads();
                     pads.hidden = hidden;
                     pads.pads[pads.selected].pitch_gate = state;
+                    pads.pads[pads.selected].pitch = pitch;
                     let rows = render_pads_at(pads, size.0, size.1);
                     let row = rows
                         .iter()
@@ -4476,11 +4478,24 @@ mod tests {
                         .unwrap();
                     let text = row.iter().map(|cell| cell.0.as_str()).collect::<String>();
                     let word = state.label();
-                    assert!(text.contains(word), "{text}");
-                    let start = row.iter().position(|cell| cell.0 == "P").unwrap();
-                    for cell in &row[start..start + word.len()] {
-                        assert_eq!(cell.1, if state == PitchGate::A1 { TEXT } else { DIM });
+                    assert_eq!(text.contains(word), pitch != 0, "{text}");
+                    if pitch != 0 {
+                        let start = row.iter().position(|cell| cell.0 == "P").unwrap();
+                        for cell in &row[start..start + word.len()] {
+                            assert_eq!(cell.1, if state == PitchGate::A1 { TEXT } else { DIM });
+                        }
                     }
+                    let detail = if size.0 == 80 && state == PitchGate::NeedsSlice {
+                        "PG on: needs slice"
+                    } else {
+                        state.description()
+                    };
+                    assert!(rows.iter().any(|row| {
+                        row.iter()
+                            .map(|cell| cell.0.as_str())
+                            .collect::<String>()
+                            .contains(detail)
+                    }));
                     let help = rows[size.1 as usize - 1]
                         .iter()
                         .map(|cell| cell.0.as_str())
