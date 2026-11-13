@@ -9,7 +9,7 @@
 ## 2. Overview projection
 
 - [x] 2.1 Show rows with visible hits plus the selected pad by default. Keep all eight banks in the index. Make Alt+H show every row and keep the selected bank in view. Test hidden hits, empty banks, navigation, and keyboard/raw MIDI bindings.
-- [ ] 2.2 Use fixed three-cell steps and aligned numbers at 80x26 and 120x40 for every division. Keep beat, bar, triplet, cursor, and playhead marks.
+- [x] 2.2 Use fixed three-cell steps and aligned numbers at 80x26 and 120x40 for every division. Keep beat, bar, triplet, cursor, and playhead marks.
 - [ ] 2.3 Show three velocity levels while keeping off-grid and count marks. Test thresholds, collisions, and numeric detail.
 
 ## 3. Step edit
@@ -26,3 +26,5 @@
 ## Implementation evidence
 
 The row-filter step passed the 16 recorded pattern-view input tests, including the learned raw MIDI toggle. It passed 150 TUI tests, Clippy, the file-growth gate, and all 25 screen tests. The selected bottom row stays visible at both sizes in full mode. The catalogue has 826 names with no missing or new file. All 30 changed base frames are A1 overview or step frames.
+
+The fixed-cell step passed 151 TUI tests, the focused app screen test, Clippy, the file-growth gate, and all 25 screen tests. All 826 catalogue names remain. The 30 changed frames are A1 overview or step frames.

@@ -2854,8 +2854,12 @@ L="none"
                 .any(|row| row.contains("rec-20261031-200404 20 minute take"))
         );
         assert!(
-            (105..119).any(|x| matches!(buffer[(x, 5)].symbol(), "·" | "■" | "~")),
-            "time cells must use the right side"
+            (45..105).any(|x| matches!(buffer[(x, 5)].symbol(), "·" | "■" | "~")),
+            "fixed-width time cells must remain visible"
+        );
+        assert!(
+            (105..119).all(|x| buffer[(x, 5)].symbol() == " "),
+            "unused width stays blank"
         );
 
         let absent = Case {

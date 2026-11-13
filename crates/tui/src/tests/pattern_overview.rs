@@ -1,0 +1,64 @@
+//! Overview geometry at the supported terminal sizes.
+
+use super::*;
+
+/// Scenario "Overview fixed cells align every division".
+#[test]
+fn overview_fixed_cells_align_every_division() {
+    for (width, height) in [(80u16, 26u16), (120, 40)] {
+        for beat_cells in [1, 2, 3, 4, 6, 8, 12, 16] {
+            let total = 4 * beat_cells;
+            let (page, label_width) = overview_page_layout(width as usize, beat_cells, total);
+            let mut rows = vec![vec![PatternCell::default(); page]; 128];
+            rows[0][0].count = 1;
+            let view = PatternOverview {
+                header: "view 1/16".into(),
+                rows,
+                names: vec!["sample".into(); 128],
+                active_pads: [1, 0, 0, 0, 0, 0, 0, 0],
+                hide_empty: true,
+                beat_cells,
+                playhead: Some(beat_cells.min(page - 1)),
+                first_cell: 0,
+                total_cells: total,
+                edit_cursor: Some(0),
+                event_choice: None,
+            };
+            let mut pads = idle_pads();
+            pads.selected = 0;
+            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+            term.draw(|frame| {
+                pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &view)
+            })
+            .unwrap();
+            let buffer = term.backend().buffer();
+            let mut x = label_width + 1;
+            for cell in 0..page {
+                if cell > 0 && cell.is_multiple_of(beat_cells) {
+                    x += 1;
+                }
+                let number = format!("{:^3}", cell % (4 * beat_cells) + 1);
+                let actual = (x..x + 3)
+                    .map(|column| buffer[(column as u16, 2)].symbol())
+                    .collect::<String>();
+                assert_eq!(
+                    actual, number,
+                    "{width}x{height}, beat {beat_cells}, cell {cell}"
+                );
+                assert_eq!(
+                    buffer[((x + 1) as u16, 4)].symbol(),
+                    if cell == 0 { "■" } else { "·" },
+                    "{width}x{height}, beat {beat_cells}, cell {cell}"
+                );
+                if cell == 0 {
+                    assert_eq!(buffer[((x + 1) as u16, 4)].bg, CYAN);
+                } else if view.playhead == Some(cell) {
+                    assert_eq!(buffer[((x + 1) as u16, 4)].bg, PLATE);
+                }
+                x += 3;
+            }
+            assert!(x < width as usize);
+            assert_eq!(buffer[(width - 1, 4)].symbol(), "┃");
+        }
+    }
+}

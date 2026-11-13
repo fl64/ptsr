@@ -2,6 +2,37 @@
 
 use super::*;
 
+fn overview_label_width(width: usize) -> usize {
+    (width * 38 / 100).clamp(28, 48)
+}
+
+pub(super) fn overview_page_layout(
+    width: usize,
+    beat_cells: usize,
+    total: usize,
+) -> (usize, usize) {
+    let beat_cells = beat_cells.max(1);
+    let bar_cells = 4 * beat_cells;
+    let preferred_label = overview_label_width(width);
+    let minimum_label = preferred_label.min(27);
+    let room = width.saturating_sub(minimum_label + 2);
+    // A number can have two digits. Keep a third cell between neighboring numbers.
+    let bars = ((room + 1) / (3 * bar_cells + 4)).min(total.max(bar_cells) / bar_cells);
+    let count = if bars > 0 {
+        bars * bar_cells
+    } else if 3 * (2 * beat_cells) < room {
+        2 * beat_cells
+    } else {
+        beat_cells
+    };
+    let separators = count / beat_cells - 1;
+    let needed = 3 * count + separators;
+    let label = preferred_label
+        .min(width.saturating_sub(needed + 2))
+        .max(minimum_label);
+    (count, label)
+}
+
 pub(super) fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStrip) {
     let total = pattern.cells.len().min(pattern.all.len());
     let beat_cells = pattern.beat_cells.max(1);
@@ -186,20 +217,17 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         .filter(|offset| (first + offset).is_multiple_of(beat_cells))
         .count();
     let usable = grid_width.saturating_sub(separators);
-    if count > 0 && usable < 2 * count {
+    if count > 0 && usable < 3 * count {
         frame.render_widget(
             Line::from("Widen the terminal to show this view division.").fg(DIM),
             Rect::new(area.x, area.y + 2, area.width, 1),
         );
         return;
     }
-    let base = usable.checked_div(count).unwrap_or(0);
-    let extra = usable.checked_rem(count).unwrap_or(0);
-    let widths = (0..count)
-        .map(|offset| base + ((offset + 1) * extra / count - offset * extra / count))
-        .collect::<Vec<_>>();
+    let cell_width = 3;
+    let right_pad = usable.saturating_sub(cell_width * count);
     let mut numbers = vec![Span::raw(" ".repeat(label_width + 1))];
-    for (offset, &cell_width) in widths.iter().enumerate() {
+    for offset in 0..count {
         let cell = first + offset;
         if offset > 0 && cell.is_multiple_of(beat_cells) {
             numbers.push(Span::styled(
@@ -315,7 +343,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 Span::styled(text, Style::new().fg(if selected { CYAN } else { TEXT })),
             ];
             let cells = view.rows.get(abs);
-            for (offset, &cell_width) in widths.iter().enumerate() {
+            for offset in 0..count {
                 let cell = first + offset;
                 if offset > 0 && cell.is_multiple_of(beat_cells) {
                     spans.push(Span::styled(
@@ -353,7 +381,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 let cursor = view.edit_cursor == Some(cell) && selected;
                 let mut before = " ".repeat(left);
                 let mut after = " ".repeat(cell_width - left - 1);
-                if cursor && cell_width >= 3 {
+                if cursor {
                     before.replace_range(..1, "[");
                     after.replace_range(after.len() - 1.., "]");
                 }
@@ -361,6 +389,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 spans.push(Span::styled(glyph.to_string(), cell_style));
                 spans.push(Span::styled(after, cell_style));
             }
+            spans.push(Span::raw(" ".repeat(right_pad)));
             spans.push(Span::styled(if current { "┃" } else { "│" }, style));
             frame.render_widget(Line::from(spans), Rect::new(area.x, y, area.width, 1));
             y += 1;
