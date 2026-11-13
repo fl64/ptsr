@@ -913,6 +913,9 @@ fn add_pattern_overview(app: &mut App, mode: Mode) {
     };
     add_pattern_view(app, view_mode);
     app.pattern_view.overview = true;
+    if mode == Mode::PatternOverviewSafety {
+        app.pattern_view.hide_empty_banks = false;
+    }
     let raw = app.pads.pattern.as_mut().unwrap();
     raw.hits.extend([[960, 20, 90, 0], [1920, 54, 70, 0]]);
     for (pad, name) in [
@@ -2807,7 +2810,7 @@ L="none"
                 .collect::<Vec<_>>();
             assert!(rows[1].contains("PATTERN · A1"));
             assert!(rows[2].contains("BANKS · pads with A1 hits"));
-            assert!(rows[2].contains("8:0 empty shown"), "{}", rows[2]);
+            assert!(rows[2].contains("8:0 all rows shown"), "{}", rows[2]);
             for number in 10..16 {
                 assert!(rows[3].contains(&format!("{number} ")), "{}", rows[3]);
             }
@@ -2820,11 +2823,11 @@ L="none"
             }
             assert!(rows[0].contains("Save failed"));
             let help = rows[size.1 as usize - 3..].join("\n");
-            for text in ["PATTERN", "BANK", "CLOCK", "view", "empty shown"] {
+            for text in ["PATTERN", "BANK", "CLOCK", "view", "all rows shown"] {
                 assert!(help.contains(text), "{text}: {help}");
             }
             assert!(
-                rows[size.1 as usize - 4].contains("Alt+H hides empty banks."),
+                rows[size.1 as usize - 4].contains("Alt+H hides empty rows."),
                 "{}",
                 rows[size.1 as usize - 4]
             );
@@ -2890,8 +2893,18 @@ L="none"
         let (_, buffer) = render_app(case, &keymap, app, now);
         assert_eq!(buffer[(0, 4)].symbol(), "┏");
         assert_eq!(buffer[(0, 4)].fg, tui::BANK_COLORS[0]);
-        assert_eq!(buffer[(0, 22)].symbol(), "╭");
-        assert_eq!(buffer[(0, 22)].fg, tui::BANK_COLORS[1]);
+        let second = buffer
+            .content()
+            .chunks(case.size.0 as usize)
+            .position(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .contains("BANK 2 / 8")
+            })
+            .expect("bank 2 remains visible");
+        assert_eq!(buffer[(0, second as u16)].symbol(), "╭");
+        assert_eq!(buffer[(0, second as u16)].fg, tui::BANK_COLORS[1]);
         let index = buffer.content()[2 * 120..3 * 120]
             .iter()
             .map(|cell| cell.symbol())
@@ -2923,21 +2936,74 @@ L="none"
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        let all = text(fixture(case, now));
-        assert!(all.contains("BANK 3 / 8"), "default shows empty banks");
-        app.pattern_view.hide_empty_banks = true;
-        let hidden = text(app);
+        let hidden = text(fixture(case, now));
         assert!(hidden.contains("BANK 1 / 8"));
         assert!(hidden.contains("BANK 2 / 8"));
         assert!(hidden.contains("BANK 4 / 8"));
         assert!(!hidden.contains("BANK 3 / 8"));
         assert!(hidden.contains("3:0"), "fixed index keeps the bank");
+        app.pattern_view.hide_empty_banks = false;
+        let all = text(app);
+        assert!(all.contains("BANK 3 / 8"), "Alt+H shows empty banks");
 
         let mut selected = fixture(case, now);
-        selected.pattern_view.hide_empty_banks = true;
         selected.pads.bank = 2;
         let selected_text = text(selected);
         assert!(selected_text.contains("BANK 3 / 8"));
+    }
+
+    /// Scenario "Overview shows occupied and selected pad rows".
+    /// Scenario "Overview shows all pad rows and source events".
+    #[test]
+    fn overview_filters_rows_and_restores_all_rows_at_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewStraight,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.pads.selected = 5;
+            let (_, filtered) = render_app(case, &keymap, app, now);
+            let text = filtered
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains(" 1 kick"), "{text}");
+            assert!(text.contains(" W empty"), "{text}");
+            assert!(!text.contains(" 2 snare"), "{text}");
+            assert!(text.contains("empty rows hidden"), "{text}");
+
+            let mut app = fixture(case, now);
+            app.pattern_view.hide_empty_banks = false;
+            let (_, full) = render_app(case, &keymap, app, now);
+            let text = full
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains(" 2 snare"), "{text}");
+            assert!(text.contains("all rows shown"), "{text}");
+
+            let mut app = fixture(case, now);
+            app.pattern_view.hide_empty_banks = false;
+            app.pads.bank = 2;
+            app.pads.selected = 15;
+            let (_, full_selected) = render_app(case, &keymap, app, now);
+            let text = full_selected
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("BANK 3 / 8"), "{text}");
+            assert!(text.contains(" V empty"), "{text}");
+        }
     }
 
     /// Scenario "Pattern strip distinguishes subdivisions and event density".

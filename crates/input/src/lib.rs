@@ -1122,7 +1122,7 @@ pub fn short_label(action: &str) -> &'static str {
         "pattern.value_inc" => "A1 v+",
         "pattern.view_prev" => "view<",
         "pattern.view_next" => "view>",
-        "pattern.overview_empty_toggle" => "empty",
+        "pattern.overview_empty_toggle" => "rows",
         "pattern.clear" => "clrA1",
         "pattern.bars" => "bars",
         "pattern.quantize" => "quant",
@@ -1586,7 +1586,7 @@ pub const ACTIONS: &[ActionInfo] = &[
     },
     ActionInfo {
         name: "pattern.overview_empty_toggle",
-        label: "show or hide empty banks",
+        label: "show or hide empty rows",
         group: Group::Global,
         knob: false,
     },

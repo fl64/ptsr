@@ -696,7 +696,7 @@ impl App {
                 self.help_bindings(keymap, Action::PatternOverviewEmptyToggle)
                     .join("/"),
                 format!(
-                    "Empty banks: {}. Switch their sections without changing A1.",
+                    "Empty rows: {}. Switch all rows without changing A1.",
                     if self.pattern_view.hide_empty_banks {
                         "hidden"
                     } else {
@@ -1212,9 +1212,9 @@ impl App {
                         item(
                             &[Action::PatternOverviewEmptyToggle],
                             if self.pattern_view.hide_empty_banks {
-                                "empty hidden"
+                                "empty rows hidden"
                             } else {
-                                "empty shown"
+                                "all rows shown"
                             },
                         ),
                     ],

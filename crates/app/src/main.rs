@@ -1837,9 +1837,9 @@ fn hint_for(app: &App) -> Option<&'static str> {
             Some("A1 step edit: pads remove one hit; empty adds none. Ctrl+Z restores.")
         }
         Screen::Pads if app.pattern_view.overview => Some(if app.pattern_view.hide_empty_banks {
-            "A1 table: view only · pads play · Alt+H shows empty banks."
+            "A1 table: view only · pads play · Alt+H shows all rows."
         } else {
-            "A1 table: view only · pads play · Alt+H hides empty banks."
+            "A1 table: view only · pads play · Alt+H hides empty rows."
         }),
         Screen::Pads if app.pads.file.iter().all(Option::is_none) => {
             Some("Pads are empty: F6 opens files, Enter takes one, a pad hit puts it there.")

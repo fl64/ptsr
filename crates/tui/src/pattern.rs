@@ -168,9 +168,9 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     }
     index.push(Span::styled(
         if view.hide_empty {
-            "empty hidden"
+            "empty rows hidden"
         } else {
-            "empty shown"
+            "all rows shown"
         },
         Style::new().fg(DIM),
     ));
@@ -224,12 +224,30 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     let visible = (0..BANKS)
         .filter(|&bank| !view.hide_empty || view.active_pads[bank] != 0 || bank == pads.bank)
         .collect::<Vec<_>>();
+    let shown_rows = |bank: usize| {
+        (0..16)
+            .filter(|&row| {
+                !view.hide_empty
+                    || view.active_pads[bank] & (1 << row) != 0
+                    || (bank == pads.bank && row == pads.selected)
+            })
+            .collect::<Vec<_>>()
+    };
     let selected_pos = visible
         .iter()
         .position(|&bank| bank == pads.bank)
         .unwrap_or(0);
-    let full_sections = (area.height as usize).saturating_sub(3) / 18;
-    let start = selected_pos.saturating_sub(full_sections.saturating_sub(1));
+    let available = (area.height as usize).saturating_sub(3);
+    let mut start = selected_pos;
+    let mut used = shown_rows(pads.bank).len() + 2;
+    while start > 0 {
+        let before = shown_rows(visible[start - 1]).len() + 2;
+        if used + before > available {
+            break;
+        }
+        used += before;
+        start -= 1;
+    }
     let mut y = area.y + 3;
     for &bank in visible.iter().skip(start) {
         if y >= area.bottom() {
@@ -263,7 +281,18 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         );
         y += 1;
 
-        for row in 0..16 {
+        let rows = shown_rows(bank);
+        let row_start = if current {
+            let room = (area.bottom() - y).saturating_sub(1) as usize;
+            let selected = rows
+                .iter()
+                .position(|&row| row == pads.selected)
+                .unwrap_or(0);
+            selected.saturating_sub(room.saturating_sub(1))
+        } else {
+            0
+        };
+        for &row in rows.iter().skip(row_start) {
             if y >= area.bottom() {
                 break;
             }

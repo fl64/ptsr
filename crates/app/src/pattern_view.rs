@@ -54,7 +54,6 @@ impl Division {
     }
 }
 
-#[derive(Default)]
 pub(super) struct State {
     pub division: Division,
     pub overview: bool,
@@ -64,6 +63,21 @@ pub(super) struct State {
     pub cursor_visited: bool,
     pub selected_event: Option<SelectedEvent>,
     pub midi_presses: std::collections::HashSet<(usize, u64)>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            division: Division::default(),
+            overview: false,
+            hide_empty_banks: true,
+            edit: false,
+            cursor_cell: 0,
+            cursor_visited: false,
+            selected_event: None,
+            midi_presses: std::collections::HashSet::new(),
+        }
+    }
 }
 
 pub(super) struct SelectedEvent {
