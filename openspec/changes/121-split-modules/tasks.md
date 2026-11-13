@@ -26,8 +26,8 @@
 
 ## 5. Check and hand over
 
-- [ ] 5.1 Compare the complete final ANSI catalogue with the base. Run `task screens`, `task openspec:check`, `task check`, and `task build`.
-- [ ] 5.2 Review the diff for behavior changes and file growth. Give the owner the keyboard, controller, view, and listening steps from the proposal. Keep unreported manual checks open.
+- [x] 5.1 Compare the complete final ANSI catalogue with the base. Run `task screens`, `task openspec:check`, `task check`, and `task build`.
+- [x] 5.2 Review the diff for behavior changes and file growth. Give the owner the keyboard, controller, view, and listening steps from the proposal. Keep unreported manual checks open.
 
 ## Baseline and pilot evidence
 
@@ -90,3 +90,5 @@ The screen registry test move passed format, Clippy, 5 local tests, and 3 scenar
 The invalid MIDI state test move passed format, Clippy, 10 local tests, and 3 scenario-audit tests with the branch-only target. The moved test and fixture tokens match the old block after we remove whitespace.
 
 The copy test move passed format, Clippy, 17 local tests, and 3 scenario-audit tests with the branch-only target. The moved test tokens match the old block after we remove whitespace.
+
+The final `task screens` passed 22 tests. The complete catalogue matches the base: 820 files, with no missing, extra, or changed bytes. `task openspec:check`, `task check`, and `task build` passed. The full test run used the branch-only target and passed 1087 application tests. The active erasure wall maximum was 21.26 % in the final benchmark. The earlier 55.27 % failure remains open. The large-file check reports 3221 fewer lines in `main.rs` and 3254 fewer lines in `lib.rs`. We compared screen and App method bodies during each move. The source-only diff has no intended behavior change. Keyboard, controller, listening, and visual acceptance remain for the owner.
