@@ -305,3 +305,152 @@ pub(super) fn title_detail(text: &str, width: usize) -> String {
     out.push('…');
     out
 }
+
+pub(super) fn pad_cell(
+    frame: &mut Frame,
+    area: Rect,
+    pad: &PadView,
+    selected: bool,
+    bank: Color,
+    waves: u16,
+    (outline, corner): (bool, Option<PadCorner>),
+) {
+    // The bank color owns the idle frame and key letter; state colors go above it.
+    // A marked pad keeps its frame in every idle state, so the group stays visible.
+    let (border, bg, fg) = match (pad.flash, pad.marked, selected) {
+        _ if pad.in_hand => (MAGENTA, PANEL, TEXT),
+        (true, _, _) => (WHITE, WHITE, BG),
+        (false, true, _) => (MARK, MARK_BG, BRIGHT),
+        (false, false, true) => (CYAN, PANEL, TEXT),
+        (false, false, false) if outline => (MARK, PANEL, if pad.dim { DIM } else { TEXT }),
+        // the chop screen: a pad with no slice of the open chop steps back (36)
+        (false, false, false) if pad.dim => (BORDER, PANEL, DIM),
+        (false, false, false) => (bank, PANEL, TEXT),
+    };
+    // the selected pad keeps its cyan frame over a hit or a mark (98k); its frame cells stay
+    // dark, as cyan lines on a white fill are hard to see
+    let keep = selected && !pad.in_hand;
+    let border = if keep { CYAN } else { border };
+    let key = Span::styled(
+        pad.key.to_uppercase().to_string(),
+        Style::new().fg(if keep {
+            border
+        } else if pad.flash {
+            BG
+        } else if outline && !pad.in_hand && !pad.marked && !selected {
+            bank
+        } else {
+            border
+        }),
+    );
+    let frame_style = if keep {
+        Style::new().fg(border).bg(PANEL)
+    } else {
+        Style::new().fg(border)
+    };
+    let mut block = Block::bordered()
+        .title(key)
+        .border_style(frame_style)
+        .style(Style::new().bg(bg).fg(fg));
+    if let Some(corner) = corner {
+        let text = match corner {
+            PadCorner::Available => "◎".to_string(),
+            PadCorner::Replace => "!".to_string(),
+            PadCorner::Slice(n) => n.to_string(),
+            PadCorner::Erase => "E".into(),
+        };
+        block = block.title_top(
+            Line::from(text)
+                .fg(if pad.flash && !keep { BG } else { MARK })
+                .right_aligned(),
+        );
+    }
+    if pad.dashed {
+        block = block.border_set(ratatui::symbols::border::Set {
+            vertical_left: "┆",
+            vertical_right: "┆",
+            horizontal_top: "┄",
+            horizontal_bottom: "┄",
+            ..ratatui::symbols::border::PLAIN
+        });
+    }
+    // gate as a glyph, the volume, the mute group (77): `⇥ +1 mute 2`; no separator, so
+    // `⇥ -24 mute 8` fits the 13 cells of the narrowest pad. One-shot is the default and
+    // has no mark (98b): an arrow on every pad read as a position
+    let mut parts: Vec<String> = Vec::new();
+    if pad.gate {
+        parts.push("⇥".into());
+    }
+    if pad.volume_db != 0.0 {
+        parts.push(format!("{:+.0}", pad.volume_db));
+    }
+    if pad.group > 0 {
+        parts.push(format!("mute {}", pad.group));
+    }
+    // `✱`: the pad has more settings, the panel names them (77); the frame stays clean
+    if !pad.glyphs.is_empty() {
+        parts.push(pad.glyphs.clone());
+    }
+    let second = parts.join(" ");
+    let second = match (pad.missing, pad.loading, &pad.note) {
+        (_, Some(p), _) => Line::from(format!(" load {p}%")).fg(CYAN),
+        (true, None, _) => Line::from(" missing").fg(MAGENTA),
+        (_, _, Some(n)) if n.contains(" → ") => Line::from(learn_spans(&format!(" {n}"))),
+        (_, _, Some(n)) => Line::from(format!(" {n}")).fg(if pad.flash { BG } else { DIM }),
+        _ => Line::from(format!(" {second}")).fg(if pad.flash { BG } else { DIM }),
+    };
+    let width = area.width.saturating_sub(3) as usize;
+    let name = if pad.naming {
+        let mut chars = Vec::new();
+        let mut used = usize::from(width > 0);
+        for c in pad.name.chars().rev() {
+            let n = Span::raw(c.to_string()).width();
+            if used + n > width {
+                break;
+            }
+            chars.push(c);
+            used += n;
+        }
+        let mut text = chars.into_iter().rev().collect::<String>();
+        if width > 0 {
+            text.push('▏');
+        }
+        text
+    } else {
+        pad.name.clone()
+    };
+    let text = vec![Line::from(format!(" {name}")), second];
+    frame.render_widget(Paragraph::new(text).block(block), area);
+    // the wave sits between the mode line and the bottom frame (29); the selected pad's
+    // wave wears the pad's text colour, the rest is dim
+    if waves > 0 && !pad.wave.is_empty() {
+        let color = if selected || pad.flash { fg } else { DIM };
+        let cols = area.width.saturating_sub(2) as usize;
+        let rows = braille_abs(&pad.wave, cols, waves as usize);
+        for (w, row) in rows.iter().enumerate() {
+            frame.render_widget(
+                Line::from(Span::styled(row.clone(), Style::new().fg(color))),
+                Rect {
+                    x: area.x + 1,
+                    y: area.y + PAD_H - 1 + w as u16,
+                    width: area.width - 2,
+                    height: 1,
+                },
+            );
+        }
+    }
+}
+
+/// A parameter row of the pad panel: the knob number while its page is up, the label, and
+/// the value — highlighted when picked, lit for a moment after a change.
+/// A learn label: the control now in magenta, a waiting one after ` → ` in amber (57).
+pub(super) fn learn_spans(text: &str) -> Vec<Span<'static>> {
+    match text.split_once(" → ") {
+        Some((now, new)) => vec![
+            now.to_string().fg(MAGENTA),
+            " → ".fg(DIM),
+            Span::styled(new.to_string(), Style::new().fg(AMBER).bold()),
+        ],
+        None => vec![text.to_string().fg(MAGENTA)],
+    }
+}
