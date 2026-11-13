@@ -25,8 +25,8 @@ The pre-code source at `12a5dad` passed 22 screen tests. Its local manifest has 
 
 ## 4. Check and hand over
 
-- [ ] 4.1 Run focused checks before each code commit. Run `task screens`, `task openspec:check`, `task check`, and `task build` on the final code state.
-- [ ] 4.2 Review the diff for sound, input, saved-format, and large-file changes. Give the owner the keyboard, controller, view, and listening checks. Keep unreported hardware and listening results open.
+- [x] 4.1 Run focused checks before each code commit. Run `task screens`, `task openspec:check`, `task check`, and `task build` on the final code state.
+- [x] 4.2 Review the diff for sound, input, saved-format, and large-file changes. Give the owner the keyboard, controller, view, and listening checks. Keep unreported hardware and listening results open.
 
 ## Implementation evidence
 
@@ -41,3 +41,5 @@ The CLIP step passed controlled-clock meter tests, 148 TUI tests, Clippy, the fi
 The Pitch Gate step passed keyboard, raw MIDI, popup, panel, F1, and parameter-page tests. It passed 148 TUI tests, Clippy, the file-size gate, and all 23 screen tests. The catalogue still has 824 files and no missing base name. The detail row stays inside the pad panel at both sizes.
 
 The long-name step passed format, Clippy, 150 TUI tests, the named app scenario, and the active scenario audit. All 24 screen tests passed. The catalogue has 826 files: 820 base names and six new cases at both sizes. No base name is missing. Of the base frames, 714 changed. The new cases cover empty pads, clip feedback, and long names. The old frames changed where the visible words or name clipping changed. The pattern strip keeps five display cells for a wide pad label. Save failure and file-in-hand messages stay visible.
+
+The final `task check` passed on the last code and test state. The release `task build` passed. The diff changes UI text, drawing, and UI meter timing. It changes no engine code, keymap, dependency, or saved data format. The two guarded large files do not grow. `docs/LIVE-CHECKS.md` gives keyboard, controller, screen, and listening steps. The owner has not reported a hardware or listening result for change 122.
