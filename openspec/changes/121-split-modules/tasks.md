@@ -46,3 +46,5 @@ The shared wave move passed 148 TUI tests and `task check`. All 820 ANSI file na
 The Help screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base. The first full run found an unused import. The second run passed after we limited the import to tests.
 
 The FX screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
+
+The Files screen and project picker move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
