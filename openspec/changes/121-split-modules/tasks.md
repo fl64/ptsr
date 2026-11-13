@@ -88,3 +88,5 @@ The save and project test move passed format, Clippy, 13 local tests, and 3 scen
 The screen registry test move passed format, Clippy, 5 local tests, and 3 scenario-audit tests with the branch-only target. The moved test tokens match the old block after we remove whitespace.
 
 The invalid MIDI state test move passed format, Clippy, 10 local tests, and 3 scenario-audit tests with the branch-only target. The moved test and fixture tokens match the old block after we remove whitespace.
+
+The copy test move passed format, Clippy, 17 local tests, and 3 scenario-audit tests with the branch-only target. The moved test tokens match the old block after we remove whitespace.
