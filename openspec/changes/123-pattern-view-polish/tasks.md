@@ -20,8 +20,8 @@
 
 ## 4. Publish and hand over
 
-- [ ] 4.1 Run focused commands before each code commit, then `task screens`, `task openspec:check`, `task check`, and `task build` on the final code state.
-- [ ] 4.2 Review the diff for sound, input, saved-format, and large-file changes. Give exact keyboard, controller, view, and listening steps. Keep unreported hardware and listening results open.
+- [x] 4.1 Run focused commands before each code commit, then `task screens`, `task openspec:check`, `task check`, and `task build` on the final code state.
+- [x] 4.2 Review the diff for sound, input, saved-format, and large-file changes. Give exact keyboard, controller, view, and listening steps. Keep unreported hardware and listening results open.
 
 ## Implementation evidence
 
@@ -32,3 +32,5 @@ The fixed-cell step passed 151 TUI tests, the focused app screen test, Clippy, t
 The velocity step passed 152 TUI tests, 25 pattern-view tests, Clippy, and the file-growth gate. The 80-column title first clipped `triplet`. The `vel` label fixed it. All 25 screen tests then passed. The catalogue still has 826 names, and its 30 changed frames are A1 overview or step frames.
 
 The addition step passed keyboard and raw MIDI tests for velocity, repeats, release, Gate length, stale edits, and the 4096-row limit. Undo, save refusal, reload, and ordered audio publication passed. The offline render test covers silence, level, timing within one sample, finite output, and clicks. The callback benchmark stayed below 50 % at 32 voices. The catalogue has 830 frames. Four new frames show velocity and addition at both sizes. No old frame is missing. The 30 changed old frames are A1 overview or step frames.
+
+The final `task check` passed with 1,107 app tests and the 32-voice benchmark. `task build`, `task screens`, OpenSpec validation, and the file-growth gate passed. Early screen runs found a clipped `triplet` title and an old hint assertion. A later screen run passed with both corrections. The owner trials in `docs/LIVE-CHECKS.md` stay open.
