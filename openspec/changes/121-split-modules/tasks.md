@@ -66,3 +66,5 @@ The screen learn App method move passed `task check`. Its method tokens match th
 The MIDI tab App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.
 
 The remaining Chop App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.
+
+The pad edit App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace. The first build found that the pad and MIDI modules both define `Param`. We kept the MIDI value method and settings method in `main.rs` for their own moves.
