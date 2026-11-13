@@ -165,7 +165,7 @@ and [owner checks](docs/LIVE-CHECKS.md).
 
 - `AGENTS.md` gives the rules for the code: real time, tests, keys, the process.
 - The process is OpenSpec (`npm install -g @fission-ai/openspec`). First a change in `openspec/changes/`, then the code. `openspec list` shows the open changes.
-- `task check` runs name, format, dependency license, Clippy, test and audio benchmark checks. Commit only after they pass.
+- `task check` runs name, format, dependency license, Clippy, test and audio benchmark checks. Run it before you publish code changes.
   The test `crates/app/tests/scenarios.rs` fails if a spec scenario has no test.
 - The tests write WAV files to `renders/`. Listen to them.
   Each new effect has automatic level, timing and click checks.
@@ -200,14 +200,14 @@ Enable the Git hooks once in each clone:
 task hooks:install
 ```
 
-The pre-push hook checks Rust formatting and Clippy. Run `task check` before each commit.
+The pre-push hook checks Rust formatting and Clippy. Run focused checks before each commit. Run `task check` before you push code or publish a code PR.
 
-Fetch the base branch. Check the new branch commits. Then make a commit with a signoff:
+Fetch the base branch. Run checks for the changed files. Then make a commit with a signoff and check its name:
 
 ```sh
 git fetch origin master
-task check
 git commit --signoff -m 'ci(build): check change names [repo-format]'
+task names
 ```
 
 `task names` runs only the checker tests and new-commit checks.
