@@ -1167,6 +1167,894 @@ pub fn overwrites(targets: &[(usize, usize)], taken: impl Fn(usize) -> Option<St
         .join("; ")
 }
 
+use crate::*;
+
+impl App {
+    /// Opens the chop screen for the selected pad's sample.
+    pub(super) fn open_chop(&mut self) {
+        let abs = self.pads.selected_abs();
+        let (Some(sound), Some(file)) = (self.pads.sound[abs].clone(), self.pads.file[abs].clone())
+        else {
+            let why = if self.pads.loading[abs].is_some() {
+                "pad is still loading"
+            } else {
+                "pad is empty: put a sample on it first (F6)"
+            };
+            self.post_notice(Level::Warn, (why.into(), Instant::now()));
+            return;
+        };
+        let (region, link) = (self.pads.region[abs], self.pads.link[abs]);
+        // a pad of a slice opens the chop the slice came from (45)
+        let created = match link {
+            Some((_, epoch)) if self.focus_epoch(file.clone(), sound.clone(), epoch) => false,
+            _ => self.focus_chop(file, sound),
+        };
+        // a pad with the whole file means a new chop of it (42); the older one stays with
+        // its pads (45), undo goes back to it
+        if link.is_none()
+            && region == Region::WHOLE
+            && !created
+            && let Some(old) = self.chop.take_if(|c| !c.is_blank())
+        {
+            let epoch = self.epoch_floor(&old.file).max(old.epoch + 1);
+            self.fresh_undo = Some((old.file.clone(), epoch, old.epoch));
+            self.chop = Some(old.fresh(epoch));
+            self.older.push(old);
+            self.post_notice(
+                Level::Info,
+                (
+                    "a new chop of this file; the older one keeps its pads, Ctrl+Z goes back to it"
+                        .into(),
+                    Instant::now(),
+                ),
+            );
+        }
+        self.sync_links();
+        let Some(c) = self.chop.as_mut() else {
+            return;
+        };
+        let selected = match link {
+            Some((id, epoch)) if epoch == c.epoch => {
+                // the pad of a slice: the picture opens on that slice (37)
+                let i = c.slice_of(id);
+                c.select_slice(i);
+                c.view_slice(i);
+                i
+            }
+            _ => {
+                // a free slice on a new chop brings its edges as the first cuts; an existing
+                // chop is left as it is, so its linked pads keep their sound
+                if created && region != Region::WHOLE {
+                    c.ensure_cut(region.start);
+                    c.ensure_cut(region.end);
+                }
+                // the pad's own piece: the picture opens on it (69)
+                if region != Region::WHOLE {
+                    c.view_region(region);
+                }
+                c.slice_at(region.start)
+            }
+        };
+        c.select_slice(selected);
+        self.chop_from = Some(abs);
+        self.show_bank_of_chop();
+        self.goto(Screen::Chop);
+    }
+
+    /// The chop screen opens on the bank that holds slices of this chop when the bank shown
+    /// holds none (36): the grid shows the real pads, where the slices lie.
+    pub(super) fn show_bank_of_chop(&mut self) {
+        if self.pattern_owns_pads() {
+            return;
+        }
+        let Some(c) = &self.chop else {
+            return;
+        };
+        let p = &self.pads;
+        let ours = |a: usize| {
+            p.file[a].as_ref() == Some(&c.file) && p.link[a].is_some_and(|l| l.1 == c.epoch)
+        };
+        let here = p.bank * PADS_PER_BANK..(p.bank + 1) * PADS_PER_BANK;
+        if here.into_iter().any(ours) {
+            return;
+        }
+        if let Some(a) = (0..PADS).find(|&a| ours(a)) {
+            self.pads.bank = a / PADS_PER_BANK;
+        }
+    }
+
+    /// F3 on the files screen: the selected file goes to the chop screen without a pad.
+    pub(super) fn open_file_chop(&mut self) {
+        let Some(path) = self
+            .browser
+            .current()
+            .filter(|e| !e.is_dir)
+            .map(|e| self.browser.dir.join(&e.name))
+        else {
+            self.post_notice(
+                Level::Warn,
+                ("select a file to chop".into(), Instant::now()),
+            );
+            return;
+        };
+        // already in memory: on a pad or in a chop
+        let sound = (0..PADS)
+            .find(|&a| self.pads.file[a].as_ref() == Some(&path))
+            .and_then(|a| self.pads.sound[a].clone())
+            .or_else(|| {
+                self.chop
+                    .iter()
+                    .chain(self.chops.values())
+                    .find(|c| c.file == path)
+                    .map(|c| c.sound.clone())
+            });
+        match sound {
+            Some(sound) => self.show_file_chop(path, sound),
+            None => {
+                self.load_gen[CHOP] += 1;
+                self.chop_loading = Some(path.clone());
+                self.request(CHOP, path, self.load_gen[CHOP]);
+            }
+        }
+    }
+
+    pub(super) fn show_file_chop(&mut self, path: PathBuf, sound: Arc<engine::Sample>) {
+        if self.screen == Screen::Files {
+            self.stop_preview();
+        }
+        self.focus_chop(path, sound);
+        self.plan = None;
+        self.chop_from = None;
+        self.show_bank_of_chop();
+        self.goto(Screen::Chop);
+    }
+
+    /// Ctrl+N: the volume of the pad this chop was opened from puts the peak it plays
+    /// (the pad's region) at −1 dB, rounded down. The peak comes from the sample, not
+    /// the current gain, so repeating Ctrl+N lands on the same value.
+    pub(super) fn normalize_pad(&mut self) {
+        let no_pad = "no pad to set the volume on".to_string();
+        let Some(abs) = self.chop_from else {
+            self.post_notice(Level::Warn, (no_pad, Instant::now()));
+            return;
+        };
+        let Some(sound) = self.pads.sound[abs].clone() else {
+            self.post_notice(Level::Warn, (no_pad, Instant::now()));
+            return;
+        };
+        let (start, end) = (
+            self.pads.region[abs].start.min(sound.len()),
+            self.pads.region[abs].end.min(sound.len()),
+        );
+        let mut peak = 0.0f32;
+        for ch in std::iter::once(&sound.left).chain(sound.right.as_ref()) {
+            for x in &ch[start..end.max(start)] {
+                peak = peak.max(x.abs());
+            }
+        }
+        // silence: the smallest float rounds the gain up to the +6 dB pad limit
+        let raw = (-1.0 - 20.0 * peak.max(f32::EPSILON).log10()).floor();
+        let db = raw
+            .clamp(f32::from(pads::MIN_DB), f32::from(pads::MAX_DB))
+            .round() as i8;
+        if db != self.pads.volume_db[abs] {
+            self.pads.volume_db[abs] = db;
+            let gain = 10f32.powf(db as f32 / 20.0);
+            self.send(Command::SetPadGain { pad: abs, gain });
+            self.dirty();
+        }
+        let text = if raw > f32::from(pads::MAX_DB) {
+            format!("normalized: {db:+} dB, the pad volume limit stopped it")
+        } else {
+            format!("normalized: {db:+} dB")
+        };
+        self.post_notice(
+            if raw > f32::from(pads::MAX_DB) {
+                Level::Warn
+            } else {
+                Level::Done
+            },
+            (text, Instant::now()),
+        );
+    }
+
+    /// Makes the chop of `file` the open one; `true` when it had to be made new.
+    pub(super) fn focus_chop(&mut self, file: PathBuf, sound: Arc<engine::Sample>) -> bool {
+        // the newest chop of the file is open already; an older one open is put aside (45)
+        if self.chop.as_ref().is_some_and(|c| c.file == file)
+            && !self.chops.contains_key(&file)
+            && !self.pending_chops.contains_key(&file)
+        {
+            return false;
+        }
+        if let Some(old) = self.chop.take() {
+            self.park(old);
+        }
+        let (chop, created) = match (self.chops.remove(&file), self.pending_chops.remove(&file)) {
+            (Some(c), _) => (c, false),
+            (None, Some(saved)) => (chop::Chop::from_saved(file, sound, self.rate, saved), false),
+            (None, None) => (chop::Chop::new(file, sound, self.rate), true),
+        };
+        let mut chop = chop;
+        chop.reserve_epochs(self.epoch_floor(&chop.file));
+        self.chop = Some(chop);
+        created
+    }
+
+    /// Puts a chop aside: the newest of its file goes to `chops`, an older one to `older`.
+    pub(super) fn park(&mut self, c: chop::Chop) {
+        let newer = self
+            .chops
+            .get(&c.file)
+            .map(|n| n.epoch)
+            .or_else(|| self.pending_chops.get(&c.file).map(|s| s.epoch));
+        match newer {
+            Some(e) if e > c.epoch => self.older.push(c),
+            _ => {
+                if let Some(s) = self.pending_chops.remove(&c.file) {
+                    self.pending_older.push((c.file.clone(), s));
+                }
+                if let Some(prev) = self.chops.insert(c.file.clone(), c) {
+                    self.older.push(prev);
+                }
+            }
+        }
+    }
+
+    /// The open chop's place among the chops of its file, by age, and their count (45);
+    /// `None` when the file has one chop.
+    pub(super) fn which_chop(&self) -> Option<(usize, usize)> {
+        let c = self.chop.as_ref()?;
+        let mut epochs: Vec<u32> = self
+            .chops
+            .values()
+            .chain(&self.older)
+            .filter(|o| o.file == c.file)
+            .map(|o| o.epoch)
+            .chain(self.pending_chops.get(&c.file).map(|s| s.epoch))
+            .chain(
+                self.pending_older
+                    .iter()
+                    .filter(|(f, _)| *f == c.file)
+                    .map(|(_, s)| s.epoch),
+            )
+            .chain([c.epoch])
+            .collect();
+        epochs.sort_unstable();
+        epochs.dedup();
+        let n = epochs.len();
+        (n > 1).then(|| {
+            (
+                epochs.iter().position(|&e| e == c.epoch).unwrap_or(0) + 1,
+                n,
+            )
+        })
+    }
+
+    /// A chop of `file` at `epoch` is kept: put aside or waiting in the session.
+    pub(super) fn chop_lives(&self, file: &Path, epoch: u32) -> bool {
+        self.chops
+            .values()
+            .chain(&self.older)
+            .any(|c| c.file == file && c.epoch == epoch)
+            || self
+                .pending_chops
+                .get(file)
+                .is_some_and(|s| s.epoch == epoch)
+            || self
+                .pending_older
+                .iter()
+                .any(|(f, s)| f == file && s.epoch == epoch)
+    }
+
+    /// The chop is the newest of its file: no chop of it has a later epoch.
+    pub(super) fn is_newest(&self, c: &chop::Chop) -> bool {
+        let later = |e: u32| e > c.epoch;
+        !(self
+            .chop
+            .iter()
+            .chain(self.chops.values())
+            .chain(&self.older))
+        .any(|o| o.file == c.file && later(o.epoch))
+            && !self
+                .pending_chops
+                .get(&c.file)
+                .is_some_and(|s| later(s.epoch))
+    }
+
+    /// A pad plays a slice of the chop of `file` at `epoch`.
+    pub(super) fn linked_to(&self, file: &Path, epoch: u32) -> bool {
+        (0..PADS).any(|a| {
+            self.pads.file[a].as_deref() == Some(file)
+                && self.pads.link[a].is_some_and(|l| l.1 == epoch)
+        })
+    }
+
+    /// The first epoch no chop of `file` and no pad of it uses (45).
+    pub(super) fn epoch_floor(&self, file: &Path) -> u32 {
+        let chops = self
+            .chop
+            .iter()
+            .chain(self.chops.values())
+            .chain(&self.older)
+            .filter(|c| c.file == file)
+            .map(|c| c.epoch);
+        let saved = self
+            .pending_chops
+            .get(file)
+            .map(|s| s.epoch)
+            .into_iter()
+            .chain(
+                self.pending_older
+                    .iter()
+                    .filter(|(f, _)| f == file)
+                    .map(|(_, s)| s.epoch),
+            );
+        let pads = (0..PADS)
+            .filter(|&a| self.pads.file[a].as_deref() == Some(file))
+            .filter_map(|a| self.pads.link[a].map(|l| l.1));
+        chops.chain(saved).chain(pads).max().unwrap_or(0) + 1
+    }
+
+    /// Opens the chop of `file` at `epoch` (45): the newest, an older one kept or waiting
+    /// in the session, or one rebuilt from the pads that still play its slices; `false`
+    /// when there is none.
+    pub(super) fn focus_epoch(
+        &mut self,
+        file: PathBuf,
+        sound: Arc<engine::Sample>,
+        epoch: u32,
+    ) -> bool {
+        if self
+            .chop
+            .as_ref()
+            .is_some_and(|c| c.file == file && c.epoch == epoch)
+        {
+            return true;
+        }
+        let newest = self
+            .chops
+            .get(&file)
+            .map(|c| c.epoch)
+            .or_else(|| self.pending_chops.get(&file).map(|s| s.epoch));
+        if newest == Some(epoch) {
+            self.focus_chop(file, sound);
+            return true;
+        }
+        let found = if let Some(i) = self
+            .older
+            .iter()
+            .position(|c| c.file == file && c.epoch == epoch)
+        {
+            Some(self.older.remove(i))
+        } else if let Some(i) = self
+            .pending_older
+            .iter()
+            .position(|(f, s)| *f == file && s.epoch == epoch)
+        {
+            let (_, saved) = self.pending_older.remove(i);
+            Some(chop::Chop::from_saved(
+                file.clone(),
+                sound,
+                self.rate,
+                saved,
+            ))
+        } else {
+            self.rebuild(&file, epoch)
+                .map(|saved| chop::Chop::from_saved(file.clone(), sound, self.rate, saved))
+        };
+        let Some(mut c) = found else {
+            return false;
+        };
+        if let Some(old) = self.chop.take() {
+            self.park(old);
+        }
+        c.reserve_epochs(self.epoch_floor(&file));
+        self.chop = Some(c);
+        true
+    }
+
+    /// A chop lost from a project saved before 45, rebuilt from the pads that still play
+    /// its slices: every start and end inside the file is a cut, a start keeps its pad's id.
+    pub(super) fn rebuild(&self, file: &Path, epoch: u32) -> Option<chop::Saved> {
+        let pads: Vec<usize> = (0..PADS)
+            .filter(|&a| {
+                self.pads.file[a].as_deref() == Some(file)
+                    && self.pads.link[a].is_some_and(|l| l.1 == epoch)
+            })
+            .collect();
+        let len = pads
+            .iter()
+            .find_map(|&a| self.pads.sound[a].as_ref().map(|s| s.len()))?;
+        let mut cuts: std::collections::BTreeMap<usize, Option<u32>> = Default::default();
+        for &a in &pads {
+            let (r, id) = (self.pads.region[a], self.pads.link[a]?.0);
+            if r.start > 0 && r.start < len {
+                cuts.insert(r.start, Some(id));
+            }
+            if r.end > 0 && r.end < len {
+                cuts.entry(r.end).or_insert(None);
+            }
+        }
+        let mut next = pads
+            .iter()
+            .filter_map(|&a| self.pads.link[a].map(|l| l.0 + 1))
+            .max()
+            .unwrap_or(1);
+        let cuts = cuts
+            .into_iter()
+            .map(|(at, id)| {
+                let id = id.unwrap_or_else(|| {
+                    next += 1;
+                    next - 1
+                });
+                (id, at)
+            })
+            .collect();
+        Some(chop::Saved {
+            range: Region { start: 0, end: len },
+            cuts,
+            epoch,
+            next_id: next,
+        })
+    }
+
+    /// Undo past the first step of a fresh chop (45): the older chop it stood in front of
+    /// is open again; the fresh one stays only if a pad plays a slice of it.
+    pub(super) fn undo_fresh(&mut self) -> bool {
+        let Some((file, fresh, old)) = self.fresh_undo.clone() else {
+            return false;
+        };
+        if !self
+            .chop
+            .as_ref()
+            .is_some_and(|c| c.file == file && c.epoch == fresh)
+        {
+            return false;
+        }
+        let Some(i) = self
+            .older
+            .iter()
+            .position(|c| c.file == file && c.epoch == old)
+        else {
+            return false;
+        };
+        let back = self.older.remove(i);
+        let Some(fresh_chop) = self.chop.replace(back) else {
+            return false;
+        };
+        if self.linked_to(&file, fresh) {
+            self.park(fresh_chop);
+        }
+        self.fresh_undo = None;
+        self.sync_links();
+        true
+    }
+
+    /// Pads linked to the open chop follow its cuts: new regions go to the engine.
+    /// Returns how many pads now play something else.
+    pub(super) fn sync_links(&mut self) -> usize {
+        let Some(c) = &self.chop else {
+            return 0;
+        };
+        let slices = c.slices();
+        let (range, file) = (c.range, c.file.clone());
+        let mut changed = Vec::new();
+        let mut left_out = Vec::new();
+        let linked: [bool; PADS] =
+            std::array::from_fn(|abs| matches!(self.pads.source(abs), pads::Source::Slice(_)));
+        for abs in 0..PADS {
+            let Some((id, epoch)) = self.pads.link[abs] else {
+                continue;
+            };
+            if self.pads.file[abs].as_ref() != Some(&c.file) {
+                continue;
+            }
+            // a pad of another chop of the file: it keeps its slice number while that chop
+            // lives (45); else the cuts were replaced, it keeps its bounds, no number (27)
+            if epoch != c.epoch {
+                if !self.chop_lives(&file, epoch) {
+                    self.pads.slice[abs] = None;
+                }
+                continue;
+            }
+            // the region left this pad's piece out: it keeps playing what it played (35)
+            let r = self.pads.region[abs];
+            if r.start < range.start || r.end > range.end {
+                left_out.push((abs, self.pads.link[abs], self.pads.slice[abs]));
+                continue;
+            }
+            let i = c.slice_of(id);
+            self.pads.slice[abs] = Some(i as u16 + 1);
+            if self.pads.region[abs] != slices[i] {
+                self.pads.region[abs] = slices[i];
+                changed.push((abs, slices[i]));
+            }
+        }
+        for &(pad, region) in &changed {
+            self.send(Command::SetPadRegion { pad, region });
+        }
+        if !left_out.is_empty() {
+            for &(a, _, _) in &left_out {
+                (self.pads.link[a], self.pads.slice[a]) = (None, None);
+            }
+            self.range_unlinks.push((file, left_out.clone()));
+        }
+        for (abs, was_linked) in linked.into_iter().enumerate() {
+            if was_linked != matches!(self.pads.source(abs), pads::Source::Slice(_)) {
+                self.send(self.pads.pitch_gate_command(abs));
+            }
+        }
+        if !changed.is_empty() || !left_out.is_empty() {
+            self.dirty();
+        }
+        changed.len() + left_out.len()
+    }
+
+    /// The status after an edit that changed laid-out pads.
+    pub(super) fn say_changed(&mut self, n: usize, undo: bool) {
+        if n == 0 {
+            return;
+        }
+        let pads = if n == 1 { "pad" } else { "pads" };
+        let text = if undo {
+            format!("{n} {pads} changed back")
+        } else {
+            format!("{n} {pads} changed; Ctrl+Z returns")
+        };
+        self.post_notice(Level::Info, (text, Instant::now()));
+    }
+
+    /// Slices of the open chop that no pad plays: they wear a `○` (36).
+    pub(super) fn slices_on_no_pad(&self) -> usize {
+        let Some(c) = &self.chop else {
+            return 0;
+        };
+        let mut on = vec![false; c.slices().len()];
+        for abs in 0..PADS {
+            if self.pads.file[abs].as_ref() == Some(&c.file)
+                && self.pads.link[abs].is_some_and(|l| l.1 == c.epoch)
+                && let Some(n) = self.pads.slice[abs]
+                && let Some(o) = on.get_mut(n as usize - 1)
+            {
+                *o = true;
+            }
+        }
+        on.iter().filter(|&&o| !o).count()
+    }
+
+    /// Pads that follow the open chop's cuts now.
+    pub(super) fn linked_pads(&self) -> usize {
+        let Some(c) = &self.chop else {
+            return 0;
+        };
+        (0..PADS)
+            .filter(|&a| {
+                self.pads.file[a].as_ref() == Some(&c.file)
+                    && self.pads.link[a].is_some_and(|l| l.1 == c.epoch)
+            })
+            .count()
+    }
+
+    /// Where the chop screen playback is, in frames of the sample.
+    pub(super) fn playhead(&self) -> Option<usize> {
+        if self.screen != Screen::Chop {
+            return None;
+        }
+        self.preview_frame()
+    }
+
+    /// Where the preview of the files screen plays, 0..1 of the file (33); nothing while it
+    /// is silent or the file has not loaded yet.
+    pub(super) fn preview_at(&self) -> Option<f32> {
+        if self.screen != Screen::Files {
+            return None;
+        }
+        let (secs, _) = self.preview.as_ref()?;
+        let rate = self
+            .audio
+            .as_ref()
+            .map_or(48_000, |a| a.stats.format().1.max(1));
+        let frames = secs * rate as f32;
+        Some((self.preview_frame()? as f32 / frames.max(1.0)).min(1.0))
+    }
+
+    /// The frame the preview voice plays, the chop playback and the file preview alike.
+    pub(super) fn preview_frame(&self) -> Option<usize> {
+        #[cfg(test)]
+        if self.fake_playhead.is_some() {
+            return self.fake_playhead;
+        }
+        let pos = self.audio.as_ref()?.preview_pos.load(Relaxed);
+        (pos != usize::MAX).then_some(pos)
+    }
+
+    /// Plays slice `slice` of the chop screen.
+    pub(super) fn play_slice(&mut self, slice: usize) {
+        let Some(c) = &self.chop else {
+            return;
+        };
+        if let Some(&region) = c.slices().get(slice) {
+            let cmd = Command::Preview {
+                sound: Some(c.sound.clone()),
+                region,
+            };
+            let as_pad = self.as_pad_of(slice);
+            self.send(Command::PreviewAs { pad: as_pad });
+            self.send(cmd);
+        }
+    }
+
+    /// The pad slice `slice` of the open chop plays as while "as pad" is on (50): the first
+    /// pad in pad order that plays it; `None` when the switch is off or no pad plays it.
+    pub(super) fn as_pad_of(&self, slice: usize) -> Option<usize> {
+        let c = self.chop.as_ref().filter(|c| c.as_pad)?;
+        (0..PADS).find(|&a| {
+            self.pads.file[a].as_ref() == Some(&c.file)
+                && self.pads.link[a].is_some_and(|l| l.1 == c.epoch)
+                && self.pads.slice[a] == Some(slice as u16 + 1)
+        })
+    }
+
+    /// A pad hit on the chop screen: listening plays the real pad and, when it plays a
+    /// slice of this chop, selects that slice (36); assigning plans the pad of the current
+    /// bank and plays the slice planned there.
+    pub(super) fn chop_pad(
+        &mut self,
+        pad: usize,
+        velocity: f32,
+        source: pads::HitSource,
+    ) -> Option<usize> {
+        self.meters.hit(Instant::now());
+        let Some(mut plan) = self.plan.clone() else {
+            // no slice on a pad yet: the keys play the slices, 16 a bank page (36)
+            if let Some(c) = self.chop.as_mut()
+                && !(0..PADS).any(|a| {
+                    self.pads.file[a].as_ref() == Some(&c.file)
+                        && self.pads.link[a].is_some_and(|l| l.1 == c.epoch)
+                })
+            {
+                let slice = slice_page(self.pads.bank, c.slices().len()) * PADS_PER_BANK + pad;
+                if c.select_slice(slice) {
+                    self.play_slice(slice);
+                }
+                return None;
+            }
+            let mut queued = false;
+            for cmd in self.pads.press(pad, velocity, source) {
+                queued |= self.try_send(cmd);
+            }
+            let abs = self.pads.bank * PADS_PER_BANK + pad;
+            if let Some(c) = self.chop.as_mut()
+                && self.pads.file[abs].as_ref() == Some(&c.file)
+                && let Some((id, epoch)) = self.pads.link[abs]
+                && epoch == c.epoch
+            {
+                // the slice just heard is the one the next edit acts on
+                let slice = c.slice_of(id);
+                c.select_slice(slice);
+            }
+            return queued.then_some(abs);
+        };
+        let c = self.chop.as_mut()?;
+        let abs = self.pads.bank * PADS_PER_BANK + pad;
+        self.pads.selected = pad;
+        let (count, before) = (c.slices().len(), c.selected);
+        let by_hand = matches!(plan, chop::Plan::ByHand(_));
+        let all_placed = format!("all {count} slices placed: Enter applies");
+        if by_hand && plan.all_planned(count) {
+            self.post_notice(Level::Info, (all_placed, Instant::now()));
+        } else {
+            plan.hit(abs, before);
+            if by_hand {
+                match plan.next_unplanned(count, before) {
+                    Some(next) => {
+                        c.select_slice(next);
+                    }
+                    None => self.post_notice(Level::Info, (all_placed, Instant::now())),
+                }
+            }
+            self.change_plan(plan.clone(), before);
+        }
+        if let Some(&(slice, _)) = plan.targets(count).iter().find(|t| t.1 == abs) {
+            self.play_slice(slice);
+        }
+        None
+    }
+
+    /// A new plan; the old one and the slice selected before go to undo.
+    pub(super) fn change_plan(&mut self, plan: chop::Plan, selected: usize) {
+        if let Some(old) = self.plan.replace(plan.clone())
+            && old != plan
+        {
+            self.plan_undo.push((old, selected));
+        }
+    }
+
+    /// `P`: the assign mode starts by hand from slice 1.
+    pub(super) fn start_assign(&mut self) {
+        if self.chop.is_none() {
+            return;
+        }
+        // tap pads one by one, from the slice just heard (04e): it stays selected
+        self.plan = Some(chop::Plan::ByHand(Vec::new()));
+        self.plan_undo.clear();
+    }
+
+    /// Enter in the assign mode: the planned slices go onto their pads.
+    pub(super) fn apply_plan(&mut self) {
+        // in order with no pad hit: the selected pad is the start, the plan is shown and the
+        // next Enter applies it, as the controller's commit does (67)
+        if matches!(self.plan, Some(chop::Plan::InOrder(None))) {
+            let start = self.pads.selected_abs();
+            let slice = self.chop.as_ref().map_or(0, |c| c.selected);
+            self.change_plan(chop::Plan::InOrder(Some(start)), slice);
+            self.post_notice(
+                Level::Info,
+                (
+                    format!("from {}: Enter applies", pad_place(start)),
+                    Instant::now(),
+                ),
+            );
+            return;
+        }
+        let (Some(c), Some(plan)) = (&self.chop, &self.plan) else {
+            return;
+        };
+        let (sound, file, slices) = (c.sound.clone(), c.file.clone(), c.slices());
+        let link_ids: Vec<u32> = (0..slices.len()).map(|i| c.start_id(i)).collect();
+        let epoch = c.epoch;
+        let targets = plan.targets(slices.len());
+        let taken = |p: usize| self.pads.file[p].is_some();
+        let Some(summary) = chop::summary(&targets, slices.len(), taken) else {
+            self.post_notice(
+                Level::Warn,
+                ("nothing planned: hit a pad".into(), Instant::now()),
+            );
+            return;
+        };
+        let lost: Vec<String> = targets
+            .iter()
+            .filter(|t| taken(t.1))
+            .map(|&(slice, abs)| {
+                format!(
+                    "  {}: {} → slice {}",
+                    pad_place(abs),
+                    pad_name(&self.pads, abs),
+                    slice + 1
+                )
+            })
+            .collect();
+        if !lost.is_empty() {
+            let mut lines = vec![format!(
+                "Replace what lies on {} pad{}?",
+                lost.len(),
+                if lost.len() == 1 { "" } else { "s" }
+            )];
+            lines.extend(lost);
+            lines.extend(overwrite_footer());
+            // what lies there is read now: a changed list is asked about again
+            if !matches!(&self.ask, Some(Ask::Plan { lines: old }) if *old == lines) {
+                self.ask = Some(Ask::Plan { lines });
+                return;
+            }
+        }
+        self.ask = None;
+        for (slice, abs) in targets {
+            let region = slices[slice];
+            // a load still on its way to this pad would replace the slice
+            self.load_gen[abs] += 1;
+            self.pads.loading[abs] = None;
+            self.pads.missing[abs] = false;
+            self.pads.custom_name[abs] = None;
+            self.pads.file[abs] = Some(file.clone());
+            self.pads.set_sound(abs, sound.clone());
+            self.pads.region[abs] = region;
+            self.pads.slice[abs] = Some(slice as u16 + 1);
+            self.pads.link[abs] = Some((link_ids[slice], epoch));
+            self.send(Command::SetPadSound {
+                pad: abs,
+                sound: Some(sound.clone()),
+            });
+            self.send(Command::SetPadRegion { pad: abs, region });
+            self.send(self.pads.pitch_gate_command(abs));
+        }
+        self.post_notice(
+            Level::Done,
+            (format!("slices placed on {summary}"), Instant::now()),
+        );
+        // the chop stays open: its cuts can still be moved and the pads follow
+        self.plan = None;
+        self.goto(Screen::Pads);
+        self.dirty();
+    }
+    /// A loop playing on the chop screen takes the bounds as they are now (49): a moved cut,
+    /// slice bound or region edge is heard from the next turn on.
+    pub(super) fn follow_loop(&mut self) {
+        let Some(sent) = self.loop_sent else {
+            return;
+        };
+        let Some(region) = self
+            .chop
+            .as_ref()
+            .filter(|c| c.looping)
+            .map(|c| c.play_region())
+        else {
+            return;
+        };
+        if region != sent {
+            self.send(Command::PreviewLoop {
+                region: Some(region),
+            });
+            self.loop_sent = Some(region);
+        }
+    }
+
+    /// After an undo on the chop screen: a region that had left pads out covers them
+    /// again, they follow their slice again (35).
+    pub(super) fn relink_after_undo(&mut self) -> usize {
+        let Some(c) = self.chop.as_ref() else {
+            return 0;
+        };
+        let mut relinked = 0;
+        let file = c.file.clone();
+        // the region came back over pads it had left out: they follow their slice again
+        let range = c.range;
+        let fits = |r: Region| r.start >= range.start && r.end <= range.end;
+        let (back, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut self.range_unlinks)
+            .into_iter()
+            .partition(|(f, pads)| *f == file && pads.iter().all(|p| fits(self.pads.region[p.0])));
+        self.range_unlinks = keep;
+        for (_, pads) in back {
+            for (a, link, slice) in pads {
+                (self.pads.link[a], self.pads.slice[a]) = (link, slice);
+                self.send(self.pads.pitch_gate_command(a));
+                relinked += 1;
+            }
+        }
+        relinked
+    }
+
+    /// The cuts are kept with the session also when no pad follows them (04e): any change
+    /// of the open chop's cuts or range marks the session to be written.
+    pub(super) fn cuts_changed(&mut self, before: Option<chop::Saved>) {
+        let now = self.chop.as_ref().map(|c| c.saved());
+        // opening a chop changes nothing yet; another file opened over one marks it too,
+        // which only writes the session once more
+        if before.is_some() && now.is_some() && now != before {
+            self.dirty();
+        }
+    }
+
+    /// The slices of a file's cuts with the cut id at each slice start and the chop epoch,
+    /// from the open chop, a kept one or one waiting in the session (27).
+    pub(super) fn file_slices(&self, file: &Path) -> Option<(Vec<Region>, Vec<u32>, u32)> {
+        let saved = match self
+            .chop
+            .iter()
+            .chain(self.chops.values())
+            .find(|c| c.file == file)
+        {
+            Some(c) => c.saved(),
+            None => self.pending_chops.get(file)?.clone(),
+        };
+        let mut bounds = vec![saved.range.start];
+        bounds.extend(saved.cuts.iter().map(|&(_, at)| at));
+        bounds.push(saved.range.end);
+        let slices = bounds
+            .windows(2)
+            .map(|w| Region {
+                start: w[0],
+                end: w[1],
+            })
+            .collect();
+        let ids = std::iter::once(0)
+            .chain(saved.cuts.iter().map(|&(id, _)| id))
+            .collect();
+        Some((slices, ids, saved.epoch))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

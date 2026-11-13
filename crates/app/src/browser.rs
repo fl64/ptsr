@@ -246,6 +246,257 @@ impl Browser {
     }
 }
 
+use crate::*;
+
+impl App {
+    /// The keys of the open folder picker (11): Up/Down choose, Right enters a folder,
+    /// Left goes up (at `/` it stays), Enter picks the folder it is in, Esc cancels;
+    /// the rest do nothing.
+    pub(super) fn picker_key(&mut self, action: Action) {
+        let Some(mut picker) = self.path_picker.take() else {
+            return;
+        };
+        match action {
+            Action::SettingsRow(step) => picker.move_cursor(step as isize),
+            Action::SettingsValue(step) => {
+                if step > 0 {
+                    if let Some(dir) = picker.entries.get(picker.selected).cloned() {
+                        picker.at = dir;
+                        picker.entries = folders_of(&picker.at);
+                        picker.selected = 0;
+                    }
+                } else if let Some(parent) = picker.at.parent().map(Path::to_path_buf) {
+                    let from = picker.at.file_name().map(|n| n.to_owned());
+                    picker.at = parent;
+                    picker.entries = folders_of(&picker.at);
+                    // the folder we came from stays under the cursor, as the files screen does
+                    picker.selected = from
+                        .and_then(|n| {
+                            picker
+                                .entries
+                                .iter()
+                                .position(|e| e.file_name() == Some(&n))
+                        })
+                        .unwrap_or(0);
+                }
+            }
+            Action::SettingsLearn => {
+                let (which, at) = (picker.which, picker.at.clone());
+                self.paths_set(which, at);
+                return; // picked: the picker stays closed
+            }
+            Action::Back => return, // cancelled: the picker stays closed
+            _ => {}
+        }
+        self.path_picker = Some(picker);
+    }
+
+    pub(super) fn save_before_project_transition(&mut self) -> bool {
+        self.session_dirty.is_none() || self.save_session().is_ok()
+    }
+
+    /// Validate the target before saving or replacing current work. Startup keeps its
+    /// separate empty-session fallback for an absent session file.
+    pub(super) fn open_project(&mut self, folder: PathBuf) -> bool {
+        if self.refuse_pattern_project_change() {
+            return false;
+        }
+        let same = self.project.as_ref().is_some_and(|p| {
+            p.folder == folder
+                || std::fs::canonicalize(&p.folder)
+                    .ok()
+                    .zip(std::fs::canonicalize(&folder).ok())
+                    .is_some_and(|(current, target)| current == target)
+        });
+        if same {
+            return true;
+        }
+        let sess = match session::load_existing(&folder.join("project.toml")) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("{e}");
+                self.post_notice(
+                    Level::Error,
+                    (format!("Project not opened: {e}"), Instant::now()),
+                );
+                return false;
+            }
+        };
+        if !self.save_before_project_transition() {
+            return false;
+        }
+        self.session_read_error = None;
+        let sess = with_resolved_paths(sess, Some(&folder));
+        let name = file_name(&folder);
+        self.project = Some(Project {
+            name: name.clone(),
+            folder,
+        });
+        self.apply_session(sess);
+        self.post_notice(Level::Done, (format!("Project {name}"), Instant::now()));
+        self.project_cfg.last = Some(name);
+        self.save_project_cfg();
+        true
+    }
+
+    /// Save pending source work before creating any target files. Existing project
+    /// names use the same guarded open path; refusals keep the picker name available.
+    pub(super) fn create_project(&mut self, name: String) -> bool {
+        if self.refuse_pattern_project_change() {
+            return false;
+        }
+        if name.trim().is_empty() {
+            return false;
+        }
+        let folder = self.paths.projects.join(&name);
+        if folder.join("project.toml").is_file() {
+            return self.open_project(folder);
+        }
+        if !self.save_before_project_transition() {
+            return false;
+        }
+        let result = std::fs::create_dir_all(&folder)
+            .and_then(|()| std::fs::create_dir_all(folder.join("samples")))
+            .map_err(|e| format!("{}: {e}", folder.display()))
+            .and_then(|()| {
+                session::save_project(&folder.join("project.toml"), &session::Session::default())
+            });
+        if let Err(e) = result {
+            log::error!("{e}");
+            self.post_notice(Level::Error, (e, Instant::now()));
+            return false;
+        }
+        self.open_project(folder)
+    }
+    /// A key while the filter line is open; `false` lets it through (releases, Ctrl+key).
+    pub(super) fn filter_key(&mut self, k: &event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+        if k.kind == KeyEventKind::Release || k.modifiers.contains(KeyModifiers::CONTROL) {
+            return false;
+        }
+        let mut filter = self.browser.filter.clone();
+        match k.code {
+            KeyCode::Esc => {
+                filter.clear();
+                self.browser.editing = false;
+            }
+            KeyCode::Enter => self.browser.editing = false,
+            KeyCode::Backspace => {
+                filter.pop();
+            }
+            KeyCode::Char(c) => filter.push(c),
+            // modifier keys and the like
+            _ => return true,
+        }
+        if filter != self.browser.filter {
+            self.browser.set_filter(filter);
+            self.preview_selection();
+        }
+        true
+    }
+
+    /// A key while the project picker is open; `false` lets it through (releases, Ctrl+key).
+    /// A character with the list on screen starts the name of a new project; the name line
+    /// then takes every character until Enter (create and open) or Esc (back to the list).
+    pub(super) fn project_picker_key(&mut self, k: &event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+        if k.kind == KeyEventKind::Release || k.modifiers.contains(KeyModifiers::CONTROL) {
+            return false;
+        }
+        let Some(mut picker) = self.project_picker.take() else {
+            return false;
+        };
+        if let Some(name) = &mut picker.naming {
+            match k.code {
+                KeyCode::Esc => picker.naming = None,
+                KeyCode::Enter => {
+                    if self.create_project(name.clone()) {
+                        return true;
+                    }
+                }
+                KeyCode::Backspace => {
+                    name.pop();
+                }
+                KeyCode::Char(c) => name.push(c),
+                // modifier keys and the like
+                _ => {
+                    self.project_picker = Some(picker);
+                    return true;
+                }
+            }
+            self.project_picker = Some(picker);
+            return true;
+        }
+        match k.code {
+            KeyCode::Up => picker.selected = picker.selected.saturating_sub(1),
+            KeyCode::Down => {
+                picker.selected = (picker.selected + 1).min(picker.entries.len().saturating_sub(1));
+            }
+            KeyCode::Enter => {
+                if let Some(name) = picker.entries.get(picker.selected).cloned()
+                    && self.open_project(self.paths.projects.join(name))
+                {
+                    return true;
+                }
+            }
+            KeyCode::Esc => return true, // closed, nothing happens
+            // any character is the start of a new project's name
+            KeyCode::Char(c) => picker.naming = Some(c.to_string()),
+            _ => {
+                self.project_picker = Some(picker);
+                return true;
+            }
+        }
+        self.project_picker = Some(picker);
+        true
+    }
+
+    /// (11) The window title: the open project joins the program's name while its folder
+    /// is still on disk; a deleted folder drops the name.
+    pub(super) fn window_title(&self) -> String {
+        match self.project.as_ref().filter(|p| p.folder.is_dir()) {
+            Some(p) => format!("ptsr — {}", p.name),
+            None => "ptsr".into(),
+        }
+    }
+
+    pub(super) fn stop_preview(&mut self) {
+        // a load still on its way for the old selection becomes stale
+        self.load_gen[PREVIEW] += 1;
+        self.preview = None;
+        if self.loop_sent.take().is_some() {
+            self.send(Command::PreviewLoop { region: None });
+        }
+        self.send(Command::Preview {
+            sound: None,
+            region: Region::WHOLE,
+        });
+    }
+
+    /// Plays the selected file if it is an audio file and the preview is on.
+    pub(super) fn preview_selection(&mut self) {
+        let file = self
+            .browser
+            .current()
+            .filter(|e| !e.is_dir)
+            .map(|e| self.browser.dir.join(&e.name));
+        match file {
+            Some(path) if self.preview_on && self.screen == Screen::Files => {
+                self.load_gen[PREVIEW] += 1;
+                self.preview = None;
+                if let Some((tx, _)) = &self.loader {
+                    let _ = tx.send(loader::Request {
+                        pad: PREVIEW,
+                        path,
+                        generation: self.load_gen[PREVIEW],
+                    });
+                }
+            }
+            _ => self.stop_preview(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
