@@ -7,7 +7,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let (badge, badge_style) = if p.playing {
         (" PLAY ▶   ", Style::new().fg(BG).bg(CYAN))
     } else {
-        (" PLAY     ", Style::new().fg(DIM).bg(BG))
+        ("          ", Style::new().fg(DIM).bg(BG))
     };
     frame.render_widget(
         title(
@@ -95,7 +95,20 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
             // what the next change hits, on top: under the blocks it read as a part of the
             // last one (70); the same word as the help line (68)
             Line::from(vec!["  scope   ".fg(DIM), p.scope.clone().fg(CYAN)]),
-            Line::from(sel.detail.clone().unwrap_or_else(|| sel.name.clone())),
+            Line::from({
+                let detail = sel.detail.clone().unwrap_or_else(|| sel.name.clone());
+                let width = panel.width.saturating_sub(2) as usize;
+                if let Some((name, source)) = detail.rsplit_once(" · ") {
+                    let source = format!(" · {source}");
+                    format!(
+                        "{}{}",
+                        clip_name(name, width.saturating_sub(Span::raw(&source).width())),
+                        source
+                    )
+                } else {
+                    clip_name(&detail, width)
+                }
+            }),
             Line::from(vec![
                 if panel.width < 28 {
                     "  mode   "
@@ -106,7 +119,11 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
                 mode(sel.gate).into(),
                 " ".fg(DIM),
                 Span::styled(
-                    sel.pitch_gate.label(),
+                    if sel.pitch == 0 {
+                        ""
+                    } else {
+                        sel.pitch_gate.label()
+                    },
                     Style::new().fg(if sel.pitch_gate == PitchGate::A1 {
                         TEXT
                     } else {
@@ -114,6 +131,19 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
                     }),
                 ),
             ]),
+            Line::from(format!(
+                "  {}",
+                if panel.width < 30 && sel.pitch_gate == PitchGate::NeedsSlice {
+                    "PG on: needs slice"
+                } else {
+                    sel.pitch_gate.description()
+                }
+            ))
+            .fg(if sel.pitch_gate == PitchGate::Off {
+                DIM
+            } else {
+                TEXT
+            }),
             param_line(
                 p,
                 PadParam::Volume,
@@ -228,7 +258,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
         }
         // the pad rows: TONE stands under the mode
         let mut lines = lines;
-        let tone = lines.split_off(4);
+        let tone = lines.split_off(5);
         // the open page stays unfolded; with the edit closed, the block of the picked one
         let open = |name: &str, params: &[PadParam]| match p.edit {
             Some(e) => e == name,

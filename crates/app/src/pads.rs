@@ -491,7 +491,7 @@ impl Pads {
     /// The wave a pad's cell draws (29): its region's peaks with the envelope over them,
     /// `cols` columns, 0..1. Kept per pad, computed again only when the sound, the region,
     /// the envelope or the width changes. A frame never scans the sample. An empty pad
-    /// draws a flat line, a missing file nothing; either drops its cached entry.
+    /// or missing file has no wave; either drops its cached entry.
     pub fn wave(&mut self, abs: usize, rate: u32, cols: usize) -> Vec<f32> {
         if self.missing[abs] {
             self.wave_cache[abs] = None;
@@ -499,7 +499,7 @@ impl Pads {
         }
         let Some(sound) = self.sound[abs].clone() else {
             self.wave_cache[abs] = None;
-            return vec![0.0];
+            return Vec::new();
         };
         let (region, attack_ms, decay_ms) =
             (self.region[abs], self.attack_ms[abs], self.decay_ms[abs]);
@@ -562,6 +562,20 @@ impl Pads {
             format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase())
         } else {
             format!("{} marked", self.marked.len())
+        }
+    }
+
+    /// The next edit target named in the Pads help line.
+    pub fn edit_scope_name(&self) -> String {
+        if self.marked.is_empty() {
+            "this pad".into()
+        } else if self.marked.len() == PADS_PER_BANK
+            && (self.bank * PADS_PER_BANK..(self.bank + 1) * PADS_PER_BANK)
+                .all(|abs| self.marked.contains(&abs))
+        {
+            "bank".into()
+        } else {
+            format!("marked ({})", self.marked.len())
         }
     }
 
@@ -3542,12 +3556,11 @@ mod tests {
         assert!(w[63] < 0.05, "ends in silence: {}", w[63]);
     }
 
-    /// Scenario "Every pad draws its wave" (29), the empty pad: a flat line, and a
-    /// missing file draws nothing at all.
+    /// Scenario "Every pad draws its wave": empty and missing pads have no wave.
     #[test]
-    fn an_empty_pad_draws_a_flat_line() {
+    fn an_empty_pad_has_no_wave() {
         let mut p = Pads::default();
-        assert_eq!(p.wave(0, 48_000, 64), vec![0.0]);
+        assert!(p.wave(0, 48_000, 64).is_empty());
         p.missing[1] = true;
         p.sound[1] = Some(Arc::new(Sample::mono(vec![1.0; 48_000])));
         assert!(p.wave(1, 48_000, 64).is_empty());

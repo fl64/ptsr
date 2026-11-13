@@ -1328,14 +1328,14 @@ impl App {
                 _ if self.pads.pattern.is_some() => [
                     item(Action::PatternRecord, "record A1"),
                     item(Action::PatternUndo, "pass undo"),
-                    item(Action::PatternControls, "controls"),
+                    item(Action::PatternControls, "pattern keys"),
                 ]
                 .into_iter()
                 .filter(|(keys, text)| !(text == "pass undo" && keys == "none"))
                 .collect(),
                 _ => vec![
                     item(Action::PatternRecord, "record A1"),
-                    item(Action::PatternControls, "controls"),
+                    item(Action::PatternControls, "pattern keys"),
                 ],
             }
         };
@@ -1361,10 +1361,10 @@ impl App {
         groups.insert(
             at,
             tui::HelpGroup {
-                name: "A1",
+                name: "PATTERN",
                 items: items
                     .into_iter()
-                    .filter(|(key, _)| !key.is_empty())
+                    .filter(|(key, text)| key != "none" || text != "pattern keys")
                     .collect(),
             },
         );
@@ -1527,7 +1527,7 @@ impl App {
             looping: self.chop.as_ref().is_some_and(|c| c.looping),
             as_pad: self.chop.as_ref().is_some_and(|c| c.as_pad),
             marking: self.pads.marking,
-            scope: self.pads.scope_name(),
+            scope: self.pads.edit_scope_name(),
             edit: self.edit,
         }
     }

@@ -460,7 +460,7 @@ impl super::App {
                 .help_bindings(keymap, input::Action::PatternRecord)
                 .join("/");
             view.header = format!(
-                "No A1 · {} record A1",
+                "pattern A1 is empty · {} record A1",
                 if keys.is_empty() { "none" } else { &keys }
             );
             return view;

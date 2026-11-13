@@ -11,6 +11,9 @@ const SIZES: [(u16, u16); 2] = [(120, 40), (80, 26)];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     Normal,
+    QuietEmpty,
+    ClipEvent,
+    LongLabels,
     Tone,
     Envelope,
     Filter,
@@ -98,6 +101,9 @@ enum Mode {
 impl Mode {
     const ALL: &'static [Self] = &[
         Self::Normal,
+        Self::QuietEmpty,
+        Self::ClipEvent,
+        Self::LongLabels,
         Self::Tone,
         Self::Envelope,
         Self::Filter,
@@ -185,6 +191,9 @@ impl Mode {
     fn name(self) -> &'static str {
         match self {
             Self::Normal => "normal",
+            Self::QuietEmpty => "quiet-empty",
+            Self::ClipEvent => "clip-event",
+            Self::LongLabels => "long-labels",
             Self::Tone => "edit-tone",
             Self::Envelope => "edit-env",
             Self::Filter => "edit-filter",
@@ -302,7 +311,10 @@ impl Mode {
             | Self::PitchGateOff
             | Self::PitchGateA1
             | Self::PitchGateSource
-            | Self::PitchGatePitch => screen == Screen::Pads,
+            | Self::PitchGatePitch
+            | Self::QuietEmpty
+            | Self::ClipEvent
+            | Self::LongLabels => screen == Screen::Pads,
             Self::Bounds
             | Self::Assign
             | Self::AssignOrder
@@ -413,6 +425,9 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                 );
                 modes.extend(
                     [
+                        "quiet-empty",
+                        "clip-event",
+                        "long-labels",
                         "pattern-view-fine",
                         "pattern-view-triplet",
                         "pattern-view-off-grid",
@@ -731,6 +746,20 @@ fn fixture(case: Case, now: Instant) -> App {
         }
         Mode::Loop => app.chop.as_mut().unwrap().looping = true,
         Mode::AsPad => app.chop.as_mut().unwrap().as_pad = true,
+        Mode::QuietEmpty => app.pads = pads::Pads::default(),
+        Mode::ClipEvent => {
+            app.meters = meters::Meters::new(now - Duration::from_secs(3_723));
+            app.meters.update((1.0, 0.7), now);
+        }
+        Mode::LongLabels => {
+            app.pads.custom_name[0] = Some("warm dusty snare sample with 音 e\u{301}".into());
+            app.pads.file[0] = Some("/offline/samples/warm dusty snare sample.wav".into());
+            app.project = Some(Project {
+                name: "warm dusty project collection".into(),
+                folder: "/offline/project".into(),
+            });
+            app.session_write_failed = true;
+        }
         Mode::Normal | Mode::Value | Mode::Device => {}
         Mode::PatternCountIn
         | Mode::PatternRecording
@@ -1097,7 +1126,15 @@ fn render_app_layers(
             0
         },
         master_db: 0,
-        meters: ([-18.0, -12.0], [-20.0, -16.0], false),
+        meters: if case.mode == Mode::ClipEvent {
+            (
+                app.meters.level_db(),
+                app.meters.peak_db(),
+                app.meters.clip_elapsed(),
+            )
+        } else {
+            ([-18.0, -12.0], [-20.0, -16.0], None)
+        },
         notice: notice.as_deref().map(|text| tui::NoticeLine {
             text,
             level: app.frame_notice_level.map(|level| match level {
@@ -1261,6 +1298,17 @@ fn check_frame(case: Case, buffer: &Buffer) {
         ),
     }
     match case.mode {
+        Mode::QuietEmpty => require("—"),
+        Mode::ClipEvent => require("CLIP +01:02:03"),
+        Mode::LongLabels => {
+            require("whole file");
+            require(if case.size.0 == 80 {
+                "warm…"
+            } else {
+                "warm dusty snare…"
+            });
+            require("Save failed");
+        }
         Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => require("EDIT"),
         Mode::Bounds => {
             require("EDIT · BOUNDS");
@@ -1275,11 +1323,20 @@ fn check_frame(case: Case, buffer: &Buffer) {
                 Mode::PitchGatePitch => ("PG n/a", "PG on: needs Pitch > 0, manual unchanged"),
                 _ => unreachable!(),
             };
-            assert!(
-                rows.iter()
-                    .any(|row| row.contains("mode ") && row.contains(label)),
+            let mode = rows.iter().find(|row| row.contains("mode ")).unwrap();
+            assert_eq!(
+                mode.contains(label),
+                case.mode != Mode::PitchGatePitch,
                 "{text}"
             );
+            let detail = match (case.size.0, case.mode) {
+                (80, Mode::PitchGateSource) => "PG on: needs slice",
+                (_, Mode::PitchGateSource) => "PG on: needs linked slice",
+                (_, Mode::PitchGatePitch) => "PG on: needs Pitch > 0",
+                (_, Mode::PitchGateA1) => "PG on: A1 only",
+                _ => "PG off",
+            };
+            assert!(rows.iter().any(|row| row.contains(detail)), "{text}");
             // the help row explains Pitch Gate only for a linked slice with it on
             let applies = matches!(case.mode, Mode::PitchGateA1 | Mode::PitchGatePitch);
             let last = &rows[case.size.1 as usize - 1];
@@ -1350,7 +1407,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("xruns 3");
             require("~");
         }
-        Mode::PatternOverviewAbsent => require("No A1"),
+        Mode::PatternOverviewAbsent => require("pattern A1 is empty"),
         Mode::PatternOverviewEmpty => require("view 1/16"),
         Mode::PatternOverviewStraight => require("steps 1-"),
         Mode::PatternOverviewTriplet => require("view 1/16 triplet"),
@@ -1506,6 +1563,108 @@ fn check_frame(case: Case, buffer: &Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Long names stay readable at both sizes".
+    #[test]
+    fn long_names_stay_readable_at_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let pads = Case {
+                screen: Screen::Pads,
+                mode: Mode::LongLabels,
+                size,
+            };
+            let (_, frame) = render(pads, &keymap);
+            check_frame(pads, &frame);
+
+            let files = Case {
+                screen: Screen::Files,
+                mode: Mode::Normal,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(files, now);
+            app.browser.dir = "/offline/warm dusty folder with 音 e\u{301}".into();
+            let name = "warm dusty sample with 音 e\u{301} and more words.wav";
+            app.browser.entries = vec![browser::Entry {
+                name: name.into(),
+                is_dir: false,
+                favorite: None,
+            }];
+            app.browser.selected = 0;
+            app.browser.in_hand = Some(format!("/offline/{name}").into());
+            let (_, frame) = render_app(files, &keymap, app, now);
+            let text = frame
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("← in hand"), "{text}");
+            assert!(text.contains("warm dusty"), "{text}");
+            assert!(text.contains('…'), "{text}");
+
+            let picker = Case {
+                screen: Screen::Pads,
+                mode: Mode::Picker,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(picker, now);
+            app.project_picker.as_mut().unwrap().entries = vec![
+                "warm dusty project with 音 e\u{301} and many more words repeated to fill the screen and another long sequence of project words"
+                    .into(),
+            ];
+            let (_, frame) = render_app(picker, &keymap, app, now);
+            let text = frame
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(text.contains("warm dusty project"), "{text}");
+            assert!(text.contains('…'), "{text}");
+        }
+    }
+
+    /// Scenario "Screen words name the same concepts".
+    #[test]
+    fn screen_words_name_the_same_concepts() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for screen in Screen::ALL {
+                let case = Case {
+                    screen,
+                    size,
+                    mode: Mode::Normal,
+                };
+                let (_, buffer) = render(case, &keymap);
+                let text = buffer
+                    .content()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(!text.contains("rhythm"), "{}", case.name());
+                assert!(text.contains("PATTERN"), "{}", case.name());
+            }
+            let case = Case {
+                screen: Screen::Settings,
+                size,
+                mode: Mode::MidiLearn,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.learning = Some(learn::Learning::new(action_info("screen.pattern")));
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let text = buffer
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(text.contains("pattern"), "{}", case.name());
+            assert!(!text.contains("rhythm"), "{}", case.name());
+            assert_eq!(action_info("screen.pattern").group, input::Group::Global);
+        }
+    }
 
     /// Scenario "Pattern warnings explain limits without claiming success".
     #[test]
@@ -2353,9 +2512,19 @@ L="none"
                                 }
                                 _ => unreachable!(),
                             };
+                            let mode_row = rows.iter().find(|row| row.contains("mode ")).unwrap();
+                            assert_eq!(
+                                mode_row.contains(label),
+                                mode != Mode::PitchGatePitch,
+                                "{rows:?}"
+                            );
+                            let panel_detail = if size.0 == 80 && mode == Mode::PitchGateSource {
+                                "PG on: needs slice"
+                            } else {
+                                description
+                            };
                             assert!(
-                                rows.iter()
-                                    .any(|row| row.contains("mode ") && row.contains(label)),
+                                rows.iter().any(|row| row.contains(panel_detail)),
                                 "{rows:?}"
                             );
                             let applies = matches!(mode, Mode::PitchGateA1 | Mode::PitchGatePitch);

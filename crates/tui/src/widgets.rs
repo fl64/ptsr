@@ -285,25 +285,9 @@ pub(super) fn title<'a>(
     Line::from(fixed)
 }
 
-/// Shorten title details in display cells, not UTF-8 bytes.
+/// Shorten title names in display cells at word or grapheme boundaries.
 pub(super) fn title_detail(text: &str, width: usize) -> String {
-    if Line::from(text).width() <= width {
-        return text.to_string();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    for ch in text.chars() {
-        let mut next = out.clone();
-        next.push(ch);
-        if Line::from(next.as_str()).width() + 1 > width {
-            break;
-        }
-        out = next;
-    }
-    out.push('…');
-    out
+    clip_name(text, width)
 }
 
 pub(super) fn pad_cell(
@@ -417,9 +401,11 @@ pub(super) fn pad_cell(
         }
         text
     } else {
-        pad.name.clone()
+        clip_name(&pad.name, width)
     };
-    let text = vec![Line::from(format!(" {name}")), second];
+    let name = Line::from(format!(" {name}"));
+    let name = if pad.empty { name.fg(DIM) } else { name };
+    let text = vec![name, second];
     frame.render_widget(Paragraph::new(text).block(block), area);
     // the wave sits between the mode line and the bottom frame (29); the selected pad's
     // wave wears the pad's text colour, the rest is dim

@@ -38,20 +38,18 @@ pub(super) fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStri
         .map(|&hit| if hit { '■' } else { '·' })
         .collect();
     let pad: Vec<char> = pattern.cells.iter().map(pad_glyph).collect();
+    let pad_label = clip_name(&pattern.label, PATTERN_LABEL);
+    let pad_label = format!(
+        "{pad_label}{}",
+        " ".repeat(PATTERN_LABEL - Span::raw(&pad_label).width())
+    );
     let rows = [
         (
             Span::styled(format!("{:<5}", "all"), Style::new().fg(DIM)),
             all,
             TEXT,
         ),
-        (
-            Span::styled(
-                format!("{:<5}", clip_label(&pattern.label, PATTERN_LABEL)),
-                Style::new().fg(TEXT),
-            ),
-            pad,
-            WHITE,
-        ),
+        (Span::styled(pad_label, Style::new().fg(TEXT)), pad, WHITE),
     ];
     for (row, (label, glyphs, hit_color)) in rows.into_iter().enumerate() {
         // a beat is " g g g g ": every glyph has a space on both sides, so the playback
@@ -275,7 +273,11 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 .get(row)
                 .map_or('?', |pad| pad.key.to_ascii_uppercase());
             let name = view.names.get(abs).map_or("empty", String::as_str);
-            let text = clip_label(&format!(" {key} {name}"), label_width);
+            let prefix = format!(" {key} ");
+            let text = format!(
+                "{prefix}{}",
+                clip_name(name, label_width.saturating_sub(Span::raw(&prefix).width()))
+            );
             let text_width = Span::raw(text.as_str()).width();
             let text = format!("{text}{}", " ".repeat(label_width - text_width));
             let selected = current && row == pads.selected;

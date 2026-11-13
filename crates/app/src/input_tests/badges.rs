@@ -2,6 +2,81 @@
 
 use super::*;
 
+/// Scenario "New pad": keyboard and raw MIDI keep an empty cell quiet.
+#[test]
+fn new_pad_stays_quiet_with_keyboard_and_raw_midi() {
+    let mut states = Vec::new();
+    for source in [Source::Keyboard, Source::Notes] {
+        let mut drive = Drive::new();
+        for frame in [drive.pad_press(source, 0), drive.pad_release(source, 0)] {
+            assert_eq!(frame.commands().len(), 1);
+            let view = pads_view(&mut drive.app.pads, None, None, Vec::new(), None, 48_000);
+            assert!(view.pads[0].empty);
+            assert_eq!(view.pads[0].name, "—");
+            assert!(view.pads[0].wave.is_empty());
+            assert_eq!(view.pads[0].detail.as_deref(), Some("empty · test tone A2"));
+        }
+        states.push(drive.seen());
+    }
+    assert_eq!(states[0], states[1]);
+}
+
+/// Scenario "Scope in the help line": keyboard and raw MIDI keep the same edit target.
+#[test]
+fn scope_in_the_help_line_follows_marks_from_keyboard_and_midi() {
+    for source in [Source::Keyboard, Source::Notes] {
+        let mut drive = Drive::new();
+        drive.app.goto(Screen::Pads);
+        drive.bind_action(102, "pad.mark_toggle");
+        drive.bind_action(103, "pad.mark_bank");
+        let shown = |drive: &Drive| {
+            let groups = crate::help_groups(&drive.keymap, Screen::Pads, &drive.app.help_state());
+            groups.iter().find(|g| g.name == "CHANGE").unwrap().items[0]
+                .1
+                .clone()
+        };
+        assert!(shown(&drive).contains("edit: this pad"));
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::Char('m'), M::NONE);
+            }
+            Source::Notes => {
+                drive.bytes(PAD_PORT, &[0xb0, 102, 127]);
+                drive.bytes(PAD_PORT, &[0xb0, 102, 0]);
+                drive.frame();
+            }
+            Source::Button => unreachable!(),
+        }
+        for pad in 0..3 {
+            drive.pad_press(source, pad);
+            drive.pad_release(source, pad);
+        }
+        assert!(
+            shown(&drive).contains("edit: marked (3)"),
+            "{source:?}: {}",
+            shown(&drive)
+        );
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::Char('a'), M::CONTROL);
+            }
+            Source::Notes => {
+                drive.bytes(PAD_PORT, &[0xb0, 103, 127]);
+                drive.bytes(PAD_PORT, &[0xb0, 103, 0]);
+                drive.frame();
+            }
+            Source::Button => unreachable!(),
+        }
+        assert!(
+            shown(&drive).contains("edit: bank"),
+            "{source:?}: {}",
+            shown(&drive)
+        );
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(shown(&drive).contains("edit: this pad"));
+    }
+}
+
 fn badge_labels(drive: &Drive) -> Vec<String> {
     let before = drive.seen();
     let badges = drive.app.title_badges();
@@ -670,7 +745,7 @@ fn pads_play_badge(drive: &mut Drive) -> bool {
         load_peak: 0.0,
         xruns: 0,
         master_db: 0,
-        meters: ([-60.0; 2], [-60.0; 2], false),
+        meters: ([-60.0; 2], [-60.0; 2], None),
         notice: None,
         no_releases: false,
         project: None,
@@ -693,8 +768,12 @@ fn pads_play_badge(drive: &mut Drive) -> bool {
         .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
         .find(|row| row.contains("F2 PADS"))
         .unwrap();
-    assert!(header.contains("PLAY"), "missing PLAY badge: {header}");
-    header.contains("PLAY ▶")
+    let slot = header.chars().skip(10).take(10).collect::<String>();
+    assert!(
+        matches!(slot.as_str(), " PLAY ▶   " | "          "),
+        "{header}"
+    );
+    slot.contains("PLAY ▶")
 }
 
 /// Scenario "Pads PLAY badge follows keyboard and MIDI playback".

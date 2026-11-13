@@ -1,6 +1,7 @@
 //! Screens. They only draw a state snapshot and never touch the engine.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
@@ -267,8 +268,8 @@ pub struct Status<'a> {
     pub load_peak: f32,
     pub xruns: u64,
     pub master_db: i8,
-    /// Output meter levels in dB: bar, peak hold, per channel; with the latched clip light.
-    pub meters: ([f32; 2], [f32; 2], bool),
+    /// Output meter levels and the latest session-relative clip time.
+    pub meters: ([f32; 2], [f32; 2], Option<Duration>),
     /// Message for the owner: why there is no audio, terminal warning.
     pub notice: Option<NoticeLine<'a>>,
     /// The terminal has no kitty protocol: no key releases, gate pads play as one-shot.
@@ -394,6 +395,8 @@ impl PitchGate {
 
 pub struct PadView {
     pub naming: bool,
+    /// No sample is assigned to this pad. This does not include an absent Chop slice.
+    pub empty: bool,
     /// `✱` when the pad has more settings than its mode line shows (77), or empty.
     pub glyphs: String,
     /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
@@ -432,8 +435,8 @@ pub struct PadView {
     pub bounds: (f32, f32),
     /// The FILTER page as the panel says it (44): kind, cutoff, resonance.
     pub filter: [String; 3],
-    /// The wave the pad plays with its envelope (29): peaks 0..1. Empty means no wave
-    /// (a missing file), one zero a flat line (an empty pad).
+    /// The wave the pad plays with its envelope (29): peaks 0..1.
+    /// An empty pad or missing file has no wave.
     pub wave: Vec<f32>,
     /// Drawn dim: on the chop screen a pad that plays no slice of the open chop (36).
     pub dim: bool,
@@ -1332,6 +1335,8 @@ fn key(k: &str) -> Span<'static> {
 
 #[cfg(test)]
 mod tests {
+    mod meter;
+    mod names;
     use super::*;
 
     #[test]
@@ -1460,7 +1465,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -1984,6 +1989,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, &key)| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -2045,7 +2051,7 @@ mod tests {
             load_peak: 1.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -2245,7 +2251,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases: false,
             notice: None,
             project,
@@ -2280,7 +2286,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases,
             notice: None,
             project: None,
@@ -2333,21 +2339,18 @@ mod tests {
         );
     }
 
-    /// Scenario "Every pad draws its wave" (29): in a terminal tall enough for three wave
-    /// rows (44 since 31) every pad with a sample shows its wave in three rows under its
-    /// mode line, an empty pad a flat middle line.
+    /// Scenario "Every pad draws its wave": loaded pads show waves; empty pads do not.
     #[test]
     fn every_pad_draws_its_wave() {
         let mut p = idle_pads();
         for (i, pad) in p.pads.iter_mut().enumerate() {
-            // pad 2 is empty: a flat line; the rest sound at full scale
-            pad.wave = if i == 1 { vec![0.0] } else { vec![1.0; 1200] };
+            pad.empty = i == 1;
+            pad.wave = if i == 1 { Vec::new() } else { vec![1.0; 1200] };
         }
         p.selected = 5;
         let rows = render_pads_at(p, 100, 44);
         let f = frame_at(100, 44);
         assert_eq!(f.waves, 3);
-        // a cell is 4+3 rows: frame, name, mode, waves, frame; 15 columns wide at 100
         let top = f.grid.y as usize;
         let has_dots = |r: usize, from: usize, to: usize| {
             rows[r][from..to]
@@ -2365,15 +2368,9 @@ mod tests {
                 "the frame follows the three wave rows"
             );
         }
-        // the empty pad: a flat line only in the middle of its three rows
-        assert!(
-            !has_dots(top + 3, 16, 29) && !has_dots(top + 5, 16, 29),
-            "an empty pad draws no dots above and below the middle"
-        );
-        assert!(
-            has_dots(top + 4, 16, 29),
-            "the flat line sits in the middle row"
-        );
+        for r in top + 3..top + 6 {
+            assert!(!has_dots(r, 16, 29), "empty pad wave row {r} is blank");
+        }
         // the selected pad's wave wears the pad's text colour, the rest are dim
         let color_of = |r: usize, from: usize, to: usize| {
             rows[r][from..to]
@@ -2525,6 +2522,7 @@ mod tests {
                 .iter()
                 .map(|&key| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -2605,7 +2603,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -3364,25 +3362,28 @@ mod tests {
                                     .unwrap();
                                     let cells = term.backend().buffer().content();
                                     let row = &cells[w as usize..2 * w as usize];
-                                    let needle = if chop { "LISTEN" } else { "PLAY" };
-                                    let at = row
-                                        .windows(needle.len())
-                                        .position(|cells| {
-                                            cells
-                                                .iter()
-                                                .map(|cell| cell.symbol())
-                                                .collect::<String>()
-                                                == needle
-                                        })
-                                        .unwrap();
-                                    let slot = at - 1..at + 9;
+                                    let slot = if chop {
+                                        let at = row
+                                            .windows(6)
+                                            .position(|cells| {
+                                                cells
+                                                    .iter()
+                                                    .map(|cell| cell.symbol())
+                                                    .collect::<String>()
+                                                    == "LISTEN"
+                                            })
+                                            .unwrap();
+                                        at - 1..at + 9
+                                    } else {
+                                        10..20
+                                    };
                                     // Assignment audition keeps the existing idle LISTEN slot.
                                     let active = playing && name != "ASSIGN";
                                     let expected = match (chop, active) {
                                         (true, true) => " LISTEN ▶ ",
                                         (true, false) => " LISTEN   ",
                                         (false, true) => " PLAY ▶   ",
-                                        (false, false) => " PLAY     ",
+                                        (false, false) => "          ",
                                     };
                                     assert_eq!(
                                         row[slot.clone()]
@@ -3744,7 +3745,7 @@ mod tests {
         );
     }
 
-    /// Scenario "Pads PLAY badge has fixed width".
+    /// Scenarios "Pads PLAY badge has fixed width" and "Idle playback keeps its space without text".
     #[test]
     fn pads_play_badge_has_fixed_width() {
         for (width, height) in [(60, 24), (80, 30), (100, 40)] {
@@ -3769,7 +3770,7 @@ mod tests {
                             };
                             let rows = render_pads_snapshot(
                                 p,
-                                ([-60.0; 2], [-60.0; 2], false),
+                                ([-60.0; 2], [-60.0; 2], None),
                                 false,
                                 width,
                                 height,
@@ -3779,14 +3780,8 @@ mod tests {
                                 .find(|&y| row_text(&rows, y).contains("F2 PADS"))
                                 .unwrap();
                             let row = &rows[y];
-                            let badge = row
-                                .windows(4)
-                                .position(|cells| {
-                                    cells.iter().map(|cell| cell.0.as_str()).collect::<String>()
-                                        == "PLAY"
-                                })
-                                .expect("PLAY badge");
-                            let text: String = row[badge - 1..badge + 9]
+                            let slot = 10..20;
+                            let text: String = row[slot.clone()]
                                 .iter()
                                 .map(|cell| cell.0.as_str())
                                 .collect();
@@ -3795,10 +3790,10 @@ mod tests {
                                 if playing {
                                     " PLAY ▶   "
                                 } else {
-                                    " PLAY     "
+                                    "          "
                                 }
                             );
-                            for cell in &row[badge - 1..badge + 9] {
+                            for cell in &row[slot] {
                                 assert_eq!(
                                     (cell.1, cell.2),
                                     if playing { (BG, CYAN) } else { (DIM, BG) }
@@ -3862,7 +3857,7 @@ mod tests {
             .expect("the title line");
         let title = row_text(&rows, y);
         assert!(
-            title.contains("F2 PADS   PLAY       MARK · hit pads · 3 marked "),
+            title.contains("F2 PADS              MARK · hit pads · 3 marked "),
             "{title}"
         );
         assert!(
@@ -3944,9 +3939,10 @@ mod tests {
                 .join("\n")
         };
         let f2 = side_text(&Screen::Pads(hidden_pads()));
-        for want in [" L ", " R ", "clip", "pad W", "volume", "release"] {
+        for want in [" L ", " R ", "pad W", "volume", "release"] {
             assert!(f2.contains(want), "F2 {want}: {f2}");
         }
+        assert!(!f2.contains("clip"));
         let names: Vec<String> = (0..12).map(|i| format!("file{i:02}.wav")).collect();
         let f6 = side_text(&Screen::Files(Files {
             dir: "~/Music",
@@ -4221,7 +4217,7 @@ mod tests {
                 load_peak: 0.0,
                 xruns: 0,
                 master_db: 0,
-                meters: ([-60.0; 2], [-60.0; 2], false),
+                meters: ([-60.0; 2], [-60.0; 2], None),
                 no_releases: false,
                 notice: None,
                 project: None,
@@ -4288,7 +4284,7 @@ mod tests {
         };
         let rec = strip_colors(&render_pads_rec(
             loud(),
-            ([-60.0; 2], [-60.0; 2], false),
+            ([-60.0; 2], [-60.0; 2], None),
             true,
             100,
             26,
@@ -4321,7 +4317,7 @@ mod tests {
         };
         let rec = strip_colors(&render_pads_rec(
             edit(),
-            ([-60.0; 2], [-60.0; 2], false),
+            ([-60.0; 2], [-60.0; 2], None),
             true,
             100,
             26,
@@ -4456,6 +4452,7 @@ mod tests {
         );
     }
 
+    /// Scenario "Pitch Gate summary stays quiet at zero pitch".
     #[test]
     fn pitch_gate_mode_row_keeps_state_and_inactive_style() {
         for size in [(80, 26), (120, 40)] {
@@ -4465,10 +4462,11 @@ mod tests {
                 PitchGate::NeedsSlice,
                 PitchGate::NeedsPitch,
             ] {
-                for hidden in [false, true] {
+                for (hidden, pitch) in [(false, 0), (true, 0), (false, 12), (true, 12)] {
                     let mut pads = idle_pads();
                     pads.hidden = hidden;
                     pads.pads[pads.selected].pitch_gate = state;
+                    pads.pads[pads.selected].pitch = pitch;
                     let rows = render_pads_at(pads, size.0, size.1);
                     let row = rows
                         .iter()
@@ -4481,11 +4479,24 @@ mod tests {
                         .unwrap();
                     let text = row.iter().map(|cell| cell.0.as_str()).collect::<String>();
                     let word = state.label();
-                    assert!(text.contains(word), "{text}");
-                    let start = row.iter().position(|cell| cell.0 == "P").unwrap();
-                    for cell in &row[start..start + word.len()] {
-                        assert_eq!(cell.1, if state == PitchGate::A1 { TEXT } else { DIM });
+                    assert_eq!(text.contains(word), pitch != 0, "{text}");
+                    if pitch != 0 {
+                        let start = row.iter().position(|cell| cell.0 == "P").unwrap();
+                        for cell in &row[start..start + word.len()] {
+                            assert_eq!(cell.1, if state == PitchGate::A1 { TEXT } else { DIM });
+                        }
                     }
+                    let detail = if size.0 == 80 && state == PitchGate::NeedsSlice {
+                        "PG on: needs slice"
+                    } else {
+                        state.description()
+                    };
+                    assert!(rows.iter().any(|row| {
+                        row.iter()
+                            .map(|cell| cell.0.as_str())
+                            .collect::<String>()
+                            .contains(detail)
+                    }));
                     let help = rows[size.1 as usize - 1]
                         .iter()
                         .map(|cell| cell.0.as_str())
@@ -4942,6 +4953,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, &key)| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -5053,7 +5065,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -5349,7 +5361,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -5641,7 +5653,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -6367,6 +6379,7 @@ mod tests {
                 .enumerate()
                 .map(|(i, &key)| PadView {
                     naming: false,
+                    empty: false,
                     glyphs: String::new(),
                     changed: Vec::new(),
                     dim: false,
@@ -6421,24 +6434,24 @@ mod tests {
 
     /// The pads screen as cells: (symbol, fg, bg) per position.
     fn render_pads(p: Pads) -> Vec<Vec<(String, Color, Color)>> {
-        render_pads_with(p, ([-60.0, -60.0], [-60.0, -60.0], false))
+        render_pads_with(p, ([-60.0, -60.0], [-60.0, -60.0], None))
     }
 
     fn render_pads_with(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], bool),
+        meters: ([f32; 2], [f32; 2], Option<Duration>),
     ) -> Vec<Vec<(String, Color, Color)>> {
         render_pads_rec(p, meters, false, 100, 26)
     }
 
     /// The pads screen at any size, for the wave-row tests.
     fn render_pads_at(p: Pads, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
-        render_pads_rec(p, ([-60.0, -60.0], [-60.0, -60.0], false), false, w, h)
+        render_pads_rec(p, ([-60.0, -60.0], [-60.0, -60.0], None), false, w, h)
     }
 
     fn render_pads_rec(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], bool),
+        meters: ([f32; 2], [f32; 2], Option<Duration>),
         recording: bool,
         w: u16,
         h: u16,
@@ -6448,7 +6461,7 @@ mod tests {
 
     fn render_pads_snapshot(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], bool),
+        meters: ([f32; 2], [f32; 2], Option<Duration>),
         recording: bool,
         w: u16,
         h: u16,
@@ -6769,7 +6782,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -6886,7 +6899,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7020,7 +7033,7 @@ mod tests {
             );
             assert_eq!(cache.builds, 1);
         }
-        status.meters = ([-1.0; 2], [0.0; 2], true);
+        status.meters = ([-1.0; 2], [0.0; 2], Some(Duration::ZERO));
         status.notice = Some(NoticeLine::plain("another frame's notice"));
         status
             .badges
@@ -7076,9 +7089,9 @@ mod tests {
                 let mut pads = idle_pads();
                 pads.playing = phase == 1;
                 status.meters = if phase == 1 {
-                    ([-1.0; 2], [0.0; 2], true)
+                    ([-1.0; 2], [0.0; 2], Some(Duration::ZERO))
                 } else {
-                    ([-60.0; 2], [-60.0; 2], false)
+                    ([-60.0; 2], [-60.0; 2], None)
                 };
                 status.notice = (phase == 1).then_some(NoticeLine::plain("an active notice"));
                 let help = Help {
@@ -7550,7 +7563,7 @@ mod tests {
             load_peak: 0.0,
             xruns,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7628,7 +7641,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7722,7 +7735,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7796,7 +7809,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7931,7 +7944,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7980,7 +7993,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -8212,40 +8225,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn meters_follow_the_sound() {
-        let p = idle_pads();
-        // L at -6 dB with its peak at -3, R at -12 dB with the peak under the bar
-        let rows = render_pads_with(p, ([-6.0, -12.0], [-3.0, -12.0], false));
-        // the meters top the right column (31)
-        let y = frame_at(100, 26).side.y as usize;
-        let (l, r) = (row_text(&rows, y), row_text(&rows, y + 1));
-        let bars = |t: &str| t.chars().filter(|&c| c == '\u{2588}').count();
-        assert!(bars(&l) > bars(&r), "the louder channel has the longer bar");
-        assert!(l.contains("-6 dB"), "the dB number is next to the bar");
-        assert!(l.contains('\u{258e}'), "the peak mark stands past the bar");
-        assert!(
-            !r.contains('\u{258e}'),
-            "no mark when the peak is under the bar"
-        );
-    }
-
-    #[test]
-    fn overload_latches() {
-        let y = frame_at(100, 26).side.y as usize + 2;
-        let rows = render_pads_with(idle_pads(), ([-6.0, -6.0], [-6.0, -6.0], true));
-        let light = rows[y]
-            .iter()
-            .find(|(s, _, _)| s == "C")
-            .expect("the lit CLIP light");
-        assert_eq!(light.2, MAGENTA, "the light is a magenta plate");
-        let rows = render_pads_with(idle_pads(), ([-60.0, -60.0], [-60.0, -60.0], false));
-        assert!(
-            rows[y].iter().all(|(_, fg, _)| *fg != MAGENTA),
-            "a clean output leaves the light dark"
-        );
-    }
-
     fn chop_status() -> (Status<'static>, Help<'static>) {
         (
             Status {
@@ -8258,7 +8237,7 @@ mod tests {
                 load_peak: 0.0,
                 xruns: 0,
                 master_db: 0,
-                meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+                meters: ([-60.0, -60.0], [-60.0, -60.0], None),
                 no_releases: false,
                 notice: None,
                 project: None,

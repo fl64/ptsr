@@ -36,10 +36,19 @@ pub(super) fn meters(frame: &mut Frame, area: Rect, s: &Status) {
         ]);
         frame.render_widget(line, rows[ch]);
     }
-    let light = if clip {
-        Span::styled(" CLIP ", Style::new().fg(BG).bg(MAGENTA))
+    let light = if let Some(elapsed) = clip {
+        let seconds = elapsed.as_secs();
+        Span::styled(
+            format!(
+                " CLIP +{:02}:{:02}:{:02}",
+                seconds / 3600,
+                seconds / 60 % 60,
+                seconds % 60
+            ),
+            Style::new().fg(BG).bg(MAGENTA),
+        )
     } else {
-        Span::styled(" clip ", Style::new().fg(DIM))
+        Span::raw("")
     };
     frame.render_widget(Line::from(light), rows[2]);
 }
@@ -88,6 +97,27 @@ pub(super) fn clip_label(text: &str, width: usize) -> String {
         clipped.push('…');
     }
     clipped
+}
+
+/// Shorten a user name at a complete word when one fits; keep graphemes whole otherwise.
+pub(super) fn clip_name(text: &str, width: usize) -> String {
+    let clean = clip_label(text, usize::MAX);
+    if Span::raw(clean.as_str()).width() <= width {
+        return clean;
+    }
+    let budget = width.saturating_sub(1);
+    let boundary = clean
+        .char_indices()
+        .rev()
+        .filter(|(_, c)| c.is_whitespace())
+        .find_map(|(index, _)| {
+            let prefix = clean[..index].trim_end();
+            (!prefix.is_empty() && Span::raw(prefix).width() <= budget).then_some(prefix)
+        });
+    match boundary {
+        Some(prefix) => format!("{prefix}…"),
+        None => clip_label(&clean, width),
+    }
 }
 
 pub(super) fn status_inputs(inputs: &[InputSource], stage: u8) -> Vec<Span<'static>> {

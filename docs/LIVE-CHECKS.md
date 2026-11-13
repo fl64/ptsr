@@ -2735,3 +2735,31 @@ Use a disposable project or a copy. Start `target/release/ptsr` after `task buil
 - [ ] In F12 MIDI, learn `screen.pattern`, `pattern.overview_empty_toggle` and the two view actions on buttons.
 - [ ] Use the learned buttons in the overview. Hit and release a Gate pad. Check its sound and release against Pads.
 - [ ] Listen to the local `renders/97-pattern-record.wav`. The overview changes no sound and adds no WAV.
+
+## 122: Quiet cells and clear words
+
+Folder: `changes/122-ui-quiet-words`
+
+Use a disposable project or a copy. Run `task build`, then start `target/release/ptsr`.
+These checks need the owner's keyboard, controller, eyes, and ears. Leave a box open until you check it.
+
+### Keyboard and screen
+
+- [ ] Open F2 with empty pads. Check the muted `—`, the blank PLAY slot, and the blank clip row. Select an empty pad and press Enter. Check its test tone.
+- [ ] Load a sample on a pad. Check `whole file`. Select a linked slice and check `slice N`. Trigger and release the pad. Check that PLAY appears during playback and clears after it.
+- [ ] Mark three pads, mark the bank, then clear the marks. Check `edit: marked (3)`, `edit: bank`, and `edit: this pad`.
+- [ ] Open Alt+N and F1. Check `pattern keys`, the `PATTERN` help group, and the current Pitch Gate state and reason.
+- [ ] Set Pitch Gate on a pad with zero pitch, then positive pitch. Check its panel line at both values. Check that the compact summary appears only at positive pitch.
+- [ ] At 80x26 and 120x40, open F2, F3, F4, F6, F12, F1, and the A1 overview. Use long pad, sample, project, and folder names. Check word clipping, whole characters, keys, values, and safety text.
+- [ ] If a real clipped output block occurs, check `CLIP +HH:MM:SS`. Check that its time updates after another clipped block and disappears after a clean pad hit.
+
+### Controller and sound
+
+- [ ] Use learned MIDI actions to open the screens and select a pad. Check that the controller map says `ptrn` in six cells, while MIDI learn says `pattern`.
+- [ ] Use a learned value control and trigger the pad. Check that the controls and sound behave as before.
+- [ ] Listen to local `renders/82-shared-fx-screen.wav` and `renders/97-pattern-record.wav`. This change adds no sound render.
+
+### Offline screen catalogue
+
+Review `renders/screens/pads-quiet-empty-80x26.ansi`, `pads-clip-event-80x26.ansi`, and `pads-long-labels-80x26.ansi`.
+Review the matching `120x40` files. Compare `pads-normal`, `chop-normal`, `files-normal`, `fx-normal`, `settings-normal`, and `pads-help` at both sizes.
