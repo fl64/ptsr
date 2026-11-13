@@ -80,3 +80,5 @@ The final pad input App method move passed format, Clippy, and 448 recorded inpu
 The feedback test move passed format and Clippy. A first targeted command used a stale test binary from the shared target and ran one old test. We did not count that result. With a branch-only target directory, 35 feedback tests, 22 transport tests, 192 pattern tests, and 3 scenario-audit tests passed. The moved test tokens match the old block after we remove module visibility and whitespace. The final full check will also use this target directory.
 
 The notices and F1 test move passed format, Clippy, 14 local tests, 13 controller map tests, and 3 scenario-audit tests with the branch-only target. The moved test tokens match the old block after we remove helper visibility and whitespace.
+
+The badge and pad view test move passed format, Clippy, 24 local tests, and 3 scenario-audit tests with the branch-only target. The moved test tokens match the old block after we remove whitespace.
