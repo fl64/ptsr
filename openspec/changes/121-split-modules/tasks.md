@@ -14,7 +14,9 @@
 ## 3. Move terminal drawing
 
 - [x] 3.1 Move Settings drawing as a pilot. Compare both catalogue sizes. Run `task check` and commit.
-- [ ] 3.2 Move shared badges, status, pad grid, and wave drawing into widget modules. Compare the catalogue. Run `task check` and commit each logical move.
+- [x] 3.2a Move the shared pad frame, bank row, grid, and title into a widget module. Compare the catalogue. Run `task check` and commit.
+- [ ] 3.2b Move shared badges, status, and meters into a widget module. Compare the catalogue. Run `task check` and commit.
+- [ ] 3.2c Move shared wave drawing into a widget module. Compare the catalogue. Run `task check` and commit.
 - [ ] 3.3 Move Help, Files, FX, Chop, Pads, and pattern drawing into screen modules. Compare the catalogue after each move. Run `task check` and commit each screen move.
 
 ## 4. Move application code and tests
@@ -34,3 +36,5 @@ The clean worktree at `2909c43` produced 820 ANSI files with `task screens`. A l
 The first post-move `task check` failed in the callback benchmark. Active erasure wall time reached 55.27 % of the buffer budget in two callbacks. Thread CPU time reached 29.58 %. All earlier checks in that run passed. Keep this failure visible even if a later run passes.
 
 The next full `task check` passed. In active erasure, wall time reached 10.84 % and no callback exceeded 50 %. This result does not resolve the earlier maximum-budget failures.
+
+The shared pad-frame widget move passed `cargo test -p tui --lib` and `task check`. All 820 ANSI file names and bytes still match the base.
