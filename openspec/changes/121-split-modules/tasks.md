@@ -1,0 +1,28 @@
+# Tasks
+
+## 1. Prepare the change
+
+- [x] 1.1 Draft this proposal, design, and task list for owner review.
+- [x] 1.2 Run `task openspec:check`, STE lint, and `task check`. Commit the artifacts separately.
+- [ ] 1.3 Ask the owner to accept this source-only scope before code moves.
+
+## 2. Freeze the comparison base
+
+- [ ] 2.1 Generate the clean base screen catalogue. Record its file count and compare method. Keep generated files out of Git.
+- [ ] 2.2 Check the existing keyboard, raw MIDI, sound, and callback results before code moves.
+
+## 3. Move terminal drawing
+
+- [ ] 3.1 Move Settings drawing as a pilot. Compare both catalogue sizes. Run `task check` and commit.
+- [ ] 3.2 Move shared badges, status, pad grid, and wave drawing into widget modules. Compare the catalogue. Run `task check` and commit each logical move.
+- [ ] 3.3 Move Help, Files, FX, Chop, Pads, and pattern drawing into screen modules. Compare the catalogue after each move. Run `task check` and commit each screen move.
+
+## 4. Move application code and tests
+
+- [ ] 4.1 Move each screen's App methods near its existing module. Keep method bodies, input priority, and keys. Run recorded input tests and `task check` before each commit.
+- [ ] 4.2 Split `input_tests.rs` by topic without changing test bodies or names. Run `task check` before each topic commit.
+
+## 5. Check and hand over
+
+- [ ] 5.1 Compare the complete final ANSI catalogue with the base. Run `task screens`, `task openspec:check`, `task check`, and `task build`.
+- [ ] 5.2 Review the diff for behavior changes and file growth. Give the owner the keyboard, controller, view, and listening steps from the proposal. Keep unreported manual checks open.
