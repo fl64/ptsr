@@ -36,10 +36,19 @@ pub(super) fn meters(frame: &mut Frame, area: Rect, s: &Status) {
         ]);
         frame.render_widget(line, rows[ch]);
     }
-    let light = if clip {
-        Span::styled(" CLIP ", Style::new().fg(BG).bg(MAGENTA))
+    let light = if let Some(elapsed) = clip {
+        let seconds = elapsed.as_secs();
+        Span::styled(
+            format!(
+                " CLIP +{:02}:{:02}:{:02}",
+                seconds / 3600,
+                seconds / 60 % 60,
+                seconds % 60
+            ),
+            Style::new().fg(BG).bg(MAGENTA),
+        )
     } else {
-        Span::styled(" clip ", Style::new().fg(DIM))
+        Span::raw("")
     };
     frame.render_widget(Line::from(light), rows[2]);
 }

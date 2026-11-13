@@ -12,6 +12,7 @@ const SIZES: [(u16, u16); 2] = [(120, 40), (80, 26)];
 enum Mode {
     Normal,
     QuietEmpty,
+    ClipEvent,
     Tone,
     Envelope,
     Filter,
@@ -100,6 +101,7 @@ impl Mode {
     const ALL: &'static [Self] = &[
         Self::Normal,
         Self::QuietEmpty,
+        Self::ClipEvent,
         Self::Tone,
         Self::Envelope,
         Self::Filter,
@@ -188,6 +190,7 @@ impl Mode {
         match self {
             Self::Normal => "normal",
             Self::QuietEmpty => "quiet-empty",
+            Self::ClipEvent => "clip-event",
             Self::Tone => "edit-tone",
             Self::Envelope => "edit-env",
             Self::Filter => "edit-filter",
@@ -306,7 +309,8 @@ impl Mode {
             | Self::PitchGateA1
             | Self::PitchGateSource
             | Self::PitchGatePitch
-            | Self::QuietEmpty => screen == Screen::Pads,
+            | Self::QuietEmpty
+            | Self::ClipEvent => screen == Screen::Pads,
             Self::Bounds
             | Self::Assign
             | Self::AssignOrder
@@ -418,6 +422,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                 modes.extend(
                     [
                         "quiet-empty",
+                        "clip-event",
                         "pattern-view-fine",
                         "pattern-view-triplet",
                         "pattern-view-off-grid",
@@ -737,6 +742,10 @@ fn fixture(case: Case, now: Instant) -> App {
         Mode::Loop => app.chop.as_mut().unwrap().looping = true,
         Mode::AsPad => app.chop.as_mut().unwrap().as_pad = true,
         Mode::QuietEmpty => app.pads = pads::Pads::default(),
+        Mode::ClipEvent => {
+            app.meters = meters::Meters::new(now - Duration::from_secs(3_723));
+            app.meters.update((1.0, 0.7), now);
+        }
         Mode::Normal | Mode::Value | Mode::Device => {}
         Mode::PatternCountIn
         | Mode::PatternRecording
@@ -1103,7 +1112,15 @@ fn render_app_layers(
             0
         },
         master_db: 0,
-        meters: ([-18.0, -12.0], [-20.0, -16.0], false),
+        meters: if case.mode == Mode::ClipEvent {
+            (
+                app.meters.level_db(),
+                app.meters.peak_db(),
+                app.meters.clip_elapsed(),
+            )
+        } else {
+            ([-18.0, -12.0], [-20.0, -16.0], None)
+        },
         notice: notice.as_deref().map(|text| tui::NoticeLine {
             text,
             level: app.frame_notice_level.map(|level| match level {
@@ -1268,6 +1285,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
     }
     match case.mode {
         Mode::QuietEmpty => require("—"),
+        Mode::ClipEvent => require("CLIP +01:02:03"),
         Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => require("EDIT"),
         Mode::Bounds => {
             require("EDIT · BOUNDS");

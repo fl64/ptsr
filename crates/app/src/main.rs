@@ -1530,7 +1530,7 @@ fn main() -> std::io::Result<()> {
             meters: (
                 app.meters.level_db(),
                 app.meters.peak_db(),
-                app.meters.clip(),
+                app.meters.clip_elapsed(),
             ),
             notice: notice.as_deref().map(|text| tui::NoticeLine {
                 text,
@@ -17167,7 +17167,7 @@ Enter = "browser.hold"
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             notice: None,
             no_releases: false,
             project: None,
@@ -17667,7 +17667,7 @@ Enter = "browser.hold"
             load_peak: 0.0,
             xruns: 0,
             master_db: app.master_db,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             notice: None,
             no_releases: false,
             project: None,

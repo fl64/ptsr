@@ -1,6 +1,7 @@
 //! Screens. They only draw a state snapshot and never touch the engine.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
@@ -267,8 +268,8 @@ pub struct Status<'a> {
     pub load_peak: f32,
     pub xruns: u64,
     pub master_db: i8,
-    /// Output meter levels in dB: bar, peak hold, per channel; with the latched clip light.
-    pub meters: ([f32; 2], [f32; 2], bool),
+    /// Output meter levels and the latest session-relative clip time.
+    pub meters: ([f32; 2], [f32; 2], Option<Duration>),
     /// Message for the owner: why there is no audio, terminal warning.
     pub notice: Option<NoticeLine<'a>>,
     /// The terminal has no kitty protocol: no key releases, gate pads play as one-shot.
@@ -1334,6 +1335,7 @@ fn key(k: &str) -> Span<'static> {
 
 #[cfg(test)]
 mod tests {
+    mod meter;
     use super::*;
 
     #[test]
@@ -1462,7 +1464,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -2048,7 +2050,7 @@ mod tests {
             load_peak: 1.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -2248,7 +2250,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases: false,
             notice: None,
             project,
@@ -2283,7 +2285,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases,
             notice: None,
             project: None,
@@ -2600,7 +2602,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -3767,7 +3769,7 @@ mod tests {
                             };
                             let rows = render_pads_snapshot(
                                 p,
-                                ([-60.0; 2], [-60.0; 2], false),
+                                ([-60.0; 2], [-60.0; 2], None),
                                 false,
                                 width,
                                 height,
@@ -3936,9 +3938,10 @@ mod tests {
                 .join("\n")
         };
         let f2 = side_text(&Screen::Pads(hidden_pads()));
-        for want in [" L ", " R ", "clip", "pad W", "volume", "release"] {
+        for want in [" L ", " R ", "pad W", "volume", "release"] {
             assert!(f2.contains(want), "F2 {want}: {f2}");
         }
+        assert!(!f2.contains("clip"));
         let names: Vec<String> = (0..12).map(|i| format!("file{i:02}.wav")).collect();
         let f6 = side_text(&Screen::Files(Files {
             dir: "~/Music",
@@ -4213,7 +4216,7 @@ mod tests {
                 load_peak: 0.0,
                 xruns: 0,
                 master_db: 0,
-                meters: ([-60.0; 2], [-60.0; 2], false),
+                meters: ([-60.0; 2], [-60.0; 2], None),
                 no_releases: false,
                 notice: None,
                 project: None,
@@ -4280,7 +4283,7 @@ mod tests {
         };
         let rec = strip_colors(&render_pads_rec(
             loud(),
-            ([-60.0; 2], [-60.0; 2], false),
+            ([-60.0; 2], [-60.0; 2], None),
             true,
             100,
             26,
@@ -4313,7 +4316,7 @@ mod tests {
         };
         let rec = strip_colors(&render_pads_rec(
             edit(),
-            ([-60.0; 2], [-60.0; 2], false),
+            ([-60.0; 2], [-60.0; 2], None),
             true,
             100,
             26,
@@ -5046,7 +5049,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -5342,7 +5345,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -5634,7 +5637,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -6415,24 +6418,24 @@ mod tests {
 
     /// The pads screen as cells: (symbol, fg, bg) per position.
     fn render_pads(p: Pads) -> Vec<Vec<(String, Color, Color)>> {
-        render_pads_with(p, ([-60.0, -60.0], [-60.0, -60.0], false))
+        render_pads_with(p, ([-60.0, -60.0], [-60.0, -60.0], None))
     }
 
     fn render_pads_with(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], bool),
+        meters: ([f32; 2], [f32; 2], Option<Duration>),
     ) -> Vec<Vec<(String, Color, Color)>> {
         render_pads_rec(p, meters, false, 100, 26)
     }
 
     /// The pads screen at any size, for the wave-row tests.
     fn render_pads_at(p: Pads, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
-        render_pads_rec(p, ([-60.0, -60.0], [-60.0, -60.0], false), false, w, h)
+        render_pads_rec(p, ([-60.0, -60.0], [-60.0, -60.0], None), false, w, h)
     }
 
     fn render_pads_rec(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], bool),
+        meters: ([f32; 2], [f32; 2], Option<Duration>),
         recording: bool,
         w: u16,
         h: u16,
@@ -6442,7 +6445,7 @@ mod tests {
 
     fn render_pads_snapshot(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], bool),
+        meters: ([f32; 2], [f32; 2], Option<Duration>),
         recording: bool,
         w: u16,
         h: u16,
@@ -6763,7 +6766,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -6880,7 +6883,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7014,7 +7017,7 @@ mod tests {
             );
             assert_eq!(cache.builds, 1);
         }
-        status.meters = ([-1.0; 2], [0.0; 2], true);
+        status.meters = ([-1.0; 2], [0.0; 2], Some(Duration::ZERO));
         status.notice = Some(NoticeLine::plain("another frame's notice"));
         status
             .badges
@@ -7070,9 +7073,9 @@ mod tests {
                 let mut pads = idle_pads();
                 pads.playing = phase == 1;
                 status.meters = if phase == 1 {
-                    ([-1.0; 2], [0.0; 2], true)
+                    ([-1.0; 2], [0.0; 2], Some(Duration::ZERO))
                 } else {
-                    ([-60.0; 2], [-60.0; 2], false)
+                    ([-60.0; 2], [-60.0; 2], None)
                 };
                 status.notice = (phase == 1).then_some(NoticeLine::plain("an active notice"));
                 let help = Help {
@@ -7544,7 +7547,7 @@ mod tests {
             load_peak: 0.0,
             xruns,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], false),
+            meters: ([-60.0; 2], [-60.0; 2], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7622,7 +7625,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7716,7 +7719,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7790,7 +7793,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7925,7 +7928,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -7974,7 +7977,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
             no_releases: false,
             notice: None,
             project: None,
@@ -8206,40 +8209,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn meters_follow_the_sound() {
-        let p = idle_pads();
-        // L at -6 dB with its peak at -3, R at -12 dB with the peak under the bar
-        let rows = render_pads_with(p, ([-6.0, -12.0], [-3.0, -12.0], false));
-        // the meters top the right column (31)
-        let y = frame_at(100, 26).side.y as usize;
-        let (l, r) = (row_text(&rows, y), row_text(&rows, y + 1));
-        let bars = |t: &str| t.chars().filter(|&c| c == '\u{2588}').count();
-        assert!(bars(&l) > bars(&r), "the louder channel has the longer bar");
-        assert!(l.contains("-6 dB"), "the dB number is next to the bar");
-        assert!(l.contains('\u{258e}'), "the peak mark stands past the bar");
-        assert!(
-            !r.contains('\u{258e}'),
-            "no mark when the peak is under the bar"
-        );
-    }
-
-    #[test]
-    fn overload_latches() {
-        let y = frame_at(100, 26).side.y as usize + 2;
-        let rows = render_pads_with(idle_pads(), ([-6.0, -6.0], [-6.0, -6.0], true));
-        let light = rows[y]
-            .iter()
-            .find(|(s, _, _)| s == "C")
-            .expect("the lit CLIP light");
-        assert_eq!(light.2, MAGENTA, "the light is a magenta plate");
-        let rows = render_pads_with(idle_pads(), ([-60.0, -60.0], [-60.0, -60.0], false));
-        assert!(
-            rows[y].iter().all(|(_, fg, _)| *fg != MAGENTA),
-            "a clean output leaves the light dark"
-        );
-    }
-
     fn chop_status() -> (Status<'static>, Help<'static>) {
         (
             Status {
@@ -8252,7 +8221,7 @@ mod tests {
                 load_peak: 0.0,
                 xruns: 0,
                 master_db: 0,
-                meters: ([-60.0, -60.0], [-60.0, -60.0], false),
+                meters: ([-60.0, -60.0], [-60.0, -60.0], None),
                 no_releases: false,
                 notice: None,
                 project: None,

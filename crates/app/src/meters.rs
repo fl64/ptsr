@@ -19,8 +19,10 @@ pub struct Meters {
     /// Peak-hold level per channel, dB.
     peak: [f32; 2],
     peak_at: [Instant; 2],
-    /// Latched: some block since the last clean hit reached full scale.
-    clip: bool,
+    /// The UI clock starts when the application starts.
+    start: Instant,
+    /// Latest clipped output observed since the last clean hit.
+    clip_at: Option<Instant>,
     /// A pad hit happened; the first read with sound (or after the timeout) decides the light.
     probing: Option<Instant>,
     last: Instant,
@@ -46,7 +48,8 @@ impl Meters {
             level: [FLOOR_DB; 2],
             peak: [FLOOR_DB; 2],
             peak_at: [now; 2],
-            clip: false,
+            start: now,
+            clip_at: None,
             probing: None,
             last: now,
         }
@@ -62,9 +65,10 @@ impl Meters {
         self.peak
     }
 
-    /// The overload light: on since the last clip, cleared by a hit that does not clip.
-    pub fn clip(&self) -> bool {
-        self.clip
+    /// Time of the latest clipped output since this application started.
+    pub fn clip_elapsed(&self) -> Option<Duration> {
+        self.clip_at
+            .map(|at| at.saturating_duration_since(self.start))
     }
 
     /// A pad was hit: the next blocks it produces decide the overload light.
@@ -80,13 +84,13 @@ impl Meters {
         let clipped = out.0 >= 1.0 || out.1 >= 1.0;
         let sounding = out.0 > 0.0 || out.1 > 0.0;
         if clipped {
-            self.clip = true;
+            self.clip_at = Some(now);
             self.probing = None;
         } else if let Some(at) = self.probing
             && (sounding || now.duration_since(at) >= PROBE_TIMEOUT)
         {
             // the hit's blocks arrived (or it stayed silent): a clean hit clears the light
-            self.clip = false;
+            self.clip_at = None;
             self.probing = None;
         }
 
@@ -144,30 +148,77 @@ mod tests {
     fn overload_latches_until_a_clean_hit() {
         let mut m = Meters::new(t(0));
         m.update((1.0, 0.5), t(0));
-        assert!(m.clip(), "full scale latches the light");
+        assert!(m.clip_elapsed().is_some(), "full scale latches the light");
         m.update((0.1, 0.1), t(50));
-        assert!(m.clip(), "silence alone does not clear it");
+        assert!(
+            m.clip_elapsed().is_some(),
+            "silence alone does not clear it"
+        );
         m.hit(t(60));
         m.update((0.0, 0.0), t(70));
-        assert!(m.clip(), "the probe waits for the hit's sound");
+        assert!(
+            m.clip_elapsed().is_some(),
+            "the probe waits for the hit's sound"
+        );
         m.update((0.3, 0.3), t(100));
-        assert!(!m.clip(), "a hit that does not clip clears the light");
+        assert!(
+            m.clip_elapsed().is_none(),
+            "a hit that does not clip clears the light"
+        );
         // a clipping hit keeps it on
         m.hit(t(200));
         m.update((1.0, 0.9), t(220));
-        assert!(m.clip());
+        assert!(m.clip_elapsed().is_some());
     }
 
     #[test]
     fn an_empty_hit_clears_the_light_after_a_beat() {
         let mut m = Meters::new(t(0));
         m.update((1.2, 1.0), t(0));
-        assert!(m.clip());
+        assert!(m.clip_elapsed().is_some());
         m.hit(t(10));
         // the empty pad stays silent: the probe times out and the light goes out
         m.update((0.0, 0.0), t(60));
-        assert!(m.clip(), "not yet: inside the probe timeout");
+        assert!(
+            m.clip_elapsed().is_some(),
+            "not yet: inside the probe timeout"
+        );
         m.update((0.0, 0.0), t(200));
-        assert!(!m.clip(), "a silent hit is a clean hit too");
+        assert!(
+            m.clip_elapsed().is_none(),
+            "a silent hit is a clean hit too"
+        );
+    }
+
+    /// Scenario "Clip feedback appears only for a real clipped block".
+    #[test]
+    fn clip_feedback_appears_only_for_a_real_clipped_block() {
+        let start = Instant::now();
+        let mut meter = Meters::new(start);
+        meter.update((0.0, 0.0), start + Duration::from_secs(1));
+        meter.hit(start + Duration::from_secs(2));
+        meter.update((0.8, 0.7), start + Duration::from_secs(2));
+        assert_eq!(meter.clip_elapsed(), None);
+        meter.update((1.0, 0.7), start + Duration::from_secs(3));
+        assert_eq!(meter.clip_elapsed(), Some(Duration::from_secs(3)));
+        meter.update((1.2, 0.9), start + Duration::from_secs(3_723));
+        assert_eq!(meter.clip_elapsed(), Some(Duration::from_secs(3_723)));
+    }
+
+    /// Scenario "A clean hit hides clip feedback".
+    #[test]
+    fn a_clean_hit_hides_clip_feedback() {
+        let start = Instant::now();
+        let mut meter = Meters::new(start);
+        meter.update((1.0, 0.2), start + Duration::from_secs(4));
+        meter.update((0.0, 0.0), start + Duration::from_secs(5));
+        assert_eq!(meter.clip_elapsed(), Some(Duration::from_secs(4)));
+        meter.hit(start + Duration::from_secs(6));
+        meter.update((0.3, 0.2), start + Duration::from_secs(6));
+        assert_eq!(meter.clip_elapsed(), None);
+        let mut restarted = Meters::new(start + Duration::from_secs(10));
+        assert_eq!(restarted.clip_elapsed(), None);
+        restarted.update((1.0, 0.1), start + Duration::from_secs(11));
+        assert_eq!(restarted.clip_elapsed(), Some(Duration::from_secs(1)));
     }
 }
