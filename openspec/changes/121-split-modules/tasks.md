@@ -58,3 +58,5 @@ The pattern strip and overview move passed 148 TUI tests and `task check`. All 8
 The Chop App method move passed `task check`. The method tokens match the old block after we remove the new module visibility and the two commas that Rustfmt added to function signatures. The first full run found an item after the test module. The next run found an empty line after a doc comment. Both layout fixes passed the final full run.
 
 The folder and project picker App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.
+
+The pad load, copy, swap, and placement App method move passed `task check`. Its method tokens match the old block after we remove the new module visibility and whitespace.

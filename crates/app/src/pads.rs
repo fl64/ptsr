@@ -1706,6 +1706,474 @@ impl Pads {
     }
 }
 
+use crate::*;
+
+impl App {
+    pub(super) fn load_pad(&mut self, abs: usize, path: PathBuf, region: Region) {
+        self.load_gen[abs] += 1;
+        self.pads.loading[abs] = Some(0);
+        self.load_region[abs] = region;
+        // the loader keeps only the newest request of a pad: pads waiting for this pad's old
+        // file would never hear back, so the first of them loads it instead
+        let waiting: Vec<_> = self
+            .followers
+            .iter()
+            .filter(|f| f.0 == abs)
+            .map(|f| (f.1, f.2))
+            .collect();
+        self.followers.retain(|f| f.0 != abs);
+        if let Some(&(next, generation)) = waiting.first()
+            && let Some(old) = self.pads.file[next].clone()
+        {
+            self.request(next, old, generation);
+            self.followers
+                .extend(waiting[1..].iter().map(|&(f, g)| (next, f, g)));
+        }
+        self.request(abs, path, self.load_gen[abs]);
+    }
+
+    pub(super) fn request(&mut self, pad: usize, path: PathBuf, generation: u64) {
+        let sent = self.loader.as_ref().is_some_and(|(tx, _)| {
+            tx.send(loader::Request {
+                pad,
+                path: path.clone(),
+                generation,
+            })
+            .is_ok()
+        });
+        if !sent {
+            self.loader_reply(loader::Reply::Failed {
+                pad,
+                generation,
+                path,
+                error: "Loader unavailable".into(),
+            });
+        }
+    }
+
+    /// `abs` gets the file `leader` is loading, without reading it again.
+    pub(super) fn follow(&mut self, leader: usize, abs: usize, region: Region) {
+        self.load_gen[abs] += 1;
+        self.pads.loading[abs] = Some(0);
+        self.load_region[abs] = region;
+        self.followers.push((leader, abs, self.load_gen[abs]));
+    }
+
+    /// 83a: Ctrl+C takes a copy of the selected loaded pad; the snapshot is taken now,
+    /// so later changes of the source do not change what is placed. Empty, missing and
+    /// loading sources are refused with a plain notice, nothing else changes.
+    pub(super) fn take_copy(&mut self) {
+        let abs = self.pads.selected_abs();
+        if self.pads.sound[abs].is_none() {
+            self.post_notice(
+                Level::Warn,
+                ("Copy what? This pad holds nothing.".into(), Instant::now()),
+            );
+            return;
+        }
+        if self.pads.missing[abs] {
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Copy what? The file this pad plays is gone.".into(),
+                    Instant::now(),
+                ),
+            );
+            return;
+        }
+        if self.pads.loading[abs].is_some() {
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Wait until loading finishes, then copy.".into(),
+                    Instant::now(),
+                ),
+            );
+            return;
+        }
+        let mut snap = self.pads.snapshot(abs);
+        // Keep the full pickup name even if the source later changes or has no file name.
+        snap.name = Some(pad_name(&self.pads, abs));
+        self.copy_in_hand = Some((abs, snap));
+        self.post_notice(Level::Info, (("COPY · hit a pad").into(), Instant::now()));
+    }
+
+    /// 83a: a pad hit with a copy in hand picks the target: the hit does not play, the
+    /// source stays; a hit on the source cancels the copy. `false` when no copy is in
+    /// hand, or the target is loading and the copy waits.
+    pub(super) fn copy_target(&mut self, abs: usize) -> bool {
+        let Some((source, snap)) = self.copy_in_hand.clone() else {
+            return false;
+        };
+        if abs == source {
+            // a hit on the original source cancels: no pad changes, no undo step
+            self.copy_in_hand = None;
+            self.post_notice(Level::Info, ("copy dropped".into(), Instant::now()));
+            return true;
+        }
+        if self.pads.loading[abs].is_some() {
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Wait until loading finishes, then place the copy.".into(),
+                    Instant::now(),
+                ),
+            );
+            return true;
+        }
+        if self.pads.sound[abs].is_some() && self.pads.loading[abs].is_none() {
+            let mut lines = vec!["Replace what lies on 1 pad?".to_string()];
+            lines.push(format!(
+                "  {}: {} → {}",
+                pad_place(abs),
+                pad_name(&self.pads, abs),
+                self.copy_name(&snap)
+            ));
+            lines.extend(overwrite_footer());
+            // a changed target asks again: only the same question, still open, places
+            if !matches!(&self.ask,
+                Some(Ask::CopyPad { source: s, lines: old })
+                    if *s == source && old[..2] == lines[..2])
+            {
+                self.ask = Some(Ask::CopyPad { source, lines });
+                return true;
+            }
+        }
+        self.place_copy(source, snap, abs);
+        true
+    }
+
+    /// Enter in the copy question: the question names the source, so the target is the
+    /// selected pad; a changed target asks again inside `copy_target`.
+    pub(super) fn place_copy_asked(&mut self, source: usize) {
+        let Some((snap_source, _)) = self.copy_in_hand.clone() else {
+            self.ask = None;
+            return;
+        };
+        debug_assert_eq!(snap_source, source, "the question names the copy in hand");
+        let abs = self.pads.selected_abs();
+        self.copy_target(abs);
+    }
+
+    /// Places the snapshot with an available numbered name. The source stays unchanged.
+    /// One undo step restores only the target.
+    pub(super) fn place_copy(&mut self, source: usize, mut snap: pads::PadSnap, abs: usize) {
+        self.ask = None;
+        self.copy_in_hand = None;
+        snap.name = Some(self.copy_name(&snap));
+        // the undo step is the apply's own: only the target changed (the snapshot was
+        // taken at pickup, the source stays), so the step restores the target alone
+        let _ = source;
+        for cmd in self.pads.put_back(abs, &snap) {
+            self.send(cmd);
+        }
+        self.dirty();
+        self.post_notice(Level::Done, ("copy placed".into(), Instant::now()));
+    }
+
+    /// The question and placement use the same pickup base and current occupied names.
+    pub(super) fn copy_name(&self, snap: &pads::PadSnap) -> String {
+        let name = snap.name.as_deref().unwrap_or("copy");
+        // Recognize decimal text without parsing: an existing marker can exceed any integer type.
+        let base = name
+            .strip_suffix(')')
+            .and_then(|text| text.rsplit_once(" (copy "))
+            .filter(|(_, number)| {
+                !number.is_empty()
+                    && !number.starts_with('0')
+                    && number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            .map_or(name, |(base, _)| base);
+        let occupied: std::collections::BTreeSet<_> =
+            (0..PADS).map(|abs| pad_name(&self.pads, abs)).collect();
+        let mut number = 1;
+        loop {
+            let candidate = format!("{base} (copy {number})");
+            if !occupied.contains(&candidate) {
+                return candidate;
+            }
+            // At most PADS names are occupied, so a candidate is free by PADS + 1.
+            number += 1;
+        }
+    }
+
+    /// Swaps the pad in hand with `abs`.
+    pub(super) fn swap_with(&mut self, abs: usize) {
+        self.flush_audio();
+        let Some(from) = self.pad_in_hand.take() else {
+            return;
+        };
+        if from == abs {
+            return;
+        }
+        if self.pads.loading[from].is_some() || self.pads.loading[abs].is_some() {
+            // the load would land on the old place
+            self.post_notice(
+                Level::Warn,
+                (
+                    "Wait until loading finishes, then swap.".into(),
+                    Instant::now(),
+                ),
+            );
+            return;
+        }
+        let before = vec![
+            (from, self.pads.snapshot(from)),
+            (abs, self.pads.snapshot(abs)),
+        ];
+        let cmd = match self.pads.swap(from, abs) {
+            Ok(cmd) => cmd,
+            Err(error) => {
+                self.post_notice(Level::Error, (error, Instant::now()));
+                return;
+            }
+        };
+        if self.pads.pattern.is_some() {
+            self.push_step(before, None, "swap".into());
+            if let Some(step) = self.history.last_mut() {
+                step.swap = Some((from, abs));
+            }
+        }
+        self.send(cmd);
+        self.dirty();
+    }
+
+    /// Puts the file in hand on a pad; a pad that holds something asks first.
+    pub(super) fn put_in_hand(&mut self, abs: usize) {
+        let Some(path) = self.browser.in_hand.clone() else {
+            return;
+        };
+        self.put_file(abs, path);
+    }
+
+    /// Loads `path` onto `abs` at once; a pad that holds something asks first. A file in
+    /// hand equal to `path` empties the hand once it lies on the pad.
+    pub(super) fn put_file(&mut self, abs: usize, path: PathBuf) {
+        if self.pads.file[abs].is_some() {
+            if same_whole_sound(&self.pads, abs, &path) {
+                // the pad already plays this very file, whole: nothing changes
+                self.ask = None;
+                if self.browser.in_hand.as_ref() == Some(&path) {
+                    self.browser.in_hand = None;
+                }
+                self.post_notice(
+                    Level::Info,
+                    (
+                        format!("{} already lies there", file_name(&path)),
+                        Instant::now(),
+                    ),
+                );
+                return;
+            }
+            let mut lines = vec![
+                "Replace what lies on 1 pad?".to_string(),
+                format!(
+                    "  {}: {} → {}",
+                    pad_place(abs),
+                    pad_name(&self.pads, abs),
+                    file_name(&path)
+                ),
+            ];
+            lines.extend(overwrite_footer());
+            let asked = matches!(
+                &self.ask,
+                Some(Ask::PutFile {
+                    abs: a,
+                    path: p,
+                    lines: old,
+                }) if *a == abs && *p == path && *old == lines
+            );
+            if !asked {
+                self.ask = Some(Ask::PutFile {
+                    abs,
+                    path: path.clone(),
+                    lines,
+                });
+                return;
+            }
+        }
+        self.ask = None;
+        if self.browser.in_hand.as_ref() == Some(&path) {
+            self.browser.in_hand = None;
+        }
+        self.load_pad(abs, path, Region::WHOLE);
+    }
+
+    pub(super) fn loader_reply(&mut self, reply: loader::Reply) {
+        // A stale leader reply must not consume followers of a newer load.
+        if let loader::Reply::Loaded {
+            pad, generation, ..
+        }
+        | loader::Reply::Failed {
+            pad, generation, ..
+        } = &reply
+            && *generation == self.load_gen[*pad]
+        {
+            let pad = *pad;
+            let waiting: Vec<_> = self
+                .followers
+                .iter()
+                .filter(|f| f.0 == pad)
+                .map(|f| (f.1, f.2))
+                .collect();
+            self.followers.retain(|f| f.0 != pad);
+            for (f, generation) in waiting {
+                self.loader_reply(match &reply {
+                    loader::Reply::Loaded { path, sound, .. } => loader::Reply::Loaded {
+                        pad: f,
+                        generation,
+                        path: path.clone(),
+                        sound: sound.clone(),
+                    },
+                    loader::Reply::Failed { path, error, .. } => loader::Reply::Failed {
+                        pad: f,
+                        generation,
+                        path: path.clone(),
+                        error: error.clone(),
+                    },
+                    loader::Reply::Progress { .. } => continue,
+                });
+            }
+        }
+        match reply {
+            loader::Reply::Loaded {
+                pad: PREVIEW,
+                generation,
+                sound,
+                ..
+            } => {
+                if generation == self.load_gen[PREVIEW] {
+                    let rate = self
+                        .audio
+                        .as_ref()
+                        .map_or(48_000, |a| a.stats.format().1.max(1));
+                    let secs = sound.len() as f32 / rate as f32;
+                    self.preview = Some((secs, loader::envelope(&sound, 1600)));
+                    self.send(Command::Preview {
+                        sound: Some(sound),
+                        region: Region::WHOLE,
+                    });
+                }
+            }
+            loader::Reply::Failed {
+                pad: PREVIEW,
+                generation,
+                path,
+                error,
+            } => {
+                if generation == self.load_gen[PREVIEW] {
+                    self.post_system_notice(
+                        Level::Error,
+                        (
+                            format!("Cannot play {}: {error}", file_name(&path)),
+                            Instant::now(),
+                        ),
+                    );
+                }
+            }
+            loader::Reply::Progress {
+                pad: PREVIEW | CHOP,
+                ..
+            } => {}
+            loader::Reply::Loaded {
+                pad: CHOP,
+                generation,
+                path,
+                sound,
+            } => {
+                if generation == self.load_gen[CHOP] {
+                    self.chop_loading = None;
+                    self.show_file_chop(path, sound);
+                }
+            }
+            loader::Reply::Failed {
+                pad: CHOP,
+                generation,
+                path,
+                error,
+            } => {
+                if generation == self.load_gen[CHOP] {
+                    self.chop_loading = None;
+                    self.post_system_notice(
+                        Level::Error,
+                        (
+                            format!("Cannot chop {}: {error}", file_name(&path)),
+                            Instant::now(),
+                        ),
+                    );
+                }
+            }
+            loader::Reply::Progress { pad, percent } => {
+                if self.pads.loading[pad].is_some() {
+                    self.pads.loading[pad] = Some(percent);
+                }
+            }
+            loader::Reply::Loaded {
+                pad,
+                generation,
+                path,
+                sound,
+            } if generation == self.load_gen[pad] => {
+                let before = (!self.restoring_project).then(|| self.pads.snapshot(pad));
+                self.pads.loading[pad] = None;
+                self.pads.missing[pad] = false;
+                if self.pads.file[pad].as_ref() != Some(&path)
+                    || self.pads.region[pad] != self.load_region[pad]
+                {
+                    self.pads.custom_name[pad] = None;
+                }
+                self.pads.file[pad] = Some(path);
+                self.pads.set_sound(pad, sound.clone());
+                let region = self.load_region[pad];
+                self.pads.region[pad] = region;
+                if region == Region::WHOLE {
+                    self.pads.slice[pad] = None;
+                    self.pads.link[pad] = None;
+                }
+                self.send(Command::SetPadSound {
+                    pad,
+                    sound: Some(sound),
+                });
+                if region != Region::WHOLE {
+                    self.send(Command::SetPadRegion { pad, region });
+                }
+                self.send(self.pads.pitch_gate_command(pad));
+                if let Some(before) = before
+                    && before != self.pads.snapshot(pad)
+                {
+                    self.push_step(vec![(pad, before)], None, "file".into());
+                }
+                self.dirty();
+            }
+            loader::Reply::Failed {
+                pad,
+                generation,
+                path,
+                error,
+            } if generation == self.load_gen[pad] => {
+                self.pads.loading[pad] = None;
+                self.post_system_notice(
+                    Level::Error,
+                    (
+                        format!("Cannot load {}: {error}", file_name(&path)),
+                        Instant::now(),
+                    ),
+                );
+                // a session file that no longer loads: the pad goes silent; a new file that
+                // failed leaves the pad as it was
+                if self.pads.file[pad].as_ref() == Some(&path) {
+                    self.pads.missing[pad] = true;
+                    self.pads.clear_sound(pad);
+                    self.send(Command::SetPadSound { pad, sound: None });
+                }
+            }
+            // a newer load for the same pad was started
+            _ => {}
+        }
+        self.finish_project_restore();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
