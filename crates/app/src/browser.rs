@@ -246,6 +246,130 @@ impl Browser {
     }
 }
 
+use crate::*;
+
+impl App {
+    /// The keys of the open folder picker (11): Up/Down choose, Right enters a folder,
+    /// Left goes up (at `/` it stays), Enter picks the folder it is in, Esc cancels;
+    /// the rest do nothing.
+    pub(super) fn picker_key(&mut self, action: Action) {
+        let Some(mut picker) = self.path_picker.take() else {
+            return;
+        };
+        match action {
+            Action::SettingsRow(step) => picker.move_cursor(step as isize),
+            Action::SettingsValue(step) => {
+                if step > 0 {
+                    if let Some(dir) = picker.entries.get(picker.selected).cloned() {
+                        picker.at = dir;
+                        picker.entries = folders_of(&picker.at);
+                        picker.selected = 0;
+                    }
+                } else if let Some(parent) = picker.at.parent().map(Path::to_path_buf) {
+                    let from = picker.at.file_name().map(|n| n.to_owned());
+                    picker.at = parent;
+                    picker.entries = folders_of(&picker.at);
+                    // the folder we came from stays under the cursor, as the files screen does
+                    picker.selected = from
+                        .and_then(|n| {
+                            picker
+                                .entries
+                                .iter()
+                                .position(|e| e.file_name() == Some(&n))
+                        })
+                        .unwrap_or(0);
+                }
+            }
+            Action::SettingsLearn => {
+                let (which, at) = (picker.which, picker.at.clone());
+                self.paths_set(which, at);
+                return; // picked: the picker stays closed
+            }
+            Action::Back => return, // cancelled: the picker stays closed
+            _ => {}
+        }
+        self.path_picker = Some(picker);
+    }
+
+    pub(super) fn save_before_project_transition(&mut self) -> bool {
+        self.session_dirty.is_none() || self.save_session().is_ok()
+    }
+
+    /// Validate the target before saving or replacing current work. Startup keeps its
+    /// separate empty-session fallback for an absent session file.
+    pub(super) fn open_project(&mut self, folder: PathBuf) -> bool {
+        if self.refuse_pattern_project_change() {
+            return false;
+        }
+        let same = self.project.as_ref().is_some_and(|p| {
+            p.folder == folder
+                || std::fs::canonicalize(&p.folder)
+                    .ok()
+                    .zip(std::fs::canonicalize(&folder).ok())
+                    .is_some_and(|(current, target)| current == target)
+        });
+        if same {
+            return true;
+        }
+        let sess = match session::load_existing(&folder.join("project.toml")) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("{e}");
+                self.post_notice(
+                    Level::Error,
+                    (format!("Project not opened: {e}"), Instant::now()),
+                );
+                return false;
+            }
+        };
+        if !self.save_before_project_transition() {
+            return false;
+        }
+        self.session_read_error = None;
+        let sess = with_resolved_paths(sess, Some(&folder));
+        let name = file_name(&folder);
+        self.project = Some(Project {
+            name: name.clone(),
+            folder,
+        });
+        self.apply_session(sess);
+        self.post_notice(Level::Done, (format!("Project {name}"), Instant::now()));
+        self.project_cfg.last = Some(name);
+        self.save_project_cfg();
+        true
+    }
+
+    /// Save pending source work before creating any target files. Existing project
+    /// names use the same guarded open path; refusals keep the picker name available.
+    pub(super) fn create_project(&mut self, name: String) -> bool {
+        if self.refuse_pattern_project_change() {
+            return false;
+        }
+        if name.trim().is_empty() {
+            return false;
+        }
+        let folder = self.paths.projects.join(&name);
+        if folder.join("project.toml").is_file() {
+            return self.open_project(folder);
+        }
+        if !self.save_before_project_transition() {
+            return false;
+        }
+        let result = std::fs::create_dir_all(&folder)
+            .and_then(|()| std::fs::create_dir_all(folder.join("samples")))
+            .map_err(|e| format!("{}: {e}", folder.display()))
+            .and_then(|()| {
+                session::save_project(&folder.join("project.toml"), &session::Session::default())
+            });
+        if let Err(e) = result {
+            log::error!("{e}");
+            self.post_notice(Level::Error, (e, Instant::now()));
+            return false;
+        }
+        self.open_project(folder)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
