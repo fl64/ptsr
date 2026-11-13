@@ -48,3 +48,5 @@ The Help screen move passed 148 TUI tests and `task check`. All 820 ANSI file na
 The FX screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
 
 The Files screen and project picker move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.
+
+The Chop screen move passed 148 TUI tests and `task check`. All 820 ANSI file names and bytes match the base.

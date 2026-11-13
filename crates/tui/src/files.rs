@@ -2,6 +2,8 @@
 
 use super::*;
 
+/// The project picker of Ctrl+P (11), drawn over the whole body in place of the screen
+/// (as [`PathPickerView`] takes the rows of the Paths tab in place of theirs).
 pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> Paragraph<'static> {
     let mut lines = vec![title(
         vec![Span::styled(" PROJECTS ", Style::new().fg(BG).bg(TEXT))],
