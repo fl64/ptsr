@@ -59,136 +59,26 @@ Release acceptance uses the three styles that the owner selected in V1.
 These plans guide the agent, like `docs/VISION.md`. They are not requirements.
 Requirements come only from `openspec/specs/` and the active change.
 Each change starts with an OpenSpec proposal, design, spec deltas and tasks.
-Follow `AGENTS.md`: one change at a time, specifications before code, a test for each scenario, atomic commits and a successful `task check`.
+Follow `AGENTS.md`: one change at a time, specifications before code, a test for each scenario, atomic commits, local checks, and green CI.
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-08)
+## Current status (2026-11-14)
 
-- Change 82 was merged in [PR #3](https://github.com/fl64/ptsr/pull/3). The owner accepted
-  all remaining checks. It is archived in
-  `openspec/changes/archive/2026-11-03-82-shared-fx-screen`.
-- The owner requested `plan/controller-first-patterns` for 84, 84a and 85 as a branch exception.
-  Closure of 85 and work on 86–86a later shared `86-screen-registry` and
-  [PR #5](https://github.com/fl64/ptsr/pull/5). The owner accepted, archived and merged 85–86a on 2026-11-04.
-  Squash commit: `5ef415f8`. New implementation changes use separate branches.
-  Push and PR need a separate request.
-- The owner accepted keymap cleanup 83a. Its archive commit is `2b084d1`.
-  Archive: `openspec/changes/archive/2026-11-03-83a-keymap-cleanup/`.
-  The shipped map has Alt+R mic, Ctrl+G normalize and H / Shift+H hits.
-  U/O change banks. J/L change values. Tab changes assignment order. Ctrl+C copies a pad.
-  The owner accepted without completing the manual checks in section 83a of `docs/LIVE-CHECKS.md`.
-  This acceptance does not imply a physical SMC-PAD or listening pass.
-- The owner checked and accepted input parity 84 on 2026-11-03. It is archived in
-  `openspec/changes/archive/2026-11-03-84-input-parity/`, based on `2b084d1`. Its paired
-  input tests cover the approved routing and release fixes, the Chop pad playback
-  line, fixed LISTEN and F2 PLAY badges. Physical-controller checks remain unverified.
-  Callback benchmark peaks above the 50% budget target remain unresolved.
-- The owner accepted report-only change 84a on 2026-11-03. It is archived in
-  `openspec/changes/archive/2026-11-03-84a-benchmark-report/`.
-  It was inserted before 85 after the benchmark investigation. Wall and thread CPU times,
-  estimated gaps, exceedance counts and empty-call overhead are now reported. The sound,
-  workload, 50% target and existing wall p99 exit checks stay unchanged. Scheduler delays
-  were observed, but slow-core CPU spikes remain open. No hardware pass is implied.
-- The owner accepted and archived report-only change 84b for automatic local overrun records.
-  Archive: `openspec/changes/archive/2026-11-05-84b-benchmark-attribution/`.
-  It follows the 84a report, without changing sound processing, workload or exit gates.
-  Generic code, tests, instructions and anonymized verification summaries can enter Git.
-  Raw CSV files, detailed machine logs and identifying local paths stay local.
-  This diagnostic does not close the callback maximum-budget gate or activate 87.
-- The owner accepted input modes 85 on 2026-11-03. It is archived in
-  `openspec/changes/archive/2026-11-03-85-input-modes/`. Implementation and offline checks are complete.
-  It shares
-  pad handling and MIDI state, fixes controller-command order and deferred releases,
-  and separately fixes mixed Chop holds and late direct notifications. The dispatch
-  move is behavior-neutral. Keys, profiles, saved data and the callback stay unchanged.
-  The three 85 WAV files and separate owner passes are in section 85 of
-  `docs/LIVE-CHECKS.md`. This is overall acceptance, not individual listening results.
-  Physical-controller checks remain unverified, and separate WAV listening remains unreported.
-- The owner accepted the screen registry (86) on 2026-11-04.
-  Its archive is `openspec/changes/archive/2026-11-04-86-screen-registry/` on `86-screen-registry`.
-  Implementation is complete at `a186fbb`. Commit `e90543c` records offline verification.
-  The registry keeps existing screen identity, help, bindings and FX rules for valid input.
-  Invalid shared MIDI state has a separate, specified correction in `a186fbb`.
-  It rejects new actions without losing original releases or pending-input order.
-  Section 86 of `docs/LIVE-CHECKS.md` records evidence and separate keyboard, controller and listening checks.
-  This is overall acceptance, not individual keyboard, physical-controller or WAV listening results.
-  Earlier callback peaks and slow-core CPU spikes remain unresolved. That acceptance did not activate 87.
-- The owner accepted and archived legacy folder migration removal (86a) in merged PR #5.
-  Archive: `openspec/changes/archive/2026-11-04-86a-remove-legacy-migration/`.
-- The owner accepted and archived save retry (86b), safe project transitions (86c) and portable chops (86d) without the manual passes.
-  Archives: `openspec/changes/archive/2026-11-05-86b-save-retry/`,
-  `openspec/changes/archive/2026-11-05-86c-safe-project-switch/` and
-  `openspec/changes/archive/2026-11-05-86d-portable-chops/`.
-  Keyboard, physical-controller and listening results remain unverified. Callback maxima above 50% remain unresolved.
-  The save-safety sequence is complete. 84b and 86b–86d merged in [PR #9](https://github.com/fl64/ptsr/pull/9) on 2026-11-05.
-  That combined PR was an explicit exception to separate change branches.
-- The owner requested `87-status-badges` on 2026-11-05 and approved its specification step and local signed-off commits.
-  The owner accepted 87 on 2026-11-07 and authorized archive, checks and squash merge in [PR #10](https://github.com/fl64/ptsr/pull/10).
-  Archive: `openspec/changes/archive/2026-11-07-87-status-badges/`.
-  It covers existing mode badges, pad marks, notices and F1 Messages, values, input status, questions and an offline screen catalogue.
-  The owner approved the specification defaults and the first implementation file plan.
-  The behavior-neutral preparation is complete: 12 screen snapshot methods are in `crates/app/src/view.rs`.
-  Shared title badges now identify existing modes, with compact edit-page names and compound placement labels.
-  Settings keeps its title visible when MIDI rows scroll. PLAY and LISTEN keep their widths. Source-specific input priorities stay unchanged.
-  Pad corners now show placement targets, existing replacement questions and planned slice numbers. Yellow mode frames retain pad state and bank identity.
-  Runtime notices share levels, visible-time lifetimes, priority and latest-50 history.
-  F1 opens Help first. Tab/Shift+Tab selects Messages, with levels, origins and wrapped text.
-  Up/Down and PageUp/PageDown scroll Messages. F1/Esc closes help without changing the work through those local controls.
-  Each result keeps its keyboard, actual device or system origin. Startup acknowledgement and silent successful autosave stay unchanged.
-  A new press acknowledges only the Error that a frame showed. Releases and repeated knob values do not acknowledge it.
-  Offline notice and save-priority regressions pass. The owner accepted step 4.3.
-  F1 navigation retains parameter pages and banks behind help. Existing pad routes and higher-priority input remain unchanged.
-  Help and Messages share the owner-accepted stable frame.
-  Applied values now use a shared one-second popup with object labels and numeric range bars.
-  Pickup, refusals, scope-limit messages and editor priority retain their behavior.
-  Input-source state now keeps connection identities and original receipt times across production routes.
-  Old connections cannot activate a new connection. Delayed delivery does not extend the original deadline.
-  Project changes keep source identities and deadlines.
-  Source feedback does not change actions, acknowledgements, velocities or release ownership.
-  Shared status keeps recording seconds, permanent KB, the last used controller number, actual audio data, master and project details.
-  Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
-  A permanent `*` is dim when saved and yellow when pending. `Save failed` remains explicit.
-  Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
-  The incomplete SMC-PAD example uses `.toml.example` and is not a working profile.
-  Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
-  Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
-  Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.
-  Text overlays now remove intersecting kitty pictures before text output and restore the current wave afterward. Unoccluded pictures stay unchanged.
-  `task screens` now checks the screen/mode matrix and writes deterministic ANSI files at both supported sizes.
-  The files stay local under `renders/screens/`. Real kitty composition still needs a manual check.
-  Active-delta coverage now checks test declarations and their attached scenario descriptions.
-  Documentation now links catalogue files and separate keyboard, controller, graphics and listening procedures.
-  Overall acceptance does not establish individual keyboard, physical-controller, kitty or listening results. Unreported checks remain unverified.
-  Earlier callback maximum-budget failures remain unresolved.
-  Sound, factory bindings and saved formats stay unchanged. Generic controller confirmation remains in 88.
-  Closure order: owner acceptance, archive in the same PR, checks, then squash merge. Keep the branch after merge.
-- The owner accepted `87a-copy-names` on 2026-11-07 after the short keyboard check.
-  Archive: `openspec/changes/archive/2026-11-07-87a-copy-names/`. The main pad-assignment specification contains its requirements.
-  Copies use one `(copy N)` marker and the smallest free number across all current banks.
-  Manual canonical markers have the same meaning. The target's current name stays occupied until replacement succeeds.
-  Existing names, sample files, sound, controls and saved formats stay unchanged.
-  The owner reported success for repeated copies, a copy of a copy, numbered names and silent placement.
-  Remaining keyboard checks, physical-controller checks, separate listening and callback maximum-budget limits remain open.
-  The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
-  Work stays in the main repository folder. Change 88 is not active.
-- The owner deferred 88 on 2026-11-07 until a MIDI device is available for live checks.
-  Do not start it now. Recorded MIDI tests cannot establish the physical-controller result.
-  Later input prerequisites remain.
-- Transport 95 is archived and merged in [PR #13](https://github.com/fl64/ptsr/pull/13).
-  It implements the audio-frame clock, project tempo, metronome, shared controls and visible clock state.
-  Format 4 saves tempo and metronome preference, not running position. Patterns are not implemented.
-  Individual keyboard, physical-controller and listening results remain unverified.
-  Start 96 from this implementation, not from the older 95 sketch in the imported plans.
-- The owner deferred separate sound-quality work until a separate request and chose pattern playback next.
-  Callback investigation 94a is no longer a separate prerequisite before transport or patterns.
-  Historical callback maximum-budget failures remain unresolved. Existing checks and benchmark limits stay mandatory.
-  Diagnosis of the reported Chop-start click remains deferred. Its cause is unknown.
-  The owner removed the universal fade requirement. Keep mute groups off / 1–8 and manual assignments unchanged.
-- Change 83 is superseded as a plan by 91. Keep its deferred artifacts as source material
-  until 91 carries the useful parts and removes the old folder.
-- The SMC-PAD port, preset, relative encoding and lights still need measurements on the
-  owner's Linux machine. Reference maps are not hardware acceptance.
+The [archives](../../openspec/changes/archive/) hold earlier change history. Keep open manual
+checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpec numbers yet.
+
+| Change | State | Open owner check |
+| --- | --- | --- |
+| 121 `split-modules` | Archived and merged | None for this refactor. |
+| 122 `ui-quiet-words` | Archived and merged | Keyboard, controller, and screen checks remain in `LIVE-CHECKS.md`. |
+| 123 `pattern-view-polish` | Waiting for the owner in [PR #8](https://github.com/fl64/ptsr/pull/8) | Check both catalogue sizes, keyboard and raw MIDI step edits, and local `renders/123-step-add.wav`. |
+| `repo-fast-checks` | Merged in [PR #15](https://github.com/fl64/ptsr/pull/15). `master` requires Rust for merge. | None for sampler behavior. |
+| `denormals` | Planned after 123 and `repo-fast-checks` | Review the silence render and callback measurements. Keep 94a open. |
+| `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
+| `pads-source-view` | Planned after `pattern-screen`. The plan is in [PR #16](https://github.com/fl64/ptsr/pull/16). | Check voice heads, sample rows, the mini pattern, and pad edit pages at both sizes. |
+| `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
+| `key-consistency` | Planned | Check bank keys, Files folder-up, and moved-key notices. |
 
 ## The goal of the owner
 
