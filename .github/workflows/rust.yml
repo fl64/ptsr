@@ -1,0 +1,55 @@
+name: Rust
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{github.event.pull_request.number}}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Read the pull request head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{github.event.pull_request.head.sha}}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev libjack-jackd2-dev
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Install test tools
+        run: |
+          curl --fail --location --silent --show-error --retry 3 https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.152/cargo-nextest-0.9.152-x86_64-unknown-linux-gnu.tar.gz | sudo tar -xz -C /usr/local/bin cargo-nextest
+          curl --fail --location --silent --show-error --retry 3 https://github.com/go-task/task/releases/download/v3.40.1/task_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin task
+          cargo install cargo-deny --version 0.20.2 --locked
+      - name: Check Rust format
+        run: cargo fmt --all --check
+      - name: Check Rust warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check dependency licenses
+        run: cargo deny check licenses
+      - name: Test check scripts
+        run: python3 -B -m unittest discover -s scripts -p test_test_changed.py && python3 -B -m unittest discover -s scripts -p test_bench_if_changed.py && python3 -B -m unittest discover -s scripts -p test_ci_bench_compare.py
+      - name: Run all tests
+        run: task test:full
+      - name: Check screen catalogue
+        run: task screens
+      - name: Compare callback benchmark
+        env:
+          BASE_SHA: ${{github.event.pull_request.base.sha}}
+          HEAD_SHA: ${{github.event.pull_request.head.sha}}
+          BENCH_LABEL: ${{contains(github.event.pull_request.labels.*.name, 'bench')}}
+        run: python3 -B scripts/ci_bench_compare.py --base "$BASE_SHA" --head "$HEAD_SHA" --label "$BENCH_LABEL"
