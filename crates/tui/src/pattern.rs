@@ -193,8 +193,8 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         );
         return;
     }
-    let base = if count == 0 { 0 } else { usable / count };
-    let extra = if count == 0 { 0 } else { usable % count };
+    let base = usable.checked_div(count).unwrap_or(0);
+    let extra = usable.checked_rem(count).unwrap_or(0);
     let widths = (0..count)
         .map(|offset| base + ((offset + 1) * extra / count - offset * extra / count))
         .collect::<Vec<_>>();
