@@ -72,3 +72,8 @@ Compact pattern controls SHALL expose bars, quantize and strength on every curre
 **Reason**: The owner chose quantize on capture. A playback quantize moved hits that were already in place.
 
 **Migration**: "Quantize applies when a hit is captured" and "Playback plays saved ticks" replace it. The program does not convert old projects. A saved tick plays as it is.
+
+## RENAMED Requirements
+
+- FROM: `### Requirement: Pattern view is independent of playback quantize`
+- TO: `### Requirement: Pattern view is independent of capture quantize`
