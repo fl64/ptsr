@@ -4697,26 +4697,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_same_whole_file_asked_nothing() {
-        let mut p = super::pads::Pads::default();
-        let kick = std::path::PathBuf::from("/m/kick.wav");
-        p.file[0] = Some(kick.clone());
-        p.region[0] = super::Region::WHOLE;
-        assert!(super::same_whole_sound(&p, 0, &kick));
-        // a slice of the same file is another sound: the question stays
-        p.region[0] = super::Region {
-            start: 100,
-            end: 400,
-        };
-        assert!(!super::same_whole_sound(&p, 0, &kick));
-        // another file is another sound
-        assert!(!super::same_whole_sound(
-            &p,
-            0,
-            std::path::Path::new("/m/snare.wav")
-        ));
-    }
+    include!("spec_sync_tests.rs");
 
     #[test]
     fn a_recording_becomes_a_stereo_sample_or_is_dropped_as_silence() {

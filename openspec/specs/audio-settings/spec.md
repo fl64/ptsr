@@ -16,6 +16,10 @@ The system SHALL let the owner select an output device from the available ones o
 - **WHEN** the selected output device has one channel
 - **THEN** both channels of the program go to it, no sound goes to other devices
 
+#### Scenario: JACK is not available right now
+- **WHEN** the config already has `backend = "jack"` and the sound server is not running
+- **THEN** the device row says that JACK is not available right now. It does not ask the owner to change the correct config.
+
 ### Requirement: Input device selection
 The system SHALL let the owner select an input device and show the input signal level on the settings screen. The input device is linked while the settings screen is open, so the meter moves, and unlinked when the screen is left, unless a microphone recording runs.
 

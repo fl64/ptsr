@@ -37,3 +37,19 @@ Long names lose complete words before `…` when a word fits the field. If one w
 - Should the clip time use wall-clock time? Default: elapsed session time. It does not depend on clock changes.
 - Should the compact Pitch Gate summary appear at zero pitch? Default: hide it there. The panel and F1 still show the saved state.
 - Should 122 reassign unused body rows at 80x26? Default: leave geometry to `screen-layouts` so this wording change stays small.
+
+## Owner acceptance and deferred labels
+
+The owner accepted change 122 on 2026-11-14 after the manual check. The owner knew that
+four old labels remain. This acceptance does not claim a separate controller or listening
+result for each checklist item.
+
+- `No A1 · Ctrl+R record A1` remains in the Pads strip. `pattern-screen` owns its replacement.
+- `PG on: needs linked slice` remains in the Pitch Gate panel and F1. The current 122
+  specification permits this text. `pads-context-lane` owns its later replacement.
+- `scope pad 1` remains in the pad inspector. The Pads help already says `edit: this pad`.
+  `pads-context-lane` owns the inspector label.
+- `CLOCK` remains a help group. `compact-help` owns the group name.
+
+The later changes must add their own spec deltas and tests for these labels. Do not claim
+that 122 changed them.

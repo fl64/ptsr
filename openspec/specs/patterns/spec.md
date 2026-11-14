@@ -1,7 +1,7 @@
 # patterns Specification
 
 ## Purpose
-Play a saved pad rhythm through the project beat clock. Keep raw timing, exact loop boundaries and manual playing independent of interface redraws.
+Play a saved pad rhythm through the project beat clock. Keep saved timing, exact loop boundaries and manual playing independent of interface redraws.
 
 ## Requirements
 
@@ -28,21 +28,21 @@ Each raw hit SHALL contain an integer tick from 0â€“245759, absolute pad from 0â
 
 ### Requirement: Quantize rounding and collisions
 
-The nearest grid midpoint SHALL choose the later line. Fractional output ticks SHALL round to the nearest integer, with half choosing the later tick. Same-pad hits at the same compiled tick SHALL play once. The higher velocity SHALL win, then the longer gate length, then the earlier raw row. Raw rows SHALL NOT merge.
+At capture, the nearest grid midpoint SHALL choose the later line. Fractional placed ticks SHALL round to the nearest integer, with half choosing the later tick. Same-pad hits at the same saved tick SHALL play once. The higher velocity SHALL win, then the longer gate length, then the earlier saved row. Saved rows SHALL NOT merge during playback.
 
 #### Scenario: Pattern midpoint and collision rules are deterministic
-- **WHEN** raw hits lie at exact grid midpoints or compile onto the same pad and tick
+- **WHEN** captured hits lie at exact grid midpoints or saved hits share a pad and tick
 - **THEN** rounding follows the later-line rule and each collision uses the specified winner
 - **AND** different pads on that tick retain their separate hits
 
 ### Requirement: Hidden hits survive loop shortening
 
-Playback SHALL exclude raw hits at or beyond the current loop length before quantization. These raw hits SHALL remain saved and return when the loop grows. Only included hits that quantize to the loop end SHALL wrap to tick zero.
+Playback SHALL exclude saved hits at or beyond the current loop length. These hits SHALL remain saved and return when the loop grows. At capture, a hit placed at the loop end SHALL wrap to tick zero before save. Shortening the loop SHALL NOT wrap hidden hits into the start.
 
 #### Scenario: Pattern shortening cannot wrap hidden hits into the start
 - **WHEN** a two-bar pattern shortens to one bar with hits before, on and after tick 3840
-- **THEN** hits on and after tick 3840 stay saved but do not play or quantize into the start
-- **AND** growing back restores them, while an included hit quantized to the seam plays at tick zero once
+- **THEN** hits on and after tick 3840 stay saved but do not play or wrap into the start
+- **AND** growing back restores them, while a hit captured at the seam plays at tick zero once
 
 ### Requirement: Pattern timing uses audio frames
 
@@ -415,26 +415,26 @@ Transport Stop SHALL close the current pass before resetting position. Audio los
 - **THEN** the recoverable take finishes at the last coherent accepted tick with a warning
 - **AND** known gates close and saving or exit can continue without a fabricated audio acknowledgement
 
-### Requirement: Pattern view is independent of playback quantize
+### Requirement: Pattern view is independent of capture quantize
 
-The view SHALL support 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T and 1/64, with 1/16 as the default. View steps SHALL follow this order of cell size, and each finer step SHALL have a smaller cell. Playback Off SHALL NOT remove view cells. View changes SHALL preserve raw rows, quantize, strength, velocities, Gate lengths, dirty state and Undo history. Viewing absent A1 SHALL NOT create it.
+The view SHALL support 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T and 1/64, with 1/16 as the default. View steps SHALL follow this order of cell size, and each finer step SHALL have a smaller cell. Recording Quantize Off SHALL NOT remove view cells. View changes SHALL preserve saved rows, quantize, strength, velocities, Gate lengths, dirty state and Undo history. Viewing absent A1 SHALL NOT create it.
 
 #### Scenario: Pattern view divisions preserve the take
-- **WHEN** each view division shows patterns at every playback grid and strengths 0, 50 and 100
-- **THEN** raw rows and playback settings remain unchanged and Off still has a readable view
+- **WHEN** each view division shows patterns captured at every quantize grid and strengths 0, 50 and 100
+- **THEN** saved rows and recording settings remain unchanged and Off still has a readable view
 - **AND** changing the view or inspecting absent A1 creates no edit or history entry
 
 ### Requirement: Pattern cells retain source event identity
 
-Each visible raw row SHALL occupy the half-open view cell containing its compiled playback tick. Hidden rows SHALL remain excluded before quantize. A visible seam-wrapped row SHALL appear at loop start. Off-grid positions and multiple source rows SHALL remain distinguishable, including quantize collisions. The view SHALL NOT merge raw rows.
+Each visible saved row SHALL occupy the half-open view cell containing its saved tick. Rows beyond the current loop length SHALL stay hidden. A seam-wrapped saved row SHALL appear at loop start. Off-grid positions and multiple saved rows SHALL remain distinguishable, including same-tick collisions. The view SHALL NOT merge saved rows.
 
 #### Scenario: Pattern cells show off-grid events and collisions
-- **WHEN** off-grid same-pad rows share a cell or compile onto one tick
-- **THEN** the cell reports their multiplicity and keeps each raw row in playback-tick, raw-tick and original-row order
-- **AND** no raw row changes merely because the view groups it
+- **WHEN** off-grid same-pad saved rows share a cell or tick
+- **THEN** the cell reports their multiplicity and keeps each row in saved-tick and original-row order
+- **AND** no saved row changes merely because the view groups it
 
 #### Scenario: Pattern view preserves hidden rows and the loop seam
-- **WHEN** a loop shortens with hidden rows and a visible last-tick row quantizes to the seam
+- **WHEN** a loop shortens with hidden rows and a visible row captured at the seam
 - **THEN** only the visible seam row appears at loop start and hidden rows remain saved but absent from cells
 - **AND** growing the loop restores the hidden rows at their corresponding positions
 
@@ -530,7 +530,7 @@ Playback SHALL play each visible row at its saved tick. It SHALL NOT quantize th
 
 ### Requirement: A1 overview shows every bank in one vertical list
 
-The A1 overview SHALL arrange all eight banks in one vertical list. Each shown bank SHALL keep its 16 pad rows in pad order. Each row SHALL show the pad key, the pad name and the visible events at the selected view division. The view SHALL use compiled playback ticks without changing saved raw hits. It SHALL keep hidden raw hits hidden and show visible seam hits at the loop start.
+The A1 overview SHALL arrange all eight banks in one vertical list. Each shown bank SHALL keep its 16 pad rows in pad order. Each row SHALL show the pad key, the pad name and the visible events at the selected view division. The view SHALL use saved ticks without changing saved rows. It SHALL keep hidden rows hidden and show saved seam hits at the loop start.
 
 #### Scenario: Overview shows all pad rows and source events
 - **WHEN** A1 has hits on several pads and banks, including off-grid hits and two source hits in one cell
@@ -538,9 +538,9 @@ The A1 overview SHALL arrange all eight banks in one vertical list. Each shown b
 - **AND** each occupied cell shows its event type and count without merging source hits or changing the take
 
 #### Scenario: Overview filters hidden hits before seam wrapping
-- **WHEN** A1 has a hidden row beyond its shortened length and a visible row that quantizes to the seam
+- **WHEN** A1 has a hidden row beyond its shortened length and a visible row captured at the seam
 - **THEN** the hidden row does not appear in any overview cell
-- **AND** the visible seam row appears once at the loop start without changing the raw rows
+- **AND** the visible seam row appears once at the loop start without changing saved rows
 
 ### Requirement: Overview follows the shared view division and bank
 

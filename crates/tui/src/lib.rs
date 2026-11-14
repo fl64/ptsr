@@ -1697,9 +1697,9 @@ mod tests {
         }
     }
 
-    /// Scenario "The Chop slice line keeps each value whole".
+    /// Scenarios "The Chop slice line keeps each value whole" and "Labeled slice line".
     #[test]
-    fn the_chop_slice_line_keeps_each_value_whole() {
+    fn labeled_slice_line() {
         let wave = vec![0.5; 400];
         for (w, h) in [(80, 26), (120, 40)] {
             for edit in [false] {
@@ -6349,21 +6349,7 @@ mod tests {
         assert!(text(width as u16 - 1)[1].contains("PgUp PgDn turn"));
     }
 
-    #[test]
-    fn bank_glyphs_mirror_the_pad_grid() {
-        // every pad lit: two full glyphs
-        assert_eq!(bank_glyphs(0xFFFF), "⣿⣿");
-        // nothing lit: two blank glyphs keep the row aligned
-        assert_eq!(bank_glyphs(0), "\u{2800}\u{2800}");
-        // pad 1 (row 0, col 0): top-left dot of the first glyph
-        assert_eq!(bank_glyphs(1), "\u{2801}\u{2800}");
-        // pad 4 (row 1, col 0): second dot of the left column
-        assert_eq!(bank_glyphs(1 << 4), "\u{2802}\u{2800}");
-        // pad 5 (row 1, col 1): second dot of the right column
-        assert_eq!(bank_glyphs(1 << 5), "\u{2810}\u{2800}");
-        // pad 8 (row 1, col 3): second dot of the right column of the second glyph
-        assert_eq!(bank_glyphs(1 << 7), "\u{2800}\u{2810}");
-    }
+    include!("bank_glyph_scenario_test.rs");
 
     /// 16 idle pads, pad 6 (Q) selected, bank 1.
     fn idle_pads() -> Pads {
@@ -6832,7 +6818,7 @@ mod tests {
     }
 
     #[test]
-    fn one_slice_is_said_in_plain_words() {
+    fn one_slice_in_plain_words() {
         let pads = Pads {
             pattern: None,
             overview: None,
