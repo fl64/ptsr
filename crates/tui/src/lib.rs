@@ -5346,7 +5346,7 @@ mod tests {
             }
         }
     }
-
+    /// Scenario "The playhead does not take the cursor" (chopping).
     #[test]
     fn chop_screen_shows_markers_cursor_and_slice_pads() {
         let wave: Vec<f32> = (0..4000).map(|i| (i % 1000) as f32 / 1000.0).collect();
@@ -7593,7 +7593,7 @@ mod tests {
         assert!(bars(0.05) > 0, "speaking moves it");
         assert!(bars(0.5) > bars(0.05), "louder, longer");
     }
-
+    /// Scenario "JACK is not available right now" (audio-settings).
     #[test]
     fn settings_say_honestly_when_jack_is_down() {
         let st = Settings {

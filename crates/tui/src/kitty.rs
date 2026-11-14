@@ -315,6 +315,7 @@ mod tests {
         }
     }
 
+    /// Scenario "The picture does not blink" (chopping).
     #[test]
     fn update_sends_only_what_changed() {
         let cell = (4, 8);

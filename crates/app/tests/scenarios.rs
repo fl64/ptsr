@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -86,14 +87,28 @@ fn test_names(code: &str) -> Vec<(String, String)> {
     out
 }
 
+fn project_tests() -> &'static BTreeSet<(String, String)> {
+    static TESTS: OnceLock<BTreeSet<(String, String)>> = OnceLock::new();
+    TESTS.get_or_init(|| {
+        let mut sources = Vec::new();
+        files(&root().join("crates"), "rs", &mut sources);
+        sources
+            .iter()
+            .flat_map(|path| test_names(&fs::read_to_string(path).unwrap()))
+            .collect()
+    })
+}
+
+fn named_test(scenario: &str) -> bool {
+    let name = snake(scenario);
+    let description = scenario.to_lowercase();
+    project_tests()
+        .iter()
+        .any(|(test, header)| test.contains(&name) || header.contains(&description))
+}
+
 #[test]
 fn active_delta_scenarios_name_real_tests() {
-    let mut sources = Vec::new();
-    files(&root().join("crates"), "rs", &mut sources);
-    let tests: Vec<_> = sources
-        .iter()
-        .flat_map(|path| test_names(&fs::read_to_string(path).unwrap()))
-        .collect();
     let mut missing = Vec::new();
     for change in fs::read_dir(root().join("openspec/changes"))
         .unwrap()
@@ -107,10 +122,7 @@ fn active_delta_scenarios_name_real_tests() {
             continue;
         }
         for (spec, scenario) in scenarios(&directory) {
-            let named = tests.iter().any(|(name, description)| {
-                name.contains(&snake(&scenario)) || description.contains(&scenario.to_lowercase())
-            });
-            if !named {
+            if !named_test(&scenario) {
                 missing.push(format!(
                     "{scenario} ({}/{spec})",
                     change.file_name().to_string_lossy()
@@ -149,20 +161,13 @@ fn test_name_audit_requires_a_real_test_header() {
 
 #[test]
 fn every_scenario_names_its_test() {
-    let mut sources = Vec::new();
-    files(&root().join("crates"), "rs", &mut sources);
-    let code: String = sources
-        .iter()
-        .map(|f| fs::read_to_string(f).unwrap().to_lowercase())
-        .collect();
-    let named = |s: &str| code.contains(&s.to_lowercase()) || code.contains(&snake(s));
     let skip = untested();
     let all = scenarios(&root().join("openspec/specs"));
     assert!(all.len() > 400, "the specs were read: {}", all.len());
 
     let missing: Vec<String> = all
         .iter()
-        .filter(|(_, s)| !named(s) && !skip.contains(s))
+        .filter(|(_, s)| !named_test(s) && !skip.contains(s))
         .map(|(spec, s)| format!("{s} ({spec})"))
         .collect();
     assert!(
@@ -175,7 +180,7 @@ fn every_scenario_names_its_test() {
     let names: BTreeSet<&str> = all.iter().map(|(_, s)| s.as_str()).collect();
     let stale: Vec<&String> = skip
         .iter()
-        .filter(|s| !names.contains(s.as_str()) || named(s))
+        .filter(|s| !names.contains(s.as_str()) || named_test(s))
         .collect();
     assert!(
         stale.is_empty(),

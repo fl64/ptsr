@@ -1694,6 +1694,52 @@ fn value_drive() -> Drive {
     drive
 }
 
+/// Scenario "A tap is fine, holding is coarse" (editing).
+#[test]
+fn a_tap_is_fine_holding_is_coarse() {
+    let mut drive = value_drive();
+    drive.tap(KeyCode::Enter, M::NONE);
+    drive.app.pads.param = pads::Param::Attack;
+    drive.tap(KeyCode::Char('l'), M::NONE);
+    assert_eq!(drive.app.pads.attack_ms[0], 1);
+    drive.key(KeyCode::Char('l'), M::NONE, KeyEventKind::Repeat);
+    drive.frame();
+    assert_eq!(drive.app.pads.attack_ms[0], 6);
+}
+
+/// Scenario "Enter closes too" (editing).
+#[test]
+fn enter_closes_too() {
+    let mut drive = value_drive();
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.edit);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(!drive.app.edit);
+    drive.tap(KeyCode::Enter, M::NONE);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(!drive.app.edit);
+}
+
+/// Scenario "The knobs turn the page" (pad-playback).
+#[test]
+fn the_knobs_turn_the_page() {
+    let mut drive = value_drive();
+    drive.tap(KeyCode::Enter, M::NONE);
+    drive.app.pads.param = pads::Param::Decay;
+    drive.app.takeover.response = input::midi::Response::Pickup;
+    assert_eq!(drive.app.pads.page().0, "ENV");
+    value_knob(&mut drive, "pad.decay", 127);
+    assert_eq!(drive.app.pads.decay_ms[0], 0, "the distant knob waits");
+    assert!(drive.app.pickup.is_some());
+    value_knob(&mut drive, "pad.decay", 0);
+    value_knob(&mut drive, "pad.decay", 64);
+    assert!(
+        drive.app.pads.decay_ms[0] > 0,
+        "the caught knob turns decay"
+    );
+    assert_eq!(drive.app.pads.page().0, "ENV");
+}
+
 pub(super) fn value_knob(drive: &mut Drive, action: &str, value: u8) -> Frame {
     assert!(input::midi::is_param_action(action), "{action}");
     let group = if drive.app.screen == Screen::Fx && action.starts_with("edit.param_") {

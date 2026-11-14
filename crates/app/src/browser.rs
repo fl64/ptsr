@@ -501,6 +501,58 @@ impl App {
 mod tests {
     use super::*;
 
+    /// Scenario "Favorite folder" (sample-loading).
+    #[test]
+    fn favorite_folder_survives_restart_and_has_one_marked_entry() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let root = std::env::temp_dir().join(format!("ptsr-favorite-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("breaks")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        let config_path = root.join("config.toml");
+        let mut app = crate::tests::test_app();
+        app.user_path = Some(config_path.clone());
+        app.browser = Browser::new(Some(root.clone()));
+        app.screen = input::Screen::Files;
+        app.browser.selected = app
+            .browser
+            .entries
+            .iter()
+            .position(|entry| entry.name == "breaks")
+            .unwrap();
+        let (keymap, _) = input::Keymap::from_toml(crate::DEFAULT_KEYMAP).unwrap();
+        let action = keymap
+            .resolve_in(
+                input::Screen::Files,
+                false,
+                &KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            )
+            .unwrap();
+        assert_eq!(action, input::Action::BrowserFavorite);
+        app.apply(action);
+
+        let loaded = crate::config::load_from(&config_path);
+        assert_eq!(loaded.error, None);
+        assert_eq!(loaded.config.browser.favorites, [root.join("breaks")]);
+        let mut restarted = Browser::new(Some(root.join("other")));
+        restarted.favorites = loaded.config.browser.favorites;
+        restarted.open(root.join("other"), None);
+        assert_eq!(restarted.entries[0].name, "breaks");
+        assert_eq!(restarted.entries[0].favorite, Some(root.join("breaks")));
+        restarted.enter();
+        assert_eq!(restarted.dir, root.join("breaks"));
+        restarted.parent();
+        let matches: Vec<_> = restarted
+            .entries
+            .iter()
+            .filter(|entry| entry.name == "breaks")
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].favorite, Some(root.join("breaks")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn folders_first_audio_only_and_back_to_the_same_folder() {
         let root = std::env::temp_dir().join(format!("ptsr-browser-{}", std::process::id()));
