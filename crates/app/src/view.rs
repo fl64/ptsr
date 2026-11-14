@@ -666,7 +666,7 @@ impl App {
             rows.push((
                 "Pattern overview".into(),
                 if self.pattern_view.edit {
-                    "F7 leaves step correction. Pads select or remove one hit without sound."
+                    "Step controls move the time column. A pad selects its row and adds or removes its hit without sound."
                 } else {
                     "Rows with hits and the selected pad show by default. The row toggle shows all rows. Pads still play."
                 }
@@ -674,13 +674,13 @@ impl App {
             ));
             rows.push((
                 "A1 marks".into(),
-                "Square: hit. Tilde: off-grid hit. Number: several hits. Dim/normal/bright: velocity 1-42/43-84/85-127. Light plate: playback. Cyan cell: edit cursor."
+                "Square: hit. Tilde: off-grid hit. Number: several hits. Dim/normal/bright: velocity 1-42/43-84/85-127. Light plate: playback. Cyan column: time cursor. Arrow: selected pad row."
                     .into(),
             ));
             if self.pattern_view.edit {
                 rows.push((
                     "Step correction".into(),
-                    "Use the listed controls to select a step and an event. A pad adds at an empty cell or removes its selected hit. Edit pads stay silent. Undo restores."
+                    "Use the shown step keys or learned MIDI step controls to move the time column. A pad selects its row and adds or removes only its hit at that step. An arrow marks the selected pad row. Use the event keys when several hits share one cell. Edit pads stay silent. Undo restores."
                         .into(),
                 ));
             }
@@ -1179,13 +1179,17 @@ impl App {
                                         fine: false,
                                     },
                                 ],
-                                "step",
+                                "time step",
                             ),
                         ],
                     },
                     tui::HelpGroup {
                         name: "TARGET",
-                        items: vec![bank, item(&[Action::ParamPrev, Action::ParamNext], "event")],
+                        items: vec![
+                            bank,
+                            ("pads".into(), "add/remove".into()),
+                            item(&[Action::ParamPrev, Action::ParamNext], "event"),
+                        ],
                     },
                     tui::HelpGroup {
                         name: "A1",

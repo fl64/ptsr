@@ -380,6 +380,7 @@ impl super::App {
         {
             return;
         }
+        self.pads.bank = abs / super::PADS_PER_BANK;
         self.pads.selected = abs % super::PADS_PER_BANK;
         let Ok(model) = self.step_model() else {
             return;
@@ -430,9 +431,11 @@ impl super::App {
                         super::Level::Done,
                         (
                             format!(
-                                "A1: added one hit on pad {}. Undo removes it.",
+                                "A1: bank {} pad {} step {}: added one hit. Undo removes it.",
+                                self.pads.bank + 1,
                                 super::pads::PAD_KEYS[abs % super::PADS_PER_BANK]
-                                    .to_ascii_uppercase()
+                                    .to_ascii_uppercase(),
+                                self.pattern_view.cursor_cell + 1,
                             ),
                             std::time::Instant::now(),
                         ),
@@ -469,8 +472,10 @@ impl super::App {
                 super::Level::Done,
                 (
                     format!(
-                        "A1: removed one hit from pad {}. Undo restores it.",
-                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase()
+                        "A1: bank {} pad {} step {}: removed one hit. Undo restores it.",
+                        self.pads.bank + 1,
+                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase(),
+                        self.pattern_view.cursor_cell + 1,
                     ),
                     std::time::Instant::now(),
                 ),

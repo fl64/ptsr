@@ -242,9 +242,21 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 Style::new().fg(DIM),
             ));
         }
+        let style = if view.edit_cursor == Some(cell) {
+            Style::new()
+                .fg(if view.playhead == Some(cell) {
+                    PLATE
+                } else {
+                    BG
+                })
+                .bg(CYAN)
+                .bold()
+        } else {
+            Style::new().fg(DIM)
+        };
         numbers.push(Span::styled(
             format!("{:^cell_width$}", cell % bar_cells + 1),
-            Style::new().fg(DIM),
+            style,
         ));
     }
     frame.render_widget(
@@ -333,14 +345,21 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 .get(row)
                 .map_or('?', |pad| pad.key.to_ascii_uppercase());
             let name = view.names.get(abs).map_or("empty", String::as_str);
+            let selected = current && row == pads.selected;
             let prefix = format!(" {key} ");
             let text = format!(
                 "{prefix}{}",
-                clip_name(name, label_width.saturating_sub(Span::raw(&prefix).width()))
+                clip_name(
+                    name,
+                    label_width.saturating_sub(Span::raw(&prefix).width() + usize::from(selected))
+                )
             );
             let text_width = Span::raw(text.as_str()).width();
-            let text = format!("{text}{}", " ".repeat(label_width - text_width));
-            let selected = current && row == pads.selected;
+            let text = if selected {
+                format!("{text}{}▶", " ".repeat(label_width - text_width - 1))
+            } else {
+                format!("{text}{}", " ".repeat(label_width - text_width))
+            };
             let mut spans = vec![
                 Span::styled(if current { "┃" } else { "│" }, style),
                 Span::styled(text, Style::new().fg(if selected { CYAN } else { TEXT })),
@@ -371,10 +390,15 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 } else {
                     Style::new()
                 };
-                let cell_style = if view.edit_cursor == Some(cell) && selected {
-                    Style::new().fg(BG).bg(CYAN).bold()
-                } else if view.edit_cursor == Some(cell) {
-                    Style::new().fg(WHITE).bg(BEAT_BG).bold()
+                let cell_style = if view.edit_cursor == Some(cell) {
+                    Style::new()
+                        .fg(if view.playhead == Some(cell) {
+                            PLATE
+                        } else {
+                            BG
+                        })
+                        .bg(CYAN)
+                        .bold()
                 } else if view.playhead == Some(cell) {
                     Style::new().fg(BG).bg(PLATE).bold()
                 } else {
@@ -387,16 +411,9 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                     shade.fg(color)
                 };
                 let left = (cell_width - 1) / 2;
-                let cursor = view.edit_cursor == Some(cell) && selected;
-                let mut before = " ".repeat(left);
-                let mut after = " ".repeat(cell_width - left - 1);
-                if cursor {
-                    before.replace_range(..1, "[");
-                    after.replace_range(after.len() - 1.., "]");
-                }
-                spans.push(Span::styled(before, cell_style));
+                spans.push(Span::styled(" ".repeat(left), cell_style));
                 spans.push(Span::styled(glyph.to_string(), cell_style));
-                spans.push(Span::styled(after, cell_style));
+                spans.push(Span::styled(" ".repeat(cell_width - left - 1), cell_style));
             }
             spans.push(Span::raw(" ".repeat(right_pad)));
             spans.push(Span::styled(if current { "┃" } else { "│" }, style));

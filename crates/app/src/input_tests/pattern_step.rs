@@ -187,6 +187,41 @@ fn correction_help_shows_effective_undo_key_and_notice_names_action() {
     assert!(!drive.last_notice().text.contains("Ctrl+Z"));
 }
 
+/// Scenario "Correction help separates step from pad target".
+#[test]
+fn correction_help_names_time_controls_and_pad_toggle() {
+    let mut drive = Drive::new();
+    drive.app.pads.pattern = Some(pattern(vec![]));
+    drive.tap(KeyCode::F(5), M::NONE);
+    drive.tap(KeyCode::F(7), M::NONE);
+    let groups = drive
+        .app
+        .pattern_help_groups(&drive.keymap, vec![], None, true);
+    let step = groups
+        .iter()
+        .find(|group| group.name == "STEP EDIT")
+        .unwrap();
+    assert!(
+        step.items
+            .iter()
+            .any(|(key, label)| { label == "time step" && key.contains('J') && key.contains('L') })
+    );
+    let target = groups.iter().find(|group| group.name == "TARGET").unwrap();
+    assert!(
+        target
+            .items
+            .iter()
+            .any(|(key, label)| key == "pads" && label == "add/remove")
+    );
+    let full = drive
+        .app
+        .full_help_recording_keys(&drive.keymap, true, None);
+    assert!(
+        full.iter()
+            .any(|(_, text)| { text.contains("time column") && text.contains("selected pad row") })
+    );
+}
+
 /// Scenario "Step addition Undo restores the prior A1".
 #[test]
 fn step_addition_undo_removes_one_row_and_waits_for_newer_pad_edit() {
@@ -536,6 +571,46 @@ fn a_single_hit_on_another_pad_needs_only_one_press() {
     drive.tap(KeyCode::Char('2'), M::NONE);
     assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits.len(), 2);
     assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits[0][1], 0);
+}
+
+/// Scenario "Step pad press changes only its own row".
+#[test]
+fn step_pad_hit_selects_its_row_and_toggles_only_its_hit() {
+    let mut drive = Drive::new();
+    drive.app.pads.pattern = Some(pattern(vec![[240, 0, 100, 0]]));
+    drive.tap(KeyCode::F(5), M::NONE);
+    drive.tap(KeyCode::F(7), M::NONE);
+    drive.tap(KeyCode::Char('l'), M::NONE);
+
+    let added = drive.tap(KeyCode::Char('q'), M::NONE);
+    assert!(added.commands().is_empty());
+    assert_eq!(drive.app.pattern_view.cursor_cell, 1);
+    assert_eq!(drive.app.pads.selected, 4);
+    assert_eq!(
+        drive.app.pads.pattern.as_ref().unwrap().hits,
+        vec![[240, 0, 100, 0], [240, 4, 80, 0]]
+    );
+    for text in ["bank 1", "pad Q", "step 2", "one hit"] {
+        assert!(drive.last_notice().text.contains(text), "{text}");
+    }
+
+    drive.tap(KeyCode::Char('q'), M::NONE);
+    assert_eq!(
+        drive.app.pads.pattern.as_ref().unwrap().hits,
+        vec![[240, 0, 100, 0]]
+    );
+    assert_eq!(drive.app.pattern_view.cursor_cell, 1);
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits.len(), 2);
+
+    drive.bytes(PAD_PORT, &[0x90, 40, 67]);
+    drive.bytes(PAD_PORT, &[0x90, 40, 0]);
+    assert!(drive.frame().commands().is_empty());
+    assert_eq!(drive.app.pads.selected, 4);
+    assert_eq!(
+        drive.app.pads.pattern.as_ref().unwrap().hits,
+        vec![[240, 0, 100, 0]]
+    );
 }
 
 #[test]

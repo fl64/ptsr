@@ -118,3 +118,55 @@ fn overview_velocity_levels_keep_event_marks() {
         }
     }
 }
+
+/// Scenario "Step cursor shows one time across pad rows".
+#[test]
+fn step_cursor_shows_one_time_across_pad_rows() {
+    for (width, height) in [(80u16, 26u16), (120, 40)] {
+        let (page, label_width) = overview_page_layout(width as usize, 4, 16);
+        let mut rows = vec![vec![PatternCell::default(); page]; 128];
+        rows[0][1].count = 1;
+        rows[1][2].count = 1;
+        let view = PatternOverview {
+            header: "view 1/16".into(),
+            rows,
+            names: vec!["sample".into(); 128],
+            active_pads: [0b11, 0, 0, 0, 0, 0, 0, 0],
+            hide_empty: true,
+            beat_cells: 4,
+            playhead: Some(2),
+            first_cell: 0,
+            total_cells: 16,
+            edit_cursor: Some(1),
+            event_choice: None,
+            event_velocity: None,
+        };
+        let mut pads = idle_pads();
+        pads.selected = 1;
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|frame| pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &view))
+            .unwrap();
+        let buffer = term.backend().buffer();
+        let cursor_x = (label_width + 1 + 3) as u16;
+        for y in [2, 4, 5] {
+            assert_eq!(buffer[(cursor_x, y)].bg, CYAN, "{width}x{height}, row {y}");
+            assert_eq!(buffer[(cursor_x + 2, y)].bg, CYAN);
+        }
+        assert_eq!(buffer[(label_width as u16, 5)].symbol(), "▶");
+        assert_eq!(buffer[(cursor_x, 5)].symbol(), " ");
+        assert_eq!(buffer[(cursor_x + 2, 5)].symbol(), " ");
+        assert_eq!(buffer[(cursor_x + 4, 4)].bg, PLATE);
+
+        let mut overlap = view.clone();
+        overlap.playhead = Some(1);
+        term.draw(|frame| {
+            pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &overlap)
+        })
+        .unwrap();
+        let buffer = term.backend().buffer();
+        for y in [2, 4, 5] {
+            assert_eq!(buffer[(cursor_x + 1, y)].bg, CYAN);
+            assert_eq!(buffer[(cursor_x + 1, y)].fg, PLATE);
+        }
+    }
+}

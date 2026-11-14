@@ -17,7 +17,7 @@
 - [x] 3.1 Add a silent pad hit to an empty cell with keyboard and raw MIDI velocity. Keep Gate and OneShot lengths, repeat and release behavior, and original sound ownership.
 - [x] 3.2 Keep explicit choice for multiple hits. Give each add or remove one Undo step and verified ordered publication. Test full capacity, stale work, project change, save refusal, and reload.
 - [x] 3.3 Add the named catalogue fixtures and a verified offline step-add render. Compare the unchanged catalogue areas with the base.
-- [ ] 3.4 Mark the time column across all rows and the pressed pad as the row target. Name bank, pad, and step in feedback. Add keyboard, raw MIDI, TUI, and catalogue tests at both sizes.
+- [x] 3.4 Mark the time column across all rows and the pressed pad as the row target. Name bank, pad, and step in feedback. Add keyboard, raw MIDI, TUI, and catalogue tests at both sizes.
 
 ## 4. Publish and hand over
 
@@ -35,3 +35,5 @@ The velocity step passed 152 TUI tests, 25 pattern-view tests, Clippy, and the f
 The addition step passed keyboard and raw MIDI tests for velocity, repeats, release, Gate length, stale edits, and the 4096-row limit. Undo, save refusal, reload, and ordered audio publication passed. The offline render test covers silence, level, timing within one sample, finite output, and clicks. The callback benchmark stayed below 50 % at 32 voices. The catalogue has 830 frames. Four new frames show velocity and addition at both sizes. No old frame is missing. The 30 changed old frames are A1 overview or step frames.
 
 The final `task check` passed with 1,107 app tests and the 32-voice benchmark. `task build`, `task screens`, OpenSpec validation, and the file-growth gate passed. Early screen runs found a clipped `triplet` title and an old hint assertion. A later screen run passed with both corrections. The owner trials in `docs/LIVE-CHECKS.md` stay open.
+
+The time-column step passed 26 pattern-step tests, including keyboard and raw MIDI pad toggles, Undo, saved hits, and held Gate tails. All 153 TUI tests passed. The cursor and playhead keep separate marks, including when they meet in one cell. All 24 screen tests passed. The disk catalogue has 662 ANSI files, two more than the published PR head. Only 34 existing A1 overview and step frames changed. Clippy passed for App and TUI. The owner accepted change 123 on 2026-11-14 without separate manual results.

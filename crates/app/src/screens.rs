@@ -91,6 +91,7 @@ enum Mode {
     PatternStepOffGrid,
     PatternStepMultiple,
     PatternStepCursor,
+    PatternStepTarget,
     PatternStepAdd,
     PatternStepSafety,
     PatternErasePads,
@@ -183,6 +184,7 @@ impl Mode {
         Self::PatternStepOffGrid,
         Self::PatternStepMultiple,
         Self::PatternStepCursor,
+        Self::PatternStepTarget,
         Self::PatternStepAdd,
         Self::PatternStepSafety,
         Self::PatternErasePads,
@@ -275,6 +277,7 @@ impl Mode {
             Self::PatternStepOffGrid => "pattern-step-off-grid",
             Self::PatternStepMultiple => "pattern-step-multiple",
             Self::PatternStepCursor => "pattern-step-cursor",
+            Self::PatternStepTarget => "pattern-step-target",
             Self::PatternStepAdd => "pattern-step-add",
             Self::PatternStepSafety => "pattern-step-safety",
             Self::PatternErasePads => "pattern-erase-pads",
@@ -308,6 +311,7 @@ impl Mode {
             | Self::PatternStepOffGrid
             | Self::PatternStepMultiple
             | Self::PatternStepCursor
+            | Self::PatternStepTarget
             | Self::PatternStepAdd
             | Self::PatternStepSafety
             | Self::PatternErasePads
@@ -457,6 +461,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-step-off-grid",
                         "pattern-step-multiple",
                         "pattern-step-cursor",
+                        "pattern-step-target",
                         "pattern-step-add",
                         "pattern-step-safety",
                         "pattern-erase-pads",
@@ -816,6 +821,7 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternStepOffGrid
         | Mode::PatternStepMultiple
         | Mode::PatternStepCursor
+        | Mode::PatternStepTarget
         | Mode::PatternStepAdd
         | Mode::PatternStepSafety => add_pattern_step(&mut app, case.mode),
         Mode::PatternErasePads => {
@@ -965,6 +971,7 @@ fn add_pattern_step(app: &mut App, mode: Mode) {
     app.pattern_view.cursor_cell = match mode {
         Mode::PatternStepEmpty => 3,
         Mode::PatternStepCursor => 20,
+        Mode::PatternStepTarget => 1,
         Mode::PatternStepAdd => 3,
         Mode::PatternStepOffGrid => 1,
         _ => 0,
@@ -974,6 +981,15 @@ fn add_pattern_step(app: &mut App, mode: Mode) {
     }
     if mode == Mode::PatternStepMultiple {
         app.pads.selected = 0;
+    }
+    if mode == Mode::PatternStepTarget {
+        app.pads.selected = 4;
+        app.pads
+            .pattern
+            .as_mut()
+            .unwrap()
+            .hits
+            .push([240, 4, 90, 0]);
     }
     if mode == Mode::PatternStepSafety {
         app.pads.bank = 1;
@@ -1314,6 +1330,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternStepOffGrid
         | Mode::PatternStepMultiple
         | Mode::PatternStepCursor
+        | Mode::PatternStepTarget
         | Mode::PatternStepAdd
         | Mode::PatternStepSafety => require("STEP EDIT · A1"),
         Mode::Help | Mode::Messages => {
@@ -1459,6 +1476,14 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("added one hit");
         }
         Mode::PatternStepTriplet => require("triplet"),
+        Mode::PatternStepTarget => {
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains(" Q empty") && row.contains('▶')),
+                "{} has no selected Q row",
+                case.name()
+            );
+        }
         Mode::PatternStepOffGrid => require("~"),
         Mode::PatternStepMultiple => require(" 2"),
         Mode::PatternStepSafety => require("Save failed"),
@@ -2442,6 +2467,7 @@ L="none"
                     | Mode::PatternStepOffGrid
                     | Mode::PatternStepMultiple
                     | Mode::PatternStepCursor
+                    | Mode::PatternStepTarget
                     | Mode::PatternStepAdd
                     | Mode::PatternStepSafety
             ) && !app
@@ -2682,13 +2708,14 @@ L="none"
         Mode::PatternOverviewSafety,
     ];
 
-    const STEP_MODES: [Mode; 8] = [
+    const STEP_MODES: [Mode; 9] = [
         Mode::PatternStepEmpty,
         Mode::PatternStepStraight,
         Mode::PatternStepTriplet,
         Mode::PatternStepOffGrid,
         Mode::PatternStepMultiple,
         Mode::PatternStepCursor,
+        Mode::PatternStepTarget,
         Mode::PatternStepAdd,
         Mode::PatternStepSafety,
     ];
