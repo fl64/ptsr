@@ -289,6 +289,10 @@ The system SHALL, before any step that loses what lies on a pad and cannot be un
 - **WHEN** a step can be taken back with undo (cuts, the plan itself)
 - **THEN** it is done without a question
 
+#### Scenario: Same sound again
+- **WHEN** the owner puts on a pad the same whole file that the pad already plays
+- **THEN** no question appears and the pad does not change
+
 ### Requirement: Chop screen readability
 The system SHALL show on the chop screen, without cutting text: the plan summary in full, the selected slice both on the waveform and, while the pads are shown, on the grid of the listen mode, empty pads in the assign mode as only "empty", and in the overwrite question each pad as "bank B, pad K: what → new".
 
@@ -304,6 +308,14 @@ The system SHALL show on the chop screen, without cutting text: the plan summary
 - **WHEN** the plan puts slice 3 on pad 3 of bank 1 that holds "kick" and the owner applies it
 - **THEN** the question says "bank 1, pad 3: kick → slice 3"
 
+#### Scenario: One slice in plain words
+- **WHEN** a file is not cut yet and the chop screen is open
+- **THEN** the header says "1 slice", not "1 slices"
+
+#### Scenario: Labeled slice line
+- **WHEN** the owner selects a slice on the chop screen
+- **THEN** its line names the slice, start and length with their units
+
 ### Requirement: Equal parts go on after a restart
 The system SHALL step equal parts on from the current number of slices when it is one of 2, 4, 8, 16, 32, also for a chop restored from the session.
 
@@ -317,6 +329,10 @@ The system SHALL let the owner zoom the wave view twice in or out around the cur
 #### Scenario: Zoom in and out
 - **WHEN** the owner presses zoom-in twice and then zoom-out
 - **THEN** the wave is a quarter of its full width and then back at the half of it; the cursor stays at the same place of the picture
+
+#### Scenario: The view follows
+- **WHEN** the cursor walks off the edge of the view
+- **THEN** the view shifts so the cursor is visible again
 
 ### Requirement: Chop region
 The system SHALL let the owner set the start and the end of the playable region from the cursor with the region actions and clear it back to the whole sample; equal parts and playback cover only the region; the region is at least one frame long.

@@ -55,6 +55,14 @@ The system SHALL provide 16 pads in a 4×4 grid and 8 banks numbered 1–8; the 
 - **WHEN** the owner presses Ctrl+3
 - **THEN** bank 3 becomes active; the plain 3 key still plays pad 3
 
+#### Scenario: See what a bank holds
+- **WHEN** bank 1 has sounds on pads 1 and Q and the other banks are empty
+- **THEN** the bank row shows two lit dots for bank 1 and no lit dots for the other banks
+
+#### Scenario: Fill follows a change
+- **WHEN** the owner puts a sound on pad A of bank 5 or removes it
+- **THEN** the bank row updates bank 5 at once on every screen that shows the row
+
 ### Requirement: Pads from the keyboard
 The system SHALL play pads from the physical keys `1 2 3 4 / Q W E R / A S D F / Z X C V` in the English (US) and Russian layouts, passing both the press and the release; Shift on press gives full velocity.
 
