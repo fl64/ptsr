@@ -12,6 +12,9 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - Each change goes in its own branch and a pull request to `master`. Do not commit to `master` directly.
 - After each completed task, make a commit with a clear message.
 - **Everything you agree on with the owner goes into the spec at once.** A decision from the conversation (behavior, UX, keys, knobs, texts) goes into the proposal/design/spec/tasks of the active change before the code. Write a question without an answer in design.md, section "Open questions", together with the option you took by default.
+- After an owner decision changes behavior, update `docs/plans/` and `docs/VISION.md` in the same change when that decision affects them.
+- After owner acceptance, archive the change in the same PR or in an immediate repository closure PR. Do not start another behavior change while a merged change remains unarchived, unless the owner allows it.
+- Run `task specs:sync` when you archive a change. The check compares archived scenarios with the main specs and warns about merged changes that still need an archive.
 - **Commit after each step, and keep commits atomic**: one commit = one logical edit. Do not mix these in one commit: different steps, specs and code of other tasks, an AGENTS.md edit and code. An artifact edit without code is a separate commit. Code with the spec of its own step is one commit. Complete a step only after its checks pass and you commit it.
 - Before a code commit, run `cargo fmt --all --check`, Clippy with `--all-targets -- -D warnings` for the changed crates, and tests for the changed behavior and its callers. Run the recorded keyboard and raw MIDI tests for input changes. For a TUI drawing change, run its TUI tests and compare the ANSI screen catalogue with the base. For a sound or audio-thread change, run the required offline render checks and the callback benchmark before the commit.
 - Before a text-only commit, run the checks for that text: `task openspec:check` for OpenSpec files and STE lint for English text. Do not run Rust tests only because text changed. Run `cargo deny check licenses` when dependencies or license rules change. Fix a failed required check before the related commit.
@@ -22,6 +25,11 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - Prefer the `asd-ste100` skill for new or revised English documentation. Use STE-flavored mode for descriptions and Strict mode for procedures. Run its `scripts/ste-lint.py` on the changed text. Review the results without a full dictionary compliance claim. Keep the original meaning and technical names. Do not rewrite unrelated documents only for style.
 - `docs/VISION.md` and `docs/plans/` are guides, not requirements. Requirements are only in `openspec/specs/` and in active changes. A deferred draft does not authorize code.
 - Do not increase the line count of `crates/app/src/main.rs` or `crates/tui/src/lib.rs`. Put new code in modules. The required CI check compares each file with the PR base. The owner can approve an explicit exception by applying the `allow-large-file-growth` label to that PR.
+
+## Manual spec review
+
+- CI cannot decide if `docs/plans/` or `docs/VISION.md` contradict the specs after an owner decision. Update the affected guides in the same change as that decision.
+- CI cannot prove that every item in a proposal's "What Changes" list is true on the screen or in the sound. Before the owner check, walk that list and the named screen catalogue entries. Report every item that is not done.
 
 ## Branch and pull request names
 
