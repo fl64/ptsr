@@ -160,6 +160,22 @@ class SpecSyncTests(unittest.TestCase):
         )
         self.assertEqual(self.audit(merged)[1], [])
 
+    def test_separate_checks_keep_warnings_nonblocking(self) -> None:
+        self.delta("2026-11-01-01-play", """## ADDED Requirements
+### Requirement: Play
+#### Scenario: Missing hit
+""")
+        self.main_spec("# patterns Specification\n")
+        self.write("openspec/changes/122-words/proposal.md", "# Proposal\n")
+        merged = [check_spec_sync.MergedCommit(
+            "feat(tui): show words [122] (#7)", self.now - timedelta(days=3)
+        )]
+        errors, count = check_spec_sync.check_archived(self.root)
+        warnings = check_spec_sync.check_unarchived(self.root, merged, self.now)
+        self.assertEqual((len(errors), count), (1, 1))
+        self.assertEqual(len(warnings), 1)
+        self.assertTrue(warnings[0].startswith("::warning "))
+
     def test_merged_range_includes_change_identifier(self) -> None:
         self.assertTrue(check_spec_sync.title_has_id("feat(engine): patterns [96-98k]", "98c"))
         self.assertFalse(check_spec_sync.title_has_id("feat(engine): patterns [96-98k]", "99"))

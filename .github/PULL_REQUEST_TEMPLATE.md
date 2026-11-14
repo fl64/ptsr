@@ -34,10 +34,14 @@ Do not include style-tool reports, harmless harness skips or routine git checks.
 - `task build`: not run.
 - `openspec validate --all --strict --no-interactive`: not run.
 
-### Listening artifacts
+## How to check by hand
+
+<!-- Give exact steps for the owner. For a text-only change, state why no program check applies. -->
+
+## Renders
 
 <!-- For sound changes, list new or changed WAV files and what to hear. State attached or local.
-Otherwise, state that sound stays unchanged and link manual checks in docs/LIVE-CHECKS.md.
+Otherwise, give one sentence that explains why this change needs no new render.
 Do not repeat old render lists or acceptance history. State relevant unverified manual checks in one sentence. -->
 
 ## Checklist
