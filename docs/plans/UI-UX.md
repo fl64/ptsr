@@ -56,21 +56,21 @@ The implementation checks below qualify the visual findings where the code alrea
 ## 3. Structure first
 
 The catalogue at `477a169` is the base for this review. F5 and F7 still open modes inside
-Pads. Change 123 already addresses the overview rows, step widths, velocity levels, and
-empty-step input. The owner has not accepted 123 yet. Do the structural changes after the
-owner accepts 123 and before
-`screen-layouts`, `mixer-view`, and the 0.4b glitch kit. Give each change its own next free
-OpenSpec number, branch, PR, specifications, tests, and catalogue fixtures at 120×40 and
-80×26. Accept one change before the next.
+Pads. Change 123 addresses the overview rows, step widths, velocity levels, and empty-step
+input. Before acceptance, check 123 against the required `Specs` job, the scenario tests,
+and the current PR body template. The owner has not accepted 123 yet. Do the structural
+changes after that acceptance and before `screen-layouts`, `mixer-view`, and the 0.4b glitch
+kit. Give each change its own next free OpenSpec number, branch, PR, specifications, scenario
+tests, and catalogue fixtures at 120×40 and 80×26. Accept one change before the next.
 
 Keep the current visual language, fixed zones, key-shaped pad grid, right pad inspector,
 Chop screen, question layout, and filter curve. Files and FX still leave much of the body
 empty. `screen-layouts` owns that work after the structural changes.
 
-Before the 122 archive, finish its remaining labels: `PG on: needs linked slice`,
-`No A1 · Ctrl+R record A1`, `CLOCK`, and `scope pad 1`. The 122 design must name any label
-that moves to a later change instead. Check the named catalogue entries before the owner
-check. Do not treat the 122 proposal as complete while its stated labels remain visible.
+The archive of change 122 is complete. Its design assigns `No A1 · Ctrl+R record A1` to
+`pattern-screen`, `PG on: needs linked slice` and `scope pad 1` to `pads-context-lane`, and
+`CLOCK` to `compact-help`. Check the affected catalogue entries when each change reaches
+owner review.
 
 ### 3.1 `pattern-screen`
 
@@ -146,6 +146,8 @@ reserves space in the layout spec before a later feature uses it.
 
 ### 4.1 `ui-quiet-and-words`
 
+Change 122 is complete. Section 3 assigns its deferred labels to later changes.
+
 Make empty pads quiet: show a muted `—`, with no wave line and no `empty` word.
 Keep a pad-mode corner mark, including `◎`, on an empty pad when it has meaning.
 
@@ -166,6 +168,8 @@ At 80×26, give otherwise empty rows to the grid or right column.
 Add tests for the labels, empty-pad mode marks, clipping state, and used rows.
 
 ### 4.2 `pattern-view-polish`
+
+Change 123 is in owner review. Apply the current `Specs` and scenario checks before acceptance.
 
 Show pads with hits plus the selected pad by default, in bank order, with bank labels.
 `Alt+H` shows every row. Keep this toggle visible in help and the catalogue.
@@ -239,10 +243,9 @@ The PR must map each old rule to its new place. Do not lose a rule or change beh
 Use this proposed sequence across the two plans. Complete and accept one change before the next.
 The order within [FX-FILTERS.md](FX-FILTERS.md) and sections 3 and 4 above stays fixed.
 
-1. Do `split-modules` before large screen changes and before `pad-bus`.
-   It is a separate behavior-neutral change and PR.
-2. Complete the remaining 122 labels before its archive. Accept `pattern-view-polish`
-   after the owner checks 123.
+1. `split-modules` (121) and the 122 UI words change are complete.
+2. Review 123 with the current spec and PR checks. Accept `pattern-view-polish` after the
+   owner checks its screen catalogue, input paths, and render.
 3. Do `pattern-screen`, `pads-context-lane`,
    `compact-help`, and `key-consistency` in that order.
 4. Do `style-doc-split` after the glossary exists and before `screen-layouts`.
