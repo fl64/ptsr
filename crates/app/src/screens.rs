@@ -3033,8 +3033,14 @@ L="none"
         let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/screens");
         std::fs::create_dir_all(&directory).unwrap();
         for case in &cases {
-            let (bytes, buffer) = render(*case, &keymap);
+            let now = Instant::now();
+            let (bytes, buffer) = render_at(*case, &keymap, now);
             check_frame(*case, &buffer);
+            assert!(
+                bytes == render_at(*case, &keymap, now).0,
+                "{} is not deterministic",
+                case.name()
+            );
             assert!(
                 !bytes.windows(3).any(|bytes| bytes == b"\x1b_G"),
                 "ANSI is not a kitty-composition test"
@@ -3071,19 +3077,5 @@ L="none"
             pads::page_names().len(),
             "every current pad edit page needs a fixture"
         );
-    }
-
-    #[test]
-    fn catalogue_bytes_are_repeatable_without_devices_or_project_writes() {
-        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
-        for case in matrix() {
-            let now = Instant::now();
-            assert_eq!(
-                render_at(case, &keymap, now).0,
-                render_at(case, &keymap, now).0,
-                "{} is not deterministic",
-                case.name()
-            );
-        }
     }
 }
