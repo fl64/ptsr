@@ -1,0 +1,14 @@
+[profile.default]
+# A slow test is reported after ten seconds. A stuck test fails after five minutes.
+slow-timeout = { period = "10s", terminate-after = 30 }
+status-level = "slow"
+final-status-level = "slow"
+
+[test-groups.slow]
+# Long renders and catalogue work use CPU heavily. Limit their overlap.
+max-threads = 4
+
+[[profile.default.overrides]]
+filter = 'test(screens::tests::) + test(input_tests::patterns::) + test(input_tests::badges::) + test(/render/) + test(/offline/) + test(count_in_before_the_first_recorded_beat) + test(input_tests::deferred_release_follows_its_actual_pad_across_modes)'
+test-group = "slow"
+slow-timeout = { period = "30s", terminate-after = 20 }
