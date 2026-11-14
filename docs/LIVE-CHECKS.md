@@ -2816,7 +2816,7 @@ Review the matching `120x40` files. Compare `pads-normal`, `chop-normal`, `files
 
 ## 123: Pattern overview and step addition
 
-Folder: `changes/123-pattern-view-polish`
+Folder: `openspec/changes/archive/2026-11-14-123-pattern-view-polish`
 
 The owner accepted change 123 on 2026-11-14. The owner did not report separate
 keyboard, controller, screen, or listening results. The boxes stay open.

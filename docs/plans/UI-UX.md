@@ -56,11 +56,10 @@ The implementation checks below qualify the visual findings where the code alrea
 ## 3. Structure first
 
 The catalogue at `477a169` is the base for this review. F5 and F7 still open modes inside
-Pads. Change 123 addresses the overview rows, step widths, velocity levels, and empty-step
-input. Before acceptance, check 123 against the required `Specs` job, the scenario tests,
-and the current PR body template. The owner has not accepted 123 yet. Do the structural
-changes after that acceptance and before `screen-layouts`, `mixer-view`, and the 0.4b glitch
-kit. Give each change its own next free OpenSpec number, branch, PR, specifications, scenario
+Pads. The owner accepted change 123, which addresses the overview rows, step widths,
+velocity levels, and empty-step input. Do the structural changes after 123 and before
+`screen-layouts`, `mixer-view`, and the 0.4b glitch kit. Give each change its own next free
+OpenSpec number, branch, PR, specifications, scenario
 tests, and catalogue fixtures at 120×40 and 80×26. Accept one change before the next.
 
 Keep the current visual language, fixed zones, key-shaped pad grid, right pad inspector,
@@ -74,7 +73,7 @@ owner review.
 
 ### 3.1 `pattern-screen`
 
-After the owner accepts 123, make F5 open a separate Pattern screen. Keep view and edit as
+Make F5 open a separate Pattern screen. Keep view and edit as
 modes inside that screen. Show `F5 PATTERN` in the title and show the active mode badge.
 Use Enter to switch between view and edit by default. Free F7 in the keymap and show a
 moved-key notice for one release. Keep pattern data and saved files unchanged.
@@ -215,7 +214,7 @@ Add tests for the labels, empty-pad mode marks, clipping state, and used rows.
 
 ### 4.2 `pattern-view-polish`
 
-Change 123 is in owner review. Apply the current `Specs` and scenario checks before acceptance.
+The owner accepted change 123. Its archive is part of [PR #8](https://github.com/fl64/ptsr/pull/8).
 
 Show pads with hits plus the selected pad by default, in bank order, with bank labels.
 `Alt+H` shows every row. Keep this toggle visible in help and the catalogue.
@@ -290,10 +289,8 @@ Use this proposed sequence across the two plans. Complete and accept one change 
 The order within [FX-FILTERS.md](FX-FILTERS.md) and sections 3 and 4 above stays fixed.
 
 1. `split-modules` (121) and the 122 UI words change are complete.
-2. Finish and merge `repo-fast-checks` before the next behavior change. Review 123 with the
-   current spec and PR checks. Accept `pattern-view-polish` after the owner checks its screen
-   catalogue, input paths, and render.
-3. After acceptance of 123 and the merge of `repo-fast-checks`, do `denormals`. Record this order
+2. The owner merged `repo-fast-checks` and accepted `pattern-view-polish` (123).
+3. Do `denormals` next. Record this order
    in its proposal. Keep the 94a callback peak investigation open until its criteria pass.
 4. Do `pattern-screen`, `pads-source-view` (including `pads-context-lane`),
    `compact-help`, and `key-consistency` in that order.

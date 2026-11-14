@@ -69,9 +69,9 @@ checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpe
 | --- | --- | --- |
 | 121 `split-modules` | Archived and merged | None for this refactor. |
 | 122 `ui-quiet-words` | Archived and merged | Keyboard, controller, and screen checks remain in `LIVE-CHECKS.md`. |
-| 123 `pattern-view-polish` | Waiting for the owner in [PR #8](https://github.com/fl64/ptsr/pull/8) | Check both catalogue sizes, keyboard and raw MIDI step edits, and local `renders/123-step-add.wav`. |
+| 123 `pattern-view-polish` | Accepted and archived in [PR #8](https://github.com/fl64/ptsr/pull/8) | Separate keyboard, controller, screen, and listening results remain open in `LIVE-CHECKS.md`. |
 | `repo-fast-checks` | Merged in [PR #15](https://github.com/fl64/ptsr/pull/15). `master` requires Rust for merge. | None for sampler behavior. |
-| `denormals` | Planned after 123 and `repo-fast-checks` | Review the silence render and callback measurements. Keep 94a open. |
+| `denormals` | Planned next | Review the silence render and callback measurements. Keep 94a open. |
 | `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
 | `pads-source-view` | Planned after `pattern-screen`. The plan is in [PR #16](https://github.com/fl64/ptsr/pull/16). | Check voice heads, sample rows, the mini pattern, and pad edit pages at both sizes. |
 | `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
@@ -177,7 +177,7 @@ ends with the owner's listening and controller or keyboard checks.
 
 ### Phase A — finish and stabilize
 
-1. [123 pattern-view-polish](UI-UX.md#42-pattern-view-polish): owner check and archive.
+1. [123 pattern-view-polish](UI-UX.md#42-pattern-view-polish): accepted and archived.
 2. [denormals](FX-FILTERS.md#41-denormals): no slowdown after reverb and delay tails. Report its effect on 94a.
 3. [metronome-path](FX-FILTERS.md#42-metronome-path): keep the click out of recordings, resampling, and export. Give it its own level.
 4. [master-safety](FX-FILTERS.md#44-master-safety-planned-111): limiter, return level, and mute per FX slot.
