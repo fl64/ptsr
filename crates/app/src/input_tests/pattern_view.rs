@@ -91,17 +91,17 @@ fn overview_empty_bank_switch_and_navigation_keep_a1_unchanged() {
     let modes = drive.app.pads.gate;
     drive.tap(KeyCode::F(5), M::NONE);
     let visible = drive.app.pattern_overview(&drive.keymap);
-    assert!(!visible.hide_empty);
+    assert!(visible.hide_empty);
     assert_ne!(visible.active_pads[0], 0);
     assert_ne!(visible.active_pads[1], 0);
     assert_eq!(visible.active_pads[2], 0, "hidden raw hit is not visible");
     drive.tap(KeyCode::Char('h'), M::ALT);
-    assert!(drive.app.pattern_view.hide_empty_banks);
+    assert!(!drive.app.pattern_view.hide_empty_banks);
     drive.tap(KeyCode::Char('o'), M::NONE);
     drive.tap(KeyCode::Char('o'), M::NONE);
     assert_eq!(drive.app.pads.bank, 2);
     let selected = drive.app.pattern_overview(&drive.keymap);
-    assert!(selected.hide_empty);
+    assert!(!selected.hide_empty);
     assert!(
         selected.rows[32..48]
             .iter()
@@ -109,11 +109,11 @@ fn overview_empty_bank_switch_and_navigation_keep_a1_unchanged() {
             .all(|cell| cell.count == 0)
     );
     drive.tap(KeyCode::Char('h'), M::ALT);
-    assert!(!drive.app.pattern_view.hide_empty_banks);
+    assert!(drive.app.pattern_view.hide_empty_banks);
     drive.tap(KeyCode::F(2), M::NONE);
     drive.tap(KeyCode::Char('h'), M::ALT);
     assert!(
-        !drive.app.pattern_view.hide_empty_banks,
+        drive.app.pattern_view.hide_empty_banks,
         "Pads does not toggle the view"
     );
     assert_eq!(drive.app.pads.pattern, Some(raw));
@@ -137,17 +137,17 @@ fn learned_empty_bank_button_changes_only_visibility() {
     restored.bytes(PAD_PORT, &[0xb0, 93, 127]);
     restored.bytes(PAD_PORT, &[0xb0, 93, 0]);
     restored.frame();
-    assert!(!restored.app.pattern_view.hide_empty_banks);
+    assert!(restored.app.pattern_view.hide_empty_banks);
     restored.tap(KeyCode::F(5), M::NONE);
     restored.bytes(PAD_PORT, &[0xb0, 93, 127]);
     restored.bytes(PAD_PORT, &[0xb0, 93, 0]);
     restored.frame();
-    assert!(restored.app.pattern_view.hide_empty_banks);
+    assert!(!restored.app.pattern_view.hide_empty_banks);
     restored.tap(KeyCode::F(2), M::NONE);
     restored.bytes(PAD_PORT, &[0xb0, 93, 127]);
     restored.bytes(PAD_PORT, &[0xb0, 93, 0]);
     restored.frame();
-    assert!(restored.app.pattern_view.hide_empty_banks);
+    assert!(!restored.app.pattern_view.hide_empty_banks);
     assert_eq!(restored.app.pads.pattern, before);
     assert_eq!(restored.app.pads.gate, modes);
     assert_eq!(restored.app.pads.bank, 0);
@@ -301,7 +301,7 @@ fn overview_help_follows_effective_bindings() {
     let empty = groups
         .iter()
         .flat_map(|group| &group.items)
-        .find(|(_, label)| label == "empty shown")
+        .find(|(_, label)| label == "empty rows hidden")
         .unwrap();
     assert!(empty.0.contains("F7") && !empty.0.contains("Alt H"));
     let rows = drive
@@ -314,8 +314,9 @@ fn overview_help_follows_effective_bindings() {
         .join("\n");
     assert!(
         text.contains("Square: hit")
+            && text.contains("velocity 1-42/43-84/85-127")
             && text.contains("current bank")
-            && text.contains("Empty banks: shown")
+            && text.contains("Empty rows: hidden")
     );
     drive.tap(KeyCode::F(1), M::NONE);
     assert!(drive.app.help_open);

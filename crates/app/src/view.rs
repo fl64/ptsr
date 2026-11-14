@@ -666,21 +666,21 @@ impl App {
             rows.push((
                 "Pattern overview".into(),
                 if self.pattern_view.edit {
-                    "F7 leaves step correction. Pads select or remove one hit without sound."
+                    "Step controls move the time column. A pad selects its row and adds or removes its hit without sound."
                 } else {
-                    "Bank sections form one list. Each shown bank has 16 pad rows. Pads still play."
+                    "Rows with hits and the selected pad show by default. The row toggle shows all rows. Pads still play."
                 }
                 .into(),
             ));
             rows.push((
                 "A1 marks".into(),
-                "Square: hit. Tilde: off-grid hit. Number: several hits. Light plate: playback. Cyan cell: edit cursor."
+                "Square: hit. Tilde: off-grid hit. Number: several hits. Dim/normal/bright: velocity 1-42/43-84/85-127. Light plate: playback. Cyan column: time cursor. Arrow: selected pad row."
                     .into(),
             ));
             if self.pattern_view.edit {
                 rows.push((
                     "Step correction".into(),
-                    "J/L select time. I/K select an event. A pad removes its selected hit. Empty cells add nothing. Ctrl+Z restores."
+                    "Use the shown step keys or learned MIDI step controls to move the time column. A pad selects its row and adds or removes only its hit at that step. An arrow marks the selected pad row. Use the event keys when several hits share one cell. Edit pads stay silent. Undo restores."
                         .into(),
                 ));
             }
@@ -696,7 +696,7 @@ impl App {
                 self.help_bindings(keymap, Action::PatternOverviewEmptyToggle)
                     .join("/"),
                 format!(
-                    "Empty banks: {}. Switch their sections without changing A1.",
+                    "Empty rows: {}. Switch all rows without changing A1.",
                     if self.pattern_view.hide_empty_banks {
                         "hidden"
                     } else {
@@ -1179,13 +1179,17 @@ impl App {
                                         fine: false,
                                     },
                                 ],
-                                "step",
+                                "time step",
                             ),
                         ],
                     },
                     tui::HelpGroup {
                         name: "TARGET",
-                        items: vec![bank, item(&[Action::ParamPrev, Action::ParamNext], "event")],
+                        items: vec![
+                            bank,
+                            ("pads".into(), "add/remove".into()),
+                            item(&[Action::ParamPrev, Action::ParamNext], "event"),
+                        ],
                     },
                     tui::HelpGroup {
                         name: "A1",
@@ -1212,9 +1216,9 @@ impl App {
                         item(
                             &[Action::PatternOverviewEmptyToggle],
                             if self.pattern_view.hide_empty_banks {
-                                "empty hidden"
+                                "empty rows hidden"
                             } else {
-                                "empty shown"
+                                "all rows shown"
                             },
                         ),
                     ],

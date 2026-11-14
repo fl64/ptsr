@@ -54,7 +54,6 @@ impl Division {
     }
 }
 
-#[derive(Default)]
 pub(super) struct State {
     pub division: Division,
     pub overview: bool,
@@ -64,6 +63,23 @@ pub(super) struct State {
     pub cursor_visited: bool,
     pub selected_event: Option<SelectedEvent>,
     pub midi_presses: std::collections::HashSet<(usize, u64)>,
+    pub step_generations: Vec<u64>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            division: Division::default(),
+            overview: false,
+            hide_empty_banks: true,
+            edit: false,
+            cursor_cell: 0,
+            cursor_visited: false,
+            selected_event: None,
+            midi_presses: std::collections::HashSet::new(),
+            step_generations: vec![0; MAX_HITS],
+        }
+    }
 }
 
 pub(super) struct SelectedEvent {
@@ -202,6 +218,7 @@ impl Model {
             if let Some(mark) = rows[pad].get_mut(cell - first) {
                 mark.count += 1;
                 mark.off_grid |= !event.played.tick().is_multiple_of(spacing);
+                mark.max_velocity = mark.max_velocity.max(event.raw.velocity());
             }
         }
         (rows, active)
@@ -337,7 +354,22 @@ impl super::App {
         });
     }
 
-    pub(super) fn step_pad_hit(&mut self, abs: usize) {
+    pub(super) fn step_pad_hit(&mut self, abs: usize, velocity: f32) {
+        if self.edit
+            || self.pads.marking
+            || self.pad_in_hand.is_some()
+            || self.copy_in_hand.is_some()
+            || self.browser.in_hand.is_some()
+        {
+            self.post_notice(
+                super::Level::Warn,
+                (
+                    "Finish the current edit before step correction.".into(),
+                    std::time::Instant::now(),
+                ),
+            );
+            return;
+        }
         if !self.pattern_view.edit
             || self.transport_input_blocked()
             || self.help_open
@@ -348,6 +380,7 @@ impl super::App {
         {
             return;
         }
+        self.pads.bank = abs / super::PADS_PER_BANK;
         self.pads.selected = abs % super::PADS_PER_BANK;
         let Ok(model) = self.step_model() else {
             return;
@@ -383,6 +416,41 @@ impl super::App {
         let target = match events.as_slice() {
             [] => {
                 self.pattern_view.selected_event = None;
+                let expected = self.pads.pattern.clone().unwrap();
+                let tick =
+                    self.pattern_view.cursor_cell as u32 * self.pattern_view.division.spacing();
+                let velocity = (velocity * 127.0).round().clamp(1.0, 127.0) as u8;
+                let gate_ticks = if self.pads.gate[abs] {
+                    self.pattern_view.division.spacing()
+                } else {
+                    0
+                };
+                let result = self.add_step_event(abs, tick, velocity, gate_ticks, &expected);
+                match result {
+                    Ok(true) => self.post_notice(
+                        super::Level::Done,
+                        (
+                            format!(
+                                "A1: bank {} pad {} step {}: added one hit. Undo removes it.",
+                                self.pads.bank + 1,
+                                super::pads::PAD_KEYS[abs % super::PADS_PER_BANK]
+                                    .to_ascii_uppercase(),
+                                self.pattern_view.cursor_cell + 1,
+                            ),
+                            std::time::Instant::now(),
+                        ),
+                    ),
+                    Ok(false) => self.post_notice(
+                        super::Level::Info,
+                        (
+                            "A1 changed: select the cell again.".into(),
+                            std::time::Instant::now(),
+                        ),
+                    ),
+                    Err(error) => {
+                        self.post_notice(super::Level::Error, (error, std::time::Instant::now()))
+                    }
+                }
                 return;
             }
             [event] => Some(*event),
@@ -404,8 +472,10 @@ impl super::App {
                 super::Level::Done,
                 (
                     format!(
-                        "A1: removed one hit from pad {}. Ctrl+Z restores.",
-                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase()
+                        "A1: bank {} pad {} step {}: removed one hit. Undo restores it.",
+                        self.pads.bank + 1,
+                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase(),
+                        self.pattern_view.cursor_cell + 1,
                     ),
                     std::time::Instant::now(),
                 ),
@@ -454,6 +524,7 @@ impl super::App {
                 .edit
                 .then_some(self.pattern_view.cursor_cell),
             event_choice: None,
+            event_velocity: None,
         };
         let Some(raw) = &self.pads.pattern else {
             let keys = self
@@ -526,6 +597,7 @@ impl super::App {
                     .and_then(|choice| events.iter().position(|event| *event == choice.event))
                     .map_or(usize::from(events.len() == 1), |index| index + 1);
                 view.event_choice = Some((index, events.len()));
+                view.event_velocity = (index > 0).then(|| events[index - 1].raw.velocity());
             }
         }
         view
@@ -681,6 +753,11 @@ impl super::App {
                 off_grid: events
                     .iter()
                     .any(|event| !event.played.tick().is_multiple_of(spacing)),
+                max_velocity: events
+                    .iter()
+                    .map(|event| event.raw.velocity())
+                    .max()
+                    .unwrap_or(0),
             })
             .collect();
         strip.all = cells.bank;
@@ -691,6 +768,39 @@ impl super::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Overview velocity levels keep event marks".
+    #[test]
+    fn overview_velocity_levels_keep_event_marks() {
+        let hits = [
+            (0, 1),
+            (240, 42),
+            (480, 43),
+            (720, 84),
+            (961, 85),
+            (1200, 20),
+            (1201, 127),
+        ]
+        .map(|(tick, velocity)| Hit::new(tick, 0, velocity, 0).unwrap());
+        let raw = RawPattern::new(1, Grid::Off, 100, hits.to_vec()).unwrap();
+        let before = raw.clone();
+        let model = Model::new(&raw, None, Division::default()).unwrap();
+        let (rows, _) = model.overview_page_cells(0, 6);
+        assert_eq!(
+            rows[0]
+                .iter()
+                .map(|cell| cell.max_velocity)
+                .collect::<Vec<_>>(),
+            [1, 42, 43, 84, 85, 127]
+        );
+        assert_eq!(
+            rows[0].iter().map(|cell| cell.count).collect::<Vec<_>>(),
+            [1, 1, 1, 1, 1, 2]
+        );
+        assert!(rows[0][4].off_grid);
+        assert!(rows[0][5].off_grid);
+        assert_eq!(raw, before);
+    }
 
     /// Scenario "Overview shows all pad rows and source events".
     #[test]

@@ -1096,7 +1096,7 @@ impl App {
                 if !from_midi {
                     self.silent_pad_keys[local] = true;
                 }
-                self.step_pad_hit(abs);
+                self.step_pad_hit(abs, velocity);
             }
             return None;
         }

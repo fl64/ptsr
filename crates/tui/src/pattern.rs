@@ -2,6 +2,37 @@
 
 use super::*;
 
+fn overview_label_width(width: usize) -> usize {
+    (width * 38 / 100).clamp(28, 48)
+}
+
+pub(super) fn overview_page_layout(
+    width: usize,
+    beat_cells: usize,
+    total: usize,
+) -> (usize, usize) {
+    let beat_cells = beat_cells.max(1);
+    let bar_cells = 4 * beat_cells;
+    let preferred_label = overview_label_width(width);
+    let minimum_label = preferred_label.min(27);
+    let room = width.saturating_sub(minimum_label + 2);
+    // A number can have two digits. Keep a third cell between neighboring numbers.
+    let bars = ((room + 1) / (3 * bar_cells + 4)).min(total.max(bar_cells) / bar_cells);
+    let count = if bars > 0 {
+        bars * bar_cells
+    } else if 3 * (2 * beat_cells) < room {
+        2 * beat_cells
+    } else {
+        beat_cells
+    };
+    let separators = count / beat_cells - 1;
+    let needed = 3 * count + separators;
+    let label = preferred_label
+        .min(width.saturating_sub(needed + 2))
+        .max(minimum_label);
+    (count, label)
+}
+
 pub(super) fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStrip) {
     let total = pattern.cells.len().min(pattern.all.len());
     let beat_cells = pattern.beat_cells.max(1);
@@ -112,7 +143,10 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     let end = (first + count).min(view.total_cells);
     let mut title = if let Some(cursor) = view.edit_cursor {
         let choice = match view.event_choice {
-            Some((index, count)) => format!("event {index}/{count}"),
+            Some((index, count)) => match view.event_velocity {
+                Some(velocity) => format!("event {index}/{count} · vel {velocity}"),
+                None => format!("event {index}/{count}"),
+            },
             None => "empty cell".into(),
         };
         format!(
@@ -168,9 +202,9 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     }
     index.push(Span::styled(
         if view.hide_empty {
-            "empty hidden"
+            "empty rows hidden"
         } else {
-            "empty shown"
+            "all rows shown"
         },
         Style::new().fg(DIM),
     ));
@@ -186,20 +220,17 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         .filter(|offset| (first + offset).is_multiple_of(beat_cells))
         .count();
     let usable = grid_width.saturating_sub(separators);
-    if count > 0 && usable < 2 * count {
+    if count > 0 && usable < 3 * count {
         frame.render_widget(
             Line::from("Widen the terminal to show this view division.").fg(DIM),
             Rect::new(area.x, area.y + 2, area.width, 1),
         );
         return;
     }
-    let base = usable.checked_div(count).unwrap_or(0);
-    let extra = usable.checked_rem(count).unwrap_or(0);
-    let widths = (0..count)
-        .map(|offset| base + ((offset + 1) * extra / count - offset * extra / count))
-        .collect::<Vec<_>>();
+    let cell_width = 3;
+    let right_pad = usable.saturating_sub(cell_width * count);
     let mut numbers = vec![Span::raw(" ".repeat(label_width + 1))];
-    for (offset, &cell_width) in widths.iter().enumerate() {
+    for offset in 0..count {
         let cell = first + offset;
         if offset > 0 && cell.is_multiple_of(beat_cells) {
             numbers.push(Span::styled(
@@ -211,9 +242,21 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 Style::new().fg(DIM),
             ));
         }
+        let style = if view.edit_cursor == Some(cell) {
+            Style::new()
+                .fg(if view.playhead == Some(cell) {
+                    PLATE
+                } else {
+                    BG
+                })
+                .bg(CYAN)
+                .bold()
+        } else {
+            Style::new().fg(DIM)
+        };
         numbers.push(Span::styled(
             format!("{:^cell_width$}", cell % bar_cells + 1),
-            Style::new().fg(DIM),
+            style,
         ));
     }
     frame.render_widget(
@@ -224,12 +267,30 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     let visible = (0..BANKS)
         .filter(|&bank| !view.hide_empty || view.active_pads[bank] != 0 || bank == pads.bank)
         .collect::<Vec<_>>();
+    let shown_rows = |bank: usize| {
+        (0..16)
+            .filter(|&row| {
+                !view.hide_empty
+                    || view.active_pads[bank] & (1 << row) != 0
+                    || (bank == pads.bank && row == pads.selected)
+            })
+            .collect::<Vec<_>>()
+    };
     let selected_pos = visible
         .iter()
         .position(|&bank| bank == pads.bank)
         .unwrap_or(0);
-    let full_sections = (area.height as usize).saturating_sub(3) / 18;
-    let start = selected_pos.saturating_sub(full_sections.saturating_sub(1));
+    let available = (area.height as usize).saturating_sub(3);
+    let mut start = selected_pos;
+    let mut used = shown_rows(pads.bank).len() + 2;
+    while start > 0 {
+        let before = shown_rows(visible[start - 1]).len() + 2;
+        if used + before > available {
+            break;
+        }
+        used += before;
+        start -= 1;
+    }
     let mut y = area.y + 3;
     for &bank in visible.iter().skip(start) {
         if y >= area.bottom() {
@@ -263,7 +324,18 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         );
         y += 1;
 
-        for row in 0..16 {
+        let rows = shown_rows(bank);
+        let row_start = if current {
+            let room = (area.bottom() - y).saturating_sub(1) as usize;
+            let selected = rows
+                .iter()
+                .position(|&row| row == pads.selected)
+                .unwrap_or(0);
+            selected.saturating_sub(room.saturating_sub(1))
+        } else {
+            0
+        };
+        for &row in rows.iter().skip(row_start) {
             if y >= area.bottom() {
                 break;
             }
@@ -273,20 +345,27 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 .get(row)
                 .map_or('?', |pad| pad.key.to_ascii_uppercase());
             let name = view.names.get(abs).map_or("empty", String::as_str);
+            let selected = current && row == pads.selected;
             let prefix = format!(" {key} ");
             let text = format!(
                 "{prefix}{}",
-                clip_name(name, label_width.saturating_sub(Span::raw(&prefix).width()))
+                clip_name(
+                    name,
+                    label_width.saturating_sub(Span::raw(&prefix).width() + usize::from(selected))
+                )
             );
             let text_width = Span::raw(text.as_str()).width();
-            let text = format!("{text}{}", " ".repeat(label_width - text_width));
-            let selected = current && row == pads.selected;
+            let text = if selected {
+                format!("{text}{}▶", " ".repeat(label_width - text_width - 1))
+            } else {
+                format!("{text}{}", " ".repeat(label_width - text_width))
+            };
             let mut spans = vec![
                 Span::styled(if current { "┃" } else { "│" }, style),
                 Span::styled(text, Style::new().fg(if selected { CYAN } else { TEXT })),
             ];
             let cells = view.rows.get(abs);
-            for (offset, &cell_width) in widths.iter().enumerate() {
+            for offset in 0..count {
                 let cell = first + offset;
                 if offset > 0 && cell.is_multiple_of(beat_cells) {
                     spans.push(Span::styled(
@@ -311,27 +390,32 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 } else {
                     Style::new()
                 };
-                let cell_style = if view.edit_cursor == Some(cell) && selected {
-                    Style::new().fg(BG).bg(CYAN).bold()
-                } else if view.edit_cursor == Some(cell) {
-                    Style::new().fg(WHITE).bg(BEAT_BG).bold()
+                let cell_style = if view.edit_cursor == Some(cell) {
+                    Style::new()
+                        .fg(if view.playhead == Some(cell) {
+                            PLATE
+                        } else {
+                            BG
+                        })
+                        .bg(CYAN)
+                        .bold()
                 } else if view.playhead == Some(cell) {
                     Style::new().fg(BG).bg(PLATE).bold()
                 } else {
-                    shade.fg(if glyph == '·' { STEP_EMPTY } else { WHITE })
+                    let color = match mark.map_or(0, |mark| mark.max_velocity) {
+                        0 => STEP_EMPTY,
+                        1..=42 => DIM,
+                        43..=84 => TEXT,
+                        _ => WHITE,
+                    };
+                    shade.fg(color)
                 };
                 let left = (cell_width - 1) / 2;
-                let cursor = view.edit_cursor == Some(cell) && selected;
-                let mut before = " ".repeat(left);
-                let mut after = " ".repeat(cell_width - left - 1);
-                if cursor && cell_width >= 3 {
-                    before.replace_range(..1, "[");
-                    after.replace_range(after.len() - 1.., "]");
-                }
-                spans.push(Span::styled(before, cell_style));
+                spans.push(Span::styled(" ".repeat(left), cell_style));
                 spans.push(Span::styled(glyph.to_string(), cell_style));
-                spans.push(Span::styled(after, cell_style));
+                spans.push(Span::styled(" ".repeat(cell_width - left - 1), cell_style));
             }
+            spans.push(Span::raw(" ".repeat(right_pad)));
             spans.push(Span::styled(if current { "┃" } else { "│" }, style));
             frame.render_widget(Line::from(spans), Rect::new(area.x, y, area.width, 1));
             y += 1;

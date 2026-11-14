@@ -36,7 +36,7 @@ pub use help::{
 };
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
-use pattern::{pattern_overview, pattern_strip};
+use pattern::{overview_page_layout, pattern_overview, pattern_strip};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
 pub use wave::{braille, braille_abs};
@@ -585,6 +585,7 @@ pub struct PadFeedback {
 pub struct PatternCell {
     pub count: usize,
     pub off_grid: bool,
+    pub max_velocity: u8,
 }
 
 /// Where A1 has onsets in the bank row (98): banks with any visible onset, and per bank
@@ -624,13 +625,11 @@ pub struct PatternOverview {
     pub total_cells: usize,
     pub edit_cursor: Option<usize>,
     pub event_choice: Option<(usize, usize)>,
+    pub event_velocity: Option<u8>,
 }
 
 /// Row labels `all` and `pad Q` take this many columns; each beat opens with a space (98i).
 const PATTERN_LABEL: usize = 5;
-fn overview_label_width(width: usize) -> usize {
-    (width * 38 / 100).clamp(28, 48)
-}
 
 /// Cells on one page at `width` columns: the most whole bars that fit (4/4), then half a
 /// bar, then one beat. Each beat takes a leading space and two columns per cell, and each
@@ -653,29 +652,6 @@ pub fn pattern_page_cells(width: usize, beat_cells: usize, total: usize) -> usiz
 
 pub fn pattern_overview_page_cells(width: usize, beat_cells: usize, total: usize) -> usize {
     overview_page_layout(width, beat_cells, total).0
-}
-
-fn overview_page_layout(width: usize, beat_cells: usize, total: usize) -> (usize, usize) {
-    let beat_cells = beat_cells.max(1);
-    let bar_cells = 4 * beat_cells;
-    let preferred_label = overview_label_width(width);
-    let minimum_label = preferred_label.min(27);
-    let room = width.saturating_sub(minimum_label + 2);
-    // A number can have two digits. Keep a third cell between neighboring numbers.
-    let bars = ((room + 1) / (3 * bar_cells + 4)).min(total.max(bar_cells) / bar_cells);
-    let count = if bars > 0 {
-        bars * bar_cells
-    } else if 3 * (2 * beat_cells) < room {
-        2 * beat_cells
-    } else {
-        beat_cells
-    };
-    let separators = count / beat_cells - 1;
-    let needed = 3 * count + separators;
-    let label = preferred_label
-        .min(width.saturating_sub(needed + 2))
-        .max(minimum_label);
-    (count, label)
 }
 
 pub struct Pads {
@@ -1337,6 +1313,7 @@ fn key(k: &str) -> Span<'static> {
 mod tests {
     mod meter;
     mod names;
+    mod pattern_overview;
     use super::*;
 
     #[test]
@@ -1484,6 +1461,7 @@ mod tests {
                 .map(|index| PatternCell {
                     count: usize::from(index % 4 == 0),
                     off_grid: false,
+                    max_velocity: 127,
                 })
                 .collect(),
             all: (0..cells).map(|index| index % 2 == 0).collect(),
@@ -1855,6 +1833,7 @@ mod tests {
                 .map(|index| PatternCell {
                     count: usize::from(index % 64 == 40),
                     off_grid: false,
+                    max_velocity: 127,
                 })
                 .collect(),
             all: vec![false; 256],
@@ -1894,6 +1873,7 @@ mod tests {
                             .map(|index| PatternCell {
                                 count: index % 3,
                                 off_grid: index % 5 == 4,
+                                max_velocity: 127,
                             })
                             .collect(),
                         all: (0..total).map(|index| index % 2 == 0).collect(),

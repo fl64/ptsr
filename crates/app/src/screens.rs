@@ -82,6 +82,7 @@ enum Mode {
     PatternOverviewTriplet,
     PatternOverviewOffGrid,
     PatternOverviewMultiple,
+    PatternOverviewVelocity,
     PatternOverviewHiddenHit,
     PatternOverviewSafety,
     PatternStepEmpty,
@@ -90,6 +91,8 @@ enum Mode {
     PatternStepOffGrid,
     PatternStepMultiple,
     PatternStepCursor,
+    PatternStepTarget,
+    PatternStepAdd,
     PatternStepSafety,
     PatternErasePads,
     PitchGateOff,
@@ -172,6 +175,7 @@ impl Mode {
         Self::PatternOverviewTriplet,
         Self::PatternOverviewOffGrid,
         Self::PatternOverviewMultiple,
+        Self::PatternOverviewVelocity,
         Self::PatternOverviewHiddenHit,
         Self::PatternOverviewSafety,
         Self::PatternStepEmpty,
@@ -180,6 +184,8 @@ impl Mode {
         Self::PatternStepOffGrid,
         Self::PatternStepMultiple,
         Self::PatternStepCursor,
+        Self::PatternStepTarget,
+        Self::PatternStepAdd,
         Self::PatternStepSafety,
         Self::PatternErasePads,
         Self::PitchGateOff,
@@ -262,6 +268,7 @@ impl Mode {
             Self::PatternOverviewTriplet => "pattern-overview-triplet",
             Self::PatternOverviewOffGrid => "pattern-overview-off-grid",
             Self::PatternOverviewMultiple => "pattern-overview-multiple",
+            Self::PatternOverviewVelocity => "pattern-overview-velocity",
             Self::PatternOverviewHiddenHit => "pattern-overview-hidden-hit",
             Self::PatternOverviewSafety => "pattern-overview-safety",
             Self::PatternStepEmpty => "pattern-step-empty",
@@ -270,6 +277,8 @@ impl Mode {
             Self::PatternStepOffGrid => "pattern-step-off-grid",
             Self::PatternStepMultiple => "pattern-step-multiple",
             Self::PatternStepCursor => "pattern-step-cursor",
+            Self::PatternStepTarget => "pattern-step-target",
+            Self::PatternStepAdd => "pattern-step-add",
             Self::PatternStepSafety => "pattern-step-safety",
             Self::PatternErasePads => "pattern-erase-pads",
             Self::PitchGateOff => "pitch-gate-off",
@@ -293,6 +302,7 @@ impl Mode {
             | Self::PatternOverviewTriplet
             | Self::PatternOverviewOffGrid
             | Self::PatternOverviewMultiple
+            | Self::PatternOverviewVelocity
             | Self::PatternOverviewHiddenHit
             | Self::PatternOverviewSafety
             | Self::PatternStepEmpty
@@ -301,6 +311,8 @@ impl Mode {
             | Self::PatternStepOffGrid
             | Self::PatternStepMultiple
             | Self::PatternStepCursor
+            | Self::PatternStepTarget
+            | Self::PatternStepAdd
             | Self::PatternStepSafety
             | Self::PatternErasePads
             | Self::Tone
@@ -440,6 +452,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-overview-triplet",
                         "pattern-overview-off-grid",
                         "pattern-overview-multiple",
+                        "pattern-overview-velocity",
                         "pattern-overview-hidden-hit",
                         "pattern-overview-safety",
                         "pattern-step-empty",
@@ -448,6 +461,8 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "pattern-step-off-grid",
                         "pattern-step-multiple",
                         "pattern-step-cursor",
+                        "pattern-step-target",
+                        "pattern-step-add",
                         "pattern-step-safety",
                         "pattern-erase-pads",
                         "pitch-gate-off",
@@ -797,6 +812,7 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternOverviewTriplet
         | Mode::PatternOverviewOffGrid
         | Mode::PatternOverviewMultiple
+        | Mode::PatternOverviewVelocity
         | Mode::PatternOverviewHiddenHit
         | Mode::PatternOverviewSafety => add_pattern_overview(&mut app, case.mode),
         Mode::PatternStepEmpty
@@ -805,6 +821,8 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternStepOffGrid
         | Mode::PatternStepMultiple
         | Mode::PatternStepCursor
+        | Mode::PatternStepTarget
+        | Mode::PatternStepAdd
         | Mode::PatternStepSafety => add_pattern_step(&mut app, case.mode),
         Mode::PatternErasePads => {
             add_pattern_view(&mut app, Mode::PatternViewMultiple);
@@ -913,6 +931,9 @@ fn add_pattern_overview(app: &mut App, mode: Mode) {
     };
     add_pattern_view(app, view_mode);
     app.pattern_view.overview = true;
+    if mode == Mode::PatternOverviewSafety {
+        app.pattern_view.hide_empty_banks = false;
+    }
     let raw = app.pads.pattern.as_mut().unwrap();
     raw.hits.extend([[960, 20, 90, 0], [1920, 54, 70, 0]]);
     for (pad, name) in [
@@ -926,6 +947,11 @@ fn add_pattern_overview(app: &mut App, mode: Mode) {
     if mode == Mode::PatternOverviewHiddenHit {
         raw.bars = 1;
         raw.hits.push([5000, 20, 100, 0]);
+    }
+    if mode == Mode::PatternOverviewVelocity {
+        raw.hits.retain(|row| row[1] != 0);
+        raw.hits
+            .extend([[0, 0, 30, 0], [240, 0, 60, 0], [480, 0, 110, 0]]);
     }
 }
 
@@ -945,11 +971,25 @@ fn add_pattern_step(app: &mut App, mode: Mode) {
     app.pattern_view.cursor_cell = match mode {
         Mode::PatternStepEmpty => 3,
         Mode::PatternStepCursor => 20,
+        Mode::PatternStepTarget => 1,
+        Mode::PatternStepAdd => 3,
         Mode::PatternStepOffGrid => 1,
         _ => 0,
     };
+    if mode == Mode::PatternStepAdd {
+        app.step_pad_hit(0, 80.0 / 127.0);
+    }
     if mode == Mode::PatternStepMultiple {
         app.pads.selected = 0;
+    }
+    if mode == Mode::PatternStepTarget {
+        app.pads.selected = 4;
+        app.pads
+            .pattern
+            .as_mut()
+            .unwrap()
+            .hits
+            .push([240, 4, 90, 0]);
     }
     if mode == Mode::PatternStepSafety {
         app.pads.bank = 1;
@@ -1281,6 +1321,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternOverviewTriplet
         | Mode::PatternOverviewOffGrid
         | Mode::PatternOverviewMultiple
+        | Mode::PatternOverviewVelocity
         | Mode::PatternOverviewHiddenHit
         | Mode::PatternOverviewSafety => require("PATTERN · A1"),
         Mode::PatternStepEmpty
@@ -1289,6 +1330,8 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternStepOffGrid
         | Mode::PatternStepMultiple
         | Mode::PatternStepCursor
+        | Mode::PatternStepTarget
+        | Mode::PatternStepAdd
         | Mode::PatternStepSafety => require("STEP EDIT · A1"),
         Mode::Help | Mode::Messages => {
             require("HELP");
@@ -1422,12 +1465,25 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::PatternOverviewTriplet => require("view 1/16 triplet"),
         Mode::PatternOverviewOffGrid | Mode::PatternOverviewHiddenHit => require("~"),
         Mode::PatternOverviewMultiple => require(" 2"),
+        Mode::PatternOverviewVelocity => require("PATTERN · A1"),
         Mode::PatternOverviewSafety => {
             require("Save failed");
             require("PATTERN · A1");
         }
         Mode::PatternStepEmpty => require("empty cell"),
+        Mode::PatternStepAdd => {
+            require("vel 80");
+            require("added one hit");
+        }
         Mode::PatternStepTriplet => require("triplet"),
+        Mode::PatternStepTarget => {
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains(" Q empty") && row.contains('▶')),
+                "{} has no selected Q row",
+                case.name()
+            );
+        }
         Mode::PatternStepOffGrid => require("~"),
         Mode::PatternStepMultiple => require(" 2"),
         Mode::PatternStepSafety => require("Save failed"),
@@ -2402,6 +2458,7 @@ L="none"
                     | Mode::PatternOverviewTriplet
                     | Mode::PatternOverviewOffGrid
                     | Mode::PatternOverviewMultiple
+                    | Mode::PatternOverviewVelocity
                     | Mode::PatternOverviewHiddenHit
                     | Mode::PatternOverviewSafety
                     | Mode::PatternStepEmpty
@@ -2410,6 +2467,8 @@ L="none"
                     | Mode::PatternStepOffGrid
                     | Mode::PatternStepMultiple
                     | Mode::PatternStepCursor
+                    | Mode::PatternStepTarget
+                    | Mode::PatternStepAdd
                     | Mode::PatternStepSafety
             ) && !app
                 .pattern_record_state()
@@ -2637,24 +2696,27 @@ L="none"
         }
     }
 
-    const OVERVIEW_MODES: [Mode; 8] = [
+    const OVERVIEW_MODES: [Mode; 9] = [
         Mode::PatternOverviewAbsent,
         Mode::PatternOverviewEmpty,
         Mode::PatternOverviewStraight,
         Mode::PatternOverviewTriplet,
         Mode::PatternOverviewOffGrid,
         Mode::PatternOverviewMultiple,
+        Mode::PatternOverviewVelocity,
         Mode::PatternOverviewHiddenHit,
         Mode::PatternOverviewSafety,
     ];
 
-    const STEP_MODES: [Mode; 7] = [
+    const STEP_MODES: [Mode; 9] = [
         Mode::PatternStepEmpty,
         Mode::PatternStepStraight,
         Mode::PatternStepTriplet,
         Mode::PatternStepOffGrid,
         Mode::PatternStepMultiple,
         Mode::PatternStepCursor,
+        Mode::PatternStepTarget,
+        Mode::PatternStepAdd,
         Mode::PatternStepSafety,
     ];
 
@@ -2807,7 +2869,7 @@ L="none"
                 .collect::<Vec<_>>();
             assert!(rows[1].contains("PATTERN · A1"));
             assert!(rows[2].contains("BANKS · pads with A1 hits"));
-            assert!(rows[2].contains("8:0 empty shown"), "{}", rows[2]);
+            assert!(rows[2].contains("8:0 all rows shown"), "{}", rows[2]);
             for number in 10..16 {
                 assert!(rows[3].contains(&format!("{number} ")), "{}", rows[3]);
             }
@@ -2820,11 +2882,11 @@ L="none"
             }
             assert!(rows[0].contains("Save failed"));
             let help = rows[size.1 as usize - 3..].join("\n");
-            for text in ["PATTERN", "BANK", "CLOCK", "view", "empty shown"] {
+            for text in ["PATTERN", "BANK", "CLOCK", "view", "all rows shown"] {
                 assert!(help.contains(text), "{text}: {help}");
             }
             assert!(
-                rows[size.1 as usize - 4].contains("Alt+H hides empty banks."),
+                rows[size.1 as usize - 4].contains("row toggle hides empty rows."),
                 "{}",
                 rows[size.1 as usize - 4]
             );
@@ -2851,8 +2913,12 @@ L="none"
                 .any(|row| row.contains("rec-20261031-200404 20 minute take"))
         );
         assert!(
-            (105..119).any(|x| matches!(buffer[(x, 5)].symbol(), "·" | "■" | "~")),
-            "time cells must use the right side"
+            (45..105).any(|x| matches!(buffer[(x, 5)].symbol(), "·" | "■" | "~")),
+            "fixed-width time cells must remain visible"
+        );
+        assert!(
+            (105..119).all(|x| buffer[(x, 5)].symbol() == " "),
+            "unused width stays blank"
         );
 
         let absent = Case {
@@ -2890,8 +2956,18 @@ L="none"
         let (_, buffer) = render_app(case, &keymap, app, now);
         assert_eq!(buffer[(0, 4)].symbol(), "┏");
         assert_eq!(buffer[(0, 4)].fg, tui::BANK_COLORS[0]);
-        assert_eq!(buffer[(0, 22)].symbol(), "╭");
-        assert_eq!(buffer[(0, 22)].fg, tui::BANK_COLORS[1]);
+        let second = buffer
+            .content()
+            .chunks(case.size.0 as usize)
+            .position(|row| {
+                row.iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+                    .contains("BANK 2 / 8")
+            })
+            .expect("bank 2 remains visible");
+        assert_eq!(buffer[(0, second as u16)].symbol(), "╭");
+        assert_eq!(buffer[(0, second as u16)].fg, tui::BANK_COLORS[1]);
         let index = buffer.content()[2 * 120..3 * 120]
             .iter()
             .map(|cell| cell.symbol())
@@ -2923,21 +2999,74 @@ L="none"
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        let all = text(fixture(case, now));
-        assert!(all.contains("BANK 3 / 8"), "default shows empty banks");
-        app.pattern_view.hide_empty_banks = true;
-        let hidden = text(app);
+        let hidden = text(fixture(case, now));
         assert!(hidden.contains("BANK 1 / 8"));
         assert!(hidden.contains("BANK 2 / 8"));
         assert!(hidden.contains("BANK 4 / 8"));
         assert!(!hidden.contains("BANK 3 / 8"));
         assert!(hidden.contains("3:0"), "fixed index keeps the bank");
+        app.pattern_view.hide_empty_banks = false;
+        let all = text(app);
+        assert!(all.contains("BANK 3 / 8"), "Alt+H shows empty banks");
 
         let mut selected = fixture(case, now);
-        selected.pattern_view.hide_empty_banks = true;
         selected.pads.bank = 2;
         let selected_text = text(selected);
         assert!(selected_text.contains("BANK 3 / 8"));
+    }
+
+    /// Scenario "Overview shows occupied and selected pad rows".
+    /// Scenario "Overview shows all pad rows and source events".
+    #[test]
+    fn overview_filters_rows_and_restores_all_rows_at_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewStraight,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.pads.selected = 5;
+            let (_, filtered) = render_app(case, &keymap, app, now);
+            let text = filtered
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains(" 1 kick"), "{text}");
+            assert!(text.contains(" W empty"), "{text}");
+            assert!(!text.contains(" 2 snare"), "{text}");
+            assert!(text.contains("empty rows hidden"), "{text}");
+
+            let mut app = fixture(case, now);
+            app.pattern_view.hide_empty_banks = false;
+            let (_, full) = render_app(case, &keymap, app, now);
+            let text = full
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains(" 2 snare"), "{text}");
+            assert!(text.contains("all rows shown"), "{text}");
+
+            let mut app = fixture(case, now);
+            app.pattern_view.hide_empty_banks = false;
+            app.pads.bank = 2;
+            app.pads.selected = 15;
+            let (_, full_selected) = render_app(case, &keymap, app, now);
+            let text = full_selected
+                .content()
+                .chunks(size.0 as usize)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("BANK 3 / 8"), "{text}");
+            assert!(text.contains(" V empty"), "{text}");
+        }
     }
 
     /// Scenario "Pattern strip distinguishes subdivisions and event density".
