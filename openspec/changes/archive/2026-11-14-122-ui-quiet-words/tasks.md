@@ -42,4 +42,8 @@ The Pitch Gate step passed keyboard, raw MIDI, popup, panel, F1, and parameter-p
 
 The long-name step passed format, Clippy, 150 TUI tests, the named app scenario, and the active scenario audit. All 24 screen tests passed. The catalogue has 826 files: 820 base names and six new cases at both sizes. No base name is missing. Of the base frames, 714 changed. The new cases cover empty pads, clip feedback, and long names. The old frames changed where the visible words or name clipping changed. The pattern strip keeps five display cells for a wide pad label. Save failure and file-in-hand messages stay visible.
 
-The final `task check` passed on the last code and test state. The release `task build` passed. The diff changes UI text, drawing, and UI meter timing. It changes no engine code, keymap, dependency, or saved data format. The two guarded large files do not grow. `docs/LIVE-CHECKS.md` gives keyboard, controller, screen, and listening steps. The owner has not reported a hardware or listening result for change 122.
+The final `task check` passed on the last code and test state. The release `task build` passed. The diff changes UI text, drawing, and UI meter timing. It changes no engine code, keymap, dependency, or saved data format. The two guarded large files do not grow. `docs/LIVE-CHECKS.md` gives keyboard, controller, screen, and listening steps.
+
+The owner accepted 122 on 2026-11-14 with four old labels still visible. The proposal and
+design assign those labels to later UI changes. This overall acceptance does not establish
+an individual hardware or listening result.

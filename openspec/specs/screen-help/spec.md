@@ -220,20 +220,17 @@ F1, not "join".
 - **THEN** the help line has `Bksp remove cut` in the CUT group
 
 ### Requirement: The change scope in the help line
-The system SHALL show the change scope in the help line of the pads screen with the mark
-toggle, as `mark: off · scope: pad Q` or `scope: 17 marked`, so the owner sees what the
-next change hits without opening the pad edit, and SHALL name `Ctrl+A` as `mark bank` in
-the full help (F1). It stays in the help line of a
-terminal that hides the `Ctrl` combos until `Ctrl` is held.
+
+The system SHALL show the next edit scope in the Pads help line with the mark toggle. It SHALL say `edit: this pad`, `edit: marked (N)`, or `edit: bank` for the applicable scope. It SHALL name `Ctrl+A` as `mark bank` in F1. The scope SHALL remain visible when a terminal hides Ctrl combinations until the owner holds Ctrl.
 
 #### Scenario: Scope in the help line
-- **WHEN** the pads screen is open on bank 2 and the owner presses `Ctrl+A`
-- **THEN** the help line says `mark: on, hit pads · scope: 16 marked` at the mark key, also
-  in a terminal with the kitty protocol; after `Esc` it says `mark: off · scope: pad Q`
+- **WHEN** Pads selects one pad, marks three pads, then marks the bank and clears marks
+- **THEN** the help line shows `edit: this pad`, `edit: marked (3)`, `edit: bank`, and `edit: this pad` in that order
+- **AND** the mark state stays visible and the same pad operations affect the same pads
 
 #### Scenario: The mark keys in the full help
-- **WHEN** the owner opens the full help (F1) on the pads screen
-- **THEN** it names `Ctrl+A mark bank`, and no key named "scope"
+- **WHEN** the owner opens F1 on Pads
+- **THEN** it names `Ctrl+A mark bank`, and no key named `scope`
 
 ### Requirement: Plain words for no key releases
 The system SHALL, in a terminal that gives no key releases, mark the status for the
@@ -862,3 +859,12 @@ Only a successful removal or Undo SHALL report a changed event. The result SHALL
 - **WHEN** an empty press, multiple-event focus, removal, Undo and stale selection occur in order
 - **THEN** only removal and Undo claim a changed hit, and each names one-event scope
 - **AND** a refusal or F1 preserves the edit target and existing safety warnings
+
+### Requirement: Pattern help names its action
+
+The Pads help group for A1 SHALL say `PATTERN`. The action that opens pattern controls SHALL use the visible text `pattern keys` with its effective binding. With the default binding, it SHALL say `Alt+N: pattern keys`. A missing or disabled binding SHALL NOT show a false key. MIDI learn SHALL show `pattern` for the existing pattern screen action without changing its saved action ID or group.
+
+#### Scenario: Pattern keys follow the effective binding
+- **WHEN** the owner opens Pads and F1 with the default, moved, or disabled pattern-controls binding
+- **THEN** the help group says `PATTERN` and names only the effective key for `pattern keys`
+- **AND** MIDI learn shows `pattern` while old saved assignments still work

@@ -18,7 +18,15 @@ The master meter SHALL reserve its existing clip row. It SHALL show no clip text
 
 ### Requirement: Visible words use one glossary
 
-Screen labels, help, notices, and MIDI learn labels SHALL use `transport`, `pattern`, `pad`, `slice`, `sample`, `bank`, `send`, `FX 1`, and `FX 2` for those concepts. A visible-name change SHALL NOT rename logical action IDs, saved MIDI groups, source IDs, or project fields. Text at 80x26 and 120x40 SHALL keep its safety priority.
+Revised labels SHALL use the glossary terms `transport`, `pattern`, `pad`, `slice`, `sample`, `bank`, `send`, `FX 1`, and `FX 2`. Existing `CLOCK`, `PG`, `scope pad N`, and `No A1` labels SHALL keep their text until later changes. Revised labels SHALL NOT rename action IDs, saved MIDI groups, source IDs, or project fields. Text SHALL keep its safety priority at both supported sizes.
+
+#### Scenario: Screen words name the same concepts
+- **WHEN** the owner opens Pads, Chop, Files, FX, Settings, F1, and MIDI learn at both supported sizes
+- **THEN** revised labels use the glossary terms for the same concepts
+- **AND** required safety text stays readable
+- **AND** learned actions and saved groups keep their existing IDs
+
+### Requirement: Controller map names pattern
 
 The six-cell controller map SHALL use `ptrn` for the pattern screen action. MIDI learn SHALL show the full `pattern` label for that action.
 
@@ -26,11 +34,6 @@ The six-cell controller map SHALL use `ptrn` for the pattern screen action. MIDI
 - **WHEN** the owner views a controller with the pattern screen action
 - **THEN** the controller map says `ptrn` within six cells and MIDI learn says `pattern`
 - **AND** the saved action ID remains `screen.pattern`
-
-#### Scenario: Screen words name the same concepts
-- **WHEN** the owner opens Pads, Chop, Files, FX, Settings, F1, and MIDI learn at both supported sizes
-- **THEN** visible labels use the glossary for the same concepts and required safety text stays readable
-- **AND** learned actions and saved groups still resolve to their existing IDs
 
 ### Requirement: Long labels end at a word boundary
 

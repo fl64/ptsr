@@ -7,7 +7,7 @@ Empty pad cells repeat the word `empty` and draw flat waves. Several short label
 ## What Changes
 
 - Show a muted `—` in an empty pad cell. Do not draw a flat pad wave. Keep a meaningful corner mark and the test tone in the pad edit.
-- Use plain names for the edit scope, sample source, pattern, Pitch Gate, and pattern keys. Use one glossary in screen text, help, notices, and MIDI learn labels.
+- Use plain names in the changed edit-scope help, sample-source text, pattern help, and pattern keys. Keep Pitch Gate state and restrictions visible in the pad panel and F1.
 - Keep the ten-cell playback slots. Leave the idle PLAY slot blank. Keep active PLAY and LISTEN feedback.
 - Hide the idle clip label. Show `CLIP` with the elapsed session time of the latest clipped block while the existing clip latch is on.
 - Shorten long labels at word boundaries where a whole word fits. Keep graphemes and safety text whole.
@@ -33,6 +33,9 @@ The change affects terminal drawing and the UI-side meter state. It adds no depe
 ## Out of scope
 
 Body-row redistribution belongs to the later `screen-layouts` change. This change keeps fixed screen rows and input routes.
+The legacy `No A1` strip text moves to `pattern-screen`. The `PG on` and `scope pad 1`
+panel text moves to `pads-context-lane`. The `CLOCK` help group moves to `compact-help`.
+The owner accepted change 122 with these four labels open on 2026-11-14.
 
 ## How to check
 

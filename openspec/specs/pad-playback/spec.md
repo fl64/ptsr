@@ -109,11 +109,13 @@ The system SHALL show the pads screen on F2: a 4×4 grid with keys and sound nam
   and the other pads of bank 3 keep the bank color
 
 ### Requirement: Empty pads look empty
-The system SHALL call a pad without a sample "empty" in the grid and show its test tone only in the pad info.
+
+The system SHALL show a muted `—` in the grid cell of a pad without a sample. The cell SHALL NOT show the word `empty` or a flat wave. A meaningful mode or target corner mark SHALL remain visible. The selected pad's info SHALL still name its test tone. The pad edit SHALL still show the test tone piece.
 
 #### Scenario: New pad
-- **WHEN** a pad has no sample
-- **THEN** its cell says "empty" and, when it is selected, the info says "empty · test tone A2"
+- **WHEN** a pad has no sample in an idle, marked, or target state
+- **THEN** its grid cell shows a muted `—` without the word `empty` or a flat wave
+- **AND** the relevant corner mark remains, and the selected info says `empty · test tone A2`
 
 ### Requirement: Bank colors
 The system SHALL give each of the eight banks its own soft color, show every bank in the bank row in its color and draw the frames of the open bank's pads in that color; the colors of state (selected cyan, in hand magenta, marked yellow, hit white) stay above the bank color.
@@ -289,26 +291,27 @@ The system SHALL keep the pitch of every pad in the session; a session saved bef
 - **THEN** it opens, every pad plays at pitch 0
 
 ### Requirement: Pad waves
-The system SHALL draw in every pad cell of the pads screen the wave of what the pad plays with its envelope applied, in as many rows as the terminal has room for, up to three; an empty pad draws a flat line. When not even one row fits, the pads are drawn without waves. The pads screen draws no separate big view of the selected pad.
+
+The system SHALL draw the wave of a loaded pad in its Pads grid cell with its envelope applied. It SHALL use up to three rows when the terminal has room. An empty pad SHALL have no wave. When no wave row fits, the grid SHALL omit pad waves. The Pads screen SHALL draw no separate large view of the selected pad.
 
 #### Scenario: Every pad draws its wave
-- **WHEN** the pads screen is open in a terminal 40 rows high and pads hold samples
-- **THEN** every pad with a sample shows its wave in three rows under its mode line, and an empty pad shows a flat line
+- **WHEN** Pads shows loaded and empty pads in a terminal 40 rows high
+- **THEN** loaded pads show their waves in three rows under the mode line, and empty pads show no wave
 
 #### Scenario: The wave follows the terminal
 - **WHEN** the terminal gets lower step by step
-- **THEN** the waves take three, then two, then one row, and the whole grid always fits
+- **THEN** loaded pad waves take three, then two, then one row, and the whole grid always fits
 
 #### Scenario: The attack shows on the pad
-- **WHEN** the owner turns the attack of a pad up
+- **WHEN** the owner turns the attack of a loaded pad up
 - **THEN** the wave of that pad rises more slowly at its start
 
 #### Scenario: Short terminal
 - **WHEN** the terminal is 26 rows high
-- **THEN** the pads are drawn without waves, as before, and the whole grid fits
+- **THEN** the pads are drawn without waves, and the whole grid fits
 
 #### Scenario: No big view
-- **WHEN** a pad is selected
+- **WHEN** the owner selects a pad
 - **THEN** nothing is drawn under the info panel
 
 ### Requirement: Pad envelope
@@ -406,9 +409,8 @@ Level meters SHALL remain visible.
 - **THEN** the strip shows the live output again
 
 ### Requirement: Pad source
-The system SHALL give every pad with a sample one source and name it in the pad panel:
-`all` plays the whole file, `slice N` plays slice N of the file's cuts and follows them,
-`pad` plays the pad's own start and end and follows nothing.
+
+The system SHALL give every pad with a sample one source. The pad panel SHALL name a whole-file source as `whole file`, a linked slice as `slice N`, and a pad's own bounded piece as `pad`. The internal source IDs SHALL stay `all`, `slice N`, and `pad`. The sound and cut-following rules SHALL stay unchanged.
 
 #### Scenario: Slices laid out
 - **WHEN** slices 1–8 of a break lie on pads 5–12 and the owner selects pad 7
@@ -416,7 +418,8 @@ The system SHALL give every pad with a sample one source and name it in the pad 
 
 #### Scenario: The whole file
 - **WHEN** a pad plays a whole file and the owner selects it
-- **THEN** the pad panel says `break.wav · all`
+- **THEN** the pad panel says `break.wav · whole file`
+- **AND** the pad plays the same source as internal `all`
 
 ### Requirement: Source page
 Pad edit SHALL have SOURCE after TONE and ENV: source, start and end on knobs 1–3 and value keys.
