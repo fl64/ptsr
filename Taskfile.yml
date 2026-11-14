@@ -55,6 +55,15 @@ tasks:
       - python3 -B -m unittest discover -s scripts -p test_check_spec_sync.py
       - python3 -B scripts/check_spec_sync.py
 
+  specs:check:
+    desc: Check OpenSpec, archived scenarios, merged changes and catalogue names
+    cmds:
+      - python3 -B -m unittest discover -s scripts -p 'test_check_*.py'
+      - task: openspec:check
+      - python3 -B scripts/check_spec_sync.py --only sync
+      - python3 -B scripts/check_spec_sync.py --only unarchived
+      - python3 -B scripts/check_catalogue_names.py
+
   file-size:
     desc: Reject growth in the two large source files compared with origin/master
     cmd: python3 -B scripts/check_file_growth.py --base origin/master
@@ -69,10 +78,10 @@ tasks:
     cmd: git config --local core.hooksPath .githooks
 
   check:
-    desc: Check names, spec sync, format, licenses, Clippy, tests and benchmark before publication
+    desc: Check names, specs, format, licenses, Clippy, tests and benchmark before publication
     cmds:
       - task: names
-      - task: specs:sync
+      - task: specs:check
       - task: file-size
       - cargo fmt --all --check
       - task: licenses

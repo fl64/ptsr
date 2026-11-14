@@ -1,0 +1,54 @@
+name: Specs
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: specs-${{github.event.pull_request.number}}
+  cancel-in-progress: true
+
+jobs:
+  specs:
+    name: Specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the pull request head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{github.event.pull_request.head.sha}}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test the spec checkers
+        run: python3 -B -m unittest discover -s scripts -p 'test_check_*.py' -v
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install OpenSpec CLI
+        run: npm install --global @fission-ai/openspec@1.14.3
+      - name: OpenSpec format
+        run: openspec validate --all --strict --no-interactive
+      - name: Spec sync
+        run: python3 -B scripts/check_spec_sync.py --only sync
+      - name: Unarchived merged changes
+        env:
+          BASE_SHA: ${{github.event.pull_request.base.sha}}
+        run: python3 -B scripts/check_spec_sync.py --only unarchived --base "$BASE_SHA"
+      - name: Catalogue names in proposals
+        run: python3 -B scripts/check_catalogue_names.py
+      - name: PR body sections
+        env:
+          PR_BODY: ${{github.event.pull_request.body}}
+          BASE_SHA: ${{github.event.pull_request.base.sha}}
+          HEAD_SHA: ${{github.event.pull_request.head.sha}}
+        run: python3 -B scripts/check_pr_body.py --base "$BASE_SHA" --head "$HEAD_SHA"
+      - name: Cache Rust for scenario coverage
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Scenario coverage
+        run: cargo test -p ptsr --test scenarios
