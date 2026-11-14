@@ -997,7 +997,10 @@ fn add_recording(app: &mut App, mode: Mode) {
 }
 
 fn render(case: Case, keymap: &Keymap) -> (Vec<u8>, Buffer) {
-    let now = Instant::now();
+    render_at(case, keymap, Instant::now())
+}
+
+fn render_at(case: Case, keymap: &Keymap, now: Instant) -> (Vec<u8>, Buffer) {
     render_app(case, keymap, fixture(case, now), now)
 }
 
@@ -1031,6 +1034,12 @@ fn render_app_layers(
         None,
         app.rate,
     );
+    // The live view uses wall time for hit flashes. Catalogue frames use the fixture time.
+    for (index, pad) in pads.pads.iter_mut().enumerate() {
+        let abs = app.pads.bank * PADS_PER_BANK + index;
+        pad.flash = app.pads.held[abs]
+            || app.pads.hit_at[abs].is_some_and(|at| now.saturating_duration_since(at) < HIT_FLASH);
+    }
     preview_pad_name(&mut pads, app.pads.bank, app.pad_naming.as_ref());
     pads.edit_key = keys(keymap, Screen::Pads, &[Action::PadEdit]);
     let mut pads = app.mark_pads_recording(pads, pattern_recording);
@@ -2606,9 +2615,25 @@ L="none"
             .iter()
             .filter(|case| PATTERN_VIEW_MODES.contains(&case.mode))
         {
-            let app = fixture(*case, Instant::now());
+            let now = Instant::now();
+            let app = fixture(*case, now);
             assert!(app.session_path.starts_with("/offline"));
-            assert_eq!(render(*case, &keymap).0, render(*case, &keymap).0);
+            let (first, first_frame) = render_at(*case, &keymap, now);
+            let (second, second_frame) = render_at(*case, &keymap, now);
+            if first != second {
+                let at = first.iter().zip(&second).position(|(a, b)| a != b).unwrap();
+                let cell = first_frame
+                    .content()
+                    .iter()
+                    .zip(second_frame.content())
+                    .position(|(a, b)| a != b);
+                panic!(
+                    "{} differs at byte {at}, cell {cell:?}: {:?} versus {:?}",
+                    case.name(),
+                    cell.map(|i| &first_frame.content()[i]),
+                    cell.map(|i| &second_frame.content()[i])
+                );
+            }
         }
     }
 
@@ -3008,8 +3033,14 @@ L="none"
         let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/screens");
         std::fs::create_dir_all(&directory).unwrap();
         for case in &cases {
-            let (bytes, buffer) = render(*case, &keymap);
+            let now = Instant::now();
+            let (bytes, buffer) = render_at(*case, &keymap, now);
             check_frame(*case, &buffer);
+            assert!(
+                bytes == render_at(*case, &keymap, now).0,
+                "{} is not deterministic",
+                case.name()
+            );
             assert!(
                 !bytes.windows(3).any(|bytes| bytes == b"\x1b_G"),
                 "ANSI is not a kitty-composition test"
@@ -3046,18 +3077,5 @@ L="none"
             pads::page_names().len(),
             "every current pad edit page needs a fixture"
         );
-    }
-
-    #[test]
-    fn catalogue_bytes_are_repeatable_without_devices_or_project_writes() {
-        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
-        for case in matrix() {
-            assert_eq!(
-                render(case, &keymap).0,
-                render(case, &keymap).0,
-                "{} is not deterministic",
-                case.name()
-            );
-        }
     }
 }

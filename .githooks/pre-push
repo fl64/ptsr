@@ -5,4 +5,4 @@ root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
+task names

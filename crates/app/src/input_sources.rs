@@ -21,9 +21,14 @@ impl Connection {
     }
 
     fn take(next: &AtomicU64) -> Option<Self> {
-        next.fetch_update(Relaxed, Relaxed, |n| n.checked_add(1))
-            .ok()
-            .map(Self)
+        let mut current = next.load(Relaxed);
+        loop {
+            let updated = current.checked_add(1)?;
+            match next.compare_exchange_weak(current, updated, Relaxed, Relaxed) {
+                Ok(old) => return Some(Self(old)),
+                Err(observed) => current = observed,
+            }
+        }
     }
 }
 

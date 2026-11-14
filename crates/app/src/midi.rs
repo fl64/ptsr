@@ -1088,7 +1088,7 @@ mod tests {
         done.store(true, Release);
         writer.join().unwrap();
         assert_eq!(events.len(), 2000);
-        for pair in events.chunks_exact(2) {
+        for pair in events.as_chunks::<2>().0 {
             let Event::Message { meaning, .. } = &pair[0] else {
                 panic!("missing input log")
             };

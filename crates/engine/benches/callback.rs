@@ -17,7 +17,15 @@ use support::{Report, Timing, measure};
 
 const SR: u32 = 48_000;
 const BLOCK: usize = 128;
-const BLOCKS: usize = 20_000;
+const FULL_BLOCKS: usize = 20_000;
+
+fn run_size() -> (usize, u64) {
+    if std::env::var_os("PTSR_BENCH_QUICK").is_some() {
+        (2_000, 20)
+    } else {
+        (FULL_BLOCKS, 200)
+    }
+}
 
 fn setup(mut send: impl FnMut(Command)) {
     send(Command::SetTempo { bpm: 172.0 });
@@ -69,6 +77,7 @@ fn setup(mut send: impl FnMut(Command)) {
 
 fn main() -> io::Result<()> {
     let budget = BLOCK as f64 / SR as f64;
+    let (blocks, switches) = run_size();
     println!("{}", support::TIMING_NOTES);
     const OVERHEAD_CALLS: usize = 2_000;
     let mut empty = Vec::with_capacity(OVERHEAD_CALLS);
@@ -99,7 +108,7 @@ fn main() -> io::Result<()> {
     )?;
 
     // The sound is longer than the run, so every voice plays to the end.
-    let sound = (0..BLOCK * BLOCKS * 2 + 1)
+    let sound = (0..BLOCK * blocks * 2 + 1)
         .map(|i| (i as f32 * 0.01).sin() * 0.01)
         .collect();
     let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
@@ -112,7 +121,7 @@ fn main() -> io::Result<()> {
     );
     let (mut l, mut r) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
 
-    let samples = (0..BLOCKS)
+    let samples = (0..blocks)
         .map(|block| trace.measure("steady playback", 0, block, || rt.process(&mut l, &mut r)))
         .collect::<io::Result<Vec<_>>>()?;
     let report = Report::new(&samples, budget)?;
@@ -129,13 +138,19 @@ fn main() -> io::Result<()> {
         pct(max)
     );
     report.write("steady playback", &mut io::stdout().lock())?;
-    let switch_p99 = bench_switch(budget, &mut trace)?;
-    let (pattern_p99, dropped) = bench_pattern(budget, &mut trace)?;
-    let recording_exceeded = bench_recording(budget, &mut trace)?;
+    let switch_p99 = bench_switch(budget, &mut trace, switches)?;
+    let (pattern_p99, dropped) = bench_pattern(budget, &mut trace, blocks)?;
+    let recording_exceeded = bench_recording(budget, &mut trace, blocks)?;
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/bench-diagnostics");
     let (path, exceeded) = trace.finish(&directory, pct(p99), switch_p99)?;
     println!("Local callback trace: {}", path.display());
+    if std::env::var_os("PTSR_BENCH_REPORT_ONLY").is_some() {
+        println!(
+            "CI report only: steady p99 {p99:.2} %, switch p99 {switch_p99:.2} %, dense pattern p99 {pattern_p99:.2} %, dropped hits {dropped}, recording/erasure limit exceeded {recording_exceeded}"
+        );
+        return Ok(());
+    }
     if exceeded {
         eprintln!("EXCEEDED: steady callback p99 or switch peak p99 is over 50 % of the budget");
         std::process::exit(1);
@@ -151,13 +166,13 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn bench_recording(budget: f64, trace: &mut Trace) -> io::Result<bool> {
+fn bench_recording(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<bool> {
     use support::recording::{Kind, Workload, maximum_exceeded};
     let mut exceeded = false;
     for kind in [Kind::Recording, Kind::Erasure] {
-        let mut workload = Workload::new(kind, BLOCKS, |send| setup(send))?;
-        let mut samples = Vec::with_capacity(BLOCKS);
-        for block in 0..BLOCKS {
+        let mut workload = Workload::new(kind, blocks, |send| setup(send))?;
+        let mut samples = Vec::with_capacity(blocks);
+        for block in 0..blocks {
             workload.prepare(block);
             samples.push(trace.measure(kind.label(), 0, block, || workload.process())?);
             workload.collect()?;
@@ -172,7 +187,7 @@ fn bench_recording(budget: f64, trace: &mut Trace) -> io::Result<bool> {
                 Kind::Erasure => "erasure release",
             },
             0,
-            BLOCKS,
+            blocks,
             || workload.process(),
         )?;
         let report = Report::new(&[release], budget)?;
@@ -188,7 +203,7 @@ fn bench_recording(budget: f64, trace: &mut Trace) -> io::Result<bool> {
                 Kind::Erasure => "erasure finishing",
             },
             0,
-            BLOCKS + 1,
+            blocks + 1,
             || workload.process(),
         )?;
         let report = Report::new(&[finishing], budget)?;
@@ -197,11 +212,11 @@ fn bench_recording(budget: f64, trace: &mut Trace) -> io::Result<bool> {
             &mut io::stdout().lock(),
         )?;
         exceeded |= maximum_exceeded(&report);
-        let evidence = workload.validate(BLOCKS)?;
+        let evidence = workload.validate(blocks)?;
         println!(
             "{}: {} callbacks, {} voices, {} accepted onsets, {} completed Gates, {} erased rows; no capture losses, no dropped playback hits. Accepted Finishing boundary; UI reconstruction and acknowledgement are not measured.",
             kind.label(),
-            BLOCKS,
+            blocks,
             evidence.voices,
             evidence.onsets,
             evidence.gates,
@@ -211,7 +226,7 @@ fn bench_recording(budget: f64, trace: &mut Trace) -> io::Result<bool> {
     Ok(exceeded)
 }
 
-fn bench_pattern(budget: f64, trace: &mut Trace) -> io::Result<(f64, u64)> {
+fn bench_pattern(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<(f64, u64)> {
     use engine::pattern::{Grid, Hit, RawPattern};
     let sound = (0..SR as usize * 4)
         .map(|i| (i as f32 * 0.01).sin() * 0.001)
@@ -240,8 +255,8 @@ fn bench_pattern(budget: f64, trace: &mut Trace) -> io::Result<(f64, u64)> {
     let stats = Arc::new(Stats::default());
     let mut rt = Realtime::new(engine, vec![], stats.clone(), SR);
     let (mut left, mut right) = ([0.0; BLOCK], [0.0; BLOCK]);
-    let mut samples = Vec::with_capacity(BLOCKS);
-    for block in 0..BLOCKS {
+    let mut samples = Vec::with_capacity(blocks);
+    for block in 0..blocks {
         samples.push(trace.measure("dense pattern playback", 0, block, || {
             rt.process(&mut left, &mut right)
         })?);
@@ -260,8 +275,7 @@ fn bench_pattern(budget: f64, trace: &mut Trace) -> io::Result<(f64, u64)> {
     Ok((p99, dropped))
 }
 
-fn bench_switch(budget: f64, trace: &mut Trace) -> io::Result<f64> {
-    const SWITCHES: u64 = 200;
+fn bench_switch(budget: f64, trace: &mut Trace, switches: u64) -> io::Result<f64> {
     let sound = Arc::new(engine::Sample::mono(
         (0..SR as usize * 4)
             .map(|i| (i as f32 * 0.01).sin() * 0.01)
@@ -284,7 +298,7 @@ fn bench_switch(budget: f64, trace: &mut Trace) -> io::Result<f64> {
     let mut peaks = Vec::new();
     let mut samples = Vec::new();
     let mut phase_times: [Vec<Timing>; 3] = std::array::from_fn(|_| Vec::new());
-    for epoch in 1..=SWITCHES {
+    for epoch in 1..=switches {
         for pad in 0..MAX_VOICES {
             tx.push(ProjectCommand {
                 epoch: epoch - 1,
@@ -341,7 +355,7 @@ fn bench_switch(budget: f64, trace: &mut Trace) -> io::Result<f64> {
     let p99 = pct(times[times.len() * 99 / 100]);
     let peak_p99 = pct(peaks[peaks.len() * 99 / 100]);
     println!(
-        "project switch: {SWITCHES} switches, {} callbacks, mean {:.2} %, callback p99 {:.2} %, switch peak p99 {:.2} %, max {:.2} %",
+        "project switch: {switches} switches, {} callbacks, mean {:.2} %, callback p99 {:.2} %, switch peak p99 {:.2} %, max {:.2} %",
         times.len(),
         pct(times.iter().sum::<f64>() / times.len() as f64),
         p99,

@@ -871,13 +871,19 @@ fn pads_play_badge_follows_all_sounding_pads() {
 #[test]
 fn pads_play_badge_keeps_voice_identity_beside_pad_feedback() {
     use std::sync::atomic::Ordering::Acquire;
+    let tone = Arc::new(Sample::mono(
+        (0..8192)
+            .map(|frame| (std::f32::consts::TAU * 220.0 * frame as f32 / 48_000.0).sin() * 0.2)
+            .collect(),
+    ));
 
     for source in [Source::Keyboard, Source::Notes, Source::Button] {
         for mode in ["normal", "mark", "copy", "swap", "file", "learn"] {
             for hidden in [false, true] {
                 for switch in [false, true] {
                     let mut drive = Drive::offline();
-                    drive.parity_pad(0, false);
+                    drive.load_pad(18, tone.clone(), "badge");
+                    drive.tap(KeyCode::Char('2'), M::CONTROL);
                     drive.app.pads.gate[18] = false;
                     let snap = drive.app.pads.snapshot(18);
                     for command in drive.app.pads.put_back(18, &snap) {
@@ -986,7 +992,7 @@ fn pads_play_badge_keeps_voice_identity_beside_pad_feedback() {
                         assert_eq!(drive.project.ready.load(Acquire), new_epoch);
                         assert!(drive.app.pending_audio.is_empty());
                     } else {
-                        let end = drive.render_blocks(400);
+                        let end = drive.render_blocks(80);
                         assert!(
                             !pads_play_badge(&mut drive),
                             "the last voice ended, not the mode"
@@ -995,7 +1001,7 @@ fn pads_play_badge_keeps_voice_identity_beside_pad_feedback() {
                         for channel in [&end.0, &end.1] {
                             assert_eq!(engine::checks::first_non_finite(channel), None);
                             assert!(engine::checks::peak(channel) < 1.0);
-                            assert_eq!(engine::checks::peak(&channel[49_000..]), 0.0);
+                            assert_eq!(engine::checks::peak(&channel[9_000..]), 0.0);
                         }
                     }
                 }

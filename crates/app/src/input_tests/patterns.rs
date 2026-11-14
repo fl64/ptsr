@@ -8337,7 +8337,7 @@ fn complete_recording_every_grid_and_strength_changes_future_sound_without_rewri
                     if step == 0 {
                         tick
                     } else {
-                        let snapped = ((tick + step / 2) / step) * step;
+                        let snapped = (tick + step / 2).checked_div(step).unwrap_or(0) * step;
                         (tick * (100 - strength) + snapped * strength + 50) / 100
                     }
                 };
@@ -8934,8 +8934,8 @@ fn complete_recording_workflow_renders_first_take_overdub_erasure_grid_and_pass_
                 .samples::<f32>()
                 .map(Result::unwrap)
                 .collect::<Vec<_>>();
-            for (frame, pair) in samples.chunks_exact(2).enumerate() {
-                assert_eq!(pair, [wave.0[frame], wave.1[frame]]);
+            for (frame, pair) in samples.as_chunks::<2>().0.iter().enumerate() {
+                assert_eq!(*pair, [wave.0[frame], wave.1[frame]]);
             }
             println!(
                 "Recording WAV: 1344000 frames, 48000 Hz, stereo float32; all 19 onsets within one frame, independent stereo error <=0.000001, onset RMS within 0.01 dB, finite samples, no clipping, required silence and reference-bounded cuts."

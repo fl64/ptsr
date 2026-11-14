@@ -162,9 +162,10 @@ pub fn decode(
                 .flat_map(|f| f.iter().take(2).copied()),
         );
 
-        if total > 0 {
-            let percent =
-                ((interleaved.len() / channels.max(1)) as u64 * 100 / total).min(100) as u8;
+        if let Some(percent) =
+            ((interleaved.len() / channels.max(1)) as u64 * 100).checked_div(total)
+        {
+            let percent = percent.min(100) as u8;
             if percent >= last_percent + 5 {
                 last_percent = percent;
                 progress(percent);

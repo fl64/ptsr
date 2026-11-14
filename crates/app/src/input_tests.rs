@@ -1,6 +1,7 @@
 //! Recorded input through the production keyboard and MIDI routes. No device or sound card.
 
 mod badges;
+mod bank_scenarios;
 mod controller_map;
 mod copy;
 mod feedback;
