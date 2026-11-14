@@ -311,12 +311,12 @@ A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio
     Reject rolls that do not fit. A 1/32 roll needs 2 steps or fewer.
   - **Freeze:** keep the current variant across phrases.
   - **Back to straight:** one action resets variation and warp to zero.
-  - Keep a seed per pattern so a variant can play again. Compute variation at playback, like quantize.
+  - Keep a seed per pattern so a variant can play again. Compute variation at playback.
     Never change the written pattern. This differs from the saved A/B/C/D copies below.
 - **Humanize:** a small random change of time and velocity for each hit at playback. One knob sets the amount. The stored hits do not change.
 - **Groove templates:** extract timing offsets and velocities from a break or recorded take, per step of a 1/16 or 1/32 grid.
   Save the result as a groove. Apply it to any pattern at playback, with amount 0–100 %.
-  Include a few MPC-style swing grooves at 50–75 %. Like quantize, this is non-destructive and acts in pattern compilation.
+  Include a few MPC-style swing grooves at 50–75 %. Apply a groove at playback without changing saved hits.
 - **Pattern variations:** each slot holds up to four variations (A/B/C/D) of one pattern. A variation starts as a copy.
   Switch at the next bar or loop end, as with slots.
 - **Pattern chains:** an ordered list of slots with repeat counts, for example A1 ×4, A2 ×2, A3 ×1.
@@ -576,7 +576,10 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
 - **Hold STOP is the command panel** (default). PAD BANK layer 2 is the same panel as a latch.
 - **Destructive actions:** keep X-Session direct safe defaults unchanged. For the SMC panel, the proposed default is a visible question for destructive changes in both held and latched forms. Change 92 must record the owner's choice before code.
 - **Visual control** (section 17): one badge model, levels for messages; yellow means "the pads do something other than sound" (default; changes `docs/ui/STYLE.md`).
-- **Patterns:** the sequencer is in the audio thread; time in ticks (960 per quarter); a pattern keeps the hits as played, and quantize applies at playback (it is non-destructive); a pattern uses absolute pads 0–127 (default); one pattern plays at a time until the launcher exists (default).
+- **Patterns:** the sequencer is in the audio thread and uses ticks (960 per quarter).
+  Capture applies quantize and saves the resulting tick. Later grid changes leave saved hits
+  in place. A pattern uses absolute pads 0–127 (default). One pattern plays at a time until
+  the launcher exists (default).
 - **New projects from the controller** get a date name; the owner can rename them from the keyboard.
 - **Modulation, parameter locks and slice motion** (sections 7, 12, 16a): V1 moves minimum per-hit locks into milestone 0.4b.
   More locks, phrase variation, slice follow, playhead mode and general modulation remain `1.x`.

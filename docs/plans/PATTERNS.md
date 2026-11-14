@@ -44,7 +44,7 @@ The scheduling sketch uses `offset = round((t - tick_at_block_start) * frames_pe
 A tempo change acts at the next block start. The tick position does not jump. 4/4 only, 40–300 BPM.
 Define block-edge rounding and loop behavior in the 96 design before code. Fractional source starts are not a prerequisite.
 
-### 2.3 A pattern is raw hits plus settings; the engine gets a compiled list
+### 2.3 A pattern stores ticks and settings for the engine
 
 App side (`crates/app/src/pattern.rs`), saved in the project:
 
@@ -53,7 +53,7 @@ pub struct PatternData {
     pub bars: u8,              // 1..=64
     pub quantize: Grid,        // Off, 1/4, 1/8, 1/16, 1/32, 1/64, 1/8T, 1/16T, 1/32T
     pub strength: u8,          // 0..=100, steps of 10
-    pub hits: Vec<Hit>,        // as played, not quantized; max 4096
+    pub hits: Vec<Hit>,        // saved ticks, with up to 4096 rows
 }
 pub struct Hit { pub tick: u32, pub pad: u8, pub velocity: u8, pub len: u32 }
 ```
@@ -71,13 +71,14 @@ pub struct Pattern {
 pub struct Event { pub tick: u32, pub pad: u16, pub velocity: f32, pub len: u32, pub skip_lap: u32 }
 ```
 
-`compile` first leaves out raw hits at or beyond the current pattern length. Those hits
-stay saved and return when the length grows. It then applies quantize to the visible hits
-(`tick' = tick + (grid_tick - tick) * strength / 100`, where `grid_tick` is the nearest grid
-line). Only a quantized visible hit that crosses the loop end wraps to the start. Merge two
-hits of one pad on one tick (the louder one stays). Quantize is **non-destructive**: change
-it any time, the raw hits stay. Swing (later) goes into `compile` too. Change 96 needs tests
-for shortening, growing and a quantized hit at the loop boundary.
+`compile` leaves out saved hits at or beyond the current pattern length. Those hits stay
+saved and return when the length grows. It plays each visible hit at its saved tick. New
+recordings apply quantize and strength when they capture a hit. The pass saves that tick.
+Changing the grid or strength affects later hits only. The raw played time is not saved
+after the pass. Quantize Off keeps the accepted tick. If capture moves a visible hit to
+the loop end, that hit wraps to the start. Same-pad hits on one tick play once by the
+specified collision order. A later swing feature must state whether it changes saved
+ticks or acts at playback.
 
 ### 2.4 Changing a pattern while it plays
 
@@ -267,7 +268,7 @@ Behavior:
 3. A pass is from record on to record off; one pass is one undo step (`Ctrl+Z`, panel Undo).
 4. The quantize and strength are settings of the pattern (§2.3), default 1/16 and 100 %.
    Include 1/32, 1/16T and 1/32T grids for fast breaks and triplets.
-   `T` means triplet. Keep raw timing when the owner changes the grid.
+   `T` means triplet. A grid change leaves saved hits at their captured ticks.
 5. Gate pads: the release writes `len`.
 6. Erase: while erase is on and a pad is held, the hits of that pad that the playhead passes are
    removed. Keyboard: hold Backspace and the pad. The UI removes hits in the tick window between
@@ -305,7 +306,7 @@ Tests:
 5. Count-in: one bar of clicks, then recording starts at tick 0.
 6. Parity: recording from keyboard pads and from SMC-PAD pads gives the same pattern.
 7. Render and record 1/32, 1/16T and 1/32T at 172 BPM, including hits near the loop boundary.
-   Check exact timing, no double hits and grid changes without loss of raw timing.
+   Check exact timing, no double hits and saved ticks after grid changes.
 
 Render for the owner: `renders/97-pattern-record.wav` (raw take, then the quantized loop).
 
