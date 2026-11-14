@@ -89,11 +89,8 @@ def title_has_id(title: str, identifier: str) -> bool:
     return False
 
 
-def audit(
-    root: Path, merged: list[MergedCommit], now: datetime
-) -> tuple[list[str], list[str], int]:
+def check_archived(root: Path) -> tuple[list[str], int]:
     errors: list[str] = []
-    warnings: list[str] = []
     # The key keeps requirement identity for later REMOVED and RENAMED entries.
     active: dict[tuple[str, str, str], str] = {}
     archive = root / "openspec/changes/archive"
@@ -137,6 +134,13 @@ def audit(
                 "from main specs"
             )
 
+    return errors, len(active)
+
+
+def check_unarchived(
+    root: Path, merged: list[MergedCommit], now: datetime
+) -> list[str]:
+    warnings: list[str] = []
     changes = root / "openspec/changes"
     for folder in sorted(path for path in changes.iterdir() if path.is_dir()
                          and path.name != "archive"):
@@ -151,7 +155,14 @@ def audit(
                 f"title=Unarchived merged change::Change {identifier} was merged "
                 f"more than two days ago. Archive it after owner acceptance."
             )
-    return errors, warnings, len(active)
+    return warnings
+
+
+def audit(
+    root: Path, merged: list[MergedCommit], now: datetime
+) -> tuple[list[str], list[str], int]:
+    errors, count = check_archived(root)
+    return errors, check_unarchived(root, merged, now), count
 
 
 def git_history(root: Path, base: str) -> list[MergedCommit]:
@@ -183,11 +194,19 @@ def cli() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--base", help="Merged master revision; default: origin/master")
+    parser.add_argument("--only", choices=("sync", "unarchived"),
+                        help="Run one check for a separate CI step")
     args = parser.parse_args()
     root = args.root.resolve()
     try:
-        merged = git_history(root, args.base or default_base(root))
-        errors, warnings, count = audit(root, merged, datetime.now(timezone.utc))
+        errors, count = check_archived(root) if args.only != "unarchived" else ([], 0)
+        warnings = (
+            check_unarchived(
+                root, git_history(root, args.base or default_base(root)),
+                datetime.now(timezone.utc),
+            )
+            if args.only != "sync" else []
+        )
     except (OSError, ValueError) as error:
         print(f"Spec sync: {error}", file=sys.stderr)
         return 1
@@ -195,7 +214,10 @@ def cli() -> int:
         print(warning)
     for error in errors:
         print(f"Spec sync: {error}", file=sys.stderr)
-    print(f"Spec sync: checked {count} current archived scenarios; {len(errors)} errors")
+    if args.only != "unarchived":
+        print(f"Spec sync: checked {count} current archived scenarios; {len(errors)} errors")
+    else:
+        print(f"Spec sync: checked merged changes; {len(warnings)} warnings")
     return 1 if errors else 0
 
 
