@@ -88,7 +88,8 @@ Measurable form of the goal:
 
 - Every action in the program that does not need text has a controller path.
 - A frequent action takes 1 press. Any other action takes not more than 2 presses
-  (for example: hold STOP + a pad) from any screen, plus knob turns for values.
+  from a visible panel, plus knob turns for values. The first panel entry needs
+  PAD BANK and two layer 2 hits because the first hit only shows the panel.
 - The keyboard and the controller do the same thing for the same logical action, on every
   screen and in every mode. A test proves this.
 
@@ -289,13 +290,13 @@ Move an item into a phase only after an owner decision in
 These points qualify the detailed plans. Resolve each in that change's design and spec
 before code. The imported plans do not override an existing requirement.
 
-- **Count presses consistently (93):** STOP + a cell is two physical presses. Object and
-  target selection and value turns are separate from the command count. Count each command,
-  not a whole multi-action story. Test the path from each screen and mode.
+- **Count presses consistently (93):** A cell in a visible panel is one press.
+  First entry is PAD BANK plus two layer 2 hits. The first hit only shows the panel.
+  Count first entry and repeated commands separately. Test both from each screen and mode.
   Do not assume an unchanging panel row proves that a command is reachable inside a picker or a question.
-- **Protect the latched panel too (92):** PAD BANK layer 2 needs no held STOP. A destructive
-  cell must ask a question before it removes or replaces anything. Proposed safe default:
-  destructive cells ask in both panel forms. Keep X-Session direct defaults unchanged.
+- **Protect the latched panel too (92):** PAD BANK layer 2 needs no held button.
+  A destructive cell asks a question before it removes or replaces anything.
+  The rule applies to every panel access path. Keep X-Session direct defaults unchanged.
 - **No hidden bug fixes (85):** the pending-action acknowledgement changes a race outcome.
   List it as an explicit fix with a scenario, not as a behavior-neutral code move. Resolve
   priority differences found by 84 before the refactor.
@@ -304,8 +305,9 @@ before code. The imported plans do not override an existing requirement.
 - **Keep hidden hits hidden (96):** filter raw hits outside the shortened length before
   quantization. Wrap a quantized hit at the loop boundary only after that filter. Otherwise
   shortening the pattern would move hidden hits into its beginning.
-- **Controller-only work needs no fake keyboard equivalent:** test panel holds and layer
-  marks with timed MIDI events. Paired tests cover shared logical actions.
+- **Controller-only work needs no fake keyboard equivalent:** test layer 2 notes,
+  the first-hit rule, optional holds, and layer marks with timed MIDI events.
+  Paired tests cover shared logical actions.
   Raw MIDI velocity and device identity have their own tests.
 
 ## Rules that apply to every change in these plans
@@ -328,7 +330,7 @@ before code. The imported plans do not override an existing requirement.
 6. **The keyboard keeps its comfort.** The keyboard is the reference.
    Refactors and controller work do not change a key's role, except where the proposal explicitly states a change.
    Every new action also has a keyboard key or path, except controller-only actions.
-   Those exceptions are holding STOP for the panel and the layer marks. The reach test of 93
+   Those exceptions are layer selection, its mark, and an optional quick look. The reach test of 93
    checks both inputs. Controller-only parts of the screen (the `SMC` help group, the action
    echo, the panel) show only while a controller is connected.
 7. **Every new mode or state is visible** as `VISUAL.md` says: badge, pad glyphs, notices with a
@@ -361,10 +363,12 @@ answer, take the default and write the question into `design.md` under "Open que
 | 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |
 | 89 | How long is a "hold" for a button? | 300 ms, or at once when another control is used while the button is down |
 | 91 | Can the owner set the SMC-PAD encoders to relative mode in MidiSuite once? | Yes. Without it, the encoders stop at the ends of their range |
-| 92 | Is "hold STOP" the command panel? | Yes. PAD BANK layer 2 gives the same panel as a latch |
-| 92 | May an SMC panel cell apply a layout or answer a replacement question? | Yes, with a visible question for destructive changes in both panel forms. Keep X-Session direct defaults unchanged |
-| 93a | Panic on STOP + PLAY together | Yes |
-| 93a | Redo on the SMC-PAD: STOP held + RIGHT (undo: STOP held + LEFT) | Yes |
+| 92 | Is PAD BANK layer 2 the main panel path? | Yes. It latches the panel. |
+| 92 | Does the first layer 2 hit only show a hidden panel? | Yes. It runs no cell. |
+| 92 | Does holding STOP open the panel? | Off by default. An optional setting enables it. |
+| 92 | How does Panic work? | A panel cell with a question-free double press. |
+| 92 | May an SMC panel cell apply a layout or answer a replacement question? | Yes, with a visible question for destructive changes through every panel path. Keep X-Session direct defaults unchanged |
+| 93a | Where are Panic, Undo, and Redo? | Fixed panel cells. Panic needs a double press. |
 | 93a | A new project from the controller gets a date name (`2026-11-03-1`) | Yes |
 | 96 | Does a pattern store absolute pads (0–127) or pads of the open bank? | Absolute |
 | 96 | `Ctrl+X` swaps two pads: do the pattern hits follow the sound? | Yes |

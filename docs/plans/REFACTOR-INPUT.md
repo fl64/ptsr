@@ -194,7 +194,7 @@ The MIDI thread gets a `Gestures` tracker per (port, channel, control). Profile 
 
 ```toml
 [screens.global]
-stop = { tap = "ui.back", hold = "layer.panel" }
+play = { tap = "play.context", hold = "metronome.toggle" }
 ```
 
 A plain string binding (`b1 = "bank.prev"`) keeps today's behavior: act on press. A binding
@@ -212,7 +212,8 @@ plain action with a down/up meaning (`record.mic`, on Alt+R after 83a). A layer 
 sends the layer to the UI, so the screen can draw it.
 
 Only buttons with a `hold` binding wait for the release. Say this in the spec: such a tap acts
-on release, not on press.
+on release, not on press. Keep the default STOP binding plain, so it stops on press.
+A setting can add `layer.panel` to STOP hold in change 92. It is off by default.
 
 ### 2.6 Confirm
 
@@ -347,11 +348,13 @@ Tasks:
 2. Profile syntax `{ tap, hold }`; old plain strings unchanged.
 3. Learned maps store the tap and the hold action of a control (config migration: old entries
    are taps).
-4. Hold of `record.mic`: down starts, up stops (same as `Alt+R` after 83a).
+4. PLAY hold toggles the metronome. RECORD hold uses `record.mic`: down starts,
+   up stops (as `Alt+R` after 83a). A STOP hold can open the panel only when
+   its optional setting is on. Do not bind a default layer to STOP.
 5. Disconnect and lost releases clear all gesture state of the port (`CROSS-CUTTING.md` §2.2);
    tests with recorded event lists.
 6. No layer yet (layers come in 92). A `hold` binding to an unknown layer is refused with a
-   message.
+   message. Test that a default STOP tap stops on press, without waiting for HOLD_MS.
 
 ### Change 90 — `90-relative-encoders`
 
