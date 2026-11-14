@@ -73,10 +73,10 @@ checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpe
 | 121 `split-modules` | Archived and merged | None for this refactor. |
 | 122 `ui-quiet-words` | Archived and merged | Keyboard, controller, and screen checks remain in `LIVE-CHECKS.md`. |
 | 123 `pattern-view-polish` | Waiting for the owner in [PR #8](https://github.com/fl64/ptsr/pull/8) | Check both catalogue sizes, keyboard and raw MIDI step edits, and local `renders/123-step-add.wav`. |
-| `repo-fast-checks` | Planned (local branch ready) | Check the CI time and make the Rust job required after publication. |
+| `repo-fast-checks` | Merged in [PR #15](https://github.com/fl64/ptsr/pull/15). `master` requires Rust for merge. | None for sampler behavior. |
 | `denormals` | Planned after 123 and `repo-fast-checks` | Review the silence render and callback measurements. Keep 94a open. |
 | `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
-| `pads-context-lane` | Planned | Check the mini pattern, pad edit pages, and empty strip at both sizes. |
+| `pads-source-view` | Planned after `pattern-screen`. The plan is in [PR #16](https://github.com/fl64/ptsr/pull/16). | Check voice heads, sample rows, the mini pattern, and pad edit pages at both sizes. |
 | `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
 | `key-consistency` | Planned | Check bank keys, Files folder-up, and moved-key notices. |
 
