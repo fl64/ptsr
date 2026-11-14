@@ -28,6 +28,23 @@ An occupied cell keeps the current removal rule. The first pad press removes one
 
 The edit handler does not receive the current keymap. A success notice names the Undo action without a fixed key. The help band shows the effective Undo key, including `none`. This keeps the notice accurate when the owner changes a binding.
 
+### Show the step and pad target separately
+
+On 2026-11-14, the owner chose a time-column cursor and a one-press pad toggle. J/L select
+one time step. Learned MIDI `edit.value_dec` and `edit.value_inc` actions move the same column
+one step in each direction. The SMC-PAD profile is still a template, so this change does
+not assign physical button numbers. Draw the three-cell column across the header and every
+visible pad row. Do
+not draw a bracket around one pad cell. Mark the selected pad in its row label. A pad press
+selects that pad's row before it adds or removes a hit in the selected step. Keep that row
+in view. Show the actual bank, pad, and step in each success notice.
+
+One press adds a hit if that pad has none in the selected cell. One press removes its sole
+hit if it has one. A different pad can have a hit in the same step. Its hit stays in A1.
+When one pad has several hits in the cell, keep the existing explicit event choice. I/K
+select an event for that pad. The pressed pad's row and the time column must stay visible
+at 80x26 and 120x40. The full column must remain distinct from the moving playback plate.
+
 ## Rejected options
 
 - Do not spread leftover columns across steps. This makes the positions depend on the page width.
@@ -39,3 +56,4 @@ The edit handler does not receive the current keymap. A success notice names the
 - Should a new Gate event last one view cell, until the edit pad releases, or act as a one-shot? Default: one view cell. The owner has not answered this choice yet.
 - Should the three velocity levels use equal thirds? Default: 1–42, 43–84, and 85–127.
 - Should an edit notice show the Undo key itself? Default: name Undo in the notice and show the effective key in the help band. The owner has not answered this choice yet.
+- Which physical SMC-PAD controls move the step? Default: learn two buttons or one relative encoder as `edit.value_dec` and `edit.value_inc` after device measurement. The profile has no verified button numbers yet.

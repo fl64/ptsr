@@ -34,6 +34,29 @@ In step edit, a new keyboard or raw MIDI pad press on an empty cell SHALL add on
 - **THEN** both hits play at the selected cell, the OneShot has zero Gate ticks, and the Gate lasts one view cell
 - **AND** changing view or quantize later does not move either saved hit
 
+### Requirement: Step edit cursor marks one time column
+
+The edit cursor SHALL mark one time column across the step header and every visible pad row.
+It SHALL NOT frame one pad cell as the only edit target. J/L and learned MIDI
+`edit.value_dec` and `edit.value_inc` SHALL move this column one step at a time. The time
+cursor SHALL remain distinct from the live playhead.
+
+#### Scenario: Step cursor shows one time across pad rows
+- **WHEN** the owner moves the step with keyboard or learned MIDI controls at 80x26 and 120x40
+- **THEN** the header and every visible pad row mark the same step without a single-cell frame
+- **AND** the moving playback mark stays distinct
+
+### Requirement: Step pad press shows its row target
+
+A pad press SHALL select that pad's row and keep it visible before the system changes its
+hit at the selected step. A press on another pad SHALL leave hits on other pad rows
+unchanged. The selected row SHALL use a mark separate from the time cursor.
+
+#### Scenario: Step pad press changes only its own row
+- **WHEN** the owner selects a step on pad 1 and presses Q in the same bank
+- **THEN** the time column stays on that step and Q becomes the selected row
+- **AND** only Q gains or loses a hit while pad 1 keeps its hit
+
 ### Requirement: A1 step addition refuses unsafe work
 
 The system SHALL check the full replacement before changing A1. It SHALL refuse at 4096 raw rows or when a conflicting input owner blocks editing. Refusal SHALL leave A1, Undo, dirty state, and sound unchanged. A new saved tick SHALL play at its stored position even when capture quantize differs from the view division.

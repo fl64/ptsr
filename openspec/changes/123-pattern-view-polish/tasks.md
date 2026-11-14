@@ -17,6 +17,7 @@
 - [x] 3.1 Add a silent pad hit to an empty cell with keyboard and raw MIDI velocity. Keep Gate and OneShot lengths, repeat and release behavior, and original sound ownership.
 - [x] 3.2 Keep explicit choice for multiple hits. Give each add or remove one Undo step and verified ordered publication. Test full capacity, stale work, project change, save refusal, and reload.
 - [x] 3.3 Add the named catalogue fixtures and a verified offline step-add render. Compare the unchanged catalogue areas with the base.
+- [ ] 3.4 Mark the time column across all rows and the pressed pad as the row target. Name bank, pad, and step in feedback. Add keyboard, raw MIDI, TUI, and catalogue tests at both sizes.
 
 ## 4. Publish and hand over
 
