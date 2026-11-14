@@ -847,10 +847,7 @@ mod tests {
             velocity: 1.0,
         })
         .unwrap();
-        let hung = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(2));
-            drop(ui);
-        });
+        // Keep the UI sender idle while the callback processes two seconds of audio.
         let started = Instant::now();
         let (mut l, mut r) = (vec![0.0; 128], vec![0.0; 128]);
         let mut out = Vec::new();
@@ -867,6 +864,6 @@ mod tests {
             out[480..].iter().all(|&x| (x - 0.5).abs() < 1e-3),
             "a gap in the sound"
         );
-        hung.join().unwrap();
+        drop(ui);
     }
 }
