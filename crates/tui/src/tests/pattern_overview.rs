@@ -159,10 +159,8 @@ fn step_cursor_shows_one_time_across_pad_rows() {
 
         let mut overlap = view.clone();
         overlap.playhead = Some(1);
-        term.draw(|frame| {
-            pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &overlap)
-        })
-        .unwrap();
+        term.draw(|frame| pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &overlap))
+            .unwrap();
         let buffer = term.backend().buffer();
         for y in [2, 4, 5] {
             assert_eq!(buffer[(cursor_x + 1, y)].bg, CYAN);
