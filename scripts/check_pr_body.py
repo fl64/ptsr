@@ -72,7 +72,7 @@ def check(template: str, body: str, code_changed: bool) -> list[str]:
 def code_changed(root: Path, base: str, head: str) -> bool:
     result = subprocess.run(
         ["git", "-C", str(root), "diff", "--name-only", "--diff-filter=ACMR",
-         base, head, "--", "crates/"],
+         f"{base}...{head}", "--", "crates/"],
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
     if result.returncode:
