@@ -103,10 +103,11 @@ panel cells and keep both views available without changing the pad block.
 
 - Fill the main strip with the focus sample's Braille wave. Show its slice bounds and the
   labels of pads that use each slice, for example `1` or `Q`. By default, focus follows the
-  last hit pad. A key and a panel cell pin the selected pad's sample instead. A focus hold
-  setting prevents rapid jumps during dense play. Its proposed default is 150 ms.
+  last hit pad. A key and a panel cell pin the selected pad's sample instead. After a hit,
+  change focus only when the current sample's visible time reaches the focus hold time.
+  Its proposed default is 150 ms. A pin keeps focus on the selected pad's sample.
 - Put the sample name at the left of the header. Put `▶ N voices` at the right while voices
-  sound, or muted `■ silent` when none sound.
+  sound, or muted `■ silent` when none sound. Keep the focus wave visible in silence.
 - For each sounding voice on the focus sample, light its region in the play accent (cyan).
   Use three brightness levels that follow the voice level after its envelope. Draw a white
   vertical line at the current position of each voice. Light a slice's pad label in cyan
