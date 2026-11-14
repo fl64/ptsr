@@ -1,25 +1,22 @@
-# Plans: controller-first work, patterns and sample workflows
+# Plans: one ordered roadmap
 
 ## Start here: v1.0.0
 
-[V1.md](V1.md) is the release plan: sample → chop → pads → pattern → resample → effects → export.
-[FX-FILTERS.md](FX-FILTERS.md) is the ordered plan for effects, filters, pad sound and the metronome path.
-[UI-UX.md](UI-UX.md) plans screen space, pattern editing, wording and the bank mixer.
-V1 selects the minimum for both keyboard and SMC-PAD, with no clicks and no crashes.
-Its scope and milestone order take priority over the broader tracks below and the historical vision stages.
-Everything outside that minimum is `1.x`. Only the owner can move work into 1.0.
-The quality, export and release changes retain numbers 110–120. Deferred callback investigation keeps 94a. Change 109 is canceled.
-The new glitch-kit and pad-sound names are planning labels. Assign numbers before their OpenSpec proposals.
-Independent report-only change 84b adds local overrun records before further product work.
+[The ordered roadmap](#ordered-roadmap) sets the sequence for new work. [V1.md](V1.md)
+sets the 1.0 release scope and criteria. [FX-FILTERS.md](FX-FILTERS.md),
+[UI-UX.md](UI-UX.md), and the other plans give details. An older order in a detailed
+plan does not change the roadmap order. Requirements come from OpenSpec, not these plans.
 
-The functional order is input/controller (0.2), patterns (0.4), glitch kit (0.4b),
-tempo/resample/effects/export (0.5), then data safety and release (0.6).
-The owner resumed part of sound-quality work (0.3) in the FX and filters plan.
-The project now includes transport 95 and patterns 96–98k.
-On 2026-11-12, the owner chose a full-bank A1 overview before targeted step editing.
-Change 98l adds the overview. Change 98a adds one-hit correction. The earlier 98a draft is a historical guide.
-Edit panels share the pad edit frame since 98d–98h.
-Existing real-time rules, tests and benchmark limits stay mandatory. Input prerequisites need explicit decisions before code.
+The owner checks each phase by ear and by eye. Each item gets one OpenSpec change,
+number, branch, and PR. A phase ends with the owner's listening and controller or
+keyboard checks. Do not start the next phase while an item waits for owner checks,
+unless the owner allows it. Move an item from Later into a phase only by an owner
+decision recorded in the decisions table.
+
+The quality, export, and release changes retain numbers 110–120. Change 109 is
+canceled. New names are planning labels. Assign numbers before OpenSpec work.
+Existing real-time rules, tests, and callback limits stay mandatory.
+
 The owner expanded the 1.0 sound scope on 2026-11-07:
 
 - **0.4:** quantize and step grids include 1/64. The default step view stays 1/16.
@@ -171,80 +168,121 @@ How to verify: repeat the two-variant move with a disposable project from each i
 Open a pad from each variant and move a cut. Only that variant's linked pads follow it.
 Local render: `renders/86d-portable-chops.wav`. Compare matching before/after slices as section 86d of `docs/LIVE-CHECKS.md` describes.
 
-## Broader tracks and visual rules
+## Ordered roadmap
 
-This is the full roadmap, not the 1.0 feature list. V1 selects reduced scopes from it.
-Unselected parts remain `1.x`, even when they have a planned change number.
+Daily use guides this order. An item that the owner can hear or see comes first.
+Small internal work stays in [Later](#later), unless it blocks a phase. Each phase
+ends with the owner's listening and controller or keyboard checks.
 
-| Order | Track | Document | Changes |
-|---|---|---|---|
-| 0 | Consistent keys and reserved recording / redo chords | `KEYMAP-CLEANUP.md` | 83a |
-| before 87 | Save retry, safe project switches and portable chop variants | This document, Project save safety | 86b–86d |
-| 1 | Input parity, refactors and new input features. Change 87 is the visual base | `REFACTOR-INPUT.md`, `VISUAL.md` (87) | 84–90 |
-| 2 | SMC-PAD integration and the command panel | `SMC-PAD-INTEGRATION.md` | 91–94 |
-| deferred | Investigate callback peaks and slow-core CPU spikes after a separate owner request | `PATTERNS.md` | 94a |
-| 3 | Transport, patterns, recording, sequencer | `PATTERNS.md` | 95–100a, optional 101 |
-| 4, after 100a | Sample tempo, break patterns, locks, resampling, bass, mix and movement | `SAMPLE-WORKFLOWS.md` | 102–108 |
-| all | Tools, safety, comfort, docs and risks. Changes 93a and 100a | `CROSS-CUTTING.md` | tasks in many changes |
+### Phase A — finish and stabilize
 
-`VISUAL.md` also gives rules for every later change.
-Each new mode or state brings its badge, pad glyphs, notices and hints for both inputs.
+1. [123 pattern-view-polish](UI-UX.md#42-pattern-view-polish): owner check and archive.
+2. [denormals](FX-FILTERS.md#41-denormals): no slowdown after reverb and delay tails. Report its effect on 94a.
+3. [metronome-path](FX-FILTERS.md#42-metronome-path): keep the click out of recordings, resampling, and export. Give it its own level.
+4. [master-safety](FX-FILTERS.md#44-master-safety-planned-111): limiter, return level, and mute per FX slot.
 
-The order is not free. Track 2 needs the mode model, the button hold and the relative encoders
-of track 1. Track 3 needs the screen registry for a new screen, plus `ui.confirm` and button holds (`erase`, note repeat).
-It also needs the track 2 command panel for the new actions' controller paths.
-Project save safety 86b–86d comes before 87. The owner deferred separate callback investigation 94a, not existing benchmark checks.
-Track 4 follows the pattern base through 100a. It does not wait for optional timestamps (101).
-For 1.0, V1 inserts the glitch kit after patterns and before sample tempo, resampling, effects and export.
-The minimum locks from 104 move into `step-locks` in 0.4b. The rest of 104 stays `1.x`.
-The diagram below retains the broader roadmap, not the revised 1.0 order.
-Change 103 needs 102. Changes 104 and 105 need patterns. Changes 106–108 can change order between them.
+The owner hears no clipping, no click in recordings, and no dropouts after long tails.
 
-```
-83a keymap cleanup (A confirmed; specifications first)
-    │
-    ▼
-84 parity ─► 85 modes ─► 86 screens
-                             │
-            86b retry ─► 86c safe switch ─► 86d portable chops
-                                                    │
-87 badges ◄────────────────────────────────────────┘
-    │
-88 confirm ─► 89 hold ─► 90 relative ─► 91 smc profile
-                                           │
-            92 command panel ◄─────────────┘
-                 │
-            93 controller reach ─► 93a comfort ─┬─► (94 pad lights, optional)
-                                               │
-            95 transport ◄─────────────────────┘
-                 │
-            96 pattern play ─► 97 pattern record ─► 98 step + screen
-                                                        │
-                                  99 pattern slots ◄────┘
-                                       │
-                                  100 note repeat ─► 100a pad mute
-                                                        │
-                      ┌─────────────────────────────────┤
-                      ▼                                 ├─► 104 locks
-            102 sample tempo ─► 103 break to pattern     ├─► 105 resample
-                                                        ├─► 106 bass / 107 mix / 108 movement
-                                                        └─► (101 input timestamps, optional)
-```
+### Phase B — the sound of a pad
 
-In parallel with 84, start step 0 of change 91 without code.
-The owner measures the SMC-PAD on Linux and sets the encoders to relative. This removes the biggest risk early.
+5. [pad-sound](FX-FILTERS.md#45-pad-sound): pan, fine tune, exponential decay with hold, and velocity curve.
+6. [pad-reverse](FX-FILTERS.md#46-pad-reverse): play a pad region backward.
+7. [pitch-quality](ROADMAP-DETAILS.md#pitch-quality): anti-aliased interpolation for pitched pads.
+8. [no-clicks](ROADMAP-DETAILS.md#no-clicks): short fades on starts, stops, steals, cuts, and slice edits.
 
-Change 82 is archived. The new prerequisite for 84 is keymap cleanup 83a.
-Change 91 will replace change 83 (`openspec/deferred/83-controller-profiles`).
-In 91, move its useful sources, pad orientation and raw-byte test approach into the new change.
-Then remove the deferred folder. The diagram retains the controller-first dependency plan, not completed hardware acceptance.
-Transport 95 uses existing keyboard and learnable MIDI paths. Physical-controller checks and the unfinished controller work remain open.
-Each later proposal must resolve the input prerequisites it needs. Recording still needs an explicit redo decision.
-Change 94 is optional. Change 94a waits for a separate owner request, not a separate implementation step before patterns.
-A passing p99 check alone does not resolve the historical maximum-budget failures.
+The owner hears clean pitched breaks, natural decays, real dynamics, and no clicks.
 
-Letters keep the existing change numbers valid. These additions do not renumber 87–101.
-The owner can change the order, subject to the dependencies above.
+### Phase C — sequencing on screen
+
+9. [pattern-screen](UI-UX.md#31-pattern-screen): F5 screen, view and edit, F7 free, step lane.
+10. [control-pages](ROADMAP-DETAILS.md#control-pages): one control table per screen and mode.
+11. [pads-source-view](UI-UX.md#32-pads-source-view-includes-pads-context-lane): live source and mini pattern lane.
+12. [99 pattern slots](PATTERNS.md#change-99--99-pattern-slots): 16 slots with 4, 8, or 16 bar switches.
+13. [100 note repeat](PATTERNS.md#change-100--100-note-repeat): 1/32 and triplets.
+14. [100a pad mute](CROSS-CUTTING.md#change-100a--100a-pad-mute-after-100): mute pads during play.
+
+The owner sees and hears a step sequencer, sounding slices, slots, and repeats.
+
+### Phase D — the controller
+
+15. [88 ui.confirm](REFACTOR-INPUT.md#change-88--88-ui-confirm): visible confirmation.
+16. [89 button hold](REFACTOR-INPUT.md#change-89--89-button-hold): tap and hold.
+17. [90 relative encoders](REFACTOR-INPUT.md#change-90--90-relative-encoders): endless knob values.
+18. [91 SMC-PAD profile](SMC-PAD-INTEGRATION.md#change-91--91-smc-pad-profile): Linux measurement and knob strip.
+19. [92 command panel](SMC-PAD-INTEGRATION.md#change-92--92-command-panel): controller flows and control pages.
+20. [93 controller reach test](SMC-PAD-INTEGRATION.md#change-93--93-controller-reach): cover both stories.
+21. [93a comfort](SMC-PAD-INTEGRATION.md#change-93a--93a-controller-comfort): panic, redo, date names, velocity curve.
+
+Changes 88–90 can start without the device. Changes 91–93a need it. If the
+device is not at hand, do 88–90 and continue with phase E. Return to the
+remaining phase D items when the device arrives. The owner checks a full
+session from an empty project to a saved one without the keyboard, except
+for typed names.
+
+### Phase E — effects and mix by ear
+
+22. [pad-bus](FX-FILTERS.md#47-pad-bus): drive on the pad sum before inserts.
+23. [drive-aa](FX-FILTERS.md#48-drive-aa): reduce aliasing in drive.
+24. [filter-v2](FX-FILTERS.md#49-filter-v2): 24 dB slope, notch, peak, envelope, key tracking.
+25. [reverb-v2](FX-FILTERS.md#410-reverb-v2): FDN, pre-delay, low cut, width.
+26. [delay-v2](FX-FILTERS.md#411-delay-v2): filters in loop, ping-pong, tempo sync.
+27. [fx-core](ROADMAP-DETAILS.md#fx-core): up to four inserts per pad and master.
+28. [screen-layouts](UI-UX.md#43-screen-layouts): FX slots and sends. Files data and a preview wave.
+29. [mixer-view](UI-UX.md#44-mixer-view): F8 mix screen.
+
+The owner hears drum effects and sees a readable mix.
+
+### Phase F — the glitch kit (0.4b)
+
+30. [pad-pitch-env](ROADMAP-DETAILS.md#pad-pitch-envelope): pad pitch envelope.
+31. [pad-loop](ROADMAP-DETAILS.md#pad-loop): loop with crossfade.
+32. [step-locks](ROADMAP-DETAILS.md#step-locks): slice, start, reverse, pitch, cutoff.
+33. [step-ratchet](ROADMAP-DETAILS.md#step-ratchet): ramps and probability.
+34. [stutter](ROADMAP-DETAILS.md#stutter): held master effect.
+35. [roll-matrix](ROADMAP-DETAILS.md#roll-matrix): rolls over the running pattern.
+36. [stretch-offline](ROADMAP-DETAILS.md#stretch-offline): make a stretched sample offline.
+
+The owner hears chopped, retriggered, and stretched breaks in live play.
+
+### Phase G — tempo, resampling, and export
+
+37. [102 sample tempo](SAMPLE-WORKFLOWS.md#change-102--102-sample-tempo): BPM, beats per sample, tempo-grid chop, repitch fit.
+38. [record-latency](ROADMAP-DETAILS.md#record-latency): align recording to beat.
+39. [105 resample in tempo](SAMPLE-WORKFLOWS.md#change-105--105-resample-in-tempo): record at project tempo.
+40. [sample-ops](ROADMAP-DETAILS.md#sample-operations): trim, fades, reverse, DC removal.
+41. [export](ROADMAP-DETAILS.md#export): render slots to WAV offline.
+42. [project-safety](ROADMAP-DETAILS.md#project-safety): collect, relink, autosave, recover.
+
+The owner checks a full track from an empty project to an exported WAV.
+
+### Phase H — release 1.0
+
+43. [format-freeze](ROADMAP-DETAILS.md#format-freeze): freeze project format.
+44. [soak](ROADMAP-DETAILS.md#soak): four-hour session.
+45. [packaging](ROADMAP-DETAILS.md#packaging): one binary and ptsr doctor.
+46. [manual](ROADMAP-DETAILS.md#manual): installation and use.
+47. [three release tracks and friction log](ROADMAP-DETAILS.md#release-track-review): V1 criterion 1.
+48. [tag v1.0.0](ROADMAP-DETAILS.md#tag-v100): tag the accepted release.
+
+The owner checks the package, manual, tracks, and friction log before the tag.
+
+### Later
+
+Move an item into a phase only after an owner decision in
+[the decisions table](#decisions-to-get-from-the-owner).
+
+- [compact-help](UI-UX.md#33-compact-help), [key-consistency](UI-UX.md#34-key-consistency),
+  [style-doc-split](UI-UX.md#45-style-doc-split-between-two-changes), and the debug fixtures
+  of [control-pages](ROADMAP-DETAILS.md#control-pages) beyond what 92 needs.
+- [fx-cost](FX-FILTERS.md#43-fx-cost), unless the callback budget needs it earlier.
+- Fine level matching, inter-sample peak precision, and
+  [catalogue rules](CROSS-CUTTING.md#12-screen-catalogue-task-in-change-87).
+- [App library split and merged branches](ROADMAP-DETAILS.md#later-internal-work).
+- [Pad lights](SMC-PAD-INTEGRATION.md#change-94--94-pad-lights-optional-experiment) and terminal fallback.
+- 1.x in [V1.md](V1.md#4-everything-else-is-1x): phrase variation, groove templates,
+  break to pattern, chromatic and bass mode, sidechain, LFO and modulation.
+  Other 1.x work includes MIDI clock and Link, cue output, loudness meter, layers,
+  kits and presets, launcher and scenes, library, and time stretch.
 
 ## Review notes before implementation
 
@@ -305,8 +343,8 @@ answer, take the default and write the question into `design.md` under "Open que
 
 | Before | Question | Default |
 |---|---|---|
-| 0.2 | Is the SMC-PAD at hand? Without it, 90–93 cannot be accepted | Prepare 96 from implemented transport 95. Resolve input prerequisites in each proposal. Keep sound-quality work deferred and unverified controller checks open |
-| 88 | When does confirmation work resume? | After a MIDI device is available for live checks. Owner decision: defer 88 |
+| Phase D | Is the SMC-PAD at hand for changes 91–93a? | Do 88–90, then phase E. Return to 91–93a when the device arrives. |
+| 88 | When does confirmation work resume? | In phase D. Test the keyboard path before the device check. |
 | 0.4 | One swing amount in 1.0? | Yes, if 96 makes it cheap |
 | 0.4b | Is the glitch kit in 1.0? | Yes |
 | 0.4b | Stutter on the master only, or also per pad in 1.0? | Master only |
