@@ -42,16 +42,18 @@ One action stops all sound at once: transport stop, all voices fade out over the
 (`HushPads` exists; add the preview and the FX tails), recording stops and keeps what it has.
 
 - Keyboard: `Ctrl+.` (right half; check clashes).
-- SMC-PAD: STOP + PLAY pressed together (a chord: the second button within 100 ms, or PLAY
-  while STOP is down). This does not open the panel.
+- SMC-PAD: a Panic panel cell with a question-free double press. The first press
+  shows an armed state. Change 92 sets the time limit. Neither press changes
+  the transport until the second press runs Panic.
 - Notice: `! all sound stopped` (Warn).
 
 ### 2.2 A controller goes away while something is held (task in change 89 and 92)
 
-- Unplug while STOP is held: the panel layer ends, the pads sound again. Unplug while a pad is
-  held: the existing gate release happens (spec "75-unplug-gate").
-- A layer or a hold never stays on without its button: the `Gestures` tracker clears all state of
-  a port on disconnect and on a lost release (a press of the same control while it is "down").
+- Unplug during an optional SHIFT or STOP hold: its panel view ends. Unplug while a
+  pad is held: the existing gate release happens (spec "75-unplug-gate").
+- Disconnect clears the PANEL mark and the held gestures of that port. PAD BANK is
+  local to the device; the program learns its layer from the next pad note after reconnect.
+  A lost release clears a held gesture on the next press of the same control.
 - Notices: `· SMC-PAD connected`, `! SMC-PAD disconnected` (with what was released).
 
 ### 2.3 Two controllers at the same time (task in change 92)
@@ -59,16 +61,17 @@ One action stops all sound at once: transport stop, all voices fade out over the
 The X-Session Pro and the SMC-PAD can be connected together (spec "Several MIDI devices at
 once"). Rules:
 
-- A layer (panel, erase, repeat) belongs to the device whose button made it. Pads of the other
-  device keep sounding. The badge says which device: `PANEL · SMC`.
+- A panel belongs to the device whose layer 2 note or optional shortcut showed it.
+  Pads of another device keep sounding. The badge names the device: `PANEL · SMC`.
 - The X-Session has no pads, so it has no panel. Its current physical map (change 82) must not
   change. Run its existing tests in every change of these plans; they are the regression guard.
 
 ### 2.4 Destructive actions
 
 For the SMC-PAD, proposed default: clear pad, clear pattern, reset pad, apply a plan over
-occupied pads and delete a slot open a question (`ASK`) in both panel forms. A latched
-layer-2 cell needs no held STOP, so the panel alone is not a safety guard. Only an explicit
+occupied pads and delete a slot open a question (`ASK`) through every panel path.
+A latched layer-2 cell needs no held button, so the panel alone is not a safety guard.
+Only an explicit
 Yes cell confirms. Keep the X-Session direct safe defaults unchanged. Record the owner's
 choice in change 92 before code. Existing keyboard behavior stays as specified.
 
@@ -82,8 +85,8 @@ undo covers.
 - Keyboard: `Ctrl+Y`, reserved by keymap cleanup 83a. After 83a, Chop hits use H and
   Shift+H. Check `config/keymap.toml`, owner overrides and the supported terminals before
   binding redo. The earlier Ctrl+U candidate is superseded.
-- SMC-PAD: while STOP is held, LEFT is undo and RIGHT is redo (2 presses, symmetric, easy to
-  find by touch). The Undo cell of the panel stays.
+- SMC-PAD: the fixed Undo and Redo panel cells. LEFT and RIGHT keep their
+  previous and next roles while the panel is visible.
 - A new edit after an undo drops the redo steps. Notice: `✓ undo: <what>`, `✓ redo: <what>`.
 
 ### 3.2 A new project without typing
@@ -106,11 +109,13 @@ velocity curve (3.3), the knob response (exists). Each with a knob path.
 
 ### 3.5 First connect and the cheat sheet
 
-- The first time the SMC-PAD connects, one Info notice: `SMC-PAD: hold STOP for commands`.
-  Kept in the config so it shows once.
+- The first time the SMC-PAD connects, one Info notice: `SMC-PAD: PAD BANK opens panel`.
+  F1 explains that the first layer 2 hit only shows the panel. Keep the notice
+  state in the config so it shows once.
 - Controller map (owner decision, 2026-11-12). A separate change after 98b.
   - F1 gets a page `Controller`: a drawing of each connected device, with the action of each
-    control on the current screen and mode. While the owner holds STOP, the pads show the panel cells.
+    control on the current screen and mode. Layer 2 pads show panel cells after
+    the first layer 2 hit reveals the panel.
     Both knob banks show, and the active bank is bright. Free and device-local controls are dim.
   - F12 MIDI shows the same drawing live: a press or a turn on the device lights its control.
     Arrows select a control, Enter learns it, Backspace clears it.
@@ -141,9 +146,11 @@ velocity curve (3.3), the knob response (exists). Each with a knob path.
   - The places of `k1`–`k12` and `b1`–`b10` were recorded on 2026-11-12 with `aseqdump`
     while the owner pressed each control. Change 98j has the record and the layout.
   - Change 98j adds the F1 `Controller` tab, the `[layout]` section and the X-Session layout.
-    The live F12 map, the SMC-PAD layout, its knob banks and the STOP panel cells are still open.
+    The live F12 map, the SMC-PAD layout, its knob banks and the layer 2 panel cells are still open.
 - `docs/SMC-PAD.md`: the same as a printable page for the owner, regenerated by
-  `task controller-doc` (a test fails when it is out of date).
+  `task controller-doc` (a test fails when it is out of date). The setup guide
+  and `ptsr doctor` ask for a distinct layer 2 pad color in MIDI Suite.
+  The screen mark still works when the owner has only Linux.
 
 ## 4. Additions to the sequencer plan
 

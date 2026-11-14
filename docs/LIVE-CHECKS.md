@@ -2134,31 +2134,52 @@ Earlier callback maximum-budget failures remain open. Owner acceptance does not 
 
 ## 92 — Planned SMC-PAD-only flow checks
 
-These checks are targets for change 92. Keep every box open until the SMC-PAD profile,
-command panel, and knob strip exist. Use a disposable project and a sample with clear
-hits. Keep the keyboard out of reach after setup. Record the device preset and each
-missing control instead of treating a keyboard fallback as a controller pass.
+These checks are targets for change 92. Keep every box open until the SMC-PAD
+profile, command panel, and knob strip exist. Use a disposable project and a
+sample with clear hits. Keep the keyboard out of reach after setup. Record the
+device preset and each missing control. A keyboard fallback does not count as
+a controller pass.
+
+### Panel access while music plays
+
+- [ ] Start the transport. Press PAD BANK for layer 2. Hit a layer 2 pad once.
+  Check that the panel appears and no command runs. Read PANEL in the status
+  line. Check that the transport and all sounding voices continue.
+- [ ] Hit a screen cell. Check that it runs on this second layer 2 hit. Turn
+  both knob banks while the panel shows. Check that the named values change
+  and the music continues. Press PAD BANK for layer 1, then hit a pad.
+  Check that the panel hides and the hit uses its normal pad role.
+- [ ] Tap STOP while playback runs. Check that the transport stops without
+  opening the panel. Tap STOP again. Check that the position returns to the
+  start. Press PLAY to continue.
+- [ ] If change 91 measures a distinct SHIFT message, hold SHIFT to show
+  the panel and release it to leave. If the optional STOP hold setting is
+  on, test it separately. Keep both shortcuts off for the default pass.
 
 ### Chop the sound of a pad
 
-- [ ] Hit the pad with the sample. Hold STOP and hit the Chop panel cell. Check that
-  Chop opens on that pad's sample. Turn knob 1. Check that it moves the cursor and that
-  the knob strip names the other active knobs.
-- [ ] Use the panel cells for a cut, equal parts, and cuts at hits. Use Assign, hit the
-  target pads, and apply the layout through the panel. Check that the slices appear on
-  the target pads. Press PLAY and listen to each slice.
-- [ ] Tap STOP to return to Pads. Play the target pads. Check that every slice sounds
-  and that the full flow used no keyboard action.
+- [ ] Hit the pad with the sample. Press PAD BANK and hit a layer 2 pad once
+  to show the panel. Check that this hit runs no cell. Hit Chop. Check that
+  Chop opens on that pad's sample. Turn knob 1. Check that it moves the cursor
+  and that the knob strip names the other active knobs.
+- [ ] Hit the Cut, Parts, and Hits cells. Hit Assign. Press PAD BANK for
+  layer 1, then hit the target pads. Press PAD BANK for layer 2 and use one
+  hit to reveal the panel again. Hit Apply. Check that the slices appear
+  on the target pads. Press PLAY and listen to each slice.
+- [ ] Hit Back to return to Pads. Return to layer 1. Play the target pads.
+  Check that every slice sounds. Record whether you used a keyboard action.
 
 ### Edit a pad
 
-- [ ] Hit a pad and select knob bank 2. Turn volume, pan, pitch, cutoff, decay, and
-  sends. Check each value and listen for its effect without opening the inspector edit.
-- [ ] Hold STOP and hit the Edit panel cell. Turn knob 1. Check that it selects the
-  parameter. Turn knobs 2–8. Check that the knob strip names and changes the parameters
-  of the open page. Press LEFT and RIGHT to change pages.
-- [ ] Tap STOP to close the edit. Check that every pad parameter has a controller path
-  with at most two presses per command plus knob turns. Record any missing path.
+- [ ] Hit a pad and select knob bank 2. Turn volume, pan, pitch, cutoff,
+  decay, and sends. Check each value and listen without opening the edit.
+- [ ] Press PAD BANK and reveal the panel if it is hidden. Hit Edit. Turn
+  knob 1. Check that it selects the parameter. Turn knobs 2–8. Check that
+  the knob strip names and changes the open page. Press LEFT and RIGHT to
+  change pages.
+- [ ] Hit Back to close the edit. Check that every pad parameter has a
+  controller path. Record first-entry and repeated-command press counts
+  separately. Record any missing path.
 
 ## 95: Transport and metronome
 

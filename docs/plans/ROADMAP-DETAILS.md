@@ -19,11 +19,28 @@ The owner checks each path by ear and with the automated click checks. See the
 
 ## Control pages
 
-`control-pages` is a documentation and drawing change. Make one control table for each
-screen and mode, including Pattern. Each table names pad, knob, panel, and button roles.
-Do not change an action in this change. Include a page for the chop and pad-edit flows
-in [the SMC-PAD plan](SMC-PAD-INTEGRATION.md#2-the-layout). A unit test checks that
-bank 1 knob 1 selects the current thing or moves its cursor on each page.
+control-pages is a documentation and drawing change. Make one control table
+for each screen and mode, including Pattern. Each table names pad, knob,
+panel, and button roles. Do not change an action in this change. Include a
+page for the chop and pad-edit flows in
+[the SMC-PAD plan](SMC-PAD-INTEGRATION.md#2-the-layout). A unit test checks
+that bank 1 knob 1 selects the current thing or moves its cursor on each page.
+
+ButtonRoles uses this table on every page:
+
+| Button | Tap | Hold |
+|---|---|---|
+| PLAY | Play or continue the screen's transport, selection, or preview. | Toggle metronome. |
+| STOP | Stop transport or preview. A second tap while stopped returns to the start. | Optional panel access, off by default. |
+| RECORD | Record the pattern. | Record the microphone while held. |
+| LEFT / RIGHT | Previous / next item of the main list. | Repeat. |
+
+The panel rows include fixed Back, Undo, Redo, and Panic cells. Panic uses a
+question-free double press. The top row selects screens. The middle rows
+contain screen commands. PAD BANK layer 2 latches the panel. If the panel is
+hidden, the first layer 2 hit only reveals it. A later hit runs its cell.
+The page shows this first-hit rule and the PANEL status mark. It keeps both
+knob banks usable while the panel is visible.
 
 ## FX core
 

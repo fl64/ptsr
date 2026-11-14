@@ -30,7 +30,8 @@ Sources to retain when 91 replaces 83:
 
 Consequences:
 
-- The device SHIFT is useless to ptsr. ptsr makes its own modifier: hold STOP (change 92).
+- Reports say SHIFT sends no MIDI message. Change 91 checks it on Linux.
+  Only a measured SHIFT message can enable the optional quick panel view.
 - PAD BANK and KNOB BANK are useful: ptsr knows the layer from the note or CC number.
 - The encoders must be in relative mode. The owner sets the type "CW" (relative) for the 8
   encoders once in MidiSuite. MidiSuite runs on Windows or macOS. If the owner cannot do this,
@@ -41,134 +42,165 @@ Consequences:
 
 ### One navigation pattern
 
-This is the target flow for `control-pages`, changes 88–93, and later screens. It does not
-describe a complete SMC-PAD profile in the current build.
+This is the target flow for control-pages, changes 88–93, and later screens. It
+does not describe a complete SMC-PAD profile in the current build.
 
 1. Hit a pad to select the thing to work on: a pad, slice, step, channel, or slot.
-2. Hold STOP and hit a pad to select a command panel cell. The top row selects screens.
-   The middle rows contain screen commands. The bottom row contains global commands.
-3. Turn knob 1 in bank 1 to move the selection or cursor. Knobs 2–8 change parameters
-   of the selected thing. The knob strip names their current roles. Bank 2 always
-   controls the selected pad's main parameters and the master.
-4. Tap STOP to go back one level. It closes an edit or returns from a screen to Pads.
-5. Press PLAY to play what the screen shows. Press RECORD to record. Press LEFT or RIGHT
-   to move through the screen's main list.
+2. Press PAD BANK to select pad layer 2. The first layer 2 hit shows the command
+   panel if it is hidden. It runs no command. Hit a cell after the panel appears.
+   The top row selects screens. The middle rows contain screen commands. The
+   bottom row contains global commands, including Back, Undo, and Redo.
+3. Turn knob 1 in bank 1 to move the selection or cursor. Knobs 2–8 change
+   parameters of the selected thing. The knob strip names their current roles.
+   Bank 2 controls the selected pad and the master on every screen.
+4. Hit the Back panel cell to close an edit or return from a screen to Pads.
+   Press PAD BANK to return to pad layer 1. The next layer 1 hit hides the panel
+   and uses the normal pad route.
+5. Press PLAY to play or continue what the screen shows. Press RECORD to record
+   the pattern. Press LEFT or RIGHT to move through the screen's main list.
+   Tap STOP to stop the transport or preview. Tap it again while stopped to
+   return to the start.
 
 The keyboard keeps its full path: F keys, Enter, Esc, I/K, J/L, and Tab.
+Panel access never changes the transport or stops a sounding voice. During play,
+knob bank 1 controls the screen and bank 2 controls the selected pad and master.
+Knobs keep working while the panel is visible.
 
-Principles (they go into the spec of change 92):
+The first panel entry takes PAD BANK and two layer 2 hits. Later cell commands
+take one hit while the panel is visible. Change 93 counts these physical presses
+and records the first-entry cost. A frequent action remains direct where a
+button, pad, or knob has that role. Do not count the first reveal as a command.
 
-1. Outside the command panel, layer 1 pads sound or act as targets / steps where the mode
-   says so, as keyboard pads do. Only an explicit panel hold changes them into command cells.
-2. Commands are on the 5 buttons, on the command panel, and on the knobs.
-3. One role per button on every screen.
-4. A frequent action is 1 press; any action is not more than 2 presses. A pad hit that picks
-   the object or the target (the pad to edit, the pad to load onto) is not counted.
-5. A second press of the same panel cell confirms its own step (as `P` then `P` today). A
-   question is answered by `ui.confirm`.
-6. The screen always shows what the panel cells and the knobs do now.
+Performance tools such as roll, pad mute, slot pick, note repeat, and erase use
+latched pad modes. One panel cell enters a mode. The same cell or Back leaves it.
+The badge names the mode. Destructive cells always ask a visible question.
+Entering or leaving a mode does not change the transport.
 
 ### 2.1 Buttons
 
 | Button | Tap | Hold |
 |---|---|---|
-| PLAY | `play.toggle`: play / stop what the screen is about: the transport (Pads, Pattern), the selection (Chop), the preview (Files) | from change 95: `metronome.toggle` |
-| STOP | `ui.back` (Esc) | `layer.panel`: the command panel while held |
-| RECORD | `record.toggle`: the microphone recording; from change 97, the pattern recording when the transport plays or the Pattern screen is open | `record.mic` while held (as `Alt+R` after 83a) |
-| LEFT / RIGHT | `nav.prev` / `nav.next`: the main list of the screen: bank (Pads), page (edit), slice (Chop), folder parent / open (Files), bar page (Pattern) | repeat |
+| PLAY | Play or continue the transport on Pads and Pattern, the selection on Chop, or the preview on Files. | Toggle the metronome. |
+| STOP | Stop the transport or preview. A second tap while stopped returns to the start. | No default role. An optional setting opens the panel. |
+| RECORD | Record the pattern. | Record the microphone while held. |
+| LEFT / RIGHT | Previous / next item in the screen's main list. | Repeat. |
 
-While STOP is held, the other buttons change meaning (from change 93a): LEFT is undo, RIGHT is
-redo, PLAY is panic (all sound stops). RECORD with STOP held does nothing.
+STOP has no hold binding by default, so its tap can act on press. With the
+optional STOP hold setting, its tap acts on release. Change 89 adds tap and hold
+for PLAY, RECORD, and the optional STOP hold. It does not bind a default layer
+to STOP. PLAY never stops an active transport. Undo, Redo, and Panic are panel
+cells. The Panic cell needs a question-free double press. Change 92 sets its
+time limit and visible first-press state. Back is a fixed panel cell.
 
-`play.toggle`, `record.toggle`, `nav.prev`, `nav.next` are new context actions. Each maps to an
-existing action per screen and mode; the table lives in one function in `crates/input`, with a
-test per row. On Pads before the transport exists (95), PLAY plays the selected pad.
+ButtonRoles in control-pages uses this table. Each row gets a keyboard path and
+raw MIDI tests through the real profile and dispatch. The context action table
+maps PLAY, STOP, RECORD, LEFT, and RIGHT on each screen and mode.
 
 ### 2.2 The command panel
 
-Hold STOP: the 16 layer 1 pads become 16 cells. PAD BANK layer 2 shows the same cells as a
-latch. The pad grid on the screen is replaced by the panel grid, with the labels in the physical
-layout (top row of pads = top row of cells). Release STOP: pads sound again at once.
+PAD BANK latches physical pad layer 2, notes 52–67. PAD BANK itself sends no
+MIDI message. The first layer 2 hit while the panel is hidden only shows it.
+Later layer 2 hits run the named cells. A layer 1 hit hides the panel and follows
+the normal pad route. The screen cannot react to PAD BANK alone. It learns the
+new layer from the next pad note. The status line shows PANEL while the last
+pad note came from layer 2.
 
-```
- ┌──────────┬──────────┬──────────┬──────────┐
- │  Pads    │  Files   │  Chop    │ Pattern  │  fixed: screens
- ├──────────┼──────────┼──────────┼──────────┤
- │  c5      │  c6      │  c7      │  c8      │  context of the screen
- ├──────────┼──────────┼──────────┼──────────┤
- │  c9      │  c10     │  c11     │  c12     │  context of the screen
- ├──────────┼──────────┼──────────┼──────────┤
- │  FX      │ Settings │  Undo    │ Projects │  fixed
- └──────────┴──────────┴──────────┴──────────┘
-```
+The panel replaces the pad grid with 16 cells in the same physical layout.
+The top row selects screens. The middle rows contain screen commands. The
+bottom row contains fixed Back, Undo, Redo, and Panic cells. A screen page
+provides cells for screens that do not fit in the first top row. Change 92
+sets that page and checks access to Files, Chop, Pattern, FX, and Settings.
+No cell acts on the first layer 2 hit when the panel is hidden.
 
-The Pattern cell is empty (dim) until change 98. Context cells:
+A setup guide and ptsr doctor tell the owner to give layer 2 pads a distinct
+color in MIDI Suite. The color is a device setup aid, not a requirement for
+panel access on Linux. The on-screen PANEL mark remains the source of truth.
 
-| Screen / mode | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 |
-|---|---|---|---|---|---|---|---|---|
-| Pads | Edit | Mode | Swap | Clear | Mark | Mark bank | Hide pads | Rec output |
-| Pads · Edit | Page − | Page + | Param − | Param + | Reset pad | — | — | Close edit |
-| Files | Take | Load to pad | Open | Parent | Favorite | Preview loop | Chop file | Rec output |
-| Chop | Cut | Parts | Hits | Assign | Snap | Play mode | Loop | Delete cut |
-| Chop · Assign | In order / by hand | Bank − | Bank + | Apply | — | — | — | Cancel |
-| Chop · slice edit | Start ← | Start → | End ← | End → | Delete end | Normalize | As pad | Close |
-| FX | FX 1 | FX 2 | Kind | Bypass | — | — | — | — |
-| Settings | Tab | Learn | Clear binding | — | — | — | — | — |
-| Any screen · question | Yes (`ui.confirm`) | — | — | — | — | — | — | No (`ui.back`) |
+When a command needs ordinary pad targets, press PAD BANK to return to layer 1.
+Target hits hide the panel and use the active screen mode. Press PAD BANK again
+to return to layer 2. The first layer 2 hit reveals the hidden panel without
+action; the next hit can run Apply or another cell. The reach check records
+these switches in the complete story path.
 
-Cells name logical actions, not raw MIDI controls. Most exist today (see `Action` and the
-keymap); others, such as FX bypass and the context actions, still need a separate behavior
-spec and tests before they can be bound. Do not add placeholder bindings. The
-table is data: `config/panel.toml`, read like the keymap, so the owner can change it. A cell may
-name a layer action or a confirmable action. The panel definition is validated at start: an
-unknown action is refused with a message, as for the keymap.
+If change 91 measures that SHIFT sends distinct MIDI messages, holding SHIFT
+can show the panel for a quick look. Its pads act as cells until release.
+If SHIFT stays local to the device, this path is absent. A setting can let a
+STOP hold show the panel. This setting is off by default. These shortcuts use the same
+cell map and safety questions as PAD BANK.
 
-Panel safety still needs the owner's decision in change 92. Layer 2 is latched: its cells
-need no held STOP, so a panel cell alone is not a sufficient guard. Proposed default: Clear,
-Delete cut, Reset pad and replacement Apply open a visible question in either panel form;
-only the question's Yes cell calls `ui.confirm`. Keep the X-Session safe direct defaults
-and their tests unchanged. Specify the SMC panel exception separately; do not remove the
-X-Session rule. See this folder's README, "Review notes before implementation".
+#### Panel state cases for change 92
+
+| Situation | Required result | Check |
+|---|---|---|
+| Transport plays and first layer 2 note arrives | Show panel. Run no cell. Keep sound and transport. | Raw MIDI sequence and owner check |
+| Another layer 2 note arrives while panel shows | Run exactly its cell once. | Raw MIDI sequence |
+| Layer 1 note arrives after panel use | Hide panel. Route this hit as a normal pad hit. | Raw MIDI sequence |
+| Assign needs target pads | Change to layer 1 for targets. Change back and reveal the panel before Apply. | Raw MIDI sequence and owner check |
+| A second device sends a pad while SMC panel shows | Keep that device's pad route and sound. | Two-device sequence |
+| SMC-PAD disconnects during a held shortcut | Clear the shortcut and PANEL mark. Release held gates. | Disconnect sequence |
+| Panic cell gets one press, then another in time | First press arms only. Second stops sound without a question. | Raw MIDI sequence |
+| A destructive cell opens a question | Keep transport and sound. Only Yes runs the action. | Raw MIDI sequence |
+| Optional STOP hold is off | STOP tap stops on press. It never shows the panel. | Raw MIDI sequence |
+
+| Screen / mode | Example middle-row cells |
+|---|---|
+| Pads | Edit, Mode, Swap, Clear, Mark, Mark bank, Hide pads, Record output |
+| Pads edit | Page previous, Page next, Parameter previous, Parameter next, Reset pad, Close edit |
+| Files | Take, Load to pad, Open, Parent, Favorite, Preview loop, Chop file |
+| Chop | Cut, Parts, Hits, Assign, Snap, Play mode, Loop, Delete cut |
+| Chop assign | In order / by hand, Bank previous, Bank next, Apply, Cancel |
+| Chop slice edit | Move start, Move end, Delete end, Normalize, As pad, Close |
+| FX | FX 1, FX 2, Kind, Bypass |
+| Settings | Tab, Learn, Clear binding |
+| Question | Yes, No |
+
+Cells name logical actions, not raw MIDI controls. The panel map is data in
+config/panel.toml. It is validated at start. An unknown action is refused with
+a message. A destructive cell asks before it removes or replaces anything.
+Only the question's Yes cell confirms it. Keep the X-Session direct safe
+defaults and tests unchanged.
 
 ### 2.3 Knobs
 
-Bank 1 (CC 30–37) is the context of the screen. Bank 2 (CC 38–45) is the same on every screen.
+Bank 1 (CC 30–37) is the context of the screen. Bank 2 (CC 38–45) is the
+same on every screen.
 
-| Bank 1 knob | Pads | Pads · Edit | Files | Chop | Pattern | FX | Settings |
+| Bank 1 knob | Pads | Pads edit | Files | Chop | Pattern | FX | Settings |
 |---|---|---|---|---|---|---|---|
 | 1 | selected pad | selected parameter | selected file | cursor | selected row or step | selected slot | selected row |
 | 2–8 | pad context | page parameters | file context | zoom, threshold, slice bounds | pattern parameters | slot parameters | selected setting |
 
-The knob strip names each available parameter. It dims a knob when that screen or mode has
-no parameter for it. The selected thing and knob 1's role remain visible.
+The knob strip names each available parameter. It dims a knob when that screen
+or mode has no parameter for it. The selected thing and knob 1's role remain
+visible.
 
-Bank 2 has the same roles on every screen. Knob 1 controls pad volume, 2 pan, 3 pitch,
-and 4 cutoff. Knob 5 controls decay, 6 send FX 1, 7 send FX 2, and 8 master volume.
-Features that do not exist yet stay dim until their own changes add them.
-
-Hold STOP while turning a knob: the fine step (as Shift on the keyboard), no acceleration.
+Bank 2 has the same roles on every screen. Knob 1 controls pad volume, 2 pan,
+3 pitch, and 4 cutoff. Knob 5 controls decay, 6 send FX 1, 7 send FX 2, and
+8 master volume. Features that do not exist yet stay dim until their own
+changes add them. A controller fine-step path needs a decision in change 90.
+The default panel does not use STOP as a knob modifier.
 
 ### 2.4 Paths for the main stories (the target of change 93)
 
-Here `P` names one command gesture, not one physical press: STOP+cell is two presses.
-Change 93 counts physical presses per command, including picker and question paths.
-These story sketches are not yet proof that the reach rule passes.
+Each panel-cell action below assumes that the panel is visible. On the first
+visit, press PAD BANK and hit any layer 2 pad once to reveal it. This first hit
+does not run a cell. Change 93 measures the complete first-use path and the
+shorter repeated path separately.
 
-| Story | Command gestures (P) and turns (T) |
+| Story | Controller path |
 |---|---|
-| Load a file onto a pad | STOP+Files (P), knob 1 (T), PLAY to hear (P), STOP+Take (P), hit the pad (P) |
-| Chop by hits and lay out | STOP+Chop (P), knob 5 (T), STOP+Assign (P), STOP+Assign again to apply (P) |
-| Set a pad's decay | hit the pad (P), bank 2 knob 5 (T) |
-| Swap two pads | hit pad A to select it (P), STOP+Swap (P), hit pad B (P) |
-| Open a project | STOP+Projects (P), knob 1 (T), `ui.confirm`: second press of STOP+Projects (P) |
-| Change the bank | LEFT / RIGHT on Pads (P) |
-| Record the microphone onto a pad | hold RECORD (P), hit the pad (P) |
+| Load a file onto a pad | Files cell, knob 1 to select, PLAY to hear, Take cell, hit the target pad |
+| Chop by hits and lay out | Chop cell, knob for threshold, Hits cell, Assign cell, PAD BANK to layer 1, target pads, PAD BANK to layer 2, reveal hit, Apply cell |
+| Set a pad's decay | Hit the pad, turn bank 2 knob 5 |
+| Swap two pads | Hit pad A, Swap cell, hit pad B |
+| Open a project | Projects screen cell, knob 1, confirm cell |
+| Change the bank | LEFT or RIGHT on Pads |
+| Record the microphone onto a pad | Hold RECORD, hit the pad |
 
-Change 93 makes this table for every story of `docs/USER-STORIES.md` and fixes what is longer
-than the rule.
-The planned `control-pages` change shows a page for both "Chop the sound of a pad" and
-"Edit a pad". Its unit test checks that bank 1 knob 1 moves the selection or cursor.
-Change 93 includes both stories as named paths in its reach test.
+The planned control-pages change shows a page for both "Chop the sound of a
+pad" and "Edit a pad". Its unit test checks that bank 1 knob 1 moves the
+selection or cursor. Change 93 includes both stories as named paths in its
+reach test.
 
 ## 3. The changes
 
@@ -177,14 +209,16 @@ Change 93 includes both stories as named paths in its reach test.
 Goal: the SMC-PAD works as a set of pads, knobs and buttons with the current actions. It
 replaces the deferred change 83.
 
-Step 0, with the owner (before any code; write the results into `design.md`):
+Step 0, with the owner: record the results in `design.md` before code.
 
 1. The owner sets the 8 encoders (both knob banks) to relative ("CW") in MidiSuite and keeps
    the rest of the factory preset. Write down the preset number.
 2. The owner connects the SMC-PAD by USB to Linux and runs `aconnect -l` and
-   `aseqdump -p <port>`, or opens F12 → input debug. Record: the port names; the bytes of each
-   pad on both PAD BANK layers; each encoder on both KNOB BANK banks, slow and fast, both ways;
-   each of the 5 buttons, press and release; what aftertouch arrives.
+   `aseqdump -p <port>`, or opens F12 → input debug. Record the port names.
+   Record pad bytes on both PAD BANK layers. Record slow and fast encoder bytes
+   on both KNOB BANK banks in both directions. Record press and release bytes
+   for each of the five buttons. Check whether SHIFT changes any message.
+   Record aftertouch.
 3. If the bytes differ from §1, the measured bytes win. Update §1 in this file.
 
 Tasks:
@@ -201,9 +235,9 @@ Tasks:
    both channels.
 4. Ignore channel pressure (aftertouch) in the parser path for this profile; test that it
    triggers nothing.
-5. Default roles with today's actions (no panel yet): STOP tap `ui.back`, PLAY tap the chop or
-   preview play, LEFT / RIGHT bank or slice, RECORD hold `record.mic`, knobs as in §2.3 where the
-   action exists.
+5. Default roles before the panel exists: STOP stops the transport or preview.
+   PLAY plays or continues the current screen. LEFT / RIGHT select the main list.
+   RECORD hold uses `record.mic`. The keyboard keeps Esc for back until change 92.
 6. Raw-byte tests through the shipped TOML, profile seeding, dispatch and `App` (the harness of
    84): pads with velocity, both note-off forms, relative steps, buttons 127 / 0, two devices
    (X-Session + SMC-PAD) at the same time, unplug during a held pad.
@@ -214,41 +248,51 @@ Tasks:
 How to verify (owner): hit every pad on both layers; turn every knob on both banks; press every
 button; check F12 input debug and the default roles.
 
-### Change 92 — `92-command-panel`
+### Change 92 — 92-command-panel
 
-Goal: §2.1 and §2.2: the buttons with tap / hold and the command panel.
+Goal: implement the button roles and the latched pad-layer panel of section 2.
+STOP hold is optional and off by default.
 
-Spec deltas: a new capability `command-panel`, plus `input-devices` (button roles, the
-"Chopping from the X-Session Pro" rule edit), `screen-layout` (the panel grid in place of the pad
-grid while the panel is active), `screen-help` (the bottom line shows the 5 button roles of the
-connected controller).
+Spec deltas: command-panel, input-devices, screen-layout, and screen-help. State
+the button roles, the first-hit rule, the panel cells, the status mark, and
+the optional access paths before code. Keep keyboard and X-Session paths.
 
 Tasks:
 
-1. `Mode::Panel` in `Focus` (added by the MIDI thread at the hold moment, and by the UI from the
-   layer event). `route_pad(Panel)` returns `Ui`: no sound.
-2. `config/panel.toml` and its parser and validation; one table per screen and mode, the fixed
-   rows once.
-3. A panel cell hit → the cell's action through the normal `App::apply`.
-4. Layer 2 notes `c1..c16` → the same cells, latched (no hold). The screen shows the label
-   `PANEL` in the title line while the last note came from layer 2; a hit on layer 1 clears it.
-5. Context actions `play.toggle`, `record.toggle`, `nav.prev`, `nav.next`: one table function,
-   a test per row.
-6. Drawing: the panel grid in `crates/tui`, the same size as the pad grid, cell labels from the
-   action short names; empty cells dim; the cell of the last action lit for `LIT_FOR`.
-7. Scenarios (parity harness where a keyboard way exists): hold STOP shows the panel; release
-   hides it; hold STOP + Files cell opens Files; tap STOP is back; a pad hit with STOP held does
-   not sound; Assign twice from the panel lays out the slices; layer 2 latch works and the pads
-   of layer 1 sound again after a layer 1 hit.
-8. Visual (`VISUAL.md`): the `PANEL` badge; the panel grid with destructive cells in magenta
-   text and latched cells in the pad-mode color; the `L2` / `K2` layer marks in the status line;
-   the action echo of controller presses; hints by the device of the last input; the `SMC` help
-   group only while the SMC-PAD is connected. Tui tests for each.
-9. Two controllers and unplugging (`CROSS-CUTTING.md` §2.2, §2.3): the layer belongs to its
-   device; unplug ends it; the X-Session tests of change 82 stay green.
+1. Add Mode::Panel to Focus. Layer 2 notes select the panel route. The first
+   layer 2 hit when the panel is hidden only reveals it. A later hit runs its
+   cell through the normal action path. A layer 1 hit hides it and uses the
+   normal pad route. PAD BANK itself has no event.
+2. Read and validate config/panel.toml. Define the fixed Back, Undo, Redo,
+   and Panic cells. Define a screen page for screens beyond the top row.
+   Show the cell labels in the physical 4×4 order.
+3. Use ButtonRoles from control-pages for PLAY, STOP, RECORD, LEFT, and RIGHT
+   on each screen and mode. STOP has no default hold binding. A second
+   STOP tap while stopped returns to the start.
+4. Add the PANEL status mark while the last pad note came from layer 2.
+   Keep the knob strip active. Draw the panel in the pad-grid space.
+5. Add the optional SHIFT quick look only if step 0 of change 91 measures a
+   distinct message. Add the optional STOP hold setting, off by default.
+   All access paths use the same cell map and questions.
+6. Make performance tools latched pad modes with badges. The same cell or
+   Back leaves a mode. A destructive cell always asks a visible question.
+   Panic uses a question-free double press with a visible first-press state.
+7. Test raw bytes through the shipped profile and dispatch. Enter and
+   leave the panel while the transport plays. Check that sound and transport
+   do not change. Check that the first layer 2 hit runs no cell, later hits
+   do, and STOP only stops. Check that a layer 1 hit leaves the panel and
+   follows its normal route. Check the optional paths separately.
+8. Test two controllers and disconnects. The panel belongs to its device.
+   A disconnect clears a held shortcut. The X-Session tests stay green.
+9. Add catalogue views at both sizes for the panel, layer mark, question,
+   and latched performance mode.
 
-How to verify (owner): hold STOP and look at the screen; go through every screen by the top row
-of cells; chop and lay out a break without the keyboard.
+How to verify (owner): start playback. Press PAD BANK and hit a layer 2 pad
+once. The panel appears and no command runs. Hit a screen cell and use its
+commands. Turn both knob banks while music plays. Hit Back, then a layer 1
+pad. Check that the music never stops on panel entry or exit. Tap STOP:
+playback stops. Tap it again: the position returns to the start. Check Undo,
+Redo, and the double-press Panic cell in a disposable project.
 
 ### Change 93 — `93-controller-reach`
 
@@ -261,12 +305,15 @@ Tasks:
 2. A "text-only" list in `crates/input` (an `ActionInfo` flag): `pad.rename`, `browser.filter`,
    the typed name of a new project, `app.quit`, keymap edits. Nothing else may be on it without
    the owner's approval.
-3. The reach test, in both directions. Controller side: for each screen and each mode, for each
-   action that the keyboard can do there and that is not text-only, find a controller path in the SMC-PAD profile + `panel.toml`:
-   direct button (1 press), panel cell (2), context action (1), knob (turns). Fail with the list
-   of actions without a path or with more than 2 presses. Keyboard side: every action that a
-   controller can do has a key or a key path too, except the controller-only list (hold STOP for
-   the panel, the layer marks). The test also checks that every mode has its badge
+3. The reach test checks both directions. For each screen and mode, find a
+   controller path for each non-text keyboard action. Use the SMC-PAD profile
+   and `panel.toml`:
+   direct button, pad hit, panel cell, or knob. Count a visible panel cell as one
+   press. Count the first panel entry separately: PAD BANK and two layer 2 hits.
+   Report any action without a path or any repeated path above two presses.
+   Keyboard side: every controller action has a key or key path, except layer
+   selection, its status mark, and an optional measured SHIFT quick look.
+   The test also checks that every mode has its badge
    (`VISUAL.md` §2.1).
 4. Fix the gaps the test shows. Expected ones: the project picker by knob and confirm; the
    folder picker of the Paths tab; the settings values by knob; the splash closes on any

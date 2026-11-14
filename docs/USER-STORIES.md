@@ -39,6 +39,10 @@ Notes:
 
 The keyboard steps below use current keys. The SMC-PAD steps are targets for changes
 91–93. The current build has no complete SMC-PAD profile or command panel.
+PAD BANK changes the physical pad layer. On the first visit, its first layer 2
+hit only shows the panel. Hit the chosen cell again to run it. Later cells run
+on one hit while the panel is visible. STOP stops playback. The Back cell
+closes an edit or screen.
 
 ### Chop the sound of a pad
 
@@ -47,11 +51,15 @@ Use `J` and `L` for the cursor and `I` and `K` for zoom. Press `M` to cut, `Y` f
 parts, or `H` for cuts at hits. Press `P`, hit the target pads, and press `Enter` to
 apply the layout. Press `Space` to listen. Press `F2` or `Esc` to return to Pads.
 
-**SMC-PAD:** Hit the pad. Hold STOP and hit the Chop cell in the top panel row.
-Turn knob 1 to move the cursor. The knob strip names zoom, hit threshold, and slice
-bounds on the other knobs. Hold STOP and hit a panel cell to cut, make equal parts,
-or cut at hits. Use the Assign cell, hit the target pads, and use Assign again to apply.
-Press PLAY to listen. Tap STOP to return to Pads.
+**SMC-PAD:** Hit the pad. Press PAD BANK to use layer 2. Hit a layer 2 pad
+once to show the panel. This first hit runs no command. Hit the Chop cell to
+open Chop. Turn knob 1 to move the cursor. The knob strip names zoom, hit
+threshold, and slice bounds on the other knobs. Hit the Cut, Parts, or Hits
+cell. Hit Assign, then press PAD BANK for layer 1. Hit the target pads.
+Press PAD BANK for layer 2 again. Hit a layer 2 pad once to show the panel
+without a command, then hit Apply to lay out the slices. Press PLAY to listen.
+Hit Back to return to Pads. Press PAD BANK for layer 1. A layer 1 hit hides
+the panel and follows its normal pad role.
 
 **Done when:** The slices are on pads and play without a keyboard action.
 
@@ -65,12 +73,15 @@ parameter. Use `J` and `L` to change its value. Hold Shift for a fine step. Pres
 **SMC-PAD, quick:** Hit the pad. Switch to knob bank 2. Turn its volume, pan, pitch,
 cutoff, decay, and send knobs without opening the edit.
 
-**SMC-PAD, full:** Hit the pad. Hold STOP and hit the Edit panel cell. Turn knob 1 to
-select a parameter. Knobs 2–8 change the parameters named on the current page of the
-knob strip. Press LEFT or RIGHT to change pages. Tap STOP to close the edit.
+**SMC-PAD, full:** Hit the pad. Press PAD BANK for layer 2. If the panel is
+hidden, hit a layer 2 pad once to show it without a command. Hit Edit. Turn
+knob 1 to select a parameter. Knobs 2–8 change the parameters named on the
+current page of the knob strip. Press LEFT or RIGHT to change pages. Hit
+Back to close the edit.
 
-**Done when:** Every pad parameter can change from the SMC-PAD in at most two presses
-plus knob turns.
+**Done when:** Every pad parameter has a controller path. A command in a
+visible panel takes one cell hit plus knob turns. The first panel entry
+takes PAD BANK and two layer 2 hits.
 
 ## Read modes and operation results
 

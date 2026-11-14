@@ -436,9 +436,13 @@ them. The keys in use are in `config/keymap.toml`; the table below is historical
 - **Ctrl+K: command palette.** Fuzzy search in Russian and English. It shows the hotkey of each command.
 - You can remap all hotkeys in `keymap.toml`.
 
-**Controller first:** after the start, every action that does not need typed text is possible from the SMC-PAD alone. A frequent action takes 1 press. Any other action takes not more than 2 presses, plus knob turns for values. The keyboard and the controller do the same thing for the same action. Typed text (names, the file filter) stays on the keyboard.
+**Controller first:** after the start, every action that does not need typed text is possible from the SMC-PAD alone. A frequent action takes one press. A command in the visible panel takes one cell hit. First panel entry takes PAD BANK and two layer 2 hits because the first hit only reveals the panel. Change 93 counts these paths separately. The keyboard and controller do the same logical action. Typed text (names, the file filter) stays on the keyboard.
 
-**Controller:** the SMC-PAD buttons have one role on every screen: PLAY plays or stops what the screen is about, STOP is back, RECORD records, LEFT and RIGHT turn the main list of the screen. **Hold STOP** and the pads become a command panel of 16 cells: the top row opens screens, the bottom row is FX, settings, undo and projects, the two middle rows are the commands of the screen. The screen shows the panel with labels in the physical layout while STOP is held. PAD BANK gives the same panel as a latch. With STOP held, LEFT is undo, RIGHT is redo and PLAY stops all sound (panic). The first knob bank works for the screen, the second knob bank is the same on every screen (the selected pad, the sends, the tempo, the master).
+**Controller:** PLAY plays or continues the transport on Pads and Pattern. On Chop it plays the selection. On Files it plays the preview. PLAY hold toggles the metronome. STOP stops the transport or preview. A second STOP tap while stopped returns to the start. STOP has no panel hold by default. RECORD tap records the pattern. RECORD hold records the microphone. LEFT and RIGHT turn the main list and repeat while held.
+
+PAD BANK selects pad layer 2 as a latched command panel. Its top row opens screens, its middle rows hold screen commands, and its bottom row holds global commands. Back, Undo, Redo and a double-press Panic are fixed panel cells. PAD BANK sends no MIDI message. The first layer 2 hit when the panel is hidden only shows it. Later hits run cells. A layer 1 hit hides the panel. The status line shows PANEL after a layer 2 hit. Entering or leaving the panel never stops the music. Knob bank 1 controls the screen. Bank 2 controls the selected pad and master on every screen. Both banks work while the panel shows.
+
+A measured SHIFT message can provide a held quick look. An optional setting lets STOP hold open the panel, but it is off by default. Destructive cells ask a question through every panel path.
 
 **Visual control:** at one look the owner sees what the pads do now, what plays, what records, what waits and what the last press did. Badges in the title line show the modes (yellow: the pads do something other than sound; cyan: on or playing; magenta: records, waits or asks). Pads show small glyphs for the mode (target, planned slice, step, erase). Messages have levels (done, info, warning, error), and an error stays until the next action; F1 keeps the last messages. A knob change shows the value on every screen. The status line shows the transport, the recording, the connected devices and the audio state. The hints name the controls of the device that the owner used last.
 
@@ -573,8 +577,8 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
   records, Ctrl+C copies a pad, Tab switches the assign order. The owner checks are in
   `docs/LIVE-CHECKS.md` (section 83a); 84 waits until they pass.
 - **One input route:** the keyboard and the controller go through one decision about what a press means. A test runs each input scenario from both.
-- **Hold STOP is the command panel** (default). PAD BANK layer 2 is the same panel as a latch.
-- **Destructive actions:** keep X-Session direct safe defaults unchanged. For the SMC panel, the proposed default is a visible question for destructive changes in both held and latched forms. Change 92 must record the owner's choice before code.
+- **PAD BANK layer 2 opens the command panel** (default). The first layer 2 hit only shows a hidden panel. STOP hold is an optional setting and is off by default.
+- **Destructive actions:** keep X-Session direct safe defaults unchanged. For the SMC panel, destructive changes ask a visible question through every access path. Change 92 must record the owner's choice before code.
 - **Visual control** (section 17): one badge model, levels for messages; yellow means "the pads do something other than sound" (default; changes `docs/ui/STYLE.md`).
 - **Patterns:** the sequencer is in the audio thread and uses ticks (960 per quarter).
   Capture applies quantize and saves the resulting tick. Later grid changes leave saved hits
