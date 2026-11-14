@@ -9,7 +9,7 @@ The terminal drawing, application actions, and recorded input tests occupy three
 - Move recorded input tests from `input_tests.rs` into topic modules. Keep their test names and bodies.
 - Make one logical move per commit. Check the complete screen catalogue against the pre-change output after each drawing move.
 
-This is a source move. It SHALL NOT change keys, input order, displayed cells, sound, saved data, configuration, or the audio callback.
+This change includes no behavior change. It SHALL NOT change keys, input order, displayed cells, sound, saved data, configuration, or the audio callback.
 
 The owner asked to continue on 2026-11-13 after the choice between this planned source split and pattern slots. This change follows the source split first, as the UI plan specifies.
 
