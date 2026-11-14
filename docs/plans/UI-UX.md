@@ -74,40 +74,22 @@ owner review.
 
 ### 3.1 `pattern-screen`
 
-Make F5 open a separate Pattern screen. Keep overview and step edit as modes inside that
-screen. F7 becomes free. Use Enter to switch between view and edit by default. Record the
-key choice and the moved-key notice in the design and keymap. Show `F5 PATTERN` in the title.
-Keep pattern data and saved files unchanged.
+After the owner accepts 123, make F5 open a separate Pattern screen. Keep view and edit as
+modes inside that screen. Show `F5 PATTERN` in the title and show the active mode badge.
+Use Enter to switch between view and edit by default. Free F7 in the keymap and show a
+moved-key notice for one release. Keep pattern data and saved files unchanged.
 
-The proposed layout keeps one row for the selected step value:
+Reserve one row below the grid for the selected row's step value. Show velocity in that
+row now. Later 0.4b changes can use the row for locks, ratchets, and probability.
+Replace `No A1 · Ctrl+R record A1` with `pattern A1 is empty · Ctrl+R records` when the
+pattern has no hits.
 
-```text
- F5 PATTERN  A1 · 2 bars · 1/16 · ▶ 1.3       bar 1 of 2
-          1 . . . 2 . . . 3 . . . 4 . . .
- 1 kick   █ · · · · · █ · · · · · █ · · ·
- 2 snare  · · · · █ · · · · · · · █ · · ▪
- 3 hat    ▪ · ▪ · ▪ · ▪ · ▪ · ▪ · ▪ · ▪ ▪
- Q chop3  · · · · · · ▪ · · · · · · · · ·
-          ▲
- vel      ▆ ▁ ▃ ▁ ▇ ▁ ▆ ▁ ▃ ▁ ▃ ▁ ▇ ▁ ▃ ▅
-```
+Give the controller a panel action for the Pattern screen, LEFT/RIGHT bar pages, and knobs
+for the step value. Record that the physical SMC-PAD mapping still needs measurement.
 
-- Show pads with hits plus the selected pad in bank order, with bank labels. Add a row when
-  its pad gets a hit. Alt+H shows all rows and defaults to off.
-- Give each step an equal-width cell. Put the header number over its cell. Keep beat and bar
-  shading. Use an even grid for triplet divisions. Test column positions at both sizes.
-- Show soft, medium, and loud hits with three brightness levels of one glyph. Light the
-  current step column during playback.
-- Reserve one row below the grid for the selected row's step value. Show velocity now.
-  Later 0.4b changes can use this row for locks, ratchets, and probability.
-- In edit mode, a keyboard or MIDI pad hit adds a hit at an empty cursor step with its input
-  velocity. Shift gives a keyboard hit full velocity. A hit for the same pad at an occupied
-  step removes that hit. Undo restores each edit. J/L move the cursor. I/K select a row.
-- Give the controller a panel action for the Pattern screen, LEFT/RIGHT bar pages, and knobs
-  for the step value. Record that the physical SMC-PAD mapping still needs measurement.
-
-The new proposal must name view, edit, triplet, and moving-playhead catalogue files at both
-sizes. It must give separate keyboard and controller checks and name the renders to hear.
+The new proposal must name view, edit, step-lane, empty-pattern, and moved-key catalogue
+files at both sizes. It must give separate keyboard and controller checks and name the
+renders to hear.
 
 ### 3.2 `pads-context-lane`
 
@@ -264,7 +246,6 @@ Record that decision in the first active proposal. Do not run two active changes
 | Before | Question | Proposed default |
 | --- | --- | --- |
 | 3.1 | Which key switches view and edit inside Pattern? | Enter. |
-| 3.1 | Does Pattern show empty rows by default? | No. |
 | 3.2 | Does Pads show a mini pattern lane when a pattern exists? | Yes. |
 | 3.3 | Which help band is the default? | Compact, one row. |
 | 4.2 | How do hit velocities look? | Three brightness levels of one glyph. |
