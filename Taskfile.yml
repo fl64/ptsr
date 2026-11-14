@@ -17,8 +17,28 @@ tasks:
     cmd: cargo run --release -p ptsr
 
   test:
-    desc: Tests; renders go to renders/
-    cmd: cargo test --workspace
+    desc: Run the full test set
+    cmds:
+      - task: test:full
+
+  test:changed:
+    desc: Run tests for paths changed against origin/master
+    preconditions: &nextest-cli
+      - sh: command -v cargo-nextest >/dev/null 2>&1
+        msg: 'cargo-nextest is required. Install it with: cargo install cargo-nextest --version 0.9.152 --locked'
+    cmds:
+      - python3 -B -m unittest discover -s scripts -p test_test_changed.py
+      - python3 -B scripts/test_changed.py
+
+  test:fast:
+    desc: Run all tests except the slow group
+    preconditions: *nextest-cli
+    cmd: cargo nextest run --workspace -E 'not group(slow)'
+
+  test:full:
+    desc: Run all tests, including slow tests and offline renders
+    preconditions: *nextest-cli
+    cmd: cargo nextest run --workspace
 
   screens:
     desc: Generate and check the offline ANSI screen catalogue
@@ -26,6 +46,12 @@ tasks:
 
   bench:
     desc: Audio callback benchmark (32 voices, buffer 128, 48 kHz)
+    cmd: cargo bench -p engine
+
+  bench:quick:
+    desc: Short local callback benchmark
+    env:
+      PTSR_BENCH_QUICK: '1'
     cmd: cargo bench -p engine
 
   lint:
@@ -78,7 +104,7 @@ tasks:
     cmd: git config --local core.hooksPath .githooks
 
   check:
-    desc: Check names, specs, format, licenses, Clippy, tests and benchmark before publication
+    desc: Run the full checks and any required callback benchmark
     cmds:
       - task: names
       - task: specs:check
@@ -86,8 +112,9 @@ tasks:
       - cargo fmt --all --check
       - task: licenses
       - task: lint
-      - task: test
-      - task: bench
+      - task: test:full
+      - python3 -B -m unittest discover -s scripts -p test_bench_if_changed.py
+      - python3 -B scripts/bench_if_changed.py
 
   openspec:init:
     desc: Set up OpenSpec skills and commands (Pi by default)
