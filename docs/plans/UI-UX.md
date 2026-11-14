@@ -226,20 +226,22 @@ Use this proposed sequence across the two plans. Complete and accept one change 
 The order within [FX-FILTERS.md](FX-FILTERS.md) and sections 3 and 4 above stays fixed.
 
 1. `split-modules` (121) and the 122 UI words change are complete.
-2. Review 123 with the current spec and PR checks. Accept `pattern-view-polish` after the
-   owner checks its screen catalogue, input paths, and render.
-3. Do `pattern-screen`, `pads-context-lane`,
+2. Finish and merge `repo-fast-checks` before the next behavior change. Review 123 with the
+   current spec and PR checks. Accept `pattern-view-polish` after the owner checks its screen
+   catalogue, input paths, and render.
+3. After acceptance of 123 and the merge of `repo-fast-checks`, do `denormals`. Record this order
+   in its proposal. Keep the 94a callback peak investigation open until its criteria pass.
+4. Do `pattern-screen`, `pads-context-lane`,
    `compact-help`, and `key-consistency` in that order.
-4. Do `style-doc-split` after the glossary exists and before `screen-layouts`.
-5. Do `screen-layouts` next. Keep its FX geometry ready for later effect parameters.
-6. Resume the FX order: `denormals`, `metronome-path`, `fx-cost`, `master-safety`,
+5. Do `style-doc-split` after the glossary exists and before `screen-layouts`.
+6. Do `screen-layouts` next. Keep its FX geometry ready for later effect parameters.
+7. Resume the FX order: `metronome-path`, `fx-cost`, `master-safety`,
    `pad-sound`, `pad-reverse`, and `pad-bus`.
-7. Do `mixer-view` after `pad-sound` and `pad-bus`, so its first version has pan and meters.
+8. Do `mixer-view` after `pad-sound` and `pad-bus`, so its first version has pan and meters.
    Resolve 100a pad mute in its design before code.
-8. Complete the remaining FX changes: `drive-aa`, `filter-v2`, `reverb-v2`, and `delay-v2`.
+9. Complete the remaining FX changes: `drive-aa`, `filter-v2`, `reverb-v2`, and `delay-v2`.
 
-If callback peaks block screen work, move `denormals` ahead of step 2.
-Record that decision in the first active proposal. Do not run two active changes at once.
+Do not run two active behavior changes at once.
 
 ## 6. Owner decisions before implementation
 
@@ -253,6 +255,6 @@ Record that decision in the first active proposal. Do not run two active changes
 | 4.4 | Which key opens the mixer? | F8, after keymap conflict checks. |
 | 4.4 | Does solo silence old FX tails? | No. It silences other pads' dry sound and new sends. |
 | 4.4 | How does mixer mute relate to planned 100a? | Use one pad-mute behavior. Resolve ownership in the mixer design. |
-| Cross-plan | When does FX work resume? | After the small UI steps and `screen-layouts`. Move `denormals` earlier if peaks block work. |
+| Cross-plan | When does FX work resume? | Do `denormals` after 123 and `repo-fast-checks`, before `pattern-screen`. Resume other FX work after `screen-layouts`. |
 
 These defaults are proposals, not owner acceptance of the future OpenSpec changes.
