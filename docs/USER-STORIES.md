@@ -35,6 +35,43 @@ Notes:
 6. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` page the banks on all screens with pads: on the
    pads, in edit mode, on the chop screen, in the files.
 
+## Planned SMC-PAD flows
+
+The keyboard steps below use current keys. The SMC-PAD steps are targets for changes
+91–93. The current build has no complete SMC-PAD profile or command panel.
+
+### Chop the sound of a pad
+
+**Keyboard:** Hit pad `1` to select it. Press `F3` to open Chop with its sample.
+Use `J` and `L` for the cursor and `I` and `K` for zoom. Press `M` to cut, `Y` for equal
+parts, or `H` for cuts at hits. Press `P`, hit the target pads, and press `Enter` to
+apply the layout. Press `Space` to listen. Press `F2` or `Esc` to return to Pads.
+
+**SMC-PAD:** Hit the pad. Hold STOP and hit the Chop cell in the top panel row.
+Turn knob 1 to move the cursor. The knob strip names zoom, hit threshold, and slice
+bounds on the other knobs. Hold STOP and hit a panel cell to cut, make equal parts,
+or cut at hits. Use the Assign cell, hit the target pads, and use Assign again to apply.
+Press PLAY to listen. Tap STOP to return to Pads.
+
+**Done when:** The slices are on pads and play without a keyboard action.
+
+### Edit a pad
+
+**Keyboard:** Hit a pad and press `Enter` to open its inspector edit. Use `Tab` and
+`Shift+Tab` to select TONE, ENV, FILTER, SOURCE, or FX. Use `I` and `K` to select a
+parameter. Use `J` and `L` to change its value. Hold Shift for a fine step. Press
+`Enter` or `Esc` to close the edit.
+
+**SMC-PAD, quick:** Hit the pad. Switch to knob bank 2. Turn its volume, pan, pitch,
+cutoff, decay, and send knobs without opening the edit.
+
+**SMC-PAD, full:** Hit the pad. Hold STOP and hit the Edit panel cell. Turn knob 1 to
+select a parameter. Knobs 2–8 change the parameters named on the current page of the
+knob strip. Press LEFT or RIGHT to change pages. Tap STOP to close the edit.
+
+**Done when:** Every pad parameter can change from the SMC-PAD in at most two presses
+plus knob turns.
+
 ## Read modes and operation results
 
 `[87]` These steps use the default keys. Use the replacement shown if you changed a key.

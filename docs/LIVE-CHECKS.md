@@ -1,8 +1,9 @@
 # Live checks
 
 This file lists the checks that the owner does by hand and by ear. Each section is one
-OpenSpec change. The current behavior is in `openspec/specs/` and active changes. The steps
-describe the current behavior, also when a later change replaced a part of the change.
+OpenSpec change. The current behavior is in `openspec/specs/` and active changes.
+Unless a section says "planned", its steps describe current behavior. A later change can
+replace part of that behavior.
 The folder paths are relative to `openspec/`.
 
 How to use this file:
@@ -2130,6 +2131,34 @@ Its SHA-256 is `2a8e1b1647d7ac6e493c2d00dd319093823d09f1b3785b49924e475c69cc3bfd
 These commands did not open live audio or MIDI. They do not establish any unchecked owner result above.
 These implementation results precede archive. Refer to [the archived tasks](../openspec/changes/archive/2026-11-07-87a-copy-names/tasks.md#owner-acceptance-and-closure-2026-11-07) for closure evidence.
 Earlier callback maximum-budget failures remain open. Owner acceptance does not close that separate issue.
+
+## 92 — Planned SMC-PAD-only flow checks
+
+These checks are targets for change 92. Keep every box open until the SMC-PAD profile,
+command panel, and knob strip exist. Use a disposable project and a sample with clear
+hits. Keep the keyboard out of reach after setup. Record the device preset and each
+missing control instead of treating a keyboard fallback as a controller pass.
+
+### Chop the sound of a pad
+
+- [ ] Hit the pad with the sample. Hold STOP and hit the Chop panel cell. Check that
+  Chop opens on that pad's sample. Turn knob 1. Check that it moves the cursor and that
+  the knob strip names the other active knobs.
+- [ ] Use the panel cells for a cut, equal parts, and cuts at hits. Use Assign, hit the
+  target pads, and apply the layout through the panel. Check that the slices appear on
+  the target pads. Press PLAY and listen to each slice.
+- [ ] Tap STOP to return to Pads. Play the target pads. Check that every slice sounds
+  and that the full flow used no keyboard action.
+
+### Edit a pad
+
+- [ ] Hit a pad and select knob bank 2. Turn volume, pan, pitch, cutoff, decay, and
+  sends. Check each value and listen for its effect without opening the inspector edit.
+- [ ] Hold STOP and hit the Edit panel cell. Turn knob 1. Check that it selects the
+  parameter. Turn knobs 2–8. Check that the knob strip names and changes the parameters
+  of the open page. Press LEFT and RIGHT to change pages.
+- [ ] Tap STOP to close the edit. Check that every pad parameter has a controller path
+  with at most two presses per command plus knob turns. Record any missing path.
 
 ## 95: Transport and metronome
 

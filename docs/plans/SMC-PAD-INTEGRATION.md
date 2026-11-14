@@ -39,6 +39,23 @@ Consequences:
 
 ## 2. The layout
 
+### One navigation pattern
+
+This is the target flow for `control-pages`, changes 88–93, and later screens. It does not
+describe a complete SMC-PAD profile in the current build.
+
+1. Hit a pad to select the thing to work on: a pad, slice, step, channel, or slot.
+2. Hold STOP and hit a pad to select a command panel cell. The top row selects screens.
+   The middle rows contain screen commands. The bottom row contains global commands.
+3. Turn knob 1 in bank 1 to move the selection or cursor. Knobs 2–8 change parameters
+   of the selected thing. The knob strip names their current roles. Bank 2 always
+   controls the selected pad's main parameters and the master.
+4. Tap STOP to go back one level. It closes an edit or returns from a screen to Pads.
+5. Press PLAY to play what the screen shows. Press RECORD to record. Press LEFT or RIGHT
+   to move through the screen's main list.
+
+The keyboard keeps its full path: F keys, Enter, Esc, I/K, J/L, and Tab.
+
 Principles (they go into the spec of change 92):
 
 1. Outside the command panel, layer 1 pads sound or act as targets / steps where the mode
@@ -117,19 +134,17 @@ X-Session rule. See this folder's README, "Review notes before implementation".
 
 Bank 1 (CC 30–37) is the context of the screen. Bank 2 (CC 38–45) is the same on every screen.
 
-| Knob | Pads / Pads · Edit / FX | Files | Chop | Pattern (from 98) | Settings |
-|---|---|---|---|---|---|
-| 1 | page parameter 1 | scroll the list | cursor | tempo | rows |
-| 2 | page parameter 2 | — | slice start | swing (later) | values |
-| 3 | page parameter 3 | — | slice end | quantize | — |
-| 4 | page | — | zoom | quantize strength | — |
-| 5 | — | — | hit threshold | pattern length | — |
-| 6 | — | — | region start | — | — |
-| 7 | — | — | region end | — | — |
-| 8 | master volume | master volume | master volume | master volume | master volume |
+| Bank 1 knob | Pads | Pads · Edit | Files | Chop | Pattern | FX | Settings |
+|---|---|---|---|---|---|---|---|
+| 1 | selected pad | selected parameter | selected file | cursor | selected row or step | selected slot | selected row |
+| 2–8 | pad context | page parameters | file context | zoom, threshold, slice bounds | pattern parameters | slot parameters | selected setting |
 
-Bank 2, every screen: selected pad volume, pitch, cutoff, decay, send FX 1, send FX 2, tempo
-(from 95; before it, empty), master volume.
+The knob strip names each available parameter. It dims a knob when that screen or mode has
+no parameter for it. The selected thing and knob 1's role remain visible.
+
+Bank 2 has the same roles on every screen. Knob 1 controls pad volume, 2 pan, 3 pitch,
+and 4 cutoff. Knob 5 controls decay, 6 send FX 1, 7 send FX 2, and 8 master volume.
+Features that do not exist yet stay dim until their own changes add them.
 
 Hold STOP while turning a knob: the fine step (as Shift on the keyboard), no acceleration.
 
@@ -143,7 +158,7 @@ These story sketches are not yet proof that the reach rule passes.
 |---|---|
 | Load a file onto a pad | STOP+Files (P), knob 1 (T), PLAY to hear (P), STOP+Take (P), hit the pad (P) |
 | Chop by hits and lay out | STOP+Chop (P), knob 5 (T), STOP+Assign (P), STOP+Assign again to apply (P) |
-| Set a pad's decay | hit the pad (P), bank 2 knob 4 (T) |
+| Set a pad's decay | hit the pad (P), bank 2 knob 5 (T) |
 | Swap two pads | hit pad A to select it (P), STOP+Swap (P), hit pad B (P) |
 | Open a project | STOP+Projects (P), knob 1 (T), `ui.confirm`: second press of STOP+Projects (P) |
 | Change the bank | LEFT / RIGHT on Pads (P) |
@@ -151,6 +166,9 @@ These story sketches are not yet proof that the reach rule passes.
 
 Change 93 makes this table for every story of `docs/USER-STORIES.md` and fixes what is longer
 than the rule.
+The planned `control-pages` change shows a page for both "Chop the sound of a pad" and
+"Edit a pad". Its unit test checks that bank 1 knob 1 moves the selection or cursor.
+Change 93 includes both stories as named paths in its reach test.
 
 ## 3. The changes
 
