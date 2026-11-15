@@ -280,7 +280,7 @@ impl App {
                         .unwrap_or(0);
                 }
             }
-            Action::SettingsLearn => {
+            Action::SettingsLearn | Action::Confirm => {
                 let (which, at) = (picker.which, picker.at.clone());
                 self.paths_set(which, at);
                 return; // picked: the picker stays closed
@@ -403,17 +403,16 @@ impl App {
         if k.kind == KeyEventKind::Release || k.modifiers.contains(KeyModifiers::CONTROL) {
             return false;
         }
+        if k.code == KeyCode::Enter {
+            self.project_picker_confirm();
+            return true;
+        }
         let Some(mut picker) = self.project_picker.take() else {
             return false;
         };
         if let Some(name) = &mut picker.naming {
             match k.code {
                 KeyCode::Esc => picker.naming = None,
-                KeyCode::Enter => {
-                    if self.create_project(name.clone()) {
-                        return true;
-                    }
-                }
                 KeyCode::Backspace => {
                     name.pop();
                 }
@@ -432,13 +431,6 @@ impl App {
             KeyCode::Down => {
                 picker.selected = (picker.selected + 1).min(picker.entries.len().saturating_sub(1));
             }
-            KeyCode::Enter => {
-                if let Some(name) = picker.entries.get(picker.selected).cloned()
-                    && self.open_project(self.paths.projects.join(name))
-                {
-                    return true;
-                }
-            }
             KeyCode::Esc => return true, // closed, nothing happens
             // any character is the start of a new project's name
             KeyCode::Char(c) => picker.naming = Some(c.to_string()),
@@ -449,6 +441,22 @@ impl App {
         }
         self.project_picker = Some(picker);
         true
+    }
+
+    pub(super) fn project_picker_confirm(&mut self) {
+        let Some(picker) = self.project_picker.take() else {
+            return;
+        };
+        let accepted = match &picker.naming {
+            Some(name) => self.create_project(name.clone()),
+            None => picker
+                .entries
+                .get(picker.selected)
+                .is_some_and(|name| self.open_project(self.paths.projects.join(name))),
+        };
+        if !accepted {
+            self.project_picker = Some(picker);
+        }
     }
 
     /// (11) The window title: the open project joins the program's name while its folder

@@ -439,9 +439,156 @@ fn working_question_drive(kind: &str) -> Drive {
             drive.tap(KeyCode::Enter, M::NONE);
             assert!(matches!(drive.app.ask, Some(Ask::ResetProfile { .. })));
         }
+        "pattern" => {
+            drive.app.pads.pattern = Some(session::PatternState {
+                slot: "A1".into(),
+                bars: 1,
+                quantize: "1/16".into(),
+                strength: 100,
+                hits: vec![[0, 4, 90, 0]],
+            });
+            drive.app.ask_clear_pattern();
+            assert!(matches!(drive.app.ask, Some(Ask::ClearPattern { .. })));
+        }
         _ => panic!("unknown question fixture: {kind}"),
     }
     drive
+}
+
+const CONFIRM_QUESTION_KINDS: [&str; 7] = [
+    "copy", "file", "plan", "reset", "clear", "profile", "pattern",
+];
+
+fn assert_confirmed_question(drive: &Drive, kind: &str) {
+    assert!(drive.app.ask.is_none(), "{kind}: question remains open");
+    match kind {
+        "copy" => assert_eq!(
+            drive.app.pads.custom_name[18].as_deref(),
+            Some("source (copy 1)")
+        ),
+        "file" => assert!(drive.app.browser.in_hand.is_none()),
+        "plan" => assert!(drive.app.pads.link[18].is_some()),
+        "reset" => assert_eq!(drive.app.pads.volume_db[18], 0),
+        "clear" => assert!(drive.app.pads.sound[18].is_none()),
+        "profile" => assert!(!drive.app.learned["Recorded pads"]["global"].contains_key("cc 5")),
+        "pattern" => assert!(drive.app.pads.pattern.as_ref().unwrap().hits.is_empty()),
+        _ => unreachable!(),
+    }
+}
+
+/// Scenario "Enter confirms every current question".
+#[test]
+fn enter_confirms_every_current_question() {
+    for kind in CONFIRM_QUESTION_KINDS {
+        let mut drive = working_question_drive(kind);
+        let screen = drive.app.screen;
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert_confirmed_question(&drive, kind);
+        let destination = if kind == "plan" { Screen::Pads } else { screen };
+        assert_eq!(drive.app.screen, destination, "{kind}: wrong destination");
+    }
+}
+
+/// Scenario "Learned confirm answers every current question".
+#[test]
+fn learned_confirm_answers_every_current_question() {
+    for kind in CONFIRM_QUESTION_KINDS {
+        for source in [Source::Notes, Source::Button] {
+            let mut drive = working_question_drive(kind);
+            match source {
+                Source::Notes => {
+                    learn::assign(
+                        &mut drive.app.learned,
+                        "Recorded pads",
+                        input::Group::Global,
+                        input::midi::Key::Note(5),
+                        "ui.confirm",
+                    );
+                    drive
+                        .app
+                        .sync_learned("Recorded pads", input::Group::Global);
+                    drive.midi().recorded_fence();
+                    drive.bytes(PAD_PORT, &[0x90, 5, 127]);
+                    drive.bytes(PAD_PORT, &[0x80, 5, 0]);
+                }
+                Source::Button => {
+                    drive.bind_action(5, "ui.confirm");
+                    drive.bytes(PAD_PORT, &[0xb0, 5, 127]);
+                    drive.bytes(PAD_PORT, &[0xb0, 5, 0]);
+                }
+                Source::Keyboard => unreachable!(),
+            }
+            drive.frame();
+            assert_confirmed_question(&drive, kind);
+        }
+    }
+}
+
+/// Scenario "Question confirmation wins over a screen binding".
+#[test]
+fn question_confirmation_wins_over_a_screen_binding() {
+    use input::{Group, midi::Key};
+    let mut drive = working_question_drive("reset");
+    drive.bind_action(5, "ui.confirm");
+    learn::assign(
+        &mut drive.app.learned,
+        "Recorded pads",
+        Group::PadsEdit,
+        Key::Cc(5),
+        "ui.back",
+    );
+    drive.app.sync_learned("Recorded pads", Group::PadsEdit);
+    drive.midi().recorded_fence();
+    drive.bytes(PAD_PORT, &[0xb0, 5, 127]);
+    drive.frame();
+    assert_confirmed_question(&drive, "reset");
+    assert!(
+        drive.app.edit,
+        "the edit action below the question did not run"
+    );
+
+    drive.app.pads.volume_db[18] = -6;
+    drive.tap(KeyCode::Backspace, M::NONE);
+    assert!(drive.app.ask.is_some());
+    drive.bytes(PAD_PORT, &[0xb0, 5, 127]);
+    drive.frame();
+    assert!(drive.app.ask.is_some(), "a held button cannot answer twice");
+    drive.bytes(PAD_PORT, &[0xb0, 5, 0]);
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0xb0, 5, 127]);
+    drive.frame();
+    assert_confirmed_question(&drive, "reset");
+    drive.bytes(PAD_PORT, &[0xb0, 5, 0]);
+    drive.frame();
+    drive.bytes(PAD_PORT, &[0xb0, 5, 127]);
+    drive.frame();
+    assert!(
+        !drive.app.edit,
+        "the edit action resumes outside the question"
+    );
+}
+
+/// Scenario "Confirm cannot consume an earlier pad release".
+#[test]
+fn confirm_cannot_consume_an_earlier_pad_release() {
+    let mut drive = Drive::new();
+    drive.load_pad(4, Arc::new(Sample::mono(vec![0.25; 32_000])), "gate");
+    assert_full_hit(&drive.pad_press(Source::Button, 4), 4);
+    drive.tap(KeyCode::F(12), M::NONE);
+    drive.tap(KeyCode::Tab, M::NONE);
+    drive.tap(KeyCode::Tab, M::NONE);
+    drive.app.midi_row = drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| matches!(row, MidiListRow::Reset { name, .. } if name == "Recorded pads"))
+        .unwrap();
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(matches!(drive.app.ask, Some(Ask::ResetProfile { .. })));
+    drive.bind_action(5, "ui.confirm");
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.ask.is_none());
+    assert_only_release(&drive.pad_release(Source::Button, 4), 4);
 }
 
 /// Scenario "Questions show effective working answers" for every existing question.
@@ -564,6 +711,18 @@ fn questions_show_effective_working_answers() {
     }
 }
 
+#[test]
+fn owner_enter_cannot_quit_below_question() {
+    let mut drive = working_question_drive("reset");
+    drive
+        .keymap
+        .overlay("[screens.pads]\nEnter = 'app.quit'\n")
+        .unwrap();
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.ask.is_some());
+    assert!(drive.app.question_view(&drive.keymap).unwrap().answers[0].contains("no confirm key"));
+}
+
 /// Scenario "Missing controller confirmation stays honest".
 #[test]
 fn missing_controller_confirmation_stays_honest() {
@@ -633,6 +792,24 @@ fn missing_controller_confirmation_stays_honest() {
         drive.app.question_view(&drive.keymap).unwrap().answers[0].starts_with("KB no confirm key")
     );
     assert!(drive.app.ask.is_some());
+}
+
+/// Scenario "Learned shared confirmation appears only when it works".
+#[test]
+fn learned_shared_confirmation_appears_only_when_it_works() {
+    let mut drive = working_question_drive("profile");
+    drive.bind_action(5, "ui.confirm");
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert!(view.answers[0].contains("Enter: reset"));
+    assert!(view.answers.iter().any(|row| row.contains("cc 5: reset")));
+    for (width, height) in [(80, 26), (120, 40)] {
+        let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
+        assert!(rows.iter().any(|row| row.contains("cc 5: reset")));
+    }
+    drive.midi().recorded_disconnect(PAD_PORT);
+    drive.frame();
+    let view = drive.app.question_view(&drive.keymap).unwrap();
+    assert!(view.answers.iter().all(|row| !row.contains("cc 5:")));
 }
 
 #[test]

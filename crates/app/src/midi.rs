@@ -1,7 +1,7 @@
 //! MIDI input: finds ports, connects and drops them on the fly, sends pad hits straight to the
 //! audio thread (no UI frame delay) and everything else to the UI.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -592,6 +592,7 @@ fn dispatch(
         origin: None,
     };
     let mut positions: HashMap<(String, u8, Key), u8> = HashMap::new();
+    let mut held_controls: HashSet<(String, u8, Key)> = HashSet::new();
     let mut defaults: HashMap<String, Profile> = HashMap::new();
     let mut pressed = DirectHolds::new();
     let mut ui_pressed = UiHolds::new();
@@ -660,6 +661,7 @@ fn dispatch(
             }
             Raw::Disconnected(port, _) => {
                 positions.retain(|(device, _, _), _| *device != port);
+                held_controls.retain(|(device, _, _)| *device != port);
                 // a held gate pad would hang without its note off
                 pressed.retain(|(p, _, _), held| {
                     if *p == port {
@@ -749,7 +751,12 @@ fn dispatch(
             }),
         };
         let waiting = ui.last_sent != acknowledged;
-        let (resolved, activity) = profile.resolve_input_in(focus.screen, focus.mode.edit, msg);
+        let modal = (focus.mode.question || focus.mode.picker)
+            && !focus.mode.text
+            && !focus.mode.screen_learn
+            && !focus.mode.midi_learn;
+        let (resolved, activity) =
+            profile.resolve_input_modal(focus.screen, focus.mode.edit, modal, msg);
         if let Some(origin) = &mut ui.origin {
             origin.activity = activity;
         }
@@ -779,6 +786,14 @@ fn dispatch(
         let channel = match msg {
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
         };
+        let control = (port.clone(), channel, msg.key());
+        let repeated = match msg {
+            Msg::NoteOff { .. } | Msg::Cc { value: 0, .. } => {
+                held_controls.remove(&control);
+                false
+            }
+            Msg::NoteOn { .. } | Msg::Cc { .. } => !held_controls.insert(control),
+        };
         if release_tracked(
             &port,
             msg,
@@ -787,6 +802,14 @@ fn dispatch(
             &mut pending,
             &mut ui,
         ) {
+            continue;
+        }
+        if (focus.mode.text || focus.mode.screen_learn || focus.mode.midi_learn)
+            && matches!(resolved, Some(Resolved::Action(Action::Confirm)))
+        {
+            continue;
+        }
+        if repeated && matches!(resolved, Some(Resolved::Action(Action::Confirm))) {
             continue;
         }
         let route = route_pad(focus);

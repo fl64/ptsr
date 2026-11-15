@@ -1773,6 +1773,95 @@ fn modes_85_folder_picker_consumes_actions_not_direct_midi_hits() {
     }
 }
 
+fn assert_both_pickers_confirm(source: Source) {
+    let files = TransitionFiles::new();
+    let mut drive = files.drive(false);
+    drive.app.user_path = Some(files.0.join("config.toml"));
+    drive.app.path_picker = Some(PathPicker {
+        which: 0,
+        at: files.0.clone(),
+        entries: Vec::new(),
+        selected: 0,
+    });
+    drive.frame();
+    if matches!(source, Source::Button) {
+        drive.bind_action(5, "ui.confirm");
+    }
+    drive.registry_command(source, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.path_picker.is_none());
+    assert_eq!(drive.app.paths.projects, files.0);
+
+    drive.tap(KeyCode::Char('p'), M::CONTROL);
+    assert!(drive.app.project_picker.is_some());
+    drive.registry_command(source, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.project_picker.is_none());
+    assert_eq!(drive.app.project.as_ref().unwrap().name, "A");
+}
+
+/// Scenario "Enter confirms both current pickers".
+#[test]
+fn enter_confirms_both_current_pickers() {
+    assert_both_pickers_confirm(Source::Keyboard);
+}
+
+/// Scenario "Learned confirm selects in both pickers".
+#[test]
+fn learned_confirm_selects_in_both_pickers() {
+    assert_both_pickers_confirm(Source::Button);
+}
+
+#[test]
+fn owner_enter_override_stays_inside_project_picker() {
+    let files = TransitionFiles::new();
+    let mut drive = files.drive(false);
+    drive
+        .keymap
+        .overlay("[screens.pads]\nEnter = 'pad.edit'\n")
+        .unwrap();
+    drive.tap(KeyCode::Char('p'), M::CONTROL);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.project_picker.is_some());
+    assert!(!drive.app.edit);
+    drive
+        .keymap
+        .overlay("[screens.pads]\nEnter = 'none'\n")
+        .unwrap();
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.project_picker.is_some());
+    assert!(!drive.app.edit);
+}
+
+/// Scenario "Enter uses a typed project name".
+#[test]
+fn enter_uses_a_typed_project_name() {
+    let files = TransitionFiles::new();
+    let mut drive = files.drive(false);
+    drive.tap(KeyCode::Char('p'), M::CONTROL);
+    for c in "No".chars() {
+        drive.tap(KeyCode::Char(c), M::NONE);
+    }
+    drive.tap(KeyCode::Backspace, M::NONE);
+    drive.tap(KeyCode::Backspace, M::NONE);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert_eq!(
+        drive.app.project_picker.as_ref().unwrap().naming.as_deref(),
+        Some("")
+    );
+    for c in "NewBeat".chars() {
+        drive.tap(KeyCode::Char(c), M::NONE);
+    }
+    drive.bind_action(5, "ui.confirm");
+    drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert_eq!(
+        drive.app.project_picker.as_ref().unwrap().naming.as_deref(),
+        Some("NewBeat")
+    );
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.project_picker.is_none());
+    assert_eq!(drive.app.project.as_ref().unwrap().name, "NewBeat");
+    assert!(files.0.join("NewBeat/project.toml").is_file());
+}
+
 #[test]
 fn modes_85_f12_learning_does_not_acquire_f10_silence() {
     for source in [Source::Keyboard, Source::Notes, Source::Button] {
@@ -1818,6 +1907,45 @@ fn modes_85_f12_learning_does_not_acquire_f10_silence() {
             }
             assert_only_release(&drive.pad_release(source, 4), 4);
         }
+    }
+}
+
+/// Scenario "Confirmation learning stays pending".
+#[test]
+fn confirmation_learning_stays_pending() {
+    for save in [false, true] {
+        let mut drive = Drive::new();
+        drive.tap(KeyCode::F(12), M::NONE);
+        drive.tap(KeyCode::Tab, M::NONE);
+        drive.tap(KeyCode::Tab, M::NONE);
+        drive.app.midi_open.push(input::Group::Global);
+        drive.app.midi_row = drive
+            .app
+            .midi_list()
+            .iter()
+            .position(
+                |row| matches!(row, MidiListRow::Action { info } if info.name == "ui.confirm"),
+            )
+            .unwrap();
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.learning.is_some());
+        drive.bytes(PAD_PORT, &[0xb0, 5, 127]);
+        drive.frame();
+        assert!(drive.app.learning.as_ref().unwrap().pending.is_some());
+        assert!(drive.app.ask.is_none());
+        assert!(!drive.app.learned["Recorded pads"]["global"].contains_key("cc 5"));
+        drive.tap(if save { KeyCode::Enter } else { KeyCode::Esc }, M::NONE);
+        assert!(drive.app.learning.is_none());
+        drive.bytes(PAD_PORT, &[0xb0, 5, 0]);
+        drive.frame();
+        drive.app.screen = Screen::Pads;
+        drive.app.ask = Some(Ask::ResetPads {
+            pads: vec![0],
+            lines: vec!["Reset pad 1?".into()],
+        });
+        drive.frame();
+        drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+        assert_eq!(drive.app.ask.is_none(), save);
     }
 }
 

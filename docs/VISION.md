@@ -624,8 +624,9 @@ Defaults that wait for the owner are marked "(default)". The full list of questi
   Check licenses before any PaulStretch source reuse or library choice. This plan chooses no dependency.
   Real-time old-sampler stretch, tuned comb feedback and MIDI clock in/out remain `1.x`, as described in [V1 section 4](plans/V1.md#4-everything-else-is-1x).
   Until the real-time stretch exists, the 1.0 matrix's stretch-all cell uses half speed, one octave down.
-- **88 on hold:** the owner deferred confirmation work until a MIDI device is available for live checks.
-  Recorded MIDI tests do not replace physical acceptance.
+- **88 shared confirmation:** Enter and a learned controller button can confirm
+  questions and pickers. Automated keyboard and MIDI checks pass. Physical
+  controller acceptance remains open.
 - **Current priority:** prepare 96 from implemented transport 95 and saved format 4, then recording and step editing.
   Resolve input prerequisites in each proposal. Sound-quality changes 94a and 110–112 wait for a separate request.
   Change 109 is canceled. The owner removed universal fades, automatic slice grouping and fractional-start prerequisites from the plan.

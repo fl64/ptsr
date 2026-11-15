@@ -60,7 +60,7 @@ Follow `AGENTS.md`: one change at a time, specifications before code, a test for
 A change normally has its own branch. Earlier combined branches were explicit owner exceptions,
 not permission to combine the new changes.
 
-## Current status (2026-11-14)
+## Current status (2026-11-15)
 
 The [archives](../../openspec/changes/archive/) hold earlier change history. Keep open manual
 checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpec numbers yet.
@@ -71,7 +71,8 @@ checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpe
 | 122 `ui-quiet-words` | Archived and merged | Keyboard, controller, and screen checks remain in `LIVE-CHECKS.md`. |
 | 123 `pattern-view-polish` | Accepted and archived in [PR #8](https://github.com/fl64/ptsr/pull/8) | Separate keyboard, controller, screen, and listening results remain open in `LIVE-CHECKS.md`. |
 | `repo-fast-checks` | Merged in [PR #15](https://github.com/fl64/ptsr/pull/15). `master` requires Rust for merge. | None for sampler behavior. |
-| `denormals` | Planned next | Review the silence render and callback measurements. Keep 94a open. |
+| 88 `ui-confirm` | Active on `88-ui-confirm`. Automated keyboard and MIDI checks pass. | Check Enter and a learned button on the physical controller. |
+| `denormals` | Planned in a separate branch | Review the silence render and callback measurements. Keep 94a open. |
 | `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
 | `pads-source-view` | Planned after `pattern-screen`. The plan is in [PR #16](https://github.com/fl64/ptsr/pull/16). | Check voice heads, sample rows, the mini pattern, and pad edit pages at both sizes. |
 | `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
@@ -346,7 +347,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | Before | Question | Default |
 |---|---|---|
 | Phase D | Is the SMC-PAD at hand for changes 91–93a? | Do 88–90, then phase E. Return to 91–93a when the device arrives. |
-| 88 | When does confirmation work resume? | In phase D. Test the keyboard path before the device check. |
+| 88 | When does confirmation work resume? | The owner resumed it on 2026-11-15. The physical controller check remains open. |
 | 0.4 | One swing amount in 1.0? | Yes, if 96 makes it cheap |
 | 0.4b | Is the glitch kit in 1.0? | Yes |
 | 0.4b | Stutter on the master only, or also per pad in 1.0? | Master only |

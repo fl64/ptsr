@@ -726,6 +726,7 @@ pub enum Action {
     HelpToggle,
     HelpPagePrev,
     HelpPageNext,
+    Confirm,
     Back,
     Quit,
     /// Save the session now; the manual save says that it did (22).
@@ -949,6 +950,7 @@ impl Action {
             "help.toggle" => Self::HelpToggle,
             "help.page_prev" => Self::HelpPagePrev,
             "help.page_next" => Self::HelpPageNext,
+            "ui.confirm" => Self::Confirm,
             "ui.back" => Self::Back,
             "app.quit" => Self::Quit,
             "session.save" => Self::SessionSave,
@@ -1082,6 +1084,7 @@ pub fn short_label(action: &str) -> &'static str {
         "help.toggle" => "help",
         "help.page_prev" => "help<",
         "help.page_next" => "help>",
+        "ui.confirm" => "ok",
         "ui.back" => "back",
         "bank.prev" => "bank<",
         "bank.next" => "bank>",
@@ -1340,6 +1343,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "help.page_next",
         label: "next help page",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "ui.confirm",
+        label: "confirm question or picker",
         group: Group::Global,
         knob: false,
     },
@@ -2656,6 +2665,9 @@ pub struct Keymap {
     /// every screen.
     edit: HashMap<Chord, Option<Action>>,
     screens: HashMap<Screen, HashMap<Chord, Option<Action>>>,
+    owner_global_enter: Option<Option<Action>>,
+    owner_edit_enter: Option<Option<Action>>,
+    owner_screen_enter: HashMap<Screen, Option<Action>>,
     default_velocity: f32,
     shift_velocity: f32,
 }
@@ -2667,10 +2679,16 @@ impl Keymap {
             global: HashMap::new(),
             edit: HashMap::new(),
             screens: HashMap::new(),
+            owner_global_enter: None,
+            owner_edit_enter: None,
+            owner_screen_enter: HashMap::new(),
             default_velocity: 80.0 / 127.0,
             shift_velocity: 1.0,
         };
         let warnings = k.overlay(text)?;
+        k.owner_global_enter = None;
+        k.owner_edit_enter = None;
+        k.owner_screen_enter.clear();
         Ok((k, warnings))
     }
 
@@ -2734,7 +2752,52 @@ impl Keymap {
             let map = self.screens.entry(screen).or_default();
             section(name, screens_t.and_then(|s| s.get(name)), map);
         }
+        let enter = |table: Option<&toml::Value>| {
+            table
+                .and_then(|table| table.get("Enter"))
+                .and_then(toml::Value::as_str)
+                .and_then(|name| {
+                    if name == "none" {
+                        Some(None)
+                    } else {
+                        Action::parse(name).map(Some)
+                    }
+                })
+        };
+        if let Some(action) = enter(t.get("global")) {
+            self.owner_global_enter = Some(action);
+        }
+        if let Some(action) = enter(t.get("edit")) {
+            self.owner_edit_enter = Some(action);
+        }
+        for screen in Screen::ALL {
+            if let Some(action) = enter(screens_t.and_then(|screens| screens.get(screen.key()))) {
+                self.owner_screen_enter.insert(screen, action);
+            }
+        }
         Ok(warnings)
+    }
+
+    /// The question or picker owns plain Enter before the edit and screen layers.
+    /// An owner overlay can still replace or remove that key.
+    pub fn resolve_modal_enter(
+        &self,
+        screen: Screen,
+        editing: bool,
+        event: &KeyEvent,
+    ) -> Option<Action> {
+        if event.code != KeyCode::Enter || !event.modifiers.is_empty() {
+            return self.resolve_in(screen, editing, event);
+        }
+        if event.kind != KeyEventKind::Press {
+            return None;
+        }
+        editing
+            .then_some(self.owner_edit_enter)
+            .flatten()
+            .or_else(|| self.owner_screen_enter.get(&screen).copied())
+            .or(self.owner_global_enter)
+            .unwrap_or(Some(Action::Confirm))
     }
 
     /// Action for a key event on `screen`.
@@ -4824,5 +4887,36 @@ mod tests {
             ],
             "a tap, two repeats, a new tap after the release"
         );
+    }
+
+    /// Scenario "A removed Enter binding stays removed".
+    #[test]
+    fn a_removed_enter_binding_stays_removed() {
+        let mut keymap = keymap();
+        let enter = ev(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Press);
+        let release = ev(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Release);
+        let repeat = ev(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Repeat);
+        for screen in Screen::ALL {
+            assert_eq!(
+                keymap.resolve_modal_enter(screen, true, &enter),
+                Some(Action::Confirm)
+            );
+            assert_eq!(keymap.resolve_modal_enter(screen, true, &release), None);
+            assert_eq!(keymap.resolve_modal_enter(screen, true, &repeat), None);
+        }
+        keymap.overlay("[global]\nEnter = 'none'\n").unwrap();
+        assert_eq!(
+            keymap.resolve_modal_enter(Screen::Pads, false, &enter),
+            None
+        );
+        keymap
+            .overlay("[screens.pads]\nEnter = 'pad.edit'\n")
+            .unwrap();
+        assert_eq!(
+            keymap.resolve_modal_enter(Screen::Pads, false, &enter),
+            Some(Action::PadEdit)
+        );
+        keymap.overlay("[edit]\nEnter = 'none'\n").unwrap();
+        assert_eq!(keymap.resolve_modal_enter(Screen::Pads, true, &enter), None);
     }
 }

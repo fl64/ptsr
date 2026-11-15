@@ -809,8 +809,19 @@ impl Profile {
         edit: bool,
         msg: Msg,
     ) -> (Option<Resolved>, Activity) {
+        self.resolve_input_modal(screen, edit, false, msg)
+    }
+
+    /// Gives a learned shared confirmation priority while a question or picker owns input.
+    pub fn resolve_input_modal(
+        &self,
+        screen: Screen,
+        edit: bool,
+        modal: bool,
+        msg: Msg,
+    ) -> (Option<Resolved>, Activity) {
         let mut activity = Activity::None;
-        let resolved = self.resolve_inner(screen, edit, msg, &mut activity);
+        let resolved = self.resolve_inner(screen, edit, modal, msg, &mut activity);
         (resolved, activity)
     }
 
@@ -839,6 +850,7 @@ impl Profile {
         &self,
         screen: Screen,
         edit: bool,
+        modal: bool,
         msg: Msg,
         activity: &mut Activity,
     ) -> Option<Resolved> {
@@ -854,6 +866,16 @@ impl Profile {
             Msg::NoteOff { .. } => (0, false),
             Msg::Cc { value, .. } => (value, value > 0),
         };
+        if modal
+            && self
+                .learned
+                .get(&Scope::Global)
+                .and_then(|bindings| bindings.get(&msg.key()))
+                .is_some_and(|action| action == "ui.confirm")
+        {
+            *activity = self.activity(msg, Some("ui.confirm"));
+            return learned_resolved("ui.confirm", msg, value, on);
+        }
         let control = match msg {
             Msg::NoteOn { note, .. } | Msg::NoteOff { note, .. } => self.notes.get(&note),
             Msg::Cc { cc, .. } => self.ccs.get(&cc),
