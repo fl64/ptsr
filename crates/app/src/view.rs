@@ -30,6 +30,7 @@ fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
     use input::Action;
     match action {
         Action::Back => Some(false),
+        Action::Confirm => Some(true),
         Action::SettingsLearn if matches!(ask, Ask::ResetProfile { .. }) => Some(true),
         Action::BrowserLoad if matches!(ask, Ask::PutFile { .. }) => Some(true),
         Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit
@@ -360,14 +361,29 @@ impl App {
         let focus = self.focus();
         let keyboard_blocked = focus.mode.text || focus.mode.picker || focus.mode.screen_learn;
         let key = |confirm| {
-            keymap
-                .bindings(self.screen)
+            let mut bindings = keymap.bindings(self.screen);
+            bindings.push(("Enter".into(), input::Action::Confirm));
+            bindings
                 .into_iter()
-                .filter(|(key, action)| {
-                    !keyboard_blocked
-                        && question_answer(ask, *action) == Some(confirm)
-                        && keymap.binding_for(self.screen, self.edit_keys(), key)
-                            == Some(Some(*action))
+                .filter(|(key, _)| {
+                    if keyboard_blocked {
+                        return false;
+                    }
+                    let effective = if key == "Enter" {
+                        keymap.resolve_modal_enter(
+                            self.screen,
+                            self.edit_keys(),
+                            &ratatui::crossterm::event::KeyEvent::new(
+                                ratatui::crossterm::event::KeyCode::Enter,
+                                ratatui::crossterm::event::KeyModifiers::NONE,
+                            ),
+                        )
+                    } else {
+                        keymap
+                            .binding_for(self.screen, self.edit_keys(), key)
+                            .flatten()
+                    };
+                    effective.is_some_and(|action| question_answer(ask, action) == Some(confirm))
                 })
                 .map(|(key, _)| key)
                 .min_by_key(|key| (key != "Enter" && key != "Esc", key.clone()))
@@ -404,8 +420,8 @@ impl App {
                                 velocity: 127,
                             },
                         ] {
-                            let (Some(Resolved::Action(action)), Activity::Press) =
-                                profile.resolve_input_in(self.screen, focus.mode.edit, msg)
+                            let (Some(Resolved::Action(action)), Activity::Press) = profile
+                                .resolve_input_modal(self.screen, focus.mode.edit, true, msg)
                             else {
                                 continue;
                             };

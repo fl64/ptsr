@@ -8,17 +8,17 @@
 
 ## 2. Route one confirm action
 
-- [ ] Add the action, its GLOBAL learn row, short label, and shipped Enter binding.
-- [ ] Route keyboard and raw MIDI confirm presses through the existing question and picker guards.
-- [ ] Keep the old answer actions, owner bindings, text input, learning, and held pad releases.
-- [ ] Add tests named for each new scenario. Use the production profile and dispatch for raw MIDI.
-- [ ] Run `cargo fmt --all --check`, Clippy for changed crates, and `task test:changed`. Commit this code step.
+- [x] Add the action, its GLOBAL learn row, short label, and shipped Enter binding.
+- [x] Route keyboard and raw MIDI confirm presses through the existing question and picker guards.
+- [x] Keep the old answer actions, owner bindings, text input, learning, and held pad releases.
+- [x] Add tests named for each new scenario. Use the production profile and dispatch for raw MIDI.
+- [x] Run `cargo fmt --all --check`, Clippy for changed crates, and `task test:changed`. Commit this code step.
 
 ## 3. Show the working answer
 
-- [ ] Show `ui.confirm` only when an effective keyboard or connected controller route reaches the current question.
-- [ ] Check the question catalogue at 80x26 and 120x40 against the base.
-- [ ] Run the required code checks and commit this step.
+- [x] Show `ui.confirm` only when an effective keyboard or connected controller route reaches the current question.
+- [x] Check the question catalogue at 80x26 and 120x40 against the base.
+- [x] Run the required code checks and commit this step.
 
 ## 4. Review and publish
 

@@ -18,7 +18,8 @@ impl App {
         self.note_done(action);
         // a change of the pads made on the pads or files screen is a step of the undo (61)
         let undoable = matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx)
-            && !matches!(action, Action::Undo | Action::PatternUndo);
+            && !matches!(action, Action::Undo | Action::PatternUndo)
+            && !(action == Action::Confirm && self.project_picker.is_some());
         let what = self.step_name(action);
         let before = undoable.then(|| self.before());
         let quit = self.run(action);
@@ -66,6 +67,10 @@ impl App {
             self.picker_key(action);
             return false;
         }
+        if action == Action::Confirm && self.project_picker.is_some() {
+            self.project_picker_confirm();
+            return false;
+        }
         if self.ask.is_none()
             && self.pattern_owns_pads()
             && (matches!(
@@ -95,7 +100,9 @@ impl App {
             // a question waits for Enter (the key of the step itself) or Esc only
             a if self.ask.is_some() => match a {
                 // the settings Enter answers the reset question (59)
-                Action::SettingsLearn if matches!(&self.ask, Some(Ask::ResetProfile { .. })) => {
+                Action::SettingsLearn | Action::Confirm
+                    if matches!(&self.ask, Some(Ask::ResetProfile { .. })) =>
+                {
                     if let Some(Ask::ResetProfile { name, port, .. }) = self.ask.take() {
                         self.seed_device(&port, &name, true);
                         self.post_notice(
@@ -104,7 +111,11 @@ impl App {
                         );
                     }
                 }
-                Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit => {
+                Action::Confirm
+                | Action::ChopCommit
+                | Action::ChopEdit
+                | Action::BrowserHold
+                | Action::PadEdit => {
                     match self.ask.as_ref() {
                         Some(Ask::Plan { .. }) => self.apply_plan(),
                         Some(Ask::ResetProfile { .. }) => {}
@@ -799,7 +810,7 @@ impl App {
                     _ => {}
                 }
             }
-            Action::SettingsLearn | Action::SettingsClear => {}
+            Action::Confirm | Action::SettingsLearn | Action::SettingsClear => {}
             Action::SettingsValue(step) => self.change(self.settings_row, step as isize),
             Action::SettingsTab => {
                 self.settings_tab = (self.settings_tab + 1) % 4;
@@ -1934,8 +1945,18 @@ impl App {
         if self.pad_naming.is_some() && self.pad_name_key(k) {
             return false;
         }
-        if self.project_picker.is_some() && self.project_picker_key(k) {
-            return false;
+        if self.project_picker.is_some() {
+            if k.code == event::KeyCode::Enter {
+                if keymap.resolve_modal_enter(self.screen, self.edit_keys(), &tracked)
+                    == Some(Action::Confirm)
+                {
+                    self.apply(Action::Confirm);
+                }
+                return false;
+            }
+            if self.project_picker_key(k) {
+                return false;
+            }
         }
         // Learn must not swallow the release of a key held before F10. New silent
         // learn keys are not in HeldPads and must not release another control's pad.
@@ -1975,10 +1996,20 @@ impl App {
             self.keymap_warnings.pop_front();
         }
         let panel = self.pattern_panel.is_some() && !self.transport_input_blocked();
-        let Some(action) = keymap.resolve_in(self.screen, self.edit_keys() || panel, &k) else {
+        let resolved = if k.code == event::KeyCode::Enter
+            && (self.ask.is_some() || self.path_picker.is_some())
+        {
+            keymap.resolve_modal_enter(self.screen, self.edit_keys() || panel, &k)
+        } else {
+            keymap.resolve_in(self.screen, self.edit_keys() || panel, &k)
+        };
+        let Some(action) = resolved else {
             self.moved_key_notice(keymap, &k);
             return false;
         };
+        if k.code == event::KeyCode::Enter && self.ask.is_some() && action == Action::Quit {
+            return false;
+        }
         let action = if panel {
             match action {
                 Action::ParamPrev => Action::PatternParamPrev,

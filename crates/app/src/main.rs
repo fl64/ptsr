@@ -3763,7 +3763,6 @@ fn assign_deaf(a: &Action) -> bool {
             | Action::SliceEndDelete
     )
 }
-
 fn describe(a: Action) -> String {
     match a {
         Action::PadPress { .. } | Action::PadRelease { .. } => "play pad".into(),
@@ -3900,6 +3899,7 @@ fn describe(a: Action) -> String {
         Action::LearnToggle => "bind controller knobs and buttons to what the screen shows".into(),
         Action::ProjectPick => "open the project picker".into(),
         Action::PadsToggle => "hide / show the pads".into(),
+        Action::Confirm => "confirm the open question or picker".into(),
         Action::Back => "back".into(),
         Action::Quit => "quit".into(),
         Action::SessionSave => "save the session now".into(),
@@ -4019,11 +4019,11 @@ fn help_section(a: Action) -> usize {
         | Action::ProjectPick
         | Action::PadsToggle
         | Action::Back
+        | Action::Confirm
         | Action::Quit
         | Action::SessionSave => 6,
     }
 }
-
 const HELP_SECTIONS: [&str; 7] = [
     "PADS", "BANK", "FILES", "CHOP", "SETTINGS", "SOUND", "SCREENS",
 ];
