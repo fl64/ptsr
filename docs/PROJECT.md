@@ -136,7 +136,9 @@ Existing names, sample files, sound, controls and saved formats stay unchanged.
 The owner reported success for repeated copies, a copy of a copy, numbered names and silent placement.
 Remaining keyboard checks, physical-controller checks and separate listening remain unverified.
 The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
-Work stays in the main repository folder. Change 88 is not active.
+Change 88 is active on its own branch. It adds one shared confirmation action
+for questions and pickers. Automated keyboard and MIDI checks pass. A physical
+controller check remains open.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
