@@ -22,8 +22,8 @@
 
 ## 4. Review and publish
 
-- [ ] Update `docs/PROJECT.md` and the ordered roadmap before publication. Keep the pending `denormals` plan change in its own branch.
-- [ ] Walk each item in the proposal's What Changes list against the program and catalogue.
-- [ ] Run `task test:fast`, `task specs:check`, `task names`, and the PR text lint before push.
-- [ ] Give the owner separate keyboard and controller checks. Record unverified physical checks.
+- [x] Update `docs/PROJECT.md` and the ordered roadmap before publication. Keep the pending `denormals` plan change in its own branch.
+- [x] Walk each item in the proposal's What Changes list against the program and catalogue.
+- [x] Run `task test:fast`, `task specs:check`, `task names`, and the PR text lint before push.
+- [x] Give the owner separate keyboard and controller checks. Record unverified physical checks.
 - [ ] After owner acceptance, archive the change, run `task specs:sync`, and complete the PR checks.
