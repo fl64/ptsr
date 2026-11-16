@@ -25,3 +25,5 @@
 - [x] 4.1 Show SMC-PAD pad order, controls, both encoder banks, current roles and incomplete setup status in the controller view. Compare the ANSI catalogue with the base.
 - [x] 4.2 Run `cargo fmt --all --check`, changed-crate Clippy, `task test:changed`, and `task test:fast` at the required points. Review `git diff` and commit each completed step.
 - [ ] 4.3 Record the owner's physical results for all 16 pads in both layers, both encoder banks, five buttons, SHIFT, PAD BANK, aftertouch and disconnect. Give exact keyboard and controller checks. Do not claim hardware acceptance from replay alone.
+
+The owner said "go dalshe" on 2026-11-16 after receiving the open physical-check list. This authorizes closure of change 91 without those results. Task 4.3 remains open as a physical acceptance limit. It does not block the separate command-panel change.

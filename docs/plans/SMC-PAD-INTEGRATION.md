@@ -6,13 +6,12 @@ for pads, `Focus` / `Mode`, `ui.confirm`, tap / hold buttons, relative encoders.
 
 ## 1. What the SMC-PAD gives the computer
 
-Reference maps came from other people's measurements and
-`openspec/deferred/83-controller-profiles/design.md`. Change 91 read the active preset on
+The change 91 design lists reference maps. Change 91 read the active preset on
 the owner's Linux machine and captured a small MIDI sample. The physical position of every
 control still needs physical checks. A one-record USB write and exact restore passed.
 The application also wrote all 16 encoder records. A USB script restored the original preset.
 
-Sources to retain when 91 replaces 83:
+Sources retained in the change 91 design:
 
 - Manufacturer manual: https://manualf.oss-cn-hongkong.aliyuncs.com/manual/MIDI-KEYBOARD/SMC-PAD_ZE.pdf
 - Reported MIDI measurements: https://github.com/SDR3078/mvave-home-assistant/blob/main/docs/HARDWARE-BLE.md
@@ -32,7 +31,7 @@ Sources to retain when 91 replaces 83:
 
 Consequences:
 
-- Reports say SHIFT sends no MIDI message. Change 91 checks it on Linux.
+- Reports say SHIFT sends no MIDI message. Its physical Linux check is still open.
   Only a measured SHIFT message can enable the optional quick panel view.
 - PAD BANK and KNOB BANK are useful: ptsr knows the layer from the note or CC number.
 - The active preset has 16 absolute encoder records. Change 91 tries a guarded USB setup:
@@ -251,8 +250,8 @@ Tasks:
 6. Raw-byte tests through the shipped TOML, profile seeding, dispatch and `App` (the harness of
    84): pads with velocity, both note-off forms, relative steps, buttons 127 / 0, two devices
    (X-Session + SMC-PAD) at the same time, unplug during a held pad.
-7. Carry the source links from `openspec/deferred/83-controller-profiles` into the change 91 design.
-   Keep the deferred draft until the owner accepts change 91, then remove it during the archive.
+7. The change 91 design retains the source links, pad orientation and raw-route tests.
+   Change 91 removed the superseded deferred draft during the archive.
 8. The virtual controller tool `task midi-replay` and the first scripts in `tests/midi/`
    (`CROSS-CUTTING.md` §1.1).
 

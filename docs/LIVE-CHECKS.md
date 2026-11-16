@@ -2134,7 +2134,10 @@ Earlier callback maximum-budget failures remain open. Owner acceptance does not 
 
 ## 91: SMC-PAD measured profile
 
-Folder: `changes/91-smc-pad-profile`
+Folder: `openspec/changes/archive/2026-11-16-91-smc-pad-profile/`
+
+The owner authorized archive on 2026-11-16 without completing the checks below.
+Every unchecked box remains unverified.
 
 Connect the SMC-PAD by USB. Use a disposable project with a Gate sample on a pad.
 Run `task build`, then start `target/release/ptsr`. Leave each box open until you check it.
