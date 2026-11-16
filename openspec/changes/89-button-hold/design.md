@@ -14,6 +14,8 @@ The MIDI receipt time determines whether a release is a tap. The worker checks d
 
 The profile accepts an action string or `{ tap = "...", hold = "..." }` in a screen or edit binding. A map needs `hold`. It can omit `tap`. A string in an existing user config remains a press action. New user-config maps store tap and hold in the same control entry. The new binding format does not rewrite old strings by itself. The existing FX binding migration can save the user file for its own reason. Profile seeding copies both actions once. The program refuses unknown actions, including a future `layer.*` action. Its message names the profile file and control. Change 91 will add an SMC-PAD factory profile after the owner measures its Linux messages.
 
+Gesture slots accept command actions. They refuse `pad.*` triggers and absolute parameters. A pad trigger needs its original pad, bank, and audio release route. A plain binding keeps that route. The profile warning names the file and control. The program removes saved gesture slots with these actions and gives the existing warning. A valid other slot stays.
+
 Use existing actions in test profiles: PLAY can use `transport.toggle` for tap and `metronome.toggle` for hold. RECORD can use `record.output` for tap and `record.mic` for hold. Any plain button acts on press. The plan's `play.context` example does not name an existing action. Use `transport.toggle` in this change. A dedicated STOP action and screen roles belong to change 92.
 
 ## MIDI learn and setting
@@ -35,6 +37,7 @@ F12 MIDI shows a `hold time` row. J and L change the time in 50 ms steps. The al
 | The owner presses a plain button | Its action runs immediately. | Preserve | Raw MIDI dispatch |
 | The program loads a saved string binding | It runs on press. The program does not rewrite it. | Preserve | Config round trip |
 | A future layer action is in a profile | The program refuses the binding with a message. | Specify now | Profile load error |
+| A pad trigger is in a gesture slot | Refuse the gesture. Keep plain pad bindings and their releases. | Specify now | Profile load and saved-binding tests |
 
 ## Open questions
 

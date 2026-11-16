@@ -23,12 +23,17 @@ A device profile SHALL accept a plain action string in a screen or edit binding.
 
 ### Requirement: Hold actions keep their action semantics
 
-A toggle action SHALL act only on hold down. `record.mic` SHALL start on hold down and stop on hold up. The program SHALL refuse an unknown action, including an unavailable `layer.*` action. The message SHALL name the profile file and control.
+A toggle action SHALL act only on hold down. `record.mic` SHALL start on hold down and stop on hold up. A gesture slot SHALL accept a command action. It SHALL refuse a pad trigger or an absolute parameter action. A plain binding MAY use those actions and SHALL keep its existing release path. The program SHALL refuse an unknown action, including an unavailable `layer.*` action. The message SHALL name the profile file and control.
 
 #### Scenario: Program refuses an unknown layer action
 - **WHEN** a profile gives a button a `layer.panel` hold before the panel exists
 - **THEN** the program refuses that binding and names its profile file and control
 - **AND** other valid bindings in the profile keep their actions
+
+#### Scenario: Pad trigger cannot use a button gesture
+- **WHEN** a profile gives a button a `pad.1` hold
+- **THEN** the program refuses that binding and names its profile file and control
+- **AND** a plain pad binding keeps its release behavior
 
 ### Requirement: Another control starts a pending hold
 
