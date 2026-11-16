@@ -34,4 +34,10 @@
 ## 6. Final validation
 
 - [x] 6.1 Run `task test:fast`, `task names`, `task specs:check`, STE lint and `git diff --check`. Report each required check and failure.
-- [ ] 6.2 Publish a PR to `master` with separate keyboard and controller steps and the named WAV. Wait for green CI before merge. Keep physical control and listening results open until the owner checks them.
+- [x] 6.2 Publish a PR to `master` with separate keyboard and controller steps and the named WAV. Wait for green CI before merge. Keep physical control and listening results open until the owner checks them.
+
+## Owner acceptance and closure
+
+The owner accepted change 92 on 2026-11-16 and reported that PLAY works in the change 92 build. The owner did not report the other physical, keyboard, graphics, or listening checks. Keep their boxes open in `docs/LIVE-CHECKS.md`.
+
+PR #26 passed Change names, Specs, and Rust before archive. Archive, synchronization, and merge still need their final checks.
