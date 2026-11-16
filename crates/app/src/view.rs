@@ -396,6 +396,10 @@ impl App {
         if !keyboard_blocked && !focus.mode.midi_learn {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
+                if port.contains("SMC-PAD-Master") {
+                    answers.push(format!("SMC P7: keep · P8: {verb}"));
+                    continue;
+                }
                 // Match the worker's port selection. Assignment labels can search another layer.
                 let mut profile = self
                     .profiles
@@ -769,6 +773,30 @@ impl App {
             rows.push(("A1 state".into(), key.badge().normal));
             if !key.targets.is_empty() {
                 rows.push(("Erase targets".into(), key.targets.join(" ")));
+            }
+        }
+        if self
+            .midi_devices
+            .iter()
+            .any(|(port, _)| port.contains("SMC-PAD-Master"))
+        {
+            let view = self.panel_view();
+            rows.push((
+                "SMC-PAD".into(),
+                format!("First second-bank hit shows the panel. Page {}/{}. PLAY starts or continues. STOP pauses; press again to reset.", self.panel.page() + 1, self.panel.page_count(view)),
+            ));
+            for first in [1, 5, 9, 13] {
+                let cells = (first..first + 4)
+                    .map(|cell| {
+                        let name = self.panel.label(view, cell).unwrap_or("unavailable");
+                        if cell >= 15 || name == "unavailable" {
+                            format!("P{cell} {name} unavailable")
+                        } else {
+                            format!("P{cell} {name}")
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                rows.push(("SMC cells".into(), cells.join(" · ")));
             }
         }
         if self.screen != Screen::Pads {

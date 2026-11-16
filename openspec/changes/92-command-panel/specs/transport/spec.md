@@ -23,7 +23,7 @@ The `play.context` action SHALL start a stopped transport at bar 1 or continue a
 
 ### Requirement: Context buttons keep previews separate from transport
 
-On Files and Chop, `play.context` SHALL start the selected preview only when no preview plays. It SHALL not stop or restart an active preview. `stop.context` SHALL stop that preview without starting it. With no preview, STOP MAY reset a paused transport but SHALL not start one. These actions SHALL not answer a visible question.
+On Files and Chop, `play.context` SHALL start the selected preview only when no preview plays. It SHALL not stop or restart an active preview. `stop.context` SHALL stop that preview without starting it. On Files, STOP SHALL also cancel a pending preview load. With no preview, STOP MAY reset a paused transport but SHALL not start one. These actions SHALL not answer a visible question.
 
 #### Scenario: PLAY does not toggle an active preview
 - **WHEN** a selected Files or Chop preview plays and the owner taps PLAY twice
@@ -34,6 +34,11 @@ On Files and Chop, `play.context` SHALL start the selected preview only when no 
 - **WHEN** a replacement question is visible and PLAY or STOP arrives on Files or Chop
 - **THEN** the applicable preview starts or stops without confirming the question
 - **AND** its target and answer remain available
+
+#### Scenario: STOP cancels a pending Files preview
+- **WHEN** the owner taps STOP on Files before the selected preview finishes loading
+- **THEN** that load cannot start a preview after STOP
+- **AND** a later PLAY can request the selected file again
 
 ### Requirement: Context pause safely closes recording
 

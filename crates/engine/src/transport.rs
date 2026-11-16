@@ -65,6 +65,14 @@ impl Clock {
         self.next_beat = 0;
     }
 
+    pub fn pause(&mut self) {
+        self.state.playing = false;
+    }
+
+    pub fn resume(&mut self) {
+        self.state.playing = true;
+    }
+
     /// Split before this tick's nearest output frame, including a buffer-end boundary.
     pub fn frames_until(&self, ticks: f64, sample_rate: f64) -> usize {
         let step = self.state.bpm * TICKS_PER_QUARTER / (60.0 * sample_rate);

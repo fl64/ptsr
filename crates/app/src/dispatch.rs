@@ -71,6 +71,10 @@ impl App {
             self.project_picker_confirm();
             return false;
         }
+        if matches!(action, Action::PlayContext | Action::StopContext) {
+            self.context_button(action);
+            return false;
+        }
         if self.ask.is_none()
             && self.pattern_owns_pads()
             && (matches!(
@@ -805,6 +809,7 @@ impl App {
                         self.midi_run = None;
                         self.learning = Some(learn::Learning::new(info));
                     }
+                    Some(MidiListRow::Disabled { .. }) => {}
                     None => {}
                 }
             }
@@ -829,6 +834,27 @@ impl App {
                     Some(MidiListRow::Action { info }) => {
                         for profile in learn::clear(&mut self.learned, info.group, info.name) {
                             self.sync_learned(&profile, info.group);
+                        }
+                        self.save_midi();
+                    }
+                    Some(MidiListRow::Disabled {
+                        profile,
+                        group,
+                        key,
+                    }) => {
+                        let (profile, group, key) = (profile.clone(), group.clone(), key.clone());
+                        if let Some(bindings) = self
+                            .learned
+                            .get_mut(&profile)
+                            .and_then(|m| m.get_mut(&group))
+                        {
+                            bindings.remove(&key);
+                        }
+                        if let Some(group) = input::Group::ALL
+                            .into_iter()
+                            .find(|candidate| candidate.key() == group)
+                        {
+                            self.sync_learned(&profile, group);
                         }
                         self.save_midi();
                     }
@@ -1076,7 +1102,24 @@ impl App {
             .map_or(Origin::System, |port| Origin::Device(port.into()));
         let owner_input = ev.owner_input();
         let released = ev.release_signal();
-        if let Some(ev) = ev.current(self.audio.as_ref().map(|audio| audio.project.as_ref())) {
+        let blocked_transport_answer = self.ask.is_some()
+            && ev
+                .origin()
+                .is_some_and(|port| port.contains("SMC-PAD-Master"))
+            && matches!(ev.control_key(), Some(input::midi::Key::Cc(27 | 28)))
+            && matches!(ev.event, midi::Event::Action(action) if !matches!(action, Action::PlayContext | Action::StopContext));
+        let suppressed = ev
+            .origin()
+            .zip(ev.control_key())
+            .is_some_and(|(port, key)| self.question_pads.contains(&(port.into(), key)))
+            && matches!(
+                ev.event,
+                midi::Event::Action(_) | midi::Event::PadHit { .. } | midi::Event::PanelCell { .. }
+            );
+        if let Some(ev) = ev
+            .current(self.audio.as_ref().map(|audio| audio.project.as_ref()))
+            .filter(|_| !suppressed && !blocked_transport_answer)
+        {
             let old = std::mem::replace(&mut self.notice_origin, origin);
             if owner_input {
                 self.acknowledge_notice();
@@ -1260,6 +1303,43 @@ impl App {
         self.value_after(value_before, Instant::now());
     }
 
+    fn panel_back(&mut self) {
+        let esc = event::KeyEvent::new(event::KeyCode::Esc, event::KeyModifiers::NONE);
+        if self.pad_naming.is_some() {
+            self.pad_name_key(&esc);
+        } else if self.project_picker.is_some() {
+            self.project_picker_key(&esc);
+        } else if self.path_picker.is_some() {
+            self.apply(Action::Back);
+        } else if self.screen == Screen::Files && self.browser.editing {
+            self.filter_key(&esc);
+        } else if let Some(learn) = self.screen_learn.as_mut() {
+            if learn.pending.is_some() || learn.clearing {
+                learn.pending = None;
+                learn.clearing = false;
+            } else {
+                self.screen_learn = None;
+            }
+        } else if self.midi_run.is_some()
+            || self.learning.is_some()
+            || self.help_open
+            || self.edit
+            || self.pattern_view.overview
+            || self.pattern_view.edit
+            || self.pattern_panel.is_some()
+            || self.plan.is_some()
+            || self.browser.in_hand.is_some()
+            || self.pad_in_hand.is_some()
+            || self.copy_in_hand.is_some()
+            || self.erase_pads
+            || (self.screen == Screen::Files && !self.browser.filter.is_empty())
+        {
+            self.apply(Action::Back);
+        } else {
+            self.panel.hide();
+        }
+    }
+
     fn midi_event_inner(
         &mut self,
         ev: midi::Event,
@@ -1295,6 +1375,7 @@ impl App {
                 self.midi_devices.push((port, profile));
             }
             midi::Event::Disconnected { port } => {
+                self.panel.disconnect(&port);
                 if port.contains("SMC-PAD-Master") {
                     self.help_overlay.controller.smc_status = None;
                 }
@@ -1307,6 +1388,20 @@ impl App {
                 msg,
                 meaning,
             } => {
+                if port.contains("SMC-PAD-Master")
+                    && let input::midi::Msg::NoteOn { note: 62 | 63, .. } = msg
+                {
+                    let key = msg.key();
+                    self.question_pads.remove(&(port.clone(), key));
+                    if self.ask.is_some() {
+                        self.question_pads.insert((port.clone(), key));
+                        self.apply(if key == input::midi::Key::Note(62) {
+                            Action::Back
+                        } else {
+                            Action::Confirm
+                        });
+                    }
+                }
                 self.help_overlay.controller.last_port = Some(port.clone());
                 // a run takes every new control for the next pad or bank; a control
                 // already taken in the run waits for another (28)
@@ -1342,12 +1437,61 @@ impl App {
                 self.input_log
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
+            midi::Event::PanelCell { port, cell } => {
+                if !port.contains("SMC-PAD-Master") {
+                    return;
+                }
+                if self.ask.is_some() {
+                    match cell {
+                        7 => {
+                            self.apply(Action::Back);
+                        }
+                        8 => {
+                            self.apply(Action::Confirm);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                if self.pad_naming.is_some()
+                    || self.project_picker.is_some()
+                    || self.path_picker.is_some()
+                    || self.browser.editing
+                    || self.screen_learn.is_some()
+                    || self.learning.is_some()
+                    || self.midi_run.is_some()
+                    || self.help_open
+                {
+                    if cell == 13 && self.panel.owner() == Some(&port) {
+                        self.panel_back();
+                    }
+                    return;
+                }
+                if self.panel.press(&port, cell) == super::panel::Press::Cell(cell) {
+                    let view = self.panel_view();
+                    self.panel.sync_view(view);
+                    match self.panel.choice(view, cell) {
+                        super::panel::Choice::Action(action) => {
+                            self.apply(action);
+                        }
+                        super::panel::Choice::Back => {
+                            self.panel_back();
+                        }
+                        super::panel::Choice::Page | super::panel::Choice::Dim => {}
+                    }
+                }
+            }
             midi::Event::PadHit {
                 abs,
                 velocity,
                 ui_press,
                 sound,
             } => {
+                if let Origin::Device(port) = &self.notice_origin
+                    && self.panel.owner() == Some(port)
+                {
+                    self.panel.hide();
+                }
                 if self.pattern_view.edit
                     && let Some(id) = ui_press
                     && !self.pattern_view.midi_presses.insert((abs, id))
@@ -2269,6 +2413,46 @@ impl App {
 mod relative_tests {
     use super::*;
     use input::midi::{ListTarget, StepTarget};
+
+    #[test]
+    fn panel_back_closes_the_top_open_mode() {
+        let port = "SMC-PAD-Master test";
+        for mode in 0..5 {
+            let mut app = crate::tests::test_app();
+            app.panel.press(port, 1);
+            match mode {
+                0 => app.pad_naming = Some((0, "kick".into())),
+                1 => {
+                    app.project_picker = Some(ProjectPicker {
+                        entries: vec![],
+                        selected: 0,
+                        naming: Some("project".into()),
+                    });
+                }
+                2 => {
+                    app.screen = Screen::Files;
+                    app.browser.editing = true;
+                    app.browser.set_filter("kick".into());
+                }
+                3 => app.screen_learn = Some(app.learn_open()),
+                4 => app.help_open = true,
+                _ => unreachable!(),
+            }
+            app.midi_event(midi::Event::PanelCell {
+                port: port.into(),
+                cell: 13,
+            });
+            assert!(app.panel.visible(), "mode {mode}");
+            match mode {
+                0 => assert!(app.pad_naming.is_none()),
+                1 => assert!(app.project_picker.as_ref().unwrap().naming.is_none()),
+                2 => assert!(!app.browser.editing && app.browser.filter.is_empty()),
+                3 => assert!(app.screen_learn.is_none()),
+                4 => assert!(!app.help_open),
+                _ => unreachable!(),
+            }
+        }
+    }
 
     fn turn(app: &mut App, target: StepTarget, steps: i32, fine: bool) {
         app.midi_event(midi::Event::Step {

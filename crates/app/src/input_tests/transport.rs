@@ -289,6 +289,259 @@ fn raw_midi_buttons_control_transport_and_metronome() {
     }
 }
 
+/// Scenario "Context PLAY and STOP match keyboard and raw MIDI" (keyboard).
+#[test]
+fn context_play_and_stop_match_keyboard_and_raw_midi() {
+    for screen in [Screen::Pads, Screen::Files, Screen::Chop] {
+        for midi in [false, true] {
+            let mut drive = Drive::smc_offline();
+            let mut request = None;
+            if screen == Screen::Chop {
+                drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "preview");
+                drive.tap(KeyCode::F(3), M::NONE);
+                assert!(drive.app.chop.is_some());
+            } else {
+                drive.app.screen = screen;
+            }
+            if screen == Screen::Files {
+                let files = TransitionFiles::new();
+                drive.app.browser = browser::Browser::new(Some(files.0.clone()));
+                drive.app.browser.selected = drive
+                    .app
+                    .browser
+                    .entries
+                    .iter()
+                    .position(|entry| entry.name == "tone.wav")
+                    .unwrap();
+                let (tx, rx) = std::sync::mpsc::channel();
+                let (_reply_tx, reply_rx) = std::sync::mpsc::channel();
+                drive.app.loader = Some((tx, reply_rx));
+                request = Some((files, rx));
+            }
+            let play = if midi {
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 27, 127]);
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 27, 0]);
+                drive.frame()
+            } else {
+                drive.tap(KeyCode::Char('t'), M::ALT)
+            };
+            match screen {
+                Screen::Pads => assert!(
+                    play.ui
+                        .iter()
+                        .any(|command| matches!(command, Command::TransportPlayContext))
+                ),
+                Screen::Chop => assert!(
+                    play.ui
+                        .iter()
+                        .any(|command| matches!(command, Command::Preview { sound: Some(_), .. }))
+                ),
+                Screen::Files => assert!(request.as_ref().unwrap().1.try_recv().is_ok()),
+                _ => unreachable!(),
+            }
+            if screen == Screen::Pads {
+                settle(&mut drive);
+            } else {
+                drive.app.fake_playhead = Some(0);
+            }
+            let stop = if midi {
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 127]);
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 0]);
+                drive.frame()
+            } else {
+                drive.tap(KeyCode::Char('y'), M::ALT)
+            };
+            match screen {
+                Screen::Pads => assert!(
+                    stop.ui
+                        .iter()
+                        .any(|command| matches!(command, Command::TransportStopContext))
+                ),
+                Screen::Files | Screen::Chop => assert!(
+                    stop.ui
+                        .iter()
+                        .any(|command| matches!(command, Command::Preview { sound: None, .. }))
+                ),
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+/// Scenario "A screen switch resets the panel page" (command-panel).
+#[test]
+fn a_screen_switch_resets_the_panel_page() {
+    let mut drive = Drive::smc_offline();
+    let port = "SINCO SMC-PAD-Master 28:1";
+    drive.bytes(port, &[0x99, 64, 100]);
+    drive.bytes(port, &[0x89, 64, 0]);
+    drive.frame();
+    assert!(drive.app.panel.visible());
+    drive.bytes(port, &[0x99, 63, 100]);
+    drive.bytes(port, &[0x89, 63, 0]);
+    drive.frame();
+    assert_eq!(drive.app.panel.page(), 1);
+    drive.tap(KeyCode::F(6), M::NONE);
+    assert_eq!(drive.app.screen, Screen::Files);
+    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(
+        drive.app.panel.label(drive.app.panel_view(), 9),
+        Some("take")
+    );
+    drive.bytes(port, &[0x99, 63, 100]);
+    drive.bytes(port, &[0x89, 63, 0]);
+    drive.frame();
+    assert_eq!(drive.app.panel.page(), 1);
+    drive.bytes(port, &[0x99, 59, 100]);
+    drive.bytes(port, &[0x89, 59, 0]);
+    drive.frame();
+    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(drive.app.screen, Screen::Files);
+}
+
+/// Scenario "PLAY does not toggle an active preview" (transport).
+#[test]
+fn play_does_not_toggle_an_active_preview() {
+    for screen in [Screen::Files, Screen::Chop] {
+        let mut drive = Drive::smc_offline();
+        if screen == Screen::Chop {
+            drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "preview");
+            drive.tap(KeyCode::F(3), M::NONE);
+        } else {
+            drive.app.screen = Screen::Files;
+        }
+        drive.app.fake_playhead = Some(120);
+        let before = drive.app.transport_state();
+        for _ in 0..2 {
+            drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 27, 127]);
+            drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 27, 0]);
+            let frame = drive.frame();
+            assert!(!frame.commands().iter().any(|command| matches!(
+                command,
+                Command::Preview { .. } | Command::TransportPlayContext
+            )));
+            assert_eq!(drive.app.preview_frame(), Some(120));
+        }
+        drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 127]);
+        drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 0]);
+        let stop = drive.frame();
+        assert_eq!(
+            stop.ui
+                .iter()
+                .filter(|command| matches!(command, Command::Preview { sound: None, .. }))
+                .count(),
+            1
+        );
+        assert_eq!(drive.app.transport_state(), before);
+    }
+}
+
+/// Scenario "STOP cancels a pending Files preview" (transport).
+#[test]
+fn stop_cancels_a_pending_files_preview() {
+    let mut drive = Drive::smc_offline();
+    let files = TransitionFiles::new();
+    drive.app.screen = Screen::Files;
+    drive.app.browser = browser::Browser::new(Some(files.0.clone()));
+    drive.app.browser.selected = drive
+        .app
+        .browser
+        .entries
+        .iter()
+        .position(|entry| entry.name == "tone.wav")
+        .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (_reply_tx, reply_rx) = std::sync::mpsc::channel();
+    drive.app.loader = Some((tx, reply_rx));
+    drive.tap(KeyCode::Char('t'), M::ALT);
+    let old = rx.try_recv().unwrap();
+    drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 127]);
+    drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 0]);
+    let stop = drive.frame();
+    assert!(
+        stop.ui
+            .iter()
+            .any(|command| matches!(command, Command::Preview { sound: None, .. }))
+    );
+    assert!(drive.app.load_gen[PREVIEW] > old.generation);
+    drive.app.loader_reply(loader::Reply::Loaded {
+        pad: PREVIEW,
+        generation: old.generation,
+        path: old.path,
+        sound: Arc::new(Sample::mono(vec![0.2; 48_000])),
+    });
+    assert!(
+        !drive
+            .app
+            .sent
+            .iter()
+            .any(|command| matches!(command, Command::Preview { sound: Some(_), .. }))
+    );
+    drive.tap(KeyCode::Char('t'), M::ALT);
+    assert!(rx.try_recv().unwrap().generation > old.generation);
+}
+
+/// Scenario "Preview buttons leave a question intact" (transport).
+#[test]
+fn preview_buttons_leave_a_question_intact() {
+    for screen in [Screen::Files, Screen::Chop] {
+        let mut drive = Drive::smc_offline();
+        let mut request = None;
+        if screen == Screen::Chop {
+            drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "preview");
+            drive.tap(KeyCode::F(3), M::NONE);
+        } else {
+            let files = TransitionFiles::new();
+            drive.app.screen = Screen::Files;
+            drive.app.browser = browser::Browser::new(Some(files.0.clone()));
+            drive.app.browser.selected = drive
+                .app
+                .browser
+                .entries
+                .iter()
+                .position(|entry| entry.name == "tone.wav")
+                .unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (_reply_tx, reply_rx) = std::sync::mpsc::channel();
+            drive.app.loader = Some((tx, reply_rx));
+            request = Some((files, rx));
+        }
+        drive.app.ask = Some(Ask::PutFile {
+            abs: 0,
+            path: "target.wav".into(),
+            lines: vec!["Replace pad 1?".into(), "Enter: replace".into()],
+        });
+        drive.app.publish_midi(&drive.shared);
+        drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 27, 127]);
+        drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 27, 0]);
+        let play = drive.frame();
+        if screen == Screen::Files {
+            assert!(request.as_ref().unwrap().1.try_recv().is_ok());
+        } else {
+            assert!(
+                play.ui
+                    .iter()
+                    .any(|command| matches!(command, Command::Preview { sound: Some(_), .. }))
+            );
+        }
+        assert!(
+            matches!(&drive.app.ask, Some(Ask::PutFile { abs: 0, path, .. }) if path == Path::new("target.wav"))
+        );
+        drive.app.fake_playhead = Some(120);
+        drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 127]);
+        drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 28, 0]);
+        let stop = drive.frame();
+        assert!(
+            stop.ui
+                .iter()
+                .any(|command| matches!(command, Command::Preview { sound: None, .. }))
+        );
+        assert!(
+            matches!(&drive.app.ask, Some(Ask::PutFile { abs: 0, path, .. }) if path == Path::new("target.wav"))
+        );
+    }
+}
+
 #[test]
 fn raw_midi_tempo_buttons_match_keyboard_steps() {
     for (action, code, mods, expected) in [

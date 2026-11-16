@@ -35,14 +35,31 @@ Notes:
 6. `[43]` `PgUp` `PgDn` and `Ctrl+1…8` page the banks on all screens with pads: on the
    pads, in edit mode, on the chop screen, in the files.
 
-## Planned SMC-PAD flows
+## SMC-PAD command panel
 
-The keyboard steps below use current keys. The SMC-PAD steps are targets for changes
-91–93. The current build has no complete SMC-PAD profile or command panel.
-PAD BANK changes the physical pad layer. On the first visit, its first layer 2
-hit only shows the panel. Hit the chosen cell again to run it. Later cells run
-on one hit while the panel is visible. STOP stops playback. The Back cell
-closes an edit or screen.
+Change 92 gives the SMC-PAD Master port a command panel on the second physical
+pad bank. PAD BANK is local to the device. The first second-bank hit shows the
+panel without an action. Each later hit runs its visible cell. The panel uses
+the same top-to-bottom rows as the first-bank pads. A first-bank hit hides it
+and keeps that pad's sound and release.
+
+The main page has Pads, Files, Chop, Pattern, FX, Settings, Help and More.
+Four cells show actions for the current screen. More opens a context page.
+Next cycles context pages, and Main returns to the first page. The bottom row
+keeps Back, Undo, Redo and Panic. Redo and Panic are unavailable in change 92.
+Back closes the top open mode before it closes the panel.
+
+While a question shows, physical P7 cancels it and P8 accepts it on the first
+press. PLAY and STOP cannot answer a question. PLAY starts or continues A1 on
+Pads, Pattern, FX and Settings. On Files and Chop, it starts a preview only if
+one is not playing. The first STOP tap pauses A1 or stops a preview. A second
+STOP tap while paused returns A1 to bar 1. A PLAY hold toggles the metronome.
+The keyboard has the same context actions on `Alt+T` and `Alt+Y`. Space keeps
+its existing toggle and reset behavior.
+
+The physical SHIFT key has no ptsr shortcut without a separate measured MIDI
+message. F1 shows the panel cells and current controller roles. The complete
+controller-only routes for the stories below remain work for changes 93 and 93a.
 
 ### Chop the sound of a pad
 
@@ -51,17 +68,15 @@ Use `J` and `L` for the cursor and `I` and `K` for zoom. Press `M` to cut, `Y` f
 parts, or `H` for cuts at hits. Press `P`, hit the target pads, and press `Enter` to
 apply the layout. Press `Space` to listen. Press `F2` or `Esc` to return to Pads.
 
-**SMC-PAD:** Hit the pad. Press PAD BANK to use layer 2. Hit a layer 2 pad
-once to show the panel. This first hit runs no command. Hit the Chop cell to
-open Chop. Turn knob 1 to move the cursor. The knob strip names zoom, hit
-threshold, and slice bounds on the other knobs. Hit the Cut, Parts, or Hits
-cell. Hit Assign, then press PAD BANK for layer 1. Hit the target pads.
-Press PAD BANK for layer 2 again. Hit a layer 2 pad once to show the panel
-without a command, then hit Apply to lay out the slices. Press PLAY to listen.
-Hit Back to return to Pads. Press PAD BANK for layer 1. A layer 1 hit hides
-the panel and follows its normal pad role.
+**SMC-PAD:** Hit the first-bank pad to select its sample. Select PAD BANK 2 and
+hit any panel cell once to show the panel. Hit Chop. Turn the first encoder on
+knob bank 1 to move the cursor. The Chop main page has Cut, Parts, Hits and
+Assign. Its context page has Commit. Use PAD BANK 1 for target pad hits. Use
+PAD BANK 2 again to reveal the panel and select Commit. A replacement question
+uses P7 to keep its target or P8 to replace it. PLAY starts a stopped preview.
 
-**Done when:** The slices are on pads and play without a keyboard action.
+**Done when:** Change 93 verifies the complete route from the physical device
+without a keyboard action. Change 92 supplies the named panel actions.
 
 ### Edit a pad
 
@@ -70,18 +85,15 @@ the panel and follows its normal pad role.
 parameter. Use `J` and `L` to change its value. Hold Shift for a fine step. Press
 `Enter` or `Esc` to close the edit.
 
-**SMC-PAD, quick:** Hit the pad. Switch to knob bank 2. Turn its volume, pan, pitch,
-cutoff, decay, and send knobs without opening the edit.
+**SMC-PAD:** Hit the first-bank pad. Select PAD BANK 2 and reveal the panel.
+Hit Edit. The four current-screen cells select the previous or next page and
+parameter. On More, Val - and Val + change the selected value. Back closes
+edit before it closes the panel. The shipped knob bank 2 controls pad volume,
+pitch, cutoff and decay, plus master volume. It has no pan or send assignment.
 
-**SMC-PAD, full:** Hit the pad. Press PAD BANK for layer 2. If the panel is
-hidden, hit a layer 2 pad once to show it without a command. Hit Edit. Turn
-knob 1 to select a parameter. Knobs 2–8 change the parameters named on the
-current page of the knob strip. Press LEFT or RIGHT to change pages. Hit
-Back to close the edit.
-
-**Done when:** Every pad parameter has a controller path. A command in a
-visible panel takes one cell hit plus knob turns. The first panel entry
-takes PAD BANK and two layer 2 hits.
+**Done when:** Change 93 verifies a path to every pad parameter without typed
+text. A command in a visible panel takes one cell hit. The first panel entry
+takes PAD BANK and two second-bank hits.
 
 ## Read modes and operation results
 

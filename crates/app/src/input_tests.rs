@@ -84,11 +84,19 @@ impl Drive {
         Self::with_audio(true)
     }
 
+    fn smc_offline() -> Self {
+        Self::with_saved_bindings_and_smc(true, None, true)
+    }
+
     fn with_audio(offline: bool) -> Self {
         Self::with_saved_bindings(offline, None)
     }
 
     fn with_saved_bindings(offline: bool, path: Option<&Path>) -> Self {
+        Self::with_saved_bindings_and_smc(offline, path, false)
+    }
+
+    fn with_saved_bindings_and_smc(offline: bool, path: Option<&Path>, smc: bool) -> Self {
         let mut app = tests::test_app();
         app.pads.track_keys = true;
         app.profiles = vec![
@@ -99,6 +107,15 @@ impl Drive {
             )
             .unwrap(),
         ];
+        if smc {
+            app.profiles.push(
+                Profile::from_toml(
+                    "smc-pad.toml",
+                    include_str!("../../../config/devices/smc-pad.toml"),
+                )
+                .unwrap(),
+            );
+        }
         if let Some(path) = path {
             let loaded = config::load_from(path);
             assert_eq!(loaded.user_path.as_deref(), Some(path));
@@ -155,6 +172,9 @@ impl Drive {
         };
         drive.midi().recorded_connect(PAD_PORT);
         drive.midi().recorded_connect(XS_PORT);
+        if smc {
+            drive.midi().recorded_connect("SINCO SMC-PAD-Master 28:1");
+        }
         drive.frame(); // Connected -> App::seed_device -> real learned-map updates.
         drive.midi().recorded_fence();
         assert!(drive.app.seeded.iter().any(|name| name == "Recorded pads"));

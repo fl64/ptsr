@@ -2,6 +2,61 @@
 
 use super::*;
 
+/// The current command labels for the SMC-PAD second bank.
+pub struct CommandPanel {
+    pub labels: [Option<String>; 16],
+    pub page: usize,
+    pub pages: usize,
+    pub view: &'static str,
+}
+
+pub fn command_panel_area(area: Rect) -> Rect {
+    let [_, body, _, _] = frame_areas(area);
+    pad_frame(body, false).grid
+}
+
+pub fn command_panel(frame: &mut Frame, panel: &CommandPanel, question_view: Option<&Question>) {
+    let [_, body, _, _] = frame_areas(frame.area());
+    let pad = pad_frame(body, false);
+    frame.render_widget(
+        Line::from(" PANEL · SMC ").fg(BG).bg(CYAN),
+        Rect {
+            width: pad.title.width.min(13),
+            ..pad.title
+        },
+    );
+    frame.render_widget(
+        Line::from(format!(
+            " PANEL · SMC | {} {}/{}",
+            panel.view,
+            panel.page + 1,
+            panel.pages
+        ))
+        .fg(CYAN)
+        .bg(BG),
+        pad.bank,
+    );
+    let rows = Layout::vertical([Constraint::Length(PAD_H + pad.waves); 4]).split(pad.grid);
+    for (row, area) in rows.iter().enumerate() {
+        let cells = Layout::horizontal([Constraint::Length(pad.grid.width / 4); 4]).split(*area);
+        for (column, area) in cells.iter().enumerate() {
+            let index = row * 4 + column;
+            let label = panel.labels[index].as_deref().unwrap_or("-");
+            let active = panel.labels[index].is_some() && index != 14 && index != 15;
+            let color = if active { CYAN } else { DIM };
+            let cell = Block::bordered()
+                .title(Line::from(format!("{} {label}", index + 1)).fg(color))
+                .border_style(Style::new().fg(if active { BORDER } else { DIM }))
+                .style(Style::new().bg(PANEL));
+            frame.render_widget(Clear, *area);
+            frame.render_widget(cell, *area);
+        }
+    }
+    if let Some(question_view) = question_view {
+        question(frame, body, question_view);
+    }
+}
+
 pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     let f = pad_frame(area, p.hidden);
     let (badge, badge_style) = if p.playing {

@@ -36,12 +36,12 @@ pub use help::{
 };
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
+pub use pads::{CommandPanel, command_panel, command_panel_area};
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
 pub use wave::{braille, braille_abs};
 use widgets::*;
-
 // Colors from docs/ui/STYLE.md
 const BG: Color = Color::Rgb(0x07, 0x08, 0x0A);
 const TEXT: Color = Color::Rgb(0xC9, 0xD1, 0xD9);

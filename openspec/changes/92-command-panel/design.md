@@ -75,6 +75,7 @@ The offline render checks A1 pause, continuation from its held tick, second-STOP
 | X-Session input arrives while the SMC panel shows | Its own pad and action routes stay independent | Preserve existing behavior. Two-device test required. |
 | SMC-PAD disconnects with panel and held Gate | Clear panel and release only its Gate | Support now. Disconnect test required. |
 | STOP arrives while a question shows | Change transport or preview, never answer the question | Support now. Keyboard and MIDI test required. |
+| STOP arrives before a Files preview finishes loading | Cancel the load. A later PLAY can load again. | Support now. Recorded keyboard and MIDI test required. |
 | Audio accepts pause after a delayed UI frame | Show only accepted position and resume there | Support now. Offline render required. |
 | SHIFT with a physical pad changes the device preset | No host SHIFT shortcut can run or change a panel cell | No measured host message. Hardware check remains open. |
 

@@ -1,5 +1,6 @@
 use engine::checks::{first_non_finite, max_step, onsets, peak};
 use engine::offline::write_wav;
+use engine::pattern::{Grid, Hit, RawPattern};
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState, Realtime, Stats};
 use engine::{Command, Engine, MAX_VOICES, Sample, click};
 use std::sync::{
@@ -257,6 +258,179 @@ fn transport_stop_preserves_a_manually_played_tail() {
     assert_eq!(stereo(&mut a, 100_000, 128), stereo(&mut b, 100_000, 128));
 }
 
+/// Scenario "Context STOP pauses and PLAY continues A1". The render is longer than one second.
+#[test]
+fn context_stop_pauses_and_play_continues_a1_render() {
+    let sound: Vec<f32> = (0..4800)
+        .map(|i| {
+            let fade = (i.min(4799 - i) as f32 / 240.0).min(1.0);
+            0.2 * fade * (std::f32::consts::TAU * 220.0 * i as f32 / SR as f32).sin()
+        })
+        .collect();
+    let pattern = Arc::new(
+        RawPattern::new(
+            1,
+            Grid::Quarter,
+            0,
+            vec![
+                Hit::new(0, 0, 127, 0).unwrap(),
+                Hit::new(1920, 0, 127, 0).unwrap(),
+            ],
+        )
+        .unwrap()
+        .compile(),
+    );
+    let setup = || {
+        let mut e = Engine::with_sounds(SR, click(SR), vec![sound.clone()]);
+        e.handle(
+            0,
+            Command::SetPattern {
+                pattern: Some(pattern.clone()),
+            },
+        );
+        e.handle(0, Command::SetMetronome { enabled: true });
+        e.handle(0, Command::TransportPlayContext);
+        e
+    };
+    let mut reference = setup();
+    let mut actual = setup();
+    let before = audio(&mut actual, 125_000, 128);
+    assert_eq!(before, audio(&mut reference, 125_000, 128));
+    let held_tick = actual.transport().ticks;
+    actual.handle(0, Command::TransportStopContext);
+    assert!(!actual.transport().playing);
+    assert_eq!(actual.transport().ticks, held_tick);
+    let pause = audio(&mut actual, 10_000, 128);
+    assert_eq!(peak(&pause), 0.0);
+    assert_eq!(actual.transport().ticks, held_tick);
+    actual.handle(0, Command::TransportPlayContext);
+    let continued = audio(&mut actual, 25_000, 128);
+    assert_eq!(continued, audio(&mut reference, 25_000, 128));
+    assert_eq!(onsets(&continued, 1e-6, 4800), [19_000]);
+    let mut render = before;
+    render.extend(pause);
+    render.extend(continued);
+    assert_eq!(first_non_finite(&render), None);
+    assert!(peak(&render) < 1.0 && max_step(&render) < 0.11);
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/92-command-panel.wav");
+    write_wav(&path, SR, &render, &render).unwrap();
+}
+
+/// Scenario "Second context STOP resets to the start".
+#[test]
+fn second_context_stop_resets_to_the_start() {
+    let mut e = engine(SR);
+    let mut reference = engine(SR);
+    let sound = Arc::new(Sample::mono(vec![0.05; 96_000]));
+    for target in [&mut e, &mut reference] {
+        target.handle(
+            0,
+            Command::SetPadSound {
+                pad: 0,
+                sound: Some(sound.clone()),
+            },
+        );
+        target.handle(
+            0,
+            Command::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            },
+        );
+    }
+    e.handle(0, Command::TransportPlayContext);
+    assert_eq!(
+        audio(&mut e, 30_000, 128),
+        audio(&mut reference, 30_000, 128)
+    );
+    let held_tick = e.transport().ticks;
+    e.handle(0, Command::TransportStopContext);
+    assert_eq!(e.transport().ticks, held_tick);
+    e.handle(0, Command::TransportStopContext);
+    assert_eq!(e.transport().ticks, 0.0);
+    assert_eq!(
+        audio(&mut e, 10_000, 128),
+        audio(&mut reference, 10_000, 128)
+    );
+    e.handle(0, Command::TransportPlayContext);
+    assert_eq!(e.transport().ticks, 0.0);
+}
+
+/// Scenario "STOP during recording retains one pass".
+#[test]
+fn stop_during_recording_retains_one_pass() {
+    use engine::capture::{Kind, Phase};
+    let mut e = engine(SR);
+    e.handle(
+        0,
+        Command::SetPattern {
+            pattern: Some(Arc::new(
+                RawPattern::new(1, Grid::Off, 100, vec![])
+                    .unwrap()
+                    .compile(),
+            )),
+        },
+    );
+    let mut events = e.enable_capture();
+    e.handle(0, Command::TransportPlayContext);
+    e.handle(0, Command::PatternRecordStart { pass: 1 });
+    e.handle(
+        0,
+        Command::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        },
+    );
+    audio(&mut e, 128, 128);
+    let accepted = e.transport().ticks;
+    e.handle(0, Command::TransportStopContext);
+    assert_eq!(e.recording().phase, Phase::Finishing);
+    assert_eq!(e.recording().ticks, accepted);
+    assert_eq!(e.transport().ticks, accepted);
+    assert!(!e.transport().playing);
+    let event = events.pop().unwrap();
+    assert!(matches!(event.kind, Kind::Onset { pad: 0, .. }));
+    assert!(events.pop().is_err());
+}
+
+#[test]
+fn context_stop_cancels_count_in_without_starting_transport() {
+    use engine::capture::Phase;
+    let mut e = engine(SR);
+    e.handle(
+        0,
+        Command::SetPattern {
+            pattern: Some(Arc::new(
+                RawPattern::new(1, Grid::Off, 100, vec![])
+                    .unwrap()
+                    .compile(),
+            )),
+        },
+    );
+    let _events = e.enable_capture();
+    e.handle(0, Command::PatternRecordStart { pass: 1 });
+    assert_eq!(e.recording().phase, Phase::CountIn);
+    audio(&mut e, 128, 128);
+    e.handle(0, Command::TransportStopContext);
+    assert_eq!(e.recording().phase, Phase::Idle);
+    assert!(!e.transport().playing);
+    assert_eq!(e.transport().ticks, 0.0);
+}
+
+/// Scenario "Existing Space transport path keeps its reset".
+#[test]
+fn existing_space_transport_path_keeps_its_reset() {
+    let mut e = engine(SR);
+    e.handle(0, Command::TransportToggle);
+    audio(&mut e, 30_000, 128);
+    e.handle(0, Command::TransportToggle);
+    assert_eq!(e.transport().ticks, 0.0);
+    e.handle(0, Command::TransportPlayContext);
+    assert_eq!(e.transport().ticks, 0.0);
+    assert!(e.transport().playing);
+}
+
 #[test]
 fn automatic_clicks_preserve_full_pad_polyphony() {
     let mut a = engine(SR);
@@ -304,6 +478,8 @@ fn late_transport_commands_stay_in_their_original_project() {
     for _ in 0..300 {
         push(0, true, Command::TransportToggle);
     }
+    push(0, true, Command::TransportStopContext);
+    push(0, true, Command::TransportPlayContext);
     push(0, true, Command::SetTempo { bpm: 299.0 });
     push(0, true, Command::SetMetronome { enabled: true });
     push(1, false, Command::SetTempo { bpm: 90.0 });

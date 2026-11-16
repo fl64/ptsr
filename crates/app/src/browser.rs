@@ -483,24 +483,31 @@ impl App {
 
     /// Plays the selected file if it is an audio file and the preview is on.
     pub(super) fn preview_selection(&mut self) {
-        let file = self
-            .browser
-            .current()
-            .filter(|e| !e.is_dir)
-            .map(|e| self.browser.dir.join(&e.name));
-        match file {
+        match self.browser.selected_file() {
             Some(path) if self.preview_on && self.screen == Screen::Files => {
-                self.load_gen[PREVIEW] += 1;
-                self.preview = None;
-                if let Some((tx, _)) = &self.loader {
-                    let _ = tx.send(loader::Request {
-                        pad: PREVIEW,
-                        path,
-                        generation: self.load_gen[PREVIEW],
-                    });
-                }
+                self.request_preview(path);
             }
             _ => self.stop_preview(),
+        }
+    }
+
+    pub(super) fn preview_selected_once(&mut self) {
+        if self.screen == Screen::Files
+            && let Some(path) = self.browser.selected_file()
+        {
+            self.request_preview(path);
+        }
+    }
+
+    fn request_preview(&mut self, path: PathBuf) {
+        self.load_gen[PREVIEW] += 1;
+        self.preview = None;
+        if let Some((tx, _)) = &self.loader {
+            let _ = tx.send(loader::Request {
+                pad: PREVIEW,
+                path,
+                generation: self.load_gen[PREVIEW],
+            });
         }
     }
 }

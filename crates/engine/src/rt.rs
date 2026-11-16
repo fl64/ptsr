@@ -379,6 +379,8 @@ impl Realtime {
                                 | Command::TransportPlay
                                 | Command::TransportStop
                                 | Command::TransportToggle
+                                | Command::TransportPlayContext
+                                | Command::TransportStopContext
                                 | Command::PatternRecordStart { .. }
                                 | Command::PatternRecordEnd { .. }
                                 | Command::PatternRecordAck { .. }
@@ -424,6 +426,8 @@ impl Realtime {
                                 | Command::TransportPlay
                                 | Command::TransportStop
                                 | Command::TransportToggle
+                                | Command::TransportPlayContext
+                                | Command::TransportStopContext
                                 | Command::PatternRecordStart { .. }
                                 | Command::PatternRecordEnd { .. }
                                 | Command::PatternRecordAck { .. }

@@ -99,6 +99,13 @@ enum Mode {
     PitchGateA1,
     PitchGateSource,
     PitchGatePitch,
+    PanelMain,
+    PanelContext,
+    PanelQuestion,
+    PanelUnavailable,
+    PanelDisconnected,
+    PanelImageOn,
+    PanelImageOff,
 }
 
 impl Mode {
@@ -192,6 +199,13 @@ impl Mode {
         Self::PitchGateA1,
         Self::PitchGateSource,
         Self::PitchGatePitch,
+        Self::PanelMain,
+        Self::PanelContext,
+        Self::PanelQuestion,
+        Self::PanelUnavailable,
+        Self::PanelDisconnected,
+        Self::PanelImageOn,
+        Self::PanelImageOff,
     ];
 
     fn name(self) -> &'static str {
@@ -285,6 +299,13 @@ impl Mode {
             Self::PitchGateA1 => "pitch-gate-a1",
             Self::PitchGateSource => "pitch-gate-source",
             Self::PitchGatePitch => "pitch-gate-pitch",
+            Self::PanelMain => "panel-main",
+            Self::PanelContext => "panel-context",
+            Self::PanelQuestion => "panel-question",
+            Self::PanelUnavailable => "panel-unavailable",
+            Self::PanelDisconnected => "panel-disconnected",
+            Self::PanelImageOn => "panel-image-on",
+            Self::PanelImageOff => "panel-image-off",
         }
     }
 
@@ -344,6 +365,10 @@ impl Mode {
             | Self::QuestionProfile => screen == Screen::Settings,
             Self::Hidden => matches!(screen, Screen::Pads | Screen::Files | Screen::Chop),
             Self::Text => matches!(screen, Screen::Pads | Screen::Files),
+            Self::PanelQuestion | Self::PanelUnavailable | Self::PanelDisconnected => {
+                matches!(screen, Screen::Pads | Screen::Chop)
+            }
+            Self::PanelImageOn | Self::PanelImageOff => screen == Screen::Chop,
             _ => true,
         }
     }
@@ -421,6 +446,8 @@ fn validate(cases: &[Case]) -> Result<(), String> {
             "pattern-erase",
             "pattern-finishing",
             "pattern-safety",
+            "panel-main",
+            "panel-context",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -501,6 +528,14 @@ fn validate(cases: &[Case]) -> Result<(), String> {
         }
         if matches!(screen, Screen::Pads | Screen::Files | Screen::Chop) {
             modes.push("hidden-grid".into());
+        }
+        if matches!(screen, Screen::Pads | Screen::Chop) {
+            modes.extend(
+                ["panel-question", "panel-unavailable", "panel-disconnected"].map(str::to_owned),
+            );
+        }
+        if screen == Screen::Chop {
+            modes.extend(["panel-image-on", "panel-image-off"].map(str::to_owned));
         }
         if matches!(screen, Screen::Pads | Screen::Files) {
             modes.push("text".into());
@@ -589,6 +624,24 @@ fn fixture(case: Case, now: Instant) -> App {
     app.chop = Some(chop);
     app.notices = Notices::new(now);
     match case.mode {
+        Mode::PanelMain | Mode::PanelUnavailable | Mode::PanelImageOn | Mode::PanelImageOff => {
+            app.panel.press("SMC-PAD-Master offline", 1);
+        }
+        Mode::PanelContext => {
+            app.panel.press("SMC-PAD-Master offline", 1);
+            app.panel.choice(app.panel_view(), 8);
+        }
+        Mode::PanelQuestion => {
+            app.panel.press("SMC-PAD-Master offline", 1);
+            app.ask = Some(Ask::ClearPads {
+                pads: vec![0],
+                lines: vec!["Clear pad 1?".into(), "Enter: clear · Esc: keep".into()],
+            });
+        }
+        Mode::PanelDisconnected => {
+            app.panel.press("SMC-PAD-Master offline", 1);
+            app.panel.disconnect("SMC-PAD-Master offline");
+        }
         Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => {
             app.edit = true;
             app.pads.param = match case.mode {
@@ -1056,10 +1109,16 @@ fn render_app_layers(
     show_pattern_controls: bool,
 ) -> (Vec<u8>, Buffer) {
     app.resize_help(case.size.0, case.size.1);
+    let panel_view = app.panel_view();
+    app.panel.sync_view(panel_view);
     let pattern_recording = app.pattern_record_state();
     let kitty = !matches!(
         case.mode,
-        Mode::Safety | Mode::PatternSafety | Mode::PatternViewSafety | Mode::PatternStepSafety
+        Mode::Safety
+            | Mode::PatternSafety
+            | Mode::PatternViewSafety
+            | Mode::PatternStepSafety
+            | Mode::PanelImageOff
     );
     let help_keys = app.full_help_recording_keys(keymap, kitty, pattern_recording);
     if app.help_open {
@@ -1099,6 +1158,7 @@ fn render_app_layers(
     app.learn_grid(&mut chop.pads.pads);
     let learning = app.learning_view(keymap);
     let question = app.question_view(keymap);
+    let panel = app.panel_snapshot();
     let groups = if app.screen_learn.is_some() {
         vec![]
     } else if app.project_picker.is_some() {
@@ -1283,6 +1343,9 @@ fn render_app_layers(
         buffer = term
             .draw(|frame| {
                 tui::draw_cached(frame, &status, &screen, &help, &feedback, &mut cache, None);
+                if let Some(panel) = &panel {
+                    tui::command_panel(frame, panel, question.as_ref());
+                }
                 if let Some(value) = &value {
                     tui::value_popup(frame, value);
                 }
@@ -1315,6 +1378,12 @@ fn check_frame(case: Case, buffer: &Buffer) {
     };
     match case.mode {
         Mode::Picker | Mode::PickerName => require("PROJECT"),
+        Mode::PanelMain
+        | Mode::PanelContext
+        | Mode::PanelQuestion
+        | Mode::PanelUnavailable
+        | Mode::PanelImageOn
+        | Mode::PanelImageOff => require("PANEL · SMC"),
         Mode::PatternOverviewAbsent
         | Mode::PatternOverviewEmpty
         | Mode::PatternOverviewStraight
@@ -1350,6 +1419,28 @@ fn check_frame(case: Case, buffer: &Buffer) {
         ),
     }
     match case.mode {
+        Mode::PanelMain | Mode::PanelImageOn | Mode::PanelImageOff => {
+            require("1/2");
+            require("8 more");
+            require("13 back");
+            require("16 panic");
+        }
+        Mode::PanelContext => {
+            require("2/2");
+            require("11 next");
+            require("12 main");
+            require("15 redo");
+        }
+        Mode::PanelQuestion => {
+            require("ASK");
+            require("KB");
+            require("PANEL · SMC");
+        }
+        Mode::PanelUnavailable => {
+            require("15 redo");
+            require("16 panic");
+        }
+        Mode::PanelDisconnected => assert!(!text.contains("PANEL · SMC"), "{text}"),
         Mode::QuietEmpty => require("—"),
         Mode::ClipEvent => require("CLIP +01:02:03"),
         Mode::LongLabels => {
@@ -3153,6 +3244,58 @@ L="none"
         }
     }
 
+    /// Scenario "Panel grid fits both supported sizes" (screen-layout).
+    /// Scenario "Panel feedback follows the active connection and page" (screen-layout).
+    #[test]
+    fn panel_grid_fits_both_supported_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for screen in [
+                Screen::Pads,
+                Screen::Files,
+                Screen::Chop,
+                Screen::Fx,
+                Screen::Settings,
+            ] {
+                let case = Case {
+                    screen,
+                    mode: Mode::Normal,
+                    size,
+                };
+                let now = Instant::now();
+                for page in [0, 1] {
+                    let mut app = fixture(case, now);
+                    assert_eq!(
+                        app.panel.press("SMC-PAD-Master", 1),
+                        crate::panel::Press::Revealed
+                    );
+                    if page == 1 {
+                        assert_eq!(
+                            app.panel.choice(app.panel_view(), 8),
+                            crate::panel::Choice::Page
+                        );
+                    }
+                    let (_, buffer) = render_app(case, &keymap, app, now);
+                    let rows: Vec<String> = buffer
+                        .content()
+                        .chunks(size.0 as usize)
+                        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                        .collect();
+                    let text = rows.join("\n");
+                    assert!(text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
+                    assert!(
+                        text.contains(&format!("{}/2", page + 1)),
+                        "{screen:?} {size:?} {page}"
+                    );
+                    for label in ["13 back", "14 undo", "15 redo", "16 panic"] {
+                        assert!(text.contains(label), "{screen:?} {size:?} {page}: {label}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scenario "Catalogue covers panel pages and safety" (screen-layout).
     #[test]
     fn catalogue_covers_screens_and_existing_modes() {
         let cases = matrix();

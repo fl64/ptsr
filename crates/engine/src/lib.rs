@@ -105,6 +105,8 @@ pub enum Command {
     TransportPlay,
     TransportStop,
     TransportToggle,
+    TransportPlayContext,
+    TransportStopContext,
     /// Explicit pass commands use increasing identities within one project epoch.
     PatternRecordStart {
         pass: u64,
@@ -407,6 +409,7 @@ pub struct Engine {
     pads: [Pad; PADS],
     click: Arc<Sample>,
     transport: transport::Clock,
+    context_paused: bool,
     count_in: transport::Clock,
     sequencer: Sequencer,
     capture: capture::Recorder,
@@ -504,6 +507,7 @@ impl Engine {
             }),
             click: Arc::new(Sample::mono(click)),
             transport: transport::Clock::default(),
+            context_paused: false,
             count_in: transport::Clock::default(),
             sequencer: Sequencer::default(),
             capture: capture::Recorder::default(),
@@ -675,6 +679,7 @@ impl Engine {
         self.capture.reset(self.recording().epoch);
         self.count_in.stop();
         self.transport = transport::Clock::default();
+        self.context_paused = false;
         self.sequencer.reset();
         self.sequencer.dropped = 0;
         self.pattern_hits.fill(0);
@@ -816,6 +821,7 @@ impl Engine {
                 }
             }
             Command::TransportPlay => {
+                self.context_paused = false;
                 self.capture.cancel_count_in();
                 self.count_in.stop();
                 if !self.transport.state.playing {
@@ -825,12 +831,14 @@ impl Engine {
                 self.transport.play();
             }
             Command::TransportStop => {
+                self.context_paused = false;
                 self.close_erasure(self.recording().pass);
                 self.capture.stop(self.transport.state.ticks);
                 self.count_in.stop();
                 self.stop_pattern();
             }
             Command::TransportToggle => {
+                self.context_paused = false;
                 self.capture.cancel_count_in();
                 self.count_in.stop();
                 if self.transport.state.playing {
@@ -841,6 +849,35 @@ impl Engine {
                     let run = self.sequencer.restart();
                     self.capture.set_run(run);
                     self.transport.play();
+                }
+            }
+            Command::TransportPlayContext => {
+                self.capture.cancel_count_in();
+                self.count_in.stop();
+                if !self.transport.state.playing {
+                    if self.context_paused {
+                        self.transport.resume();
+                    } else {
+                        let run = self.sequencer.restart();
+                        self.capture.set_run(run);
+                        self.transport.play();
+                    }
+                }
+                self.context_paused = false;
+            }
+            Command::TransportStopContext => {
+                if self.transport.state.playing {
+                    self.close_erasure(self.recording().pass);
+                    self.capture.stop(self.transport.state.ticks);
+                    self.count_in.stop();
+                    self.pause_pattern();
+                    self.context_paused = true;
+                } else if self.context_paused {
+                    self.stop_pattern();
+                    self.context_paused = false;
+                } else {
+                    self.capture.cancel_count_in();
+                    self.count_in.stop();
                 }
             }
             Command::PatternRecordStart { pass } => {
