@@ -107,8 +107,9 @@ before the hit goes to the engine. Render test: the same hits through each curve
 
 ### 3.4 Controller settings in one place (F12 → MIDI)
 
-Hold time (89), action echo on / off (92), encoder acceleration on / off and its strength (90),
-velocity curve (3.3), the knob response (exists). Each with a knob path.
+F12 MIDI groups the hold time (89), timed action echo (93a), encoder acceleration
+(on/off and strength, 90), velocity curve (3.3), and knob response.
+Each setting has a knob path.
 
 ### 3.5 First connect and the cheat sheet
 
