@@ -7,7 +7,8 @@ A terminal sampler-groovebox for Linux. References: Roland SP-404 MK2 (live work
 ## Who it is for and how
 
 One owner, a musician. The owner uses a keyboard and MIDI controllers without a mouse.
-The current controller is M-Audio X-Session Pro. M-VAVE SMC-PAD is planned.
+The current controller is M-Audio X-Session Pro. M-VAVE SMC-PAD is connected.
+Change 91 read its current preset and provides its application profile. Physical checks remain open.
 The owner can use the keyboard and controllers at the same time. An AI agent writes the code. The owner does not read the code. The owner checks the specifications, the renders and the program by hand.
 
 ## Current state and next goal
@@ -15,8 +16,9 @@ The owner can use the keyboard and controllers at the same time. An AI agent wri
 The sampler loads samples, chops them, assigns them to pads and plays them. Pad shaping,
 microphone and output recording, projects, MIDI learn and shared FX are already present.
 Change 82 (the F4 FX screen and safe physical X-Session defaults) was merged in PR #3,
-accepted by the owner and archived on 2026-11-03. The SMC-PAD profile is still an incomplete
-template. Change 95 implements the beat clock and metronome.
+accepted by the owner and archived on 2026-11-03. Change 91 replaces the incomplete
+SMC-PAD template with a measured profile. Its archive is
+`openspec/changes/archive/2026-11-16-91-smc-pad-profile/`. Change 95 implements the beat clock and metronome.
 The clock runs at 40–300 BPM on the audio thread. Space toggles it on Pads, FX and Settings.
 Chop and Files keep their previews. Format 4 saves tempo and metronome preference, not running position.
 Offline regression tests and p99 exit checks pass. Recorded callback maximum failures remain unresolved. See [verification limits](../openspec/changes/archive/2026-11-08-95-transport/tasks.md#implementation-verification).
@@ -115,7 +117,8 @@ Shared status keeps recording seconds, permanent KB, the last used controller nu
 Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
 A permanent `*` is dim when saved and yellow when pending. `Save failed` remains explicit.
 Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
-The incomplete SMC-PAD example uses `.toml.example` and is not a working profile.
+Change 91 adds a measured SMC-PAD profile beside the excluded `.toml.example` file.
+Physical checks of every pad, encoder, button and local layer switch remain open.
 Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
 Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
 Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.
@@ -140,8 +143,11 @@ Change 88 reached master in PR #20. It adds one shared confirmation action for
 questions and pickers. A physical controller check remains open.
 Change 89 adds MIDI button tap and hold actions, a saved hold time, and two-slot
 MIDI learn. Its automated checks pass. The physical controller and listening
-checks remain unverified. The SMC-PAD profile still needs measured Linux MIDI
-messages in change 91. This work does not make the SMC-PAD autonomous yet.
+checks remain unverified. Change 91 read the active SMC-PAD preset and captured
+mirrored Linux MIDI messages from its Master and Private ports. It added the
+guarded encoder setup and measured profile. The owner authorized closure without
+the full physical control check on 2026-11-16. The command panel and controller
+reach work remain open. The SMC-PAD is not autonomous yet.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

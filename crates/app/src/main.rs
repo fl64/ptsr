@@ -5360,7 +5360,7 @@ mod tests {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/devices");
         let (profiles, errors) = super::midi::load_profiles(dir);
         assert!(errors.is_empty(), "{errors:?}");
-        assert!(!profiles.iter().any(|p| p.name == "SMC-PAD"));
+        assert!(profiles.iter().any(|p| p.name == "SMC-PAD"));
         let x = profiles.iter().find(|p| p.name == "X-Session Pro").unwrap();
         for (scope, key, name) in x.roles() {
             assert!(input::midi::known(&name), "{key} {name}");

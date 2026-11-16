@@ -9,7 +9,7 @@ context: |
 
   The current baseline includes sample loading, chopping, pad play and shaping, projects, recording, MIDI learn and shared FX.
   The owner accepted change 82, which adds F4 FX and safe X-Session controls. Its archive is complete.
-  The SMC-PAD profile remains a template. Transport and metronome are implemented. Pattern sequencing is not implemented.
+  Change 91 adds a measured SMC-PAD profile. Its full physical control check remains open. ptsr implements transport, metronome and pattern sequencing.
 
   The owner accepted keymap cleanup 83a without completing the manual checks in docs/LIVE-CHECKS.md.
   Its archive commit is 2b084d1. This acceptance implies no listening or physical SMC-PAD pass.
@@ -74,7 +74,7 @@ context: |
   Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
   A permanent * is dim when saved and yellow when pending. Save failed remains explicit.
   Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
-  The incomplete SMC-PAD example uses .toml.example and is not a working profile.
+  Change 91 adds a measured SMC-PAD profile beside the excluded .toml.example file. Physical acceptance remains open.
   Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
   Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
   Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.

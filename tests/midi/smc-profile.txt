@@ -1,0 +1,36 @@
+# Top-left and bottom-left physical pads in the measured first bank.
+note 10 48 100
+wait 120ms
+noteoff 10 48
+note 10 36 64
+wait 120ms
+noteoff 10 36
+
+# The first pad of the second hardware bank has no action in change 91.
+note 10 64 100
+noteoff 10 64
+
+# Five measured buttons: PLAY and STOP have no starting action in change 91.
+cc 1 25 127
+cc 1 25 0
+cc 1 26 127
+cc 1 26 0
+cc 1 27 127
+cc 1 27 0
+cc 1 28 127
+cc 1 28 0
+cc 1 29 127
+cc 1 29 0
+
+# One relative encoder step in both directions from each hardware bank.
+cc 1 31 65
+wait 100ms
+cc 1 31 63
+cc 1 31 64
+cc 1 38 65
+wait 100ms
+cc 1 38 63
+cc 1 38 64
+
+# Channel pressure has no host action.
+pressure 10 80

@@ -16,6 +16,8 @@ pub(super) struct State {
     scroll: usize,
     /// The port of the last MIDI message: the tab starts on its device.
     pub last_port: Option<String>,
+    /// The latest USB setup result for the measured SMC-PAD profile.
+    pub smc_status: Option<(bool, String)>,
 }
 
 /// The full help text of an action; knob names outside the learn list have none.
@@ -295,7 +297,7 @@ impl App {
             .clone()
             .filter(|s| profile.kind_of(s).is_some())
             .or_else(first);
-        let detail = match &selected {
+        let mut detail = match &selected {
             Some(name) => {
                 let kind = profile.kind_of(name).map_or("", |k| k.name());
                 match action(name) {
@@ -305,6 +307,13 @@ impl App {
             }
             None => String::new(),
         };
+        if profile.name == "SMC-PAD" {
+            let status = match &self.help_overlay.controller.smc_status {
+                Some((true, _)) => "encoders ready",
+                Some((false, _)) | None => "encoders unavailable",
+            };
+            detail = format!("{status} · {detail}");
+        }
         let body = match self.controller_drawing(profile) {
             Some(rows) => {
                 let mut at = (usize::MAX, usize::MAX);

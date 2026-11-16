@@ -363,7 +363,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, `erase`, panel). Change `docs/ui/STYLE.md`? | The owner approved this meaning on 2026-11-05. Marking still sounds. |
 | 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |
 | 89 | How long is a "hold" for a button? | 300 ms, or at once when another control is used while the button is down |
-| 91 | Can the owner set the SMC-PAD encoders to relative mode in MidiSuite once? | Yes. Without it, the encoders stop at the ends of their range |
+| 91 | How do the SMC-PAD encoders enter relative mode without MidiSuite? | Change 91 reads and saves the active preset, writes only its 16 encoder records, then checks the read-back. A failed check leaves encoder actions off and reports the problem. USB write behavior on this unit remains unverified. |
 | 92 | Is PAD BANK layer 2 the main panel path? | Yes. It latches the panel. |
 | 92 | Does the first layer 2 hit only show a hidden panel? | Yes. It runs no cell. |
 | 92 | Does holding STOP open the panel? | Off by default. An optional setting enables it. |

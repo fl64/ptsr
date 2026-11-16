@@ -6,11 +6,12 @@ for pads, `Focus` / `Mode`, `ui.confirm`, tap / hold buttons, relative encoders.
 
 ## 1. What the SMC-PAD gives the computer
 
-Reference maps from other people's measurements (Windows USB, Bluetooth), carried from
-`openspec/deferred/83-controller-profiles/design.md`. These reports were not independently
-verified during this import. **Change 91 checks each fact on the owner's Linux machine first.**
+The change 91 design lists reference maps. Change 91 read the active preset on
+the owner's Linux machine and captured a small MIDI sample. The physical position of every
+control still needs physical checks. A one-record USB write and exact restore passed.
+The application also wrote all 16 encoder records. A USB script restored the original preset.
 
-Sources to retain when 91 replaces 83:
+Sources retained in the change 91 design:
 
 - Manufacturer manual: https://manualf.oss-cn-hongkong.aliyuncs.com/manual/MIDI-KEYBOARD/SMC-PAD_ZE.pdf
 - Reported MIDI measurements: https://github.com/SDR3078/mvave-home-assistant/blob/main/docs/HARDWARE-BLE.md
@@ -26,17 +27,19 @@ Sources to retain when 91 replaces 83:
 | SHIFT, PAD BANK, KNOB BANK, Note Repeat, BT | nothing | local to the device |
 | aftertouch | channel pressure after hits, amount is a device setting | ignore it |
 | pad lights | only when the pad's Led field equals a note; velocity is the color index | on USB, only seen on the third port with MCP pads; Linux not tested |
-| ports | Windows shows three port pairs; "SMC-PAD" is a part of all three names | Linux names unknown |
+| ports | Linux: `SINCO SMC-PAD-Private`, `SINCO SMC-PAD-Master`, `SINCO` | Private and Master mirrored the captured note and CC. Use Master for performance. |
 
 Consequences:
 
-- Reports say SHIFT sends no MIDI message. Change 91 checks it on Linux.
+- Reports say SHIFT sends no MIDI message. Its physical Linux check is still open.
   Only a measured SHIFT message can enable the optional quick panel view.
 - PAD BANK and KNOB BANK are useful: ptsr knows the layer from the note or CC number.
-- The encoders must be in relative mode. The owner sets the type "CW" (relative) for the 8
-  encoders once in MidiSuite. MidiSuite runs on Windows or macOS. If the owner cannot do this,
-  stop and ask: in absolute mode the knobs stop at the ends and the plan does not work.
-- A port match by the text "SMC-PAD" can match several ports. Change 91 decides the match.
+- The active preset has 16 absolute encoder records. Change 91 tries a guarded USB setup:
+  save the records, change only those records to relative mode, and read them back. A failed
+  check leaves encoder actions off and reports the failure. The write and restore path
+  passed on this unit. Physical encoder output still needs a check.
+- A match by the text `SMC-PAD` can match both inputs. Give Master the performance profile
+  and Private an empty profile so mirrored messages do not double actions.
 
 ## 2. The layout
 
@@ -212,17 +215,18 @@ reach test.
 Goal: the SMC-PAD works as a set of pads, knobs and buttons with the current actions. It
 replaces the deferred change 83.
 
-Step 0, with the owner: record the results in `design.md` before code.
+Step 0: record the results in `design.md` before code.
 
-1. The owner sets the 8 encoders (both knob banks) to relative ("CW") in MidiSuite and keeps
-   the rest of the factory preset. Write down the preset number.
-2. The owner connects the SMC-PAD by USB to Linux and runs `aconnect -l` and
-   `aseqdump -p <port>`, or opens F12 → input debug. Record the port names.
+1. Read the active preset over USB and save the original encoder records before any write.
+   Test one reversible record, then set all 16 relative records only if read-back matches it.
+   Keep the rest of the preset and every other slot unchanged.
+2. Read Linux port names and capture MIDI from all three inputs with `aconnect -l` and
+   `aseqdump -p <port>`, or F12 input debug. Record the port names.
    Record pad bytes on both PAD BANK layers. Record slow and fast encoder bytes
    on both KNOB BANK banks in both directions. Record press and release bytes
    for each of the five buttons. Check whether SHIFT changes any message.
    Record aftertouch.
-3. If the bytes differ from §1, the measured bytes win. Update §1 in this file.
+3. If the bytes differ from section 1, the measured bytes win. Update section 1 here.
 
 Tasks:
 
@@ -231,20 +235,23 @@ Tasks:
    13–16). Layer 2 notes 52–67 as buttons `c1..c16` (the panel uses them in 92; in 91 they are
    unassigned). Encoders `e1..e8` CC 30–37 and `f1..f8` CC 38–45, `type = "relative"` with the
    measured encoding. Buttons `left right play stop record` CC 25–29.
-2. Port match: match the one port that carries notes and CCs. If Linux shows several ports,
-   add an optional `match_index` or match a more exact name; spec delta in `input-devices`.
+2. Port match: use Master for performance. Give the mirrored Private input an empty profile.
+   Do not match the generic third port.
 3. The profile has a `channel` filter for the whole device, but the pads are on channel 10 and
    the rest on channel 1. Keep the filter off for this profile (design 83 decided this). Test
    both channels.
 4. Ignore channel pressure (aftertouch) in the parser path for this profile; test that it
    triggers nothing.
-5. Default roles before the panel exists: STOP stops the transport or preview.
-   PLAY plays or continues the current screen. LEFT / RIGHT select the main list.
-   RECORD hold uses `record.mic`. The keyboard keeps Esc for back until change 92.
+5. Roles before the panel exists: LEFT / RIGHT use existing selection actions where
+   available. RECORD hold uses `record.mic`. PLAY and STOP stay unassigned until
+   change 92 adds their start-only and stop-only context actions. Existing toggle
+   actions cannot meet the agreed PLAY and STOP behavior. The keyboard keeps Esc
+   for back until change 92.
 6. Raw-byte tests through the shipped TOML, profile seeding, dispatch and `App` (the harness of
    84): pads with velocity, both note-off forms, relative steps, buttons 127 / 0, two devices
    (X-Session + SMC-PAD) at the same time, unplug during a held pad.
-7. Delete `openspec/deferred/83-controller-profiles`; carry its sources into this design.
+7. The change 91 design retains the source links, pad orientation and raw-route tests.
+   Change 91 removed the superseded deferred draft during the archive.
 8. The virtual controller tool `task midi-replay` and the first scripts in `tests/midi/`
    (`CROSS-CUTTING.md` §1.1).
 

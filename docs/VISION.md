@@ -6,10 +6,10 @@ Version 3 · 03.11.2026 · project name: ptsr. Version 3 adds modulation, patter
 
 Current status: transport 95 is implemented, archived and merged. Pattern sequencing is not implemented.
 Next: 96 pattern playback, then 97 recording and 98 step editing.
-SMC-PAD integration and physical-controller acceptance remain incomplete.
+Change 91 adds the measured SMC-PAD profile. Physical-controller acceptance remains open.
 The broader features below are plans, not shipped features. See `docs/PROJECT.md` for the current state.
-SMC-PAD hardware details below are reference assumptions until change 91 measures the
-owner's device on Linux.
+Change 91 measured the active preset on the owner's Linux device. The physical position
+and output of every control still need a check.
 
 ## 1. Goal and context
 
@@ -548,9 +548,9 @@ The agent does not hear sound. Thus three checks apply to each feature: an autom
 
 ## 22. Open questions
 
-- [ ] Which notes, CC and buttons the SMC-PAD sends by default. Other people measured it on Windows and over Bluetooth: pads notes 36–51 on channel 10 (52–67 on the second layer), encoders CC 30–37 (38–45), buttons CC 25–29. Check it on Linux on the MIDI debug screen.
+- [ ] The active USB preset contains pad notes 36–67 on channel 10, encoder CC 30–45 and button CC 25–29 on channel 1. Check every physical control in F12 Input.
 - [ ] The MIDI TRS wiring type of the SMC-PAD (A or B). Is an adapter necessary for a direct connection to the SP-404?
-- [ ] Absolute or relative CC on the SMC-PAD encoders. Factory: an absolute counter that stops at 0 and 127. MidiSuite can set them to relative (64 ± n). Do it once on the owner's device.
+- [ ] The active preset had absolute encoders. Change 91 wrote and read back 16 relative records. Check the output of every physical encoder in both banks.
 - [ ] SMC-PAD pad lights: can MIDI control the colors? Over Bluetooth, yes, when the Led field of a pad equals its note (velocity is the color). Over USB it was seen only on the third port. Not tested on Linux. The launcher needs this; the screen must work without it.
 - [ ] The final project name.
 - [ ] Is a web editor on top of the same engine necessary later?

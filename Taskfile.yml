@@ -14,7 +14,11 @@ tasks:
   run:
     desc: Build and run in the current terminal
     interactive: true
-    cmd: cargo run --release -p ptsr
+    cmd: cargo run --release -p ptsr --bin ptsr
+
+  midi-replay:
+    desc: Send a recorded SMC-PAD script to a virtual ALSA MIDI port
+    cmd: cargo run -p ptsr --bin midi_replay -- {{.CLI_ARGS}}
 
   test:
     desc: Run the full test set
