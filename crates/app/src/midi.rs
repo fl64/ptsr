@@ -3580,7 +3580,7 @@ mod tests {
             .collect();
         assert_eq!(hits, expected);
         assert_eq!(sent.len(), 32, "each hit has one release");
-        for pair in sent.chunks_exact(2) {
+        for pair in sent.as_chunks::<2>().0 {
             assert!(
                 matches!(pair, [Command::PadPress { pad: first, .. }, Command::PadRelease { pad: second }] if first == second)
             );

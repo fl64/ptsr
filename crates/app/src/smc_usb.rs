@@ -244,8 +244,8 @@ fn checked<T: Transport>(transport: &mut T) -> Result<(), String> {
     active(transport)?;
     let address = SLOT * STRIDE + ENCODERS;
     let records = read(transport, 5, address, 16 * RECORD)?;
-    for (index, record) in records.chunks_exact(RECORD).enumerate() {
-        if record != expected(index) {
+    for (index, record) in records.as_chunks::<RECORD>().0.iter().enumerate() {
+        if *record != expected(index) {
             return Err(format!(
                 "SMC-PAD encoder {} is no longer relative",
                 index + 1
