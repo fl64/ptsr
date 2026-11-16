@@ -584,6 +584,8 @@ pub enum Action {
     /// Master volume step in dB.
     MasterVolume(i8),
     TransportToggle,
+    PlayContext,
+    StopContext,
     TempoStep {
         up: bool,
         fine: bool,
@@ -819,6 +821,8 @@ impl Action {
             "screen.fx" => Self::ScreenFx,
             "transport.play_stop" => Self::ChopPlay,
             "transport.toggle" => Self::TransportToggle,
+            "play.context" => Self::PlayContext,
+            "stop.context" => Self::StopContext,
             "transport.tempo_up" => Self::TempoStep {
                 up: true,
                 fine: false,
@@ -1069,6 +1073,8 @@ pub struct ActionInfo {
 pub fn short_label(action: &str) -> &'static str {
     match action {
         "transport.toggle" => "play",
+        "play.context" => "play",
+        "stop.context" => "stop",
         "metronome.toggle" => "metro",
         "transport.tempo_up" => "bpm+",
         "transport.tempo_down" => "bpm-",
@@ -1250,6 +1256,18 @@ pub fn short_label(action: &str) -> &'static str {
 /// Every action a key or a controller can drive, by group. Quitting is left out on purpose:
 /// a stray controller press must not close the program during a set.
 pub const ACTIONS: &[ActionInfo] = &[
+    ActionInfo {
+        name: "play.context",
+        label: "start or continue context playback",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "stop.context",
+        label: "pause or stop context playback",
+        group: Group::Global,
+        knob: false,
+    },
     ActionInfo {
         name: "transport.toggle",
         label: "transport play / stop",

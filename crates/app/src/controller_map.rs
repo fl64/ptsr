@@ -286,6 +286,17 @@ impl App {
         let profile = &devices[index].profile;
         let edit = self.edit_keys();
         let action = |name: &str| profile.control_action(self.screen, edit, name);
+        let panel_role = |name: &str| {
+            let cell = name.strip_prefix('c')?.parse::<u8>().ok()?;
+            if profile.name != "SMC-PAD" || action(name) != Some("panel.cell") {
+                return None;
+            }
+            let label = self
+                .panel
+                .label(self.panel_view(), cell)
+                .unwrap_or("unavailable");
+            Some((label, cell >= 15 || label == "unavailable"))
+        };
         let first = || match self.controller_drawing(profile) {
             Some(rows) => places(rows).first().map(|(_, _, n)| n.to_string()),
             None => profile.controls().first().map(|(n, _)| n.clone()),
@@ -300,9 +311,15 @@ impl App {
         let mut detail = match &selected {
             Some(name) => {
                 let kind = profile.kind_of(name).map_or("", |k| k.name());
-                match action(name) {
-                    Some(a) => format!("{name} · {kind} · {a} · {}", label(a)),
-                    None => format!("{name} · {kind} · free"),
+                match panel_role(name) {
+                    Some((role, free)) => format!(
+                        "{name} · {kind} · panel cell · {role}{}",
+                        if free { " unavailable" } else { "" }
+                    ),
+                    None => match action(name) {
+                        Some(a) => format!("{name} · {kind} · {a} · {}", label(a)),
+                        None => format!("{name} · {kind} · free"),
+                    },
                 }
             }
             None => String::new(),
@@ -330,11 +347,17 @@ impl App {
                                 }
                                 let (open, close) =
                                     brackets(profile.kind_of(name).unwrap_or(ControlKind::Button));
-                                let short = action(name).map_or("-", input::short_label);
+                                let (short, free) = match panel_role(name) {
+                                    Some((role, free)) => (role, free),
+                                    None => (
+                                        action(name).map_or("-", input::short_label),
+                                        action(name).is_none(),
+                                    ),
+                                };
                                 Some(tui::ControlCell {
                                     name: name.to_string(),
                                     label: format!("{open}{short}{close}"),
-                                    free: action(name).is_none(),
+                                    free,
                                 })
                             })
                             .collect()

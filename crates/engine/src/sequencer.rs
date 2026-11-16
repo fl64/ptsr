@@ -266,6 +266,11 @@ impl crate::Engine {
         self.transport.stop();
     }
 
+    pub(super) fn pause_pattern(&mut self) {
+        self.end_pattern_notes();
+        self.transport.pause();
+    }
+
     pub(super) fn replace_pattern(&mut self, pattern: Option<Arc<Pattern>>, release_old: bool) {
         self.capture.published(
             pattern.as_deref(),

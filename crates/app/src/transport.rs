@@ -1,6 +1,6 @@
 //! Project transport preferences and accepted audio-thread feedback.
 
-use super::{App, Command};
+use super::{Action, App, Command, Screen};
 use engine::transport::{DEFAULT_BPM, MAX_BPM, MIN_BPM, Snapshot};
 use std::cell::Cell;
 use std::sync::atomic::Ordering::Acquire;
@@ -30,6 +30,61 @@ impl Default for State {
 }
 
 impl App {
+    pub(super) fn context_button(&mut self, action: Action) {
+        let focus = self.focus();
+        if focus.mode.text
+            || focus.mode.picker
+            || focus.mode.screen_learn
+            || focus.mode.midi_learn
+            || self.restoring_project
+            || (self.screen == Screen::Chop && self.plan.is_some())
+            || self.audio.as_ref().is_some_and(|audio| {
+                audio.project.epoch.load(Acquire) != audio.project.ready.load(Acquire)
+            })
+        {
+            return;
+        }
+        match (self.screen, action) {
+            (Screen::Files, Action::PlayContext) if self.preview_frame().is_none() => {
+                self.preview_selected_once();
+            }
+            (Screen::Chop, Action::PlayContext) if self.playhead().is_none() => {
+                if let Some(chop) = &self.chop {
+                    let region = chop.play_region();
+                    let looped = chop.looping.then_some(region);
+                    let as_pad = self.as_pad_of(chop.selected);
+                    let sound = chop.sound.clone();
+                    self.send(Command::PreviewLoop { region: looped });
+                    self.send(Command::PreviewAs { pad: as_pad });
+                    self.loop_sent = looped;
+                    self.send(Command::Preview {
+                        sound: Some(sound),
+                        region,
+                    });
+                }
+            }
+            (Screen::Files | Screen::Chop, Action::PlayContext) => {}
+            (Screen::Files, Action::StopContext) => {
+                let playing = self.preview_frame().is_some();
+                self.stop_preview();
+                if !playing && !self.transport_state().playing {
+                    self.send(Command::TransportStopContext);
+                }
+            }
+            (Screen::Chop, Action::StopContext) if self.preview_frame().is_some() => {
+                self.stop_preview();
+            }
+            (Screen::Chop, Action::StopContext) => {
+                if !self.transport_state().playing {
+                    self.send(Command::TransportStopContext);
+                }
+            }
+            (_, Action::PlayContext) => self.send(Command::TransportPlayContext),
+            (_, Action::StopContext) => self.send(Command::TransportStopContext),
+            _ => {}
+        }
+    }
+
     pub(super) fn transport_state(&self) -> Snapshot {
         let fallback = Snapshot {
             bpm: self.transport.bpm,

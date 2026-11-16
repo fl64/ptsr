@@ -109,7 +109,23 @@ pub fn known(name: &str) -> bool {
     param_of(name).is_some()
         || list_target_of(name).is_some()
         || name == "knob.fine"
+        || panel_cell(name).is_some()
         || crate::Action::parse(name).is_some()
+}
+
+fn panel_cell(name: &str) -> Option<u8> {
+    let cell = name.strip_prefix("panel.cell.")?.parse::<u8>().ok()?;
+    (1..=16).contains(&cell).then_some(cell)
+}
+
+fn smc_new_control(name: &str) -> bool {
+    if matches!(name, "play" | "stop") {
+        return true;
+    }
+    let Some(cell) = name.strip_prefix('c').and_then(|n| n.parse::<u8>().ok()) else {
+        return false;
+    };
+    (1..=16).contains(&cell)
 }
 
 /// Every knob action and its parameter, in one table for both directions.
@@ -274,6 +290,7 @@ impl RelativeEncoding {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Resolved {
     Action(Action),
+    PanelCell(u8),
     /// A button press with separate actions for a tap and a hold.
     Gesture {
         tap: Option<Action>,
@@ -851,6 +868,7 @@ impl Profile {
                 StepTarget::List(list) => Some(list.action()),
             },
             Resolved::Fine(_) => Some("knob.fine"),
+            Resolved::PanelCell(_) => Some("panel.cell"),
             Resolved::Gesture { tap, hold } => self.action_label(tap.unwrap_or(hold)),
             Resolved::Action(action) => self.action_label(action),
         }
@@ -1317,7 +1335,10 @@ impl Profile {
             }
         }
         // seeded (59): the profile's roles live in the learned maps now
-        if self.seeded {
+        if self.seeded
+            && !(self.name == "SMC-PAD"
+                && matches!(control, Some(Control::Button(name)) if smc_new_control(name)))
+        {
             return None;
         }
         let control = control?;
@@ -1420,6 +1441,9 @@ fn learned_resolved(
     on: bool,
     encoding: Option<RelativeEncoding>,
 ) -> Option<Resolved> {
+    if let Some(cell) = panel_cell(action) {
+        return on.then_some(Resolved::PanelCell(cell));
+    }
     if action == "knob.fine" {
         return Some(Resolved::Fine(on));
     }
@@ -1571,6 +1595,72 @@ impl Takeover {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 92 command-panel: "First second-bank hit only reveals the panel".
+    #[test]
+    fn first_second_bank_hit_only_reveals_the_panel_profile_route() {
+        let mut profile = Profile::from_toml(
+            "config/devices/smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        assert!(profile.warnings().is_empty(), "{:?}", profile.warnings());
+        profile.set_seeded(true);
+        for (cell, note) in [
+            64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59, 52, 53, 54, 55,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(
+                profile.resolve(
+                    Screen::Pads,
+                    Msg::NoteOn {
+                        ch: 1,
+                        note,
+                        velocity: 100,
+                    }
+                ),
+                Some(Resolved::PanelCell(cell as u8 + 1))
+            );
+            assert_eq!(
+                profile.resolve(Screen::Pads, Msg::NoteOff { ch: 1, note }),
+                None
+            );
+        }
+    }
+
+    /// 92 input-devices: "A saved assignment wins over a new panel default".
+    #[test]
+    fn saved_assignment_wins_over_new_panel_default() {
+        let mut profile = Profile::from_toml(
+            "config/devices/smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        profile.set_seeded(true);
+        let note = Msg::NoteOn {
+            ch: 1,
+            note: 64,
+            velocity: 127,
+        };
+        assert_eq!(
+            profile.resolve(Screen::Pads, note),
+            Some(Resolved::PanelCell(1))
+        );
+        profile.set_learned(Scope::Global, [(Key::Note(64), "pad.1".into())].into());
+        assert!(matches!(
+            profile.resolve(Screen::Pads, note),
+            Some(Resolved::Action(Action::PadPress { pad: 0, .. }))
+        ));
+        profile.set_learned(Scope::Global, [(Key::Note(64), "none".into())].into());
+        assert_eq!(profile.resolve(Screen::Pads, note), None);
+        profile.set_learned(Scope::Global, HashMap::new());
+        assert_eq!(
+            profile.resolve(Screen::Pads, note),
+            Some(Resolved::PanelCell(1))
+        );
+    }
 
     fn relative_profile(encoding: &str) -> Profile {
         Profile::from_toml(

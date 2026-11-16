@@ -78,7 +78,25 @@ rows = [
 ]
 
 [screens.global]
-record = { hold = "record.mic" }
+play = { tap = "play.context", hold = "metronome.toggle" }
+stop = "stop.context"
+record = { tap = "pattern.record", hold = "record.mic" }
+c1 = "panel.cell.1"
+c2 = "panel.cell.2"
+c3 = "panel.cell.3"
+c4 = "panel.cell.4"
+c5 = "panel.cell.5"
+c6 = "panel.cell.6"
+c7 = "panel.cell.7"
+c8 = "panel.cell.8"
+c9 = "panel.cell.9"
+c10 = "panel.cell.10"
+c11 = "panel.cell.11"
+c12 = "panel.cell.12"
+c13 = "panel.cell.13"
+c14 = "panel.cell.14"
+c15 = "panel.cell.15"
+c16 = "panel.cell.16"
 f1 = "pad.volume"
 f3 = "pad.pitch"
 f4 = "pad.cutoff"

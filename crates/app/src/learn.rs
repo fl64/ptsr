@@ -16,6 +16,11 @@ pub(super) enum MidiListRow {
         name: String,
         port: String,
     },
+    Disabled {
+        profile: String,
+        group: String,
+        key: String,
+    },
     Group {
         group: input::Group,
     },
@@ -125,7 +130,13 @@ pub fn drop_dead(learned: &mut Learned) -> Vec<String> {
         for (group, keys) in groups.iter_mut() {
             keys.retain(|key, binding| match binding {
                 MidiBinding::Press(name) => {
-                    if input::midi::known(name) {
+                    if input::midi::known(name)
+                        || (device == "SMC-PAD"
+                            && name == "none"
+                            && key.parse::<Key>().is_ok_and(|key| {
+                                matches!(key, Key::Note(52..=67) | Key::Cc(27 | 28))
+                            }))
+                    {
                         true
                     } else {
                         gone.push(format!("{device} {group} {key} {name}"));
@@ -1252,6 +1263,37 @@ impl App {
                 });
             }
         }
+        let mut disabled = self
+            .learned
+            .get("SMC-PAD")
+            .into_iter()
+            .flat_map(|groups| {
+                groups.iter().flat_map(|(group, controls)| {
+                    controls.iter().filter_map(|(key, binding)| {
+                        let parsed = key.parse::<Key>().ok()?;
+                        (matches!(binding, MidiBinding::Press(name) if name == "none")
+                            && matches!(parsed, Key::Note(52..=67) | Key::Cc(27 | 28)))
+                        .then(|| MidiListRow::Disabled {
+                            profile: "SMC-PAD".into(),
+                            group: group.clone(),
+                            key: key.clone(),
+                        })
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        disabled.sort_by(|a, b| match (a, b) {
+            (
+                MidiListRow::Disabled {
+                    group: ga, key: ka, ..
+                },
+                MidiListRow::Disabled {
+                    group: gb, key: kb, ..
+                },
+            ) => (ga, ka).cmp(&(gb, kb)),
+            _ => std::cmp::Ordering::Equal,
+        });
+        rows.extend(disabled);
         let mut prev: Option<input::Group> = None;
         for info in input::ACTIONS {
             if prev != Some(info.group) {
@@ -1384,6 +1426,16 @@ impl App {
                 MidiListRow::Reset { name, .. } => tui::MidiRow::Action {
                     label: "reset to profile".into(),
                     who: name.clone(),
+                    taken: false,
+                    stays: Vec::new(),
+                },
+                MidiListRow::Disabled {
+                    profile,
+                    group,
+                    key,
+                } => tui::MidiRow::Action {
+                    label: format!("disabled {key}"),
+                    who: format!("{profile} {group}: none · clear to restore"),
                     taken: false,
                     stays: Vec::new(),
                 },
@@ -1525,7 +1577,12 @@ impl App {
             Some(MidiListRow::Action { info }) => info.group,
             // the pads and the banks stand in GLOBAL: the fold covers their row
             Some(MidiListRow::Set { infos, .. }) => infos[0].group,
-            Some(MidiListRow::Response | MidiListRow::HoldTime | MidiListRow::Reset { .. })
+            Some(
+                MidiListRow::Response
+                | MidiListRow::HoldTime
+                | MidiListRow::Reset { .. }
+                | MidiListRow::Disabled { .. },
+            )
             | None => return,
         };
         if open {
@@ -2016,5 +2073,159 @@ mod tests {
             );
         assert_eq!(drop_dead(&mut learned), ["X global note 60 pad.1"]);
         assert_eq!(learned["X"]["global"]["note 60"], "transport.toggle");
+    }
+
+    /// Scenario "Owner unbinding keeps a second-bank cell silent" (input-devices).
+    #[test]
+    fn smc_none_survives_dead_binding_cleanup_only_on_new_controls() {
+        let mut learned = Learned::new();
+        for (device, key) in [
+            ("SMC-PAD", "note 64"),
+            ("SMC-PAD", "cc 27"),
+            ("SMC-PAD", "cc 28"),
+            ("SMC-PAD", "note 48"),
+            ("X", "note 64"),
+        ] {
+            learned
+                .entry(device.into())
+                .or_default()
+                .entry("global".into())
+                .or_default()
+                .insert(key.into(), MidiBinding::Press("none".into()));
+        }
+        let gone = drop_dead(&mut learned);
+        assert_eq!(
+            gone,
+            ["SMC-PAD global note 48 none", "X global note 64 none"]
+        );
+        for key in ["note 64", "cc 27", "cc 28"] {
+            assert_eq!(learned["SMC-PAD"]["global"][key], "none");
+        }
+    }
+
+    /// Scenario "Existing SMC-PAD keeps saved roles when panel defaults arrive" (input-devices).
+    #[test]
+    fn existing_smc_pad_keeps_saved_roles_when_panel_defaults_arrive() {
+        let mut app = crate::tests::test_app();
+        app.profiles.push(
+            input::midi::Profile::from_toml(
+                "smc-pad.toml",
+                include_str!("../../../config/devices/smc-pad.toml"),
+            )
+            .unwrap(),
+        );
+        app.seeded.push("SMC-PAD".into());
+        assign(
+            &mut app.learned,
+            "SMC-PAD",
+            input::Group::Global,
+            Key::Note(66),
+            "pad.1",
+        );
+        assign(
+            &mut app.learned,
+            "SMC-PAD",
+            input::Group::Global,
+            Key::Note(67),
+            "none",
+        );
+        assign(
+            &mut app.learned,
+            "X-Session Pro",
+            input::Group::Global,
+            Key::Cc(25),
+            "bank.next",
+        );
+        for device in ["SMC-PAD", "X-Session Pro"] {
+            app.learned
+                .get_mut(device)
+                .unwrap()
+                .insert("fx".into(), Default::default());
+        }
+        let saved = app.learned.clone();
+        app.seed_device("SMC-PAD-Master", "SMC-PAD", false);
+        assert_eq!(app.learned, saved);
+        let mut profile = app.profiles.remove(0);
+        crate::midi::apply_learned(&mut profile, &crate::midi::parse_learned(&app.learned));
+        profile.set_seeded(true);
+        for (note, result) in [(66, 1), (67, 0), (60, 5)] {
+            let actual = profile.resolve(
+                input::Screen::Pads,
+                input::midi::Msg::NoteOn {
+                    ch: 1,
+                    note,
+                    velocity: 100,
+                },
+            );
+            match result {
+                1 => assert!(matches!(
+                    actual,
+                    Some(input::midi::Resolved::Action(input::Action::PadPress {
+                        pad: 0,
+                        ..
+                    }))
+                )),
+                0 => assert_eq!(actual, None),
+                5 => assert_eq!(actual, Some(input::midi::Resolved::PanelCell(5))),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    /// Scenario "Explicit none keeps one SMC-PAD cell inactive" (input-devices).
+    #[test]
+    fn explicit_none_keeps_one_smc_pad_cell_inactive() {
+        let mut app = crate::tests::test_app();
+        app.profiles.push(
+            input::midi::Profile::from_toml(
+                "smc-pad.toml",
+                include_str!("../../../config/devices/smc-pad.toml"),
+            )
+            .unwrap(),
+        );
+        app.profiles[0].set_seeded(true);
+        app.seeded.push("SMC-PAD".into());
+        assign(
+            &mut app.learned,
+            "SMC-PAD",
+            input::Group::Global,
+            Key::Note(64),
+            "none",
+        );
+        app.sync_learned("SMC-PAD", input::Group::Global);
+        let press = |note| input::midi::Msg::NoteOn {
+            ch: 1,
+            note,
+            velocity: 100,
+        };
+        assert_eq!(
+            app.profiles[0].resolve(input::Screen::Pads, press(64)),
+            None
+        );
+        assert_eq!(
+            app.profiles[0].resolve(input::Screen::Pads, press(65)),
+            Some(input::midi::Resolved::PanelCell(2))
+        );
+        app.screen = input::Screen::Settings;
+        app.settings_tab = 2;
+        let row = app
+            .midi_list()
+            .iter()
+            .position(|row| matches!(row, MidiListRow::Disabled { key, .. } if key == "note 64"))
+            .unwrap();
+        app.midi_row = row;
+        assert!(
+            matches!(&app.midi_screen()[row], tui::MidiRow::Action { who, .. } if who.contains("none"))
+        );
+        app.apply(input::Action::SettingsClear);
+        assert!(!app.learned["SMC-PAD"]["global"].contains_key("note 64"));
+        assert_eq!(
+            app.profiles[0].resolve(input::Screen::Pads, press(64)),
+            Some(input::midi::Resolved::PanelCell(1))
+        );
+        assert_eq!(
+            app.profiles[0].resolve(input::Screen::Pads, press(65)),
+            Some(input::midi::Resolved::PanelCell(2))
+        );
     }
 }

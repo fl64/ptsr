@@ -1,0 +1,183 @@
+# SMC-PAD command cells use physical rows, top to bottom.
+# Cells 13-16 are fixed in the program: Back, Undo, Redo, Panic.
+
+[[view]]
+name = "pads"
+page = 0
+cells = [
+  { cell = 9, label = "edit", action = "pad.edit" },
+  { cell = 10, label = "copy", action = "pad.copy" },
+  { cell = 11, label = "take", action = "pad.take" },
+  { cell = 12, label = "mark", action = "pad.mark_toggle" },
+]
+
+[[view]]
+name = "pads"
+page = 1
+cells = [
+  { cell = 1, label = "mode", action = "pad.mode_next" },
+  { cell = 2, label = "marks", action = "pad.mark_bank" },
+  { cell = 3, label = "clear", action = "pad.clear" },
+  { cell = 4, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 5, label = "A1 rec", action = "pattern.record" },
+  { cell = 6, label = "erase", action = "pattern.erase" },
+  { cell = 7, label = "gate", action = "pad.pitch_gate_toggle" },
+  { cell = 8, label = "grid", action = "ui.pads_toggle" },
+  { cell = 9, label = "proj", action = "project.pick" },
+  { cell = 10, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "pad_edit"
+page = 0
+cells = [
+  { cell = 9, label = "pg -", action = "edit.page_prev" },
+  { cell = 10, label = "pg +", action = "edit.page_next" },
+  { cell = 11, label = "par -", action = "edit.param_prev" },
+  { cell = 12, label = "par +", action = "edit.param_next" },
+]
+
+[[view]]
+name = "pad_edit"
+page = 1
+cells = [
+  { cell = 1, label = "val -", action = "edit.value_dec" },
+  { cell = 2, label = "val +", action = "edit.value_inc" },
+  { cell = 3, label = "mode", action = "pad.mode_next" },
+  { cell = 4, label = "clear", action = "pad.clear" },
+  { cell = 5, label = "gate", action = "pad.pitch_gate_toggle" },
+  { cell = 6, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "pattern"
+page = 0
+cells = [
+  { cell = 9, label = "step", action = "pattern.step_edit" },
+  { cell = 10, label = "view -", action = "pattern.view_prev" },
+  { cell = 11, label = "view +", action = "pattern.view_next" },
+  { cell = 12, label = "A1 ctl", action = "pattern.controls" },
+]
+
+[[view]]
+name = "pattern"
+page = 1
+cells = [
+  { cell = 1, label = "A1 rec", action = "pattern.record" },
+  { cell = 2, label = "erase", action = "pattern.erase" },
+  { cell = 3, label = "undo", action = "pattern.undo" },
+  { cell = 4, label = "clear", action = "pattern.clear" },
+  { cell = 5, label = "rows", action = "pattern.overview_empty_toggle" },
+  { cell = 6, label = "par -", action = "pattern.param_prev" },
+  { cell = 7, label = "par +", action = "pattern.param_next" },
+  { cell = 8, label = "val -", action = "pattern.value_dec" },
+  { cell = 9, label = "val +", action = "pattern.value_inc" },
+  { cell = 10, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "files"
+page = 0
+cells = [
+  { cell = 9, label = "take", action = "browser.hold" },
+  { cell = 10, label = "load", action = "browser.load" },
+  { cell = 11, label = "parent", action = "browser.parent" },
+  { cell = 12, label = "fav", action = "browser.favorite_toggle" },
+]
+
+[[view]]
+name = "files"
+page = 1
+cells = [
+  { cell = 1, label = "enter", action = "browser.enter" },
+  { cell = 2, label = "auto", action = "browser.preview_toggle" },
+  { cell = 3, label = "chop", action = "screen.chop" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "chop"
+page = 0
+cells = [
+  { cell = 9, label = "cut", action = "chop.cut" },
+  { cell = 10, label = "parts", action = "chop.parts" },
+  { cell = 11, label = "hits", action = "chop.hits" },
+  { cell = 12, label = "assign", action = "chop.assign" },
+]
+
+[[view]]
+name = "chop"
+page = 1
+cells = [
+  { cell = 1, label = "loop", action = "chop.loop_toggle" },
+  { cell = 2, label = "play", action = "chop.play_mode" },
+  { cell = 3, label = "snap", action = "chop.snap_toggle" },
+  { cell = 4, label = "as pad", action = "chop.as_pad_toggle" },
+  { cell = 5, label = "norm", action = "chop.normalize" },
+  { cell = 6, label = "commit", action = "chop.commit" },
+  { cell = 7, label = "start", action = "chop.region_start" },
+  { cell = 8, label = "end", action = "chop.region_end" },
+  { cell = 9, label = "whole", action = "chop.region_clear" },
+  { cell = 10, label = "edit", action = "chop.edit" },
+]
+
+[[view]]
+name = "chop_edit"
+page = 0
+cells = [
+  { cell = 9, label = "pg -", action = "edit.page_prev" },
+  { cell = 10, label = "pg +", action = "edit.page_next" },
+  { cell = 11, label = "par -", action = "edit.param_prev" },
+  { cell = 12, label = "par +", action = "edit.param_next" },
+]
+
+[[view]]
+name = "chop_edit"
+page = 1
+cells = [
+  { cell = 1, label = "val -", action = "edit.value_dec" },
+  { cell = 2, label = "val +", action = "edit.value_inc" },
+  { cell = 3, label = "norm", action = "chop.normalize" },
+  { cell = 4, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "fx"
+page = 0
+cells = [
+  { cell = 9, label = "pg -", action = "edit.page_prev" },
+  { cell = 10, label = "pg +", action = "edit.page_next" },
+  { cell = 11, label = "par -", action = "edit.param_prev" },
+  { cell = 12, label = "par +", action = "edit.param_next" },
+]
+
+[[view]]
+name = "fx"
+page = 1
+cells = [
+  { cell = 1, label = "val -", action = "edit.value_dec" },
+  { cell = 2, label = "val +", action = "edit.value_inc" },
+  { cell = 3, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "settings"
+page = 0
+cells = [
+  { cell = 9, label = "tab", action = "settings.tab_next" },
+  { cell = 10, label = "learn", action = "settings.learn" },
+  { cell = 11, label = "clear", action = "settings.clear" },
+  { cell = 12, label = "save", action = "session.save" },
+]
+
+[[view]]
+name = "settings"
+page = 1
+cells = [
+  { cell = 1, label = "row -", action = "settings.row_prev" },
+  { cell = 2, label = "row +", action = "settings.row_next" },
+  { cell = 3, label = "val -", action = "settings.value_prev" },
+  { cell = 4, label = "val +", action = "settings.value_next" },
+  { cell = 5, label = "proj", action = "project.pick" },
+]

@@ -73,6 +73,10 @@ pub enum Event {
         abs: usize,
         id: u64,
     },
+    PanelCell {
+        port: String,
+        cell: u8,
+    },
     Action(Action),
     Param {
         port: String,
@@ -330,6 +334,7 @@ fn send_gesture_edges(ui: &mut UiSender, edges: impl IntoIterator<Item = Gesture
             source,
             from_message: true,
             activity: Activity::None,
+            key: Some(key.2),
         });
         match edge {
             GestureEdge::Tap(action, stamp) | GestureEdge::Down(action, stamp) => {
@@ -380,6 +385,7 @@ struct Provenance {
     source: Option<SourceStamp>,
     from_message: bool,
     activity: Activity,
+    key: Option<Key>,
 }
 
 pub struct UiEvent {
@@ -412,6 +418,7 @@ impl UiSender {
         let sequence = matches!(
             &event,
             Event::Action(_)
+                | Event::PanelCell { .. }
                 | Event::Step {
                     target: StepTarget::List(ListTarget::Page | ListTarget::Bank)
                         | StepTarget::Param(Param::Page),
@@ -461,6 +468,10 @@ impl UiEvent {
     pub fn origin(&self) -> Option<&str> {
         let origin = self.origin.as_ref()?;
         origin.from_message.then_some(origin.port.as_str())
+    }
+
+    pub fn control_key(&self) -> Option<Key> {
+        self.origin.as_ref()?.key
     }
 
     pub(super) fn source(&self) -> Option<SourceStamp> {
@@ -896,11 +907,12 @@ fn dispatch(
         // Freeze the source of this raw event into every derived UI envelope.
         // Later events from another port cannot relabel queued work.
         ui.origin = match &raw {
-            Raw::Msg(port, _, stamp) => Some(Provenance {
+            Raw::Msg(port, msg, stamp) => Some(Provenance {
                 port: port.clone(),
                 source: stamp.source,
                 from_message: true,
                 activity: Activity::None,
+                key: Some(msg.key()),
             }),
             Raw::Connected(port, connection) | Raw::Disconnected(port, connection) => {
                 Some(Provenance {
@@ -911,6 +923,7 @@ fn dispatch(
                     }),
                     from_message: false,
                     activity: Activity::None,
+                    key: None,
                 })
             }
             _ => None,
@@ -1117,6 +1130,7 @@ fn dispatch(
             None if guarded_encoder => "SMC-PAD encoder setup incomplete".into(),
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
+            Some(Resolved::PanelCell(cell)) => format!("panel cell {cell}"),
             Some(Resolved::Gesture { tap, hold }) => format!("tap {tap:?} / hold {hold:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
             Some(Resolved::Step {
@@ -1195,26 +1209,32 @@ fn dispatch(
             continue;
         }
         let route = route_pad(focus);
-        if route == PadRoute::Ignore
-            && !(waiting && matches!(resolved, Some(Resolved::Action(_))))
-            && !(focus.mode.picker
+        let allowed_while_ignored = matches!(resolved, Some(Resolved::PanelCell(_)))
+            || (waiting && matches!(resolved, Some(Resolved::Action(_))))
+            || (focus.mode.picker
                 && matches!(
                     resolved,
                     Some(Resolved::Step {
                         target: StepTarget::List(ListTarget::Projects),
                         ..
                     })
-                ))
-        {
+                ));
+        if route == PadRoute::Ignore && !allowed_while_ignored {
             continue;
         }
 
         match resolved {
+            Some(Resolved::PanelCell(cell)) => {
+                ui.send(Event::PanelCell { port, cell }, Some(stamp));
+            }
             Some(Resolved::Gesture { tap, hold }) => {
                 gestures.press((port, channel, msg.key()), at, stamp, tap, hold);
             }
             Some(Resolved::Action(Action::PadPress { pad, velocity }))
-                if waiting || route == PadRoute::Ui =>
+                if waiting
+                    || route == PadRoute::Ui
+                    || (port.contains("SMC-PAD-Master")
+                        && matches!(msg, Msg::NoteOn { note: 62 | 63, .. })) =>
             {
                 let abs = focus.bank * PADS_PER_BANK + pad;
                 let ui_press = stamp.ready.then(|| {
@@ -3601,8 +3621,467 @@ mod tests {
             .collect();
         let (events, sent) = dispatched(raw, smc_profiles(), on_screen(0, 0));
         assert!(sent.is_empty());
-        let seen = events.iter().filter(|event| matches!(event, Event::Message { meaning, .. } if meaning == "not assigned")).count();
-        assert_eq!(seen, 16);
+        let cells: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::PanelCell { cell, .. } => Some(*cell),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            cells,
+            [13, 14, 15, 16, 9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4]
+        );
+    }
+
+    /// Scenario "PLAY tap and hold have separate results" (input-devices).
+    #[test]
+    fn smc_play_tap_and_hold_have_separate_results() {
+        let (producer, _consumer) = rtrb::RingBuffer::new(32);
+        let (midi, worker) = Midi::recorded(
+            smc_profiles(),
+            producer,
+            Arc::new(ProjectState::default()),
+            Arc::new(Shared::default()),
+        );
+        let project = ProjectState::default();
+        let start = Instant::now();
+        for (millis, bytes) in [
+            (0, [0xB0, 27, 127]),
+            (100, [0xB0, 27, 0]),
+            (200, [0xB0, 27, 127]),
+            (300, [0x99, 48, 100]),
+            (350, [0x89, 48, 0]),
+            (400, [0xB0, 27, 0]),
+        ] {
+            midi.recorded_bytes_at(
+                SMC_MASTER,
+                &bytes,
+                &project,
+                start + Duration::from_millis(millis),
+            );
+        }
+        midi.recorded_fence();
+        let events = midi
+            .events
+            .try_iter()
+            .map(|event| event.event)
+            .collect::<Vec<_>>();
+        let actions = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(*action),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actions, [Action::PlayContext, Action::MetronomeToggle]);
+        let hold = events
+            .iter()
+            .position(|event| matches!(event, Event::Action(Action::MetronomeToggle)))
+            .unwrap();
+        let pad = events
+            .iter()
+            .position(|event| matches!(event, Event::PadHit { .. }))
+            .unwrap();
+        assert!(
+            hold < pad,
+            "a pad on channel 10 promotes the PLAY hold first"
+        );
+        drop(midi);
+        worker.join().unwrap();
+    }
+
+    /// Scenario "STOP acts on press by default" (input-devices).
+    #[test]
+    fn smc_stop_acts_on_press_by_default() {
+        let raw = [127, 0]
+            .into_iter()
+            .map(|value| {
+                Raw::Msg(
+                    SMC_MASTER.into(),
+                    Msg::Cc {
+                        ch: 1,
+                        cc: 28,
+                        value,
+                    },
+                    test_stamp(),
+                )
+            })
+            .collect();
+        let (events, sent) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert!(sent.is_empty());
+        let actions = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(*action),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actions, [Action::StopContext]);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, Event::PanelCell { .. }))
+        );
+    }
+
+    /// Scenario "Local SHIFT cannot trigger a host command" (input-devices).
+    /// Physical SHIFT behavior remains for the owner's hardware check.
+    #[test]
+    fn local_shift_cannot_trigger_a_host_command() {
+        let profile = smc_profiles()
+            .into_iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .unwrap();
+        assert!(profile.controls().iter().all(|(name, _)| name != "shift"));
+        assert_eq!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::Cc {
+                    ch: 1,
+                    cc: 49,
+                    value: 127
+                }
+            ),
+            None
+        );
+        assert!(matches!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 10,
+                    note: 48,
+                    velocity: 100
+                }
+            ),
+            Some(Resolved::Action(Action::PadPress { pad: 0, .. }))
+        ));
+    }
+
+    /// 92 command-panel: "P7 and P8 answer a visible question on the first hit".
+    #[test]
+    fn p7_and_p8_answer_a_visible_question_on_the_first_hit() {
+        for (note, binding) in [(62, "pad.1"), (63, "ui.confirm")] {
+            let mut profile = smc_profiles()
+                .into_iter()
+                .find(|profile| profile.name == "SMC-PAD")
+                .unwrap();
+            profile.set_bindings(
+                Scope::Global,
+                [(Key::Note(note), Binding::Press(binding.into()))].into(),
+            );
+            profile.set_seeded(true);
+            let (producer, _consumer) = rtrb::RingBuffer::new(32);
+            let (midi, worker) = Midi::recorded(
+                vec![profile],
+                producer,
+                Arc::new(ProjectState::default()),
+                Arc::new(Shared::default()),
+            );
+            midi.recorded_bytes_at(
+                SMC_MASTER,
+                &[0x99, note, 100],
+                &ProjectState::default(),
+                Instant::now(),
+            );
+            midi.recorded_bytes_at(
+                SMC_MASTER,
+                &[0x89, note, 0],
+                &ProjectState::default(),
+                Instant::now() + Duration::from_millis(10),
+            );
+            midi.recorded_fence();
+            let mut app = crate::tests::test_app();
+            app.ask = Some(crate::Ask::ClearPattern { lines: Vec::new() });
+            for event in midi.events.try_iter() {
+                app.midi_ui_event(event);
+            }
+            assert!(app.ask.is_none(), "note {note}");
+            assert!(!app.panel.visible(), "note {note}");
+            assert!(
+                !app.sent
+                    .iter()
+                    .any(|command| matches!(command, Command::PadPress { .. }))
+            );
+            drop(midi);
+            worker.join().unwrap();
+        }
+    }
+
+    /// Scenario "PLAY and STOP do not answer a question" (command-panel).
+    #[test]
+    fn play_and_stop_do_not_answer_a_question() {
+        for (cc, command) in [
+            (27, Command::TransportPlayContext),
+            (28, Command::TransportStopContext),
+        ] {
+            for owner_confirm in [false, true] {
+                let mut profile = smc_profiles()
+                    .into_iter()
+                    .find(|profile| profile.name == "SMC-PAD")
+                    .unwrap();
+                if owner_confirm {
+                    profile.set_bindings(
+                        Scope::Global,
+                        [(Key::Cc(cc), Binding::Press("ui.confirm".into()))].into(),
+                    );
+                    profile.set_seeded(true);
+                }
+                let (producer, _consumer) = rtrb::RingBuffer::new(32);
+                let (midi, worker) = Midi::recorded(
+                    vec![profile],
+                    producer,
+                    Arc::new(ProjectState::default()),
+                    Arc::new(Shared::default()),
+                );
+                let now = Instant::now();
+                midi.recorded_bytes_at(SMC_MASTER, &[0xB0, cc, 127], &ProjectState::default(), now);
+                midi.recorded_bytes_at(
+                    SMC_MASTER,
+                    &[0xB0, cc, 0],
+                    &ProjectState::default(),
+                    now + Duration::from_millis(20),
+                );
+                midi.recorded_fence();
+                let mut app = crate::tests::test_app();
+                app.ask = Some(crate::Ask::ClearPattern { lines: Vec::new() });
+                for event in midi.events.try_iter() {
+                    app.midi_ui_event(event);
+                }
+                assert!(app.ask.is_some(), "cc {cc}, owner_confirm {owner_confirm}");
+                assert_eq!(
+                    app.sent.iter().any(
+                        |sent| std::mem::discriminant(sent) == std::mem::discriminant(&command)
+                    ),
+                    !owner_confirm,
+                );
+                drop(midi);
+                worker.join().unwrap();
+            }
+        }
+    }
+
+    /// Scenario "Question shows both controller answers" (screen-help).
+    #[test]
+    fn question_shows_both_controller_answers() {
+        for visible in [false, true] {
+            let (producer, _consumer) = rtrb::RingBuffer::new(32);
+            let (midi, worker) = Midi::recorded(
+                smc_profiles(),
+                producer,
+                Arc::new(ProjectState::default()),
+                Arc::new(Shared::default()),
+            );
+            midi.recorded_connect(SMC_MASTER);
+            midi.recorded_fence();
+            let mut app = crate::tests::test_app();
+            for event in midi.events.try_iter() {
+                app.midi_ui_event(event);
+            }
+            if visible {
+                app.panel.press(SMC_MASTER, 1);
+            }
+            app.ask = Some(crate::Ask::ClearPattern {
+                lines: vec!["Keep pattern?".into(), "Enter to clear".into()],
+            });
+            let (keymap, _) = input::Keymap::from_toml(crate::DEFAULT_KEYMAP).unwrap();
+            let question = app.question_view(&keymap).unwrap();
+            assert!(
+                question
+                    .answers
+                    .iter()
+                    .any(|answer| answer.contains("P7: keep · P8: clear"))
+            );
+            assert!(question.answers.iter().any(|answer| answer.contains("KB ")));
+            assert!(
+                !question
+                    .answers
+                    .iter()
+                    .any(|answer| answer.contains("PLAY") || answer.contains("STOP"))
+            );
+            assert_eq!(question.body, ["Keep pattern?"]);
+            drop(midi);
+            worker.join().unwrap();
+        }
+    }
+
+    /// Scenario "Help names panel entry and current cells" (screen-help).
+    #[test]
+    fn help_names_panel_entry_and_current_cells() {
+        let (producer, _consumer) = rtrb::RingBuffer::new(32);
+        let (midi, worker) = Midi::recorded(
+            smc_profiles(),
+            producer,
+            Arc::new(ProjectState::default()),
+            Arc::new(Shared::default()),
+        );
+        midi.recorded_connect(SMC_MASTER);
+        midi.recorded_fence();
+        let mut app = crate::tests::test_app();
+        for event in midi.events.try_iter() {
+            app.midi_ui_event(event);
+        }
+        let (keymap, _) = input::Keymap::from_toml(crate::DEFAULT_KEYMAP).unwrap();
+        let before = app.full_help_recording_keys(&keymap, true, None);
+        assert!(
+            before
+                .iter()
+                .any(|(_, text)| text.contains("First second-bank hit"))
+        );
+        assert!(before.iter().any(|(_, text)| text.contains("P1 pads")));
+        app.panel.press(SMC_MASTER, 1);
+        assert_eq!(
+            app.panel.choice(app.panel_view(), 8),
+            crate::panel::Choice::Page
+        );
+        let after = app.full_help_recording_keys(&keymap, true, None);
+        assert!(after.iter().any(|(_, text)| text.contains("Page 2/2")));
+        assert!(after.iter().any(|(_, text)| text.contains("P1 mode")));
+        assert!(
+            after
+                .iter()
+                .any(|(_, text)| text.contains("P15 redo unavailable"))
+        );
+        assert!(
+            after
+                .iter()
+                .any(|(key, _)| !key.is_empty() && key != "SMC-PAD" && key != "SMC cells")
+        );
+        drop(midi);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn controller_view_names_the_visible_panel_cells() {
+        let mut app = crate::tests::test_app();
+        app.profiles = smc_profiles();
+        app.midi_event(Event::Connected {
+            port: SMC_MASTER.into(),
+            profile: "SMC-PAD".into(),
+        });
+        app.help_overlay.size = (120, 40);
+        app.panel.press(SMC_MASTER, 1);
+        assert_eq!(
+            app.panel.choice(app.panel_view(), 8),
+            crate::panel::Choice::Page
+        );
+        let (keymap, _) = input::Keymap::from_toml(crate::DEFAULT_KEYMAP).unwrap();
+        app.controller_start();
+        let view = app.controller_view(&keymap);
+        let tui::ControllerBody::Drawing { rows, .. } = view.body else {
+            panic!("SMC-PAD drawing missing");
+        };
+        assert_eq!(rows[4][4].as_ref().unwrap().label, "[mode]");
+        assert_eq!(rows[7][6].as_ref().unwrap().label, "[redo]");
+        assert!(rows[7][6].as_ref().unwrap().free);
+        assert!(rows[7][7].as_ref().unwrap().free);
+    }
+
+    /// Scenario "Two second-bank presses keep input order" (command-panel).
+    /// Scenario "A destructive cell cannot confirm itself" (command-panel).
+    /// Scenario "A panel action followed by P8 confirms only the question" (command-panel).
+    #[test]
+    fn a_panel_action_followed_by_p8_confirms_only_the_question() {
+        let (producer, _consumer) = rtrb::RingBuffer::new(32);
+        let (midi, worker) = Midi::recorded(
+            smc_profiles(),
+            producer,
+            Arc::new(ProjectState::default()),
+            Arc::new(Shared::default()),
+        );
+        let start = Instant::now();
+        for (step, note) in [64, 63, 66, 63].into_iter().enumerate() {
+            midi.recorded_bytes_at(
+                SMC_MASTER,
+                &[0x99, note, 100],
+                &ProjectState::default(),
+                start + Duration::from_millis(step as u64 * 20),
+            );
+            midi.recorded_bytes_at(
+                SMC_MASTER,
+                &[0x89, note, 0],
+                &ProjectState::default(),
+                start + Duration::from_millis(step as u64 * 20 + 10),
+            );
+        }
+        midi.recorded_fence();
+        let mut app = crate::tests::test_app();
+        app.pads.file[0] = Some("first.wav".into());
+        app.pads.file[1] = Some("second.wav".into());
+        app.pads.marked.insert(0);
+        for event in midi.events.try_iter() {
+            app.midi_ui_event(event);
+        }
+        assert!(app.ask.is_none());
+        assert!(app.pads.file[0].is_none());
+        assert_eq!(
+            app.pads.file[1].as_deref(),
+            Some(std::path::Path::new("second.wav"))
+        );
+        assert!(app.panel.visible());
+        assert_eq!(app.panel.page(), 1);
+        drop(midi);
+        worker.join().unwrap();
+    }
+
+    /// 92 command-panel: "First-bank hit leaves the panel and keeps its Gate".
+    #[test]
+    fn first_bank_hit_leaves_the_panel_and_keeps_its_gate() {
+        let (producer, mut consumer) = rtrb::RingBuffer::new(32);
+        let (midi, worker) = Midi::recorded(
+            smc_profiles(),
+            producer,
+            Arc::new(ProjectState::default()),
+            Arc::new(Shared::default()),
+        );
+        let start = Instant::now();
+        for (step, bytes) in [
+            [0x99, 64, 100],
+            [0x89, 64, 0],
+            [0x99, 48, 100],
+            [0x89, 48, 0],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            midi.recorded_bytes_at(
+                SMC_MASTER,
+                &bytes,
+                &ProjectState::default(),
+                start + Duration::from_millis(step as u64 * 10),
+            );
+        }
+        midi.recorded_fence();
+        let events: Vec<_> = midi.events.try_iter().collect();
+        assert!(events.iter().any(|event| matches!(
+            event.event,
+            Event::PadHit {
+                abs: 0,
+                sound: PadSound::UiUnattempted { deferred: true },
+                ..
+            }
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event.event, Event::UiPadRelease { abs: 0, .. }))
+        );
+        let mut app = crate::tests::test_app();
+        app.pads.gate[0] = true;
+        for event in events {
+            app.midi_ui_event(event);
+        }
+        assert!(!app.panel.visible());
+        let sent: Vec<_> = std::iter::from_fn(|| consumer.pop().ok())
+            .map(|command| command.command)
+            .collect();
+        assert!(sent.is_empty(), "{sent:?}");
+        assert!(matches!(
+            app.sent.as_slice(),
+            [Command::PadPress { pad: 0, .. }]
+        ));
+        drop(midi);
+        worker.join().unwrap();
     }
 
     /// Scenario "Absolute bytes cannot become false steps" (input-devices).
@@ -3749,8 +4228,19 @@ mod tests {
                 );
                 assert_eq!(profile.resolve(screen, knob(cc, 0)), None);
             }
+            assert_eq!(
+                profile.resolve(screen, knob(27, 127)),
+                Some(Resolved::Gesture {
+                    tap: Some(Action::PlayContext),
+                    hold: Action::MetronomeToggle,
+                })
+            );
+            assert_eq!(
+                profile.resolve(screen, knob(28, 127)),
+                Some(Resolved::Action(Action::StopContext))
+            );
             for cc in [27, 28] {
-                assert_eq!(profile.resolve(screen, knob(cc, 127)), None);
+                assert_eq!(profile.resolve(screen, knob(cc, 0)), None);
             }
         }
         assert!(matches!(

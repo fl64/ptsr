@@ -361,13 +361,13 @@ answer, take the default and write the question into `design.md` under "Open que
 | 0.6 | How many autosave versions | 10 |
 | 83a | J/L on Pads: values with banks on U/O (A), or keep banks and require edit on FX too (B)? | The owner chose A on 2026-11-03. The archived 83a proposal records the choice |
 | 87 | Yellow now means "the pads do something other than sound" (marks, in hand, assign, step, `erase`, panel). Change `docs/ui/STYLE.md`? | The owner approved this meaning on 2026-11-05. Marking still sounds. |
-| 92 | Action echo of controller presses in the message line | On, 1.5 s, a setting turns it off |
+| 93a | Should controller presses show an action echo in the message line? | On for 1.5 s. Add an off setting in F12 MIDI. |
 | 89 | How long is a "hold" for a button? | 300 ms, or at once when another control is used while the button is down |
 | 91 | How do the SMC-PAD encoders enter relative mode without MidiSuite? | Change 91 reads and saves the active preset, writes only its 16 encoder records, then checks the read-back. A failed check leaves encoder actions off and reports the problem. USB write behavior on this unit remains unverified. |
 | 92 | Is PAD BANK layer 2 the main panel path? | Yes. It latches the panel. |
 | 92 | Does the first layer 2 hit only show a hidden panel? | Yes. It runs no cell. |
-| 92 | Does holding STOP open the panel? | Off by default. An optional setting enables it. |
-| 92 | How does Panic work? | A panel cell with a question-free double press. |
+| 93a | Does holding STOP open the panel? | Off by default. Add an optional setting in 93a. |
+| 93a | How does Panic work? | Cell 16 stays dim in 92. In 93a, a question-free double press runs Panic. |
 | 92 | May an SMC panel cell apply a layout or answer a replacement question? | Yes, with a visible question for destructive changes through every panel path. Keep X-Session direct defaults unchanged |
 | 93a | Where are Panic, Undo, and Redo? | Fixed panel cells. Panic needs a double press. |
 | 93a | A new project from the controller gets a date name (`2026-11-03-1`) | Yes |

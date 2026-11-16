@@ -2171,54 +2171,70 @@ This change adds no WAV. Listen to the Gate sample that you load.
 - [ ] If F1 says `encoders unavailable`, read the cause in the message history.
   Check that pads and buttons still work, and that an absolute encoder CC cannot change a value.
 
-## 92 — Planned SMC-PAD-only flow checks
+## 92: SMC-PAD command panel and context transport
 
-These checks are targets for change 92. Keep every box open until the SMC-PAD
-profile, command panel, and knob strip exist. Use a disposable project and a
-sample with clear hits. Keep the keyboard out of reach after setup. Record the
-device preset and each missing control. A keyboard fallback does not count as
-a controller pass.
+Folder: `changes/92-command-panel`
 
-### Panel access while music plays
+Use a disposable project with a loaded Gate pad and an A1 pattern. Connect the
+SMC-PAD Master port. Keep the physical-pad and listening boxes open until you
+check the device and sound. Raw MIDI tests do not establish those results.
 
-- [ ] Start the transport. Press PAD BANK for layer 2. Hit a layer 2 pad once.
-  Check that the panel appears and no command runs. Read PANEL in the status
-  line. Check that the transport and all sounding voices continue.
-- [ ] Hit a screen cell. Check that it runs on this second layer 2 hit. Turn
-  both knob banks while the panel shows. Check that the named values change
-  and the music continues. Press PAD BANK for layer 1, then hit a pad.
-  Check that the panel hides and the hit uses its normal pad role.
-- [ ] Tap STOP while playback runs. Check that the transport stops without
-  opening the panel. Tap STOP again. Check that the position returns to the
-  start. Press PLAY to continue.
-- [ ] If change 91 measures a distinct SHIFT message, hold SHIFT to show
-  the panel and release it to leave. If the optional STOP hold setting is
-  on, test it separately. Keep both shortcuts off for the default pass.
+### Keyboard pass
 
-### Chop the sound of a pad
+- [ ] On Pads, press `Alt+T` to start A1. Press `Alt+Y` after bar 1. Check that
+  the position pauses. Press `Alt+T` and check that A1 continues from that
+  position. Press `Alt+Y` twice to reset to bar 1. Press `Space` to check its
+  existing stop-and-reset behavior.
+- [ ] On Files and Chop, select a sample. Press `Alt+T` twice. Check that the
+  second press does not restart the playing preview. Press `Alt+Y` to stop it.
+  Repeat with a replacement question open. Check that the question stays.
+- [ ] Open F1. Check the keyboard actions and the SMC-PAD section. Check that
+  F12 MIDI shows an explicit `none` override on a new SMC-PAD control.
 
-- [ ] Hit the pad with the sample. Press PAD BANK and hit a layer 2 pad once
-  to show the panel. Check that this hit runs no cell. Hit Chop. Check that
-  Chop opens on that pad's sample. Turn knob 1. Check that it moves the cursor
-  and that the knob strip names the other active knobs.
-- [ ] Hit the Cut, Parts, and Hits cells. Hit Assign. Press PAD BANK for
-  layer 1, then hit the target pads. Press PAD BANK for layer 2 and use one
-  hit to reveal the panel again. Hit Apply. Check that the slices appear
-  on the target pads. Press PLAY and listen to each slice.
-- [ ] Hit Back to return to Pads. Return to layer 1. Play the target pads.
-  Check that every slice sounds. Record whether you used a keyboard action.
+### Physical-controller pass
 
-### Edit a pad
+- [ ] Press PAD BANK for the second layer. Press and release one pad. Check
+  `PANEL · SMC` and the 4 by 4 grid. The first press only shows the panel.
+  Press another cell. Check its shown action. Check that pads follow the
+  physical rows from top to bottom. Open `more`, then `next` and `main`.
+  Check that Back, Undo, dim Redo and dim Panic stay in the bottom row.
+- [ ] Start A1. Open the panel and switch between Pads, Files and Chop. Check
+  that the panel updates its labels and page without stopping A1. Press a
+  first-layer Gate pad. Check that it hides the panel. Change bank and release
+  the pad. Check that only the original Gate ends.
+- [ ] Open a replacement question from a panel cell. Press P7 to cancel.
+  Open it again and press P8 to accept. Check both answers on the question.
+  Press PLAY and STOP during a separate question. Check that neither answers it.
+- [ ] Tap PLAY to start or continue A1. Hold PLAY for at least 300 ms to toggle
+  the metronome once. Tap STOP to pause. Tap STOP again to reset to bar 1.
+  Check Files and Chop previews with PLAY and STOP. Check that RECORD release
+  ends a microphone hold. LEFT and RIGHT keep selecting items. On Files, tap
+  STOP before a large file finishes loading. Check that it does not start later.
+- [ ] On F12 MIDI, set one second-layer cell to `none`. Restart. Check that
+  this cell does nothing and that other cells work. Clear its binding in F12.
+  Check that only this cell gets its shipped action again.
+- [ ] Open F1 Controller. Check both pad banks, both encoder banks and the five
+  buttons. Press SHIFT alone and with a pad, button and encoder. Record the
+  MIDI messages. Check that ptsr adds no SHIFT shortcut or transpose.
+- [ ] Disconnect the SMC-PAD while you hold a Gate pad with the panel open.
+  Check that the panel closes and the original Gate ends. Reconnect and check
+  that the panel starts hidden. Test a second controller if one is available.
+- [ ] At 80x26 and 120x40, check the panel with picture and Braille waves.
+  Open a question and F1. Check that text stays readable and the current wave
+  returns after the panel closes.
 
-- [ ] Hit a pad and select knob bank 2. Turn volume, pan, pitch, cutoff,
-  decay, and sends. Check each value and listen without opening the edit.
-- [ ] Press PAD BANK and reveal the panel if it is hidden. Hit Edit. Turn
-  knob 1. Check that it selects the parameter. Turn knobs 2–8. Check that
-  the knob strip names and changes the open page. Press LEFT and RIGHT to
-  change pages.
-- [ ] Hit Back to close the edit. Check that every pad parameter has a
-  controller path. Record first-entry and repeated-command press counts
-  separately. Record any missing path.
+### Listening and offline screen evidence
+
+- [ ] Listen to `renders/92-command-panel.wav`. The first 2.604 seconds play
+  A1 with a metronome. The next 0.208 seconds are silent during pause. The
+  last 0.521 seconds continue from the held position. Check the resumed hit
+  and the absence of an extra hit or click at the boundary.
+- [ ] Run `task screens`. Inspect the `panel` entries in `renders/screens/` at
+  80x26 and 120x40. These offline frames do not prove physical pad order,
+  kitty image composition or listening quality.
+
+Change 93 checks access to every action from each mode. Change 93a adds the
+remaining controller comfort actions. Neither result follows from these checks.
 
 ## 95: Transport and metronome
 

@@ -146,8 +146,12 @@ MIDI learn. Its automated checks pass. The physical controller and listening
 checks remain unverified. Change 91 read the active SMC-PAD preset and captured
 mirrored Linux MIDI messages from its Master and Private ports. It added the
 guarded encoder setup and measured profile. The owner authorized closure without
-the full physical control check on 2026-11-16. The command panel and controller
-reach work remain open. The SMC-PAD is not autonomous yet.
+the full physical control check on 2026-11-16. Change 92 adds the second-bank
+command panel and context PLAY/STOP in [PR #26](https://github.com/fl64/ptsr/pull/26).
+The owner accepted it on 2026-11-16 and reported that PLAY works in its build.
+Its archive is `openspec/changes/archive/2026-11-16-92-command-panel/`.
+Other physical, keyboard, graphics, and listening checks remain open.
+Controller reach (93) and comfort (93a) remain open. The SMC-PAD is not autonomous yet.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,
