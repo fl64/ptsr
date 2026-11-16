@@ -173,13 +173,13 @@ fn restore<T: Transport>(transport: &mut T, before: &[u8]) -> Result<(), String>
             first_error.get_or_insert(error);
         }
     }
-    if let Some(error) = first_error {
-        return Err(error);
+    let actual =
+        read_all(transport).map_err(|error| format!("SMC-PAD restore read-back: {error}"))?;
+    if actual != before {
+        let write_error = first_error.map_or(String::new(), |error| format!("; {error}"));
+        return Err(format!("SMC-PAD restore read-back differs{write_error}"));
     }
-    match read_all(transport)? == before {
-        true => Ok(()),
-        false => Err("SMC-PAD restore read-back differs".into()),
-    }
+    Ok(())
 }
 
 fn configure<T: Transport>(transport: &mut T) -> Result<(), String> {
@@ -470,10 +470,13 @@ mod tests {
     #[test]
     fn failed_restore_still_attempts_all_records() {
         let mut device = Fake::measured();
+        let before = device.memory.clone();
         device.fail_at = vec![2, 3];
         let error = configure(&mut device).unwrap_err();
         assert!(error.contains("restore failed"), "{error}");
+        assert!(error.contains("restore read-back differs"), "{error}");
         assert_eq!(device.writes, 18);
+        assert_ne!(device.memory, before);
     }
 
     #[test]
