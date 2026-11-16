@@ -42,9 +42,10 @@ One action stops all sound at once: transport stop, all voices fade out over the
 (`HushPads` exists; add the preview and the FX tails), recording stops and keeps what it has.
 
 - Keyboard: `Ctrl+.` (right half; check clashes).
-- SMC-PAD: a Panic panel cell with a question-free double press. The first press
-  shows an armed state. Change 92 sets the time limit. Neither press changes
-  the transport until the second press runs Panic.
+- SMC-PAD: a Panic panel cell with a question-free double press. Change 92
+  reserves its fixed place and shows it as unavailable. Change 93a sets the
+  time limit and armed state. Neither press changes the transport until the
+  second press runs Panic in 93a.
 - Notice: `! all sound stopped` (Warn).
 
 ### 2.2 A controller goes away while something is held (task in change 89 and 92)
@@ -68,12 +69,14 @@ once"). Rules:
 
 ### 2.4 Destructive actions
 
-For the SMC-PAD, proposed default: clear pad, clear pattern, reset pad, apply a plan over
+For the SMC-PAD, clear pad, clear pattern, reset pad, apply a plan over
 occupied pads and delete a slot open a question (`ASK`) through every panel path.
 A latched layer-2 cell needs no held button, so the panel alone is not a safety guard.
-Only an explicit
-Yes cell confirms. Keep the X-Session direct safe defaults unchanged. Record the owner's
-choice in change 92 before code. Existing keyboard behavior stays as specified.
+Only physical P8 or another explicit Yes path confirms. Physical P7 cancels.
+Both act on the first press when a question is visible, even from a hidden panel.
+PLAY and STOP never answer a question. Keep the X-Session direct safe defaults
+unchanged. Change 92 records this choice before code. Existing keyboard behavior
+stays as specified.
 
 ## 3. Comfort (change 93a `93a-controller-comfort`, after 93)
 
