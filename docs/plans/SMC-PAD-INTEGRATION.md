@@ -116,7 +116,11 @@ context page with up to ten other actions, Next and Main cells. Next cycles
 through further context pages. The bottom row
 keeps Back, Undo, Redo and Panic in cells 13–16. Change 92 checks access to
 Files, Chop, Pattern, FX and Settings. Redo and Panic remain dim until 93a.
-No cell acts on the first layer 2 hit when the panel is hidden.
+With a shipped panel binding, the first layer 2 hit only reveals a hidden panel.
+An explicit
+owner binding can replace a cell outside a question. Physical P7 and P8 still
+answer a visible question. PLAY and STOP cannot confirm it, even with an owner
+`ui.confirm` binding.
 
 A setup guide and ptsr doctor tell the owner to give layer 2 pads a distinct
 color in MIDI Suite. The color is a device setup aid, not a requirement for

@@ -12,7 +12,7 @@ The cross-cutting plan assigns full Redo and Panic behavior to change 93a. This 
 
 ### Panel entry and ownership
 
-Only the measured Master profile's `c1` through `c16` controls enter the panel. A first second-layer press while the panel is hidden shows it and runs no cell. Its release does nothing. Later presses run one visible cell each. A first-layer Master pad press hides the panel and follows its existing pad route on that same press. The panel does not take ownership of its held Gate release. PAD BANK itself has no host event. A keyboard screen change updates the panel's screen context without changing its device owner.
+Only the Master profile's panel-bound `c1` through `c16` controls enter the panel. A first panel-bound press while the panel is hidden shows it and runs no cell. Its release does nothing. Later presses run one visible cell each. An explicit owner action on a cell acts outside a question and bypasses panel entry. A first-layer Master pad press hides the panel and follows its existing pad route on that same press. The panel does not take ownership of its held Gate release. PAD BANK itself has no host event. A keyboard screen change updates the panel's screen context without changing its device owner.
 
 The panel belongs to the Master connection that showed it. A second device's pads keep their own routes. A disconnect clears that panel and its badge. A reconnect does not inherit its visible state. Invalid shared MIDI state refuses new panel presses and preserves accepted Gate releases.
 
@@ -45,7 +45,7 @@ The saved MIDI map already stores action names as strings. This change accepts `
 
 ### Questions and input priority
 
-A visible question takes priority over the ordinary panel map. Physical P7 (`c7`) cancels and P8 (`c8`) confirms it on the first press, even when the panel was hidden. The first-hit reveal rule does not consume either answer. Other second-layer cells do not answer or reveal a panel during a question. Destructive cells only open the normal visible question. They never answer it with the same press. PLAY and STOP remain transport controls under a question and never confirm it. A question for replacing a sample or applying a Chop layout keeps its existing target checks.
+A visible question takes priority over the ordinary panel map and owner cell bindings. Physical P7 (`c7`) cancels and P8 (`c8`) confirms it on the first press, even when the panel was hidden. The first-hit reveal rule does not consume either answer. Other second-layer cells do not answer or reveal a panel during a question. Destructive cells only open the normal visible question. They never answer it with the same press. A shipped PLAY or STOP context transport role can act under a question. An owner `ui.confirm` binding on PLAY or STOP cannot answer it. A question for replacing a sample or applying a Chop layout keeps its existing target checks.
 
 Text input, pickers, MIDI learn and screen learn keep their existing priority. A panel press cannot submit typed text or become a pad hit. During a question, only P7 and P8 answer it. Outside a question, Back closes the highest-priority open mode before it closes the panel. Help and Messages retain their current navigation and content priority.
 
@@ -82,3 +82,5 @@ The offline render checks A1 pause, continuation from its held tick, second-STOP
 
 - Does the first physical STOP need to pause at the current position? Default: yes. The owner was asked because the existing transport specification resets on its first explicit stop. Keep Space unchanged.
 - Does the optional STOP hold need a saved setting in change 92? Default: no. Keep it off and defer its setting to the grouped controller settings in change 93a. The main PAD BANK path works without it.
+- Can an explicit owner `pad.1` assignment on a second-bank cell sound? Default: yes, outside a question. It replaces that cell's panel entry until the owner clears the binding.
+- Can an explicit owner `ui.confirm` assignment on PLAY answer a question? Default: no. Physical P7/P8 answer the question, and PLAY/STOP cannot confirm it.

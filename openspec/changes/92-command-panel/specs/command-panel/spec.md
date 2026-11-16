@@ -4,10 +4,10 @@
 
 ### Requirement: SMC-PAD second bank opens a command panel
 
-The measured Master profile SHALL route its 16 second-bank notes to the command panel in the same physical rows as the first bank. The first second-bank press while the panel is hidden SHALL show the panel and run no cell. Later presses SHALL run one visible cell each. Releases SHALL run no cell. A first-bank press SHALL hide the panel and keep its normal pad action and original release. PAD BANK itself SHALL require no host message.
+The Master profile SHALL map 16 second-bank notes to panel cells in the first bank's physical rows. An owner binding MAY replace a cell outside a question. The first panel-bound press while hidden SHALL reveal the panel without an action. Later presses SHALL run one visible cell. Releases SHALL run no cell. A first-bank press SHALL hide the panel and keep its pad action and original release. PAD BANK SHALL require no host message.
 
 #### Scenario: First second-bank hit only reveals the panel
-- **WHEN** the owner starts transport and sends a second-bank press and release while the panel is hidden
+- **WHEN** the owner starts transport and sends a second-bank press and release with the shipped panel binding while the panel is hidden
 - **THEN** the panel appears in the pad-grid area and no cell action runs
 - **AND** transport and sounding voices continue without a new hit or stop
 
@@ -65,7 +65,7 @@ The main page SHALL offer Pads, Files, Chop, Pattern, FX, Settings, Help and Mor
 
 ### Requirement: Visible questions use the two agreed pads
 
-While a question is visible, the SMC-PAD's physical P7 (cell 7) SHALL cancel it and P8 (cell 8) SHALL confirm it on press. These answers SHALL work when the panel was hidden before that press. Other second-bank cells SHALL not reveal the panel, answer the question or run background commands. PLAY and STOP SHALL keep their context transport roles and SHALL not answer the question. Keyboard and learned confirmation paths SHALL keep their current rules.
+While a question is visible, physical P7 SHALL cancel and P8 SHALL confirm on press, even with owner bindings and a hidden panel. Other second-bank cells SHALL not reveal or act. PLAY and STOP SHALL never answer the question, even with `ui.confirm` bound. Their context transport roles MAY act while the question stays visible. Keyboard and learned confirmation paths SHALL keep their rules.
 
 #### Scenario: P7 and P8 answer a visible question on the first hit
 - **WHEN** a question is visible and the owner presses P7 or P8 from a hidden panel in separate runs

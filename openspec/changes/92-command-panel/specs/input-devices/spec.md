@@ -4,7 +4,7 @@
 
 ### Requirement: Device profiles
 
-The system SHALL describe each device with a TOML profile: controls and their starting logical actions per screen. A device without a profile SHALL use the default notes 36 through 51 for pads 1 through 16. The system SHALL copy starting actions into the user config on first connection with no saved bindings. After that, the user config SHALL give the device its actions and the profile SHALL name its controls. For new SMC-PAD panel cells and PLAY/STOP roles, a missing saved binding SHALL use the shipped action at runtime. This exception SHALL not change the user config. An explicit owner action or `none` SHALL take precedence.
+The system SHALL describe each device with a TOML profile: controls and their starting logical actions per screen. A device without a profile SHALL use the default notes 36 through 51 for pads 1 through 16. The system SHALL copy starting actions into the user config on first connection with no saved bindings. After that, the user config SHALL give the device its actions and the profile SHALL name its controls. For new SMC-PAD panel cells and PLAY/STOP roles, a missing saved binding SHALL use the shipped action at runtime. This exception SHALL not change the user config. An explicit owner action or `none` SHALL take precedence outside a visible question. Physical P7/P8 answers and the PLAY/STOP confirmation ban SHALL take priority during a question.
 
 #### Scenario: New controller
 - **WHEN** a device without its own profile is connected
@@ -41,7 +41,7 @@ The supported SMC-PAD Master preset SHALL map channel 10 notes 36 through 51 to 
 #### Scenario: Second pad bank stays distinct
 - **WHEN** raw Master MIDI presses all 16 second-bank notes on channel 10
 - **THEN** it recognizes 16 distinct cells ordered from the screen top row to bottom row
-- **AND** no second-bank hit plays a sample
+- **AND** no second-bank hit with a shipped panel binding plays a sample
 
 ### Requirement: SMC-PAD buttons keep measured identities
 
