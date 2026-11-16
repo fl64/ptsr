@@ -4,13 +4,15 @@
 
 A plain action string keeps its current press timing. A button with a `hold` action waits. A release before the threshold sends `tap` once. At the threshold, or before another control on the same port acts, it sends `hold` down once. Release after that sends `hold` up once and no tap. A toggle such as `metronome.toggle` acts on hold down. Its up event has no action. `record.mic` starts on hold down and stops on hold up.
 
+The existing one-action-per-control rule applies to each gesture slot. A button can have one tap action and one hold action in the same group. Replacing or clearing one slot leaves the other slot in place. A tap without a hold is an immediate string binding.
+
 The gesture key is port, channel, and control. Another control on the same port can start the hold even when it uses a different MIDI channel. This matters for devices whose pads and buttons use different channels. The other control keeps its own action, and the hold event precedes it. A release or duplicate value does not count as use of another control.
 
 The MIDI receipt time determines whether a release is a tap. The worker checks due holds after queued messages. A repeated press of the same held control does not restart its timer or send another action. A disconnect ends active hold actions and clears pending taps without making a tap. An invalid shared input state does not start a new gesture. An existing up action can still end. If the device loses only a release message, the next press looks like a repeated press. The hold stays active until release or disconnect.
 
 ## Profile and saved bindings
 
-The profile accepts an action string or `{ tap = "...", hold = "..." }` in a screen or edit binding. A map needs `hold`. It can omit `tap`. A string in an existing user config remains a press action. New user-config maps store tap and hold in the same control entry. Reading an old string does not rewrite the user file. Profile seeding copies both actions once. The program refuses unknown actions, including a future `layer.*` action. Its message names the profile file and control. Change 91 will add an SMC-PAD factory profile after the owner measures its Linux messages.
+The profile accepts an action string or `{ tap = "...", hold = "..." }` in a screen or edit binding. A map needs `hold`. It can omit `tap`. A string in an existing user config remains a press action. New user-config maps store tap and hold in the same control entry. The new binding format does not rewrite old strings by itself. The existing FX binding migration can save the user file for its own reason. Profile seeding copies both actions once. The program refuses unknown actions, including a future `layer.*` action. Its message names the profile file and control. Change 91 will add an SMC-PAD factory profile after the owner measures its Linux messages.
 
 Use existing actions in test profiles: PLAY can use `transport.toggle` for tap and `metronome.toggle` for hold. RECORD can use `record.output` for tap and `record.mic` for hold. Any plain button acts on press. The plan's `play.context` example does not name an existing action. Use `transport.toggle` in this change. A dedicated STOP action and screen roles belong to change 92.
 
