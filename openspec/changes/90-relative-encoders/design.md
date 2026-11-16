@@ -30,7 +30,7 @@ A relative turn applies one logical UI event. The app groups all steps from that
 | Pad start or end | 1 ms | 1 ms |
 | Tempo | 1 BPM | 0.1 BPM |
 | Pattern bars or quantize | one option | one option |
-| Pattern strength | 1 % | 1 % |
+| Pattern strength | 10 % | 10 % |
 | Slice start or end, cursor or region edge | one visible fine step | one visible fine step |
 | Chop zoom | one keyboard zoom step | one keyboard zoom step |
 | Chop threshold | 1 dB | 1 dB |

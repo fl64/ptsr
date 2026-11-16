@@ -1245,7 +1245,7 @@ impl App {
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
         // a button runs its action through `apply`, which keeps the step itself
         let before = (matches!(self.screen, Screen::Pads | Screen::Fx)
-            && matches!(ev, midi::Event::Param { .. }))
+            && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. }))
         .then(|| self.before());
         self.midi_event_inner(ev, released);
         if let Some(b) = before {
@@ -1270,7 +1270,10 @@ impl App {
         if self.screen_learn.is_some()
             && matches!(
                 ev,
-                midi::Event::PadHit { .. } | midi::Event::Action(_) | midi::Event::Param { .. }
+                midi::Event::PadHit { .. }
+                    | midi::Event::Action(_)
+                    | midi::Event::Param { .. }
+                    | midi::Event::Step { .. }
             )
         {
             return;
@@ -1425,6 +1428,14 @@ impl App {
             midi::Event::Action(action) => {
                 // quitting from a controller is not offered
                 self.apply(action);
+            }
+            midi::Event::Step {
+                target,
+                steps,
+                fine,
+                ..
+            } => {
+                self.midi_step(target, steps, fine);
             }
             // open pattern controls: edit knobs 1-3 turn A1, other edit knobs wait (98b)
             midi::Event::Param {
@@ -1928,6 +1939,188 @@ impl App {
         }
     }
 
+    fn midi_step(&mut self, target: input::midi::StepTarget, steps: i32, fine: bool) {
+        use input::midi::{ListTarget, StepTarget};
+        if steps == 0 || self.ask.is_some() || self.path_picker.is_some() {
+            return;
+        }
+        if self.pattern_panel.is_some()
+            && (matches!(target, StepTarget::List(ListTarget::Page))
+                || matches!(target, StepTarget::Param(param) if !matches!(param,
+                    Param::Slot(_) | Param::MasterVolume | Param::Tempo
+                        | Param::PatternBars | Param::PatternQuantize | Param::PatternStrength)))
+        {
+            return;
+        }
+        self.pickup = None;
+        let right = steps > 0;
+        let action = match target {
+            StepTarget::List(ListTarget::Files) if self.screen == Screen::Files => {
+                self.browser.step(steps as isize);
+                self.preview_selection();
+                return;
+            }
+            StepTarget::List(ListTarget::Projects) => {
+                if let Some(picker) = self.project_picker.as_mut().filter(|p| p.naming.is_none()) {
+                    picker.selected = (picker.selected as i64 + i64::from(steps))
+                        .clamp(0, picker.entries.len().saturating_sub(1) as i64)
+                        as usize;
+                }
+                return;
+            }
+            StepTarget::List(ListTarget::Settings) if self.screen == Screen::Settings => {
+                Some(Action::SettingsRow(if right { 1 } else { -1 }))
+            }
+            StepTarget::List(ListTarget::Page)
+                if self.screen == Screen::Fx || (self.screen == Screen::Pads && self.edit) =>
+            {
+                Some(if right {
+                    Action::PageNext
+                } else {
+                    Action::PagePrev
+                })
+            }
+            StepTarget::List(ListTarget::Bank)
+                if matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx) =>
+            {
+                Some(if right {
+                    Action::BankNext
+                } else {
+                    Action::BankPrev
+                })
+            }
+            StepTarget::Param(Param::Page) => {
+                return self.midi_step(StepTarget::List(ListTarget::Page), steps, fine);
+            }
+            StepTarget::Param(Param::Slot(k)) => {
+                if self.pattern_panel.is_some() {
+                    if let Some(&setting) = super::pattern_record::Setting::ALL.get(k as usize) {
+                        self.pattern_step(setting, steps);
+                    }
+                    return;
+                }
+                if let Some(param) = self.slot_param(k) {
+                    return self.midi_step(StepTarget::Param(param), steps, fine);
+                }
+                return;
+            }
+            StepTarget::Param(
+                param @ (Param::PatternBars | Param::PatternQuantize | Param::PatternStrength),
+            ) => {
+                if let Some(setting) = super::pattern_record::Setting::from_param(param) {
+                    self.pattern_step(setting, steps);
+                }
+                return;
+            }
+            StepTarget::Param(Param::MasterVolume) => {
+                Some(Action::MasterVolume(if right { 1 } else { -1 }))
+            }
+            StepTarget::Param(Param::Tempo) => Some(Action::TempoStep { up: right, fine }),
+            StepTarget::Param(Param::Zoom) if self.screen == Screen::Chop => {
+                Some(Action::ChopZoom { zoom_in: right })
+            }
+            StepTarget::Param(Param::Cursor) if self.screen == Screen::Chop => {
+                Some(Action::CursorMove { right, fine: true })
+            }
+            StepTarget::Param(
+                param @ (Param::PadVolume
+                | Param::PadPitch
+                | Param::PadAttack
+                | Param::PadDecay
+                | Param::PadRelease
+                | Param::PadFilter
+                | Param::PadCutoff
+                | Param::PadReso
+                | Param::PadSource
+                | Param::PadStart
+                | Param::PadEnd
+                | Param::PadEffect(_)),
+            ) if matches!(self.screen, Screen::Pads | Screen::Fx) => {
+                let selected = match param {
+                    Param::PadVolume => pads::Param::Volume,
+                    Param::PadPitch => pads::Param::Pitch,
+                    Param::PadAttack | Param::PadDecay | Param::PadRelease => pad_env(param),
+                    Param::PadFilter | Param::PadCutoff | Param::PadReso => pad_filter(param),
+                    Param::PadSource => pads::Param::Source,
+                    Param::PadStart => pads::Param::Start,
+                    Param::PadEnd => pads::Param::End,
+                    Param::PadEffect(i) => match EFFECT_PARAMS.get(i as usize) {
+                        Some(p) => *p,
+                        None => return,
+                    },
+                    _ => return,
+                };
+                if self.screen == Screen::Fx && selected.slot().is_none() {
+                    return;
+                }
+                let previous = std::mem::replace(&mut self.pads.param, selected);
+                for _ in 0..steps.unsigned_abs() {
+                    let action = Action::EditValue {
+                        up: right,
+                        fine: true,
+                    };
+                    if self.screen == Screen::Fx {
+                        let commands = self.pads.apply(action);
+                        if !commands.is_empty() {
+                            for command in commands {
+                                self.send(command);
+                            }
+                            self.dirty();
+                        }
+                        self.lit = Some((Lit::Pad(selected), Instant::now()));
+                    } else {
+                        self.run(action);
+                    }
+                }
+                self.pads.param = previous;
+                return;
+            }
+            StepTarget::Param(param @ (Param::SliceStart | Param::SliceEnd))
+                if self.screen == Screen::Chop =>
+            {
+                let end = param == Param::SliceEnd;
+                for _ in 0..steps.unsigned_abs() {
+                    if let Some(chop) = self.chop.as_mut() {
+                        let step = chop.view_step(1);
+                        chop.nudge_by(end, right, step);
+                    }
+                }
+                self.lit = Some((Lit::Bound(end), Instant::now()));
+                let changed = self.sync_links();
+                self.say_changed(changed, false);
+                return;
+            }
+            StepTarget::Param(Param::Threshold) if self.screen == Screen::Chop => {
+                if let Some(chop) = self.chop.as_mut() {
+                    let next = (chop.threshold_db - steps as f32).clamp(-40.0, 0.0);
+                    chop.set_threshold(-next / 40.0);
+                }
+                let changed = self.sync_links();
+                self.say_changed(changed, false);
+                return;
+            }
+            StepTarget::Param(param @ (Param::RegionStart | Param::RegionEnd))
+                if self.screen == Screen::Chop =>
+            {
+                let end = param == Param::RegionEnd;
+                if let Some(chop) = self.chop.as_mut() {
+                    let length = chop.sound.len().max(1) as f32;
+                    let delta = chop.view_step(1) as f32 * steps as f32 / length;
+                    chop.set_region_edge(end, chop.region_edge_pos(end) + delta);
+                }
+                let changed = self.sync_links();
+                self.say_changed(changed, false);
+                return;
+            }
+            _ => None,
+        };
+        if let Some(action) = action {
+            for _ in 0..steps.unsigned_abs() {
+                self.run(action);
+            }
+        }
+    }
+
     pub(super) fn keyboard_event(
         &mut self,
         keymap: &Keymap,
@@ -2059,5 +2252,181 @@ impl App {
             Some(action)
         };
         action.is_some_and(|action| self.apply(action))
+    }
+}
+
+#[cfg(test)]
+mod relative_tests {
+    use super::*;
+    use input::midi::{ListTarget, StepTarget};
+
+    fn turn(app: &mut App, target: StepTarget, steps: i32, fine: bool) {
+        app.midi_event(midi::Event::Step {
+            target,
+            steps,
+            fine,
+        });
+    }
+
+    /// 90 editing: "One detent matches one value key".
+    #[test]
+    fn one_detent_matches_one_value_key() {
+        let mut keyboard = crate::tests::test_app();
+        let mut controller = crate::tests::test_app();
+        controller.pickup = Some(("turn knob up".into(), Instant::now()));
+        keyboard.apply(Action::EditValue {
+            up: true,
+            fine: true,
+        });
+        turn(
+            &mut controller,
+            StepTarget::Param(Param::PadVolume),
+            1,
+            false,
+        );
+        assert_eq!(controller.pads.volume_db[0], keyboard.pads.volume_db[0]);
+        assert_eq!(controller.pads.volume_db[0], 1);
+        assert!(controller.pickup.is_none());
+        turn(
+            &mut controller,
+            StepTarget::Param(Param::PadVolume),
+            -2,
+            false,
+        );
+        assert_eq!(controller.pads.volume_db[0], -1);
+    }
+
+    /// 90 editing: "Fast value turn is one Undo step".
+    #[test]
+    fn fast_value_turn_is_one_undo_step() {
+        let mut app = crate::tests::test_app();
+        app.pads.marked.extend([0, 1]);
+        app.pads.volume_db[1] = pads::MAX_DB - 1;
+        turn(&mut app, StepTarget::Param(Param::PadVolume), 4, false);
+        assert_eq!(app.pads.volume_db[0], 4);
+        assert_eq!(app.pads.volume_db[1], pads::MAX_DB);
+        assert_eq!(app.history.len(), 1);
+        app.apply(Action::Undo);
+        assert_eq!(app.pads.volume_db[0], 0);
+        assert_eq!(app.pads.volume_db[1], pads::MAX_DB - 1);
+    }
+
+    /// 90 editing: "Relative page matches Tab".
+    #[test]
+    fn relative_page_matches_tab() {
+        let mut keyboard = crate::tests::test_app();
+        let mut controller = crate::tests::test_app();
+        keyboard.apply(Action::PadEdit);
+        controller.apply(Action::PadEdit);
+        keyboard.apply(Action::PageNext);
+        turn(
+            &mut controller,
+            StepTarget::List(ListTarget::Page),
+            1,
+            false,
+        );
+        assert_eq!(controller.pads.param, keyboard.pads.param);
+        turn(
+            &mut controller,
+            StepTarget::List(ListTarget::Bank),
+            2,
+            false,
+        );
+        assert_eq!(controller.pads.bank, 2);
+    }
+
+    /// 90 editing: "Fine tempo changes a tenth".
+    #[test]
+    fn fine_tempo_changes_a_tenth() {
+        let mut app = crate::tests::test_app();
+        let before = app.transport.bpm;
+        turn(&mut app, StepTarget::Param(Param::Tempo), 1, true);
+        assert!((app.transport.bpm - before - 0.1).abs() < 0.001);
+    }
+
+    /// 90 projects: "Relative project selection waits for confirmation".
+    #[test]
+    fn relative_project_selection_waits_for_confirmation() {
+        let mut app = crate::tests::test_app();
+        app.project_picker = Some(ProjectPicker {
+            entries: vec!["A".into(), "B".into(), "C".into()],
+            selected: 0,
+            naming: None,
+        });
+        turn(&mut app, StepTarget::List(ListTarget::Projects), 5, false);
+        assert_eq!(app.project_picker.as_ref().unwrap().selected, 2);
+        assert!(app.project_picker.is_some());
+    }
+
+    /// 90 sample-loading: "Relative file selection previews the last row".
+    #[test]
+    fn relative_file_selection_previews_the_last_row() {
+        let mut app = crate::tests::test_app();
+        app.screen = Screen::Files;
+        app.browser.entries = ["first.wav", "last.wav"]
+            .map(|name| super::super::browser::Entry {
+                name: name.into(),
+                is_dir: false,
+                favorite: None,
+            })
+            .to_vec();
+        let before = app.load_gen[PADS];
+        turn(&mut app, StepTarget::List(ListTarget::Files), 8, false);
+        assert_eq!(app.browser.selected, 1);
+        assert_eq!(app.load_gen[PADS], before + 1);
+    }
+
+    /// 90 audio-settings: "Relative knob moves through MIDI rows".
+    #[test]
+    fn relative_knob_moves_through_midi_rows() {
+        let mut app = crate::tests::test_app();
+        app.screen = Screen::Settings;
+        app.settings_tab = 2;
+        app.midi_devices.push(("Device".into(), "default".into()));
+        assert!(app.midi_list().len() > 1);
+        turn(&mut app, StepTarget::List(ListTarget::Settings), 1, false);
+        assert_eq!(app.midi_row, 1);
+    }
+
+    /// 90 editing: "Relative edit slot follows its page".
+    #[test]
+    fn relative_edit_slot_follows_its_page() {
+        let mut app = crate::tests::test_app();
+        app.apply(Action::PadEdit);
+        assert_eq!(app.slot_param(0), Some(Param::PadVolume));
+        turn(&mut app, StepTarget::Param(Param::Slot(0)), 1, false);
+        assert_eq!(app.pads.volume_db[0], 1);
+        app.apply(Action::PageNext);
+        assert_eq!(app.slot_param(0), Some(Param::PadAttack));
+        let before = app.pads.attack_ms[0];
+        turn(&mut app, StepTarget::Param(Param::Slot(0)), 1, false);
+        assert_eq!(app.pads.attack_ms[0], before + 1);
+        app.apply(Action::PageNext);
+        assert_eq!(app.slot_param(0), Some(Param::PadFilter));
+        let before_filter = app.pads.filter[0];
+        turn(&mut app, StepTarget::Param(Param::Slot(0)), 1, false);
+        assert_ne!(app.pads.filter[0], before_filter);
+        assert_eq!(app.pads.attack_ms[0], before + 1);
+    }
+
+    #[test]
+    fn relative_fx_slot_changes_its_bound_parameter() {
+        let mut app = crate::tests::test_app();
+        app.screen = Screen::Fx;
+        let before = app.pads.fx[0].size;
+        turn(&mut app, StepTarget::Param(Param::PadEffect(4)), 1, false);
+        assert_eq!(app.pads.fx[0].size, before + 1);
+    }
+
+    #[test]
+    fn relative_pattern_strength_uses_supported_step() {
+        let mut app = crate::tests::test_app();
+        turn(
+            &mut app,
+            StepTarget::Param(Param::PatternStrength),
+            -1,
+            false,
+        );
+        assert_eq!(app.pads.pattern.as_ref().unwrap().strength, 90);
     }
 }

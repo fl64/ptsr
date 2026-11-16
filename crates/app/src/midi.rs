@@ -11,7 +11,9 @@ use crate::input_sources::{Connection, Stamp as SourceStamp};
 
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
-use input::midi::{Activity, Binding, Key, Msg, Param, Profile, Resolved, Scope};
+use input::midi::{
+    Activity, Binding, Key, ListTarget, Msg, Param, Profile, Resolved, Scope, StepTarget,
+};
 use input::{Action, Focus, Group, PadRoute, route_pad};
 use std::sync::atomic::Ordering::Acquire;
 
@@ -67,6 +69,11 @@ pub enum Event {
         param: Param,
         value: f32,
         takeover: bool,
+    },
+    Step {
+        target: StepTarget,
+        steps: i32,
+        fine: bool,
     },
 }
 
@@ -392,6 +399,11 @@ impl UiSender {
         let sequence = matches!(
             &event,
             Event::Action(_)
+                | Event::Step {
+                    target: StepTarget::List(ListTarget::Page | ListTarget::Bank)
+                        | StepTarget::Param(Param::Page),
+                    ..
+                }
                 | Event::PadHit {
                     sound: PadSound::UiUnattempted { .. } | PadSound::EditUnattempted,
                     ..
@@ -796,6 +808,8 @@ fn dispatch(
         origin: None,
     };
     let mut positions: HashMap<(String, u8, Key), u8> = HashMap::new();
+    let mut speed: HashMap<(String, u8, Key), (Instant, u8)> = HashMap::new();
+    let mut fine: HashMap<String, (u8, Key)> = HashMap::new();
     let mut held_controls: HashSet<(String, u8, Key)> = HashSet::new();
     let mut gestures = Gestures::new(DEFAULT_HOLD);
     let mut defaults: HashMap<String, Profile> = HashMap::new();
@@ -881,6 +895,8 @@ fn dispatch(
             Raw::Disconnected(port, _) => {
                 send_gesture_edges(&mut ui, gestures.disconnect(&port));
                 positions.retain(|(device, _, _), _| *device != port);
+                speed.retain(|(device, _, _), _| *device != port);
+                fine.remove(&port);
                 held_controls.retain(|(device, _, _)| *device != port);
                 // a held gate pad would hang without its note off
                 pressed.retain(|(p, _, _), held| {
@@ -968,6 +984,9 @@ fn dispatch(
                     Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
                 };
                 if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+                    if fine.get(&port) == Some(&(channel, msg.key())) {
+                        fine.remove(&port);
+                    }
                     let key = (port.clone(), channel, msg.key());
                     send_gesture_edges(&mut ui, gestures.release_invalid(&key));
                 }
@@ -1003,6 +1022,7 @@ fn dispatch(
         }
         let owner_input = match (activity, msg) {
             (Activity::Press, _) => true,
+            (Activity::Movement, _) if matches!(resolved, Some(Resolved::Step { .. })) => true,
             (Activity::Movement, Msg::Cc { ch, value, .. }) => {
                 positions.insert((port.clone(), ch, msg.key()), value) != Some(value)
             }
@@ -1013,6 +1033,12 @@ fn dispatch(
             Some(Resolved::Action(a)) => format!("{a:?}"),
             Some(Resolved::Gesture { tap, hold }) => format!("tap {tap:?} / hold {hold:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
+            Some(Resolved::Step {
+                control,
+                target,
+                steps,
+            }) => format!("{control} -> {target:?} {steps:+}"),
+            Some(Resolved::Fine(on)) => format!("knob.fine {}", if *on { "on" } else { "off" }),
         };
         ui.send_input(
             Event::Message {
@@ -1029,7 +1055,14 @@ fn dispatch(
             Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
         };
         let control = (port.clone(), channel, msg.key());
+        if fine.get(&port) == Some(&(channel, msg.key()))
+            && matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. })
+        {
+            fine.remove(&port);
+        }
+        let relative = matches!(resolved, Some(Resolved::Step { .. }));
         let repeated = match msg {
+            _ if relative => false,
             Msg::NoteOff { .. } | Msg::Cc { value: 0, .. } => {
                 held_controls.remove(&control);
                 false
@@ -1037,21 +1070,29 @@ fn dispatch(
             Msg::NoteOn { .. } | Msg::Cc { .. } => !held_controls.insert(control),
         };
         let at = stamp.source.map_or_else(Instant::now, |source| source.at);
-        if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+        if !relative && matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
             let key = (port.clone(), channel, msg.key());
             send_gesture_edges(&mut ui, gestures.release(&key, at, stamp));
         } else if owner_input && (activity == Activity::Movement || !repeated) {
             let key = (port.clone(), channel, msg.key());
             send_gesture_edges(&mut ui, gestures.other(&port, &key));
         }
-        if release_tracked(
-            &port,
-            msg,
-            &mut pressed,
-            &mut ui_pressed,
-            &mut pending,
-            &mut ui,
-        ) {
+        if !relative
+            && release_tracked(
+                &port,
+                msg,
+                &mut pressed,
+                &mut ui_pressed,
+                &mut pending,
+                &mut ui,
+            )
+        {
+            continue;
+        }
+        if let Some(Resolved::Fine(on)) = &resolved {
+            if *on {
+                fine.insert(port, (channel, msg.key()));
+            }
             continue;
         }
         if (focus.mode.text || focus.mode.screen_learn || focus.mode.midi_learn)
@@ -1068,7 +1109,16 @@ fn dispatch(
             continue;
         }
         let route = route_pad(focus);
-        if route == PadRoute::Ignore && !(waiting && matches!(resolved, Some(Resolved::Action(_))))
+        if route == PadRoute::Ignore
+            && !(waiting && matches!(resolved, Some(Resolved::Action(_))))
+            && !(focus.mode.picker
+                && matches!(
+                    resolved,
+                    Some(Resolved::Step {
+                        target: StepTarget::List(ListTarget::Projects),
+                        ..
+                    })
+                ))
         {
             continue;
         }
@@ -1171,6 +1221,40 @@ fn dispatch(
                     Some(stamp),
                 );
             }
+            Some(Resolved::Step { target, steps, .. }) => {
+                let count = speed
+                    .entry((port.clone(), channel, msg.key()))
+                    .or_insert((at, 0));
+                count.1 = if at
+                    .checked_duration_since(count.0)
+                    .is_some_and(|gap| gap <= Duration::from_millis(40))
+                {
+                    count.1.saturating_add(1).min(4)
+                } else {
+                    1
+                };
+                count.0 = at;
+                let is_fine = fine.contains_key(&port);
+                let multiplier = if is_fine {
+                    1
+                } else {
+                    match count.1 {
+                        1 => 1,
+                        2 => 2,
+                        3 => 4,
+                        _ => 8,
+                    }
+                };
+                ui.send(
+                    Event::Step {
+                        target,
+                        steps: steps * multiplier,
+                        fine: is_fine,
+                    },
+                    Some(stamp),
+                );
+            }
+            Some(Resolved::Fine(_)) => {}
             None => {}
         }
     }
@@ -1266,6 +1350,281 @@ pub fn load_profiles(dir: &str) -> (Vec<Profile>, Vec<String>) {
 mod tests {
     use super::*;
     use input::{Screen, midi::Key};
+
+    fn relative_turns() -> Vec<(String, i32, bool, Option<u64>)> {
+        let profile = Profile::from_toml(
+            "relative.toml",
+            "[device]\nname = 'Relative'\nmatch_port = 'Relative'\n\
+             [controls.knobs]\nk1 = { cc = 30, type = 'relative', encoding = 'twos' }\n\
+             [controls.buttons]\nb1 = { note = 60 }\n\
+             [screens.global]\nb1 = 'knob.fine'\n\
+             [screens.pads]\nk1 = 'pad.volume'\n",
+        )
+        .unwrap();
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let shared = Arc::new(Shared::default());
+        let worker_shared = shared.clone();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![profile],
+                LearnedMaps::new(),
+                Vec::new(),
+                None,
+                None,
+                worker_shared,
+            )
+        });
+        let at = Instant::now();
+        let connection = Connection::fresh().unwrap();
+        let send = |port: &str, bytes: &[u8], ms: u64| {
+            raw_tx
+                .send(Raw::Msg(
+                    port.into(),
+                    Msg::parse(bytes).unwrap(),
+                    Stamp {
+                        epoch: 0,
+                        ready: true,
+                        source: Some(SourceStamp {
+                            connection,
+                            at: at + Duration::from_millis(ms),
+                        }),
+                    },
+                ))
+                .unwrap();
+        };
+        send("Relative A", &[0xB0, 30, 1], 0);
+        send("Relative A", &[0xB0, 30, 1], 10);
+        send("Relative B", &[0xB0, 30, 127], 10);
+        send("Relative A", &[0x90, 60, 127], 15);
+        send("Relative A", &[0xB0, 30, 1], 20);
+        send("Relative A", &[0x80, 60, 0], 25);
+        send("Relative A", &[0xB0, 30, 1], 30);
+        raw_tx
+            .send(Raw::Disconnected("Relative A".into(), None))
+            .unwrap();
+        send("Relative A", &[0xB0, 30, 1], 40);
+        let (done, finished) = mpsc::channel();
+        raw_tx.send(Raw::Fence(done)).unwrap();
+        finished.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(raw_tx);
+        worker.join().unwrap();
+        let turns: Vec<_> = rx
+            .try_iter()
+            .filter_map(|event| {
+                let port = event.origin()?.to_string();
+                match event.event {
+                    Event::Step { steps, fine, .. } => Some((port, steps, fine, event.sequence())),
+                    _ => None,
+                }
+            })
+            .collect();
+        turns
+    }
+
+    /// 90 input-devices: "Fast turn and fine button".
+    #[test]
+    fn fast_turn_and_fine_button() {
+        let turns = relative_turns();
+        assert_eq!(turns.len(), 6);
+        assert_eq!(
+            turns
+                .iter()
+                .map(|(_, steps, fine, _)| (*steps, *fine))
+                .collect::<Vec<_>>(),
+            [
+                (1, false),
+                (2, false),
+                (-1, false),
+                (1, true),
+                (8, false),
+                (1, false)
+            ]
+        );
+        assert!(turns.iter().all(|(_, _, _, sequence)| sequence.is_none()));
+    }
+
+    /// 90 input-devices: "Two devices keep separate step state".
+    #[test]
+    fn two_devices_keep_separate_step_state() {
+        let turns = relative_turns();
+        assert_eq!(turns[0].0, "Relative A");
+        assert_eq!(turns[2], ("Relative B".into(), -1, false, turns[2].3));
+        assert_eq!(turns[3].0, "Relative A");
+        assert_eq!(turns[5], ("Relative A".into(), 1, false, turns[5].3));
+    }
+
+    /// 90 input-devices: "Relative bank step precedes a pad hit".
+    #[test]
+    fn relative_bank_step_precedes_a_pad_hit() {
+        let profile = Profile::from_toml(
+            "bank.toml",
+            "[device]\nname = 'R'\nmatch_port = 'R'\n[controls.knobs]\nk1 = { cc = 30, type = 'relative', encoding = 'offset64' }\n[controls.pads]\np1 = { note = 36 }\n[screens.pads]\nk1 = 'bank'\n",
+        ).unwrap();
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![profile],
+                LearnedMaps::new(),
+                Vec::new(),
+                None,
+                None,
+                Arc::new(Shared::default()),
+            )
+        });
+        for bytes in [[0xB0, 30, 65], [0x90, 36, 100]] {
+            raw_tx
+                .send(Raw::Msg(
+                    "R".into(),
+                    Msg::parse(&bytes).unwrap(),
+                    Stamp {
+                        epoch: 0,
+                        ready: true,
+                        source: None,
+                    },
+                ))
+                .unwrap();
+        }
+        drop(raw_tx);
+        worker.join().unwrap();
+        let events: Vec<_> = rx.try_iter().collect();
+        let step = events
+            .iter()
+            .find(|e| matches!(e.event, Event::Step { .. }))
+            .unwrap();
+        let hit = events
+            .iter()
+            .find(|e| matches!(e.event, Event::PadHit { .. }))
+            .unwrap();
+        assert!(step.sequence().is_some());
+        assert!(matches!(
+            step.event,
+            Event::Step {
+                target: StepTarget::List(ListTarget::Bank),
+                steps: 1,
+                ..
+            }
+        ));
+        assert!(matches!(
+            hit.event,
+            Event::PadHit {
+                sound: PadSound::UiUnattempted { deferred: true },
+                ..
+            }
+        ));
+        assert!(hit.sequence().is_some());
+    }
+
+    #[test]
+    fn invalid_state_release_clears_fine_mode() {
+        let profile = Profile::from_toml(
+            "fine.toml",
+            "[device]\nname = 'R'\nmatch_port = 'R'\n[controls.knobs]\nk1 = { cc = 30, type = 'relative', encoding = 'twos' }\n[controls.buttons]\nb1 = { note = 60 }\n[screens.global]\nb1 = 'knob.fine'\n[screens.pads]\nk1 = 'pad.volume'\n",
+        ).unwrap();
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let shared = Arc::new(Shared::default());
+        let worker_shared = shared.clone();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![profile],
+                LearnedMaps::new(),
+                Vec::new(),
+                None,
+                None,
+                worker_shared,
+            )
+        });
+        let send = |bytes: [u8; 3]| {
+            raw_tx
+                .send(Raw::Msg(
+                    "R".into(),
+                    Msg::parse(&bytes).unwrap(),
+                    Stamp {
+                        epoch: 0,
+                        ready: true,
+                        source: None,
+                    },
+                ))
+                .unwrap()
+        };
+        let fence = || {
+            let (done, finished) = mpsc::channel();
+            raw_tx.send(Raw::Fence(done)).unwrap();
+            finished.recv_timeout(Duration::from_secs(2)).unwrap();
+        };
+        send([0x90, 60, 127]);
+        fence();
+        shared.inject_focus(u32::MAX);
+        send([0x80, 60, 0]);
+        fence();
+        assert!(shared.publish(Focus::default()));
+        send([0xB0, 30, 1]);
+        fence();
+        drop(raw_tx);
+        worker.join().unwrap();
+        assert!(rx.try_iter().any(|event| matches!(
+            event.event,
+            Event::Step {
+                steps: 1,
+                fine: false,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn raw_relative_detent_matches_keyboard_value() {
+        let profile = Profile::from_toml(
+            "value.toml",
+            "[device]\nname = 'R'\nmatch_port = 'R'\n[controls.knobs]\nk1 = { cc = 30, type = 'relative', encoding = 'offset64' }\n[screens.pads]\nk1 = 'pad.volume'\n",
+        ).unwrap();
+        let (raw_tx, raw_rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            dispatch(
+                raw_rx,
+                tx,
+                vec![profile],
+                LearnedMaps::new(),
+                Vec::new(),
+                None,
+                None,
+                Arc::new(Shared::default()),
+            )
+        });
+        raw_tx
+            .send(Raw::Msg(
+                "R".into(),
+                Msg::parse(&[0xB0, 30, 65]).unwrap(),
+                Stamp {
+                    epoch: 0,
+                    ready: true,
+                    source: None,
+                },
+            ))
+            .unwrap();
+        drop(raw_tx);
+        worker.join().unwrap();
+        let mut controller = crate::tests::test_app();
+        for event in rx.try_iter() {
+            controller.midi_event(event.event);
+        }
+        let mut keyboard = crate::tests::test_app();
+        keyboard.apply(Action::EditValue {
+            up: true,
+            fine: true,
+        });
+        assert_eq!(controller.pads.volume_db[0], keyboard.pads.volume_db[0]);
+        assert_eq!(controller.pads.volume_db[0], 1);
+    }
 
     #[test]
     fn shared_focus_rejects_invalid_publication_and_keeps_its_default() {
