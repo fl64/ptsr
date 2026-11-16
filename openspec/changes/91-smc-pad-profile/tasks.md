@@ -9,7 +9,7 @@
 
 ## 2. Guarded hardware setup
 
-- [ ] 2.1 Check one reversible encoder record on the connected device, with exact read-back and restore. Stop and revise the design if the protocol differs.
+- [x] 2.1 Check one reversible encoder record on the connected device, with exact read-back and restore. Stop and revise the design if the protocol differs.
 - [ ] 2.2 Implement active-preset read, backup, relative-record write, read-back, and restoration on failure. Use a test transport for byte-level cases.
 - [ ] 2.3 Keep relative actions disabled until setup succeeds. Show a specific status on failed setup. Test disconnect and a changed preset during setup.
 
