@@ -116,7 +116,8 @@ Shared status keeps recording seconds, permanent KB, the last used controller nu
 Input emphasis lasts one second. Keyboard activity and expiry retain the controller number and fixed columns.
 A permanent `*` is dim when saved and yellow when pending. `Save failed` remains explicit.
 Full port names stay in F12 Input. CPU and full xrun diagnostics stay in F12 Audio.
-The incomplete SMC-PAD example uses `.toml.example` and is not a working profile yet.
+Change 91 adds a measured SMC-PAD profile beside the excluded `.toml.example` file.
+Physical checks of every pad, encoder, button and local layer switch remain open.
 Screen learning uses the fixed three-row help band and keeps the status visible. Its hints follow effective keys.
 Unchanged badge, input-label and status text now use UI-thread caches. Timers, meters, notices, playback and hints retain live updates.
 Questions show effective keyboard and connected MIDI answers. Large questions retain safety text and answer rows without changing target checks.

@@ -2132,6 +2132,42 @@ These commands did not open live audio or MIDI. They do not establish any unchec
 These implementation results precede archive. Refer to [the archived tasks](../openspec/changes/archive/2026-11-07-87a-copy-names/tasks.md#owner-acceptance-and-closure-2026-11-07) for closure evidence.
 Earlier callback maximum-budget failures remain open. Owner acceptance does not close that separate issue.
 
+## 91: SMC-PAD measured profile
+
+Folder: `changes/91-smc-pad-profile`
+
+Connect the SMC-PAD by USB. Use a disposable project with a Gate sample on a pad.
+Run `task build`, then start `target/release/ptsr`. Leave each box open until you check it.
+This change adds no WAV. Listen to the Gate sample that you load.
+
+### Keyboard
+
+- [ ] Press `1` and `Z` on F2. Check the top-left and bottom-left screen pads.
+  Release each key and check that its Gate sound ends.
+- [ ] Use the existing keys to select a file, change a pad value and return to F2.
+  Check that the keyboard keeps its actions while the SMC-PAD is connected.
+
+### Controller and sound
+
+- [ ] Open F12 Input. Press and release all 16 pads in the first hardware bank.
+  Check one hit per press, the received velocity and the screen pad in the same physical position.
+- [ ] Press PAD BANK. Press all 16 pads again. Check 16 distinct notes from 52 through 67.
+  Check that these hits run no command in change 91. Record if PAD BANK latches or needs a hold.
+- [ ] Turn all eight encoders in each KNOB BANK layer in both directions.
+  Check CC 30 through 45, steps 63 and 65, and neutral 64. Check the F1 Controller roles.
+  Check that no value stops at an end of the physical turn range.
+- [ ] Press and release LEFT, RIGHT, PLAY, STOP and RECORD. Check CC 25 through 29.
+  Check selection with LEFT and RIGHT. Hold RECORD, then release it. Check that microphone recording ends.
+  PLAY and STOP have no starting action in change 91.
+- [ ] Press SHIFT alone and with a pad, button and encoder. Record every MIDI message that changes.
+  Check that SHIFT does not change an octave or transpose samples in ptsr.
+- [ ] Press a pad with aftertouch. Check that channel pressure runs no extra action.
+  Disconnect the SMC-PAD during a held Gate pad or RECORD hold. Check that the hold ends once.
+- [ ] Use the X-Session Pro and SMC-PAD together. Check that each keeps its roles and saved bindings.
+  Restart ptsr and check that the SMC-PAD profile and owner bindings remain.
+- [ ] If F1 says `encoders unavailable`, read the cause in the message history.
+  Check that pads and buttons still work, and that an absolute encoder CC cannot change a value.
+
 ## 92 — Planned SMC-PAD-only flow checks
 
 These checks are targets for change 92. Keep every box open until the SMC-PAD

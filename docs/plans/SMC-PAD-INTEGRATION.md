@@ -9,7 +9,8 @@ for pads, `Focus` / `Mode`, `ui.confirm`, tap / hold buttons, relative encoders.
 Reference maps came from other people's measurements and
 `openspec/deferred/83-controller-profiles/design.md`. Change 91 read the active preset on
 the owner's Linux machine and captured a small MIDI sample. The physical position of every
-control and the USB encoder-write behavior still need checks.
+control still needs physical checks. A one-record USB write and exact restore passed.
+The application also wrote all 16 encoder records. A USB script restored the original preset.
 
 Sources to retain when 91 replaces 83:
 
@@ -36,8 +37,8 @@ Consequences:
 - PAD BANK and KNOB BANK are useful: ptsr knows the layer from the note or CC number.
 - The active preset has 16 absolute encoder records. Change 91 tries a guarded USB setup:
   save the records, change only those records to relative mode, and read them back. A failed
-  check leaves encoder actions off and reports the failure. USB write behavior is not yet
-  verified on this unit.
+  check leaves encoder actions off and reports the failure. The write and restore path
+  passed on this unit. Physical encoder output still needs a check.
 - A match by the text `SMC-PAD` can match both inputs. Give Master the performance profile
   and Private an empty profile so mirrored messages do not double actions.
 
@@ -242,13 +243,16 @@ Tasks:
    both channels.
 4. Ignore channel pressure (aftertouch) in the parser path for this profile; test that it
    triggers nothing.
-5. Default roles before the panel exists: STOP stops the transport or preview.
-   PLAY plays or continues the current screen. LEFT / RIGHT select the main list.
-   RECORD hold uses `record.mic`. The keyboard keeps Esc for back until change 92.
+5. Roles before the panel exists: LEFT / RIGHT use existing selection actions where
+   available. RECORD hold uses `record.mic`. PLAY and STOP stay unassigned until
+   change 92 adds their start-only and stop-only context actions. Existing toggle
+   actions cannot meet the agreed PLAY and STOP behavior. The keyboard keeps Esc
+   for back until change 92.
 6. Raw-byte tests through the shipped TOML, profile seeding, dispatch and `App` (the harness of
    84): pads with velocity, both note-off forms, relative steps, buttons 127 / 0, two devices
    (X-Session + SMC-PAD) at the same time, unplug during a held pad.
-7. Delete `openspec/deferred/83-controller-profiles`; carry its sources into this design.
+7. Carry the source links from `openspec/deferred/83-controller-profiles` into the change 91 design.
+   Keep the deferred draft until the owner accepts change 91, then remove it during the archive.
 8. The virtual controller tool `task midi-replay` and the first scripts in `tests/midi/`
    (`CROSS-CUTTING.md` §1.1).
 
