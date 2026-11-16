@@ -136,9 +136,12 @@ Existing names, sample files, sound, controls and saved formats stay unchanged.
 The owner reported success for repeated copies, a copy of a copy, numbered names and silent placement.
 Remaining keyboard checks, physical-controller checks and separate listening remain unverified.
 The owner authorized archive, checks, signed-off commits, push, a PR and squash merge. Keep the branch.
-Change 88 is active on its own branch. It adds one shared confirmation action
-for questions and pickers. Automated keyboard and MIDI checks pass. A physical
-controller check remains open.
+Change 88 reached master in PR #20. It adds one shared confirmation action for
+questions and pickers. A physical controller check remains open.
+Change 89 adds MIDI button tap and hold actions, a saved hold time, and two-slot
+MIDI learn. Its automated checks pass. The physical controller and listening
+checks remain unverified. The SMC-PAD profile still needs measured Linux MIDI
+messages in change 91. This work does not make the SMC-PAD autonomous yet.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

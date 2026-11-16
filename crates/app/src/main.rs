@@ -50,6 +50,7 @@ use ratatui::crossterm::{
 
 use audio::{Audio, Routed};
 use config::AudioConfig;
+use learn::MidiListRow;
 use notices::{Level, Notice, NoticeToken, Notices, Origin};
 
 /// Metronome click velocity.
@@ -439,6 +440,7 @@ struct App {
     project_picker: Option<ProjectPicker>,
     pad_naming: Option<(usize, String)>,
     takeover: Takeover,
+    midi_gestures: config::MidiGesturesConfig,
     /// Soft takeover hint for the selected pad and when it was last updated.
     pickup: Option<(String, Instant)>,
     /// Connected MIDI devices: (port, profile name).
@@ -1183,6 +1185,7 @@ fn main() -> std::io::Result<()> {
     let ui = loaded.config.ui;
     let response =
         input::midi::Response::from_name(&loaded.config.knobs.response).unwrap_or_default();
+    let midi_gestures = loaded.config.midi_gestures;
     let paths = loaded.config.paths;
     // the roots appear empty on first use (11); a failure only speaks in the log
     for root in [&paths.projects, &paths.samples] {
@@ -1257,6 +1260,7 @@ fn main() -> std::io::Result<()> {
         meters: meters::Meters::default(),
         settings_tab: 0,
         takeover: Takeover::with(response),
+        midi_gestures,
         pickup: None,
         midi_devices: Vec::new(),
         input_log: Vec::new(),
@@ -1378,6 +1382,7 @@ fn main() -> std::io::Result<()> {
         app.audio.as_mut().and_then(|a| a.midi_commands.take()),
         app.audio.as_ref().map(|a| a.project.clone()),
         shared.clone(),
+        Duration::from_millis(app.midi_gestures.hold_time_ms.into()),
     ));
     if let Some(d) = app.audio.as_ref().and_then(|a| a.devices()) {
         log::info!("devices: outputs {:?}, inputs {:?}", d.outputs, d.inputs);
@@ -2398,28 +2403,6 @@ fn overwrite_footer() -> [String; 3] {
         "This cannot be undone.".into(),
         "Enter: replace · Esc: keep".into(),
     ]
-}
-
-/// One row of the MIDI learn list: a group with its actions folded in, or an action of
-/// an open group (28).
-enum MidiListRow {
-    /// How the knobs catch a value (58): jump, pickup, scale.
-    Response,
-    /// A connected device's bindings back to its profile (59), after a question.
-    Reset {
-        name: String,
-        port: String,
-    },
-    Group {
-        group: input::Group,
-    },
-    Action {
-        info: &'static input::ActionInfo,
-    },
-    Set {
-        name: &'static str,
-        infos: &'static [input::ActionInfo],
-    },
 }
 
 /// A run over the pads or the banks row: every control pressed goes to the next one
@@ -4768,6 +4751,7 @@ mod tests {
             meters: meters::Meters::default(),
             settings_tab: 0,
             takeover: Takeover::default(),
+            midi_gestures: config::MidiGesturesConfig::default(),
             pickup: None,
             midi_devices: Vec::new(),
             input_log: Vec::new(),
@@ -9291,7 +9275,7 @@ Enter = "browser.hold"
         assert_eq!(
             app.learned["default"]["pads_edit"]
                 .get("cc 28")
-                .map(String::as_str),
+                .map(crate::config::MidiBinding::as_str),
             Some("pad.cutoff")
         );
         let cc = input::midi::Msg::Cc {
@@ -11778,7 +11762,7 @@ Enter = "browser.hold"
                 value,
                 takeover,
             }),
-            None => {}
+            None | Some(Resolved::Gesture { .. }) => {}
         }
     }
 
@@ -11846,7 +11830,7 @@ Enter = "browser.hold"
         assert!(app.seeded.iter().any(|s| s == "X-Session Pro"));
         let pads = &app.learned["X-Session Pro"]["pads"];
         assert_eq!(
-            pads.get("note 58").map(String::as_str),
+            pads.get("note 58").map(crate::config::MidiBinding::as_str),
             Some("pad.edit_only")
         );
         assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
@@ -11861,7 +11845,7 @@ Enter = "browser.hold"
         assert_eq!(
             app.learned["X-Session Pro"]["chop_edit"]
                 .get("note 46")
-                .map(String::as_str),
+                .map(crate::config::MidiBinding::as_str),
             Some("edit.page_prev")
         );
         assert_eq!(xs_live(&app, press(B10)), None);
@@ -11882,7 +11866,7 @@ Enter = "browser.hold"
         assert_ne!(
             app.learned["X-Session Pro"]["pads"]
                 .get("note 45")
-                .map(String::as_str),
+                .map(crate::config::MidiBinding::as_str),
             Some("screen.fx")
         );
         assert_eq!(xs_live(&app, press(B7)), Some(Action::PadEditOnly));
@@ -12439,7 +12423,7 @@ Enter = "browser.hold"
         assert_eq!(
             app.learned["X-Session Pro"]["pads"]
                 .get("note 45")
-                .map(String::as_str),
+                .map(crate::config::MidiBinding::as_str),
             Some("bank.next"),
             "Esc keeps the bindings"
         );
@@ -13776,7 +13760,7 @@ Enter = "browser.hold"
             assert_eq!(
                 app.learned["X-Session Pro"]["fx"]
                     .get("cc 80")
-                    .map(String::as_str),
+                    .map(crate::config::MidiBinding::as_str),
                 Some("edit.param_1")
             );
             assert!(matches!(

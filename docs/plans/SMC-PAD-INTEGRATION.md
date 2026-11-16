@@ -91,6 +91,9 @@ for PLAY, RECORD, and the optional STOP hold. It does not bind a default layer
 to STOP. PLAY never stops an active transport. Undo, Redo, and Panic are panel
 cells. The Panic cell needs a question-free double press. Change 92 sets its
 time limit and visible first-press state. Back is a fixed panel cell.
+Gesture slots use command actions. Physical pad triggers keep plain bindings
+and their direct release path. Change 89 does not assign SMC-PAD buttons until
+change 91 measures their Linux MIDI messages.
 
 ButtonRoles in control-pages uses this table. Each row gets a keyboard path and
 raw MIDI tests through the real profile and dispatch. The context action table
