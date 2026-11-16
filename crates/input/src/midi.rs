@@ -59,7 +59,7 @@ impl std::fmt::Display for Msg {
 }
 
 /// A control by its MIDI number; learned assignments are keyed by it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Key {
     Cc(u8),
     Note(u8),
@@ -198,6 +198,11 @@ pub enum Param {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Resolved {
     Action(Action),
+    /// A button press with separate actions for a tap and a hold.
+    Gesture {
+        tap: Option<Action>,
+        hold: Action,
+    },
     /// An absolute knob or fader: `value` is 0..1.
     Param {
         control: String,
@@ -258,6 +263,50 @@ pub enum Scope {
     Edit(Screen),
 }
 
+/// A plain binding acts on press. A gesture waits for release or the hold threshold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Binding {
+    Press(String),
+    Gesture { tap: Option<String>, hold: String },
+}
+
+impl Binding {
+    pub fn has_action(&self, action: &str) -> bool {
+        match self {
+            Self::Press(name) => name == action,
+            Self::Gesture { tap, hold } => tap.as_deref() == Some(action) || hold == action,
+        }
+    }
+
+    pub fn primary(&self) -> &str {
+        match self {
+            Self::Press(name) => name,
+            Self::Gesture { tap, hold } => tap.as_deref().unwrap_or(hold),
+        }
+    }
+
+    fn slot_label(&self, action: &str) -> Option<&'static str> {
+        match self {
+            Self::Press(_) => None,
+            Self::Gesture { tap, .. } if tap.as_deref() == Some(action) => Some("tap"),
+            Self::Gesture { hold, .. } if hold == action => Some("hold"),
+            Self::Gesture { .. } => None,
+        }
+    }
+}
+
+impl From<String> for Binding {
+    fn from(action: String) -> Self {
+        Self::Press(action)
+    }
+}
+
+impl From<&str> for Binding {
+    fn from(action: &str) -> Self {
+        Self::Press(action.into())
+    }
+}
+
 #[derive(Clone)]
 pub struct Profile {
     pub name: String,
@@ -268,12 +317,12 @@ pub struct Profile {
     notes: HashMap<u8, Control>,
     ccs: HashMap<u8, Control>,
     /// Screen sections; `None` key is `[screens.global]`.
-    screens: HashMap<Option<Screen>, HashMap<String, String>>,
+    screens: HashMap<Option<Screen>, HashMap<String, Binding>>,
     /// `[edit]`: control -> action while an edit mode is open, over the screens and learned.
-    edit: HashMap<String, String>,
+    edit: HashMap<String, Binding>,
     /// Learned on the MIDI tab (user config); override `screens`, the edit groups (28)
     /// stand over the `[edit]` layer.
-    learned: HashMap<Scope, HashMap<Key, String>>,
+    learned: HashMap<Scope, HashMap<Key, Binding>>,
     /// The roles were copied into the user config (59): only `learned` acts, the profile
     /// still names the controls.
     seeded: bool,
@@ -282,6 +331,8 @@ pub struct Profile {
     kinds: Vec<(String, ControlKind)>,
     /// `[layout]` (98j): `Err` keeps the device working and the drawing off.
     layout: Option<Result<Vec<LayoutRow>, String>>,
+    /// Invalid bindings leave the other controls in a profile available.
+    warnings: Vec<String>,
 }
 
 /// `[layout] rows`: each name once, each a control of the profile; `""` is an empty place.
@@ -318,6 +369,70 @@ fn parse_layout(
         .collect()
 }
 
+fn parse_binding(
+    file: &str,
+    control: &str,
+    is_button: bool,
+    value: &toml::Value,
+    warnings: &mut Vec<String>,
+) -> Option<Binding> {
+    let warning = |reason: &str| format!("{file}: {control}: {reason}");
+    if let Some(action) = value.as_str() {
+        if known(action) {
+            return Some(Binding::Press(action.into()));
+        }
+        warnings.push(warning(&format!("{action}: no such action")));
+        return None;
+    }
+    let Some(table) = value.as_table() else {
+        warnings.push(warning("expected an action or a tap/hold table"));
+        return None;
+    };
+    if !is_button {
+        warnings.push(warning("tap/hold needs a button control"));
+        return None;
+    }
+    let Some(hold) = table.get("hold").and_then(toml::Value::as_str) else {
+        warnings.push(warning("tap/hold table needs a hold action"));
+        return None;
+    };
+    if !known(hold) {
+        warnings.push(warning(&format!("{hold}: no such hold action")));
+        return None;
+    }
+    if gesture_action(hold).is_none() {
+        warnings.push(warning(&format!("{hold}: hold needs a command action")));
+        return None;
+    }
+    let tap = match table.get("tap") {
+        Some(value) => match value.as_str() {
+            Some(action) if gesture_action(action).is_some() => Some(action.into()),
+            Some(action) => {
+                let reason = if known(action) {
+                    "tap needs a command action"
+                } else {
+                    "no such tap action"
+                };
+                warnings.push(warning(&format!("{action}: {reason}")));
+                None
+            }
+            None => {
+                warnings.push(warning("tap action is not a string"));
+                None
+            }
+        },
+        None => None,
+    };
+    Some(Binding::Gesture {
+        tap,
+        hold: hold.into(),
+    })
+}
+
+fn gesture_action(name: &str) -> Option<Action> {
+    Action::parse(name).filter(|action| !matches!(action, Action::PadPress { .. }))
+}
+
 /// Notes 36..51 play pads 1..16, as on most pad controllers.
 const DEFAULT_FIRST_NOTE: u8 = 36;
 
@@ -342,6 +457,7 @@ impl Profile {
                 .map(|n| (format!("p{n}"), ControlKind::Pad))
                 .collect(),
             layout: None,
+            warnings: Vec::new(),
         }
     }
 
@@ -439,6 +555,7 @@ impl Profile {
         });
 
         let mut screens = HashMap::new();
+        let mut warnings = Vec::new();
         for (key, section) in t
             .get("screens")
             .and_then(|s| s.as_table())
@@ -456,7 +573,18 @@ impl Profile {
                 .as_table()
                 .into_iter()
                 .flatten()
-                .filter_map(|(c, a)| a.as_str().map(|a| (c.clone(), a.to_string())))
+                .filter_map(|(control, value)| {
+                    parse_binding(
+                        file,
+                        control,
+                        kinds
+                            .iter()
+                            .any(|(name, kind)| name == control && *kind == ControlKind::Button),
+                        value,
+                        &mut warnings,
+                    )
+                    .map(|binding| (control.clone(), binding))
+                })
                 .collect();
             screens.insert(screen, map);
         }
@@ -465,7 +593,18 @@ impl Profile {
             .and_then(|s| s.as_table())
             .into_iter()
             .flatten()
-            .filter_map(|(c, a)| a.as_str().map(|a| (c.clone(), a.to_string())))
+            .filter_map(|(control, value)| {
+                parse_binding(
+                    file,
+                    control,
+                    kinds
+                        .iter()
+                        .any(|(name, kind)| name == control && *kind == ControlKind::Button),
+                    value,
+                    &mut warnings,
+                )
+                .map(|binding| (control.clone(), binding))
+            })
             .collect();
 
         Ok(Self {
@@ -483,7 +622,12 @@ impl Profile {
                 .get("layout")
                 .map(|l| parse_layout(l, &kinds).map_err(|m| err(&format!("[layout]: {m}")))),
             kinds,
+            warnings,
         })
+    }
+
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 
     /// The named controls and their kinds, by kind and then by name.
@@ -538,16 +682,20 @@ impl Profile {
             Resolved::Param { param, .. } => PARAMS
                 .iter()
                 .find_map(|(name, p)| (*p == param).then_some(*name)),
-            Resolved::Action(action) => crate::ACTIONS.iter().map(|i| i.name).find(|name| {
-                match (Action::parse(name), action) {
-                    (Some(Action::PadPress { pad: a, .. }), Action::PadPress { pad: b, .. }) => {
-                        a == b
-                    }
-                    (Some(a), b) => a == b,
-                    (None, _) => false,
-                }
-            }),
+            Resolved::Gesture { tap, hold } => self.action_label(tap.unwrap_or(hold)),
+            Resolved::Action(action) => self.action_label(action),
         }
+    }
+
+    fn action_label(&self, action: Action) -> Option<&'static str> {
+        crate::ACTIONS
+            .iter()
+            .map(|i| i.name)
+            .find(|name| match (Action::parse(name), action) {
+                (Some(Action::PadPress { pad: a, .. }), Action::PadPress { pad: b, .. }) => a == b,
+                (Some(a), b) => a == b,
+                (None, _) => false,
+            })
     }
 
     /// The roles copied into the user config (59): from now on only the learned act.
@@ -559,6 +707,13 @@ impl Profile {
     /// groups, `[screens.global]` in GLOBAL, `[edit]` in both edit groups, the pads of a
     /// pad control in GLOBAL.
     pub fn roles(&self) -> Vec<(Scope, Key, String)> {
+        self.binding_roles()
+            .into_iter()
+            .map(|(scope, key, binding)| (scope, key, binding.primary().into()))
+            .collect()
+    }
+
+    pub fn binding_roles(&self) -> Vec<(Scope, Key, Binding)> {
         let mut out = Vec::new();
         for (screen, map) in &self.screens {
             let scope = screen.map_or(Scope::Global, Scope::Screen);
@@ -580,7 +735,11 @@ impl Profile {
         }
         for (note, c) in &self.notes {
             if let Control::Pad(pad) = c {
-                out.push((Scope::Global, Key::Note(*note), format!("pad.{}", pad + 1)));
+                out.push((
+                    Scope::Global,
+                    Key::Note(*note),
+                    Binding::Press(format!("pad.{}", pad + 1)),
+                ));
             }
         }
         out
@@ -616,6 +775,16 @@ impl Profile {
 
     /// Learned controls of a group.
     pub fn set_learned(&mut self, scope: Scope, learned: HashMap<Key, String>) {
+        self.set_bindings(
+            scope,
+            learned
+                .into_iter()
+                .map(|(key, action)| (key, action.into()))
+                .collect(),
+        );
+    }
+
+    pub fn set_bindings(&mut self, scope: Scope, learned: HashMap<Key, Binding>) {
         self.learned.insert(scope, learned);
     }
 
@@ -623,7 +792,7 @@ impl Profile {
         self.learned
             .get(&scope)?
             .iter()
-            .find_map(|(k, a)| (a == action).then_some(*k))
+            .find_map(|(k, a)| a.has_action(action).then_some(*k))
     }
 
     /// A learned control of `action` that works on `screen` (its own group or global).
@@ -632,12 +801,12 @@ impl Profile {
             .or_else(|| self.learned_in(Scope::Global, action))
     }
 
-    fn action_name(&self, screen: Screen, control: &str) -> Option<&str> {
+    fn action_name(&self, screen: Screen, control: &str) -> Option<&Binding> {
         let action = [Some(screen), None]
             .iter()
             .find_map(|s| self.screens.get(s).and_then(|m| m.get(control)))?;
         // a learned action takes over every profile control of the same action
-        if self.learned_action(screen, action).is_some() {
+        if self.learned_action(screen, action.primary()).is_some() {
             return None;
         }
         Some(action)
@@ -645,9 +814,9 @@ impl Profile {
 
     /// The FX screen accepts its own bindings first, then the former page controls.
     /// The optional name identifies a profile control, not a learned assignment.
-    fn fx_binding(&self, key: Key) -> Option<(&str, Option<&str>)> {
+    fn fx_binding(&self, key: Key) -> Option<(&Binding, Option<&str>)> {
         if let Some(map) = self.learned.get(&Scope::Screen(Screen::Fx)) {
-            return map.get(&key).map(|action| (action.as_str(), None));
+            return map.get(&key).map(|action| (action, None));
         }
         let learned = |scope| self.learned.get(&scope).and_then(|m| m.get(&key));
         let name = self.name_of(key);
@@ -664,7 +833,7 @@ impl Profile {
                 && self
                     .screens
                     .get(&Some(Screen::Fx))
-                    .is_some_and(|map| map.values().any(|a| a == action))
+                    .is_some_and(|map| map.values().any(|a| a.has_action(action)))
         };
         let scopes = [
             Scope::Edit(Screen::Pads),
@@ -672,42 +841,57 @@ impl Profile {
             Scope::Screen(Screen::Pads),
             Scope::Global,
         ];
-        let overridden = |action: &str, before: usize| {
-            scopes[..before]
-                .iter()
-                .any(|scope| self.learned_in(*scope, action).is_some())
-                || profile_action(action)
+        let overridden = |binding: &Binding, before: usize| {
+            let hidden = |action: &str| {
+                scopes[..before]
+                    .iter()
+                    .any(|scope| self.learned_in(*scope, action).is_some())
+                    || profile_action(action)
+            };
+            match binding {
+                Binding::Press(action) => hidden(action),
+                Binding::Gesture { tap, hold } => {
+                    hidden(hold) || tap.as_deref().is_some_and(hidden)
+                }
+            }
         };
         scopes
             .into_iter()
             .enumerate()
             .find_map(|(i, scope)| {
                 learned(scope)
-                    .filter(|a| fx_compatible(a) && !overridden(a, i))
-                    .map(|a| (a.as_str(), None))
+                    .filter(|a| fx_compatible_binding(a) && !overridden(a, i))
+                    .map(|a| (a, None))
             })
             .or_else(|| {
                 (!self.seeded)
                     .then(|| self.edit.get(name?))
                     .flatten()
-                    .filter(|a| fx_compatible(a) && !overridden(a, scopes.len()))
-                    .map(|a| (a.as_str(), name))
+                    .filter(|a| fx_compatible_binding(a) && !overridden(a, scopes.len()))
+                    .map(|a| (a, name))
             })
             .or_else(|| {
                 profile(Screen::Pads)
-                    .filter(|a| fx_compatible(a) && !overridden(a, scopes.len()))
-                    .map(|a| (a.as_str(), name))
+                    .filter(|a| fx_compatible_binding(a) && !overridden(a, scopes.len()))
+                    .map(|a| (a, name))
             })
             .or_else(|| {
                 (!self.seeded)
                     .then(|| self.screens.get(&None)?.get(name?))
                     .flatten()
-                    .filter(|a| fx_compatible(a) && !overridden(a, scopes.len()))
-                    .map(|a| (a.as_str(), name))
+                    .filter(|a| fx_compatible_binding(a) && !overridden(a, scopes.len()))
+                    .map(|a| (a, name))
             })
     }
 
     pub fn fx_defaults(&self) -> HashMap<Key, String> {
+        self.fx_default_bindings()
+            .into_iter()
+            .map(|(key, binding)| (key, binding.primary().into()))
+            .collect()
+    }
+
+    pub fn fx_default_bindings(&self) -> HashMap<Key, Binding> {
         let mut keys: Vec<_> = self
             .learned
             .values()
@@ -718,7 +902,7 @@ impl Profile {
         keys.into_iter()
             .filter_map(|key| {
                 self.fx_binding(key)
-                    .map(|(action, _)| (key, action.to_string()))
+                    .map(|(action, _)| (key, action.clone()))
             })
             .collect()
     }
@@ -738,27 +922,46 @@ impl Profile {
             keys.extend(self.notes.keys().map(|note| Key::Note(*note)));
             return keys.into_iter().find_map(|key| {
                 let (bound, _) = self.fx_binding(key)?;
-                (bound == action).then(|| match self.name_of(key) {
-                    Some(name) => format!("{name} ({key})"),
-                    None => key.to_string(),
+                bound.has_action(action).then(|| {
+                    let label = match self.name_of(key) {
+                        Some(name) => format!("{name} ({key})"),
+                        None => key.to_string(),
+                    };
+                    match bound.slot_label(action) {
+                        Some(slot) => format!("{label} · {slot}"),
+                        None => label,
+                    }
                 })
             });
         }
         if let Some(key) = self.learned_in(scope, action) {
             // every binding is the owner's after the seed (59): named as the profile names it
-            return Some(match self.name_of(key) {
+            let label = match self.name_of(key) {
                 Some(name) => format!("{name} ({key})"),
                 None => key.to_string(),
-            });
+            };
+            return Some(
+                match self
+                    .learned
+                    .get(&scope)
+                    .and_then(|map| map.get(&key))
+                    .and_then(|binding| binding.slot_label(action))
+                {
+                    Some(slot) => format!("{label} · {slot}"),
+                    None => label,
+                },
+            );
         }
         if self.seeded {
             return None;
         }
-        let find = |m: &HashMap<String, String>| {
-            m.iter()
-                .find_map(|(c, a)| (a == action).then_some(c.clone()))
+        let find = |m: &HashMap<String, Binding>| {
+            m.iter().find_map(|(c, a)| {
+                a.has_action(action)
+                    .then_some((c.clone(), a.slot_label(action)))
+            })
         };
-        let control = match scope {
+        let (control, slot) = match scope {
             // the edit groups are served by the profile's `[edit]` layer (28)
             Scope::Edit(_) => find(&self.edit),
             Scope::Screen(s) => self
@@ -786,9 +989,13 @@ impl Profile {
                     .iter()
                     .find_map(|(n, c)| named(c).then_some(Key::Note(*n)))
             });
-        Some(match key {
+        let label = match key {
             Some(k) => format!("{control} ({k})"),
             None => control.to_string(),
+        };
+        Some(match slot {
+            Some(slot) => format!("{label} · {slot}"),
+            None => label,
         })
     }
 
@@ -871,7 +1078,9 @@ impl Profile {
                 .learned
                 .get(&Scope::Global)
                 .and_then(|bindings| bindings.get(&msg.key()))
-                .is_some_and(|action| action == "ui.confirm")
+                .is_some_and(
+                    |action| matches!(action, Binding::Press(name) if name == "ui.confirm"),
+                )
         {
             *activity = self.activity(msg, Some("ui.confirm"));
             return learned_resolved("ui.confirm", msg, value, on);
@@ -884,8 +1093,8 @@ impl Profile {
         if rules.fx_page_controls
             && let Some((action, name)) = self.fx_binding(msg.key())
         {
-            *activity = self.activity(msg, Some(action));
-            let mut resolved = learned_resolved(action, msg, value, on)?;
+            *activity = self.activity(msg, Some(action.primary()));
+            let mut resolved = binding_resolved(action, msg, value, on)?;
             if let (Some(name), Resolved::Param { control, .. }) = (name, &mut resolved) {
                 *control = name.to_string();
             }
@@ -901,8 +1110,8 @@ impl Profile {
                 .get(&Scope::Edit(screen))
                 .and_then(|m| m.get(&msg.key()))
         {
-            *activity = self.activity(msg, Some(action));
-            return learned_resolved(action, msg, value, on);
+            *activity = self.activity(msg, Some(action.primary()));
+            return binding_resolved(action, msg, value, on);
         }
         let layered = !self.seeded
             && edit
@@ -915,11 +1124,11 @@ impl Profile {
                 .into_iter()
                 .find_map(|s| self.learned.get(&s).and_then(|m| m.get(&msg.key())));
             if let Some(action) = learned {
-                if rules.fx_page_controls && fx_compatible(action) {
+                if rules.fx_page_controls && fx_compatible_binding(action) {
                     return None;
                 }
-                *activity = self.activity(msg, Some(action));
-                return learned_resolved(action, msg, value, on);
+                *activity = self.activity(msg, Some(action.primary()));
+                return binding_resolved(action, msg, value, on);
             }
         }
         // seeded (59): the profile's roles live in the learned maps now
@@ -929,10 +1138,10 @@ impl Profile {
         let control = control?;
         let action_name = |name: &str| {
             let action = match layered {
-                true => self.edit.get(name).map(String::as_str),
+                true => self.edit.get(name),
                 false => self.action_name(screen, name),
             }?;
-            (!rules.fx_page_controls || !fx_compatible(action)).then_some(action)
+            (!rules.fx_page_controls || !fx_compatible_binding(action)).then_some(action)
         };
         match control {
             Control::Pad(pad) if on => Some(Resolved::Action(Action::PadPress {
@@ -942,22 +1151,10 @@ impl Profile {
             Control::Pad(pad) => Some(Resolved::Action(Action::PadRelease { pad: *pad })),
             Control::Button(name) => {
                 let action = action_name(name)?;
-                match Action::parse(action) {
-                    Some(Action::PadPress { pad, .. }) if on => {
-                        Some(Resolved::Action(Action::PadPress {
-                            pad,
-                            velocity: value as f32 / 127.0,
-                        }))
-                    }
-                    Some(Action::PadPress { pad, .. }) => {
-                        Some(Resolved::Action(Action::PadRelease { pad }))
-                    }
-                    Some(a) if on => Some(Resolved::Action(a)),
-                    _ => None,
-                }
+                binding_resolved(action, msg, value, on)
             }
             Control::Knob { name } => {
-                let param = param_of(action_name(name)?)?;
+                let param = param_of(action_name(name)?.primary())?;
                 Some(Resolved::Param {
                     control: name.clone(),
                     param,
@@ -984,6 +1181,26 @@ fn fx_compatible(action: &str) -> bool {
                 | Action::EditValue { .. }
         )
     )
+}
+
+fn fx_compatible_binding(binding: &Binding) -> bool {
+    match binding {
+        Binding::Press(action) => fx_compatible(action),
+        Binding::Gesture { tap, hold } => {
+            fx_compatible(hold) && tap.as_deref().is_none_or(fx_compatible)
+        }
+    }
+}
+
+fn binding_resolved(binding: &Binding, msg: Msg, value: u8, on: bool) -> Option<Resolved> {
+    match binding {
+        Binding::Press(action) => learned_resolved(action, msg, value, on),
+        Binding::Gesture { tap, hold } if on => Some(Resolved::Gesture {
+            tap: tap.as_deref().and_then(gesture_action),
+            hold: gesture_action(hold)?,
+        }),
+        Binding::Gesture { .. } => None,
+    }
 }
 
 /// A release of a control learned for a pad ends a gate pad; other actions ignore releases.
@@ -1721,7 +1938,10 @@ mod tests {
             let mut p = Profile::from_toml("xsession-pro.toml", XSESSION).unwrap();
             if seeded {
                 for (scope, key, action) in p.roles() {
-                    p.learned.entry(scope).or_default().insert(key, action);
+                    p.learned
+                        .entry(scope)
+                        .or_default()
+                        .insert(key, action.into());
                 }
                 p.set_seeded(true);
             }
@@ -1848,7 +2068,10 @@ mod tests {
             globals
         );
         for (scope, key, action) in roles {
-            p.learned.entry(scope).or_default().insert(key, action);
+            p.learned
+                .entry(scope)
+                .or_default()
+                .insert(key, action.into());
         }
         p.set_seeded(true);
         assert_eq!(p.fx_defaults(), expected);
@@ -1932,6 +2155,132 @@ mod tests {
     }
 
     #[test]
+    fn plain_button_acts_on_press() {
+        let profile = Profile::from_toml(
+            "plain.toml",
+            "[device]\nname='Plain'\nmatch_port='Plain'\n[controls.buttons]\nplay={note=60}\n[screens.global]\nplay='transport.toggle'\n",
+        )
+        .unwrap();
+        assert_eq!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 60,
+                    velocity: 127
+                }
+            ),
+            Some(Resolved::Action(Action::TransportToggle)),
+        );
+        assert_eq!(
+            profile.resolve(Screen::Pads, Msg::NoteOff { ch: 1, note: 60 }),
+            None
+        );
+    }
+
+    #[test]
+    fn program_refuses_an_unknown_layer_action() {
+        let profile = Profile::from_toml(
+            "gesture.toml",
+            "[device]\nname='Gesture'\nmatch_port='Gesture'\n[controls.buttons]\ngood={note=60}\nbad={note=61}\n[screens.global]\ngood='transport.toggle'\nbad={tap='record.output',hold='layer.panel'}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            profile.warnings(),
+            ["gesture.toml: bad: layer.panel: no such hold action"]
+        );
+        assert_eq!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 60,
+                    velocity: 127
+                }
+            ),
+            Some(Resolved::Action(Action::TransportToggle)),
+        );
+        assert_eq!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 61,
+                    velocity: 127
+                }
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn gesture_table_requires_a_button_and_command_actions() {
+        let profile = Profile::from_toml(
+            "bad-gesture.toml",
+            "[device]\nname='Bad'\nmatch_port='Bad'\n[controls.knobs]\nk1={cc=24}\n[controls.buttons]\nplay={note=60}\n[screens.global]\nk1={hold='transport.toggle'}\nplay={tap='pad.volume',hold='metronome.toggle'}\n",
+        ).unwrap();
+        assert_eq!(
+            profile.warnings(),
+            [
+                "bad-gesture.toml: k1: tap/hold needs a button control",
+                "bad-gesture.toml: play: pad.volume: tap needs a command action",
+            ]
+        );
+        assert_eq!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 60,
+                    velocity: 127
+                }
+            ),
+            Some(Resolved::Gesture {
+                tap: None,
+                hold: Action::MetronomeToggle
+            })
+        );
+    }
+
+    #[test]
+    fn pad_trigger_cannot_use_a_button_gesture() {
+        let profile = Profile::from_toml(
+            "pad-button.toml",
+            "[device]\nname='Pad button'\nmatch_port='Pad button'\n[controls.buttons]\nbad={note=60}\nplain={note=61}\n[screens.global]\nbad={hold='pad.1'}\nplain='pad.1'\n",
+        ).unwrap();
+        assert_eq!(
+            profile.warnings(),
+            ["pad-button.toml: bad: pad.1: hold needs a command action"]
+        );
+        assert_eq!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 60,
+                    velocity: 127
+                }
+            ),
+            None
+        );
+        assert!(matches!(
+            profile.resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 61,
+                    velocity: 127
+                }
+            ),
+            Some(Resolved::Action(Action::PadPress { pad: 0, .. }))
+        ));
+        assert_eq!(
+            profile.resolve(Screen::Pads, Msg::NoteOff { ch: 1, note: 61 }),
+            Some(Resolved::Action(Action::PadRelease { pad: 0 }))
+        );
+    }
+
+    #[test]
     fn learned_pad_hit_carries_velocity_and_release() {
         let mut p = xsession();
         // a learned note drives pad 7; global scope, so it works on every screen
@@ -1963,7 +2312,7 @@ mod tests {
         let mut p = xsession();
         // the profile's own button now hits pad 2 (a profile mapping, velocity included)
         p.screens
-            .insert(None, [("b1".to_string(), "pad.2".to_string())].into());
+            .insert(None, [("b1".to_string(), "pad.2".into())].into());
         assert_eq!(
             p.resolve(
                 Screen::Settings,
@@ -1984,7 +2333,7 @@ mod tests {
         );
         // a CC button learned for a pad: press is the value, 0 is the release
         p.screens
-            .insert(None, [("b9".to_string(), "pad.2".to_string())].into());
+            .insert(None, [("b9".to_string(), "pad.2".into())].into());
         p.ccs.insert(9, Control::Button("b9".into()));
         assert_eq!(
             p.resolve(

@@ -733,6 +733,21 @@ impl App {
                     .clamp(0, SETTINGS_ROWS as isize - 1)
                     as usize
             }
+            Action::SettingsValue(step)
+                if self.settings_tab == 2
+                    && self
+                        .learning
+                        .as_ref()
+                        .is_some_and(|l| !l.info.knob && l.pending.is_none()) =>
+            {
+                if let Some(learning) = self.learning.as_mut() {
+                    learning.slot = if step < 0 {
+                        crate::learn::GestureSlot::Tap
+                    } else {
+                        crate::learn::GestureSlot::Hold
+                    };
+                }
+            }
             // MIDI tab: the knob response row steps its value (58)
             Action::SettingsValue(step)
                 if self.settings_tab == 2
@@ -742,6 +757,15 @@ impl App {
                     ) =>
             {
                 self.step_response(step as isize)
+            }
+            Action::SettingsValue(step)
+                if self.settings_tab == 2
+                    && matches!(
+                        self.midi_list().get(self.midi_row),
+                        Some(MidiListRow::HoldTime)
+                    ) =>
+            {
+                self.step_hold_time(step as isize)
             }
             // MIDI tab: → opens the group of the selected row, ← closes it (28)
             Action::SettingsValue(step) if self.settings_tab == 2 => self.midi_fold(step > 0),
@@ -764,6 +788,7 @@ impl App {
                 match self.midi_list().get(self.midi_row) {
                     Some(MidiListRow::Group { .. }) => self.midi_fold(true),
                     Some(MidiListRow::Response) => self.step_response(1),
+                    Some(MidiListRow::HoldTime) => self.step_hold_time(1),
                     Some(MidiListRow::Reset { name, port }) => {
                         self.ask = Some(Ask::ResetProfile {
                             lines: vec![

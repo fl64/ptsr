@@ -11,12 +11,13 @@ use crate::input_sources::{Connection, Stamp as SourceStamp};
 
 use engine::rt::{ProjectCommand, ProjectMessage, ProjectState};
 use engine::{Command, PADS_PER_BANK};
-use input::midi::{Activity, Key, Msg, Param, Profile, Resolved, Scope};
+use input::midi::{Activity, Binding, Key, Msg, Param, Profile, Resolved, Scope};
 use input::{Action, Focus, Group, PadRoute, route_pad};
 use std::sync::atomic::Ordering::Acquire;
 
 /// midir does not report hotplug, so ports are polled.
 const SCAN: Duration = Duration::from_secs(1);
+const DEFAULT_HOLD: Duration = Duration::from_millis(300);
 
 /// The original audio attempt must not be inferred from App's later screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,9 +117,12 @@ enum Raw {
     Disconnected(String, Option<Connection>),
     Msg(String, Msg, Stamp),
     /// New learned assignments of a profile in a group.
-    Learned(String, Scope, HashMap<Key, String>),
+    Learned(String, Scope, HashMap<Key, Binding>),
     /// The roles of a profile are copied into the learned maps (59): only those act now.
     Seeded(String),
+    HoldTime(Duration),
+    #[cfg(test)]
+    Tick(Instant),
     #[cfg(test)]
     Fence(Sender<()>),
 }
@@ -139,6 +143,185 @@ struct Stamp {
     epoch: u64,
     ready: bool,
     source: Option<SourceStamp>,
+}
+
+type GestureKey = (String, u8, Key);
+
+#[derive(Clone, Copy)]
+enum GestureEdge {
+    Tap(Action, Stamp),
+    Down(Action, Stamp),
+    Up(Action),
+}
+
+type GestureOutput = (GestureKey, GestureEdge);
+
+struct ButtonGesture {
+    tap: Option<Action>,
+    hold: Action,
+    at: Instant,
+    threshold: Duration,
+    stamp: Stamp,
+    active: bool,
+}
+
+struct Gestures {
+    held: HashMap<GestureKey, ButtonGesture>,
+    threshold: Duration,
+}
+
+impl Gestures {
+    fn new(threshold: Duration) -> Self {
+        Self {
+            held: HashMap::new(),
+            threshold,
+        }
+    }
+
+    fn press(
+        &mut self,
+        key: GestureKey,
+        at: Instant,
+        stamp: Stamp,
+        tap: Option<Action>,
+        hold: Action,
+    ) {
+        self.held.entry(key).or_insert(ButtonGesture {
+            tap,
+            hold,
+            at,
+            threshold: self.threshold,
+            stamp,
+            active: false,
+        });
+    }
+
+    fn promote(gesture: &mut ButtonGesture) -> Option<GestureEdge> {
+        if gesture.active {
+            return None;
+        }
+        gesture.active = true;
+        Some(GestureEdge::Down(gesture.hold, gesture.stamp))
+    }
+
+    fn other(&mut self, port: &str, key: &GestureKey) -> Vec<GestureOutput> {
+        let mut pending: Vec<_> = self
+            .held
+            .iter()
+            .filter(|(held, gesture)| held.0 == port && *held != key && !gesture.active)
+            .map(|(held, gesture)| (held.clone(), gesture.at))
+            .collect();
+        pending.sort_by_key(|(held, at)| (*at, held.1, held.2));
+        pending
+            .into_iter()
+            .filter_map(|(held, _)| Some((held.clone(), Self::promote(self.held.get_mut(&held)?)?)))
+            .collect()
+    }
+
+    fn release(&mut self, key: &GestureKey, at: Instant, stamp: Stamp) -> Vec<GestureOutput> {
+        let Some(mut gesture) = self.held.remove(key) else {
+            return Vec::new();
+        };
+        if gesture.active {
+            return vec![(key.clone(), GestureEdge::Up(gesture.hold))];
+        }
+        if at
+            .checked_duration_since(gesture.at)
+            .is_some_and(|d| d >= gesture.threshold)
+        {
+            vec![
+                (key.clone(), Self::promote(&mut gesture).unwrap()),
+                (key.clone(), GestureEdge::Up(gesture.hold)),
+            ]
+        } else {
+            gesture
+                .tap
+                .map(|tap| (key.clone(), GestureEdge::Tap(tap, stamp)))
+                .into_iter()
+                .collect()
+        }
+    }
+
+    fn due(&mut self, now: Instant) -> Vec<GestureOutput> {
+        let mut pending: Vec<_> = self
+            .held
+            .iter()
+            .filter(|(_, gesture)| {
+                !gesture.active
+                    && now
+                        .checked_duration_since(gesture.at)
+                        .is_some_and(|d| d >= gesture.threshold)
+            })
+            .map(|(key, gesture)| (key.clone(), gesture.at))
+            .collect();
+        pending.sort_by_key(|(key, at)| (*at, key.1, key.2));
+        pending
+            .into_iter()
+            .filter_map(|(key, _)| Some((key.clone(), Self::promote(self.held.get_mut(&key)?)?)))
+            .collect()
+    }
+
+    fn disconnect(&mut self, port: &str) -> Vec<GestureOutput> {
+        let mut ended = Vec::new();
+        self.held.retain(|key, gesture| {
+            if key.0 == port {
+                if gesture.active {
+                    ended.push((
+                        gesture.at,
+                        key.1,
+                        key.2,
+                        key.clone(),
+                        GestureEdge::Up(gesture.hold),
+                    ));
+                }
+                false
+            } else {
+                true
+            }
+        });
+        ended.sort_by_key(|(at, ch, key, _, _)| (*at, *ch, *key));
+        ended
+            .into_iter()
+            .map(|(_, _, _, key, edge)| (key, edge))
+            .collect()
+    }
+
+    fn reject_pending(&mut self) {
+        self.held.retain(|_, gesture| gesture.active);
+    }
+
+    fn release_invalid(&mut self, key: &GestureKey) -> Vec<GestureOutput> {
+        match self.held.remove(key) {
+            Some(gesture) if gesture.active => vec![(key.clone(), GestureEdge::Up(gesture.hold))],
+            _ => Vec::new(),
+        }
+    }
+}
+
+fn send_gesture_edges(ui: &mut UiSender, edges: impl IntoIterator<Item = GestureOutput>) {
+    let previous = ui.origin.take();
+    for (key, edge) in edges {
+        let source = match edge {
+            GestureEdge::Tap(_, stamp) | GestureEdge::Down(_, stamp) => stamp.source,
+            GestureEdge::Up(_) => None,
+        };
+        ui.origin = Some(Provenance {
+            port: key.0,
+            source,
+            from_message: true,
+            activity: Activity::None,
+        });
+        match edge {
+            GestureEdge::Tap(action, stamp) | GestureEdge::Down(action, stamp) => {
+                ui.send(Event::Action(action), Some(stamp));
+            }
+            GestureEdge::Up(Action::RecordMic(true)) => {
+                ui.send(Event::Action(Action::RecordMic(false)), None);
+            }
+            GestureEdge::Up(_) => {}
+        }
+    }
+    ui.origin = previous;
 }
 
 impl Stamp {
@@ -169,7 +352,7 @@ impl Stamp {
 }
 
 /// Learned assignments per (profile name, group scope; 28).
-pub type LearnedMaps = HashMap<(String, Scope), HashMap<Key, String>>;
+pub type LearnedMaps = HashMap<(String, Scope), HashMap<Key, Binding>>;
 
 #[derive(Clone)]
 struct Provenance {
@@ -396,13 +579,19 @@ impl Midi {
             .expect("recorded MIDI frame did not finish");
     }
 
+    #[cfg(test)]
+    pub fn recorded_tick(&self, at: Instant) {
+        self.updates.send(Raw::Tick(at)).unwrap();
+        self.recorded_fence();
+    }
+
     /// Publishes the state after one UI event, even when its old-project body was discarded.
     pub fn consumed(&self, focus: Focus, sequence: u64) {
         self.shared.consumed(focus, sequence);
     }
 
     /// Replaces the learned assignments of `profile` in `group` in the MIDI thread.
-    pub fn set_learned(&self, profile: &str, group: Group, map: HashMap<Key, String>) {
+    pub fn set_learned(&self, profile: &str, group: Group, map: HashMap<Key, Binding>) {
         let _ = self
             .updates
             .send(Raw::Learned(profile.into(), group.scope(), map));
@@ -411,6 +600,10 @@ impl Midi {
     /// The profile's roles live in the learned maps from now on (59).
     pub fn set_seeded(&self, profile: &str) {
         let _ = self.updates.send(Raw::Seeded(profile.into()));
+    }
+
+    pub fn set_hold_time(&self, time: Duration) {
+        let _ = self.updates.send(Raw::HoldTime(time));
     }
 }
 
@@ -431,11 +624,18 @@ pub fn parse_learned(cfg: &crate::config::Learned) -> LearnedMaps {
                 match key.parse::<Key>() {
                     Ok(k) => {
                         // the name before 76, so the learned row shows under its new name
-                        let action = match action.as_str() {
+                        let rename = |name: &str| match name {
                             "pad.scope_next" => "pad.mark_bank".to_string(),
-                            a => a.to_string(),
+                            other => other.to_string(),
                         };
-                        map.insert(k, action);
+                        let binding = match action {
+                            crate::config::MidiBinding::Press(name) => Binding::Press(rename(name)),
+                            crate::config::MidiBinding::Gesture { tap, hold } => Binding::Gesture {
+                                tap: tap.as_deref().map(rename),
+                                hold: rename(hold),
+                            },
+                        };
+                        map.insert(k, binding);
                     }
                     Err(e) => log::warn!("config [midi.{profile}]: {e}"),
                 }
@@ -448,7 +648,7 @@ pub fn parse_learned(cfg: &crate::config::Learned) -> LearnedMaps {
 pub fn apply_learned(profile: &mut Profile, learned: &LearnedMaps) {
     for ((name, scope), map) in learned {
         if *name == profile.name {
-            profile.set_learned(*scope, map.clone());
+            profile.set_bindings(*scope, map.clone());
         }
     }
 }
@@ -460,6 +660,7 @@ pub fn start(
     commands: Option<rtrb::Producer<ProjectCommand>>,
     project: Option<Arc<ProjectState>>,
     shared: Arc<Shared>,
+    hold_time: Duration,
 ) -> Midi {
     for p in profiles.iter_mut() {
         apply_learned(p, &learned);
@@ -467,6 +668,9 @@ pub fn start(
     }
     let (raw_tx, raw_rx) = mpsc::channel();
     let (tx, rx) = mpsc::channel();
+    raw_tx
+        .send(Raw::HoldTime(hold_time))
+        .expect("set initial MIDI hold time");
     let scan_tx = raw_tx.clone();
     let scan_project = project.clone();
     std::thread::Builder::new()
@@ -593,6 +797,7 @@ fn dispatch(
     };
     let mut positions: HashMap<(String, u8, Key), u8> = HashMap::new();
     let mut held_controls: HashSet<(String, u8, Key)> = HashSet::new();
+    let mut gestures = Gestures::new(DEFAULT_HOLD);
     let mut defaults: HashMap<String, Profile> = HashMap::new();
     let mut pressed = DirectHolds::new();
     let mut ui_pressed = UiHolds::new();
@@ -619,7 +824,21 @@ fn dispatch(
         }
         let raw = match rx.recv_timeout(Duration::from_millis(2)) {
             Ok(raw) => raw,
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Timeout) => match rx.try_recv() {
+                Ok(raw) => raw,
+                Err(mpsc::TryRecvError::Empty) => {
+                    if shared.focus().is_ok() {
+                        send_gesture_edges(&mut ui, gestures.due(Instant::now()));
+                    } else {
+                        gestures.reject_pending();
+                    }
+                    continue;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    closed = true;
+                    continue;
+                }
+            },
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 closed = true;
                 if !pending.is_empty() {
@@ -660,6 +879,7 @@ fn dispatch(
                 continue;
             }
             Raw::Disconnected(port, _) => {
+                send_gesture_edges(&mut ui, gestures.disconnect(&port));
                 positions.retain(|(device, _, _), _| *device != port);
                 held_controls.retain(|(device, _, _)| *device != port);
                 // a held gate pad would hang without its note off
@@ -697,7 +917,7 @@ fn dispatch(
             Raw::Learned(name, scope, map) => {
                 for p in profiles.iter_mut().chain(defaults.values_mut()) {
                     if p.name == name {
-                        p.set_learned(scope, map.clone());
+                        p.set_bindings(scope, map.clone());
                     }
                 }
                 learned.insert((name, scope), map);
@@ -710,6 +930,19 @@ fn dispatch(
                     }
                 }
                 seeded.push(name);
+                continue;
+            }
+            Raw::HoldTime(time) => {
+                gestures.threshold = time;
+                continue;
+            }
+            #[cfg(test)]
+            Raw::Tick(at) => {
+                if shared.focus().is_ok() {
+                    send_gesture_edges(&mut ui, gestures.due(at));
+                } else {
+                    gestures.reject_pending();
+                }
                 continue;
             }
             #[cfg(test)]
@@ -729,6 +962,14 @@ fn dispatch(
                 if !invalid_reported {
                     log::error!("MIDI rejected new input: invalid state {bits:#010x}");
                     invalid_reported = true;
+                }
+                gestures.reject_pending();
+                let channel = match msg {
+                    Msg::NoteOn { ch, .. } | Msg::NoteOff { ch, .. } | Msg::Cc { ch, .. } => ch,
+                };
+                if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+                    let key = (port.clone(), channel, msg.key());
+                    send_gesture_edges(&mut ui, gestures.release_invalid(&key));
                 }
                 release_tracked(
                     &port,
@@ -770,6 +1011,7 @@ fn dispatch(
         let meaning = match &resolved {
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
+            Some(Resolved::Gesture { tap, hold }) => format!("tap {tap:?} / hold {hold:?}"),
             Some(Resolved::Param { control, param, .. }) => format!("{control} -> {param:?}"),
         };
         ui.send_input(
@@ -794,6 +1036,14 @@ fn dispatch(
             }
             Msg::NoteOn { .. } | Msg::Cc { .. } => !held_controls.insert(control),
         };
+        let at = stamp.source.map_or_else(Instant::now, |source| source.at);
+        if matches!(msg, Msg::NoteOff { .. } | Msg::Cc { value: 0, .. }) {
+            let key = (port.clone(), channel, msg.key());
+            send_gesture_edges(&mut ui, gestures.release(&key, at, stamp));
+        } else if owner_input && (activity == Activity::Movement || !repeated) {
+            let key = (port.clone(), channel, msg.key());
+            send_gesture_edges(&mut ui, gestures.other(&port, &key));
+        }
         if release_tracked(
             &port,
             msg,
@@ -809,7 +1059,12 @@ fn dispatch(
         {
             continue;
         }
-        if repeated && matches!(resolved, Some(Resolved::Action(Action::Confirm))) {
+        if repeated
+            && matches!(
+                resolved,
+                Some(Resolved::Action(Action::Confirm) | Resolved::Gesture { .. })
+            )
+        {
             continue;
         }
         let route = route_pad(focus);
@@ -819,6 +1074,9 @@ fn dispatch(
         }
 
         match resolved {
+            Some(Resolved::Gesture { tap, hold }) => {
+                gestures.press((port, channel, msg.key()), at, stamp, tap, hold);
+            }
             Some(Resolved::Action(Action::PadPress { pad, velocity }))
                 if waiting || route == PadRoute::Ui =>
             {
@@ -989,14 +1247,10 @@ pub fn load_profiles(dir: &str) -> (Vec<Profile>, Vec<String>) {
             .and_then(|t| Profile::from_toml(&file, &t))
         {
             Ok(p) => {
-                // a role naming no action does nothing: it is named, the rest loads (71)
-                for (_, key, name) in p.roles() {
-                    if !input::midi::known(&name) {
-                        let e = format!("{file}: {key} {name}: no such action");
-                        log::warn!("{e}");
-                        errors.push(e);
-                    }
+                for warning in p.warnings() {
+                    log::warn!("{warning}");
                 }
+                // a role naming no action does nothing: it is named, the rest loads (71)
                 profiles.push(p)
             }
             Err(e) => {
@@ -1630,11 +1884,11 @@ mod tests {
             .get(&("xsession-pro".into(), Scope::Screen(Screen::Pads)))
             .unwrap();
         assert_eq!(
-            map.get(&Key::Cc(24)).map(String::as_str),
+            map.get(&Key::Cc(24)).map(Binding::primary),
             Some("pad.volume")
         );
         assert_eq!(
-            map.get(&Key::Note(43)).map(String::as_str),
+            map.get(&Key::Note(43)).map(Binding::primary),
             Some("bank.next")
         );
 
@@ -1650,14 +1904,14 @@ mod tests {
             .get(&("xsession-pro".into(), Scope::Edit(Screen::Pads)))
             .unwrap();
         assert_eq!(
-            pads_edit.get(&Key::Cc(25)).map(String::as_str),
+            pads_edit.get(&Key::Cc(25)).map(Binding::primary),
             Some("edit.param_2")
         );
         let chop_edit = maps
             .get(&("xsession-pro".into(), Scope::Edit(Screen::Chop)))
             .unwrap();
         assert_eq!(
-            chop_edit.get(&Key::Cc(26)).map(String::as_str),
+            chop_edit.get(&Key::Cc(26)).map(Binding::primary),
             Some("edit.param_3")
         );
     }
@@ -1674,6 +1928,409 @@ mod tests {
 
     fn test_stamp() -> Stamp {
         Stamp::ready(0)
+    }
+
+    fn gesture_profile() -> Profile {
+        Profile::from_toml(
+            "gesture.toml",
+            "[device]\nname='Gesture'\nmatch_port='Gesture'\n\
+             [controls.buttons]\nplay={note=60}\nrecord={note=61}\n\
+             [controls.pads]\np1={note=36}\n\
+             [screens.global]\nplay={tap='transport.toggle',hold='metronome.toggle'}\n\
+             record={tap='record.output',hold='record.mic'}\n",
+        )
+        .unwrap()
+    }
+
+    fn gesture_stamp(at: Instant) -> Stamp {
+        Stamp {
+            source: Some(SourceStamp {
+                connection: Connection::fresh().unwrap(),
+                at,
+            }),
+            ..test_stamp()
+        }
+    }
+
+    #[test]
+    fn threshold_and_repeat_use_one_gesture() {
+        let start = Instant::now();
+        let key = ("Gesture".into(), 1, Key::Note(60));
+        let mut gestures = Gestures::new(Duration::from_millis(300));
+        gestures.press(
+            key.clone(),
+            start,
+            gesture_stamp(start),
+            Some(Action::TransportToggle),
+            Action::MetronomeToggle,
+        );
+        gestures.press(
+            key.clone(),
+            start + Duration::from_millis(100),
+            gesture_stamp(start),
+            Some(Action::TransportToggle),
+            Action::MetronomeToggle,
+        );
+        assert!(gestures.due(start + Duration::from_millis(299)).is_empty());
+        let down = gestures.due(start + Duration::from_millis(300));
+        assert!(matches!(
+            down.as_slice(),
+            [(_, GestureEdge::Down(Action::MetronomeToggle, _))]
+        ));
+        assert!(gestures.due(start + Duration::from_millis(400)).is_empty());
+        let up = gestures.release(&key, start + Duration::from_millis(400), test_stamp());
+        assert!(matches!(
+            up.as_slice(),
+            [(_, GestureEdge::Up(Action::MetronomeToggle))]
+        ));
+        assert!(
+            gestures
+                .release(&key, start + Duration::from_millis(500), test_stamp())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn play_tap_and_hold_use_different_actions() {
+        let start = Instant::now();
+        let (producer, _consumer) = rtrb::RingBuffer::new(32);
+        let (midi, worker) = Midi::recorded(
+            vec![gesture_profile()],
+            producer,
+            Arc::new(ProjectState::default()),
+            Arc::new(Shared::default()),
+        );
+        midi.recorded_connect("Gesture");
+        midi.recorded_bytes_at("Gesture", &[0x90, 60, 127], &ProjectState::default(), start);
+        midi.recorded_bytes_at(
+            "Gesture",
+            &[0x80, 60, 0],
+            &ProjectState::default(),
+            start + Duration::from_millis(100),
+        );
+        midi.recorded_bytes_at(
+            "Gesture",
+            &[0x90, 60, 127],
+            &ProjectState::default(),
+            start + Duration::from_millis(200),
+        );
+        midi.recorded_tick(start + Duration::from_millis(500));
+        midi.recorded_bytes_at(
+            "Gesture",
+            &[0x80, 60, 0],
+            &ProjectState::default(),
+            start + Duration::from_millis(600),
+        );
+        midi.recorded_fence();
+        let actions: Vec<_> = midi
+            .events
+            .try_iter()
+            .filter_map(|event| match event.event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::TransportToggle, Action::MetronomeToggle]);
+        drop(midi);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn record_hold_ends_microphone_capture() {
+        let start = Instant::now();
+        let raw = vec![
+            Raw::Msg("Gesture".into(), note_on(61), gesture_stamp(start)),
+            Raw::Tick(start + DEFAULT_HOLD),
+            Raw::Msg(
+                "Gesture".into(),
+                Msg::NoteOff { ch: 1, note: 61 },
+                gesture_stamp(start + Duration::from_millis(400)),
+            ),
+        ];
+        let (events, _) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let actions: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::RecordMic(true), Action::RecordMic(false)]);
+    }
+
+    #[test]
+    fn a_pad_on_another_channel_starts_the_hold() {
+        let start = Instant::now();
+        let raw = vec![
+            Raw::Msg("Gesture".into(), note_on(60), gesture_stamp(start)),
+            Raw::Msg(
+                "Gesture".into(),
+                Msg::NoteOn {
+                    ch: 10,
+                    note: 36,
+                    velocity: 100,
+                },
+                gesture_stamp(start + Duration::from_millis(100)),
+            ),
+            Raw::Msg(
+                "Gesture".into(),
+                Msg::NoteOff { ch: 1, note: 60 },
+                gesture_stamp(start + Duration::from_millis(150)),
+            ),
+        ];
+        let (events, commands) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let relevant: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(format!("{action:?}")),
+                Event::PadHit { .. } => Some("pad".into()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(relevant, ["MetronomeToggle", "pad"]);
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::PadPress { pad: 0, .. }]
+        ));
+    }
+
+    #[test]
+    fn a_moving_knob_starts_a_hold_after_earlier_movement() {
+        let start = Instant::now();
+        let cc = |value| Msg::Cc {
+            ch: 1,
+            cc: 24,
+            value,
+        };
+        let raw = vec![
+            Raw::Msg("Gesture".into(), cc(10), gesture_stamp(start)),
+            Raw::Msg(
+                "Gesture".into(),
+                note_on(60),
+                gesture_stamp(start + Duration::from_millis(10)),
+            ),
+            Raw::Msg(
+                "Gesture".into(),
+                cc(10),
+                gesture_stamp(start + Duration::from_millis(20)),
+            ),
+            Raw::Msg(
+                "Gesture".into(),
+                cc(11),
+                gesture_stamp(start + Duration::from_millis(30)),
+            ),
+            Raw::Msg(
+                "Gesture".into(),
+                Msg::NoteOff { ch: 1, note: 60 },
+                gesture_stamp(start + Duration::from_millis(40)),
+            ),
+        ];
+        let (events, _) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let actions: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::MetronomeToggle]);
+    }
+
+    #[test]
+    fn two_ports_keep_separate_holds() {
+        let start = Instant::now();
+        let raw = vec![
+            Raw::Msg("Gesture A".into(), note_on(60), gesture_stamp(start)),
+            Raw::Msg("Gesture B".into(), note_on(60), gesture_stamp(start)),
+            Raw::Msg(
+                "Gesture A".into(),
+                Msg::NoteOn {
+                    ch: 10,
+                    note: 36,
+                    velocity: 100,
+                },
+                gesture_stamp(start + Duration::from_millis(100)),
+            ),
+            Raw::Msg(
+                "Gesture B".into(),
+                Msg::NoteOff { ch: 1, note: 60 },
+                gesture_stamp(start + Duration::from_millis(150)),
+            ),
+            Raw::Msg(
+                "Gesture A".into(),
+                Msg::NoteOff { ch: 1, note: 60 },
+                gesture_stamp(start + Duration::from_millis(200)),
+            ),
+        ];
+        let (events, _) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let actions: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::MetronomeToggle, Action::TransportToggle]);
+    }
+
+    #[test]
+    fn disconnect_ends_an_active_hold() {
+        let start = Instant::now();
+        let raw = vec![
+            Raw::Msg("Gesture".into(), note_on(61), gesture_stamp(start)),
+            Raw::Tick(start + DEFAULT_HOLD),
+            Raw::Msg(
+                "Gesture".into(),
+                note_on(60),
+                gesture_stamp(start + Duration::from_millis(350)),
+            ),
+            Raw::Disconnected("Gesture".into(), None),
+            Raw::Connected("Gesture".into(), None),
+        ];
+        let (events, _) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let actions: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::RecordMic(true), Action::RecordMic(false)]);
+    }
+
+    #[test]
+    fn missing_release_does_not_duplicate_a_hold() {
+        let start = Instant::now();
+        let raw = vec![
+            Raw::Msg("Gesture".into(), note_on(61), gesture_stamp(start)),
+            Raw::Tick(start + DEFAULT_HOLD),
+            Raw::Msg(
+                "Gesture".into(),
+                note_on(61),
+                gesture_stamp(start + Duration::from_millis(400)),
+            ),
+            Raw::Disconnected("Gesture".into(), None),
+        ];
+        let (events, _) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let actions: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::RecordMic(true), Action::RecordMic(false)]);
+    }
+
+    #[test]
+    fn invalid_state_keeps_original_release() {
+        let start = Instant::now();
+        let shared = Arc::new(Shared::default());
+        let (producer, _consumer) = rtrb::RingBuffer::new(32);
+        let (midi, worker) = Midi::recorded(
+            vec![gesture_profile()],
+            producer,
+            Arc::new(ProjectState::default()),
+            shared.clone(),
+        );
+        midi.recorded_connect("Gesture");
+        midi.recorded_bytes_at("Gesture", &[0x90, 61, 127], &ProjectState::default(), start);
+        midi.recorded_tick(start + DEFAULT_HOLD);
+        shared.inject_focus(5);
+        midi.recorded_bytes_at(
+            "Gesture",
+            &[0x80, 61, 0],
+            &ProjectState::default(),
+            start + Duration::from_millis(400),
+        );
+        midi.recorded_bytes_at("Gesture", &[0x90, 60, 127], &ProjectState::default(), start);
+        midi.recorded_fence();
+        let actions: Vec<_> = midi
+            .events
+            .try_iter()
+            .filter_map(|event| match event.event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::RecordMic(true), Action::RecordMic(false)]);
+        drop(midi);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn existing_hold_keeps_its_start_threshold() {
+        let start = Instant::now();
+        let ms = |n| start + Duration::from_millis(n);
+        let raw = vec![
+            Raw::Msg("Gesture".into(), note_on(60), gesture_stamp(ms(0))),
+            Raw::HoldTime(Duration::from_millis(400)),
+            Raw::Tick(ms(300)),
+            Raw::Msg(
+                "Gesture".into(),
+                Msg::NoteOff { ch: 1, note: 60 },
+                gesture_stamp(ms(350)),
+            ),
+            Raw::Msg("Gesture".into(), note_on(60), gesture_stamp(ms(500))),
+            Raw::Tick(ms(850)),
+            Raw::Msg(
+                "Gesture".into(),
+                Msg::NoteOff { ch: 1, note: 60 },
+                gesture_stamp(ms(850)),
+            ),
+        ];
+        let (events, _) = dispatched(raw, vec![gesture_profile()], Shared::default());
+        let actions: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, [Action::MetronomeToggle, Action::TransportToggle]);
+    }
+
+    #[test]
+    fn old_saved_action_stays_immediate() {
+        let dir = std::env::temp_dir().join(format!("ptsr-old-midi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(
+            &path,
+            "[midi.Gesture.global]\n'note 60'='transport.toggle'\n",
+        )
+        .unwrap();
+        let loaded = crate::config::load_from(&path);
+        let learned = parse_learned(&loaded.config.midi);
+        let mut profile = gesture_profile();
+        apply_learned(&mut profile, &learned);
+        profile.set_seeded(true);
+        let raw = vec![Raw::Msg(
+            "Gesture".into(),
+            note_on(60),
+            gesture_stamp(Instant::now()),
+        )];
+        let (events, _) = dispatched(raw, vec![profile], Shared::default());
+        let relevant: Vec<_> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Action(action) => Some(action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(relevant, [Action::TransportToggle]);
+        crate::config::save_section(&path, "knobs", &crate::config::KnobsConfig::default())
+            .unwrap();
+        assert_eq!(
+            crate::config::load_from(&path).config.midi["Gesture"]["global"]["note 60"],
+            "transport.toggle"
+        );
+        let saved: toml::Value = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            saved["midi"]["Gesture"]["global"]["note 60"].as_str(),
+            Some("transport.toggle")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn note_on(note: u8) -> Msg {
@@ -1727,7 +2384,7 @@ mod tests {
         let mut raw = vec![Raw::Learned(
             "X-Session Pro".into(),
             Scope::Global,
-            [(key, action.to_string())].into(),
+            [(key, action.into())].into(),
         )];
         raw.extend(msgs.iter().map(|m| Raw::Msg(XS.into(), *m, test_stamp())));
         dispatched(raw, vec![xsession()], shared).1

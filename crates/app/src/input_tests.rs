@@ -5,6 +5,7 @@ mod bank_scenarios;
 mod controller_map;
 mod copy;
 mod feedback;
+mod gestures;
 mod midi_state;
 mod notices_help;
 mod pattern_step;

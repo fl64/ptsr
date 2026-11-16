@@ -17,6 +17,7 @@ pub struct Config {
     pub ui: UiConfig,
     /// How absolute knobs catch a value (58), saved under `[knobs]`.
     pub knobs: KnobsConfig,
+    pub midi_gestures: MidiGesturesConfig,
     /// The devices whose profile roles are copied into `[midi]` (59), under `[devices]`.
     pub devices: DevicesConfig,
     /// The two roots the program works from (11).
@@ -86,14 +87,102 @@ pub struct KnobsConfig {
     pub response: String,
 }
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(default)]
+pub struct MidiGesturesConfig {
+    pub hold_time_ms: u32,
+}
+
+impl Default for MidiGesturesConfig {
+    fn default() -> Self {
+        Self { hold_time_ms: 300 }
+    }
+}
+
+impl MidiGesturesConfig {
+    pub fn valid(self) -> bool {
+        (200..=600).contains(&self.hold_time_ms) && self.hold_time_ms.is_multiple_of(50)
+    }
+}
+
 #[derive(Deserialize, Serialize, Default, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct BrowserConfig {
     pub favorites: Vec<PathBuf>,
 }
 
-/// MIDI learn results: profile name -> screen -> control ("cc 24") -> action ("pad.volume").
-pub type Learned = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
+/// A saved string acts on press. A table keeps both gestures of one button.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum MidiBinding {
+    Press(String),
+    Gesture {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tap: Option<String>,
+        hold: String,
+    },
+}
+
+impl MidiBinding {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Press(action) => action,
+            Self::Gesture { tap, hold } => tap.as_deref().unwrap_or(hold),
+        }
+    }
+
+    pub fn has_action(&self, action: &str) -> bool {
+        match self {
+            Self::Press(name) => name == action,
+            Self::Gesture { tap, hold } => tap.as_deref() == Some(action) || hold == action,
+        }
+    }
+}
+
+impl From<String> for MidiBinding {
+    fn from(action: String) -> Self {
+        Self::Press(action)
+    }
+}
+
+impl From<&str> for MidiBinding {
+    fn from(action: &str) -> Self {
+        Self::Press(action.into())
+    }
+}
+
+impl From<MidiBinding> for input::midi::Binding {
+    fn from(binding: MidiBinding) -> Self {
+        match binding {
+            MidiBinding::Press(action) => Self::Press(action),
+            MidiBinding::Gesture { tap, hold } => Self::Gesture { tap, hold },
+        }
+    }
+}
+
+impl From<input::midi::Binding> for MidiBinding {
+    fn from(binding: input::midi::Binding) -> Self {
+        match binding {
+            input::midi::Binding::Press(action) => Self::Press(action),
+            input::midi::Binding::Gesture { tap, hold } => Self::Gesture { tap, hold },
+        }
+    }
+}
+
+impl PartialEq<&str> for MidiBinding {
+    fn eq(&self, other: &&str) -> bool {
+        matches!(self, Self::Press(action) if action == *other)
+    }
+}
+
+impl PartialEq<str> for MidiBinding {
+    fn eq(&self, other: &str) -> bool {
+        matches!(self, Self::Press(action) if action == other)
+    }
+}
+
+/// MIDI learn results: profile name -> group -> control -> one or two actions.
+pub type Learned = BTreeMap<String, BTreeMap<String, BTreeMap<String, MidiBinding>>>;
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 #[serde(default)]
@@ -154,10 +243,38 @@ pub fn load_from(user: &Path) -> Loaded {
             false
         }
     };
-    let config = toml::Value::Table(table).try_into().unwrap_or_else(|e| {
+    if let Some(value) = table.get_mut("midi_gestures") {
+        let saved = value.get("hold_time_ms").cloned();
+        let valid = saved.as_ref().is_none_or(|value| {
+            value
+                .as_integer()
+                .is_some_and(|time| (200..=600).contains(&time) && time % 50 == 0)
+        });
+        if !valid || !value.is_table() {
+            let shown = saved.map_or_else(
+                || value.to_string(),
+                |saved| {
+                    saved
+                        .as_integer()
+                        .map_or_else(|| saved.to_string(), |time| format!("{time} ms"))
+                },
+            );
+            error = Some(format!("invalid MIDI hold time {shown}; using 300 ms"));
+            *value =
+                toml::Value::try_from(MidiGesturesConfig::default()).expect("hold time is TOML");
+        }
+    }
+    let mut config: Config = toml::Value::Table(table).try_into().unwrap_or_else(|e| {
         error = Some(format!("bad config: {e}"));
         Config::default()
     });
+    if !config.midi_gestures.valid() {
+        error = Some(format!(
+            "invalid MIDI hold time {} ms; using 300 ms",
+            config.midi_gestures.hold_time_ms
+        ));
+        config.midi_gestures = MidiGesturesConfig::default();
+    }
     if let Some(e) = &error {
         log::error!("{e}");
     }
@@ -459,5 +576,56 @@ mod tests {
             "[audio\nbuffer_size = 256\n"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn set_and_keep_hold_time() {
+        let dir = std::env::temp_dir().join(format!("ptsr-hold-time-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, "[audio]\nbackend='jack'\n").unwrap();
+        save_section(
+            &path,
+            "midi_gestures",
+            &MidiGesturesConfig { hold_time_ms: 400 },
+        )
+        .unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.config.midi_gestures.hold_time_ms, 400);
+        assert_eq!(loaded.config.audio.backend, Backend::Jack);
+        assert!(loaded.error.is_none(), "{:?}", loaded.error);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reject_an_invalid_saved_hold_time() {
+        let dir = std::env::temp_dir().join(format!("ptsr-bad-hold-time-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(
+            &path,
+            "[audio]\nbackend='jack'\n[midi_gestures]\nhold_time_ms=700\n",
+        )
+        .unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.config.midi_gestures.hold_time_ms, 300);
+        assert_eq!(loaded.config.audio.backend, Backend::Jack);
+        assert!(
+            loaded
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("700 ms"))
+        );
+        assert!(loaded.user_path.is_some());
+        std::fs::write(
+            &path,
+            "[audio]\nbackend='jack'\n[midi_gestures]\nhold_time_ms='late'\n",
+        )
+        .unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.config.audio.backend, Backend::Jack);
+        assert_eq!(loaded.config.midi_gestures.hold_time_ms, 300);
+        assert!(loaded.error.as_deref().is_some_and(|e| e.contains("late")));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

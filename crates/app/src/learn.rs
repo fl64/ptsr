@@ -3,16 +3,52 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use input::midi::{Key, Msg};
+use input::midi::{Binding, Key, Msg};
 use input::{ActionInfo, Group};
 
-use crate::config::Learned;
+use crate::config::{Learned, MidiBinding};
+
+/// One row on the MIDI tab.
+pub(super) enum MidiListRow {
+    Response,
+    HoldTime,
+    Reset {
+        name: String,
+        port: String,
+    },
+    Group {
+        group: input::Group,
+    },
+    Action {
+        info: &'static input::ActionInfo,
+    },
+    Set {
+        name: &'static str,
+        infos: &'static [input::ActionInfo],
+    },
+}
 
 /// A knob is decided after this much time since its first message.
 const KNOB_WINDOW: Duration = Duration::from_millis(500);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GestureSlot {
+    Tap,
+    Hold,
+}
+
+impl GestureSlot {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Tap => "tap",
+            Self::Hold => "hold",
+        }
+    }
+}
+
 pub struct Learning {
     pub info: &'static ActionInfo,
+    pub slot: GestureSlot,
     first: Option<Instant>,
     /// (profile, CC) -> messages seen.
     moved: HashMap<(String, Key), u32>,
@@ -24,6 +60,7 @@ impl Learning {
     pub fn new(info: &'static ActionInfo) -> Self {
         Self {
             info,
+            slot: GestureSlot::Tap,
             first: None,
             moved: HashMap::new(),
             pending: None,
@@ -35,6 +72,7 @@ impl Learning {
     pub fn hold(&mut self, profile: String, key: Key) {
         *self = Self {
             pending: Some((profile, key)),
+            slot: self.slot,
             ..Self::new(self.info)
         };
     }
@@ -79,14 +117,39 @@ impl Learning {
 /// `device group key name` for the log.
 pub fn drop_dead(learned: &mut Learned) -> Vec<String> {
     let mut gone = Vec::new();
+    let valid_gesture = |name: &str| {
+        input::Action::parse(name)
+            .is_some_and(|action| !matches!(action, input::Action::PadPress { .. }))
+    };
     for (device, groups) in learned.iter_mut() {
         for (group, keys) in groups.iter_mut() {
-            keys.retain(|key, name| {
-                let known = input::midi::known(name);
-                if !known {
-                    gone.push(format!("{device} {group} {key} {name}"));
+            keys.retain(|key, binding| match binding {
+                MidiBinding::Press(name) => {
+                    if input::midi::known(name) {
+                        true
+                    } else {
+                        gone.push(format!("{device} {group} {key} {name}"));
+                        false
+                    }
                 }
-                known
+                MidiBinding::Gesture { tap, hold } => {
+                    if tap.as_ref().is_some_and(|name| !valid_gesture(name)) {
+                        gone.push(format!("{device} {group} {key} {}", tap.as_ref().unwrap()));
+                        *tap = None;
+                    }
+                    if valid_gesture(hold) {
+                        true
+                    } else {
+                        gone.push(format!("{device} {group} {key} {hold}"));
+                        match tap.take() {
+                            Some(name) => {
+                                *binding = MidiBinding::Press(name);
+                                true
+                            }
+                            None => false,
+                        }
+                    }
+                }
             });
         }
         groups.retain(|group, keys| group == Group::Fx.key() || !keys.is_empty());
@@ -109,8 +172,102 @@ pub fn assign(learned: &mut Learned, profile: &str, group: Group, key: Key, acti
         .or_default()
         .entry(group.key().into())
         .or_default();
-    map.retain(|_, a| a != action);
+    map.retain(|_, binding| without_action(binding, action));
     map.insert(key.to_string(), action.into());
+}
+
+pub fn assign_slot(
+    learned: &mut Learned,
+    profile: &str,
+    group: Group,
+    key: Key,
+    slot: GestureSlot,
+    action: &str,
+) {
+    if group == Group::Fx {
+        materialize_fx(
+            learned,
+            profile,
+            &input::midi::Profile::default_for(profile),
+            true,
+        );
+    }
+    let map = learned
+        .entry(profile.into())
+        .or_default()
+        .entry(group.key().into())
+        .or_default();
+    map.retain(|_, binding| without_slot_action(binding, slot, action));
+    let target = map.entry(key.to_string()).or_insert_with(|| match slot {
+        GestureSlot::Tap => MidiBinding::Press(action.into()),
+        GestureSlot::Hold => MidiBinding::Gesture {
+            tap: None,
+            hold: action.into(),
+        },
+    });
+    match (slot, target) {
+        (GestureSlot::Tap, MidiBinding::Press(name)) => *name = action.into(),
+        (GestureSlot::Hold, binding @ MidiBinding::Press(_)) => {
+            let MidiBinding::Press(old) =
+                std::mem::replace(binding, MidiBinding::Press(String::new()))
+            else {
+                unreachable!();
+            };
+            *binding = MidiBinding::Gesture {
+                tap: Some(old),
+                hold: action.into(),
+            };
+        }
+        (GestureSlot::Tap, MidiBinding::Gesture { tap, .. }) => *tap = Some(action.into()),
+        (GestureSlot::Hold, MidiBinding::Gesture { hold, .. }) => *hold = action.into(),
+    }
+}
+
+fn without_slot_action(binding: &mut MidiBinding, slot: GestureSlot, action: &str) -> bool {
+    match (slot, binding) {
+        (GestureSlot::Tap, MidiBinding::Press(name)) => name != action,
+        (GestureSlot::Tap, MidiBinding::Gesture { tap, .. }) => {
+            if tap.as_deref() == Some(action) {
+                *tap = None;
+            }
+            true
+        }
+        (GestureSlot::Hold, binding @ MidiBinding::Gesture { .. }) => {
+            let MidiBinding::Gesture { tap, hold } = binding else {
+                unreachable!()
+            };
+            if hold != action {
+                return true;
+            }
+            match tap.take() {
+                Some(name) => {
+                    *binding = MidiBinding::Press(name);
+                    true
+                }
+                None => false,
+            }
+        }
+        (GestureSlot::Hold, MidiBinding::Press(_)) => true,
+    }
+}
+
+fn without_action(binding: &mut MidiBinding, action: &str) -> bool {
+    match binding {
+        MidiBinding::Press(name) => name != action,
+        MidiBinding::Gesture { tap, hold } if hold == action => match tap.take() {
+            Some(name) if name != action => {
+                *binding = MidiBinding::Press(name);
+                true
+            }
+            _ => false,
+        },
+        MidiBinding::Gesture { tap, .. } => {
+            if tap.as_deref() == Some(action) {
+                *tap = None;
+            }
+            true
+        }
+    }
 }
 
 /// The group of a scope (59).
@@ -120,7 +277,20 @@ pub fn group_of(scope: input::midi::Scope) -> Option<Group> {
 
 /// Copies the profile roles into `profile`'s bindings (59): a binding already there wins,
 /// on the same control or the same action of its group.
+#[cfg(test)]
 pub fn seed(learned: &mut Learned, profile: &str, roles: &[(input::midi::Scope, Key, String)]) {
+    let bindings: Vec<_> = roles
+        .iter()
+        .map(|(scope, key, action)| (*scope, *key, Binding::Press(action.clone())))
+        .collect();
+    seed_bindings(learned, profile, &bindings);
+}
+
+pub fn seed_bindings(
+    learned: &mut Learned,
+    profile: &str,
+    roles: &[(input::midi::Scope, Key, Binding)],
+) {
     let groups = learned.entry(profile.into()).or_default();
     let had_fx = groups.contains_key(Group::Fx.key());
     let existing = groups.clone();
@@ -133,13 +303,18 @@ pub fn seed(learned: &mut Learned, profile: &str, roles: &[(input::midi::Scope, 
         }
         let map = groups.entry(group.key().into()).or_default();
         if map.contains_key(&key.to_string())
-            || existing
-                .get(group.key())
-                .is_some_and(|m| m.values().any(|a| a == action))
+            || existing.get(group.key()).is_some_and(|m| {
+                m.values().any(|a| match action {
+                    Binding::Press(name) => a.has_action(name),
+                    Binding::Gesture { tap, hold } => {
+                        a.has_action(hold) || tap.as_deref().is_some_and(|name| a.has_action(name))
+                    }
+                })
+            })
         {
             continue;
         }
-        map.insert(key.to_string(), action.clone());
+        map.insert(key.to_string(), action.clone().into());
     }
     materialize_fx(
         learned,
@@ -150,10 +325,28 @@ pub fn seed(learned: &mut Learned, profile: &str, roles: &[(input::midi::Scope, 
     if !had_fx {
         for (scope, key, action) in roles {
             if *scope == Group::Fx.scope() {
-                assign(learned, profile, Group::Fx, *key, action);
+                assign_binding(learned, profile, Group::Fx, *key, action.clone());
             }
         }
     }
+}
+
+fn assign_binding(learned: &mut Learned, profile: &str, group: Group, key: Key, binding: Binding) {
+    let map = learned
+        .entry(profile.into())
+        .or_default()
+        .entry(group.key().into())
+        .or_default();
+    let names: Vec<&str> = match &binding {
+        Binding::Press(name) => vec![name],
+        Binding::Gesture { tap, hold } => tap
+            .iter()
+            .map(String::as_str)
+            .chain([hold.as_str()])
+            .collect(),
+    };
+    map.retain(|_, existing| names.iter().all(|name| without_action(existing, name)));
+    map.insert(key.to_string(), binding.into());
 }
 
 fn materialize_fx(
@@ -175,13 +368,13 @@ fn materialize_fx(
             .get(name)
             .is_some_and(|groups| groups.contains_key(group.key()))
         {
-            profile.set_learned(group.scope(), group_map(learned, name, group));
+            profile.set_bindings(group.scope(), group_bindings(learned, name, group));
         }
     }
     let map = profile
-        .fx_defaults()
+        .fx_default_bindings()
         .into_iter()
-        .map(|(key, action)| (key.to_string(), action))
+        .map(|(key, action)| (key.to_string(), action.into()))
         .collect();
     learned
         .entry(name.into())
@@ -220,9 +413,9 @@ pub fn clear(learned: &mut Learned, group: Group, action: &str) -> Vec<String> {
     let mut changed = Vec::new();
     for (profile, groups) in learned.iter_mut() {
         if let Some(map) = groups.get_mut(group.key()) {
-            let before = map.len();
-            map.retain(|_, a| a != action);
-            if map.len() != before {
+            let before = map.clone();
+            map.retain(|_, binding| without_action(binding, action));
+            if *map != before {
                 changed.push(profile.clone());
             }
         }
@@ -231,13 +424,21 @@ pub fn clear(learned: &mut Learned, group: Group, action: &str) -> Vec<String> {
 }
 
 /// Learned controls of a profile in a group, parsed.
+#[cfg(test)]
 pub fn group_map(learned: &Learned, profile: &str, group: Group) -> HashMap<Key, String> {
+    group_bindings(learned, profile, group)
+        .into_iter()
+        .map(|(key, binding)| (key, binding.primary().into()))
+        .collect()
+}
+
+pub fn group_bindings(learned: &Learned, profile: &str, group: Group) -> HashMap<Key, Binding> {
     learned
         .get(profile)
         .and_then(|s| s.get(group.key()))
         .into_iter()
         .flatten()
-        .filter_map(|(k, a)| Some((k.parse().ok()?, a.clone())))
+        .filter_map(|(k, a)| Some((k.parse().ok()?, a.clone().into())))
         .collect()
 }
 
@@ -702,6 +903,39 @@ impl App {
             .map(|i| (i.name, i.label.to_string()))
     }
 
+    pub(super) fn taken_in_slot(
+        &self,
+        profile: &str,
+        group: input::Group,
+        key: input::midi::Key,
+        picked: &str,
+        slot: learn::GestureSlot,
+    ) -> Option<(&'static str, String)> {
+        let binding = self
+            .learned
+            .get(profile)?
+            .get(group.key())?
+            .get(&key.to_string())?;
+        let name = match (slot, binding) {
+            (learn::GestureSlot::Tap, config::MidiBinding::Press(name)) => name.as_str(),
+            (
+                learn::GestureSlot::Tap,
+                config::MidiBinding::Gesture {
+                    tap: Some(name), ..
+                },
+            ) => name.as_str(),
+            (learn::GestureSlot::Hold, config::MidiBinding::Gesture { hold, .. }) => hold.as_str(),
+            _ => return None,
+        };
+        if name == picked {
+            return None;
+        }
+        input::ACTIONS
+            .iter()
+            .find(|i| i.name == name)
+            .map(|i| (i.name, i.label.to_string()))
+    }
+
     /// The grid cells in the learn mode: a bound pad carries its control, the picked one
     /// stands out, the one a waiting control would leave is marked (52).
     pub(super) fn learn_grid(&self, cells: &mut [tui::PadView]) {
@@ -845,12 +1079,12 @@ impl App {
             .iter()
             .filter(|g| **g != here)
             .filter_map(|&g| {
-                let map = learn::group_map(&self.learned, profile, g);
-                let action = map.get(&key)?;
+                let map = learn::group_bindings(&self.learned, profile, g);
+                let action = map.get(&key)?.primary();
                 let label = input::ACTIONS
                     .iter()
-                    .find(|i| i.name == *action)
-                    .map_or(action.as_str(), |i| i.label);
+                    .find(|i| i.name == action)
+                    .map_or(action, |i| i.label);
                 Some(format!("{named} on {}: {label}", g.title()))
             })
             .collect()
@@ -894,7 +1128,7 @@ impl App {
         if reset {
             self.learned.remove(name);
         }
-        learn::seed(&mut self.learned, name, &profile.roles());
+        learn::seed_bindings(&mut self.learned, name, &profile.binding_roles());
         if !self.seeded.iter().any(|s| s == name) {
             self.seeded.push(name.into());
         }
@@ -921,12 +1155,12 @@ impl App {
 
     /// Sends the learned controls of `profile` in `group` to the MIDI thread and the local copy.
     pub(super) fn sync_learned(&mut self, profile: &str, group: input::Group) {
-        let map = learn::group_map(&self.learned, profile, group);
+        let map = learn::group_bindings(&self.learned, profile, group);
         if let Some(m) = &self.midi {
             m.set_learned(profile, group, map.clone());
         }
         for p in self.profiles.iter_mut().filter(|p| p.name == profile) {
-            p.set_learned(group.scope(), map.clone());
+            p.set_bindings(group.scope(), map.clone());
         }
     }
 
@@ -984,7 +1218,18 @@ impl App {
         let Some((profile, key)) = l.pending else {
             return;
         };
-        learn::assign(&mut self.learned, &profile, l.info.group, key, l.info.name);
+        if l.info.knob {
+            learn::assign(&mut self.learned, &profile, l.info.group, key, l.info.name);
+        } else {
+            learn::assign_slot(
+                &mut self.learned,
+                &profile,
+                l.info.group,
+                key,
+                l.slot,
+                l.info.name,
+            );
+        }
         self.sync_learned(&profile, l.info.group);
         self.save_midi();
         log::info!("MIDI learn: {profile} {key} -> {}", l.info.name);
@@ -995,7 +1240,7 @@ impl App {
     pub(super) fn midi_list(&self) -> Vec<MidiListRow> {
         let sets = midi_sets();
         // the knob response first: one setting for every knob (58)
-        let mut rows = vec![MidiListRow::Response];
+        let mut rows = vec![MidiListRow::Response, MidiListRow::HoldTime];
         for (port, name) in &self.midi_devices {
             if !rows
                 .iter()
@@ -1041,7 +1286,7 @@ impl App {
     pub(super) fn learned_any(&self, group: input::Group, action: &str) -> bool {
         self.learned.values().any(|g| {
             g.get(group.key())
-                .is_some_and(|m| m.values().any(|a| a == action))
+                .is_some_and(|m| m.values().any(|a| a.has_action(action)))
         })
     }
 
@@ -1086,14 +1331,16 @@ impl App {
         let pending = self
             .learning
             .as_ref()
-            .and_then(|l| Some((l.info, l.pending.clone()?)));
+            .and_then(|l| Some((l.info, l.slot, l.pending.clone()?)));
         let taken = pending
             .as_ref()
-            .and_then(|(i, (_, key))| self.taken_in(i.group, *key, i.name))
+            .and_then(|(i, slot, (profile, key))| {
+                self.taken_in_slot(profile, i.group, *key, i.name, *slot)
+            })
             .map(|t| t.0);
         let action = |info: &input::ActionInfo| {
             let mut row = (who(info), false, Vec::new());
-            let Some((p, (profile, key))) = &pending else {
+            let Some((p, _, (profile, key))) = &pending else {
                 return row;
             };
             let named = control_name(&profiles, profile, *key);
@@ -1146,6 +1393,12 @@ impl App {
                         "{}   (jump / pickup / scale)",
                         self.takeover.response.name()
                     ),
+                    taken: false,
+                    stays: Vec::new(),
+                },
+                MidiListRow::HoldTime => tui::MidiRow::Action {
+                    label: "hold time".into(),
+                    who: format!("{} ms", self.midi_gestures.hold_time_ms),
                     taken: false,
                     stays: Vec::new(),
                 },
@@ -1209,12 +1462,23 @@ impl App {
         }
         let l = self.learning.as_ref()?;
         Some(match &l.pending {
-            Some((profile, key)) => format!(
-                " {} for \"{}\" · Enter: assign and save · Esc: keep all · another control takes its place",
-                control_name(&self.live_profiles(), profile, *key),
-                l.info.label
+            Some((profile, key)) => {
+                let replaced = self
+                    .taken_in_slot(profile, l.info.group, *key, l.info.name, l.slot)
+                    .map(|(_, label)| format!(" · replaces {label}"))
+                    .unwrap_or_default();
+                format!(
+                    " {} for \"{}\" ({}){replaced} · Enter: assign and save · Esc: keep all · another control takes its place",
+                    control_name(&self.live_profiles(), profile, *key),
+                    l.info.label,
+                    l.slot.name(),
+                )
+            }
+            None => format!(
+                " Move a control for \"{}\" ({}). J tap · L hold · Esc cancels.",
+                l.info.label,
+                l.slot.name()
             ),
-            None => format!(" Move a control for \"{}\"... Esc cancels.", l.info.label),
         })
     }
 
@@ -1237,6 +1501,22 @@ impl App {
         self.result_notice(result, format!("knobs: {}", next.name()));
     }
 
+    pub(super) fn step_hold_time(&mut self, step: isize) {
+        let next = (self.midi_gestures.hold_time_ms as isize + step * 50).clamp(200, 600) as u32;
+        if next == self.midi_gestures.hold_time_ms {
+            return;
+        }
+        self.midi_gestures.hold_time_ms = next;
+        if let Some(midi) = &self.midi {
+            midi.set_hold_time(Duration::from_millis(next.into()));
+        }
+        let result = match &self.user_path {
+            Some(path) => config::save_section(path, "midi_gestures", &self.midi_gestures),
+            None => Err("settings are not saved: fix the config file first".into()),
+        };
+        self.result_notice(result, format!("MIDI hold time: {next} ms"));
+    }
+
     /// Opens the group of the selected row (`true`) or closes it, and selects its row.
     pub(super) fn midi_fold(&mut self, open: bool) {
         let list = self.midi_list();
@@ -1245,7 +1525,8 @@ impl App {
             Some(MidiListRow::Action { info }) => info.group,
             // the pads and the banks stand in GLOBAL: the fold covers their row
             Some(MidiListRow::Set { infos, .. }) => infos[0].group,
-            Some(MidiListRow::Response | MidiListRow::Reset { .. }) | None => return,
+            Some(MidiListRow::Response | MidiListRow::HoldTime | MidiListRow::Reset { .. })
+            | None => return,
         };
         if open {
             if !self.midi_open.contains(&group) {
@@ -1525,5 +1806,215 @@ mod tests {
         assert_eq!(clear(&mut learned, Group::Global, "help.toggle"), ["X"]);
         assert!(group_map(&learned, "X", Group::Global).is_empty());
         assert_eq!(group_map(&learned, "X", Group::Pads).len(), 1);
+    }
+
+    #[test]
+    fn learn_two_actions_on_one_button() {
+        let mut learned = Learned::new();
+        let key = Key::Note(60);
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Tap,
+            "transport.toggle",
+        );
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Hold,
+            "metronome.toggle",
+        );
+        assert_eq!(
+            group_bindings(&learned, "X", Group::Global).get(&key),
+            Some(&Binding::Gesture {
+                tap: Some("transport.toggle".into()),
+                hold: "metronome.toggle".into()
+            })
+        );
+    }
+
+    #[test]
+    fn cancel_a_pending_hold() {
+        let mut learned = Learned::new();
+        let key = Key::Note(60);
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Tap,
+            "transport.toggle",
+        );
+        let before = learned.clone();
+        let mut learning = Learning::new(info("metronome.toggle"));
+        learning.slot = GestureSlot::Hold;
+        learning.hold("X".into(), key);
+        assert_eq!(learning.pending, Some(("X".into(), key)));
+        drop(learning);
+        assert_eq!(learned, before);
+    }
+
+    #[test]
+    fn reassign_one_gesture_slot() {
+        let mut learned = Learned::new();
+        let key = Key::Note(60);
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Tap,
+            "transport.toggle",
+        );
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Hold,
+            "metronome.toggle",
+        );
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Hold,
+            "help.toggle",
+        );
+        assert_eq!(
+            group_bindings(&learned, "X", Group::Global).get(&key),
+            Some(&Binding::Gesture {
+                tap: Some("transport.toggle".into()),
+                hold: "help.toggle".into()
+            })
+        );
+        assert_eq!(
+            clear(&mut learned, Group::Global, "metronome.toggle"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn clear_one_gesture_slot() {
+        let mut learned = Learned::new();
+        let key = Key::Note(60);
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Tap,
+            "transport.toggle",
+        );
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            key,
+            GestureSlot::Hold,
+            "metronome.toggle",
+        );
+        assert_eq!(
+            clear(&mut learned, Group::Global, "metronome.toggle"),
+            ["X"]
+        );
+        assert_eq!(
+            group_bindings(&learned, "X", Group::Global).get(&key),
+            Some(&Binding::Press("transport.toggle".into()))
+        );
+    }
+
+    #[test]
+    fn add_a_hold_to_an_old_binding() {
+        let mut learned: Learned =
+            toml::from_str("[X.global]\n'note 60'='transport.toggle'\n").unwrap();
+        assign_slot(
+            &mut learned,
+            "X",
+            Group::Global,
+            Key::Note(60),
+            GestureSlot::Hold,
+            "metronome.toggle",
+        );
+        assert_eq!(
+            group_bindings(&learned, "X", Group::Global).get(&Key::Note(60)),
+            Some(&Binding::Gesture {
+                tap: Some("transport.toggle".into()),
+                hold: "metronome.toggle".into()
+            })
+        );
+    }
+
+    #[test]
+    fn seed_a_profile_with_two_actions() {
+        let mut learned = Learned::new();
+        let roles = [(
+            Group::Global.scope(),
+            Key::Note(60),
+            Binding::Gesture {
+                tap: Some("transport.toggle".into()),
+                hold: "metronome.toggle".into(),
+            },
+        )];
+        seed_bindings(&mut learned, "X", &roles);
+        assert_eq!(
+            group_bindings(&learned, "X", Group::Global).get(&Key::Note(60)),
+            Some(&roles[0].2)
+        );
+        let mut user = Learned::new();
+        assign(
+            &mut user,
+            "X",
+            Group::Global,
+            Key::Note(61),
+            "metronome.toggle",
+        );
+        seed_bindings(&mut user, "X", &roles);
+        assert_eq!(
+            group_bindings(&user, "X", Group::Global).get(&Key::Note(60)),
+            None
+        );
+        assert_eq!(
+            group_bindings(&user, "X", Group::Global).get(&Key::Note(61)),
+            Some(&Binding::Press("metronome.toggle".into()))
+        );
+    }
+
+    #[test]
+    fn invalid_hold_keeps_a_valid_tap() {
+        let mut learned = Learned::new();
+        learned
+            .entry("X".into())
+            .or_default()
+            .entry("global".into())
+            .or_default()
+            .insert(
+                "note 60".into(),
+                MidiBinding::Gesture {
+                    tap: Some("transport.toggle".into()),
+                    hold: "layer.panel".into(),
+                },
+            );
+        assert_eq!(drop_dead(&mut learned), ["X global note 60 layer.panel"]);
+        assert_eq!(learned["X"]["global"]["note 60"], "transport.toggle");
+        learned
+            .get_mut("X")
+            .unwrap()
+            .get_mut("global")
+            .unwrap()
+            .insert(
+                "note 60".into(),
+                MidiBinding::Gesture {
+                    tap: Some("transport.toggle".into()),
+                    hold: "pad.1".into(),
+                },
+            );
+        assert_eq!(drop_dead(&mut learned), ["X global note 60 pad.1"]);
+        assert_eq!(learned["X"]["global"]["note 60"], "transport.toggle");
     }
 }

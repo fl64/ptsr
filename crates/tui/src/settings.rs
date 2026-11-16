@@ -104,9 +104,20 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
     if st.tab == 2 {
         lines.push(match st.learning {
             Some(l) => Span::styled(l.to_string(), Style::new().fg(MAGENTA)).into(),
-            None => " Enter: learn a control for the action. Backspace: clear the learned one."
-                .fg(DIM)
-                .into(),
+            None => {
+                let hint = match st.midi_rows.get(st.midi_row) {
+                    Some(MidiRow::Action { label, .. }) if label == "hold time" => {
+                        " J/L: change hold time by 50 ms. Saves at once."
+                    }
+                    Some(MidiRow::Action { label, .. }) if label == "knob response" => {
+                        " J/L: change knob response. Saves at once."
+                    }
+                    _ => {
+                        " Enter: learn a control for the action. Backspace: clear the learned one."
+                    }
+                };
+                hint.fg(DIM).into()
+            }
         });
         let width = st
             .midi_rows
@@ -118,10 +129,21 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
             .max()
             .unwrap_or(0);
         let mut selected_line = 0;
+        let groups = st
+            .midi_rows
+            .iter()
+            .filter(|row| matches!(row, MidiRow::Group { .. }))
+            .count();
+        let needed = lines.len() + st.midi_rows.len() + groups;
+        let omit_from = groups.saturating_sub(needed.saturating_sub(height as usize));
+        let mut group_at = 0;
         for (i, row) in st.midi_rows.iter().enumerate() {
             match row {
                 MidiRow::Group { name, counts } => {
-                    lines.push(Line::default());
+                    if group_at < omit_from {
+                        lines.push(Line::default());
+                    }
+                    group_at += 1;
                     lines.push(Line::from(if i == st.midi_row {
                         selected_line = lines.len();
                         Span::styled(format!("▸{name} · {counts}"), Style::new().fg(CYAN).bold())
