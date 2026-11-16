@@ -203,7 +203,7 @@ shorter repeated path separately.
 | Chop by hits and lay out | Chop cell, knob for threshold, Hits cell, Assign cell, PAD BANK to layer 1, target pads, PAD BANK to layer 2, reveal hit, Apply cell |
 | Set a pad's decay | Hit the pad, turn bank 2 knob 5 |
 | Swap two pads | Hit pad A, Swap cell, hit pad B |
-| Open a project | Projects screen cell, knob 1, confirm cell |
+| Open a project | Pads context `proj` cell, knob 1 in the picker, P8 to confirm |
 | Change the bank | LEFT or RIGHT on Pads |
 | Record the microphone onto a pad | Hold RECORD, hit the pad |
 
@@ -316,25 +316,28 @@ Tasks:
 
 1. `docs/CONTROLLER-PATHS.md`: for every story in `docs/USER-STORIES.md`, the controller path
    and the count of presses, as in §2.4.
-2. A "text-only" list in `crates/input` (an `ActionInfo` flag): `pad.rename`, `browser.filter`,
-   the typed name of a new project, `app.quit`, keymap edits. Nothing else may be on it without
-   the owner's approval.
+2. Mark `pad.rename` and `browser.filter` as text entry in `ActionInfo`. A typed new-project
+   name and keymap edits are text operations outside that list. `app.quit` stays outside
+   `ACTIONS` and MIDI learn as a keyboard-only safety exception. No other exception may enter
+   the reach inventory without the owner's approval.
 3. The reach test checks both directions. For each screen and mode, find a
    controller path for each non-text keyboard action. Use the SMC-PAD profile
    and `panel.toml`:
    direct button, pad hit, panel cell, or knob. Count a visible panel cell as one
    press. Count the first panel entry separately: PAD BANK and two layer 2 hits.
    Report any action without a path or any repeated path above two presses.
-   Keyboard side: every controller action has a key or key path, except layer
-   selection, its status mark, and an optional measured SHIFT quick look.
+   Keyboard side: every sampler action has a key or key path. PAD BANK selection,
+   its status mark, panel page navigation and an optional measured SHIFT quick look
+   are controller interface steps, not sampler actions.
    The test also checks that every mode has its badge
    (`VISUAL.md` §2.1).
-4. Fix the gaps the test shows. Expected ones: the project picker by knob and confirm; the
-   folder picker of the Paths tab; the settings values by knob; the splash closes on any
-   controller input; help (F1) as a panel cell or another explicit path. Do not reserve PLAY
-   hold for help: change 95 uses it for the metronome. Decide the help path in the design.
-5. The rule for later changes goes into `AGENTS.md`: a new action names its controller path in
-   its spec, and the reach test covers it.
+4. Close the gaps that the production-route test shows. Expected gaps include project
+   selection by encoder 1 and P8, Paths folder selection, and Settings values by encoder 2.
+   Help needs navigation after the existing panel cell opens it. Keep the accepted rule
+   that sound ends the splash. A silent controller action does not close it. PLAY hold
+   keeps its metronome role.
+5. `AGENTS.md` already requires a controller path in the spec for each new action. Add the
+   reach test that enforces the rule for later changes.
 
 How to verify (owner): work a full session from start to a saved project with the keyboard out
 of reach: load, chop, lay out, shape, effects, save, switch projects.
