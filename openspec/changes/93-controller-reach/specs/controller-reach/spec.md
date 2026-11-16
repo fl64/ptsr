@@ -77,11 +77,11 @@ On Settings, SMC-PAD encoder 2 SHALL change the selected value with the same bou
 
 ### Requirement: Help has a controller route
 
-The main panel Help cell SHALL open Help. While Help shows, P7 and P8 SHALL change its page, P9 and P10 SHALL scroll the shown page, and Back SHALL close it. Help SHALL show these controller controls. A Help cell SHALL not act on the screen behind Help. Keyboard Help keys and their results SHALL stay available.
+The main panel Help cell SHALL open Help. While Help shows, P7 and P8 SHALL select the previous and next Help tab. P9 and P10 SHALL scroll Help or Messages, or move the selected control on the Controller tab. Back SHALL close Help. Help SHALL show these controller controls. A Help cell SHALL not act on the screen behind Help. Keyboard Help keys and their results SHALL stay available.
 
 #### Scenario: Help cells navigate without acting behind Help
 - **WHEN** the owner opens Help from the panel, uses P7 through P10 and then Back
-- **THEN** only the Help page or scroll position changes before Help closes
+- **THEN** only the Help tab, scroll position or selected controller control changes before Help closes
 - **AND** the screen and its selected value remain unchanged
 
 ### Requirement: Reach tests preserve modal safety and visible modes

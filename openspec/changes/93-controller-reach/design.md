@@ -24,7 +24,7 @@ Modal handlers take priority over the underlying panel. In a project picker, enc
 
 In Settings, encoder 2 changes the selected value. It uses the same action and bounds as the keyboard value keys. When a folder picker opens, the encoder moves only the picker and does not change a setting. The current screen's other knobs keep their roles. The input strip names encoder 2's Settings role.
 
-The main Help cell opens Help. While Help shows, P7 and P8 change its page, P9 and P10 scroll the shown page, and Back closes it. A question, text line or learning mode retains higher priority. Help controls must appear in Help itself. A cell used for Help navigation cannot run an action on the screen behind it. The keyboard keeps F1, Tab and its current page keys.
+The main Help cell opens Help. While Help shows, P7 and P8 select the previous and next Help tab. P9 and P10 scroll Help or Messages, or move the selected control on the Controller tab. Back closes Help. A question, text line or learning mode retains higher priority. Help controls must appear in Help itself. A cell used for Help navigation cannot run an action on the screen behind it. The keyboard keeps F1, Tab and its current page keys.
 
 The exact added context cells follow the reach inventory. Before code, add their labels and action IDs to this design and the active specification. Keep the context cell limit, fixed bottom row and existing owner override rule. A mode that cannot show its command has a recorded gap, not a silent fallback.
 
