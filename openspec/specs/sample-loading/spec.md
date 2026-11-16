@@ -155,3 +155,12 @@ The system SHALL name the file of the wave on the files screen next to its lengt
 #### Scenario: The wave names its file
 - **WHEN** the owner selects `kick.wav` on the files screen
 - **THEN** the wave is labelled `kick.wav · 0.33 s`
+
+### Requirement: A relative knob selects files
+
+On Files, a knob bound to `files.scroll` SHALL move the selected row by its signed steps and clamp at the ends. It SHALL use the existing preview behavior after selection changes. Outside Files, this target SHALL do nothing. The keyboard list keys SHALL keep their roles.
+
+#### Scenario: Relative file selection previews the last row
+- **WHEN** Files shows several sounds and a relative knob moves past them in both directions
+- **THEN** the selection stops at the list ends and the preview follows the final selected file
+- **AND** skipped previews do not start after the final one
