@@ -7,12 +7,12 @@ Change 92 gives the SMC-PAD a command panel, but it does not prove that the owne
 ## What Changes
 
 - Record a controller route and press count for every story in `docs/USER-STORIES.md`. Separate first panel entry from later use. Mark stories that only describe a display or another device.
-- Verify the shipped keyboard map, SMC-PAD profile and panel map in both directions for each screen and mode. Exempt only the agreed text entry and quit cases. Require a visible badge for each mode.
+- Verify the shipped keyboard map, SMC-PAD profile and panel map in both directions for each screen and mode. Exempt only text entry. Require a visible badge for each mode.
 - Add controller selection and confirmation in the project and folder pickers. Add a relative knob route for settings values. Make Help navigation usable after its panel cell opens it.
 - Keep every non-text action within two presses from a visible panel, apart from knob turns and target pad hits. Add a page selection route for context pages beyond the first.
 - Keep existing question priority, first-hit panel entry, keyboard keys, other devices and held pad releases.
 
-This change SHALL NOT add Redo, Panic, date-named projects, pad lights, a host SHIFT shortcut, or a new sound feature. It SHALL NOT change the accepted rule that the splash ends after sound starts. `app.quit` stays keyboard-only and unavailable for MIDI learn.
+This change SHALL NOT add Redo, Panic, date-named projects, pad lights, a host SHIFT shortcut, or a new sound feature. It SHALL NOT change the accepted rule that the splash ends after sound starts. The SMC-PAD Exit cell SHALL ask for confirmation before quit. `app.quit` SHALL stay unavailable for MIDI learn.
 
 ## Capabilities
 

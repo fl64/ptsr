@@ -2,7 +2,7 @@
 
 ## Context and evidence
 
-Change 92 supplies the panel and its first-hit rule. `config/panel.toml` gives one context page per view. In `crates/app/src/dispatch.rs`, `PanelCell` accepts only Back while a picker or Help is open. The project-list step target exists, but the shipped SMC-PAD profile does not bind it in those modes. `crates/input/src/lib.rs` excludes `app.quit` from `ACTIONS` so that MIDI learn cannot offer it. Keep that safety rule.
+Change 92 supplies the panel and its first-hit rule. `config/panel.toml` gives one context page per view. In `crates/app/src/dispatch.rs`, `PanelCell` accepts only Back while a picker or Help is open. The project-list step target exists, but the shipped SMC-PAD profile does not bind it in those modes. `crates/input/src/lib.rs` excludes `app.quit` from `ACTIONS` so that MIDI learn cannot offer it. Keep that MIDI learn rule.
 
 `openspec/specs/screen-layout/spec.md` says that sound, not a silent input, ends the splash. The planned suggestion to close it on any controller input conflicts with this accepted requirement. The splash does not block commands. Change 93 keeps the current splash rule and updates the plan.
 
@@ -12,9 +12,9 @@ Change 92 supplies the panel and its first-hit rule. `config/panel.toml` gives o
 
 The reach inventory starts with effective keyboard actions on each screen and in each mode. It also includes panel cells, profile buttons and knobs that have no direct keyboard binding. Tests use the shipped `config/keymap.toml`, `config/devices/smc-pad.toml` and `config/panel.toml`, then send recorded keyboard events and raw MIDI through production dispatch. An action name in a TOML file alone is not evidence that a modal handler accepts it. The test observes the result and the mode badge.
 
-`ActionInfo` marks `pad.rename` and `browser.filter` as text entry. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and stays keyboard-only. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
+`ActionInfo` marks `pad.rename` and `browser.filter` as text entry. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
-The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit is recorded separately because it selects a sound or target. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
+The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit or a later modal answer is recorded separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
 
 ### Context pages and modal controls
 
@@ -25,6 +25,8 @@ Modal handlers take priority over the underlying panel. In a project picker, enc
 In Settings, encoder 2 changes the selected value. It uses the same action and bounds as the keyboard value keys. When a folder picker opens, the encoder moves only the picker and does not change a setting. The current screen's other knobs keep their roles. The input strip names encoder 2's Settings role.
 
 The main Help cell opens Help. While Help shows, P7 and P8 select the previous and next Help tab. P9 and P10 scroll Help or Messages, or move the selected control on the Controller tab. Back closes Help. A question, text line or learning mode retains higher priority. Help controls must appear in Help itself. A cell used for Help navigation cannot run an action on the screen behind it. The keyboard keeps F1, Tab and its current page keys.
+
+Exit from the SMC-PAD opens a visible question and does not start quit yet. P8 confirms the question and calls the existing quit path once. P7 or Back cancels it. While the question is open, other panel cells cannot act on the screen. The keyboard keeps its current Ctrl+Q behavior. The Exit cell cannot become a learned MIDI action.
 
 The exact added context cells follow the reach inventory. Before code, add their labels and action IDs to this design and the active specification. Keep the context cell limit, fixed bottom row and existing owner override rule. A mode that cannot show its command has a recorded gap, not a silent fallback.
 
@@ -41,10 +43,10 @@ The exact added context cells follow the reach inventory. Before code, add their
 | Another MIDI controller acts while the SMC panel shows | It keeps its own action and does not select an SMC page. | Required two-device test. |
 | The SMC-PAD disconnects inside a picker | The picker remains for the keyboard. Panel state clears. No choice is accepted. | Required disconnect test. |
 | A silent controller action arrives during the splash | The action can run, and the splash remains until accepted sound. | Preserve existing splash tests. |
+| Exit opens while a recording or save is pending | The question has no quit effect. P8 enters the existing exit-save path once. P7 keeps the session open. | Required keyboard and MIDI test. |
 | An owner binding replaces a panel cell | The owner binding acts outside a question. The reach report names the shipped profile, not the owner's override. | Preserve existing override tests. |
 
 ## Open questions
 
 - Which free encoder selects overflow context pages? Default: first-bank encoder 6. It has no shipped role in the current SMC-PAD profile. Keep encoder 1 on the current item and keep both knob banks active.
 - Should a silent controller command end the splash? Default: no. The accepted screen-layout specification requires an accepted sound, and silent commands already work while the splash shows.
-- Should `app.quit` be available from MIDI? Default: no. The current action inventory deliberately omits it. The owner can leave ptsr with Ctrl+Q.

@@ -317,9 +317,10 @@ Tasks:
 1. `docs/CONTROLLER-PATHS.md`: for every story in `docs/USER-STORIES.md`, the controller path
    and the count of presses, as in §2.4.
 2. Mark `pad.rename` and `browser.filter` as text entry in `ActionInfo`. A typed new-project
-   name and keymap edits are text operations outside that list. `app.quit` stays outside
-   `ACTIONS` and MIDI learn as a keyboard-only safety exception. No other exception may enter
-   the reach inventory without the owner's approval.
+   name and keymap edits are text operations outside that list. Keep `app.quit` outside
+   `ACTIONS` and MIDI learn. Give the SMC-PAD an explicit Exit context cell with a visible
+   question. P8 confirms it. P7 or Back cancels it. Ctrl+Q keeps its direct exit behavior.
+   No other exception may enter the reach inventory without the owner's approval.
 3. The reach test checks both directions. For each screen and mode, find a
    controller path for each non-text keyboard action. Use the SMC-PAD profile
    and `panel.toml`:
@@ -335,12 +336,16 @@ Tasks:
    selection by encoder 1 and P8, Paths folder selection, and Settings values by encoder 2.
    Help needs navigation after the existing panel cell opens it. Keep the accepted rule
    that sound ends the splash. A silent controller action does not close it. PLAY hold
-   keeps its metronome role.
+   keeps its metronome role. Test Exit while a recording or save is pending.
 5. `AGENTS.md` already requires a controller path in the spec for each new action. Add the
    reach test that enforces the rule for later changes.
 
-How to verify (owner): work a full session from start to a saved project with the keyboard out
-of reach: load, chop, lay out, shape, effects, save, switch projects.
+Owner steps without the keyboard:
+
+1. Load a sound and chop it.
+2. Assign slices to pads, shape the sound and add effects.
+3. Save the project and switch projects.
+4. Select Exit and press P8.
 
 ### Change 93a — `93a-controller-comfort`
 

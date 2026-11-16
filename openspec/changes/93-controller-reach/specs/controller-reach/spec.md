@@ -18,16 +18,16 @@ For each current screen and mode, each effective keyboard action that needs no t
 
 ### Requirement: Input exceptions stay explicit
 
-The only controller-only steps SHALL be PAD BANK selection, its status mark and page navigation within its panel. The only keyboard-only operations SHALL be `pad.rename`, `browser.filter`, a typed new-project name, `app.quit` and keymap edits. `app.quit` SHALL remain unavailable for MIDI learn. No other exception SHALL enter the inventory without an owner decision.
+The only controller-only steps SHALL be PAD BANK selection, its status mark and page navigation within its panel. The only keyboard-only operations SHALL be `pad.rename`, `browser.filter`, a typed new-project name and keymap edits. `app.quit` SHALL remain unavailable for MIDI learn. No other exception SHALL enter the inventory without an owner decision.
 
-#### Scenario: Text entry and quit keep their exceptions
+#### Scenario: Text entry keeps its exceptions
 - **WHEN** the reach inventory examines pad naming, file filtering, a typed new-project name, keymap edits and quit
-- **THEN** it marks only those operations as keyboard-only
+- **THEN** it marks only the four text operations as keyboard-only
 - **AND** MIDI learn does not offer `app.quit`
 
 ### Requirement: Controller routes keep short press paths
 
-A current frequent action SHALL have a direct SMC-PAD button, pad or knob route. Each other non-text action SHALL need at most two presses from the visible main panel, apart from knob turns and target pad hits. The reach table SHALL state the count from a hidden panel separately. That count SHALL include PAD BANK selection, a reveal hit and the action hit. It SHALL name a route and both counts for every action story in `docs/USER-STORIES.md`.
+A current frequent action SHALL have a direct SMC-PAD button, pad or knob route. Each other non-text action SHALL need at most two presses from the visible main panel. Knob turns, target pad hits and later modal answers do not count toward this limit. The reach table SHALL state the count from a hidden panel separately. That count SHALL include PAD BANK selection, a reveal hit and the action hit. It SHALL name a route and both counts for every action story in `docs/USER-STORIES.md`.
 
 #### Scenario: First entry and repeated commands have separate counts
 - **WHEN** the owner reaches a context command from a hidden panel and then repeats it from a visible panel
@@ -83,6 +83,15 @@ The main panel Help cell SHALL open Help. While Help shows, P7 and P8 SHALL sele
 - **WHEN** the owner opens Help from the panel, uses P7 through P10 and then Back
 - **THEN** only the Help tab, scroll position or selected controller control changes before Help closes
 - **AND** the screen and its selected value remain unchanged
+
+### Requirement: SMC-PAD Exit asks before quit
+
+An explicit Exit context cell SHALL open a visible question without starting quit. P8 SHALL confirm and enter the existing exit-save path once. P7 or Back SHALL cancel and keep the session open. Other panel cells SHALL NOT act behind the question. Ctrl+Q SHALL keep its current direct exit behavior. MIDI learn SHALL NOT offer Exit.
+
+#### Scenario: Exit needs a second SMC-PAD press
+- **WHEN** the owner hits Exit on the panel and presses P7
+- **THEN** the question closes and the session remains open
+- **AND** a later Exit followed by P8 enters the existing exit-save path once
 
 ### Requirement: Reach tests preserve modal safety and visible modes
 
