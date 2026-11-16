@@ -12,6 +12,21 @@ Change 92 supplies the panel and its first-hit rule. `config/panel.toml` gives o
 
 The reach inventory starts with effective keyboard actions on each screen and in each mode. It also includes panel cells, profile buttons and knobs that have no direct keyboard binding. Tests use the shipped `config/keymap.toml`, `config/devices/smc-pad.toml` and `config/panel.toml`, then send recorded keyboard events and raw MIDI through production dispatch. An action name in a TOML file alone is not evidence that a modal handler accepts it. The test observes the result and the mode badge.
 
+The current `ACTIONS` catalogue has 209 entries, 171 distinct names and 50 knob entries. The panel map has eight views with a main page and one context page each. First-bank encoders 6, 7 and 8 have no shipped role. These counts describe configuration and metadata, not successful routes.
+
+| Screen or mode | Confirmed gap in the shipped route | Status |
+| --- | --- | --- |
+| Project picker over any screen | Encoder 1 does not consistently select the project. Panel P8 does not confirm it. | Open in 93. |
+| Paths folder picker | Encoder steps stop before folder selection. LEFT and RIGHT use the Settings row route, not parent and child navigation. | Open in 93. |
+| Settings values | Encoder 2 has no shipped value role. | Open in 93. |
+| Help overlay | Panel cells other than Back cannot change the Help tab or selection. | Open in 93. |
+| Every panel view | Only one context page exists. Encoder 6 cannot select later pages. | Open in 93. |
+| Session exit | Ctrl+Q exits directly. No SMC-PAD Exit cell or confirmation question exists. | Open in 93. |
+| Global commands | Output recording and screen learning have no shipped SMC-PAD cell. | Open in 93. |
+| Chop | Hits Back and both cut-deletion commands have no shipped SMC-PAD cell. | Open in 93. |
+
+The reach test must decide whether another keyboard action has an equivalent knob, button or context route before it closes this list. A static comparison of action names cannot decide that question.
+
 `ActionInfo` marks `pad.rename` and `browser.filter` as text entry. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
 The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit or a later modal answer is recorded separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
