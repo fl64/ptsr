@@ -107,6 +107,48 @@ fn controller_tab_draws_the_device_top() {
     }
 }
 
+/// Scenario "Encoder roles follow the current screen" (screen-layout).
+#[test]
+fn smc_controller_view_shows_setup_status() {
+    let mut drive = Drive::new();
+    let port = "SINCO SMC-PAD-Master 28:1";
+    drive.app.profiles.push(
+        input::midi::Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap(),
+    );
+    drive.app.midi_event(crate::midi::Event::Connected {
+        port: port.into(),
+        profile: "SMC-PAD".into(),
+    });
+    drive.app.help_overlay.controller.last_port = Some(port.into());
+    open(&mut drive, (80, 26));
+    assert_eq!(current(&mut drive), "SMC-PAD");
+    assert!(
+        view(&mut drive)
+            .detail
+            .starts_with("encoders unavailable ·")
+    );
+    drive.app.midi_event(crate::midi::Event::SetupStatus {
+        ready: false,
+        message: "USB read timed out".into(),
+    });
+    assert!(
+        view(&mut drive)
+            .detail
+            .starts_with("encoders unavailable ·")
+    );
+    drive.app.midi_event(crate::midi::Event::SetupStatus {
+        ready: true,
+        message: "SMC-PAD encoders ready".into(),
+    });
+    assert!(view(&mut drive).detail.starts_with("encoders ready ·"));
+    let rows = screen(&mut drive, (80, 26)).join("\n");
+    assert!(rows.contains("encoders ready"), "{rows}");
+}
+
 #[test]
 fn controller_labels_follow_the_screen_and_the_edit() {
     let mut drive = Drive::new();

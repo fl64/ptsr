@@ -1,0 +1,120 @@
+# Measured active USB slot 5 on SINCO SMC-PAD, 2026-11-16.
+# The Private port carries a mirror and has its own empty profile.
+# ptsr checks the 16 relative encoder records before it lets knobs act.
+
+[device]
+name = "SMC-PAD"
+match_port = "SMC-PAD-Master"
+
+[controls.pads]
+p1  = { note = 48 }
+p2  = { note = 49 }
+p3  = { note = 50 }
+p4  = { note = 51 }
+p5  = { note = 44 }
+p6  = { note = 45 }
+p7  = { note = 46 }
+p8  = { note = 47 }
+p9  = { note = 40 }
+p10 = { note = 41 }
+p11 = { note = 42 }
+p12 = { note = 43 }
+p13 = { note = 36 }
+p14 = { note = 37 }
+p15 = { note = 38 }
+p16 = { note = 39 }
+
+[controls.knobs]
+e1 = { cc = 30, type = "relative", encoding = "offset64" }
+e2 = { cc = 31, type = "relative", encoding = "offset64" }
+e3 = { cc = 32, type = "relative", encoding = "offset64" }
+e4 = { cc = 33, type = "relative", encoding = "offset64" }
+e5 = { cc = 34, type = "relative", encoding = "offset64" }
+e6 = { cc = 35, type = "relative", encoding = "offset64" }
+e7 = { cc = 36, type = "relative", encoding = "offset64" }
+e8 = { cc = 37, type = "relative", encoding = "offset64" }
+f1 = { cc = 38, type = "relative", encoding = "offset64" }
+f2 = { cc = 39, type = "relative", encoding = "offset64" }
+f3 = { cc = 40, type = "relative", encoding = "offset64" }
+f4 = { cc = 41, type = "relative", encoding = "offset64" }
+f5 = { cc = 42, type = "relative", encoding = "offset64" }
+f6 = { cc = 43, type = "relative", encoding = "offset64" }
+f7 = { cc = 44, type = "relative", encoding = "offset64" }
+f8 = { cc = 45, type = "relative", encoding = "offset64" }
+
+[controls.buttons]
+left   = { cc = 25 }
+right  = { cc = 26 }
+play   = { cc = 27 }
+stop   = { cc = 28 }
+record = { cc = 29 }
+c1  = { note = 64 }
+c2  = { note = 65 }
+c3  = { note = 66 }
+c4  = { note = 67 }
+c5  = { note = 60 }
+c6  = { note = 61 }
+c7  = { note = 62 }
+c8  = { note = 63 }
+c9  = { note = 56 }
+c10 = { note = 57 }
+c11 = { note = 58 }
+c12 = { note = 59 }
+c13 = { note = 52 }
+c14 = { note = 53 }
+c15 = { note = 54 }
+c16 = { note = 55 }
+
+[layout]
+rows = [
+  ["e7", "e8", "f7", "f8", "p1",  "p2",  "p3",  "p4",  "left"],
+  ["e5", "e6", "f5", "f6", "p5",  "p6",  "p7",  "p8",  "right"],
+  ["e3", "e4", "f3", "f4", "p9",  "p10", "p11", "p12", "play"],
+  ["e1", "e2", "f1", "f2", "p13", "p14", "p15", "p16", "stop"],
+  ["",   "",   "",   "",   "c1",  "c2",  "c3",  "c4",  "record"],
+  ["",   "",   "",   "",   "c5",  "c6",  "c7",  "c8",  ""],
+  ["",   "",   "",   "",   "c9",  "c10", "c11", "c12", ""],
+  ["",   "",   "",   "",   "c13", "c14", "c15", "c16", ""],
+]
+
+[screens.global]
+record = { hold = "record.mic" }
+f1 = "pad.volume"
+f3 = "pad.pitch"
+f4 = "pad.cutoff"
+f5 = "pad.decay"
+f8 = "master.volume"
+
+[screens.pads]
+left = "pad.select_left"
+right = "pad.select_right"
+e1 = "bank"
+e2 = "pad.volume"
+e3 = "pad.pitch"
+e4 = "pad.cutoff"
+e5 = "pad.decay"
+
+[screens.files]
+left = "browser.up"
+right = "browser.down"
+e1 = "files.scroll"
+
+[screens.chop]
+left = "marker.prev"
+right = "marker.next"
+e1 = "chop.cursor_pos"
+e2 = "chop.zoom"
+e3 = "chop.threshold"
+e4 = "slice.start"
+e5 = "slice.end"
+
+[screens.pattern]
+e1 = "bank"
+e2 = "pattern.bars"
+e3 = "pattern.quantize"
+e4 = "pattern.strength"
+
+[screens.settings]
+left = "settings.row_prev"
+right = "settings.row_next"
+e1 = "settings.row"

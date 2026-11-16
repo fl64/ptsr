@@ -1279,6 +1279,13 @@ impl App {
             return;
         }
         match ev {
+            midi::Event::SetupStatus { ready, message } => {
+                self.help_overlay.controller.smc_status = Some((ready, message.clone()));
+                self.post_system_notice(
+                    if ready { Level::Info } else { Level::Warn },
+                    (message, now),
+                );
+            }
             midi::Event::Connected { port, profile } => {
                 self.post_system_notice(
                     Level::Info,
@@ -1288,6 +1295,9 @@ impl App {
                 self.midi_devices.push((port, profile));
             }
             midi::Event::Disconnected { port } => {
+                if port.contains("SMC-PAD-Master") {
+                    self.help_overlay.controller.smc_status = None;
+                }
                 self.post_system_notice(Level::Warn, (format!("MIDI disconnected: {port}"), now));
                 self.midi_devices.retain(|(p, _)| *p != port);
             }

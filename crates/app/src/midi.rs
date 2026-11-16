@@ -1,6 +1,9 @@
 //! MIDI input: finds ports, connects and drops them on the fly, sends pad hits straight to the
 //! audio thread (no UI frame delay) and everything else to the UI.
 
+#[path = "smc_usb.rs"]
+mod smc_usb;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
@@ -21,6 +24,10 @@ use std::sync::atomic::Ordering::Acquire;
 const SCAN: Duration = Duration::from_secs(1);
 const DEFAULT_HOLD: Duration = Duration::from_millis(300);
 
+fn virtual_mode() -> bool {
+    std::env::var("PTSR_DEV_VIRTUAL").is_ok_and(|value| value == "1")
+}
+
 /// The original audio attempt must not be inferred from App's later screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadSound {
@@ -31,6 +38,10 @@ pub enum PadSound {
 }
 
 pub enum Event {
+    SetupStatus {
+        ready: bool,
+        message: String,
+    },
     Connected {
         port: String,
         profile: String,
@@ -120,6 +131,8 @@ impl Shared {
 }
 
 enum Raw {
+    SmcSetup(Result<(), String>),
+    SmcLost,
     Connected(String, Option<Connection>),
     Disconnected(String, Option<Connection>),
     Msg(String, Msg, Stamp),
@@ -689,6 +702,13 @@ pub fn start(
         .name("midi-scan".into())
         .spawn(move || scan(scan_tx, scan_project))
         .expect("spawn midi-scan");
+    if !virtual_mode() {
+        let setup_tx = raw_tx.clone();
+        std::thread::Builder::new()
+            .name("smc-pad-setup".into())
+            .spawn(move || smc_usb::watch(setup_tx))
+            .expect("spawn smc-pad-setup");
+    }
     let dispatch_shared = shared.clone();
     std::thread::Builder::new()
         .name("midi".into())
@@ -729,6 +749,7 @@ fn receive(
 }
 
 fn scan(tx: Sender<Raw>, project: Option<Arc<ProjectState>>) {
+    let dev_virtual = virtual_mode();
     let mut connections: HashMap<String, (midir::MidiInputConnection<()>, Option<Connection>)> =
         HashMap::new();
     let scanner = match midir::MidiInput::new("ptsr scan") {
@@ -743,7 +764,15 @@ fn scan(tx: Sender<Raw>, project: Option<Arc<ProjectState>>) {
             .ports()
             .into_iter()
             .filter_map(|p| scanner.port_name(&p).ok().map(|n| (n, p)))
-            .filter(|(n, _)| !n.contains("Midi Through"))
+            .filter(|(name, _)| {
+                if name.contains("Midi Through") || name.contains("ptsr SMC-PAD setup") {
+                    return false;
+                }
+                if name.contains("(virtual)") {
+                    return dev_virtual && name.contains("SMC-PAD-Master");
+                }
+                !dev_virtual || (!name.contains("SMC-PAD") && !name.contains("SINCO"))
+            })
             .collect();
 
         connections.retain(|name, (_, connection)| {
@@ -819,6 +848,9 @@ fn dispatch(
     let mut pending = VecDeque::new();
     let mut closed = false;
     let mut invalid_reported = false;
+    let mut smc_ready = false;
+    let mut smc_status: Option<String> = None;
+    let dev_virtual = virtual_mode();
     loop {
         while let Some(command) = pending.pop_front() {
             let Some(queue) = commands.as_mut() else {
@@ -884,6 +916,30 @@ fn dispatch(
             _ => None,
         };
         let (port, msg, stamp) = match raw {
+            Raw::SmcSetup(result) => {
+                let ready = result.is_ok();
+                let message = match result {
+                    Ok(()) => "SMC-PAD encoders ready".into(),
+                    Err(error) => format!("SMC-PAD encoder setup: {error}"),
+                };
+                if smc_ready != ready || smc_status.as_deref() != Some(&message) {
+                    ui.send(
+                        Event::SetupStatus {
+                            ready,
+                            message: message.clone(),
+                        },
+                        None,
+                    );
+                }
+                smc_ready = ready;
+                smc_status = Some(message);
+                continue;
+            }
+            Raw::SmcLost => {
+                smc_ready = false;
+                smc_status = None;
+                continue;
+            }
             Raw::Connected(port, _) => {
                 let profile = profiles
                     .iter()
@@ -893,6 +949,10 @@ fn dispatch(
                 continue;
             }
             Raw::Disconnected(port, _) => {
+                if port.contains("SMC-PAD-Master") {
+                    smc_ready = false;
+                    smc_status = None;
+                }
                 send_gesture_edges(&mut ui, gestures.disconnect(&port));
                 positions.retain(|(device, _, _), _| *device != port);
                 speed.retain(|(device, _, _), _| *device != port);
@@ -1015,8 +1075,33 @@ fn dispatch(
             && !focus.mode.text
             && !focus.mode.screen_learn
             && !focus.mode.midi_learn;
-        let (resolved, activity) =
-            profile.resolve_input_modal(focus.screen, focus.mode.edit, modal, msg);
+        let real_smc_encoder = !dev_virtual
+            && port.contains("SMC-PAD-Master")
+            && matches!(msg, Msg::Cc { cc: 30..=45, .. });
+        if smc_ready
+            && real_smc_encoder
+            && let Msg::Cc { cc, value, .. } = msg
+            && !(63..=65).contains(&value)
+        {
+            smc_ready = false;
+            let message = format!("SMC-PAD encoder CC {cc} sent unexpected value {value}");
+            smc_status = Some(message.clone());
+            ui.send(
+                Event::SetupStatus {
+                    ready: false,
+                    message,
+                },
+                None,
+            );
+        }
+        let guarded_encoder = !(smc_ready || (dev_virtual && port.contains("(virtual)")))
+            && port.contains("SMC-PAD-Master")
+            && matches!(msg, Msg::Cc { cc: 30..=45, .. });
+        let (resolved, activity) = if guarded_encoder {
+            (None, Activity::None)
+        } else {
+            profile.resolve_input_modal(focus.screen, focus.mode.edit, modal, msg)
+        };
         if let Some(origin) = &mut ui.origin {
             origin.activity = activity;
         }
@@ -1029,6 +1114,7 @@ fn dispatch(
             _ => false,
         };
         let meaning = match &resolved {
+            None if guarded_encoder => "SMC-PAD encoder setup incomplete".into(),
             None => "not assigned".into(),
             Some(Resolved::Action(a)) => format!("{a:?}"),
             Some(Resolved::Gesture { tap, hold }) => format!("tap {tap:?} / hold {hold:?}"),
@@ -3434,5 +3520,393 @@ mod tests {
         assert!(seen[0].starts_with("ch 1 cc 24 = 64   -> "), "{}", seen[0]);
         assert!(seen[0].contains("PadVolume"), "{}", seen[0]);
         assert_eq!(seen[1], "ch 1 cc 99 = 10   -> not assigned");
+    }
+
+    const SMC_MASTER: &str = "SINCO SMC-PAD-Master 28:1";
+    const SMC_PRIVATE: &str = "SINCO SMC-PAD-Private 28:0";
+
+    fn smc_profiles() -> Vec<Profile> {
+        [
+            (
+                "smc-pad.toml",
+                include_str!("../../../config/devices/smc-pad.toml"),
+            ),
+            (
+                "smc-pad-private.toml",
+                include_str!("../../../config/devices/smc-pad-private.toml"),
+            ),
+        ]
+        .into_iter()
+        .map(|(file, source)| Profile::from_toml(file, source).unwrap())
+        .collect()
+    }
+
+    /// Scenario "Physical pad rows match the screen" (input-devices).
+    /// Scenario "Two SMC-PAD ports do not double a hit" (input-devices).
+    #[test]
+    fn physical_pad_rows_match_the_screen_without_mirrored_hits() {
+        let mut raw = vec![
+            Raw::Connected(SMC_PRIVATE.into(), None),
+            Raw::Connected(SMC_MASTER.into(), None),
+        ];
+        for note in 36..=51 {
+            let velocity = note - 20;
+            let on = Msg::parse(&[0x99, note, velocity]).unwrap();
+            let off = if note % 2 == 0 {
+                Msg::parse(&[0x89, note, 64]).unwrap()
+            } else {
+                Msg::parse(&[0x99, note, 0]).unwrap()
+            };
+            raw.push(Raw::Msg(SMC_PRIVATE.into(), on, test_stamp()));
+            raw.push(Raw::Msg(SMC_MASTER.into(), on, test_stamp()));
+            raw.push(Raw::Msg(SMC_PRIVATE.into(), off, test_stamp()));
+            raw.push(Raw::Msg(SMC_MASTER.into(), off, test_stamp()));
+        }
+        let (events, sent) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert_eq!(connected(&events), ["SMC-PAD Private", "SMC-PAD"]);
+        let hits: Vec<_> = sent
+            .iter()
+            .filter_map(|command| match command {
+                Command::PadPress { pad, velocity } => Some((*pad, *velocity)),
+                _ => None,
+            })
+            .collect();
+        let expected: Vec<_> = (36u8..=51)
+            .map(|note| {
+                let row = 3 - (note - 36) / 4;
+                let pad = row * 4 + (note - 36) % 4;
+                (pad as usize, f32::from(note - 20) / 127.0)
+            })
+            .collect();
+        assert_eq!(hits, expected);
+        assert_eq!(sent.len(), 32, "each hit has one release");
+        for pair in sent.chunks_exact(2) {
+            assert!(
+                matches!(pair, [Command::PadPress { pad: first, .. }, Command::PadRelease { pad: second }] if first == second)
+            );
+        }
+    }
+
+    /// Scenario "Second pad bank stays distinct" (input-devices).
+    #[test]
+    fn second_pad_bank_stays_distinct() {
+        let raw = (52..=67)
+            .map(|note| {
+                Raw::Msg(
+                    SMC_MASTER.into(),
+                    Msg::parse(&[0x99, note, 100]).unwrap(),
+                    test_stamp(),
+                )
+            })
+            .collect();
+        let (events, sent) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert!(sent.is_empty());
+        let seen = events.iter().filter(|event| matches!(event, Event::Message { meaning, .. } if meaning == "not assigned")).count();
+        assert_eq!(seen, 16);
+    }
+
+    /// Scenario "Absolute bytes cannot become false steps" (input-devices).
+    #[test]
+    fn absolute_bytes_cannot_become_false_steps() {
+        let start = Instant::now();
+        let connection = Connection::fresh().unwrap();
+        let stamp = |ms| Stamp {
+            epoch: 0,
+            ready: true,
+            source: Some(SourceStamp {
+                connection,
+                at: start + Duration::from_millis(ms),
+            }),
+        };
+        let raw = vec![
+            Raw::SmcSetup(Err("read timed out".into())),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 127), stamp(0)),
+            Raw::SmcSetup(Ok(())),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 65), stamp(100)),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 63), stamp(200)),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 64), stamp(300)),
+        ];
+        let (events, sent) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert!(sent.is_empty());
+        let steps: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Step { steps, .. } => Some(*steps),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(steps, [1, -1]);
+        assert!(events.iter().any(|event| matches!(event, Event::Message { meaning, .. } if meaning == "SMC-PAD encoder setup incomplete")));
+    }
+
+    #[test]
+    fn unexpected_real_encoder_value_disables_steps() {
+        let raw = vec![
+            Raw::SmcSetup(Ok(())),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 2), test_stamp()),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 65), test_stamp()),
+            Raw::SmcSetup(Ok(())),
+            Raw::Msg(SMC_MASTER.into(), knob(31, 65), test_stamp()),
+        ];
+        let (events, _) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, Event::Step { .. }))
+                .count(),
+            1
+        );
+        assert!(events.iter().any(|event| matches!(event, Event::SetupStatus { ready: false, message } if message.contains("unexpected value 2"))));
+    }
+
+    #[test]
+    fn both_encoder_banks_keep_their_cc_identity() {
+        let profile = smc_profiles()
+            .into_iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .unwrap();
+        for (index, cc) in (30..=45).enumerate() {
+            let name = if index < 8 {
+                format!("e{}", index + 1)
+            } else {
+                format!("f{}", index - 7)
+            };
+            assert_eq!(profile.kind_of(&name), Some(input::midi::ControlKind::Knob));
+            let resolved = profile.resolve(Screen::Pads, knob(cc, 65));
+            if profile.control_action(Screen::Pads, false, &name).is_some() {
+                assert!(
+                    matches!(resolved, Some(Resolved::Step { control, steps: 1, .. }) if control == name)
+                );
+            } else {
+                assert_eq!(resolved, None);
+            }
+            assert_eq!(profile.resolve(Screen::Pads, knob(cc, 64)), None);
+        }
+    }
+
+    /// Scenario "X-Session remains independent" (input-devices).
+    #[test]
+    fn xsession_remains_independent() {
+        let raw = vec![
+            Raw::Connected(SMC_PRIVATE.into(), None),
+            Raw::Connected(SMC_MASTER.into(), None),
+            Raw::Connected(XS.into(), None),
+            Raw::Msg(
+                SMC_PRIVATE.into(),
+                Msg::parse(&[0x99, 48, 80]).unwrap(),
+                test_stamp(),
+            ),
+            Raw::Msg(
+                SMC_MASTER.into(),
+                Msg::parse(&[0x99, 48, 80]).unwrap(),
+                test_stamp(),
+            ),
+            Raw::Msg(XS.into(), knob(24, 100), test_stamp()),
+            Raw::Disconnected(SMC_MASTER.into(), None),
+        ];
+        let mut profiles = smc_profiles();
+        profiles.push(xsession());
+        let (events, sent) = dispatched(raw, profiles, on_screen(0, 0));
+        assert!(matches!(
+            sent[..],
+            [
+                Command::PadPress { pad: 0, .. },
+                Command::PadRelease { pad: 0 }
+            ]
+        ));
+        assert_eq!(params(&events), [(Param::PadVolume, 100.0 / 127.0)]);
+        assert_eq!(
+            connected(&events),
+            ["SMC-PAD Private", "SMC-PAD", "X-Session Pro"]
+        );
+    }
+
+    /// Scenario "Button press and release use the current screen" (input-devices).
+    #[test]
+    fn button_press_and_release_use_the_current_screen() {
+        let profiles = smc_profiles();
+        let profile = profiles
+            .iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .unwrap();
+        for (screen, left, right) in [
+            (
+                Screen::Pads,
+                Action::PadSelect(input::Dir::Left),
+                Action::PadSelect(input::Dir::Right),
+            ),
+            (Screen::Files, Action::BrowserUp, Action::BrowserDown),
+            (
+                Screen::Chop,
+                Action::MarkerSelect(-1),
+                Action::MarkerSelect(1),
+            ),
+        ] {
+            for (cc, action) in [(25, left), (26, right)] {
+                assert_eq!(
+                    profile.resolve(screen, knob(cc, 127)),
+                    Some(Resolved::Action(action))
+                );
+                assert_eq!(profile.resolve(screen, knob(cc, 0)), None);
+            }
+            for cc in [27, 28] {
+                assert_eq!(profile.resolve(screen, knob(cc, 127)), None);
+            }
+        }
+        assert!(matches!(
+            profile.resolve(Screen::Pads, knob(29, 127)),
+            Some(Resolved::Gesture {
+                hold: Action::RecordMic(true),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn smc_record_release_and_disconnect_end_the_hold() {
+        for disconnect in [false, true] {
+            let start = Instant::now();
+            let end = if disconnect {
+                Raw::Disconnected(SMC_MASTER.into(), None)
+            } else {
+                Raw::Msg(
+                    SMC_MASTER.into(),
+                    knob(29, 0),
+                    gesture_stamp(start + Duration::from_millis(400)),
+                )
+            };
+            let raw = vec![
+                Raw::Msg(SMC_MASTER.into(), knob(29, 127), gesture_stamp(start)),
+                Raw::Tick(start + DEFAULT_HOLD),
+                end,
+            ];
+            let (events, _) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+            let actions: Vec<_> = events
+                .into_iter()
+                .filter_map(|event| match event {
+                    Event::Action(action) => Some(action),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(actions, [Action::RecordMic(true), Action::RecordMic(false)]);
+        }
+    }
+
+    /// Scenario "Owner bindings survive profile installation" (input-devices).
+    #[test]
+    fn owner_bindings_survive_profile_installation() {
+        let mut profile = smc_profiles()
+            .into_iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .unwrap();
+        profile.set_bindings(
+            Scope::Global,
+            HashMap::from([(Key::Note(48), Binding::Press("pad.8".into()))]),
+        );
+        profile.set_seeded(true);
+        let raw = vec![Raw::Msg(
+            SMC_MASTER.into(),
+            Msg::parse(&[0x99, 48, 80]).unwrap(),
+            test_stamp(),
+        )];
+        let (_, sent) = dispatched(raw, vec![profile], on_screen(0, 0));
+        assert!(matches!(sent[..], [Command::PadPress { pad: 7, .. }]));
+    }
+
+    /// Scenario "Controller view matches both pad banks" (screen-layout).
+    #[test]
+    fn controller_view_matches_both_pad_banks() {
+        let profile = smc_profiles()
+            .into_iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .unwrap();
+        let rows = profile.layout().unwrap();
+        let names = |row: usize| {
+            rows[row][4..8]
+                .iter()
+                .map(|name| name.as_deref().unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(0), ["p1", "p2", "p3", "p4"]);
+        assert_eq!(names(3), ["p13", "p14", "p15", "p16"]);
+        assert_eq!(names(4), ["c1", "c2", "c3", "c4"]);
+        assert_eq!(names(7), ["c13", "c14", "c15", "c16"]);
+        assert_eq!(rows[0][0].as_deref(), Some("e7"));
+        assert_eq!(rows[3][0].as_deref(), Some("e1"));
+    }
+
+    /// Scenario "Encoder roles follow the current screen" (screen-layout).
+    #[test]
+    fn encoder_roles_follow_the_current_screen() {
+        let profile = smc_profiles()
+            .into_iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .unwrap();
+        assert_eq!(
+            profile.control_action(Screen::Pads, false, "e1"),
+            Some("bank")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e1"),
+            Some("files.scroll")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Chop, false, "e1"),
+            Some("chop.cursor_pos")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Pads, false, "f8"),
+            Some("master.volume")
+        );
+        assert_eq!(profile.control_action(Screen::Files, false, "e8"), None);
+    }
+
+    /// Scenario "Replay covers the measured controller stream" (input-devices).
+    #[test]
+    fn replay_covers_the_measured_controller_stream() {
+        let (sender, receiver) = mpsc::channel();
+        let project = ProjectState::default();
+        for bytes in [
+            &[0x99, 48, 100][..],
+            &[0x89, 48, 64],
+            &[0x99, 64, 100],
+            &[0x89, 64, 64],
+            &[0xb0, 25, 127],
+            &[0xb0, 25, 0],
+            &[0xb0, 31, 65],
+            &[0xd9, 80],
+        ] {
+            receive(&sender, SMC_MASTER, bytes, Some(&project), None);
+        }
+        drop(sender);
+        let mut raw = vec![Raw::SmcSetup(Ok(()))];
+        raw.extend(receiver);
+        let (events, sent) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert!(matches!(
+            sent[..],
+            [
+                Command::PadPress { pad: 0, .. },
+                Command::PadRelease { pad: 0 }
+            ]
+        ));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, Event::Step { steps: 1, .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, Event::Action(Action::PadSelect(input::Dir::Left))))
+                .count(),
+            1
+        );
+        let mut app = crate::tests::test_app();
+        for event in events {
+            app.midi_event(event);
+        }
+        assert_eq!(app.input_log.len(), 7, "pressure did not enter App");
     }
 }

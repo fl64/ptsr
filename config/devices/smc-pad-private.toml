@@ -1,0 +1,5 @@
+# This USB input mirrors the Master input. Keep it silent to avoid two hits.
+
+[device]
+name = "SMC-PAD Private"
+match_port = "SMC-PAD-Private"

@@ -69,14 +69,23 @@ Before relative actions start, ptsr SHALL save the active preset's 16 encoder re
 - **THEN** setup stops, attempts to restore all original encoder records and verifies the result
 - **AND** the status reports a failed restore if verification differs
 
-### Requirement: SMC-PAD buttons start safe actions
+### Requirement: SMC-PAD preset changes end relative actions
 
-The supported preset SHALL recognize LEFT, RIGHT, PLAY, STOP and RECORD as channel 1 CC 25 through 29. Press SHALL use the received nonzero value and release SHALL use zero. LEFT and RIGHT SHALL select the current screen item. PLAY SHALL start or continue the current screen item. STOP SHALL stop the current transport or preview. RECORD SHALL hold microphone recording. These controls SHALL not answer a destructive question. Saved owner assignments SHALL take precedence over the starting roles.
+After setup, ptsr SHALL read the active slot while the device stays connected. A slot change or an encoder CC outside 63 through 65 SHALL disable relative actions until ptsr reads a supported preset again. It SHALL report the change. It SHALL keep pads and buttons available only while their messages match the measured profile.
+
+#### Scenario: Preset change after setup disables relative steps
+- **WHEN** the owner changes the SMC-PAD preset after successful encoder setup
+- **THEN** ptsr reports the change and stops relative encoder actions until it reads a supported preset again
+- **AND** pads and buttons remain available under the measured profile only when their messages still match it
+
+### Requirement: SMC-PAD buttons keep measured identities
+
+The supported preset SHALL recognize LEFT, RIGHT, PLAY, STOP and RECORD as channel 1 CC 25 through 29. Press SHALL use the received nonzero value and release SHALL use zero. LEFT and RIGHT SHALL use current selection actions where available. RECORD SHALL hold microphone recording. PLAY and STOP SHALL have no starting role until change 92 adds start-only and stop-only actions. Saved owner assignments SHALL take precedence over the starting roles.
 
 #### Scenario: Button press and release use the current screen
 - **WHEN** the Master port sends a press and release for each of CC 25 through 29 while the owner visits Pads, Files and Chop
-- **THEN** each configured action occurs once per intended gesture and RECORD ends on its release
-- **AND** no button answers a pending destructive question
+- **THEN** each button keeps its name, LEFT and RIGHT use available selection actions, and RECORD ends on release
+- **AND** unassigned PLAY and STOP do not toggle a transport, preview or pending question
 
 #### Scenario: Owner bindings survive profile installation
 - **WHEN** a saved SMC-PAD control has an owner assignment and the new profile loads
@@ -84,7 +93,7 @@ The supported preset SHALL recognize LEFT, RIGHT, PLAY, STOP and RECORD as chann
 
 ### Requirement: SMC-PAD raw replay uses production routing
 
-The virtual MIDI replay command SHALL feed recorded bytes through the shipped profiles, production parser, port selection and App dispatch. It SHALL cover both SMC-PAD inputs and the X-Session Pro. Channel pressure SHALL run no action. The replay path SHALL not substitute a test-only action router.
+The virtual MIDI replay command SHALL feed recorded bytes through the shipped profile, production parser, port selection and App dispatch. It SHALL use `PTSR_DEV_VIRTUAL=1` to select a virtual Master port. This mode SHALL exclude real SMC-PAD ports and USB setup. Normal mode SHALL exclude the virtual port. Recorded tests SHALL also cover both real SMC-PAD inputs and the X-Session Pro. Channel pressure SHALL run no action. The replay path SHALL not substitute a test-only action router.
 
 #### Scenario: Replay covers the measured controller stream
 - **WHEN** a replay sends pads, both encoder banks, button pairs, pressure and disconnect through the real input route
