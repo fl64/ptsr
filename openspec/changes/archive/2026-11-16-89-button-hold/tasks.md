@@ -27,6 +27,6 @@
 
 - [x] Update the affected plans and project status. Mark unmeasured SMC-PAD facts as unverified.
 - [x] Walk each proposal item against tests and the visible MIDI screen.
-- [ ] Run `task test:fast`, `task specs:check`, and `task names` before push.
+- [x] Run `task test:fast`, `task specs:check`, and `task names` before push.
 - [ ] Give the owner separate keyboard and controller checks and the listening step.
 - [ ] After owner acceptance, archive the change, run `task specs:sync`, and complete the PR checks.
