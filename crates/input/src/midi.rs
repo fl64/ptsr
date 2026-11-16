@@ -106,7 +106,10 @@ pub fn is_param_action(action: &str) -> bool {
 
 /// The program has this action, as a command or as a knob parameter (71).
 pub fn known(name: &str) -> bool {
-    param_of(name).is_some() || crate::Action::parse(name).is_some()
+    param_of(name).is_some()
+        || list_target_of(name).is_some()
+        || name == "knob.fine"
+        || crate::Action::parse(name).is_some()
 }
 
 /// Every knob action and its parameter, in one table for both directions.
@@ -195,6 +198,79 @@ pub enum Param {
     PadEffect(u8),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListTarget {
+    Files,
+    Projects,
+    Settings,
+    Page,
+    Bank,
+}
+
+impl ListTarget {
+    fn action(self) -> &'static str {
+        match self {
+            Self::Files => "files.scroll",
+            Self::Projects => "projects.scroll",
+            Self::Settings => "settings.row",
+            Self::Page => "edit.page",
+            Self::Bank => "bank",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StepTarget {
+    Param(Param),
+    List(ListTarget),
+}
+
+fn list_target_of(name: &str) -> Option<ListTarget> {
+    match name {
+        "files.scroll" => Some(ListTarget::Files),
+        "projects.scroll" => Some(ListTarget::Projects),
+        "settings.row" => Some(ListTarget::Settings),
+        "edit.page" => Some(ListTarget::Page),
+        "bank" => Some(ListTarget::Bank),
+        _ => None,
+    }
+}
+
+fn step_target_of(name: &str) -> Option<StepTarget> {
+    list_target_of(name)
+        .map(StepTarget::List)
+        .or_else(|| param_of(name).map(StepTarget::Param))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RelativeEncoding {
+    Offset64,
+    Twos,
+    Signbit,
+}
+
+impl RelativeEncoding {
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "offset64" => Some(Self::Offset64),
+            "twos" => Some(Self::Twos),
+            "signbit" => Some(Self::Signbit),
+            _ => None,
+        }
+    }
+
+    fn decode(self, value: u8) -> i32 {
+        match (self, value) {
+            (_, 128..) => 0,
+            (Self::Offset64, value) => i32::from(value) - 64,
+            (Self::Twos, 0 | 64) | (Self::Signbit, 0 | 64) => 0,
+            (Self::Twos | Self::Signbit, 1..=63) => i32::from(value),
+            (Self::Twos, 65..=127) => i32::from(value) - 128,
+            (Self::Signbit, 65..=127) => 64 - i32::from(value),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Resolved {
     Action(Action),
@@ -210,6 +286,12 @@ pub enum Resolved {
         value: f32,
         takeover: bool,
     },
+    Step {
+        control: String,
+        target: StepTarget,
+        steps: i32,
+    },
+    Fine(bool),
 }
 
 /// Physical activity, independent of whether the current screen has an action.
@@ -249,7 +331,10 @@ pub type LayoutRow = Vec<Option<String>>;
 #[derive(Clone, Debug)]
 enum Control {
     Pad(usize),
-    Knob { name: String },
+    Knob {
+        name: String,
+        encoding: Option<RelativeEncoding>,
+    },
     Button(String),
 }
 
@@ -514,6 +599,10 @@ impl Profile {
                     "crossfaders" => ControlKind::Crossfader,
                     _ => ControlKind::Knob,
                 };
+                if spec.get("type").and_then(|v| v.as_str()) == Some("relative") && group != "knobs"
+                {
+                    return Err(err(&format!("{group}.{name}: relative type needs a knob")));
+                }
                 let control = match group.as_str() {
                     // pads: p1..p16
                     "pads" => match name.strip_prefix('p').and_then(|n| n.parse::<usize>().ok()) {
@@ -522,17 +611,39 @@ impl Profile {
                     },
                     "buttons" => Control::Button(name.clone()),
                     _ => {
-                        if spec.get("type").and_then(|v| v.as_str()) == Some("relative") {
-                            // relative encoders (SMC-PAD) are not supported yet
-                            continue;
-                        }
+                        let encoding =
+                            if spec.get("type").and_then(|v| v.as_str()) == Some("relative") {
+                                let value = spec.get("encoding").and_then(|v| v.as_str());
+                                Some(value.and_then(RelativeEncoding::parse).ok_or_else(|| {
+                                    err(&format!(
+                                        "{group}.{name}: unknown relative encoding {}",
+                                        value.unwrap_or("(missing)")
+                                    ))
+                                })?)
+                            } else {
+                                None
+                            };
                         // the knob response is one setting for all knobs (58): a profile's
                         // `takeover` is not read
-                        Control::Knob { name: name.clone() }
+                        Control::Knob {
+                            name: name.clone(),
+                            encoding,
+                        }
                     }
                 };
                 kinds.push((name.clone(), kind));
                 match (num("note"), num("cc")) {
+                    (Some(_), _)
+                        if matches!(
+                            control,
+                            Control::Knob {
+                                encoding: Some(_),
+                                ..
+                            }
+                        ) =>
+                    {
+                        return Err(err(&format!("{group}.{name}: relative type needs a CC")));
+                    }
                     (Some(n), _) => notes.insert(n, control),
                     (None, Some(c)) => ccs.insert(c, control),
                     _ => return Err(err(&format!("{group}.{name} has no note or cc"))),
@@ -553,6 +664,57 @@ impl Profile {
             };
             (rank, digits.to_string(), number)
         });
+
+        let validate_binding = |name: &str, value: &toml::Value, global: bool| {
+            let named = ccs
+                .values()
+                .chain(notes.values())
+                .find(|control| match control {
+                    Control::Knob { name: found, .. } | Control::Button(found) => found == name,
+                    Control::Pad(_) => false,
+                });
+            let relative = matches!(
+                named,
+                Some(Control::Knob {
+                    encoding: Some(_),
+                    ..
+                })
+            );
+            if relative && value.as_str().and_then(step_target_of).is_none() {
+                return Err(err(&format!("{name}: relative knob needs a step target")));
+            }
+            if value
+                .as_str()
+                .is_some_and(|action| list_target_of(action).is_some() && action != "edit.page")
+                && !relative
+            {
+                return Err(err(&format!("{name}: list target needs a relative knob")));
+            }
+            if value.as_str() == Some("knob.fine")
+                && !(global && matches!(named, Some(Control::Button(_))))
+            {
+                return Err(err(&format!("{name}: knob.fine needs a global button")));
+            }
+            Ok(())
+        };
+        for (scope, section) in t
+            .get("screens")
+            .and_then(|v| v.as_table())
+            .into_iter()
+            .flatten()
+        {
+            for (name, value) in section.as_table().into_iter().flatten() {
+                validate_binding(name, value, scope == "global")?;
+            }
+        }
+        for (name, value) in t
+            .get("edit")
+            .and_then(|v| v.as_table())
+            .into_iter()
+            .flatten()
+        {
+            validate_binding(name, value, false)?;
+        }
 
         let mut screens = HashMap::new();
         let mut warnings = Vec::new();
@@ -682,6 +844,13 @@ impl Profile {
             Resolved::Param { param, .. } => PARAMS
                 .iter()
                 .find_map(|(name, p)| (*p == param).then_some(*name)),
+            Resolved::Step { target, .. } => match target {
+                StepTarget::Param(param) => PARAMS
+                    .iter()
+                    .find_map(|(name, p)| (*p == param).then_some(*name)),
+                StepTarget::List(list) => Some(list.action()),
+            },
+            Resolved::Fine(_) => Some("knob.fine"),
             Resolved::Gesture { tap, hold } => self.action_label(tap.unwrap_or(hold)),
             Resolved::Action(action) => self.action_label(action),
         }
@@ -748,7 +917,7 @@ impl Profile {
     /// The MIDI key of a named control (`k1` -> `cc 24`).
     fn key_of(&self, control: &str) -> Option<Key> {
         let named = |c: &Control| match c {
-            Control::Knob { name } | Control::Button(name) => name == control,
+            Control::Knob { name, .. } | Control::Button(name) => name == control,
             Control::Pad(_) => false,
         };
         self.ccs
@@ -768,7 +937,7 @@ impl Profile {
             Key::Note(n) => self.notes.get(&n),
         }?;
         match c {
-            Control::Knob { name } | Control::Button(name) => Some(name),
+            Control::Knob { name, .. } | Control::Button(name) => Some(name),
             Control::Pad(_) => None,
         }
     }
@@ -1073,6 +1242,17 @@ impl Profile {
             Msg::NoteOff { .. } => (0, false),
             Msg::Cc { value, .. } => (value, value > 0),
         };
+        let encoding = match msg {
+            Msg::Cc { cc, .. } => match self.ccs.get(&cc) {
+                Some(Control::Knob { encoding, .. }) => *encoding,
+                _ => None,
+            },
+            _ => None,
+        };
+        if encoding.is_some_and(|encoding| encoding.decode(value) == 0) {
+            *activity = Activity::None;
+            return None;
+        }
         if modal
             && self
                 .learned
@@ -1083,7 +1263,7 @@ impl Profile {
                 )
         {
             *activity = self.activity(msg, Some("ui.confirm"));
-            return learned_resolved("ui.confirm", msg, value, on);
+            return learned_resolved("ui.confirm", msg, value, on, encoding);
         }
         let control = match msg {
             Msg::NoteOn { note, .. } | Msg::NoteOff { note, .. } => self.notes.get(&note),
@@ -1094,9 +1274,14 @@ impl Profile {
             && let Some((action, name)) = self.fx_binding(msg.key())
         {
             *activity = self.activity(msg, Some(action.primary()));
-            let mut resolved = binding_resolved(action, msg, value, on)?;
-            if let (Some(name), Resolved::Param { control, .. }) = (name, &mut resolved) {
-                *control = name.to_string();
+            let mut resolved = binding_resolved(action, msg, value, on, encoding)?;
+            if let Some(name) = name {
+                match &mut resolved {
+                    Resolved::Param { control, .. } | Resolved::Step { control, .. } => {
+                        *control = name.to_string();
+                    }
+                    _ => {}
+                }
             }
             return Some(resolved);
         }
@@ -1111,7 +1296,7 @@ impl Profile {
                 .and_then(|m| m.get(&msg.key()))
         {
             *activity = self.activity(msg, Some(action.primary()));
-            return binding_resolved(action, msg, value, on);
+            return binding_resolved(action, msg, value, on, encoding);
         }
         let layered = !self.seeded
             && edit
@@ -1128,7 +1313,7 @@ impl Profile {
                     return None;
                 }
                 *activity = self.activity(msg, Some(action.primary()));
-                return binding_resolved(action, msg, value, on);
+                return binding_resolved(action, msg, value, on, encoding);
             }
         }
         // seeded (59): the profile's roles live in the learned maps now
@@ -1151,16 +1336,26 @@ impl Profile {
             Control::Pad(pad) => Some(Resolved::Action(Action::PadRelease { pad: *pad })),
             Control::Button(name) => {
                 let action = action_name(name)?;
-                binding_resolved(action, msg, value, on)
+                binding_resolved(action, msg, value, on, None)
             }
-            Control::Knob { name } => {
-                let param = param_of(action_name(name)?.primary())?;
-                Some(Resolved::Param {
-                    control: name.clone(),
-                    param,
-                    value: value as f32 / 127.0,
-                    takeover: true,
-                })
+            Control::Knob { name, encoding } => {
+                if encoding.is_none() {
+                    let param = param_of(action_name(name)?.primary())?;
+                    return Some(Resolved::Param {
+                        control: name.clone(),
+                        param,
+                        value: value as f32 / 127.0,
+                        takeover: true,
+                    });
+                }
+                let mut resolved = binding_resolved(action_name(name)?, msg, value, on, *encoding)?;
+                match &mut resolved {
+                    Resolved::Param { control, .. } | Resolved::Step { control, .. } => {
+                        *control = name.clone();
+                    }
+                    _ => {}
+                }
+                Some(resolved)
             }
         }
     }
@@ -1192,9 +1387,15 @@ fn fx_compatible_binding(binding: &Binding) -> bool {
     }
 }
 
-fn binding_resolved(binding: &Binding, msg: Msg, value: u8, on: bool) -> Option<Resolved> {
+fn binding_resolved(
+    binding: &Binding,
+    msg: Msg,
+    value: u8,
+    on: bool,
+    encoding: Option<RelativeEncoding>,
+) -> Option<Resolved> {
     match binding {
-        Binding::Press(action) => learned_resolved(action, msg, value, on),
+        Binding::Press(action) => learned_resolved(action, msg, value, on, encoding),
         Binding::Gesture { tap, hold } if on => Some(Resolved::Gesture {
             tap: tap.as_deref().and_then(gesture_action),
             hold: gesture_action(hold)?,
@@ -1212,7 +1413,28 @@ fn pad_release(action: &str) -> Option<Resolved> {
 }
 
 /// What a learned control's action means as a message lands: a knob position or a press.
-fn learned_resolved(action: &str, msg: Msg, value: u8, on: bool) -> Option<Resolved> {
+fn learned_resolved(
+    action: &str,
+    msg: Msg,
+    value: u8,
+    on: bool,
+    encoding: Option<RelativeEncoding>,
+) -> Option<Resolved> {
+    if action == "knob.fine" {
+        return Some(Resolved::Fine(on));
+    }
+    if let Some(encoding) = encoding {
+        if !matches!(msg, Msg::Cc { .. }) {
+            return None;
+        }
+        let target = step_target_of(action)?;
+        let steps = encoding.decode(value);
+        return (steps != 0).then(|| Resolved::Step {
+            control: msg.key().to_string(),
+            target,
+            steps,
+        });
+    }
     let param = param_of(action);
     match (msg, param) {
         (Msg::Cc { .. }, Some(param)) => Some(Resolved::Param {
@@ -1349,6 +1571,157 @@ impl Takeover {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn relative_profile(encoding: &str) -> Profile {
+        Profile::from_toml(
+            "relative.toml",
+            &format!(
+                "[device]\nname = 'Relative'\nmatch_port = 'Relative'\n\
+                 [controls.knobs]\nk1 = {{ cc = 30, type = 'relative', encoding = '{encoding}' }}\n\
+                 [controls.buttons]\nb1 = {{ note = 60 }}\n\
+                 [screens.global]\nb1 = 'knob.fine'\n\
+                 [screens.pads]\nk1 = 'pad.volume'\n"
+            ),
+        )
+        .unwrap()
+    }
+
+    /// 90 input-devices: "Decode each relative encoding".
+    #[test]
+    fn other_relative_encodings() {
+        for (encoding, positive, negative, neutral) in [
+            ("offset64", 65, 63, 64),
+            ("twos", 1, 127, 0),
+            ("signbit", 1, 65, 64),
+        ] {
+            let p = relative_profile(encoding);
+            let turn = |value| p.resolve(Screen::Pads, Msg::parse(&[0xB0, 30, value]).unwrap());
+            assert_eq!(
+                turn(positive),
+                Some(Resolved::Step {
+                    control: "k1".into(),
+                    target: StepTarget::Param(Param::PadVolume),
+                    steps: 1,
+                }),
+                "{encoding} positive"
+            );
+            assert_eq!(
+                turn(negative),
+                Some(Resolved::Step {
+                    control: "k1".into(),
+                    target: StepTarget::Param(Param::PadVolume),
+                    steps: -1,
+                }),
+                "{encoding} negative"
+            );
+            assert_eq!(turn(neutral), None, "{encoding} neutral");
+            assert_eq!(
+                p.resolve_input_in(
+                    Screen::Pads,
+                    false,
+                    Msg::Cc {
+                        ch: 1,
+                        cc: 30,
+                        value: neutral
+                    }
+                )
+                .1,
+                Activity::None
+            );
+        }
+    }
+
+    /// 90 input-devices: "Keep relative roles after seed".
+    #[test]
+    fn relative_control_keeps_a_learned_role() {
+        let mut p = relative_profile("twos");
+        p.set_seeded(true);
+        p.set_learned(
+            Scope::Screen(Screen::Pads),
+            [(Key::Cc(30), "pad.pitch".into())].into(),
+        );
+        assert_eq!(
+            p.resolve(
+                Screen::Pads,
+                Msg::Cc {
+                    ch: 1,
+                    cc: 30,
+                    value: 127
+                }
+            ),
+            Some(Resolved::Step {
+                control: "cc 30".into(),
+                target: StepTarget::Param(Param::PadPitch),
+                steps: -1,
+            })
+        );
+    }
+
+    /// 90 input-devices: "Reject a bad relative profile".
+    #[test]
+    fn invalid_relative_profile_keeps_default_routing() {
+        for (source, reason) in [
+            (
+                "type = 'relative', encoding = 'other'",
+                "unknown relative encoding",
+            ),
+            ("type = 'relative'", "unknown relative encoding"),
+            (
+                "type = 'relative', encoding = 'twos', note = 30",
+                "relative type needs a CC",
+            ),
+        ] {
+            let text = format!(
+                "[device]\nname = 'Relative'\nmatch_port = 'Relative'\n[controls.knobs]\nk1 = {{ cc = 30, {source} }}\n[screens.pads]\nk1 = 'pad.volume'\n"
+            );
+            let error = Profile::from_toml("bad.toml", &text).err().unwrap();
+            assert!(
+                error.contains("bad.toml") && error.contains("k1") && error.contains(reason),
+                "{error}"
+            );
+        }
+        let text = "[device]\nname = 'Relative'\nmatch_port = 'Relative'\n[controls.knobs]\nk1 = { cc = 30, type = 'relative', encoding = 'twos' }\n[screens.pads]\nk1 = 'bank.next'\n";
+        let error = Profile::from_toml("bad.toml", text).err().unwrap();
+        assert!(
+            error.contains("bad.toml") && error.contains("k1") && error.contains("step target"),
+            "{error}"
+        );
+        assert_eq!(
+            Profile::default_for("bad").resolve(
+                Screen::Pads,
+                Msg::NoteOn {
+                    ch: 1,
+                    note: 36,
+                    velocity: 100
+                }
+            ),
+            Some(Resolved::Action(Action::PadPress {
+                pad: 0,
+                velocity: 100.0 / 127.0
+            }))
+        );
+    }
+
+    /// 90 input-devices: "Offset64 direction and neutral".
+    #[test]
+    fn offset64_direction_and_neutral() {
+        let p = relative_profile("offset64");
+        let turn = |value| p.resolve(Screen::Pads, Msg::parse(&[0xB0, 30, value]).unwrap());
+        assert!(matches!(turn(65), Some(Resolved::Step { steps: 1, .. })));
+        assert!(matches!(turn(63), Some(Resolved::Step { steps: -1, .. })));
+        assert_eq!(turn(64), None);
+    }
+
+    /// 90 input-devices: "Absolute knob keeps its response".
+    #[test]
+    fn absolute_knob_keeps_its_response() {
+        let p = xsession();
+        assert!(matches!(
+            p.resolve(Screen::Pads, Msg::Cc { ch: 1, cc: 24, value: 91 }),
+            Some(Resolved::Param { param: Param::PadVolume, value, takeover: true, .. })
+                if value == 91.0 / 127.0
+        ));
+    }
 
     const XSESSION: &str = include_str!("../../../config/devices/xsession-pro.toml");
 

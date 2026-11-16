@@ -963,6 +963,26 @@ impl crate::App {
         Ok(true)
     }
 
+    pub(super) fn pattern_step(&mut self, setting: Setting, steps: i32) {
+        if steps == 0 || self.transport_input_blocked() {
+            return;
+        }
+        self.flush_audio();
+        let boundary = match self.pattern_edit_boundary(setting) {
+            Ok(boundary) => boundary,
+            Err(text) => {
+                self.pattern_notice(text);
+                return;
+            }
+        };
+        let index = (setting.index(&self.pads) as i64 + i64::from(steps))
+            .clamp(0, setting.count() as i64 - 1) as usize;
+        let position = index as f32 / (setting.count() - 1) as f32;
+        if let Err(error) = self.apply_pattern_setting(setting, position, boundary) {
+            self.post_notice(crate::Level::Error, (error, std::time::Instant::now()));
+        }
+    }
+
     pub(super) fn pattern_knob(
         &mut self,
         setting: Setting,

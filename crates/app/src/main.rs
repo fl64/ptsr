@@ -11762,7 +11762,7 @@ Enter = "browser.hold"
                 value,
                 takeover,
             }),
-            None | Some(Resolved::Gesture { .. }) => {}
+            None | Some(Resolved::Gesture { .. } | Resolved::Step { .. } | Resolved::Fine(_)) => {}
         }
     }
 

@@ -176,15 +176,14 @@ Profile syntax for a relative encoder:
 e1 = { cc = 30, type = "relative", encoding = "offset64" }
 ```
 
-Encodings: `offset64` (64 + n, so 65 = +1 and 63 = −1; the SMC-PAD sends this, measured
-elsewhere), `twos` (1..63 = +, 127..65 = −), `signbit` (1..63 = +, 65..127 = −(n − 64)).
+Encodings: `offset64` (64 + n, so 65 = +1 and 63 = −1), `twos` (1..63 = +, 127..65 = −),
+`signbit` (1..63 = +, 65..127 = −(n − 64)). The SMC-PAD encoding is not measured yet.
 Unknown encoding: refuse the profile with a clear message.
 
-Each `Param` gets a step rule in the app: `fn step(&mut self, param, steps, fine)`. Coarse and
-fine steps per parameter are a table in the design of change 90 (for example: pad volume 1 dB /
-0.25 dB, pitch 1 semitone / 10 cents only if cents exist, cursor 1 % of the view / 1 pixel
-column, threshold 1 dB). Acceleration: the app counts steps of one control inside a 40 ms window;
-the multiplier is 1, 2, 4, 8 by speed. `fine` (a held modifier) turns acceleration off.
+Each `Param` gets a step rule in the app. The design of change 90 gives the steps. Stored values
+set the smallest step: pad volume uses 1 dB, pad pitch uses 1 semitone and pattern strength uses
+10 %. The MIDI worker counts messages of one control inside a 40 ms window. The multiplier is
+1, 2, 4 or 8 by speed. `fine` (a held modifier) turns acceleration off.
 
 Takeover does not apply to `Step`.
 
@@ -368,7 +367,7 @@ picker), `audio-settings` (a knob moves the rows).
 Tasks:
 
 1. `Resolved::Step`, `StepTarget`, the encoding parser and decoders with byte tests for each
-   encoding, including the SMC-PAD `63 / 65` bytes.
+   encoding, including synthetic `offset64` bytes `63 / 65`. Measure the SMC-PAD in 91.
 2. `App::step(...)` for every `Param`, from the steps table. Absolute knobs keep their current
    code path.
 3. List targets: `files.scroll`, `projects.scroll`, `settings.row`, `edit.page`, `bank`.
@@ -376,5 +375,6 @@ Tasks:
 5. Parity: the same parameter moved by keys (J/L) and by a relative knob gives the same value
    for the same number of steps (without acceleration).
 
-How to verify (owner): after 91 sets the SMC-PAD to relative, turn a knob slowly: the value moves
-in small even steps; turn fast: big moves; the value never stops at an end of the knob.
+How to verify (owner): after 91 measures and configures the SMC-PAD, turn a knob slowly. If its
+measured mode is relative, the value moves in small steps. Turn fast for larger steps. An absolute
+factory mode keeps its absolute response until a measured profile says otherwise.
