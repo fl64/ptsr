@@ -2,7 +2,9 @@
 
 This plan records the owner's sound and code-structure decisions. It is a guide, not an active requirement.
 Requirements come from `openspec/specs/` and the active OpenSpec change. This document creates no sound change.
-Implement the changes in section 4 in order. Use 111 for `master-safety` and the next free OpenSpec number for each other change.
+Follow the [ordered roadmap](README.md#ordered-roadmap). The owner moved section 4.1 to
+Later. It does not block the other changes. Use 111 for `master-safety` and the next free OpenSpec
+number for each other change.
 Give each change its own branch and PR.
 Start the next change only after the owner accepts the current change.
 
@@ -85,6 +87,11 @@ All tests must remain green. Check that behavior, keys, saved data, and sound do
 ## 4. Ordered changes
 
 ### 4.1 `denormals`
+
+The owner deferred this work on 2026-11-14. The owner reports that earlier attempts did
+not identify the cause of the callback peaks. Revisit it before release only if a new
+reproducible measurement links the peaks to denormal values or the required callback
+budget fails. Keep 94a open. The steps below apply only if that evidence starts this change.
 
 Prevent denormal slowdown and measure its contribution to 94a.
 At the start of each audio callback and offline render, set MXCSR FTZ and DAZ on x86_64.
@@ -211,7 +218,8 @@ and the end of a tail at 90 % feedback.
 ## 5. Follow-on plans and decisions
 
 When these changes finish, update `V1.md` with measured results, not planned completion.
-Mark 111 complete only after the owner accepts `master-safety`. Record the 94a result from `denormals`.
+Mark 111 complete only after the owner accepts `master-safety`. Record the 94a result from
+`denormals` only if new evidence starts that change.
 Make 113 build on `pad-bus`. Account for delay sync and drive completed here.
 Keep voice sample interpolation and pitch-up quality in 110.
 Add one `docs/BACKLOG.md` row for each open item left by this work, including in-loop filter drive if omitted.
@@ -228,6 +236,7 @@ The defaults below are design inputs. Record each final owner decision in its ac
 | `filter-v2` | Drive inside the filter loop | No in this change. Put it in the backlog. |
 | `reverb-v2` | Default input low cut | 150 Hz. |
 | `delay-v2` | Default time-change mode | Glide. |
+| `denormals` | When to resume | Owner decision on 2026-11-14: Later, with new reproducible evidence or a failed callback budget check. |
 | Code structure | CI rejects growth of the two large files | Yes. The owner can approve an exception in a PR. |
 
 The plan moves part of the former 0.3 and 113 scope forward by the owner's request.

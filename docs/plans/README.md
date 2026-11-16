@@ -72,7 +72,7 @@ checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpe
 | 123 `pattern-view-polish` | Accepted and archived in [PR #8](https://github.com/fl64/ptsr/pull/8) | Separate keyboard, controller, screen, and listening results remain open in `LIVE-CHECKS.md`. |
 | `repo-fast-checks` | Merged in [PR #15](https://github.com/fl64/ptsr/pull/15). `master` requires Rust for merge. | None for sampler behavior. |
 | 88 `ui-confirm` | Active on `88-ui-confirm`. Automated keyboard and MIDI checks pass. | Check Enter and a learned button on the physical controller. |
-| `denormals` | Planned in a separate branch | Review the silence render and callback measurements. Keep 94a open. |
+| `denormals` | Deferred to Later by the owner on 2026-11-14. | No check now. Keep 94a open. Resume only with new measured evidence. |
 | `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
 | `pads-source-view` | Planned after `pattern-screen`. The plan is in [PR #16](https://github.com/fl64/ptsr/pull/16). | Check voice heads, sample rows, the mini pattern, and pad edit pages at both sizes. |
 | `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
@@ -179,41 +179,40 @@ ends with the owner's listening and controller or keyboard checks.
 ### Phase A — finish and stabilize
 
 1. [123 pattern-view-polish](UI-UX.md#42-pattern-view-polish): accepted and archived.
-2. [denormals](FX-FILTERS.md#41-denormals): no slowdown after reverb and delay tails. Report its effect on 94a.
-3. [metronome-path](FX-FILTERS.md#42-metronome-path): keep the click out of recordings, resampling, and export. Give it its own level.
-4. [master-safety](FX-FILTERS.md#44-master-safety-planned-111): limiter, return level, and mute per FX slot.
+2. [metronome-path](FX-FILTERS.md#42-metronome-path): keep the click out of recordings, resampling, and export. Give it its own level.
+3. [master-safety](FX-FILTERS.md#44-master-safety-planned-111): limiter, return level, and mute per FX slot.
 
-The owner hears no clipping, no click in recordings, and no dropouts after long tails.
+The owner hears no clipping and no click in recordings. The callback budget still applies.
 
 ### Phase B — the sound of a pad
 
-5. [pad-sound](FX-FILTERS.md#45-pad-sound): pan, fine tune, exponential decay with hold, and velocity curve.
-6. [pad-reverse](FX-FILTERS.md#46-pad-reverse): play a pad region backward.
-7. [pitch-quality](ROADMAP-DETAILS.md#pitch-quality): anti-aliased interpolation for pitched pads.
-8. [no-clicks](ROADMAP-DETAILS.md#no-clicks): short fades on starts, stops, steals, cuts, and slice edits.
+4. [pad-sound](FX-FILTERS.md#45-pad-sound): pan, fine tune, exponential decay with hold, and velocity curve.
+5. [pad-reverse](FX-FILTERS.md#46-pad-reverse): play a pad region backward.
+6. [pitch-quality](ROADMAP-DETAILS.md#pitch-quality): anti-aliased interpolation for pitched pads.
+7. [no-clicks](ROADMAP-DETAILS.md#no-clicks): short fades on starts, stops, steals, cuts, and slice edits.
 
 The owner hears clean pitched breaks, natural decays, real dynamics, and no clicks.
 
 ### Phase C — sequencing on screen
 
-9. [pattern-screen](UI-UX.md#31-pattern-screen): F5 screen, view and edit, F7 free, step lane.
-10. [control-pages](ROADMAP-DETAILS.md#control-pages): one control table per screen and mode.
-11. [pads-source-view](UI-UX.md#32-pads-source-view-includes-pads-context-lane): live source and mini pattern lane.
-12. [99 pattern slots](PATTERNS.md#change-99--99-pattern-slots): 16 slots with 4, 8, or 16 bar switches.
-13. [100 note repeat](PATTERNS.md#change-100--100-note-repeat): 1/32 and triplets.
-14. [100a pad mute](CROSS-CUTTING.md#change-100a--100a-pad-mute-after-100): mute pads during play.
+8. [pattern-screen](UI-UX.md#31-pattern-screen): F5 screen, view and edit, F7 free, step lane.
+9. [control-pages](ROADMAP-DETAILS.md#control-pages): one control table per screen and mode.
+10. [pads-source-view](UI-UX.md#32-pads-source-view-includes-pads-context-lane): live source and mini pattern lane.
+11. [99 pattern slots](PATTERNS.md#change-99--99-pattern-slots): 16 slots with 4, 8, or 16 bar switches.
+12. [100 note repeat](PATTERNS.md#change-100--100-note-repeat): 1/32 and triplets.
+13. [100a pad mute](CROSS-CUTTING.md#change-100a--100a-pad-mute-after-100): mute pads during play.
 
 The owner sees and hears a step sequencer, sounding slices, slots, and repeats.
 
 ### Phase D — the controller
 
-15. [88 ui.confirm](REFACTOR-INPUT.md#change-88--88-ui-confirm): visible confirmation.
-16. [89 button hold](REFACTOR-INPUT.md#change-89--89-button-hold): tap and hold.
-17. [90 relative encoders](REFACTOR-INPUT.md#change-90--90-relative-encoders): endless knob values.
-18. [91 SMC-PAD profile](SMC-PAD-INTEGRATION.md#change-91--91-smc-pad-profile): Linux measurement and knob strip.
-19. [92 command panel](SMC-PAD-INTEGRATION.md#change-92--92-command-panel): controller flows and control pages.
-20. [93 controller reach test](SMC-PAD-INTEGRATION.md#change-93--93-controller-reach): cover both stories.
-21. [93a comfort](SMC-PAD-INTEGRATION.md#change-93a--93a-controller-comfort): panic, redo, date names, velocity curve.
+14. [88 ui.confirm](REFACTOR-INPUT.md#change-88--88-ui-confirm): visible confirmation.
+15. [89 button hold](REFACTOR-INPUT.md#change-89--89-button-hold): tap and hold.
+16. [90 relative encoders](REFACTOR-INPUT.md#change-90--90-relative-encoders): endless knob values.
+17. [91 SMC-PAD profile](SMC-PAD-INTEGRATION.md#change-91--91-smc-pad-profile): Linux measurement and knob strip.
+18. [92 command panel](SMC-PAD-INTEGRATION.md#change-92--92-command-panel): controller flows and control pages.
+19. [93 controller reach test](SMC-PAD-INTEGRATION.md#change-93--93-controller-reach): cover both stories.
+20. [93a comfort](SMC-PAD-INTEGRATION.md#change-93a--93a-controller-comfort): panic, redo, date names, velocity curve.
 
 Changes 88–90 can start without the device. Changes 91–93a need it. If the
 device is not at hand, do 88–90 and continue with phase E. Return to the
@@ -223,48 +222,48 @@ for typed names.
 
 ### Phase E — effects and mix by ear
 
-22. [pad-bus](FX-FILTERS.md#47-pad-bus): drive on the pad sum before inserts.
-23. [drive-aa](FX-FILTERS.md#48-drive-aa): reduce aliasing in drive.
-24. [filter-v2](FX-FILTERS.md#49-filter-v2): 24 dB slope, notch, peak, envelope, key tracking.
-25. [reverb-v2](FX-FILTERS.md#410-reverb-v2): FDN, pre-delay, low cut, width.
-26. [delay-v2](FX-FILTERS.md#411-delay-v2): filters in loop, ping-pong, tempo sync.
-27. [fx-core](ROADMAP-DETAILS.md#fx-core): up to four inserts per pad and master.
-28. [screen-layouts](UI-UX.md#43-screen-layouts): FX slots and sends. Files data and a preview wave.
-29. [mixer-view](UI-UX.md#44-mixer-view): F8 mix screen.
+21. [pad-bus](FX-FILTERS.md#47-pad-bus): drive on the pad sum before inserts.
+22. [drive-aa](FX-FILTERS.md#48-drive-aa): reduce aliasing in drive.
+23. [filter-v2](FX-FILTERS.md#49-filter-v2): 24 dB slope, notch, peak, envelope, key tracking.
+24. [reverb-v2](FX-FILTERS.md#410-reverb-v2): FDN, pre-delay, low cut, width.
+25. [delay-v2](FX-FILTERS.md#411-delay-v2): filters in loop, ping-pong, tempo sync.
+26. [fx-core](ROADMAP-DETAILS.md#fx-core): up to four inserts per pad and master.
+27. [screen-layouts](UI-UX.md#43-screen-layouts): FX slots and sends. Files data and a preview wave.
+28. [mixer-view](UI-UX.md#44-mixer-view): F8 mix screen.
 
 The owner hears drum effects and sees a readable mix.
 
 ### Phase F — the glitch kit (0.4b)
 
-30. [pad-pitch-env](ROADMAP-DETAILS.md#pad-pitch-envelope): pad pitch envelope.
-31. [pad-loop](ROADMAP-DETAILS.md#pad-loop): loop with crossfade.
-32. [step-locks](ROADMAP-DETAILS.md#step-locks): slice, start, reverse, pitch, cutoff.
-33. [step-ratchet](ROADMAP-DETAILS.md#step-ratchet): ramps and probability.
-34. [stutter](ROADMAP-DETAILS.md#stutter): held master effect.
-35. [roll-matrix](ROADMAP-DETAILS.md#roll-matrix): rolls over the running pattern.
-36. [stretch-offline](ROADMAP-DETAILS.md#stretch-offline): make a stretched sample offline.
+29. [pad-pitch-env](ROADMAP-DETAILS.md#pad-pitch-envelope): pad pitch envelope.
+30. [pad-loop](ROADMAP-DETAILS.md#pad-loop): loop with crossfade.
+31. [step-locks](ROADMAP-DETAILS.md#step-locks): slice, start, reverse, pitch, cutoff.
+32. [step-ratchet](ROADMAP-DETAILS.md#step-ratchet): ramps and probability.
+33. [stutter](ROADMAP-DETAILS.md#stutter): held master effect.
+34. [roll-matrix](ROADMAP-DETAILS.md#roll-matrix): rolls over the running pattern.
+35. [stretch-offline](ROADMAP-DETAILS.md#stretch-offline): make a stretched sample offline.
 
 The owner hears chopped, retriggered, and stretched breaks in live play.
 
 ### Phase G — tempo, resampling, and export
 
-37. [102 sample tempo](SAMPLE-WORKFLOWS.md#change-102--102-sample-tempo): BPM, beats per sample, tempo-grid chop, repitch fit.
-38. [record-latency](ROADMAP-DETAILS.md#record-latency): align recording to beat.
-39. [105 resample in tempo](SAMPLE-WORKFLOWS.md#change-105--105-resample-in-tempo): record at project tempo.
-40. [sample-ops](ROADMAP-DETAILS.md#sample-operations): trim, fades, reverse, DC removal.
-41. [export](ROADMAP-DETAILS.md#export): render slots to WAV offline.
-42. [project-safety](ROADMAP-DETAILS.md#project-safety): collect, relink, autosave, recover.
+36. [102 sample tempo](SAMPLE-WORKFLOWS.md#change-102--102-sample-tempo): BPM, beats per sample, tempo-grid chop, repitch fit.
+37. [record-latency](ROADMAP-DETAILS.md#record-latency): align recording to beat.
+38. [105 resample in tempo](SAMPLE-WORKFLOWS.md#change-105--105-resample-in-tempo): record at project tempo.
+39. [sample-ops](ROADMAP-DETAILS.md#sample-operations): trim, fades, reverse, DC removal.
+40. [export](ROADMAP-DETAILS.md#export): render slots to WAV offline.
+41. [project-safety](ROADMAP-DETAILS.md#project-safety): collect, relink, autosave, recover.
 
 The owner checks a full track from an empty project to an exported WAV.
 
 ### Phase H — release 1.0
 
-43. [format-freeze](ROADMAP-DETAILS.md#format-freeze): freeze project format.
-44. [soak](ROADMAP-DETAILS.md#soak): four-hour session.
-45. [packaging](ROADMAP-DETAILS.md#packaging): one binary and ptsr doctor.
-46. [manual](ROADMAP-DETAILS.md#manual): installation and use.
-47. [three release tracks and friction log](ROADMAP-DETAILS.md#release-track-review): V1 criterion 1.
-48. [tag v1.0.0](ROADMAP-DETAILS.md#tag-v100): tag the accepted release.
+42. [format-freeze](ROADMAP-DETAILS.md#format-freeze): freeze project format.
+43. [soak](ROADMAP-DETAILS.md#soak): four-hour session.
+44. [packaging](ROADMAP-DETAILS.md#packaging): one binary and ptsr doctor.
+45. [manual](ROADMAP-DETAILS.md#manual): installation and use.
+46. [three release tracks and friction log](ROADMAP-DETAILS.md#release-track-review): V1 criterion 1.
+47. [tag v1.0.0](ROADMAP-DETAILS.md#tag-v100): tag the accepted release.
 
 The owner checks the package, manual, tracks, and friction log before the tag.
 
@@ -277,6 +276,9 @@ Move an item into a phase only after an owner decision in
   [style-doc-split](UI-UX.md#45-style-doc-split-between-two-changes), and the debug fixtures
   of [control-pages](ROADMAP-DETAILS.md#control-pages) beyond what 92 needs.
 - [fx-cost](FX-FILTERS.md#43-fx-cost), unless the callback budget needs it earlier.
+- [denormals](FX-FILTERS.md#41-denormals): review before release only if a new
+  reproducible measurement links callback peaks to denormal values or the required
+  callback budget fails. Do not repeat the same unsuccessful investigation.
 - Fine level matching, inter-sample peak precision, and
   [catalogue rules](CROSS-CUTTING.md#12-screen-catalogue-task-in-change-87).
 - [App library split and merged branches](ROADMAP-DETAILS.md#later-internal-work).
@@ -347,6 +349,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | Before | Question | Default |
 |---|---|---|
 | Phase D | Is the SMC-PAD at hand for changes 91–93a? | Do 88–90, then phase E. Return to 91–93a when the device arrives. |
+| 94a / pre-release | When should `denormals` resume? | Owner decision on 2026-11-14: defer it to Later. Resume only with new measured evidence or a failed callback budget check. |
 | 88 | When does confirmation work resume? | The owner resumed it on 2026-11-15. The physical controller check remains open. |
 | 0.4 | One swing amount in 1.0? | Yes, if 96 makes it cheap |
 | 0.4b | Is the glitch kit in 1.0? | Yes |

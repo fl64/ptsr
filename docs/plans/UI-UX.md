@@ -285,22 +285,15 @@ The PR must map each old rule to its new place. Do not lose a rule or change beh
 
 ## 5. Order with the FX and filters plan
 
-Use this proposed sequence across the two plans. Complete and accept one change before the next.
-The order within [FX-FILTERS.md](FX-FILTERS.md) and sections 3 and 4 above stays fixed.
+The [ordered roadmap](README.md#ordered-roadmap) sets the sequence. The owner accepted
+`pattern-view-polish` (123) and deferred `denormals` to Later on 2026-11-14. Keep the 94a
+callback peak investigation open. Do not repeat the denormal work without new measured evidence.
 
-1. `split-modules` (121) and the 122 UI words change are complete.
-2. The owner merged `repo-fast-checks` and accepted `pattern-view-polish` (123).
-3. Do `denormals` next. Record this order
-   in its proposal. Keep the 94a callback peak investigation open until its criteria pass.
-4. Do `pattern-screen`, `pads-source-view` (including `pads-context-lane`),
-   `compact-help`, and `key-consistency` in that order.
-5. Do `style-doc-split` after the glossary exists and before `screen-layouts`.
-6. Do `screen-layouts` next. Keep its FX geometry ready for later effect parameters.
-7. Resume the FX order: `metronome-path`, `fx-cost`, `master-safety`,
-   `pad-sound`, `pad-reverse`, and `pad-bus`.
-8. Do `mixer-view` after `pad-sound` and `pad-bus`, so its first version has pan and meters.
-   Resolve 100a pad mute in its design before code.
-9. Complete the remaining FX changes: `drive-aa`, `filter-v2`, `reverb-v2`, and `delay-v2`.
+In phase C, do `pattern-screen` before `pads-source-view`, which includes
+`pads-context-lane`. In phase E, do `screen-layouts` after `fx-core` and before
+`mixer-view`. Do `mixer-view` after `pad-sound` and `pad-bus`, so it can show pan and
+meters. Resolve 100a pad mute in its design. `compact-help`, `key-consistency`,
+`style-doc-split`, and `fx-cost` stay in Later unless the owner moves them.
 
 Do not run two active behavior changes at once.
 
@@ -320,6 +313,6 @@ Do not run two active behavior changes at once.
 | 4.4 | Which key opens the mixer? | F8, after keymap conflict checks. |
 | 4.4 | Does solo silence old FX tails? | No. It silences other pads' dry sound and new sends. |
 | 4.4 | How does mixer mute relate to planned 100a? | Use one pad-mute behavior. Resolve ownership in the mixer design. |
-| Cross-plan | When does FX work resume? | Do `denormals` after 123 and `repo-fast-checks`, before `pattern-screen`. Resume other FX work after `screen-layouts`. |
+| Cross-plan | When does FX work resume? | The owner deferred `denormals` to Later on 2026-11-14. Use the order in `README.md`: `metronome-path` and `master-safety` in phase A, other FX work in phase E. |
 
 These defaults are proposals, not owner acceptance of the future OpenSpec changes.
