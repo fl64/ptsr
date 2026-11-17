@@ -245,19 +245,15 @@ fn full_help_block(
     } else {
         "scroll"
     };
-    let base = format!(" Tab/Shift+Tab/P7/P8 · F1/Esc close/Back · P9/P10 {purpose} ");
-    let detail = if navigation.is_empty() {
-        "↑↓ scroll · PgUp/PgDn page".to_owned()
-    } else {
-        navigation.to_owned()
-    };
+    let base = format!(" Tab/Shift+Tab/P7/P8 · F1/Esc/Back · P9/P10 {purpose} ");
     let footer = if tab == Tab::Messages {
         " Tab/Shift+Tab/P7/P8 · F1/Esc close/Back · P9/P10/↑↓ scroll · PgUp/PgDn page ".to_owned()
-    } else if tab == Tab::Help {
+    } else if navigation.is_empty() {
         base
-    } else if Line::raw(format!("{base}· {detail}")).width() <= usize::from(width.saturating_sub(2))
+    } else if Line::raw(format!("{base}· {navigation}")).width()
+        <= usize::from(width.saturating_sub(2))
     {
-        format!("{base}· {detail}")
+        format!("{base}· {navigation}")
     } else {
         base
     };
