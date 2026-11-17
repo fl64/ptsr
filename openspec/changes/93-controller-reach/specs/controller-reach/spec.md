@@ -100,6 +100,15 @@ The main panel Help cell SHALL open Help. While Help shows, P7 and P8 SHALL sele
 - **THEN** only the Help tab, scroll position or selected controller control changes before Help closes
 - **AND** the screen and its selected value remain unchanged
 
+### Requirement: Controller can finish learning
+
+With an F10 or MIDI-tab learning choice pending, P8 SHALL save that choice, P7 SHALL cancel it and Back SHALL leave learning. The answer SHALL not replace the chosen control or run a panel action. With no choice pending, P7 and P8 SHALL remain available as controls to learn.
+
+#### Scenario: Learning answer keeps its chosen control
+- **WHEN** the owner selects an action, presses P7 or P8 as the control to learn and then presses P8 again
+- **THEN** the first press becomes the pending control and the second saves it once
+- **AND** a separate pending choice followed by P7 cancels without a new choice or screen action
+
 ### Requirement: SMC-PAD Exit asks before quit
 
 An explicit Exit context cell SHALL open a visible question without starting quit. P8 SHALL confirm and enter the existing exit-save path once. P7 or Back SHALL cancel and keep the session open. Other panel cells SHALL NOT act behind the question. Ctrl+Q SHALL keep its current direct exit behavior. MIDI learn SHALL NOT offer Exit.

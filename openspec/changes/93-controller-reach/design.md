@@ -43,6 +43,8 @@ In Settings, encoder 2 changes the selected value. It uses the same action and b
 
 The main Help cell opens Help. While Help shows, P7 and P8 select the previous and next Help tab. P9 and P10 scroll Help or Messages, or move the selected control on the Controller tab. Back closes Help. A question, text line or learning mode retains higher priority. Help controls must appear in Help itself. A cell used for Help navigation cannot run an action on the screen behind it. The keyboard keeps F1, Tab and its current page keys.
 
+The controller can finish a pending F10 or MIDI-tab learning choice. If no choice is pending, a P7 or P8 press can become the control to learn. With a choice pending, P8 saves it and P7 cancels it without replacing the choice. Back leaves learning. The raw message and its panel-cell event must count as one answer. This rule leaves P7 and P8 available as learned controls.
+
 Exit from the SMC-PAD opens a visible question and does not start quit yet. P8 confirms the question and calls the existing quit path once. P7 or Back cancels it. While the question is open, other panel cells cannot act on the screen. The keyboard keeps its current Ctrl+Q behavior. The Exit cell cannot become a learned MIDI action.
 
 The route inventory adds the following cells to every view. Page 2 holds common actions. Page 3 holds the remaining transport and pattern actions. Each row uses cells 1 through 10 in the order shown. Empty positions stay dim. The existing main and page 1 cells do not move.
