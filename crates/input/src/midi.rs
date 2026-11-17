@@ -697,7 +697,10 @@ impl Profile {
                     ..
                 })
             );
-            if relative && value.as_str().and_then(step_target_of).is_none() {
+            if relative
+                && value.as_str().and_then(step_target_of).is_none()
+                && value.as_str() != Some("settings.value_next")
+            {
                 return Err(err(&format!("{name}: relative knob needs a step target")));
             }
             if value
@@ -1337,7 +1340,10 @@ impl Profile {
         // seeded (59): the profile's roles live in the learned maps now
         if self.seeded
             && !(self.name == "SMC-PAD"
-                && matches!(control, Some(Control::Button(name)) if smc_new_control(name)))
+                && (matches!(control, Some(Control::Button(name)) if smc_new_control(name))
+                    || (screen == Screen::Settings
+                        && matches!(control, Some(Control::Knob { name, .. }) if name == "e2"))
+                    || matches!(control, Some(Control::Knob { name, .. }) if matches!(name.as_str(), "e6" | "e7" | "e8"))))
         {
             return None;
         }
@@ -1451,8 +1457,15 @@ fn learned_resolved(
         if !matches!(msg, Msg::Cc { .. }) {
             return None;
         }
-        let target = step_target_of(action)?;
         let steps = encoding.decode(value);
+        if action == "settings.value_next" {
+            return (steps != 0).then_some(Resolved::Action(Action::SettingsValue(if steps > 0 {
+                1
+            } else {
+                -1
+            })));
+        }
+        let target = step_target_of(action)?;
         return (steps != 0).then(|| Resolved::Step {
             control: msg.key().to_string(),
             target,
@@ -1800,6 +1813,79 @@ mod tests {
         assert!(matches!(turn(65), Some(Resolved::Step { steps: 1, .. })));
         assert!(matches!(turn(63), Some(Resolved::Step { steps: -1, .. })));
         assert_eq!(turn(64), None);
+    }
+
+    #[test]
+    fn relative_settings_value_uses_both_directions() {
+        let profile = Profile::from_toml(
+            "settings.toml",
+            "[device]\nname = 'Settings'\nmatch_port = 'Settings'\n[controls.knobs]\ne2 = { cc = 31, type = 'relative', encoding = 'offset64' }\n[screens.settings]\ne2 = 'settings.value_next'\n",
+        )
+        .unwrap();
+        let turn =
+            |value| profile.resolve(Screen::Settings, Msg::parse(&[0xB0, 31, value]).unwrap());
+        assert_eq!(turn(65), Some(Resolved::Action(Action::SettingsValue(1))));
+        assert_eq!(turn(63), Some(Resolved::Action(Action::SettingsValue(-1))));
+        assert_eq!(turn(64), None);
+        assert_eq!(
+            profile.control_action(Screen::Settings, false, "e2"),
+            Some("settings.value_next")
+        );
+    }
+
+    #[test]
+    fn seeded_smc_settings_value_keeps_an_owner_override() {
+        let mut profile = Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        profile.set_seeded(true);
+        let turn = Msg::parse(&[0xB0, 31, 65]).unwrap();
+        assert_eq!(
+            profile.resolve(Screen::Settings, turn),
+            Some(Resolved::Action(Action::SettingsValue(1)))
+        );
+        profile.set_learned(
+            Scope::Screen(Screen::Settings),
+            [(Key::Cc(31), "pad.pitch".into())].into(),
+        );
+        assert!(matches!(
+            profile.resolve(Screen::Settings, turn),
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PadPitch),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn seeded_smc_panel_and_transport_knobs_keep_owner_overrides() {
+        let mut profile = Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        profile.set_seeded(true);
+        for (cc, target) in [
+            (35, StepTarget::List(ListTarget::Page)),
+            (36, StepTarget::Param(Param::Tempo)),
+            (37, StepTarget::List(ListTarget::Bank)),
+        ] {
+            let msg = Msg::parse(&[0xB0, cc, 65]).unwrap();
+            assert!(matches!(
+                profile.resolve(Screen::Pads, msg),
+                Some(Resolved::Step { target: found, steps: 1, .. }) if found == target
+            ));
+        }
+        profile.set_learned(Scope::Global, [(Key::Cc(35), "pad.pitch".into())].into());
+        assert!(matches!(
+            profile.resolve(Screen::Pads, Msg::parse(&[0xB0, 35, 65]).unwrap()),
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PadPitch),
+                ..
+            })
+        ));
     }
 
     /// 90 input-devices: "Absolute knob keeps its response".

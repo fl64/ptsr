@@ -1068,6 +1068,13 @@ pub struct ActionInfo {
     pub knob: bool,
 }
 
+impl ActionInfo {
+    /// This action opens a line that needs typed text.
+    pub fn text_entry(&self) -> bool {
+        matches!(self.name, "pad.rename" | "browser.filter")
+    }
+}
+
 /// The label of an action on a device drawing (98j): ASCII, 1 to 6 cells. `?` for a name
 /// the program does not have.
 pub fn short_label(action: &str) -> &'static str {
@@ -3945,6 +3952,25 @@ mod tests {
         assert!(hits.iter().all(|a| a.group == Group::Global && !a.knob));
         assert_eq!(hits[0].name, "pad.1");
         assert_eq!(hits[15].label, "pad 16");
+    }
+
+    /// Scenario "Text entry keeps its exceptions" (controller-reach).
+    #[test]
+    fn text_entry_keeps_its_exceptions() {
+        let mut text: Vec<_> = ACTIONS
+            .iter()
+            .filter(|action| action.text_entry())
+            .map(|action| action.name)
+            .collect();
+        text.sort_unstable();
+        text.dedup();
+        assert_eq!(text, ["browser.filter", "pad.rename"]);
+        assert!(ACTIONS.iter().all(|action| action.name != "app.quit"));
+        assert!(
+            !ACTIONS
+                .iter()
+                .any(|action| action.name == "record.output" && action.text_entry())
+        );
     }
 
     #[test]

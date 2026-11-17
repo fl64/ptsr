@@ -63,11 +63,11 @@ impl App {
 
     fn run(&mut self, action: Action) -> bool {
         // the folder picker is open: the keys go to it before the screen (11)
-        if self.path_picker.is_some() {
+        if self.ask.is_none() && self.path_picker.is_some() {
             self.picker_key(action);
             return false;
         }
-        if action == Action::Confirm && self.project_picker.is_some() {
+        if self.ask.is_none() && action == Action::Confirm && self.project_picker.is_some() {
             self.project_picker_confirm();
             return false;
         }
@@ -121,6 +121,10 @@ impl App {
                 | Action::BrowserHold
                 | Action::PadEdit => {
                     match self.ask.as_ref() {
+                        Some(Ask::Exit { .. }) => {
+                            self.ask = None;
+                            self.request_quit();
+                        }
                         Some(Ask::Plan { .. }) => self.apply_plan(),
                         Some(Ask::ResetProfile { .. }) => {}
                         Some(Ask::ResetPads { pads, .. }) => {
@@ -1108,6 +1112,12 @@ impl App {
                 .is_some_and(|port| port.contains("SMC-PAD-Master"))
             && matches!(ev.control_key(), Some(input::midi::Key::Cc(27 | 28)))
             && matches!(ev.event, midi::Event::Action(action) if !matches!(action, Action::PlayContext | Action::StopContext));
+        let blocked_picker_value = self.path_picker.is_some()
+            && ev
+                .origin()
+                .is_some_and(|port| port.contains("SMC-PAD-Master"))
+            && matches!(ev.control_key(), Some(input::midi::Key::Cc(31)))
+            && matches!(ev.event, midi::Event::Action(Action::SettingsValue(_)));
         let suppressed = ev
             .origin()
             .zip(ev.control_key())
@@ -1118,7 +1128,7 @@ impl App {
             );
         if let Some(ev) = ev
             .current(self.audio.as_ref().map(|audio| audio.project.as_ref()))
-            .filter(|_| !suppressed && !blocked_transport_answer)
+            .filter(|_| !suppressed && !blocked_transport_answer && !blocked_picker_value)
         {
             let old = std::mem::replace(&mut self.notice_origin, origin);
             if owner_input {
@@ -1331,6 +1341,8 @@ impl App {
             || self.browser.in_hand.is_some()
             || self.pad_in_hand.is_some()
             || self.copy_in_hand.is_some()
+            || self.pads.marking
+            || !self.pads.marked.is_empty()
             || self.erase_pads
             || (self.screen == Screen::Files && !self.browser.filter.is_empty())
         {
@@ -1388,6 +1400,7 @@ impl App {
                 msg,
                 meaning,
             } => {
+                let mut answered_learning = false;
                 if port.contains("SMC-PAD-Master")
                     && let input::midi::Msg::NoteOn { note: 62 | 63, .. } = msg
                 {
@@ -1400,6 +1413,33 @@ impl App {
                         } else {
                             Action::Confirm
                         });
+                    } else if self
+                        .screen_learn
+                        .as_ref()
+                        .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+                    {
+                        self.question_pads.insert((port.clone(), key));
+                        if key == input::midi::Key::Note(62) {
+                            if let Some(learn) = self.screen_learn.as_mut() {
+                                learn.pending = None;
+                                learn.clearing = false;
+                            }
+                        } else {
+                            self.learn_confirm();
+                        }
+                        answered_learning = true;
+                    } else if self
+                        .learning
+                        .as_ref()
+                        .is_some_and(|learn| learn.pending.is_some())
+                    {
+                        self.question_pads.insert((port.clone(), key));
+                        if key == input::midi::Key::Note(62) {
+                            self.learning = None;
+                        } else {
+                            self.learned_save();
+                        }
+                        answered_learning = true;
                     }
                 }
                 self.help_overlay.controller.last_port = Some(port.clone());
@@ -1411,21 +1451,24 @@ impl App {
                 {
                     self.midi_run_hit(profile, key);
                 }
-                if let Some(l) = self.learning.as_mut()
+                if !answered_learning
+                    && let Some(l) = self.learning.as_mut()
                     && let Some((profile, key)) = l.feed(&profile, msg, now)
                 {
                     self.learned(profile, key);
                 }
                 // a button pressed for a parameter: the knob learner never hears a press, so
                 // the refusal is said here (57)
-                if let Some(l) = self.screen_learn.as_mut()
+                if !answered_learning
+                    && let Some(l) = self.screen_learn.as_mut()
                     && matches!(msg, input::midi::Msg::NoteOn { .. })
                     && l.picked.as_ref().is_some_and(|(n, _)| action_info(n).knob)
                 {
                     l.refused = true;
                     l.pending = None;
                 }
-                if let Some(l) = self.screen_learn.as_mut()
+                if !answered_learning
+                    && let Some(l) = self.screen_learn.as_mut()
                     && let Some((profile, key)) =
                         l.learner.as_mut().and_then(|r| r.feed(&profile, msg, now))
                 {
@@ -1446,6 +1489,9 @@ impl App {
                         7 => {
                             self.apply(Action::Back);
                         }
+                        13 if matches!(self.ask, Some(Ask::Exit { .. })) => {
+                            self.apply(Action::Back);
+                        }
                         8 => {
                             self.apply(Action::Confirm);
                         }
@@ -1453,14 +1499,32 @@ impl App {
                     }
                     return;
                 }
+                if self.project_picker.is_some() || self.path_picker.is_some() {
+                    match cell {
+                        7 | 13 => self.panel_back(),
+                        8 => {
+                            self.apply(Action::Confirm);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                if self.help_open {
+                    if self.panel.owner() != Some(&port) {
+                        return;
+                    }
+                    if cell == 13 {
+                        self.panel_back();
+                    } else {
+                        self.help_panel_cell(cell);
+                    }
+                    return;
+                }
                 if self.pad_naming.is_some()
-                    || self.project_picker.is_some()
-                    || self.path_picker.is_some()
                     || self.browser.editing
                     || self.screen_learn.is_some()
                     || self.learning.is_some()
                     || self.midi_run.is_some()
-                    || self.help_open
                 {
                     if cell == 13 && self.panel.owner() == Some(&port) {
                         self.panel_back();
@@ -1473,6 +1537,14 @@ impl App {
                     match self.panel.choice(view, cell) {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);
+                        }
+                        super::panel::Choice::Exit => {
+                            self.ask = Some(Ask::Exit {
+                                lines: vec![
+                                    "Exit ptsr?".into(),
+                                    "P8 exit · P7 or Back stay".into(),
+                                ],
+                            });
                         }
                         super::panel::Choice::Back => {
                             self.panel_back();
@@ -1581,15 +1653,25 @@ impl App {
             }
             midi::Event::Action(action) => {
                 // quitting from a controller is not offered
+                let action = if self.path_picker.is_some()
+                    && matches!(&self.notice_origin, Origin::Device(port) if port.contains("SMC-PAD-Master"))
+                    && let Action::SettingsRow(step) = action
+                {
+                    Action::SettingsValue(step)
+                } else {
+                    action
+                };
                 self.apply(action);
             }
             midi::Event::Step {
+                port,
+                control,
                 target,
                 steps,
                 fine,
                 ..
             } => {
-                self.midi_step(target, steps, fine);
+                self.midi_step(&port, &control, target, steps, fine);
             }
             // open pattern controls: edit knobs 1-3 turn A1, other edit knobs wait (98b)
             midi::Event::Param {
@@ -2093,9 +2175,53 @@ impl App {
         }
     }
 
-    fn midi_step(&mut self, target: input::midi::StepTarget, steps: i32, fine: bool) {
+    fn midi_step(
+        &mut self,
+        port: &str,
+        control: &str,
+        target: input::midi::StepTarget,
+        steps: i32,
+        fine: bool,
+    ) {
         use input::midi::{ListTarget, StepTarget};
-        if steps == 0 || self.ask.is_some() || self.path_picker.is_some() {
+        if steps == 0 || self.ask.is_some() {
+            return;
+        }
+        let smc_selector = port.contains("SMC-PAD-Master") && matches!(control, "e1" | "cc 30");
+        if self.path_picker.is_some() {
+            if smc_selector {
+                for _ in 0..steps.unsigned_abs() {
+                    self.picker_key(Action::SettingsRow(if steps > 0 { 1 } else { -1 }));
+                }
+            }
+            return;
+        }
+        if let Some(picker) = self.project_picker.as_mut() {
+            if (smc_selector || target == StepTarget::List(ListTarget::Projects))
+                && picker.naming.is_none()
+            {
+                picker.selected = (picker.selected as i64 + i64::from(steps))
+                    .clamp(0, picker.entries.len().saturating_sub(1) as i64)
+                    as usize;
+            }
+            return;
+        }
+        if port.contains("SMC-PAD-Master")
+            && matches!(control, "e6" | "cc 35")
+            && target == StepTarget::List(ListTarget::Page)
+        {
+            if self.panel.owner() == Some(port)
+                && !self.help_open
+                && self.pad_naming.is_none()
+                && !self.browser.editing
+                && self.screen_learn.is_none()
+                && self.learning.is_none()
+                && self.midi_run.is_none()
+            {
+                let view = self.panel_view();
+                self.panel.sync_view(view);
+                self.panel.select_context_page(view, steps);
+            }
             return;
         }
         if self.pattern_panel.is_some()
@@ -2144,7 +2270,13 @@ impl App {
                 })
             }
             StepTarget::Param(Param::Page) => {
-                return self.midi_step(StepTarget::List(ListTarget::Page), steps, fine);
+                return self.midi_step(
+                    port,
+                    control,
+                    StepTarget::List(ListTarget::Page),
+                    steps,
+                    fine,
+                );
             }
             StepTarget::Param(Param::Slot(k)) => {
                 if self.pattern_panel.is_some() {
@@ -2154,7 +2286,7 @@ impl App {
                     return;
                 }
                 if let Some(param) = self.slot_param(k) {
-                    return self.midi_step(StepTarget::Param(param), steps, fine);
+                    return self.midi_step(port, control, StepTarget::Param(param), steps, fine);
                 }
                 return;
             }
@@ -2456,6 +2588,8 @@ mod relative_tests {
 
     fn turn(app: &mut App, target: StepTarget, steps: i32, fine: bool) {
         app.midi_event(midi::Event::Step {
+            port: "Relative test".into(),
+            control: "test".into(),
             target,
             steps,
             fine,

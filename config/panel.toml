@@ -181,3 +181,257 @@ cells = [
   { cell = 4, label = "val +", action = "settings.value_next" },
   { cell = 5, label = "proj", action = "project.pick" },
 ]
+
+[[view]]
+name = "pads"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "pads"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "pads"
+page = 4
+cells = [
+  { cell = 1, label = "view -", action = "pattern.view_prev" },
+  { cell = 2, label = "view +", action = "pattern.view_next" },
+  { cell = 3, label = "rows", action = "pattern.overview_empty_toggle" },
+  { cell = 4, label = "step", action = "pattern.step_edit" },
+]
+
+[[view]]
+name = "pad_edit"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "pad_edit"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "pattern"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "pattern"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "files"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "files"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "chop"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "chop"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "chop"
+page = 4
+cells = [
+  { cell = 1, label = "hits -", action = "chop.hits_back" },
+  { cell = 2, label = "delcut", action = "marker.delete" },
+  { cell = 3, label = "delend", action = "slice.end_delete" },
+  { cell = 4, label = "order", action = "chop.assign_order" },
+]
+
+[[view]]
+name = "chop_edit"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "chop_edit"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "chop_edit"
+page = 4
+cells = [
+  { cell = 1, label = "hits -", action = "chop.hits_back" },
+  { cell = 2, label = "delcut", action = "marker.delete" },
+  { cell = 3, label = "delend", action = "slice.end_delete" },
+  { cell = 4, label = "order", action = "chop.assign_order" },
+]
+
+[[view]]
+name = "fx"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "fx"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]
+
+[[view]]
+name = "settings"
+page = 2
+cells = [
+  { cell = 1, label = "outrec", action = "record.output" },
+  { cell = 2, label = "trnspt", action = "transport.toggle" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "proj", action = "project.pick" },
+  { cell = 5, label = "save", action = "session.save" },
+  { cell = 6, label = "grid", action = "ui.pads_toggle" },
+  { cell = 7, label = "learn", action = "learn.toggle" },
+  { cell = 8, label = "A1undo", action = "pattern.undo" },
+  { cell = 9, label = "A1 ctl", action = "pattern.controls" },
+  { cell = 10, label = "exit", action = "app.quit" },
+]
+
+[[view]]
+name = "settings"
+page = 3
+cells = [
+  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
+  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
+  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
+  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
+  { cell = 5, label = "erase", action = "pattern.erase" },
+  { cell = 6, label = "A1 rec", action = "pattern.record" },
+]

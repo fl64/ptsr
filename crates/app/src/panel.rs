@@ -137,7 +137,7 @@ impl Config {
                     config.warnings.push(format!("{where_}: no action"));
                     continue;
                 };
-                let Some(action) = Action::parse(name).filter(|a| *a != Action::Quit) else {
+                let Some(action) = Action::parse(name) else {
                     config
                         .warnings
                         .push(format!("{where_}: unknown action {name}"));
@@ -181,6 +181,7 @@ pub(super) enum Press {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Choice {
     Action(Action),
+    Exit,
     Back,
     Page,
     Dim,
@@ -283,7 +284,13 @@ impl State {
             1..=12 => self
                 .config
                 .cell(view, self.page, cell)
-                .map_or(Choice::Dim, |cell| Choice::Action(cell.action)),
+                .map_or(Choice::Dim, |cell| {
+                    if cell.action == Action::Quit {
+                        Choice::Exit
+                    } else {
+                        Choice::Action(cell.action)
+                    }
+                }),
             _ => Choice::Dim,
         }
     }
@@ -310,6 +317,16 @@ impl State {
 
     pub(super) fn main_page(&mut self) {
         self.page = 0;
+    }
+
+    pub(super) fn select_context_page(&mut self, view: View, steps: i32) {
+        if self.visible() && self.page > 0 {
+            let pages = self.page_count(view).saturating_sub(1);
+            if pages > 0 {
+                self.page = 1
+                    + ((self.page - 1) as i64 + i64::from(steps)).rem_euclid(pages as i64) as usize;
+            }
+        }
     }
 
     pub(super) fn sync_view(&mut self, view: View) {
@@ -401,7 +418,15 @@ mod tests {
             View::Fx,
             View::Settings,
         ] {
-            assert_eq!(config.pages(view), 2, "{view:?}");
+            assert_eq!(
+                config.pages(view),
+                if matches!(view, View::Pads | View::Chop | View::ChopEdit) {
+                    5
+                } else {
+                    4
+                },
+                "{view:?}"
+            );
             for cell in 9..=12 {
                 assert!(config.cell(view, 0, cell).is_some(), "{view:?} {cell}");
             }
@@ -454,6 +479,23 @@ mod tests {
         assert_eq!(panel.label(View::Pads, 1), Some("third"));
         assert_eq!(panel.choice(View::Pads, 11), Choice::Page);
         assert_eq!(panel.page(), 1);
+    }
+
+    #[test]
+    fn encoder_page_selection_needs_a_visible_context_page() {
+        let mut panel = State::default();
+        panel.select_context_page(View::Pads, 1);
+        assert_eq!(panel.page(), 0);
+        panel.press("SMC-PAD-Master A", 8);
+        panel.select_context_page(View::Pads, 1);
+        assert_eq!(panel.page(), 0);
+        panel.choice(View::Pads, 8);
+        panel.select_context_page(View::Pads, 2);
+        assert_eq!(panel.page(), 3);
+        assert_eq!(panel.label(View::Pads, 1), Some("bpm -"));
+        panel.select_context_page(View::Pads, -1);
+        assert_eq!(panel.page(), 2);
+        assert_eq!(panel.label(View::Pads, 10), Some("exit"));
     }
 
     #[test]

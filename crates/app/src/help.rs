@@ -313,6 +313,30 @@ impl App {
         }
     }
 
+    pub(super) fn help_panel_cell(&mut self, cell: u8) {
+        use event::{KeyCode as K, KeyEvent, KeyModifiers as M};
+        if !self.help_navigation_allowed() {
+            return;
+        }
+        match cell {
+            7 | 8 => {
+                let modifiers = if cell == 7 { M::SHIFT } else { M::NONE };
+                self.help_key(&KeyEvent::new(K::Tab, modifiers));
+            }
+            9 | 10 if self.help_overlay.page == Page::Help => self.help_page(cell == 10),
+            9 | 10 => {
+                let code = match (self.help_overlay.page, cell) {
+                    (Page::Messages, 9) => K::PageUp,
+                    (Page::Messages, _) => K::PageDown,
+                    (_, 9) => K::Up,
+                    _ => K::Down,
+                };
+                self.help_key(&KeyEvent::new(code, M::NONE));
+            }
+            _ => {}
+        }
+    }
+
     fn step_key_page(&mut self, next: bool) {
         let current = self.help_overlay.keys_scroll.min(self.help_keys_max());
         let step = tui::help_page_height(

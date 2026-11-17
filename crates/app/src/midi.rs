@@ -86,6 +86,8 @@ pub enum Event {
         takeover: bool,
     },
     Step {
+        port: String,
+        control: String,
         target: StepTarget,
         steps: i32,
         fine: bool,
@@ -570,6 +572,11 @@ impl Midi {
         self.updates
             .send(Raw::Disconnected(port.into(), connection))
             .unwrap();
+    }
+
+    #[cfg(test)]
+    pub fn recorded_smc_setup(&self) {
+        self.updates.send(Raw::SmcSetup(Ok(()))).unwrap();
     }
 
     #[cfg(test)]
@@ -1212,13 +1219,14 @@ fn dispatch(
         let allowed_while_ignored = matches!(resolved, Some(Resolved::PanelCell(_)))
             || (waiting && matches!(resolved, Some(Resolved::Action(_))))
             || (focus.mode.picker
-                && matches!(
+                && (matches!(
                     resolved,
                     Some(Resolved::Step {
                         target: StepTarget::List(ListTarget::Projects),
                         ..
                     })
-                ));
+                ) || (port.contains("SMC-PAD-Master")
+                    && matches!(resolved, Some(Resolved::Step { ref control, .. }) if matches!(control.as_str(), "e1" | "cc 30")))));
         if route == PadRoute::Ignore && !allowed_while_ignored {
             continue;
         }
@@ -1327,7 +1335,11 @@ fn dispatch(
                     Some(stamp),
                 );
             }
-            Some(Resolved::Step { target, steps, .. }) => {
+            Some(Resolved::Step {
+                control,
+                target,
+                steps,
+            }) => {
                 let count = speed
                     .entry((port.clone(), channel, msg.key()))
                     .or_insert((at, 0));
@@ -1353,6 +1365,8 @@ fn dispatch(
                 };
                 ui.send(
                     Event::Step {
+                        port,
+                        control,
                         target,
                         steps: steps * multiplier,
                         fine: is_fine,
@@ -3935,7 +3949,8 @@ mod tests {
             crate::panel::Choice::Page
         );
         let after = app.full_help_recording_keys(&keymap, true, None);
-        assert!(after.iter().any(|(_, text)| text.contains("Page 2/2")));
+        assert_eq!(app.panel.page_count(app.panel_view()), 5);
+        assert!(after.iter().any(|(_, text)| text.contains("Page 2/5")));
         assert!(after.iter().any(|(_, text)| text.contains("P1 mode")));
         assert!(
             after
@@ -4348,7 +4363,18 @@ mod tests {
             profile.control_action(Screen::Pads, false, "f8"),
             Some("master.volume")
         );
-        assert_eq!(profile.control_action(Screen::Files, false, "e8"), None);
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e6"),
+            Some("edit.page")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e7"),
+            Some("transport.tempo")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e8"),
+            Some("bank")
+        );
     }
 
     /// Scenario "Replay covers the measured controller stream" (input-devices).

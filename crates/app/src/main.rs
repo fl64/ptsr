@@ -124,9 +124,10 @@ const NUDGE_FINE_MS: i32 = 4;
 /// Session changes are written this long after the last one.
 const SESSION_SAVE: Duration = Duration::from_secs(1);
 
-/// A step that loses what lies on pads, waiting for the owner's answer. `lines` is what the
-/// question showed: if the pads change before Enter, the question is shown again.
 enum Ask {
+    Exit {
+        lines: Vec<String>,
+    },
     Plan {
         lines: Vec<String>,
     },
@@ -383,7 +384,8 @@ fn folders_of(dir: &Path) -> Vec<PathBuf> {
 impl Ask {
     fn lines(&self) -> &[String] {
         match self {
-            Ask::Plan { lines }
+            Ask::Exit { lines }
+            | Ask::Plan { lines }
             | Ask::PutFile { lines, .. }
             | Ask::ResetProfile { lines, .. }
             | Ask::ResetPads { lines, .. }
@@ -1876,9 +1878,7 @@ fn hint_for(app: &App) -> Option<&'static str> {
         Screen::Files => {
             Some("Enter takes a file, a pad hit puts it there; Ctrl+Enter: the selected pad.")
         }
-        Screen::Settings => {
-            Some("Left/Right applies at once and saves to ~/.config/ptsr/config.toml.")
-        }
+        Screen::Settings => Some("Left/Right or SMC E2 changes and saves the selected value."),
         Screen::Chop if app.plan.is_some() => Some(
             "Hit pads to plan where the slices go; J L pick the slice, PgUp/PgDn the bank; Enter applies.",
         ),

@@ -216,7 +216,12 @@ enum Tab {
     Controller,
 }
 
-fn full_help_block(tab: Tab, message_count: Option<usize>, navigation: &str) -> Block<'static> {
+fn full_help_block(
+    tab: Tab,
+    message_count: Option<usize>,
+    navigation: &str,
+    width: u16,
+) -> Block<'static> {
     let selected = Style::new().fg(CYAN).bold();
     let idle = Style::new().fg(DIM);
     // Equal-width labels keep every tab name at the same cell on each page.
@@ -235,15 +240,30 @@ fn full_help_block(tab: Tab, message_count: Option<usize>, navigation: &str) -> 
         " ".into(),
         label("CONTROLLER", Tab::Controller),
     ];
-    let mut footer = vec![Span::raw(" Tab/Shift+Tab page · F1/Esc close ")];
-    if !navigation.is_empty() {
-        footer = vec![Span::raw(format!(
-            " Tab/Shift+Tab · F1/Esc · {navigation} "
-        ))];
-    }
+    let purpose = if tab == Tab::Controller {
+        "select"
+    } else {
+        "scroll"
+    };
+    let base = format!(" Tab/Shift+Tab/P7/P8 · F1/Esc close/Back · P9/P10 {purpose} ");
+    let detail = if navigation.is_empty() {
+        "↑↓ scroll · PgUp/PgDn page".to_owned()
+    } else {
+        navigation.to_owned()
+    };
+    let footer = if tab == Tab::Messages {
+        " Tab/Shift+Tab/P7/P8 · F1/Esc close/Back · P9/P10/↑↓ scroll · PgUp/PgDn page ".to_owned()
+    } else if tab == Tab::Help {
+        base
+    } else if Line::raw(format!("{base}· {detail}")).width() <= usize::from(width.saturating_sub(2))
+    {
+        format!("{base}· {detail}")
+    } else {
+        base
+    };
+    let footer = vec![Span::raw(footer)];
     if let Some(count) = message_count {
         title.push(format!(" · {count} / 50 ").into());
-        footer.push("· ↑↓ scroll · PgUp/PgDn page ".into());
     }
     Block::bordered()
         .title(Line::from(title))
@@ -362,7 +382,7 @@ pub(super) fn full_help_paged(
     caption: Option<&str>,
     navigation: &str,
 ) {
-    let block = full_help_block(Tab::Help, None, navigation);
+    let block = full_help_block(Tab::Help, None, navigation, area.width);
     let inner = block.inner(area);
     let lines = help_key_lines(rows, inner.width);
     let height = usize::from(inner.height).saturating_sub(usize::from(caption.is_some()));
@@ -451,7 +471,7 @@ pub fn message_lines(entries: &[Message<'_>], width: u16) -> Vec<Line<'static>> 
 }
 
 pub(super) fn controller(frame: &mut Frame, area: Rect, c: &Controller) {
-    let block = full_help_block(Tab::Controller, None, &c.navigation);
+    let block = full_help_block(Tab::Controller, None, &c.navigation, area.width);
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
@@ -568,7 +588,7 @@ pub(super) fn message_history_caption(
     scroll: usize,
     caption: Option<&str>,
 ) {
-    let block = full_help_block(Tab::Messages, Some(entries.len()), "");
+    let block = full_help_block(Tab::Messages, Some(entries.len()), "", area.width);
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
