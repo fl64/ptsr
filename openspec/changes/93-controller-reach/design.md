@@ -25,6 +25,7 @@ The current `ACTIONS` catalogue has 209 entries, 171 distinct names and 50 knob 
 | Global commands | Output recording and screen learning have no shipped SMC-PAD cell. | Open in 93. |
 | Pad exchange on other screens | Ctrl+X can take the selected pad on Settings, but the shipped panel has Take only on Pads. | Add Take to common page 2 in 93. |
 | Chop | Hits Back and both cut-deletion commands have no shipped SMC-PAD cell. | Open in 93. |
+| A1 controls over any screen | The shipped `[screens.pattern]` encoder roles do not load. Encoder 2 does not change Bars, while the keyboard value key does. | A raw MIDI and keyboard run confirms the gap. The route design is open in 93. |
 
 The reach test must decide whether another keyboard action has an equivalent knob, button or context route before it closes this list. A static comparison of action names cannot decide that question.
 
@@ -91,5 +92,6 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 
 ## Open questions
 
+- How should the shipped A1 encoder roles work while the A1 controls overlay is open on any screen? Default: give MIDI profile resolution a distinct pattern-control context. Load `[screens.pattern]` and select it only for that overlay. Keep the underlying keyboard screen, global actions, learned owner bindings and held-pad release path. The current public input screen model has no pattern context. The owner must approve a public API change before implementation. Test raw encoders 2 through 4 against the keyboard Bars, Quantize and Strength controls on each underlying screen. Also test close, owner overrides and a held Gate release.
 - Which free encoder selects overflow context pages? Default: first-bank encoder 6. It has no shipped role in the current SMC-PAD profile. Keep encoder 1 on the current item and keep both knob banks active.
 - Should a silent controller command end the splash? Default: no. The accepted screen-layout specification requires an accepted sound, and silent commands already work while the splash shows.
