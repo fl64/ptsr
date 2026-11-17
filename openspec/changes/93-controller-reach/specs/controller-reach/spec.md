@@ -48,6 +48,22 @@ While the SMC-PAD panel is visible, first-bank encoder 6 SHALL select a context 
 - **THEN** the later page labels show before the cell runs its action once
 - **AND** LEFT and RIGHT still select items, while Next, Main, fixed bottom cells, owner overrides, transport and sounding pads keep their behavior
 
+### Requirement: Added context cells provide missing actions
+
+Every panel view SHALL keep its main page, first context page and fixed bottom row. It SHALL add the common action cells in the table. Pads, Chop and Chop edit SHALL add the listed page 4 cells. First-bank encoder 7 SHALL step tempo, and encoder 8 SHALL select banks.
+
+#### Scenario: Added cells reach their current actions
+- **WHEN** the owner uses a listed cell in a screen or mode where its action works
+- **THEN** the action has the same result as its keyboard path
+- **AND** another screen or mode does not claim a route for a command that has no effect there
+
+| View | Page | Cells in order: label (`action`) |
+| --- | --- | --- |
+| Every view | 2 | `outrec` (`record.output`), `trnspt` (`transport.toggle`), `click` (`metronome.click`), `proj` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `A1undo` (`pattern.undo`), `A1 ctl` (`pattern.controls`), `exit` (`app.quit`) |
+| Every view | 3 | `bpm -` (`transport.tempo_down`), `bpm +` (`transport.tempo_up`), `bpm-.1` (`transport.tempo_down_fine`), `bpm+.1` (`transport.tempo_up_fine`), `erase` (`pattern.erase`), `A1 rec` (`pattern.record`) |
+| Pads | 4 | `view -` (`pattern.view_prev`), `view +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`), `step` (`pattern.step_edit`) |
+| Chop, Chop edit | 4 | `hits -` (`chop.hits_back`), `delcut` (`marker.delete`), `delend` (`slice.end_delete`), `order` (`chop.assign_order`) |
+
 ### Requirement: Pickers accept SMC-PAD selection without typed text
 
 In the project picker, SMC-PAD encoder 1 SHALL move the selection. P8 SHALL confirm the selected project, and P7 or Back SHALL cancel. These modal routes SHALL take priority over the screen behind the picker. A visible question SHALL keep its existing P7 and P8 priority. A failed project transition SHALL keep the current project, picker and selection.
