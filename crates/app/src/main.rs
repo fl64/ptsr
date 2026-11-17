@@ -15626,8 +15626,8 @@ Enter = "browser.hold"
     }
 
     /// 83a keyboard "Shipped modified chords have one role": every Ctrl/Alt chord of the
-    /// shipped map keeps one role across screens and edit layers, with the exceptions
-    /// the map comments name; no Ctrl+Shift+letter command, no plain/Shift pad command.
+    /// shipped map keeps one role across screens and edit layers, except Alt arrows;
+    /// no Ctrl+Shift+letter command, no plain/Shift pad command.
     #[test]
     fn shipped_modified_chords_have_one_role() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
@@ -15643,7 +15643,7 @@ Enter = "browser.hold"
                 let Some(rest) = k.strip_prefix("Ctrl+").or_else(|| k.strip_prefix("Alt+")) else {
                     continue;
                 };
-                if rest.chars().count() != 1 {
+                if rest.chars().count() != 1 || matches!(k.as_str(), "Alt+←" | "Alt+→") {
                     continue;
                 }
                 let c = rest.chars().next().unwrap();

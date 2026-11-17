@@ -88,6 +88,8 @@ fn every_current_keyboard_action_has_a_controller_route() {
     let aliases = [
         ("bank.prev", "e8", "bank"),
         ("bank.next", "e8", "bank"),
+        ("pad.select_left", "left", "pad.select_left"),
+        ("pad.select_right", "right", "pad.select_right"),
         ("master.volume_down", "f8", "master.volume"),
         ("master.volume_up", "f8", "master.volume"),
         ("browser.up", "left", "browser.up"),
@@ -287,7 +289,9 @@ fn every_current_controller_action_has_a_keyboard_route() {
             | "pattern.bars" | "pattern.quantize" | "pattern.strength" => {
                 has("edit.value_dec") && has("edit.value_inc")
             }
-            "pad.select_left" | "pad.select_right" => true,
+            "pad.select_left" | "pad.select_right" => {
+                has("pad.select_left") && has("pad.select_right")
+            }
             "files.scroll" | "projects.scroll" | "settings.row" => {
                 has("browser.up") && has("browser.down") || has("settings.row_prev")
             }
@@ -305,6 +309,151 @@ fn every_current_controller_action_has_a_keyboard_route() {
             _ => false,
         };
         assert!(keyboard_route, "{scope:?} {key:?} {role}: no keyboard path");
+    }
+}
+
+/// Scenario "Keyboard selects a neighboring pad without sound" (controller-reach).
+#[test]
+fn keyboard_selects_a_neighboring_pad_without_sound() {
+    for view in [panel::View::Pads, panel::View::PadEdit] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut keyboard = reach_drive(view, sound.clone());
+        let mut controller = reach_drive(view, sound);
+        for (start, code, cc, selected) in [
+            (0, KeyCode::Left, 25, 0),
+            (0, KeyCode::Right, 26, 1),
+            (3, KeyCode::Right, 26, 3),
+            (4, KeyCode::Left, 25, 4),
+            (7, KeyCode::Left, 25, 6),
+            (15, KeyCode::Right, 26, 15),
+        ] {
+            for drive in [&mut keyboard, &mut controller] {
+                drive.app.pads.selected = start;
+                drive.app.splash = true;
+                drive.app.publish_midi(&drive.shared);
+            }
+            let before = keyboard.seen();
+            let key_frame = keyboard.tap(code, M::ALT);
+            controller.bytes(SMC, &[0xB0, cc, 127]);
+            controller.bytes(SMC, &[0xB0, cc, 0]);
+            let button_frame = controller.frame();
+            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
+            assert_eq!(keyboard.seen(), controller.seen(), "{view:?} {start}");
+            assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
+            assert!(key_frame.commands().is_empty(), "{view:?} key hit");
+            assert!(button_frame.commands().is_empty(), "{view:?} button hit");
+            assert!(
+                keyboard.app.splash && controller.app.splash,
+                "{view:?} splash"
+            );
+            keyboard.key(code, M::ALT, KeyEventKind::Repeat);
+            keyboard.key(code, M::ALT, KeyEventKind::Release);
+            assert!(keyboard.frame().commands().is_empty());
+            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
+        }
+
+        for drive in [&mut keyboard, &mut controller] {
+            drive.app.pads.selected = 0;
+            drive.app.pads.gate[0] = true;
+            drive.app.publish_midi(&drive.shared);
+        }
+        keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Press);
+        keyboard.frame();
+        controller.bytes(SMC, &[0x99, 48, 80]);
+        controller.frame();
+        assert!(keyboard.app.pads.held[0] && controller.app.pads.held[0]);
+        assert!(keyboard.tap(KeyCode::Right, M::ALT).commands().is_empty());
+        controller.bytes(SMC, &[0xB0, 26, 127]);
+        controller.bytes(SMC, &[0xB0, 26, 0]);
+        assert!(controller.frame().commands().is_empty());
+        assert_eq!(keyboard.app.pads.selected, 1);
+        assert_eq!(keyboard.seen(), controller.seen());
+        keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Release);
+        let key_release = keyboard.frame();
+        controller.bytes(SMC, &[0x89, 48, 0]);
+        controller.frame();
+        assert!(
+            key_release
+                .commands()
+                .iter()
+                .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
+        );
+        assert_eq!(keyboard.seen(), controller.seen());
+        assert!(!keyboard.app.pads.held[0]);
+        assert_eq!(keyboard.app.pads.selected, 1);
+    }
+}
+
+/// Scenario "Silent selection respects owner bindings and overlays" (controller-reach).
+#[test]
+fn silent_selection_respects_owner_bindings_and_overlays() {
+    for binding in ["none", "metronome.toggle"] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut drive = reach_drive(panel::View::Pads, sound);
+        assert!(
+            drive
+                .keymap
+                .overlay(&format!("[screens.pads]\n\"Alt+Right\" = \"{binding}\"\n"))
+                .unwrap()
+                .is_empty()
+        );
+        let before = drive.app.transport.metronome;
+        let frame = drive.tap(KeyCode::Right, M::ALT);
+        assert!(!frame.commands().iter().any(|command| matches!(
+            command,
+            Command::PadPress { .. } | Command::PadRelease { .. }
+        )));
+        assert_eq!(drive.app.pads.selected, 0, "owner {binding}");
+        assert_eq!(
+            drive.app.transport.metronome,
+            if binding == "metronome.toggle" {
+                !before
+            } else {
+                before
+            },
+            "owner {binding}"
+        );
+    }
+
+    for overlay in ["text", "question", "picker", "help", "screen learn"] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut drive = reach_drive(panel::View::Pads, sound);
+        match overlay {
+            "text" => {
+                drive.tap(KeyCode::Char('n'), M::CONTROL);
+                assert!(drive.app.pad_naming.is_some());
+            }
+            "question" => {
+                drive.app.ask = Some(Ask::ClearPads {
+                    pads: vec![0],
+                    lines: vec!["Clear?".into()],
+                });
+            }
+            "picker" => {
+                drive.tap(KeyCode::Char('p'), M::CONTROL);
+                assert!(drive.app.project_picker.is_some());
+            }
+            "help" => {
+                drive.tap(KeyCode::F(1), M::NONE);
+                assert!(drive.app.help_open);
+            }
+            _ => {
+                drive.tap(KeyCode::F(10), M::NONE);
+                assert!(drive.app.screen_learn.is_some());
+            }
+        }
+        drive.tap(KeyCode::Right, M::ALT);
+        assert_eq!(drive.app.pads.selected, 0, "{overlay}");
+    }
+
+    let drive = smc_drive();
+    for (code, right) in [(KeyCode::Left, false), (KeyCode::Right, true)] {
+        assert!(matches!(
+            drive
+                .keymap
+                .resolve_in(Screen::Chop, false, &KeyEvent::new(code, M::ALT)),
+            Some(Action::SliceBound { end: true, right: resolved, fine: true }) if resolved == right
+        ));
     }
 }
 

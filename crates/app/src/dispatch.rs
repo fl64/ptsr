@@ -2488,6 +2488,13 @@ impl App {
         if self.help_key(&k) {
             return false;
         }
+        if self.help_open
+            && self.screen == Screen::Pads
+            && matches!(k.code, event::KeyCode::Left | event::KeyCode::Right)
+            && k.modifiers == event::KeyModifiers::ALT
+        {
+            return false;
+        }
         if warning_shown
             && k.kind == event::KeyEventKind::Press
             && !matches!(k.code, event::KeyCode::Modifier(_))
