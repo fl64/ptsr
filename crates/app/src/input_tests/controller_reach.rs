@@ -1748,6 +1748,186 @@ fn shipped_global_knobs_match_keyboard_results_in_each_view() {
     }
 }
 
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+/// This matrix creates 48 app instances, so it belongs to the slow group.
+#[test]
+fn shipped_transport_buttons_match_keyboard_results_in_each_view() {
+    for view in ALL_VIEWS {
+        for (cc, code, modifiers) in [
+            (27, KeyCode::Char('t'), M::ALT),
+            (28, KeyCode::Char('y'), M::ALT),
+            (29, KeyCode::Char('r'), M::CONTROL),
+        ] {
+            let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+            let mut keyboard = reach_drive(view, sound.clone());
+            let mut controller = reach_drive(view, sound);
+            let key_frame = keyboard.tap(code, modifiers);
+            controller.bytes(SMC, &[0xB0, cc, 127]);
+            controller.bytes(SMC, &[0xB0, cc, 0]);
+            let button_frame = controller.frame();
+            assert_eq!(
+                reach_result(&controller, &button_frame),
+                reach_result(&keyboard, &key_frame),
+                "{view:?} button cc {cc}"
+            );
+        }
+    }
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+/// This matrix creates 32 app instances, so it belongs to the slow group.
+#[test]
+fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
+    for view in ALL_VIEWS {
+        for (cc, right) in [(25, false), (26, true)] {
+            let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+            let mut keyboard = reach_drive(view, sound.clone());
+            let mut controller = reach_drive(view, sound);
+            let code = match view {
+                panel::View::Pads | panel::View::PadEdit | panel::View::Pattern => {
+                    for drive in [&mut keyboard, &mut controller] {
+                        drive.app.pads.selected = 1;
+                        drive.app.publish_midi(&drive.shared);
+                    }
+                    if right { KeyCode::Right } else { KeyCode::Left }
+                }
+                panel::View::Files => {
+                    for drive in [&mut keyboard, &mut controller] {
+                        drive.app.browser.entries = (0..3)
+                            .map(|index| browser::Entry {
+                                name: format!("file-{index}.wav"),
+                                is_dir: false,
+                                favorite: None,
+                            })
+                            .collect();
+                        drive.app.browser.selected = 1;
+                    }
+                    if right { KeyCode::Down } else { KeyCode::Up }
+                }
+                panel::View::Chop | panel::View::ChopEdit => {
+                    for drive in [&mut keyboard, &mut controller] {
+                        let chop = drive.app.chop.as_mut().unwrap();
+                        chop.snap = chop::Snap::Cuts;
+                        assert!(chop.select_slice(1));
+                        drive.app.publish_midi(&drive.shared);
+                    }
+                    if right {
+                        KeyCode::Char('l')
+                    } else {
+                        KeyCode::Char('j')
+                    }
+                }
+                panel::View::Fx => {
+                    controller.bytes(SMC, &[0xB0, cc, 127]);
+                    controller.bytes(SMC, &[0xB0, cc, 0]);
+                    assert!(controller.frame().commands().is_empty());
+                    assert_eq!(controller.seen(), keyboard.seen());
+                    continue;
+                }
+                panel::View::Settings => {
+                    for drive in [&mut keyboard, &mut controller] {
+                        drive.app.settings_row = 1;
+                        drive.app.publish_midi(&drive.shared);
+                    }
+                    if right { KeyCode::Down } else { KeyCode::Up }
+                }
+            };
+            if view == panel::View::ChopEdit {
+                keyboard.tap(KeyCode::Esc, M::NONE);
+            }
+            let modifiers = if matches!(
+                view,
+                panel::View::Pads | panel::View::PadEdit | panel::View::Pattern
+            ) {
+                M::ALT
+            } else {
+                M::NONE
+            };
+            let key_frame = keyboard.tap(code, modifiers);
+            if view == panel::View::ChopEdit {
+                keyboard.tap(KeyCode::Enter, M::NONE);
+            }
+            controller.bytes(SMC, &[0xB0, cc, 127]);
+            controller.bytes(SMC, &[0xB0, cc, 0]);
+            let button_frame = controller.frame();
+            assert_eq!(
+                reach_result(&controller, &button_frame),
+                reach_result(&keyboard, &key_frame),
+                "{view:?} button cc {cc}"
+            );
+            let expected = if right { 2 } else { 0 };
+            match view {
+                panel::View::Pads | panel::View::PadEdit | panel::View::Pattern => {
+                    assert_eq!(controller.app.pads.selected, expected, "{view:?} cc {cc}");
+                }
+                panel::View::Files => {
+                    assert_eq!(
+                        controller.app.browser.selected, expected,
+                        "{view:?} cc {cc}"
+                    );
+                }
+                panel::View::Chop | panel::View::ChopEdit => {
+                    assert_eq!(
+                        controller.app.chop.as_ref().unwrap().selected,
+                        expected,
+                        "{view:?} cc {cc}"
+                    );
+                }
+                panel::View::Settings => {
+                    assert_eq!(controller.app.settings_row, expected, "{view:?} cc {cc}");
+                }
+                panel::View::Fx => unreachable!(),
+            }
+        }
+    }
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+/// This matrix creates 36 app instances, so it belongs to the slow group.
+#[test]
+fn shipped_pad_knobs_match_keyboard_values_in_both_pad_modes() {
+    for view in [panel::View::Pads, panel::View::PadEdit] {
+        for (cc, param, key, value) in [
+            (31, pads::Param::Volume, KeyCode::Left, 63),
+            (32, pads::Param::Pitch, KeyCode::Right, 65),
+            (33, pads::Param::Cutoff, KeyCode::Left, 63),
+            (34, pads::Param::Decay, KeyCode::Right, 65),
+            (38, pads::Param::Volume, KeyCode::Left, 63),
+            (40, pads::Param::Pitch, KeyCode::Right, 65),
+            (41, pads::Param::Cutoff, KeyCode::Left, 63),
+            (42, pads::Param::Decay, KeyCode::Right, 65),
+        ] {
+            let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+            let mut keyboard = reach_drive(view, sound.clone());
+            let mut controller = reach_drive(view, sound);
+            for drive in [&mut keyboard, &mut controller] {
+                drive.app.pads.param = param;
+                drive.app.publish_midi(&drive.shared);
+            }
+            let before = keyboard.seen();
+            keyboard.tap(key, M::NONE);
+            turn(&mut controller, cc, value);
+            assert_eq!(controller.seen(), keyboard.seen(), "{view:?} cc {cc}");
+            assert_ne!(
+                controller.seen().pads,
+                before.pads,
+                "{view:?} cc {cc} did not act"
+            );
+        }
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut keyboard = reach_drive(view, sound.clone());
+        let mut controller = reach_drive(view, sound);
+        keyboard.tap(KeyCode::PageDown, M::NONE);
+        turn(&mut controller, 30, 65);
+        assert_eq!(
+            controller.seen(),
+            keyboard.seen(),
+            "{view:?} encoder 1 bank"
+        );
+        assert_eq!(controller.app.pads.bank, 1);
+    }
+}
+
 #[test]
 fn bank_knob_does_not_act_behind_a_question_or_picker() {
     let files = TransitionFiles::new();
