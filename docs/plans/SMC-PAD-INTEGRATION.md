@@ -174,6 +174,10 @@ defaults and tests unchanged.
 
 Bank 1 (CC 30–37) is the context of the screen. Bank 2 (CC 38–45) is the
 same on every screen.
+While A1 controls are open, the Pattern column replaces the underlying screen
+roles for encoders 1–4. Change 93 loads these roles from `[screens.pattern]`
+and adds missing roles to already seeded SMC-PAD bindings without replacing
+the owner's assignments. Closing the controls restores the screen roles.
 
 | Bank 1 knob | Pads | Pads edit | Files | Chop | Pattern | FX | Settings |
 |---|---|---|---|---|---|---|---|

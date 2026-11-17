@@ -25,7 +25,7 @@ The current `ACTIONS` catalogue has 209 entries, 171 distinct names and 50 knob 
 | Global commands | Output recording and screen learning have no shipped SMC-PAD cell. | Open in 93. |
 | Pad exchange on other screens | Ctrl+X can take the selected pad on Settings, but the shipped panel has Take only on Pads. | Add Take to common page 2 in 93. |
 | Chop | Hits Back and both cut-deletion commands have no shipped SMC-PAD cell. | Open in 93. |
-| A1 controls over any screen | The shipped `[screens.pattern]` encoder roles do not load. Encoder 2 does not change Bars, while the keyboard value key does. | A raw MIDI and keyboard run confirms the gap. The route design is open in 93. |
+| A1 controls over any screen | The shipped `[screens.pattern]` encoder roles do not load. Encoder 2 does not change Bars, while the keyboard value key does. | The owner approved a distinct MIDI context for the open A1 controls on 2026-11-17. Fix in 93. |
 
 The reach test must decide whether another keyboard action has an equivalent knob, button or context route before it closes this list. A static comparison of action names cannot decide that question.
 
@@ -35,6 +35,8 @@ The static inventory treated SMC-PAD LEFT and RIGHT on Pads as covered by a keyb
 
 An isolated SMC-PAD encoder 3 detent changes the Chop hit threshold by 1 dB. The existing MIDI speed rule accelerates detents within 40 ms. `H` and `Shift+H` select fixed thresholds. The owner approved exact keyboard steps on 2026-11-17. Add `chop.threshold_up` and `chop.threshold_down` to the Chop and Chop edit action groups. Bind `Ctrl+Alt+Up` to +1 dB and `Ctrl+Alt+Down` to -1 dB on Chop and Chop edit. Send both keys and encoder 3 through the current threshold setter. Keep its -40 to 0 dB bounds, recut, linked-pad and Undo behavior. At a bound, a step does not add an Undo entry. Test isolated encoder detents at least 100 ms apart against key presses through production dispatch. Also test both Chop modes, both bounds, Undo, owner overrides and modal priority. The new chords also need a legacy-terminal path under the accepted keyboard contract.
 The action list uses `th+1` and `th-1` as short labels for these keys.
+
+The owner approved a distinct MIDI context for open A1 controls on 2026-11-17. Load `[screens.pattern]` as an overlay context, not as a replacement for the underlying keyboard screen. Encoders 2, 3 and 4 change Bars, Quantize and Strength only while the controls are open. Encoder 1 keeps its shipped bank role. A profile's pattern roles have their own learned group, so owner pattern assignments win over the shipped roles. Global controls, panel cells and pad releases keep their current routes. When the controls close, the underlying screen roles return. A question, picker, text line or learning mode keeps priority. Seed the new group for a newly connected SMC-PAD and add only missing pattern roles to an already seeded profile. Preserve every existing owner binding. Show the current encoder roles in the Controller tab. Test the raw profile on every underlying screen, both seed states, owner overrides, close, modals, a second device and a held Gate release.
 
 `ActionInfo` does not yet mark text entry. Add that metadata for `pad.rename` and `browser.filter`. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
@@ -92,6 +94,5 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 
 ## Open questions
 
-- How should the shipped A1 encoder roles work while the A1 controls overlay is open on any screen? Default: give MIDI profile resolution a distinct pattern-control context. Load `[screens.pattern]` and select it only for that overlay. Keep the underlying keyboard screen, global actions, learned owner bindings and held-pad release path. The current public input screen model has no pattern context. The owner must approve a public API change before implementation. Test raw encoders 2 through 4 against the keyboard Bars, Quantize and Strength controls on each underlying screen. Also test close, owner overrides and a held Gate release.
 - Which free encoder selects overflow context pages? Default: first-bank encoder 6. It has no shipped role in the current SMC-PAD profile. Keep encoder 1 on the current item and keep both knob banks active.
 - Should a silent controller command end the splash? Default: no. The accepted screen-layout specification requires an accepted sound, and silent commands already work while the splash shows.

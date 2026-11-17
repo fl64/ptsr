@@ -2266,6 +2266,9 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
   Check -40 and 0 dB bounds and `Ctrl+Z` after a changed step. Repeat without
   the kitty keyboard protocol. Open Help or a question and check that the
   keys do not recut behind it.
+- [ ] On each screen, open A1 controls with `Alt+N`. Use the value keys on
+  Bars, Quantize and Strength. Check their bounds. Close the controls and
+  check that the screen keys return to their former roles.
 - [ ] Use `Ctrl+Q` to leave a disposable session. Check its existing save path.
 
 ### Physical SMC-PAD pass
@@ -2287,6 +2290,12 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
   Compare each result with `Ctrl+Alt+Down` and `Ctrl+Alt+Up`, including linked
   pads, both bounds and Undo. During assign mode, check that the knob does not
   replace the cuts behind the assignment plan.
+- [ ] On each screen, open A1 controls. Turn encoders 2, 3 and 4 one slow
+  detent each and compare Bars, Quantize and Strength with the keyboard pass.
+  Turn encoder 1 to select a bank. Check the current roles in F1 > Controller.
+  Close A1 controls and check that the screen encoder roles return. Repeat
+  after a question and with a held Gate pad. Keep another MIDI device on its
+  own route if one is available.
 - [ ] Open the project picker from a panel cell. Turn encoder 1 and press P8.
   Check that the selected project opens. Open it again and use P7 to cancel.
   On Settings > Paths, use encoder 1, LEFT, RIGHT and P8 to select a folder.

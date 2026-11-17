@@ -16,6 +16,30 @@ For each current screen and mode, each effective keyboard action that needs no t
 - **THEN** each sampler action reaches the same result from the keyboard
 - **AND** the test reports any action without a key or key path, apart from panel navigation
 
+### Requirement: A1 controls use the shipped pattern encoder context
+
+While A1 controls are open, the shipped SMC-PAD `[screens.pattern]` roles SHALL take priority over its screen roles. Encoder 1 SHALL select a bank. Encoders 2, 3 and 4 SHALL change Bars, Quantize and Strength like keyboard value controls. Closing A1 controls SHALL restore screen roles. Other devices, global controls, panel cells and held-pad releases SHALL keep their routes. Input overlays SHALL keep priority. The Controller tab SHALL show the current roles.
+
+#### Scenario: A1 encoders follow the open controls on every screen
+- **WHEN** keyboard and raw SMC-PAD runs open A1 controls on each underlying screen and change Bars, Quantize and Strength
+- **THEN** the three encoders and keyboard value controls reach the same settings and bounds
+- **AND** encoder 1 selects the same bank as the keyboard, while global controls and panel cells keep their routes
+- **AND** closing A1 controls restores the underlying encoder roles and the Controller tab names the current roles
+
+### Requirement: A1 encoder bindings survive profile seeding
+
+The pattern roles SHALL have a separate learned group. The owner's pattern bindings SHALL take priority over the shipped roles. A new SMC-PAD profile SHALL seed the group. For an already seeded profile, the program SHALL add missing pattern roles without removing or replacing existing owner bindings.
+
+#### Scenario: A1 encoder bindings survive profile seeding and owner changes
+- **WHEN** a new or already seeded SMC-PAD profile loads, and the owner replaces or removes a pattern-group binding
+- **THEN** only missing shipped pattern roles enter the saved group
+- **AND** the owner's binding or removal wins while A1 controls are open
+- **AND** the underlying screen bindings, other devices and saved owner bindings stay unchanged
+
+#### Scenario: A1 encoder context preserves input owners and held pads
+- **WHEN** a question, picker, text line or learning mode opens over A1 controls, or a held Gate pad crosses the controls' close
+- **THEN** the active input owner keeps priority, no A1 setting changes behind it, and the Gate release stops its original pad
+
 ### Requirement: Chop threshold has matching keyboard steps
 
 On Chop and Chop edit, `Ctrl+Alt+Up` SHALL increase the hit threshold by 1 dB and `Ctrl+Alt+Down` SHALL decrease it by 1 dB. These keys SHALL use `chop.threshold_up` and `chop.threshold_down`. Each step SHALL have the same result as one isolated opposite-direction detent of SMC-PAD encoder 3. Fast MIDI turns SHALL keep their existing acceleration. The threshold SHALL stay within -40 to 0 dB.

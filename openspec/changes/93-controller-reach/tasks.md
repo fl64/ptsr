@@ -12,13 +12,14 @@
 - [x] 2.1 Add `docs/CONTROLLER-PATHS.md`. Give every story in `docs/USER-STORIES.md` a controller route, first-entry count and repeated count, or its explicit exception.
 - [x] 2.2 Add text-entry metadata for the two listed actions without adding `app.quit` to MIDI learn. Test the allowed text exceptions and reject an unlisted exception.
 - [ ] 2.3 Add a test that uses the shipped keyboard map, SMC-PAD profile and panel map through production dispatch. Cover each screen and mode in both directions. Report missing and over-budget routes with their context. Test visible mode badges.
-  The inventory checks every shipped mapping and press limit. Raw MIDI checks cover 225 panel cells, all 16 pad hits, direct transport buttons and three global knobs in eight views. Result checks cover Pads and Files encoders. Chop and other contextual knob results remain open. The shipped A1 encoder roles do not load. The owner must decide on the overlay context and public input API in design.md before implementation.
+  The inventory checks every shipped mapping and press limit. Raw MIDI checks cover 225 panel cells, all 16 pad hits, direct transport buttons and three global knobs in eight views. Result checks cover Pads and Files encoders. Chop and other contextual knob results remain open. The owner approved a distinct MIDI context for the open A1 controls on 2026-11-17. The route and its tests remain open.
 - [x] 2.4 Add the missing cell labels and action IDs to this design and delta before their code. Check and commit these OpenSpec edits separately.
 - [x] 2.5 Record the owner-approved `Alt+U` route in the keyboard delta and design. Keep Files and Chop Space previews. Update the affected plan and owner checks before code. Run `task openspec:check` and commit these text edits.
 - [x] 2.6 Record `Alt+Left` and `Alt+Right` for silent pad selection in the delta and design. Keep plain value arrows on Pads and Alt-arrow slice bounds on Chop. Update the plan and owner checks, then check and commit the text before code.
 - [x] 2.7 Bind the silent selection keys on Pads and Pads edit. Compare their results with raw SMC-PAD LEFT and RIGHT, including row edges, Gate release, repeat, owner bindings and overlays. Keep other screens unchanged.
 - [x] 2.8 Record the owner-approved exact Chop threshold keys in the delta, design, proposal, plan and owner checks. Check and commit these texts before code.
 - [x] 2.9 Add the threshold actions and keys. Compare keyboard and raw encoder 3 in Chop and Chop edit, including bounds, Undo, linked pads, owner bindings, overlays and legacy terminals. Complete the named scenarios before the code commit.
+- [ ] 2.10 Load the shipped A1 encoder roles as a separate MIDI context. Add the group to new and already seeded profiles without changing owner bindings. Show the roles in the Controller tab. Test keyboard and raw MIDI parity on every underlying screen, close, input owners, other devices and held Gate releases.
 
 ## 3. Picker and Settings routes
 
