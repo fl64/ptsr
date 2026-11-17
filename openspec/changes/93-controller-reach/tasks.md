@@ -14,6 +14,7 @@
 - [ ] 2.3 Add a test that uses the shipped keyboard map, SMC-PAD profile and panel map through production dispatch. Cover each screen and mode in both directions. Report missing and over-budget routes with their context. Test visible mode badges.
   The inventory checks every shipped mapping and press limit. A raw MIDI result check for every action in every mode remains open.
 - [x] 2.4 Add the missing cell labels and action IDs to this design and delta before their code. Check and commit these OpenSpec edits separately.
+- [x] 2.5 Record the owner-approved `Alt+U` route in the keyboard delta and design. Keep Files and Chop Space previews. Update the affected plan and owner checks before code. Run `task openspec:check` and commit these text edits.
 
 ## 3. Picker and Settings routes
 

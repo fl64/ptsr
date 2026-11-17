@@ -330,6 +330,7 @@ Tasks:
    Keyboard side: every sampler action has a key or key path. PAD BANK selection,
    its status mark, panel page navigation and an optional measured SHIFT quick look
    are controller interface steps, not sampler actions.
+   Bind Alt+U to transport toggle on every screen. Keep Space preview on Files and Chop.
    The test also checks that every mode has its badge
    (`VISUAL.md` §2.1).
 4. Close the gaps that the production-route test shows. Expected gaps include project
@@ -346,6 +347,10 @@ Owner steps without the keyboard:
 2. Assign slices to pads, shape the sound and add effects.
 3. Save the project and switch projects.
 4. Select Exit and press P8.
+
+Keyboard check: on Files and Chop, use Alt+U for transport and Space for preview.
+Repeat Alt+U in the Russian layout. Check the same transport result from page 2
+`trnspt` on the SMC-PAD.
 
 ### Change 93a — `93a-controller-comfort`
 

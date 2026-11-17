@@ -8,6 +8,7 @@ Change 92 gives the SMC-PAD a command panel, but it does not prove that the owne
 
 - Record a controller route and press count for every story in `docs/USER-STORIES.md`. Separate first panel entry from later use. Mark stories that only describe a display or another device.
 - Verify the shipped keyboard map, SMC-PAD profile and panel map in both directions for each screen and mode. Exempt only text entry. Require a visible badge for each mode.
+- Bind `Alt+U` to the transport toggle on every screen. Keep the current Space preview actions on Files and Chop.
 - Add controller selection and confirmation in the project and folder pickers. Add a relative knob route for settings values. Make Help navigation usable after its panel cell opens it.
 - Keep every non-text action within two presses from a visible panel, apart from knob turns and target pad hits. Add a page selection route for context pages beyond the first.
 - Keep existing question priority, first-hit panel entry, keyboard keys, other devices and held pad releases.
@@ -22,7 +23,7 @@ This change SHALL NOT add Redo, Panic, date-named projects, pad lights, a host S
 
 ### Modified Capabilities
 
-None. The new capability adds controller routes without removing the accepted behavior of the panel, pickers, Settings or Help.
+- `keyboard`: add a shared transport key for screens where Space controls preview.
 
 ## Impact
 
@@ -33,6 +34,7 @@ The change affects input metadata, the SMC-PAD profile, panel configuration, mod
 ### Keyboard
 
 Start an empty project. Load and chop a sample, assign slices, edit a pad, change FX and settings, save and switch projects. Verify that the current keys and modal questions keep their results.
+On Files and Chop, press `Alt+U` to start and stop transport. Press Space to check the existing preview action. Repeat `Alt+U` with the Russian layout.
 
 ### Controller
 

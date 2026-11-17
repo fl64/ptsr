@@ -2253,6 +2253,9 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
 - [ ] On Files and Settings, use the arrow keys and `Enter` to select a project
   and a Paths folder. Change a Settings value with `Left` and `Right`. Open F1.
   Use `Tab`, `Shift+Tab` and the arrow keys to navigate Help.
+- [ ] On Files and Chop, press `Alt+U` to start and stop transport. Repeat in the
+  Russian layout. Press Space on each screen. Check that it keeps its preview role.
+  In a text line or question, check that `Alt+U` does not change transport.
 - [ ] Use `Ctrl+Q` to leave a disposable session. Check its existing save path.
 
 ### Physical SMC-PAD pass
@@ -2265,6 +2268,8 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
 - [ ] Use encoder 7 to change tempo and encoder 8 to change banks. Hold a Gate
   pad while you change a mode, page or bank. Release it and check that its
   original sound ends. Repeat with a second controller if one is available.
+- [ ] On Files and Chop, select page 2 and hit `trnspt`. Check the same transport
+  start and stop as `Alt+U`. Use Space for a separate keyboard preview check.
 - [ ] Open the project picker from a panel cell. Turn encoder 1 and press P8.
   Check that the selected project opens. Open it again and use P7 to cancel.
   On Settings > Paths, use encoder 1, LEFT, RIGHT and P8 to select a folder.

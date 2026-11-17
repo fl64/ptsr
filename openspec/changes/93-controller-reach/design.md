@@ -28,6 +28,8 @@ The current `ACTIONS` catalogue has 209 entries, 171 distinct names and 50 knob 
 
 The reach test must decide whether another keyboard action has an equivalent knob, button or context route before it closes this list. A static comparison of action names cannot decide that question.
 
+The page 2 `trnspt` cell runs `transport.toggle` on Files and Chop. Space runs the preview action on these screens. The shipped keyboard map has no other effective key for `transport.toggle` there. The owner approved `Alt+U` on 2026-11-17 as a shared transport key. Keep Space previews and the existing owner keymap priority. Test the result from the same screen through keyboard and raw SMC-PAD input, in both supported keyboard layouts. A keymap entry in a different screen does not count as a route.
+
 `ActionInfo` does not yet mark text entry. Add that metadata for `pad.rename` and `browser.filter`. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
 The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit or a later modal answer is recorded separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
@@ -74,6 +76,8 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 | A silent controller action arrives during the splash | The action can run, and the splash remains until accepted sound. | Covered by existing sound-first splash tests. |
 | Exit opens while a recording or save is pending | The question has no quit effect. P8 enters the existing exit-save path once. P7 keeps the session open. | Covered by `exit_question_keeps_a_pending_a1_save_until_confirmation`. |
 | An owner binding replaces a panel cell | The owner binding acts outside a question. The reach report names the shipped profile, not the owner's override. | Covered by existing owner-override tests. |
+| An owner binding replaces `Alt+U` or sets it to `none` | The owner entry keeps priority. The shipped route test uses the default map and a separate test checks the override. | Add a test in 93. |
+| A text line or question is open when `Alt+U` arrives | The active modal route keeps priority. The transport does not toggle behind it. | Add a test in 93. |
 
 ## Open questions
 
