@@ -4,7 +4,7 @@
 
 ### Requirement: Current actions have paths from both inputs
 
-For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. The route SHALL use production input dispatch.
+For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. A Chop slice-bound turn SHALL select the same start or end bound as its keyboard route. The route SHALL use production input dispatch.
 
 #### Scenario: Every current keyboard action has a controller route
 - **WHEN** the reach test visits each current screen and mode with the shipped keyboard map, SMC-PAD profile and panel map
@@ -14,6 +14,7 @@ For each current screen and mode, each effective keyboard action that needs no t
 #### Scenario: Every current controller action has a keyboard route
 - **WHEN** the reach test visits each shipped SMC-PAD button, pad, panel cell and knob role
 - **THEN** each sampler action reaches the same result from the keyboard
+- **AND** a Chop slice-bound turn selects the same start or end bound as its keyboard route
 - **AND** the test reports any action without a key or key path, apart from panel navigation
 
 ### Requirement: A1 controls use the shipped pattern encoder context

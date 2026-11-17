@@ -1817,6 +1817,7 @@ impl App {
                         if let Some(c) = self.chop.as_mut() {
                             c.set_edge(end, v);
                         }
+                        self.slice_end = end;
                         self.lit = Some((Lit::Bound(end), now));
                         let changed = self.sync_links();
                         self.say_changed(changed, false);
@@ -2383,6 +2384,7 @@ impl App {
                         chop.nudge_by(end, right, step);
                     }
                 }
+                self.slice_end = end;
                 self.lit = Some((Lit::Bound(end), Instant::now()));
                 let changed = self.sync_links();
                 self.say_changed(changed, false);

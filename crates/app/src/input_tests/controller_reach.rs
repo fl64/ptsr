@@ -2164,6 +2164,79 @@ fn shipped_files_knob_matches_keyboard_selection() {
     );
 }
 
+fn check_chop_context_encoders(view: panel::View) {
+    for (cc, value, code, modifiers) in [
+        (30, 63, KeyCode::Left, M::NONE),
+        (30, 65, KeyCode::Right, M::NONE),
+        (31, 63, KeyCode::Down, M::NONE),
+        (31, 65, KeyCode::Up, M::NONE),
+        (33, 63, KeyCode::Left, M::CONTROL),
+        (33, 65, KeyCode::Right, M::CONTROL),
+        (34, 63, KeyCode::Left, M::ALT),
+        (34, 65, KeyCode::Right, M::ALT),
+    ] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+        let mut keyboard = reach_drive(view, sound.clone());
+        let mut controller = reach_drive(view, sound);
+        for drive in [&mut keyboard, &mut controller] {
+            let chop = drive.app.chop.as_mut().unwrap();
+            assert!(chop.select_slice(1));
+            chop.zoom(true);
+        }
+        let result = |drive: &Drive| {
+            let chop = drive.app.chop.as_ref().unwrap();
+            (
+                chop.saved(),
+                chop.view,
+                chop.cursor,
+                chop.selected,
+                drive.app.slice_end,
+            )
+        };
+        let before = result(&keyboard);
+        if view == panel::View::ChopEdit && cc <= 31 {
+            keyboard.tap(KeyCode::Esc, M::NONE);
+        }
+        keyboard.tap(code, modifiers);
+        if view == panel::View::ChopEdit && cc <= 31 {
+            keyboard.tap(KeyCode::Enter, M::NONE);
+        }
+        turn(&mut controller, cc, value);
+        assert_ne!(result(&keyboard), before, "{view:?} cc {cc} {value}");
+        assert_eq!(
+            result(&controller),
+            result(&keyboard),
+            "{view:?} cc {cc} {value}"
+        );
+    }
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn shipped_chop_encoders_match_keyboard_outside_edit() {
+    check_chop_context_encoders(panel::View::Chop);
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn shipped_chop_encoders_match_keyboard_in_edit() {
+    check_chop_context_encoders(panel::View::ChopEdit);
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn absolute_chop_bound_knob_selects_the_bound_it_moves() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+    let mut drive = reach_drive(panel::View::Chop, sound);
+    assert!(drive.app.chop.as_mut().unwrap().select_slice(1));
+    drive.bytes(XS_PORT, &[0xB0, 25, 90]);
+    drive.frame();
+    assert!(drive.app.slice_end);
+    drive.bytes(XS_PORT, &[0xB0, 24, 40]);
+    drive.frame();
+    assert!(!drive.app.slice_end);
+}
+
 fn check_a1_encoders_on_screen(screen: Screen) {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut keyboard = reach_drive(panel::View::Pads, sound.clone());
