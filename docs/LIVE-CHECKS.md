@@ -2265,9 +2265,12 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
   from the visible main panel. Turn encoder 6 to pages 2, 3 and 4. Check the
   page label and cell labels before you act. Check that encoder 6 does not change
   a screen value, a bank or a hidden panel. Check LEFT, RIGHT, Next and Main.
-- [ ] Use encoder 7 to change tempo and encoder 8 to change banks. Hold a Gate
-  pad while you change a mode, page or bank. Release it and check that its
-  original sound ends. Repeat with a second controller if one is available.
+- [ ] Use encoder 7 to change tempo. On Chop, turn encoder 8 and check the next
+  bank. Return with PgUp, press PgDn and check the same bank. On Settings > MIDI,
+  compare encoder 8 with PgDn for the next group.
+- [ ] Hold a Gate pad while you change a mode, page or bank. Release it and check
+  that its original sound ends. Repeat with a second controller if one is
+  available.
 - [ ] On Files and Chop, select page 2 and hit `trnspt`. Check the same transport
   start and stop as `Alt+U`. Use Space for a separate keyboard preview check.
 - [ ] Open the project picker from a panel cell. Turn encoder 1 and press P8.
