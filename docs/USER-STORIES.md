@@ -58,8 +58,9 @@ The keyboard has the same context actions on `Alt+T` and `Alt+Y`. Space keeps
 its existing toggle and reset behavior.
 
 The physical SHIFT key has no ptsr shortcut without a separate measured MIDI
-message. F1 shows the panel cells and current controller roles. The complete
-controller-only routes for the stories below remain work for changes 93 and 93a.
+message. F1 shows the panel cells and current controller roles. Change 93 adds routes for current actions. See [SMC-PAD paths](CONTROLLER-PATHS.md)
+for each story, including controller-only and text-only exceptions. Change 93a
+adds comfort actions.
 
 ### Chop the sound of a pad
 
@@ -172,7 +173,8 @@ These examples do not prove real kitty composition, controller operation or list
    terminal does not send key releases, and gate plays as a one-shot hit. `F1` names the
    terminals that send releases: Ghostty, kitty, WezTerm, foot.
 3. Press `Shift` and a pad together. The hit has full velocity.
-4. Press `Space` on the pads screen. The program plays a test click.
+4. Press `Space` on the pads screen. The transport starts or stops. Use
+   `Alt+M` to turn the metronome on or off.
 
 ## Name a pad
 
@@ -646,7 +648,8 @@ Use the keyboard or explicit MIDI learn for these actions.
 `[84]` Use the same pad positions in the current bank from either input. A device
 without a profile uses notes 36–51. A control explicitly bound to `pad.1`…`pad.16`
 also works. The X-Session Pro has no physical pad grid; its default command buttons
-are not pad hits. The SMC-PAD profile is still a template, not a verified device map.
+are not pad hits. The SMC-PAD map comes from measured Master-port messages. Physical
+operation remains an owner check in [Live checks](LIVE-CHECKS.md#93-controller-reach).
 
 ### Keyboard pass
 
@@ -803,7 +806,8 @@ single target in the current bank. A target hit does not also play that pad.
 
 These paths have recorded-input and offline audio tests. They do not prove physical
 controller operation or owner listening. Use the separate passes and render map in
-`docs/LIVE-CHECKS.md`, section 85. The SMC-PAD map remains an incomplete template.
+`docs/LIVE-CHECKS.md`, section 85. The SMC-PAD command paths are in [SMC-PAD paths](CONTROLLER-PATHS.md).
+Physical operation remains an owner check.
 
 ## MIDI knobs
 

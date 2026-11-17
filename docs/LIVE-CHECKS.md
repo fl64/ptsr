@@ -2236,6 +2236,62 @@ check the device and sound. Raw MIDI tests do not establish those results.
 Change 93 checks access to every action from each mode. Change 93a adds the
 remaining controller comfort actions. Neither result follows from these checks.
 
+## 93: Controller reach
+
+Folder: `changes/93-controller-reach`
+
+Use a disposable project with two loaded pads, one Gate pad, one chopped sample,
+one A1 pattern and a second project. Keep the keyboard and SMC-PAD runs separate.
+Use [SMC-PAD paths](CONTROLLER-PATHS.md) for the route and press count of each story.
+The checks below need the physical device. Recorded MIDI tests cannot establish them.
+
+### Keyboard pass
+
+- [ ] On Pads, use `F2` through `F6` and `F12` to open screens. Edit a pad, copy
+  and swap pads, mark pads, chop and assign slices. Check the visible mode badge.
+  Use `Esc` to leave each mode. Check that a held Gate still releases its pad.
+- [ ] On Files and Settings, use the arrow keys and `Enter` to select a project
+  and a Paths folder. Change a Settings value with `Left` and `Right`. Open F1.
+  Use `Tab`, `Shift+Tab` and the arrow keys to navigate Help.
+- [ ] Use `Ctrl+Q` to leave a disposable session. Check its existing save path.
+
+### Physical SMC-PAD pass
+
+- [ ] Select PAD BANK 2 and reveal the panel with one hit. From its main page,
+  use More and one action cell. Count four presses from a hidden panel and two
+  from the visible main panel. Turn encoder 6 to pages 2, 3 and 4. Check the
+  page label and cell labels before you act. Check that encoder 6 does not change
+  a screen value, a bank or a hidden panel. Check LEFT, RIGHT, Next and Main.
+- [ ] Use encoder 7 to change tempo and encoder 8 to change banks. Hold a Gate
+  pad while you change a mode, page or bank. Release it and check that its
+  original sound ends. Repeat with a second controller if one is available.
+- [ ] Open the project picker from a panel cell. Turn encoder 1 and press P8.
+  Check that the selected project opens. Open it again and use P7 to cancel.
+  On Settings > Paths, use encoder 1, LEFT, RIGHT and P8 to select a folder.
+  Use P7 in a separate run to cancel. Turn encoder 2 on a Settings value and
+  check its bounds. Open the folder picker, turn it again and check that the
+  Settings value stays fixed.
+- [ ] Open Help from the main panel. Use P7 and P8 to change tabs. Use P9 and
+  P10 to scroll or select a controller control. Use Back to close Help. Check
+  that these hits do not change the screen behind Help.
+- [ ] Start learning with F10 or the MIDI tab. Touch P7 or P8 as the control.
+  Check that the first touch becomes the pending choice. Use P8 to save it or
+  P7 to cancel it. Use Back to leave learning.
+- [ ] On page 2, hit Exit. Check that a question appears and the program stays
+  open. Use P7 and Back in separate runs to stay. Hit Exit again, then P8.
+  Check that the existing save path runs once. Keep another panel cell from
+  acting while the question is open.
+- [ ] Disconnect the SMC-PAD with a picker open. Check that the picker remains
+  for keyboard input. Reconnect and check that the panel starts hidden.
+
+### Screen and sound evidence
+
+- [ ] Run `task screens` and inspect the panel, Help, picker and Exit question
+  entries at 80x26 and 120x40. Check labels, badge and hints in both sizes.
+- [ ] Listen to `renders/92-command-panel.wav` for the existing transport
+  reference. Listen to the loaded Gate pad during the physical mode changes.
+  Change 93 has no new render.
+
 ## 95: Transport and metronome
 
 Folder: `changes/archive/2026-11-08-95-transport`
