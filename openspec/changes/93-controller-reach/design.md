@@ -63,17 +63,17 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 
 | Situation | Expected result | Status |
 | --- | --- | --- |
-| A panel cell opens a question, then P8 arrives before redraw | P8 answers once. The first cell cannot answer its own question. | Required recorded MIDI test. |
-| A picker opens while the panel is hidden | P8 confirms the picked item on the first hit. No reveal hit runs. | Required keyboard and MIDI test. |
-| A project save fails during SMC confirmation | The current project and picker selection remain. No target opens. | Required keyboard and MIDI test. |
-| A folder picker is open when a Settings knob moves | Only the folder selection changes. The setting stays unchanged. | Required recorded MIDI test. |
-| Help is open when a panel cell arrives | Only the documented Help navigation acts. The underlying screen stays unchanged. | Required recorded MIDI test. |
-| A Gate pad is held across a picker, question or Help | Its original release stops that pad once. | Preserve existing audio test. |
-| Another MIDI controller acts while the SMC panel shows | It keeps its own action and does not select an SMC page. | Required two-device test. |
-| The SMC-PAD disconnects inside a picker | The picker remains for the keyboard. Panel state clears. No choice is accepted. | Required disconnect test. |
-| A silent controller action arrives during the splash | The action can run, and the splash remains until accepted sound. | Preserve existing splash tests. |
-| Exit opens while a recording or save is pending | The question has no quit effect. P8 enters the existing exit-save path once. P7 keeps the session open. | Required keyboard and MIDI test. |
-| An owner binding replaces a panel cell | The owner binding acts outside a question. The reach report names the shipped profile, not the owner's override. | Preserve existing override tests. |
+| A panel cell opens a question, then P8 arrives before redraw | P8 answers once. The first cell cannot answer its own question. | Covered by `modal_answer_wins_over_panel_entry`. |
+| A picker opens while the panel is hidden | P8 confirms the picked item on the first hit. No reveal hit runs. | Covered by `modal_answer_wins_over_panel_entry`. |
+| A project save fails during SMC confirmation | The current project and picker selection remain. No target opens. | Covered by `refused_project_save_keeps_smc_selection`. |
+| A folder picker is open when a Settings knob moves | Only the folder selection changes. The setting stays unchanged. | Covered by `settings_knob_changes_only_the_selected_value`. |
+| Help is open when a panel cell arrives | Only the documented Help navigation acts. The underlying screen stays unchanged. | Covered by `help_cells_navigate_without_acting_behind_help`. |
+| A Gate pad is held across a picker, question or Help | Its original release stops that pad once. | Covered by `modal_answer_wins_over_panel_entry` and existing Gate tests. |
+| Another MIDI controller acts while the SMC panel shows | It keeps its own action and does not select an SMC page. | Covered by `encoder_selects_a_later_context_page`. |
+| The SMC-PAD disconnects inside a picker | The picker remains for the keyboard. Panel state clears. No choice is accepted. | Covered by `disconnected_smc_keeps_the_project_picker_for_keyboard`. |
+| A silent controller action arrives during the splash | The action can run, and the splash remains until accepted sound. | Covered by existing sound-first splash tests. |
+| Exit opens while a recording or save is pending | The question has no quit effect. P8 enters the existing exit-save path once. P7 keeps the session open. | Covered by `exit_question_keeps_a_pending_a1_save_until_confirmation`. |
+| An owner binding replaces a panel cell | The owner binding acts outside a question. The reach report names the shipped profile, not the owner's override. | Covered by existing owner-override tests. |
 
 ## Open questions
 
