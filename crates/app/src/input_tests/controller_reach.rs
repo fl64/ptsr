@@ -790,6 +790,167 @@ fn tempo_cells_match_all_four_keyboard_steps() {
     }
 }
 
+/// Scenario "Shared transport key keeps previews on Files and Chop" (keyboard).
+#[test]
+fn shared_transport_key_keeps_previews_on_files_and_chop() {
+    for screen in [Screen::Files, Screen::Chop] {
+        for (letter, kitty) in [('u', true), ('г', false)] {
+            let mut keyboard = smc_drive();
+            let mut controller = smc_drive();
+            for drive in [&mut keyboard, &mut controller] {
+                drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 48_000])), "preview");
+                drive.tap(
+                    if screen == Screen::Files {
+                        KeyCode::F(6)
+                    } else {
+                        KeyCode::F(3)
+                    },
+                    M::NONE,
+                );
+                assert_eq!(drive.app.screen, screen);
+            }
+
+            for kind in [
+                KeyEventKind::Press,
+                KeyEventKind::Repeat,
+                KeyEventKind::Release,
+            ] {
+                keyboard.app.keyboard_event(
+                    &keyboard.keymap,
+                    &KeyEvent::new_with_kind(KeyCode::Char(letter), M::ALT, kind),
+                    kitty,
+                    &mut keyboard.down,
+                    &mut keyboard.held,
+                    &mut keyboard.mods,
+                );
+                let frame = keyboard.frame();
+                assert_eq!(
+                    frame
+                        .commands()
+                        .iter()
+                        .filter(|command| matches!(command, Command::TransportToggle))
+                        .count(),
+                    usize::from(kind == KeyEventKind::Press),
+                    "{screen:?} {letter} {kind:?}"
+                );
+            }
+
+            cell(&mut controller, 64);
+            cell(&mut controller, 63);
+            turn(&mut controller, 35, 65);
+            assert_eq!(controller.app.panel.page(), 2);
+            let frame = cell(&mut controller, 65);
+            assert_eq!(
+                frame
+                    .commands()
+                    .iter()
+                    .filter(|command| matches!(command, Command::TransportToggle))
+                    .count(),
+                1,
+                "{screen:?} page 2 trnspt"
+            );
+
+            let frame = keyboard.tap(KeyCode::Char(' '), M::NONE);
+            assert!(
+                !frame
+                    .commands()
+                    .iter()
+                    .any(|command| matches!(command, Command::TransportToggle)),
+                "{screen:?} Space changed transport"
+            );
+            if screen == Screen::Files {
+                assert_ne!(keyboard.app.preview_on, controller.app.preview_on);
+            } else {
+                assert!(
+                    frame
+                        .commands()
+                        .iter()
+                        .any(|command| matches!(command, Command::Preview { .. }))
+                );
+            }
+        }
+    }
+}
+
+/// Scenario "Owner transport key and modal input keep priority" (keyboard).
+#[test]
+fn owner_transport_key_and_modal_input_keep_priority() {
+    for binding in ["none", "metronome.toggle"] {
+        let mut drive = smc_drive();
+        drive
+            .keymap
+            .overlay(&format!("[global]\n\"Alt+U\" = \"{binding}\"\n"))
+            .unwrap();
+        for screen in Screen::ALL {
+            drive.app.screen = screen;
+            let before_metronome = drive.app.transport.metronome;
+            let frame = drive.tap(KeyCode::Char('u'), M::ALT);
+            assert!(
+                !frame
+                    .commands()
+                    .iter()
+                    .any(|command| matches!(command, Command::TransportToggle)),
+                "{screen:?} owner {binding}"
+            );
+            assert_eq!(
+                drive.app.transport.metronome,
+                if binding == "metronome.toggle" {
+                    !before_metronome
+                } else {
+                    before_metronome
+                },
+                "{screen:?} owner {binding}"
+            );
+        }
+    }
+
+    for overlay in ["text", "question", "picker", "screen learn", "midi learn"] {
+        let mut drive = smc_drive();
+        drive.app.screen = Screen::Files;
+        match overlay {
+            "text" => {
+                drive.tap(KeyCode::Char('/'), M::NONE);
+                assert!(drive.app.browser.editing);
+            }
+            "question" => {
+                drive.app.ask = Some(Ask::ClearPads {
+                    pads: vec![0],
+                    lines: vec!["Clear?".into()],
+                });
+            }
+            "picker" => {
+                drive.tap(KeyCode::Char('p'), M::CONTROL);
+                assert!(drive.app.project_picker.is_some());
+            }
+            "screen learn" => {
+                drive.tap(KeyCode::F(10), M::NONE);
+                assert!(drive.app.screen_learn.is_some());
+            }
+            _ => {
+                drive.tap(KeyCode::F(12), M::NONE);
+                drive.app.settings_tab = 2;
+                drive.app.midi_open.push(input::Group::Global);
+                drive.app.midi_row = drive
+                    .app
+                    .midi_list()
+                    .iter()
+                    .position(|row| matches!(row, MidiListRow::Action { info } if info.name == "transport.toggle"))
+                    .unwrap();
+                drive.tap(KeyCode::Enter, M::NONE);
+                assert!(drive.app.learning.is_some());
+            }
+        }
+        let frame = drive.tap(KeyCode::Char('u'), M::ALT);
+        assert!(
+            !frame
+                .commands()
+                .iter()
+                .any(|command| matches!(command, Command::TransportToggle)),
+            "{overlay}"
+        );
+    }
+}
+
 #[test]
 fn grid_cell_keeps_the_screen_and_matches_ctrl_o() {
     for screen in [Screen::Pads, Screen::Files, Screen::Chop, Screen::Settings] {
@@ -997,5 +1158,335 @@ fn learning_answer_keeps_its_chosen_control() {
     assert_eq!(
         bindings.get(&input::midi::Key::Note(62)).unwrap().primary(),
         "pad.copy"
+    );
+}
+
+fn panel_note(slot: u8) -> u8 {
+    [64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59][usize::from(slot - 1)]
+}
+
+fn key_chord(name: &str) -> (KeyCode, M) {
+    let mut modifiers = M::NONE;
+    let mut key = "";
+    for part in name.split('+') {
+        match part {
+            "Ctrl" => modifiers |= M::CONTROL,
+            "Alt" => modifiers |= M::ALT,
+            "Shift" => modifiers |= M::SHIFT,
+            _ => key = part,
+        }
+    }
+    let code = match key {
+        "↑" => KeyCode::Up,
+        "↓" => KeyCode::Down,
+        "←" => KeyCode::Left,
+        "→" => KeyCode::Right,
+        "PgUp" => KeyCode::PageUp,
+        "PgDn" => KeyCode::PageDown,
+        "Enter" => KeyCode::Enter,
+        "Esc" => KeyCode::Esc,
+        "Tab" if modifiers.contains(M::SHIFT) => KeyCode::BackTab,
+        "Tab" => KeyCode::Tab,
+        "Bksp" => KeyCode::Backspace,
+        "Space" => KeyCode::Char(' '),
+        other if other.starts_with('F') && other[1..].parse::<u8>().is_ok() => {
+            KeyCode::F(other[1..].parse().unwrap())
+        }
+        other if other.chars().count() == 1 => {
+            KeyCode::Char(other.chars().next().unwrap().to_ascii_lowercase())
+        }
+        _ => panic!("unsupported shipped key {name}"),
+    };
+    (code, modifiers)
+}
+
+fn reach_drive(view: panel::View, sound: Arc<Sample>) -> Drive {
+    let mut drive = smc_drive();
+    drive.load_pad(0, sound.clone(), "source");
+    match view {
+        panel::View::Pads | panel::View::PadEdit | panel::View::Pattern => {
+            drive.app.screen = Screen::Pads;
+            drive.app.edit = view == panel::View::PadEdit;
+            drive.app.pattern_view.overview = view == panel::View::Pattern;
+        }
+        panel::View::Files => drive.app.screen = Screen::Files,
+        panel::View::Chop | panel::View::ChopEdit => {
+            drive.prepare_chop(sound, 4);
+            drive.app.edit = view == panel::View::ChopEdit;
+        }
+        panel::View::Fx => drive.app.screen = Screen::Fx,
+        panel::View::Settings => drive.app.screen = Screen::Settings,
+    }
+    drive.app.publish_midi(&drive.shared);
+    drive
+}
+
+fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
+    let extra = format!(
+        "{:?} {:?}",
+        (
+            drive.app.settings_tab,
+            drive.app.settings_row,
+            drive.app.midi_row,
+            drive.app.transport.bpm,
+            drive.app.transport.metronome,
+            drive.app.ui.hide_pads,
+            drive.app.preview_on,
+            drive.app.help_open,
+        ),
+        (
+            drive.app.help_overlay.page,
+            drive.app.pattern_view.overview,
+            drive.app.pattern_view.edit,
+            drive.app.pattern_panel,
+            drive.app.screen_learn.is_some(),
+            drive
+                .app
+                .project_picker
+                .as_ref()
+                .map(|picker| picker.selected),
+            drive.app.path_picker.as_ref().map(|picker| picker.selected),
+            drive.app.quit_requested,
+        )
+    );
+    let commands = frame
+        .commands()
+        .iter()
+        .map(|command| format!("{:?}", std::mem::discriminant(*command)))
+        .collect();
+    (drive.seen(), extra, commands)
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+/// The shipped panel has 225 cells, so this production-input matrix belongs to the slow group.
+#[test]
+fn shipped_panel_cells_match_keyboard_results_in_each_view() {
+    use panel::{Config, View};
+
+    let config = Config::parse(
+        "config/panel.toml",
+        include_str!("../../../../config/panel.toml"),
+    );
+    assert!(config.warnings.is_empty(), "{:?}", config.warnings);
+    let mut checked = 0;
+    let mut special = 0;
+    for view in [
+        View::Pads,
+        View::PadEdit,
+        View::Pattern,
+        View::Files,
+        View::Chop,
+        View::ChopEdit,
+        View::Fx,
+        View::Settings,
+    ] {
+        for page in 0..config.pages(view) {
+            for slot in 1..=12 {
+                let Some(cell_info) = config.cell(view, page, slot) else {
+                    continue;
+                };
+                let action = cell_info.action;
+                if view == View::ChopEdit && action == Action::ChopAssignOrder {
+                    let mut controller =
+                        reach_drive(view, Arc::new(Sample::mono(vec![0.2; 4_800])));
+                    cell(&mut controller, 64);
+                    cell(&mut controller, 63);
+                    turn(&mut controller, 35, 63);
+                    assert_eq!(controller.app.panel.page(), 4);
+                    let before = controller.seen();
+                    let frame = cell(&mut controller, panel_note(slot));
+                    assert_eq!(
+                        controller.seen(),
+                        before,
+                        "Chop edit order must stay inactive"
+                    );
+                    assert!(frame.commands().is_empty());
+                    special += 1;
+                    continue;
+                }
+                if matches!(
+                    action,
+                    Action::Quit
+                        | Action::ChopCommit
+                        | Action::PatternClear
+                        | Action::PatternParamPrev
+                        | Action::PatternParamNext
+                        | Action::PatternValueDec
+                        | Action::PatternValueInc
+                ) {
+                    special += 1;
+                    continue;
+                }
+                let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+                let mut keyboard = reach_drive(view, sound.clone());
+                let mut controller = reach_drive(view, sound);
+                let editing = keyboard.app.edit_keys();
+                let key = keyboard
+                    .keymap
+                    .keys_for(keyboard.app.screen, action)
+                    .into_iter()
+                    .chain(keyboard.keymap.edit_keys_for(action))
+                    .find_map(|name| {
+                        let (code, modifiers) = key_chord(&name);
+                        [KeyEventKind::Press, KeyEventKind::Repeat]
+                            .into_iter()
+                            .find(|kind| {
+                                keyboard.keymap.resolve_in(
+                                    keyboard.app.screen,
+                                    editing,
+                                    &KeyEvent::new_with_kind(code, modifiers, *kind),
+                                ) == Some(action)
+                            })
+                            .map(|kind| (name, code, modifiers, kind))
+                    })
+                    .unwrap_or_else(|| {
+                        panic!("{view:?} page {page} cell {slot}: no key for {action:?}")
+                    });
+                let keyboard_frame = if key.3 == KeyEventKind::Repeat {
+                    for drive in [&mut keyboard, &mut controller] {
+                        drive.key(key.1, key.2, KeyEventKind::Press);
+                        drive.frame();
+                    }
+                    controller.key(key.1, key.2, KeyEventKind::Release);
+                    controller.frame();
+                    keyboard.key(key.1, key.2, KeyEventKind::Repeat);
+                    keyboard.key(key.1, key.2, KeyEventKind::Release);
+                    keyboard.frame()
+                } else {
+                    keyboard.tap(key.1, key.2)
+                };
+                cell(&mut controller, 64);
+                if page > 0 {
+                    cell(&mut controller, 63);
+                    match page {
+                        2 => turn(&mut controller, 35, 65),
+                        3 => {
+                            turn(&mut controller, 35, 65);
+                            controller.midi().recorded_bytes_at(
+                                SMC,
+                                &[0xB0, 35, 65],
+                                &controller.project,
+                                Instant::now() + std::time::Duration::from_millis(100),
+                            );
+                            controller.frame();
+                        }
+                        4 => turn(&mut controller, 35, 63),
+                        _ => {}
+                    }
+                }
+                assert_eq!(
+                    controller.app.panel.page(),
+                    page,
+                    "{view:?} {action:?}: {:?}",
+                    controller.app.input_log
+                );
+                let controller_frame = cell(&mut controller, panel_note(slot));
+                assert_eq!(
+                    reach_result(&controller, &controller_frame),
+                    reach_result(&keyboard, &keyboard_frame),
+                    "{view:?} page {page} cell {slot} {action:?} key {}",
+                    key.0
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked + special, 225);
+
+    for view in [
+        View::Pads,
+        View::PadEdit,
+        View::Pattern,
+        View::Files,
+        View::Chop,
+        View::ChopEdit,
+        View::Fx,
+        View::Settings,
+    ] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut keyboard = reach_drive(view, sound.clone());
+        let mut controller = reach_drive(view, sound);
+        assert!(keyboard.app.keyboard_event(
+            &keyboard.keymap,
+            &KeyEvent::new_with_kind(KeyCode::Char('q'), M::CONTROL, KeyEventKind::Press),
+            true,
+            &mut keyboard.down,
+            &mut keyboard.held,
+            &mut keyboard.mods,
+        ));
+        cell(&mut controller, 64);
+        cell(&mut controller, 63);
+        turn(&mut controller, 35, 65);
+        cell(&mut controller, 57);
+        assert!(
+            matches!(controller.app.ask, Some(Ask::Exit { .. })),
+            "{view:?}"
+        );
+        assert!(!controller.app.quit_requested, "{view:?}");
+        cell(&mut controller, 63);
+        assert_eq!(
+            controller.app.quit_requested, keyboard.app.quit_requested,
+            "{view:?}"
+        );
+    }
+
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(View::Chop, sound.clone());
+    let mut controller = reach_drive(View::Chop, sound);
+    keyboard.tap(KeyCode::Char('p'), M::NONE);
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    keyboard.tap(KeyCode::Enter, M::NONE);
+    cell(&mut controller, 64);
+    cell(&mut controller, 63);
+    cell(&mut controller, 61);
+    assert_eq!(controller.app.plan, keyboard.app.plan);
+
+    for (slot, code, row) in [(6, 'i', 1), (7, 'k', 0), (8, 'j', 0), (9, 'l', 0)] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut keyboard = reach_drive(View::Pattern, sound.clone());
+        let mut controller = reach_drive(View::Pattern, sound);
+        for drive in [&mut keyboard, &mut controller] {
+            drive.tap(KeyCode::Char('n'), M::ALT);
+            if row == 1 {
+                drive.tap(KeyCode::Down, M::NONE);
+            }
+        }
+        keyboard.tap(KeyCode::Char(code), M::NONE);
+        cell(&mut controller, 64);
+        cell(&mut controller, 63);
+        cell(&mut controller, panel_note(slot));
+        assert_eq!(
+            controller.app.pattern_panel, keyboard.app.pattern_panel,
+            "{slot}"
+        );
+        assert_eq!(
+            controller.app.pads.pattern, keyboard.app.pads.pattern,
+            "{slot}"
+        );
+    }
+
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(View::Pattern, sound.clone());
+    let mut controller = reach_drive(View::Pattern, sound);
+    for drive in [&mut keyboard, &mut controller] {
+        drive.app.pads.pattern = Some(session::PatternState {
+            slot: "A1".into(),
+            bars: 1,
+            quantize: "1/16".into(),
+            strength: 100,
+            hits: vec![[0, 0, 100, 0]],
+        });
+        drive.tap(KeyCode::Char('n'), M::ALT);
+    }
+    for _ in 0..3 {
+        keyboard.tap(KeyCode::Down, M::NONE);
+    }
+    keyboard.tap(KeyCode::Enter, M::NONE);
+    cell(&mut controller, 64);
+    cell(&mut controller, 63);
+    cell(&mut controller, 67);
+    assert_eq!(
+        controller.app.ask.as_ref().map(Ask::lines),
+        keyboard.app.ask.as_ref().map(Ask::lines)
     );
 }

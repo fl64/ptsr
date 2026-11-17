@@ -8505,7 +8505,6 @@ Enter = "browser.hold"
             "a key and two words at most: {items:?}"
         );
     }
-
     /// screen-help 21: "Hold Alt".
     #[test]
     fn hold_alt() {
@@ -8534,6 +8533,7 @@ Enter = "browser.hold"
                     "T".to_string(),
                     "start or continue transport, or start a stopped preview".to_string()
                 ),
+                ("U".to_string(), "transport: play / stop".to_string()),
                 (
                     "Y".to_string(),
                     "pause transport or stop a preview; press again to reset".to_string()

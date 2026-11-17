@@ -43,6 +43,7 @@ Esc = "ui.back"
 Enter = "ui.confirm"
 "Ctrl+Q" = "app.quit"
 Space = "transport.toggle"  # Chop and Files keep their preview actions
+"Alt+U" = "transport.toggle" # transport on preview screens too
 "Alt+T" = "play.context"
 "Alt+Y" = "stop.context"
 "Ctrl+Up" = "transport.tempo_up"
