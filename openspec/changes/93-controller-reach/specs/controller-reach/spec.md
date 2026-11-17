@@ -122,3 +122,4 @@ The reach test SHALL use the production question, picker and learning routes. It
 - **WHEN** keyboard and raw SMC-PAD runs enter each current input mode in separate runs
 - **THEN** each run shows the mode badge and the same active target
 - **AND** leaving the mode restores the previous input route
+- **AND** Panel Back leaves marking and its marks before it hides the panel, as keyboard Esc does
