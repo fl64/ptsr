@@ -4719,8 +4719,7 @@ mod tests {
                 copy_in_hand: true,
                 swap_in_hand: true,
                 pattern_pads: false,
-                erase_pads: false,
-                step_edit: false,
+                ..Mode::default()
             },
         };
         assert_eq!(app.focus(), expected);

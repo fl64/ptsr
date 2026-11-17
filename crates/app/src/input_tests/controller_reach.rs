@@ -2164,6 +2164,154 @@ fn shipped_files_knob_matches_keyboard_selection() {
     );
 }
 
+fn check_a1_encoders_on_screen(screen: Screen) {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(panel::View::Pads, sound.clone());
+    let mut controller = reach_drive(panel::View::Pads, sound);
+    for drive in [&mut keyboard, &mut controller] {
+        drive.app.goto(screen);
+        drive.app.publish_midi(&drive.shared);
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        assert_eq!(drive.app.pattern_panel, Some(0));
+        assert!(drive.app.focus().mode.pattern_controls);
+    }
+    let settings = |drive: &Drive| {
+        let pattern = drive.app.pads.pattern.as_ref().unwrap();
+        (pattern.bars, pattern.quantize.clone(), pattern.strength)
+    };
+    for (row, cc, key, value) in [
+        (0, 31, KeyCode::Right, 65),
+        (1, 32, KeyCode::Right, 65),
+        (2, 33, KeyCode::Left, 63),
+    ] {
+        for drive in [&mut keyboard, &mut controller] {
+            while drive.app.pattern_panel != Some(row) {
+                drive.tap(KeyCode::Char('k'), M::NONE);
+            }
+        }
+        let before = settings(&keyboard);
+        keyboard.tap(key, M::NONE);
+        turn(&mut controller, cc, value);
+        assert_eq!(
+            settings(&controller),
+            settings(&keyboard),
+            "{screen:?} row {row}"
+        );
+        assert_ne!(
+            settings(&controller),
+            before,
+            "{screen:?} row {row} did not act"
+        );
+    }
+    for drive in [&mut keyboard, &mut controller] {
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        assert!(drive.app.pattern_panel.is_none());
+        assert!(!drive.app.focus().mode.pattern_controls);
+    }
+}
+
+/// Scenario "A1 encoders follow the open controls on every screen" (controller-reach).
+#[test]
+fn a1_encoders_follow_the_open_controls_on_pads_files_and_chop() {
+    for screen in [Screen::Pads, Screen::Files, Screen::Chop] {
+        check_a1_encoders_on_screen(screen);
+    }
+}
+
+/// Scenario "A1 encoders follow the open controls on every screen" (controller-reach).
+#[test]
+fn a1_encoders_follow_the_open_controls_on_fx_and_settings() {
+    for screen in [Screen::Fx, Screen::Settings] {
+        check_a1_encoders_on_screen(screen);
+    }
+}
+
+/// Scenario "A1 encoders follow the open controls on every screen" (controller-reach).
+#[test]
+fn a1_bank_and_global_controls_keep_their_routes_and_close_restores_pads() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(panel::View::Pads, sound.clone());
+    let mut controller = reach_drive(panel::View::Pads, sound);
+    for drive in [&mut keyboard, &mut controller] {
+        drive.tap(KeyCode::Char('n'), M::ALT);
+    }
+    keyboard.tap(KeyCode::PageDown, M::NONE);
+    turn(&mut controller, 30, 65);
+    assert_eq!(controller.app.pads.bank, keyboard.app.pads.bank);
+    keyboard.tap(KeyCode::Up, M::CONTROL);
+    turn(&mut controller, 36, 65);
+    assert_eq!(controller.app.transport.bpm, keyboard.app.transport.bpm);
+    cell(&mut controller, 64);
+    assert!(controller.app.panel.visible());
+    assert!(controller.app.pattern_panel.is_some());
+    for drive in [&mut keyboard, &mut controller] {
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        drive.app.pads.bank = 0;
+        drive.app.pads.param = pads::Param::Volume;
+        drive.app.publish_midi(&drive.shared);
+    }
+    keyboard.tap(KeyCode::Left, M::NONE);
+    turn(&mut controller, 31, 63);
+    assert_eq!(controller.seen().pads, keyboard.seen().pads);
+}
+
+/// Scenario "A1 encoder context preserves input owners and held pads" (controller-reach).
+#[test]
+fn a1_encoder_context_preserves_input_owners_and_held_pads() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::Pads, sound);
+    drive.app.pads.gate[0] = true;
+    drive.bytes(SMC, &[0x99, 48, 80]);
+    drive.frame();
+    assert!(drive.app.pads.held[0]);
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    let bars = drive.app.pads.pattern.as_ref().unwrap().bars;
+
+    drive.app.ask = Some(Ask::ClearPads {
+        pads: vec![1],
+        lines: vec!["Clear pad 2?".into()],
+    });
+    drive.app.publish_midi(&drive.shared);
+    turn(&mut drive, 31, 65);
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().bars, bars);
+    drive.app.ask = None;
+
+    drive.app.project_picker = Some(ProjectPicker {
+        entries: Vec::new(),
+        selected: 0,
+        naming: None,
+    });
+    drive.app.publish_midi(&drive.shared);
+    turn(&mut drive, 31, 65);
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().bars, bars);
+    drive.app.project_picker = None;
+
+    drive.app.pad_naming = Some((0, "name".into()));
+    drive.app.publish_midi(&drive.shared);
+    turn(&mut drive, 31, 65);
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().bars, bars);
+    drive.app.pad_naming = None;
+
+    drive.app.screen_learn = Some(drive.app.learn_open());
+    drive.app.publish_midi(&drive.shared);
+    turn(&mut drive, 31, 65);
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().bars, bars);
+    drive.app.screen_learn = None;
+
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    drive.bytes(SMC, &[0x89, 48, 0]);
+    drive.frame();
+    assert!(!drive.app.pads.held[0]);
+
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    drive.bytes(PAD_PORT, &[0x90, 36, 80]);
+    drive.frame();
+    assert!(drive.app.pads.held[0]);
+    drive.bytes(PAD_PORT, &[0x80, 36, 0]);
+    drive.frame();
+    assert!(!drive.app.pads.held[0]);
+}
+
 #[test]
 fn bank_knob_does_not_act_behind_a_question_or_picker() {
     let files = TransitionFiles::new();

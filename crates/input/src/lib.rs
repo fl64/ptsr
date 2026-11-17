@@ -166,6 +166,8 @@ pub struct Mode {
     pub erase_pads: bool,
     /// A1 correction uses pad presses as silent edit targets.
     pub step_edit: bool,
+    /// A1 controls select their MIDI encoder roles over the current screen.
+    pub pattern_controls: bool,
 }
 
 impl Mode {
@@ -184,6 +186,7 @@ impl Mode {
             self.pattern_pads,
             self.erase_pads,
             self.step_edit,
+            self.pattern_controls,
         ]
         .into_iter()
         .enumerate()
@@ -205,6 +208,7 @@ impl Mode {
             pattern_pads: bits & (1 << 10) != 0,
             erase_pads: bits & (1 << 11) != 0,
             step_edit: bits & (1 << 12) != 0,
+            pattern_controls: bits & (1 << 13) != 0,
         }
     }
 }
@@ -239,7 +243,7 @@ impl Focus {
 
     /// Unpacks a snapshot, rejecting unknown screens, banks and reserved bits.
     pub fn unpack(bits: u32) -> Option<Self> {
-        if bits >> 20 != 0 {
+        if bits >> 21 != 0 {
             return None;
         }
         let screen = Screen::from_code(bits & 7)?;
@@ -414,6 +418,12 @@ mod screen_tests {
                 midi::Scope::Edit(Screen::Chop),
             ),
             (Group::Fx, "fx", "FX", midi::Scope::Screen(Screen::Fx)),
+            (
+                Group::Pattern,
+                "pattern",
+                "A1 CONTROLS",
+                midi::Scope::Pattern,
+            ),
         ];
         assert_eq!(Group::ALL, expected.map(|(group, ..)| group));
         for (group, key, title, scope) in expected {
@@ -502,7 +512,7 @@ mod focus_tests {
             .pack(),
             None
         );
-        for bit in 20..32 {
+        for bit in 21..32 {
             assert_eq!(Focus::unpack(1 << bit), None);
         }
         assert_eq!(Focus::unpack(u32::MAX), None);
@@ -557,6 +567,14 @@ mod focus_tests {
             },
             Mode {
                 erase_pads: true,
+                ..Mode::default()
+            },
+            Mode {
+                step_edit: true,
+                ..Mode::default()
+            },
+            Mode {
+                pattern_controls: true,
                 ..Mode::default()
             },
         ];
@@ -1002,6 +1020,7 @@ pub enum Group {
     Chop,
     ChopEdit,
     Fx,
+    Pattern,
 }
 
 impl Group {
@@ -1011,6 +1030,7 @@ impl Group {
             Group::Global => "global",
             Group::Pads => Screen::Pads.key(),
             Group::PadsEdit => "pads_edit",
+            Group::Pattern => "pattern",
             Group::Settings => Screen::Settings.key(),
             Group::Files => Screen::Files.key(),
             Group::Chop => Screen::Chop.key(),
@@ -1025,6 +1045,7 @@ impl Group {
             Group::Global => "GLOBAL",
             Group::Pads => Screen::Pads.title(),
             Group::PadsEdit => "PADS · EDIT",
+            Group::Pattern => "A1 CONTROLS",
             Group::Settings => Screen::Settings.title(),
             Group::Files => Screen::Files.title(),
             Group::Chop => Screen::Chop.title(),
@@ -1039,6 +1060,7 @@ impl Group {
             Group::Global => midi::Scope::Global,
             Group::Pads => midi::Scope::Screen(Screen::Pads),
             Group::PadsEdit => midi::Scope::Edit(Screen::Pads),
+            Group::Pattern => midi::Scope::Pattern,
             Group::Settings => midi::Scope::Screen(Screen::Settings),
             Group::Files => midi::Scope::Screen(Screen::Files),
             Group::Chop => midi::Scope::Screen(Screen::Chop),
@@ -1047,7 +1069,7 @@ impl Group {
         }
     }
 
-    pub const ALL: [Group; 8] = [
+    pub const ALL: [Group; 9] = [
         Group::Global,
         Group::Pads,
         Group::PadsEdit,
@@ -1056,6 +1078,7 @@ impl Group {
         Group::Chop,
         Group::ChopEdit,
         Group::Fx,
+        Group::Pattern,
     ];
 
     pub fn from_key(key: &str) -> Option<Self> {
@@ -1105,6 +1128,7 @@ pub fn short_label(action: &str) -> &'static str {
         "ui.back" => "back",
         "bank.prev" => "bank<",
         "bank.next" => "bank>",
+        "bank" => "bank",
         "bank.1" => "bank1",
         "bank.2" => "bank2",
         "bank.3" => "bank3",
@@ -2553,6 +2577,30 @@ pub const ACTIONS: &[ActionInfo] = &[
         label: "increase value",
         group: Group::Fx,
         knob: false,
+    },
+    ActionInfo {
+        name: "bank",
+        label: "pattern bank",
+        group: Group::Pattern,
+        knob: true,
+    },
+    ActionInfo {
+        name: "pattern.bars",
+        label: "pattern bars",
+        group: Group::Pattern,
+        knob: true,
+    },
+    ActionInfo {
+        name: "pattern.quantize",
+        label: "pattern quantize",
+        group: Group::Pattern,
+        knob: true,
+    },
+    ActionInfo {
+        name: "pattern.strength",
+        label: "pattern strength",
+        group: Group::Pattern,
+        knob: true,
     },
 ];
 

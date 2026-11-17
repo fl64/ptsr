@@ -1092,6 +1092,7 @@ impl App {
                 pattern_pads: self.pattern_routes_pads(),
                 erase_pads: self.erase_pads,
                 step_edit: self.pattern_view.edit,
+                pattern_controls: self.pattern_panel.is_some(),
             },
         }
     }

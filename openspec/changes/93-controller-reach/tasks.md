@@ -19,7 +19,7 @@
 - [x] 2.7 Bind the silent selection keys on Pads and Pads edit. Compare their results with raw SMC-PAD LEFT and RIGHT, including row edges, Gate release, repeat, owner bindings and overlays. Keep other screens unchanged.
 - [x] 2.8 Record the owner-approved exact Chop threshold keys in the delta, design, proposal, plan and owner checks. Check and commit these texts before code.
 - [x] 2.9 Add the threshold actions and keys. Compare keyboard and raw encoder 3 in Chop and Chop edit, including bounds, Undo, linked pads, owner bindings, overlays and legacy terminals. Complete the named scenarios before the code commit.
-- [ ] 2.10 Load the shipped A1 encoder roles as a separate MIDI context. Add the group to new and already seeded profiles without changing owner bindings. Show the roles in the Controller tab. Test keyboard and raw MIDI parity on every underlying screen, close, input owners, other devices and held Gate releases.
+- [x] 2.10 Load the shipped A1 encoder roles as a separate MIDI context. Add the group to new and already seeded profiles without changing owner bindings. Show the roles in the Controller tab. Test keyboard and raw MIDI parity on every underlying screen, close, input owners, other devices and held Gate releases.
 
 ## 3. Picker and Settings routes
 

@@ -1120,7 +1120,7 @@ fn dispatch(
         let (resolved, activity) = if guarded_encoder {
             (None, Activity::None)
         } else {
-            profile.resolve_input_modal(focus.screen, focus.mode.edit, modal, msg)
+            profile.resolve_input_mode(focus.screen, focus.mode, modal, msg)
         };
         if let Some(origin) = &mut ui.origin {
             origin.activity = activity;
@@ -1785,6 +1785,7 @@ mod tests {
                 screen_learn: false,
                 erase_pads: false,
                 step_edit: false,
+                pattern_controls: false,
             },
         };
         let shared = Arc::new(Shared::default());

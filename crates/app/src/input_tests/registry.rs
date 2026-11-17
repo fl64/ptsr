@@ -706,6 +706,7 @@ fn midi_list_keeps_screen_groups_and_their_order() {
         Group::Chop,
         Group::ChopEdit,
         Group::Fx,
+        Group::Pattern,
     ];
     let identities = [
         ("global", "GLOBAL", Scope::Global),
@@ -716,6 +717,7 @@ fn midi_list_keeps_screen_groups_and_their_order() {
         ("chop", "CHOP", Scope::Screen(Screen::Chop)),
         ("chop_edit", "CHOP · EDIT", Scope::Edit(Screen::Chop)),
         ("fx", "FX", Scope::Screen(Screen::Fx)),
+        ("pattern", "A1 CONTROLS", Scope::Pattern),
     ];
     for source in [Source::Keyboard, Source::Button] {
         for (screen, key, number, group) in [
