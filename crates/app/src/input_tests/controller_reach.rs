@@ -840,6 +840,73 @@ fn settings_knob_keeps_keyboard_hold_time_bounds() {
     assert_eq!(controller.app.midi_gestures, keyboard.app.midi_gestures);
 }
 
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn shipped_settings_value_knob_matches_keyboard_on_midi_rows() {
+    for row in [0, 1] {
+        let mut keyboard = smc_drive();
+        let mut controller = smc_drive();
+        for drive in [&mut keyboard, &mut controller] {
+            drive.app.screen = Screen::Settings;
+            drive.app.settings_tab = 2;
+            drive.app.midi_row = drive
+                .app
+                .midi_list()
+                .iter()
+                .position(|item| match row {
+                    0 => matches!(item, MidiListRow::Response),
+                    _ => matches!(item, MidiListRow::Group { .. }),
+                })
+                .unwrap();
+            drive.app.publish_midi(&drive.shared);
+        }
+        keyboard.tap(KeyCode::Right, M::NONE);
+        turn(&mut controller, 31, 65);
+        assert_eq!(
+            controller.app.takeover.response,
+            keyboard.app.takeover.response
+        );
+        assert_eq!(controller.app.midi_open, keyboard.app.midi_open);
+        assert_eq!(controller.app.midi_row, keyboard.app.midi_row);
+        if row == 0 {
+            assert_ne!(
+                controller.app.takeover.response,
+                input::midi::Response::Jump
+            );
+        } else {
+            assert!(!controller.app.midi_open.is_empty());
+        }
+    }
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn shipped_settings_row_knob_matches_keyboard_on_each_tab() {
+    for tab in 0..4 {
+        for (row, code, value) in [(0, KeyCode::Down, 65), (1, KeyCode::Up, 63)] {
+            let mut keyboard = smc_drive();
+            let mut controller = smc_drive();
+            for drive in [&mut keyboard, &mut controller] {
+                drive.app.screen = Screen::Settings;
+                drive.app.settings_tab = tab;
+                drive.app.settings_row = row;
+                drive.app.midi_row = row;
+                drive.app.publish_midi(&drive.shared);
+            }
+            let before = (keyboard.app.settings_row, keyboard.app.midi_row);
+            keyboard.tap(code, M::NONE);
+            turn(&mut controller, 30, value);
+            let result = |drive: &Drive| (drive.app.settings_row, drive.app.midi_row);
+            assert_ne!(result(&keyboard), before, "tab {tab} row {row}");
+            assert_eq!(
+                result(&controller),
+                result(&keyboard),
+                "tab {tab} row {row}"
+            );
+        }
+    }
+}
+
 /// Scenario "Modal answer wins over panel entry" (controller-reach).
 #[test]
 fn modal_answer_wins_over_panel_entry() {
@@ -2094,10 +2161,14 @@ fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// This matrix creates 36 app instances, so it belongs to the slow group.
+/// This matrix creates 54 app instances, so it belongs to the slow group.
 #[test]
-fn shipped_pad_knobs_match_keyboard_values_in_both_pad_modes() {
-    for view in [panel::View::Pads, panel::View::PadEdit] {
+fn shipped_pad_knobs_match_keyboard_values_in_pad_views() {
+    for view in [
+        panel::View::Pads,
+        panel::View::PadEdit,
+        panel::View::Pattern,
+    ] {
         for (cc, param, key, value) in [
             (31, pads::Param::Volume, KeyCode::Left, 63),
             (32, pads::Param::Pitch, KeyCode::Right, 65),
@@ -2116,9 +2187,19 @@ fn shipped_pad_knobs_match_keyboard_values_in_both_pad_modes() {
                 drive.app.publish_midi(&drive.shared);
             }
             let before = keyboard.seen();
+            if view == panel::View::Pattern {
+                keyboard.tap(KeyCode::F(2), M::NONE);
+            }
             keyboard.tap(key, M::NONE);
+            if view == panel::View::Pattern {
+                keyboard.tap(KeyCode::F(5), M::NONE);
+            }
             turn(&mut controller, cc, value);
             assert_eq!(controller.seen(), keyboard.seen(), "{view:?} cc {cc}");
+            assert_eq!(
+                controller.app.pattern_view.overview,
+                keyboard.app.pattern_view.overview
+            );
             assert_ne!(
                 controller.seen().pads,
                 before.pads,
