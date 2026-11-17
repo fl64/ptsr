@@ -2260,15 +2260,11 @@ impl App {
                     Action::PagePrev
                 })
             }
-            StepTarget::List(ListTarget::Bank)
-                if matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx) =>
-            {
-                Some(if right {
-                    Action::BankNext
-                } else {
-                    Action::BankPrev
-                })
-            }
+            StepTarget::List(ListTarget::Bank) => Some(if right {
+                Action::BankNext
+            } else {
+                Action::BankPrev
+            }),
             StepTarget::Param(Param::Page) => {
                 return self.midi_step(
                     port,

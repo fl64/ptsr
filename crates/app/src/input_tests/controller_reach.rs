@@ -1165,6 +1165,17 @@ fn panel_note(slot: u8) -> u8 {
     [64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59][usize::from(slot - 1)]
 }
 
+const ALL_VIEWS: [panel::View; 8] = [
+    panel::View::Pads,
+    panel::View::PadEdit,
+    panel::View::Pattern,
+    panel::View::Files,
+    panel::View::Chop,
+    panel::View::ChopEdit,
+    panel::View::Fx,
+    panel::View::Settings,
+];
+
 fn key_chord(name: &str) -> (KeyCode, M) {
     let mut modifiers = M::NONE;
     let mut key = "";
@@ -1270,16 +1281,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     assert!(config.warnings.is_empty(), "{:?}", config.warnings);
     let mut checked = 0;
     let mut special = 0;
-    for view in [
-        View::Pads,
-        View::PadEdit,
-        View::Pattern,
-        View::Files,
-        View::Chop,
-        View::ChopEdit,
-        View::Fx,
-        View::Settings,
-    ] {
+    for view in ALL_VIEWS {
         for page in 0..config.pages(view) {
             for slot in 1..=12 {
                 let Some(cell_info) = config.cell(view, page, slot) else {
@@ -1393,16 +1395,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     }
     assert_eq!(checked + special, 225);
 
-    for view in [
-        View::Pads,
-        View::PadEdit,
-        View::Pattern,
-        View::Files,
-        View::Chop,
-        View::ChopEdit,
-        View::Fx,
-        View::Settings,
-    ] {
+    for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
         let mut keyboard = reach_drive(view, sound.clone());
         let mut controller = reach_drive(view, sound);
@@ -1489,4 +1482,149 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
         controller.app.ask.as_ref().map(Ask::lines),
         keyboard.app.ask.as_ref().map(Ask::lines)
     );
+}
+
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn shipped_pad_hits_match_keyboard_results_in_each_view() {
+    let keys = [
+        '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
+    ];
+    let notes = [
+        48, 49, 50, 51, 44, 45, 46, 47, 40, 41, 42, 43, 36, 37, 38, 39,
+    ];
+    for view in ALL_VIEWS {
+        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+        let mut keyboard = reach_drive(view, sound.clone());
+        let mut controller = reach_drive(view, sound);
+        for pad in 1..16 {
+            let sample = Arc::new(Sample::mono(vec![0.2; 4_800]));
+            keyboard.load_pad(pad, sample.clone(), "source");
+            controller.load_pad(pad, sample, "source");
+        }
+        for (pad, (key, note)) in keys.into_iter().zip(notes).enumerate() {
+            keyboard.key(KeyCode::Char(key), M::NONE, KeyEventKind::Press);
+            keyboard.frame();
+            controller.bytes(SMC, &[0x99, note, 80]);
+            controller.frame();
+            assert_eq!(
+                controller.app.pads.held[pad],
+                keyboard.app.pads.held[pad],
+                "{view:?} pad {} held on press",
+                pad + 1
+            );
+            assert!(
+                controller.seen() == keyboard.seen(),
+                "{view:?} pad {} press",
+                pad + 1
+            );
+
+            keyboard.key(KeyCode::Char(key), M::NONE, KeyEventKind::Release);
+            keyboard.frame();
+            controller.bytes(SMC, &[0x89, note, 0]);
+            controller.frame();
+            assert_eq!(
+                controller.app.pads.held[pad],
+                keyboard.app.pads.held[pad],
+                "{view:?} pad {} held on release",
+                pad + 1
+            );
+            assert!(
+                controller.seen() == keyboard.seen(),
+                "{view:?} pad {} release",
+                pad + 1
+            );
+        }
+    }
+}
+
+/// Scenario "Every current keyboard action has a controller route" (controller-reach).
+/// This test creates 24 app instances, so it belongs to the slow group.
+#[test]
+fn shipped_global_knobs_match_keyboard_results_in_each_view() {
+    for view in ALL_VIEWS {
+        for (cc, key, modifiers) in [
+            (36, KeyCode::Up, M::CONTROL),
+            (37, KeyCode::PageDown, M::NONE),
+            (45, KeyCode::Char(']'), M::NONE),
+        ] {
+            let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+            let mut keyboard = reach_drive(view, sound.clone());
+            let mut controller = reach_drive(view, sound);
+            if view == panel::View::Settings {
+                for drive in [&mut keyboard, &mut controller] {
+                    drive.app.settings_tab = 2;
+                    drive.app.publish_midi(&drive.shared);
+                }
+            }
+            let before = (
+                keyboard.app.transport.bpm,
+                keyboard.app.pads.bank,
+                keyboard.app.master_db,
+                keyboard.app.midi_row,
+            );
+            keyboard.tap(key, modifiers);
+            turn(&mut controller, cc, 65);
+            assert_eq!(
+                controller.app.transport.bpm, keyboard.app.transport.bpm,
+                "{view:?} cc {cc} tempo"
+            );
+            assert_eq!(
+                controller.app.pads.bank, keyboard.app.pads.bank,
+                "{view:?} cc {cc} bank"
+            );
+            assert_eq!(
+                controller.app.master_db, keyboard.app.master_db,
+                "{view:?} cc {cc} volume"
+            );
+            assert_eq!(
+                controller.app.midi_row, keyboard.app.midi_row,
+                "{view:?} cc {cc} MIDI group"
+            );
+            assert!(
+                controller.seen() == keyboard.seen(),
+                "{view:?} cc {cc} state"
+            );
+            assert_ne!(
+                (
+                    controller.app.transport.bpm,
+                    controller.app.pads.bank,
+                    controller.app.master_db,
+                    controller.app.midi_row,
+                ),
+                before,
+                "{view:?} cc {cc} did not act"
+            );
+        }
+    }
+}
+
+#[test]
+fn bank_knob_does_not_act_behind_a_question_or_picker() {
+    let files = TransitionFiles::new();
+    let mut question = project_drive(&files);
+    question.app.ask = Some(Ask::ClearPads {
+        pads: vec![0],
+        lines: vec!["Clear?".into()],
+    });
+    let bank = question.app.pads.bank;
+    turn(&mut question, 37, 65);
+    assert_eq!(question.app.pads.bank, bank);
+    assert!(question.app.ask.is_some());
+
+    let mut project = project_drive(&files);
+    project.tap(KeyCode::Char('p'), M::CONTROL);
+    let selected = project.app.project_picker.as_ref().unwrap().selected;
+    turn(&mut project, 37, 65);
+    assert_eq!(project.app.pads.bank, 0);
+    assert_eq!(
+        project.app.project_picker.as_ref().unwrap().selected,
+        selected
+    );
+
+    let mut folder = folder_drive(&files);
+    let selected = folder.app.path_picker.as_ref().unwrap().selected;
+    turn(&mut folder, 37, 65);
+    assert_eq!(folder.app.midi_row, 0);
+    assert_eq!(folder.app.path_picker.as_ref().unwrap().selected, selected);
 }
