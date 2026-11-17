@@ -204,7 +204,7 @@ shorter repeated path separately.
 | Set a pad's decay | Hit the pad, turn bank 2 knob 5 |
 | Swap two pads | Hit pad A, Swap cell, hit pad B |
 | Open a project | Pads context `proj` cell, knob 1 in the picker, P8 to confirm |
-| Change the bank | LEFT or RIGHT on Pads |
+| Change the bank | Turn first-bank encoder 8 |
 | Record the microphone onto a pad | Hold RECORD, hit the pad |
 
 The planned control-pages change shows a page for both "Chop the sound of a
@@ -331,6 +331,8 @@ Tasks:
    its status mark, panel page navigation and an optional measured SHIFT quick look
    are controller interface steps, not sampler actions.
    Bind Alt+U to transport toggle on every screen. Keep Space preview on Files and Chop.
+   On Pads and Pads edit, bind Alt+Left and Alt+Right to silent pad selection.
+   Keep the existing Alt-arrow slice-bound keys on Chop.
    The test also checks that every mode has its badge
    (`VISUAL.md` §2.1).
 4. Close the gaps that the production-route test shows. Expected gaps include project
@@ -350,7 +352,8 @@ Owner steps without the keyboard:
 
 Keyboard check: on Files and Chop, use Alt+U for transport and Space for preview.
 Repeat Alt+U in the Russian layout. Check the same transport result from page 2
-`trnspt` on the SMC-PAD.
+`trnspt` on the SMC-PAD. On Pads and Pads edit, compare Alt+Left and Alt+Right
+with the SMC-PAD LEFT and RIGHT buttons. A pad selection must not play sound.
 
 ### Change 93a — `93a-controller-comfort`
 

@@ -2256,6 +2256,11 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
 - [ ] On Files and Chop, press `Alt+U` to start and stop transport. Repeat in the
   Russian layout. Press Space on each screen. Check that it keeps its preview role.
   In a text line or question, check that `Alt+U` does not change transport.
+- [ ] On Pads and Pads edit, press `Alt+Right` to select the next pad and
+  `Alt+Left` to return. Compare each result with SMC-PAD RIGHT and LEFT. Check
+  that neither key plays a pad, changes its value or stops a held Gate. Hold a
+  key to check that repeat does not move a second time. On Chop, check that
+  Alt+Left and Alt+Right keep their slice-bound actions.
 - [ ] Use `Ctrl+Q` to leave a disposable session. Check its existing save path.
 
 ### Physical SMC-PAD pass

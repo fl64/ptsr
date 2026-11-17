@@ -15,6 +15,8 @@
   The inventory checks every shipped mapping and press limit. Raw MIDI checks cover 225 panel cells, all 16 pad hits and three global knobs in eight views. Result checks for other direct buttons and contextual knobs in each effective mode remain open.
 - [x] 2.4 Add the missing cell labels and action IDs to this design and delta before their code. Check and commit these OpenSpec edits separately.
 - [x] 2.5 Record the owner-approved `Alt+U` route in the keyboard delta and design. Keep Files and Chop Space previews. Update the affected plan and owner checks before code. Run `task openspec:check` and commit these text edits.
+- [x] 2.6 Record `Alt+Left` and `Alt+Right` for silent pad selection in the delta and design. Keep plain value arrows on Pads and Alt-arrow slice bounds on Chop. Update the plan and owner checks, then check and commit the text before code.
+- [ ] 2.7 Bind the silent selection keys on Pads and Pads edit. Compare their results with raw SMC-PAD LEFT and RIGHT, including row edges, Gate release, repeat, owner bindings and overlays. Keep other screens unchanged.
 
 ## 3. Picker and Settings routes
 

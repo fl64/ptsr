@@ -30,6 +30,8 @@ The reach test must decide whether another keyboard action has an equivalent kno
 
 The page 2 `trnspt` cell runs `transport.toggle` on Files and Chop. Space runs the preview action on these screens. The shipped keyboard map has no other effective key for `transport.toggle` there. The owner approved `Alt+U` on 2026-11-17 as a shared transport key. Keep Space previews and the existing owner keymap priority. Test the result from the same screen through keyboard and raw SMC-PAD input, in both supported keyboard layouts. A keymap entry in a different screen does not count as a route.
 
+The static inventory treated SMC-PAD LEFT and RIGHT on Pads as covered by a keyboard pad hit. The button selects a neighboring pad without sound, but a keyboard pad hit also plays it. Bind `Alt+Left` and `Alt+Right` to `pad.select_left` and `pad.select_right` only on Pads. The screen binding also works in Pads edit, while plain arrows keep their value route. Chop keeps its Alt-arrow slice-bound keys. Test both inputs from the same selected pad, including row edges, a held Gate, key repeat, owner overrides and active overlays. A silent selection does not end the sound-first splash.
+
 `ActionInfo` does not yet mark text entry. Add that metadata for `pad.rename` and `browser.filter`. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
 The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit or a later modal answer is recorded separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
@@ -78,6 +80,8 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 | An owner binding replaces a panel cell | The owner binding acts outside a question. The reach report names the shipped profile, not the owner's override. | Covered by existing owner-override tests. |
 | An owner binding replaces `Alt+U` or sets it to `none` | The owner entry keeps priority. The shipped route test uses the default map and a separate test checks the override. | Add a test in 93. |
 | A text line or question is open when `Alt+U` arrives | The active modal route keeps priority. The transport does not toggle behind it. | Add a test in 93. |
+| A held Gate or a repeated Alt-arrow key crosses silent pad selection | The Gate keeps its original release target. Only the first key press selects a neighbor. | Add a test in 93. |
+| An owner binding or input overlay takes an Alt-arrow key | The owner entry or overlay keeps priority. Chop keeps its slice-bound key. | Add a test in 93. |
 
 ## Open questions
 

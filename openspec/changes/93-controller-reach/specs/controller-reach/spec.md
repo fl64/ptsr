@@ -16,6 +16,21 @@ For each current screen and mode, each effective keyboard action that needs no t
 - **THEN** each sampler action reaches the same result from the keyboard
 - **AND** the test reports any action without a key or key path, apart from panel navigation
 
+### Requirement: Pads have a silent keyboard selection route
+
+On Pads and Pads edit, `Alt+Left` and `Alt+Right` SHALL select the adjacent pad in the same row, as SMC-PAD LEFT and RIGHT do. Selection at a row edge SHALL stay in place. These keys SHALL not hit a pad, change its value, stop a held Gate pad or end the splash. A key repeat SHALL not select another pad. Other screens SHALL keep their current Alt-arrow routes. Owner keymap entries and an active text line, question, picker, Help or learning mode SHALL keep priority.
+
+#### Scenario: Keyboard selects a neighboring pad without sound
+- **WHEN** the owner presses `Alt+Left` or `Alt+Right` on Pads or Pads edit
+- **THEN** the selected pad matches the result of SMC-PAD LEFT or RIGHT
+- **AND** no pad plays, a held Gate keeps its release target and a repeat does not move again
+- **AND** selection stops at the row edge without changing a value or ending the splash
+
+#### Scenario: Silent selection respects owner bindings and overlays
+- **WHEN** an owner keymap replaces an Alt-arrow key or sets it to `none`, or an input overlay owns the key
+- **THEN** the owner entry or overlay acts first and the pad selection stays unchanged
+- **AND** Chop keeps its existing Alt-arrow slice-bound route
+
 ### Requirement: Input exceptions stay explicit
 
 The only controller-only steps SHALL be PAD BANK selection, its status mark and page navigation within its panel. The only keyboard-only operations SHALL be `pad.rename`, `browser.filter`, a typed new-project name and keymap edits. `app.quit` SHALL remain unavailable for MIDI learn. No other exception SHALL enter the inventory without an owner decision.
