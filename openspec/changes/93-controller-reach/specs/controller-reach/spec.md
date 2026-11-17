@@ -16,6 +16,19 @@ For each current screen and mode, each effective keyboard action that needs no t
 - **THEN** each sampler action reaches the same result from the keyboard
 - **AND** the test reports any action without a key or key path, apart from panel navigation
 
+### Requirement: Chop threshold has matching keyboard steps
+
+On Chop and Chop edit, `Ctrl+Alt+Up` SHALL increase the hit threshold by 1 dB and `Ctrl+Alt+Down` SHALL decrease it by 1 dB. These keys SHALL use `chop.threshold_up` and `chop.threshold_down`. Each step SHALL have the same result as an opposite-direction turn of SMC-PAD encoder 3. The threshold SHALL stay within -40 to 0 dB.
+
+#### Scenario: Keyboard and encoder set the same Chop threshold
+- **WHEN** separate keyboard and raw SMC-PAD runs step the threshold up and down on Chop and Chop edit
+- **THEN** each run reaches the same threshold, cuts, linked-pad result and Undo state
+- **AND** neither input moves beyond -40 to 0 dB or adds an Undo entry at a bound
+
+#### Scenario: Threshold keys respect owner bindings and input owners
+- **WHEN** an owner map replaces a threshold key or sets it to `none`, or assign mode or an input overlay owns input
+- **THEN** the owner entry or active mode keeps priority and the threshold stays unchanged
+
 ### Requirement: Pads have a silent keyboard selection route
 
 On Pads and Pads edit, `Alt+Left` and `Alt+Right` SHALL select the adjacent pad in the same row, as SMC-PAD LEFT and RIGHT do. Selection at a row edge SHALL stay in place. These keys SHALL not hit a pad, change its value, stop a held Gate pad or end the splash. A key repeat SHALL not select another pad. Other screens SHALL keep their current Alt-arrow routes. Owner keymap entries and an active text line, question, picker, Help or learning mode SHALL keep priority.

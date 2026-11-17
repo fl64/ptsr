@@ -2261,6 +2261,11 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
   that neither key plays a pad, changes its value or stops a held Gate. Hold a
   key to check that repeat does not move a second time. On Chop, check that
   Alt+Left and Alt+Right keep their slice-bound actions.
+- [ ] On Chop and Chop edit, press `Ctrl+Alt+Down` once for -1 dB and
+  `Ctrl+Alt+Up` once to return. Compare the threshold and cuts with encoder 3.
+  Check -40 and 0 dB bounds and `Ctrl+Z` after a changed step. Repeat without
+  the kitty keyboard protocol. Open Help or a question and check that the
+  keys do not recut behind it.
 - [ ] Use `Ctrl+Q` to leave a disposable session. Check its existing save path.
 
 ### Physical SMC-PAD pass
@@ -2278,6 +2283,10 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
   available.
 - [ ] On Files and Chop, select page 2 and hit `trnspt`. Check the same transport
   start and stop as `Alt+U`. Use Space for a separate keyboard preview check.
+- [ ] On Chop and Chop edit, turn encoder 3 one detent in each direction.
+  Compare each result with `Ctrl+Alt+Down` and `Ctrl+Alt+Up`, including linked
+  pads, both bounds and Undo. During assign mode, check that the knob does not
+  replace the cuts behind the assignment plan.
 - [ ] Open the project picker from a panel cell. Turn encoder 1 and press P8.
   Check that the selected project opens. Open it again and use P7 to cancel.
   On Settings > Paths, use encoder 1, LEFT, RIGHT and P8 to select a folder.

@@ -333,6 +333,8 @@ Tasks:
    Bind Alt+U to transport toggle on every screen. Keep Space preview on Files and Chop.
    On Pads and Pads edit, bind Alt+Left and Alt+Right to silent pad selection.
    Keep the existing Alt-arrow slice-bound keys on Chop.
+   On Chop and Chop edit, bind Ctrl+Alt+Up and Ctrl+Alt+Down to exact 1 dB
+   threshold steps. Compare them with encoder 3, including bounds and Undo.
    The test also checks that every mode has its badge
    (`VISUAL.md` §2.1).
 4. Close the gaps that the production-route test shows. Expected gaps include project
@@ -354,6 +356,8 @@ Keyboard check: on Files and Chop, use Alt+U for transport and Space for preview
 Repeat Alt+U in the Russian layout. Check the same transport result from page 2
 `trnspt` on the SMC-PAD. On Pads and Pads edit, compare Alt+Left and Alt+Right
 with the SMC-PAD LEFT and RIGHT buttons. A pad selection must not play sound.
+On Chop and Chop edit, compare Ctrl+Alt+Up and Ctrl+Alt+Down with encoder 3.
+Check the threshold, cuts, linked pads, -40 and 0 dB bounds, and Undo.
 
 ### Change 93a — `93a-controller-comfort`
 

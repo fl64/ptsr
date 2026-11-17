@@ -32,6 +32,8 @@ The page 2 `trnspt` cell runs `transport.toggle` on Files and Chop. Space runs t
 
 The static inventory treated SMC-PAD LEFT and RIGHT on Pads as covered by a keyboard pad hit. The button selects a neighboring pad without sound, but a keyboard pad hit also plays it. Bind `Alt+Left` and `Alt+Right` to `pad.select_left` and `pad.select_right` only on Pads. The screen binding also works in Pads edit, while plain arrows keep their value route. Chop keeps its Alt-arrow slice-bound keys. Test both inputs from the same selected pad, including row edges, a held Gate, key repeat, owner overrides and active overlays. A silent selection does not end the sound-first splash.
 
+The SMC-PAD encoder 3 changes the Chop hit threshold by 1 dB, while `H` and `Shift+H` select fixed thresholds. The owner approved exact keyboard steps on 2026-11-17. Add `chop.threshold_up` and `chop.threshold_down` to the Chop and Chop edit action groups. Bind `Ctrl+Alt+Up` to +1 dB and `Ctrl+Alt+Down` to -1 dB on Chop and Chop edit. Send both keys and encoder 3 through the current threshold setter. Keep its -40 to 0 dB bounds, recut, linked-pad and Undo behavior. At a bound, a step does not add an Undo entry. Test both inputs through production dispatch, the two Chop modes, both bounds, Undo, owner overrides and modal priority. The new chords also need a legacy-terminal path under the accepted keyboard contract.
+
 `ActionInfo` does not yet mark text entry. Add that metadata for `pad.rename` and `browser.filter`. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
 The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit or a later modal answer is recorded separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
@@ -82,9 +84,11 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 | A text line or question is open when `Alt+U` arrives | The active modal route keeps priority. The transport does not toggle behind it. | Add a test in 93. |
 | A held Gate or a repeated Alt-arrow key crosses silent pad selection | The Gate keeps its original release target. Only the first key press selects a neighbor. | Add a test in 93. |
 | An owner binding or input overlay takes an Alt-arrow key | The owner entry or overlay keeps priority. Chop keeps its slice-bound key. | Add a test in 93. |
+| The Chop threshold reaches -40 or 0 dB | A further step keeps the threshold and cuts. It adds no Undo entry. | Add a test in 93. |
+| A threshold key arrives during Chop assign or an overlay | The active mode keeps priority. No threshold recut occurs behind it. | Add a test in 93. |
+| An owner map replaces a threshold key | The owner action or `none` wins over the shipped step. | Add a test in 93. |
 
 ## Open questions
 
 - Which free encoder selects overflow context pages? Default: first-bank encoder 6. It has no shipped role in the current SMC-PAD profile. Keep encoder 1 on the current item and keep both knob banks active.
 - Should a silent controller command end the splash? Default: no. The accepted screen-layout specification requires an accepted sound, and silent commands already work while the splash shows.
-- How does the keyboard set the same Chop threshold as SMC-PAD encoder 3? The encoder changes the threshold by 1 dB, but `H` and `Shift+H` select only fixed hit thresholds. Default proposal, pending owner approval: add public actions `chop.threshold_up` and `chop.threshold_down`. Bind `Ctrl+Alt+Up` to +1 dB and `Ctrl+Alt+Down` to -1 dB on Chop and Chop edit. Use the encoder's existing setter and its -40 to 0 dB limits, recut and Undo behavior. An alternative is a named controller-only exception to the reach requirement. Do not change the public action set or the keyboard map before the owner chooses.
