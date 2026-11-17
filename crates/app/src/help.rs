@@ -92,6 +92,8 @@ pub(super) fn describe(a: Action) -> String {
         Action::ChopEqualParts => "chop: equal parts 2, 4, 8, 16, 32".into(),
         Action::ChopHits => "chop: by hits, one threshold step lower per press (−6…−30 dB)".into(),
         Action::ChopHitsBack => "chop: by hits, one threshold step back (to −6 dB)".into(),
+        Action::ThresholdStep(step) if step < 0 => "chop: hit threshold down 1 dB".into(),
+        Action::ThresholdStep(_) => "chop: hit threshold up 1 dB".into(),
         Action::ChopAssignOrder => "assign: in order / by hand".into(),
         Action::SliceBound { end, right, .. } => format!(
             "chop: the slice {} {}",

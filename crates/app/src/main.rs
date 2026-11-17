@@ -3697,9 +3697,7 @@ fn modifier_groups(
     vec![tui::HelpGroup { name, items }]
 }
 
-/// Short texts for the Ctrl view of the help line.
-/// The text of a Shift command in the Shift view of the help line (83a): what the
-/// shifted key does, not the unshifted command.
+/// Shift commands name their changed action in the help line (83a).
 fn shift_text(a: Action) -> String {
     match a {
         Action::ChopHitsBack => "fewer hit cuts".into(),
@@ -3749,6 +3747,7 @@ fn assign_deaf(a: &Action) -> bool {
             | Action::ChopEqualParts
             | Action::ChopHits
             | Action::ChopHitsBack
+            | Action::ThresholdStep(_)
             | Action::ChopAssign
             | Action::ChopZoom { .. }
             | Action::ChopRegionStart
@@ -3805,6 +3804,7 @@ fn help_section(a: Action) -> usize {
         | Action::ChopEqualParts
         | Action::ChopHits
         | Action::ChopHitsBack
+        | Action::ThresholdStep(_)
         | Action::ChopAssignOrder
         | Action::SliceBound { .. }
         | Action::ParamNext

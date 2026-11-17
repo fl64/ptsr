@@ -98,6 +98,8 @@ fn every_current_keyboard_action_has_a_controller_route() {
         ("chop.cursor_right", "e1", "chop.cursor_pos"),
         ("chop.zoom_in", "e2", "chop.zoom"),
         ("chop.zoom_out", "e2", "chop.zoom"),
+        ("chop.threshold_up", "e3", "chop.threshold"),
+        ("chop.threshold_down", "e3", "chop.threshold"),
         ("slice.start_left", "e4", "slice.start"),
         ("slice.start_right", "e4", "slice.start"),
         ("slice.end_left", "e5", "slice.end"),
@@ -281,12 +283,13 @@ fn every_current_controller_action_has_a_keyboard_route() {
             "master.volume" => has("master.volume_down") && has("master.volume_up"),
             "transport.tempo" => has("transport.tempo_down") && has("transport.tempo_up"),
             "chop.cursor_pos" => has("chop.cursor_left") && has("chop.cursor_right"),
+            "chop.threshold" => has("chop.threshold_up") && has("chop.threshold_down"),
             "chop.zoom" => has("chop.zoom_in") && has("chop.zoom_out"),
             "slice.start" => has("slice.start_left") && has("slice.start_right"),
             "slice.end" => has("slice.end_left") && has("slice.end_right"),
             "edit.page" => has("edit.page_prev") && has("edit.page_next"),
-            "pad.volume" | "pad.pitch" | "pad.cutoff" | "pad.decay" | "chop.threshold"
-            | "pattern.bars" | "pattern.quantize" | "pattern.strength" => {
+            "pad.volume" | "pad.pitch" | "pad.cutoff" | "pad.decay" | "pattern.bars"
+            | "pattern.quantize" | "pattern.strength" => {
                 has("edit.value_dec") && has("edit.value_inc")
             }
             "pad.select_left" | "pad.select_right" => {
@@ -309,6 +312,214 @@ fn every_current_controller_action_has_a_keyboard_route() {
             _ => false,
         };
         assert!(keyboard_route, "{scope:?} {key:?} {role}: no keyboard path");
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct ThresholdState {
+    db: f32,
+    cuts: Vec<(u32, usize)>,
+    epoch: u32,
+    region: Region,
+    link: Option<(u32, u32)>,
+}
+
+fn threshold_result(drive: &Drive) -> ThresholdState {
+    let chop = drive.app.chop.as_ref().unwrap();
+    ThresholdState {
+        db: chop.threshold_db,
+        cuts: chop.saved().cuts,
+        epoch: chop.epoch,
+        region: drive.app.pads.region[5],
+        link: drive.app.pads.link[5],
+    }
+}
+
+/// Scenario "Keyboard and encoder set the same Chop threshold" (controller-reach).
+#[test]
+fn keyboard_and_encoder_set_the_same_chop_threshold() {
+    let mut samples = vec![0.0; 32_000];
+    for (start, level) in [(2_000, 0.9), (10_000, 0.6), (18_000, 0.4), (26_000, 0.2)] {
+        samples[start..start + 500].fill(level);
+    }
+    let sound = Arc::new(Sample::mono(samples));
+    for view in [panel::View::Chop, panel::View::ChopEdit] {
+        let mut keyboard = reach_drive(view, sound.clone());
+        let mut controller = reach_drive(view, sound.clone());
+        keyboard.link_chop_pad(5, 2);
+        controller.link_chop_pad(5, 2);
+        let initial = threshold_result(&keyboard);
+        let at = Instant::now();
+        for (i, (key, midi, db)) in [
+            (KeyCode::Down, 65, -1.0),
+            (KeyCode::Down, 65, -2.0),
+            (KeyCode::Up, 63, -1.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            keyboard.tap(key, M::CONTROL | M::ALT);
+            controller.midi().recorded_bytes_at(
+                SMC,
+                &[0xB0, 32, midi],
+                &controller.project,
+                at + std::time::Duration::from_millis(100 * i as u64),
+            );
+            controller.frame();
+            assert_eq!(keyboard.app.chop.as_ref().unwrap().threshold_db, db);
+            assert_eq!(
+                threshold_result(&keyboard),
+                threshold_result(&controller),
+                "{view:?} {db}"
+            );
+        }
+        keyboard.tap(KeyCode::Char('z'), M::CONTROL);
+        controller.tap(KeyCode::Char('z'), M::CONTROL);
+        assert_eq!(threshold_result(&keyboard), threshold_result(&controller));
+        assert_eq!(threshold_result(&keyboard), initial, "{view:?} Undo");
+
+        for bound in [-40.0, 0.0] {
+            let mut keyboard = reach_drive(view, sound.clone());
+            let mut controller = reach_drive(view, sound.clone());
+            for drive in [&mut keyboard, &mut controller] {
+                drive
+                    .app
+                    .chop
+                    .as_mut()
+                    .unwrap()
+                    .set_threshold(-bound / 40.0);
+            }
+            let before = threshold_result(&keyboard);
+            let key = if bound == -40.0 {
+                KeyCode::Down
+            } else {
+                KeyCode::Up
+            };
+            let midi = if bound == -40.0 { 65 } else { 63 };
+            keyboard.tap(key, M::CONTROL | M::ALT);
+            turn(&mut controller, 32, midi);
+            assert_eq!(
+                threshold_result(&keyboard),
+                before,
+                "{view:?} bound {bound}"
+            );
+            assert_eq!(threshold_result(&keyboard), threshold_result(&controller));
+            keyboard.tap(KeyCode::Char('z'), M::CONTROL);
+            controller.tap(KeyCode::Char('z'), M::CONTROL);
+            assert_eq!(threshold_result(&keyboard), threshold_result(&controller));
+            if bound == -40.0 {
+                assert_eq!(keyboard.app.chop.as_ref().unwrap().threshold_db, 0.0);
+            }
+        }
+    }
+}
+
+/// Scenario "Fast encoder turns keep acceleration" (controller-reach).
+#[test]
+fn fast_encoder_turns_keep_acceleration() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 32_000]));
+    let mut keyboard = reach_drive(panel::View::Chop, sound.clone());
+    let mut controller = reach_drive(panel::View::Chop, sound);
+    let at = Instant::now();
+    for i in 0..2 {
+        keyboard.tap(KeyCode::Down, M::CONTROL | M::ALT);
+        controller.midi().recorded_bytes_at(
+            SMC,
+            &[0xB0, 32, 65],
+            &controller.project,
+            at + std::time::Duration::from_millis(10 * i),
+        );
+        controller.frame();
+    }
+    assert_eq!(keyboard.app.chop.as_ref().unwrap().threshold_db, -2.0);
+    assert_eq!(controller.app.chop.as_ref().unwrap().threshold_db, -3.0);
+}
+
+/// Scenario "Threshold keys respect owner bindings and input owners" (controller-reach).
+#[test]
+fn threshold_keys_respect_owner_bindings_and_input_owners() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 32_000]));
+    for binding in ["none", "metronome.toggle"] {
+        let mut drive = reach_drive(panel::View::Chop, sound.clone());
+        assert!(
+            drive
+                .keymap
+                .overlay(&format!(
+                    "[screens.chop]\n\"Ctrl+Alt+Down\" = \"{binding}\"\n"
+                ))
+                .unwrap()
+                .is_empty()
+        );
+        let before = threshold_result(&drive);
+        let metro = drive.app.transport.metronome;
+        drive.tap(KeyCode::Down, M::CONTROL | M::ALT);
+        assert_eq!(threshold_result(&drive), before);
+        assert_eq!(
+            drive.app.transport.metronome,
+            if binding == "none" { metro } else { !metro }
+        );
+    }
+    for overlay in ["assign", "help", "question", "learn"] {
+        let mut drive = reach_drive(panel::View::Chop, sound.clone());
+        match overlay {
+            "assign" => drive.app.plan = Some(chop::Plan::InOrder(None)),
+            "help" => {
+                drive.tap(KeyCode::F(1), M::NONE);
+            }
+            "question" => {
+                drive.app.ask = Some(Ask::ClearPads {
+                    pads: vec![0],
+                    lines: vec!["Clear?".into()],
+                })
+            }
+            _ => {
+                drive.tap(KeyCode::F(10), M::NONE);
+            }
+        }
+        let before = threshold_result(&drive);
+        drive.tap(KeyCode::Down, M::CONTROL | M::ALT);
+        turn(&mut drive, 32, 65);
+        assert_eq!(threshold_result(&drive), before, "{overlay}");
+    }
+}
+
+/// Scenario "Exact Chop threshold keys resolve in both terminal modes" (keyboard).
+#[test]
+fn exact_chop_threshold_keys_resolve_in_both_terminal_modes() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 32_000]));
+    for view in [panel::View::Chop, panel::View::ChopEdit] {
+        for kitty in [false, true] {
+            for (code, action, db) in [
+                (KeyCode::Down, Action::ThresholdStep(-1), -1.0),
+                (KeyCode::Up, Action::ThresholdStep(1), 0.0),
+            ] {
+                let mut drive = reach_drive(view, sound.clone());
+                if code == KeyCode::Up {
+                    drive.app.chop.as_mut().unwrap().set_threshold(1.0 / 40.0);
+                }
+                let key = KeyEvent::new(code, M::CONTROL | M::ALT);
+                assert_eq!(
+                    drive
+                        .keymap
+                        .resolve_in(Screen::Chop, view == panel::View::ChopEdit, &key),
+                    Some(action)
+                );
+                assert!(!drive.app.keyboard_event(
+                    &drive.keymap,
+                    &key,
+                    kitty,
+                    &mut drive.down,
+                    &mut drive.held,
+                    &mut drive.mods,
+                ));
+                drive.frame();
+                assert_eq!(
+                    drive.app.chop.as_ref().unwrap().threshold_db,
+                    db,
+                    "{view:?} kitty={kitty}"
+                );
+            }
+        }
     }
 }
 

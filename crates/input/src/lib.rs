@@ -643,6 +643,8 @@ pub enum Action {
     /// Chop screen: chop by hits, stepping the threshold one higher, stopping at −6 dB
     /// without wrapping (83a); the same cuts, undo history and hit rule as `chop.hits`.
     ChopHitsBack,
+    /// Chop hit threshold: exact 1 dB step, up (1) or down (-1).
+    ThresholdStep(i8),
     /// Chop screen: switch the assign plan between in order and by hand (83a); nothing
     /// in listen or slice edit, and it applies no plan.
     ChopAssignOrder,
@@ -850,6 +852,8 @@ impl Action {
             "chop.parts" => Self::ChopEqualParts,
             "chop.hits" => Self::ChopHits,
             "chop.hits_back" => Self::ChopHitsBack,
+            "chop.threshold_up" => Self::ThresholdStep(1),
+            "chop.threshold_down" => Self::ThresholdStep(-1),
             "chop.assign_order" => Self::ChopAssignOrder,
             "edit.param_next" => Self::ParamNext,
             "edit.param_prev" => Self::ParamPrev,
@@ -1242,6 +1246,8 @@ pub fn short_label(action: &str) -> &'static str {
         "chop.region_start_pos" => "reg[",
         "chop.region_end_pos" => "reg]",
         "chop.threshold" => "thresh",
+        "chop.threshold_up" => "th+1",
+        "chop.threshold_down" => "th-1",
         "marker.delete" => "delcut",
         "slice.end_delete" => "delend",
         "edit.undo" => "undo",
@@ -2336,6 +2342,18 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: true,
     },
     ActionInfo {
+        name: "chop.threshold_up",
+        label: "hit threshold up 1 dB",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.threshold_down",
+        label: "hit threshold down 1 dB",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
         name: "marker.delete",
         label: "delete the cut",
         group: Group::Chop,
@@ -2457,6 +2475,18 @@ pub const ACTIONS: &[ActionInfo] = &[
         label: "chop threshold (knob)",
         group: Group::ChopEdit,
         knob: true,
+    },
+    ActionInfo {
+        name: "chop.threshold_up",
+        label: "hit threshold up 1 dB",
+        group: Group::ChopEdit,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.threshold_down",
+        label: "hit threshold down 1 dB",
+        group: Group::ChopEdit,
+        knob: false,
     },
     ActionInfo {
         name: "ui.back",

@@ -18,12 +18,17 @@ For each current screen and mode, each effective keyboard action that needs no t
 
 ### Requirement: Chop threshold has matching keyboard steps
 
-On Chop and Chop edit, `Ctrl+Alt+Up` SHALL increase the hit threshold by 1 dB and `Ctrl+Alt+Down` SHALL decrease it by 1 dB. These keys SHALL use `chop.threshold_up` and `chop.threshold_down`. Each step SHALL have the same result as an opposite-direction turn of SMC-PAD encoder 3. The threshold SHALL stay within -40 to 0 dB.
+On Chop and Chop edit, `Ctrl+Alt+Up` SHALL increase the hit threshold by 1 dB and `Ctrl+Alt+Down` SHALL decrease it by 1 dB. These keys SHALL use `chop.threshold_up` and `chop.threshold_down`. Each step SHALL have the same result as one isolated opposite-direction detent of SMC-PAD encoder 3. Fast MIDI turns SHALL keep their existing acceleration. The threshold SHALL stay within -40 to 0 dB.
 
 #### Scenario: Keyboard and encoder set the same Chop threshold
-- **WHEN** separate keyboard and raw SMC-PAD runs step the threshold up and down on Chop and Chop edit
+- **WHEN** keyboard and raw SMC-PAD runs step the Chop threshold in both directions and modes, with encoder detents at least 100 ms apart
 - **THEN** each run reaches the same threshold, cuts, linked-pad result and Undo state
 - **AND** neither input moves beyond -40 to 0 dB or adds an Undo entry at a bound
+
+#### Scenario: Fast encoder turns keep acceleration
+- **WHEN** the SMC-PAD sends two encoder 3 detents within 40 ms on Chop
+- **THEN** the existing MIDI speed rule accelerates the second threshold step
+- **AND** two separate keyboard presses still change the threshold by exactly 2 dB
 
 #### Scenario: Threshold keys respect owner bindings and input owners
 - **WHEN** an owner map replaces a threshold key or sets it to `none`, or assign mode or an input overlay owns input

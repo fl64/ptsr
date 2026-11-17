@@ -444,6 +444,9 @@ impl App {
                     c.zoom(zoom_in);
                 }
             }
+            Action::ThresholdStep(step) if self.screen == Screen::Chop => {
+                self.step_threshold(i32::from(step));
+            }
             Action::ChopRegionStart if self.screen == Screen::Chop => {
                 if let Some(c) = self.chop.as_mut() {
                     let pos = c.cursor;
@@ -2175,6 +2178,18 @@ impl App {
         }
     }
 
+    fn step_threshold(&mut self, step_db: i32) {
+        if self.plan.is_some() || self.help_open || self.screen_learn.is_some() {
+            return;
+        }
+        if let Some(chop) = self.chop.as_mut() {
+            let next = (chop.threshold_db + step_db as f32).clamp(-40.0, 0.0);
+            chop.set_threshold(-next / 40.0);
+        }
+        let changed = self.sync_links();
+        self.say_changed(changed, false);
+    }
+
     fn midi_step(
         &mut self,
         port: &str,
@@ -2373,12 +2388,7 @@ impl App {
                 return;
             }
             StepTarget::Param(Param::Threshold) if self.screen == Screen::Chop => {
-                if let Some(chop) = self.chop.as_mut() {
-                    let next = (chop.threshold_db - steps as f32).clamp(-40.0, 0.0);
-                    chop.set_threshold(-next / 40.0);
-                }
-                let changed = self.sync_links();
-                self.say_changed(changed, false);
+                self.step_threshold(-steps);
                 return;
             }
             StepTarget::Param(param @ (Param::RegionStart | Param::RegionEnd))

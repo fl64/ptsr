@@ -18,7 +18,7 @@
 - [x] 2.6 Record `Alt+Left` and `Alt+Right` for silent pad selection in the delta and design. Keep plain value arrows on Pads and Alt-arrow slice bounds on Chop. Update the plan and owner checks, then check and commit the text before code.
 - [x] 2.7 Bind the silent selection keys on Pads and Pads edit. Compare their results with raw SMC-PAD LEFT and RIGHT, including row edges, Gate release, repeat, owner bindings and overlays. Keep other screens unchanged.
 - [x] 2.8 Record the owner-approved exact Chop threshold keys in the delta, design, proposal, plan and owner checks. Check and commit these texts before code.
-- [ ] 2.9 Add the threshold actions and keys. Compare keyboard and raw encoder 3 in Chop and Chop edit, including bounds, Undo, linked pads, owner bindings, overlays and legacy terminals. Complete the named scenarios before the code commit.
+- [x] 2.9 Add the threshold actions and keys. Compare keyboard and raw encoder 3 in Chop and Chop edit, including bounds, Undo, linked pads, owner bindings, overlays and legacy terminals. Complete the named scenarios before the code commit.
 
 ## 3. Picker and Settings routes
 
