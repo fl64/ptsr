@@ -44,12 +44,21 @@ fn every_story_has_a_recorded_controller_path() {
             .find(|row| row.get(1) == Some(&heading))
             .unwrap_or_else(|| panic!("no SMC-PAD route for {heading}"));
         assert!(!row[2].is_empty(), "empty SMC-PAD route for {heading}");
+        let counts: Vec<(u8, u8)> = row[2]
+            .split('`')
+            .filter_map(|part| {
+                let (visible, hidden) = part.split_once('/')?;
+                Some((visible.parse().ok()?, hidden.parse().ok()?))
+            })
+            .collect();
+        for (visible, hidden) in &counts {
+            assert!(
+                *visible <= 2 && *hidden <= 4,
+                "{heading}: over-budget SMC-PAD route {visible}/{hidden}"
+            );
+        }
         assert!(
-            row[2].contains("/0")
-                || row[2].contains("/1")
-                || row[2].contains("/2")
-                || row[2].contains("/3")
-                || row[2].contains("/4")
+            !counts.is_empty()
                 || row[3].contains("Observation")
                 || row[3].contains("text")
                 || row[3].contains("Keyboard-only")
