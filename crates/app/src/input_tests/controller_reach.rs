@@ -16,10 +16,10 @@ fn turn(drive: &mut Drive, cc: u8, value: u8) {
     drive.frame();
 }
 
-fn cell(drive: &mut Drive, note: u8) {
+fn cell(drive: &mut Drive, note: u8) -> Frame {
     drive.bytes(SMC, &[0x99, note, 100]);
     drive.bytes(SMC, &[0x89, note, 0]);
-    drive.frame();
+    drive.frame()
 }
 
 /// Scenario "Every story has a recorded controller path" (controller-reach).
@@ -642,6 +642,53 @@ fn exit_needs_a_second_smc_press() {
     assert!(keyboard.app.quit_requested);
 }
 
+#[test]
+fn exit_question_keeps_a_pending_a1_save_until_confirmation() {
+    use engine::capture::Phase;
+
+    let files = TransitionFiles::new();
+    let mut drive = project_drive(&files);
+    drive.app.session_read_error = None;
+    let start = drive.tap(KeyCode::Char('r'), M::CONTROL);
+    assert!(
+        start
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::PatternRecordStart { .. }))
+    );
+    drive.render_blocks(1);
+    drive.frame();
+    assert_eq!(
+        drive.app.pattern_record_state().unwrap().phase,
+        Phase::CountIn
+    );
+    drive.app.session_dirty = Some(Instant::now());
+    drive.app.request_manual_save();
+    assert!(drive.app.pending_manual_save.is_some());
+
+    cell(&mut drive, 64);
+    cell(&mut drive, 63);
+    turn(&mut drive, 35, 65);
+    assert_eq!(drive.app.panel.page(), 2);
+    cell(&mut drive, 57);
+    assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+    assert!(drive.app.pending_manual_save.is_some());
+    assert!(!drive.app.quit_requested);
+    cell(&mut drive, 62);
+    assert!(drive.app.ask.is_none());
+    assert!(drive.app.pending_manual_save.is_some());
+    assert!(!drive.app.quit_requested);
+
+    cell(&mut drive, 57);
+    cell(&mut drive, 63);
+    assert!(drive.app.quit_requested);
+    assert!(drive.app.quit_ready());
+    assert!(drive.app.pending_manual_save.is_none());
+    drive.app.save_on_exit();
+    assert!(drive.app.session_dirty.is_none());
+    assert!(session::load_existing(&files.0.join("A/project.toml")).is_ok());
+}
+
 /// Scenario "First entry and repeated commands have separate counts" (controller-reach).
 #[test]
 fn first_entry_and_repeated_commands_have_separate_counts() {
@@ -711,6 +758,96 @@ fn take_cell_keeps_settings_screen_and_swap_target() {
     cell(&mut controller, 66);
     assert_eq!(controller.app.pad_in_hand, keyboard.app.pad_in_hand);
     assert_eq!(controller.app.screen, keyboard.app.screen);
+}
+
+#[test]
+fn tempo_cells_match_all_four_keyboard_steps() {
+    for (note, code, modifiers) in [
+        (64, KeyCode::Down, M::CONTROL),
+        (65, KeyCode::Up, M::CONTROL),
+        (66, KeyCode::Down, M::CONTROL | M::SHIFT),
+        (67, KeyCode::Up, M::CONTROL | M::SHIFT),
+    ] {
+        let mut keyboard = smc_drive();
+        let mut controller = smc_drive();
+        keyboard.tap(code, modifiers);
+        cell(&mut controller, 64);
+        cell(&mut controller, 63);
+        cell(&mut controller, 58);
+        cell(&mut controller, 58);
+        assert_eq!(controller.app.panel.page(), 3);
+        cell(&mut controller, note);
+        assert_eq!(controller.app.transport.bpm, keyboard.app.transport.bpm);
+    }
+}
+
+#[test]
+fn grid_cell_keeps_the_screen_and_matches_ctrl_o() {
+    for screen in [Screen::Pads, Screen::Files, Screen::Chop, Screen::Settings] {
+        let mut keyboard = smc_drive();
+        let mut controller = smc_drive();
+        for drive in [&mut keyboard, &mut controller] {
+            drive.app.screen = screen;
+            drive.app.publish_midi(&drive.shared);
+        }
+        keyboard.tap(KeyCode::Char('o'), M::CONTROL);
+        cell(&mut controller, 64);
+        cell(&mut controller, 63);
+        turn(&mut controller, 35, 65);
+        assert_eq!(controller.app.panel.page(), 2);
+        cell(&mut controller, 61);
+        assert_eq!(controller.app.ui.hide_pads, keyboard.app.ui.hide_pads);
+        assert_eq!(controller.app.screen, screen);
+    }
+}
+
+#[test]
+fn pattern_record_and_erase_cells_match_keyboard_modes() {
+    for (note, code, modifiers) in [
+        (60, KeyCode::Char('e'), M::ALT),
+        (61, KeyCode::Char('r'), M::CONTROL),
+    ] {
+        let mut keyboard = smc_drive();
+        let mut controller = smc_drive();
+        if note == 60 {
+            let pattern = session::PatternState {
+                slot: "A1".into(),
+                bars: 1,
+                quantize: "1/16".into(),
+                strength: 100,
+                hits: vec![[0, 0, 100, 240]],
+            };
+            keyboard.app.pads.pattern = Some(pattern.clone());
+            controller.app.pads.pattern = Some(pattern);
+        }
+        let keyboard_frame = keyboard.tap(code, modifiers);
+        cell(&mut controller, 64);
+        cell(&mut controller, 63);
+        cell(&mut controller, 58);
+        cell(&mut controller, 58);
+        assert_eq!(controller.app.panel.page(), 3);
+        let controller_frame = cell(&mut controller, note);
+        assert_eq!(controller.app.erase_pads, keyboard.app.erase_pads);
+        assert_eq!(
+            controller
+                .app
+                .pattern_record_state()
+                .map(|state| state.phase),
+            keyboard.app.pattern_record_state().map(|state| state.phase)
+        );
+        if note == 60 {
+            assert!(controller.app.erase_pads);
+        } else {
+            for frame in [keyboard_frame, controller_frame] {
+                assert!(
+                    frame
+                        .commands()
+                        .iter()
+                        .any(|command| matches!(command, Command::PatternRecordStart { .. }))
+                );
+            }
+        }
+    }
 }
 
 /// Scenario "Every reachable mode shows its badge" (controller-reach).
