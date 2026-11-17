@@ -49,7 +49,7 @@ The route inventory adds the following cells to every view. Page 2 holds common 
 
 | Page | Cells: label (`action`) |
 | --- | --- |
-| 2 | `outrec` (`record.output`), `trnspt` (`transport.toggle`), `click` (`metronome.click`), `proj` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `A1undo` (`pattern.undo`), `A1 ctl` (`pattern.controls`), `exit` (`app.quit`) |
+| 2 | `outrec` (`record.output`), `trnspt` (`transport.toggle`), dim cell 3, `proj` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `A1undo` (`pattern.undo`), `A1 ctl` (`pattern.controls`), `exit` (`app.quit`) |
 | 3 | `bpm -` (`transport.tempo_down`), `bpm +` (`transport.tempo_up`), `bpm-.1` (`transport.tempo_down_fine`), `bpm+.1` (`transport.tempo_up_fine`), `erase` (`pattern.erase`), `A1 rec` (`pattern.record`) |
 
 Pads adds page 4: `view -` (`pattern.view_prev`), `view +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`) and `step` (`pattern.step_edit`) in cells 1 through 4. Chop and Chop edit add page 4: `hits -` (`chop.hits_back`), `delcut` (`marker.delete`), `delend` (`slice.end_delete`) and `order` (`chop.assign_order`) in cells 1 through 4. A cell that has no effect in its current screen or mode stays visible but does not claim an effective route in the inventory.
