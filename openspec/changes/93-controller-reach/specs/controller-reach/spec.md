@@ -28,11 +28,11 @@ While A1 controls are open, the shipped SMC-PAD `[screens.pattern]` roles SHALL 
 
 ### Requirement: A1 encoder bindings survive profile seeding
 
-The pattern roles SHALL have a separate learned group. The owner's pattern bindings SHALL take priority over the shipped roles. A new SMC-PAD profile SHALL seed the group. For an already seeded profile, the program SHALL add missing pattern roles without removing or replacing existing owner bindings.
+The pattern roles SHALL have a separate learned group. The owner's pattern bindings SHALL take priority over the shipped roles. A new SMC-PAD profile SHALL seed the group. For an already seeded profile, the program SHALL add the shipped group only if the group is absent. It SHALL leave an existing group unchanged, including an empty group after owner removals.
 
 #### Scenario: A1 encoder bindings survive profile seeding and owner changes
 - **WHEN** a new or already seeded SMC-PAD profile loads, and the owner replaces or removes a pattern-group binding
-- **THEN** only missing shipped pattern roles enter the saved group
+- **THEN** the program adds the shipped pattern group only if no saved pattern group exists
 - **AND** the owner's binding or removal wins while A1 controls are open
 - **AND** the underlying screen bindings, other devices and saved owner bindings stay unchanged
 
