@@ -2139,6 +2139,31 @@ fn shipped_pad_knobs_match_keyboard_values_in_both_pad_modes() {
     }
 }
 
+/// Scenario "Every current controller action has a keyboard route" (controller-reach).
+#[test]
+fn shipped_files_knob_matches_keyboard_selection() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(panel::View::Files, sound.clone());
+    let mut controller = reach_drive(panel::View::Files, sound);
+    for drive in [&mut keyboard, &mut controller] {
+        drive.app.browser.entries = (0..3)
+            .map(|index| browser::Entry {
+                name: format!("file-{index}.wav"),
+                is_dir: false,
+                favorite: None,
+            })
+            .collect();
+        drive.app.browser.selected = 1;
+    }
+    keyboard.tap(KeyCode::Down, M::NONE);
+    turn(&mut controller, 30, 65);
+    assert_eq!(controller.app.browser.selected, 2);
+    assert_eq!(
+        controller.app.browser.selected,
+        keyboard.app.browser.selected
+    );
+}
+
 #[test]
 fn bank_knob_does_not_act_behind_a_question_or_picker() {
     let files = TransitionFiles::new();
