@@ -43,9 +43,10 @@ Consequences:
 
 ## 2. The layout
 
-This section records the proposed layout after the review of PR #27.
-See [the route table](../CONTROLLER-PATHS.md) for the profile in change 93.
-The owner accepted change 93. Its archive is complete. Change 124 specifies the first part of this layout.
+This section records the layout after the review of PR #27.
+Change 124 adds the new button and knob roles and the knob strip.
+See [the route table](../CONTROLLER-PATHS.md) for the current panel paths.
+The later panel change covers the new main menu, target flows and device warnings.
 
 ### 2.1 Buttons and selection
 
@@ -79,6 +80,9 @@ questions. PLAY and STOP keep their playback roles during a question. STOP acts 
 press and has no panel role.
 
 ### 2.2 The command panel
+
+Change 124 replaces the panel steps for values, parameters and edit pages with
+direct controls. The later panel change uses the main menu and target routes below.
 
 Enable `SMC-PAD PAD BANK` by default on the supported USB unit after its status-read
 check passes. F12 MIDI offers `Open panel` and `Off`. A detected press opens the hidden
@@ -214,9 +218,11 @@ The panel's P7 and P8 use the screen grid order.
 - Explain the device Note Repeat clock in the setup guide and the F1 SMC-PAD page.
   Use ptsr Note Repeat from change 100 for the supported repeat path.
 
-Start [124](../../openspec/changes/124-smc-knob-pages/) for the buttons, both knob banks
-and their labels. Follow with `smc-panel-polish` for the panel,
-target flows and device warnings. Give each OpenSpec change its own number and PR.
+[Change 124](../../openspec/changes/124-smc-knob-pages/) covers the buttons, both
+knob banks and their labels. To update a saved old map, open F12 MIDI and select
+`SMC-PAD layout review`. Compare the current and proposed roles. Accept one change
+or all listed changes. Use Esc or P7 to cancel.
+The next change, `smc-panel-polish`, covers the panel, target flows and device warnings.
 
 | Before | Owner decision | Proposed default |
 |---|---|---|

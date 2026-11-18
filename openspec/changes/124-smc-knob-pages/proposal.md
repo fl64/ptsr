@@ -47,7 +47,7 @@ Compare these screen catalogue entries at both supported sizes:
 - `pads-edit-env` and `pads-panel-main`.
 - `chop-edit-bounds` and `chop-panel-context`.
 - `pads-pattern-controls` and `fx-fx-2`.
-- `files-normal` and `settings-panel-question`.
+- `files-normal`, `settings-panel-main` and `chop-panel-question`.
 
 ### Keyboard
 
@@ -70,7 +70,9 @@ Compare these screen catalogue entries at both supported sizes:
 9. Open Pattern, Files, FX and Settings. Compare LEFT and RIGHT with the help line.
 10. Open a question while a Gate pad sounds. Use P7 to cancel. Release the pad.
 11. Verify both banks at 80 by 26 and 120 by 40. Turn one knob in each bank.
-12. Restart with a saved personal binding. Verify it before and after the layout update.
+12. With a saved old map, open F12 MIDI. Select `SMC-PAD layout review`.
+13. Compare the old and proposed roles. Cancel one question with P7.
+14. Select a change and accept it with P8. Restart. Verify the new role and a personal binding.
 
 ### Sound
 
