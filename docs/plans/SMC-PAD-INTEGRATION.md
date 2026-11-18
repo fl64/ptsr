@@ -135,11 +135,12 @@ bottom row first and find knob 8 in the top-right corner.
 #### Bank 1 (CC 30–37)
 
 Knob 1 moves position. Knobs 2–7 change up to six values on the current page.
-Knob 8 always controls master volume. Use a slow turn for a fine step. Use
-acceleration for faster changes. Check that a slow zoom turn gives a small change.
+Knob 8 always controls master volume. Change 126 removes acceleration: each detent
+is one step. Check that a slow zoom turn gives a small change.
 
-On Pads, knobs 2–7 use the current inspector page. Use the same roles while editing
-that page. Give Pattern, FX and Chop their own value pages. Dim absent values.
+Change 126: on Pads, knobs 2–7 have no role outside pad edit. In pad edit, knob 1
+selects the page. Knobs 7, 5 and 3 change the page values in screen order, from top
+to bottom. Give Pattern, FX and Chop their own value pages.
 Remove the global roles for project scroll, tempo and bank selection from knobs 1,
 7 and 8. Use knob 1 for project scroll only in the picker.
 
@@ -148,7 +149,7 @@ Pattern More uses P6 `tap` for Tap Tempo. The keyboard uses Alt+B.
 Files, Chop and Settings have no tempo knob.
 While ptsr Note Repeat is on, bank 1 knobs 1–4 use RATE, SWING, TEMPO and LATCH.
 These roles follow the printed labels. Keep this override tied to change 100.
-Bank 2 stays available for the selected pad and master.
+Change 126 leaves bank 2 with only master.
 
 #### Pairs and page examples
 
@@ -162,15 +163,18 @@ Also test the allowed cell labels and six-cell width.
 | Page | Knobs 1–2 | Knobs 3–4 | Knobs 5–6 | Knobs 7–8 |
 |---|---|---|---|---|
 | Chop | Cursor · zoom | Slice start · slice end | Region start · region end | Threshold · master |
-| Pad ENV | Position · single value | Attack · decay | Hold · release | Single value · master |
-| Pad FILTER | Position · type | Cutoff · resonance | Envelope amount · envelope decay | Key tracking · master |
-| Pad TONE | Position · mode | Volume · pan | Pitch · fine tune | Single value · master |
-| Pad SOURCE | Position · mode | Region start · region end | Loop start · loop end | Single value · master |
+| Pad edit TONE | Page · — | Mute group · — | Pitch · — | Volume · master |
+| Pad edit ENV | Page · — | Release · — | Decay · — | Attack · master |
+| Pad edit FILTER | Page · — | Resonance · — | Cutoff · — | Filter · master |
+| Pad edit SOURCE | Page · — | End · — | Start · — | Source · master |
+
+Change 126 replaced the pad page pairs. A page lists its values in one column, so
+the left knob column follows that column from top to bottom.
 
 #### Bank 2 (CC 38–45)
 
-Use these roles for the selected pad on every screen. The right knob in the
-top row also controls master in bank 1.
+Change 126 removed these pad roles. Only knob 8 (master) stays. The table
+records the layout of change 124.
 
 | Physical row | Left knob | Right knob |
 |---|---|---|

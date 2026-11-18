@@ -22,5 +22,5 @@
 ## 5. Checks
 
 - [ ] Run format, Clippy, changed tests and the fast pre-push checks.
-- [ ] Update `docs/SMC-PAD.md` and `docs/CONTROLLER-PATHS.md` for the new roles.
+- [x] Update `docs/SMC-PAD.md` and `docs/CONTROLLER-PATHS.md` for the new roles.
 - [ ] Record the physical checks after owner review.
