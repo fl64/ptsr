@@ -436,11 +436,11 @@ them. The keys in use are in `config/keymap.toml`; the table below is historical
 - **Ctrl+K: command palette.** Fuzzy search in Russian and English. It shows the hotkey of each command.
 - You can remap all hotkeys in `keymap.toml`.
 
-**Controller first:** after the start, every action that does not need typed text is possible from the SMC-PAD alone. A frequent action takes one press. A command in the visible panel takes one cell hit. With the shortcut off, first panel entry takes PAD BANK and two layer 2 hits. On verified USB, PAD BANK opens the panel by default. A detected press skips the reveal hit. The route table counts both paths and the extra presses for later context pages. The keyboard and controller do the same logical action. Typed text (names, the file filter) stays on the keyboard.
+**Controller first:** after the start, every action that does not need typed text is possible from the SMC-PAD alone. A frequent action takes one press. A command in the visible panel takes one cell hit. With the shortcut off, first panel entry takes PAD BANK and two layer 2 hits. On verified USB, PAD BANK opens the panel by default. A detected press skips the reveal hit. The route table counts both paths and the extra press to the screens view. The keyboard and controller do the same logical action. Typed text (names, the file filter) stays on the keyboard.
 
 **Controller:** PLAY starts or continues the transport on Pads and Pattern. On Chop it starts the selection preview. On Files it starts the selected preview. PLAY hold toggles the metronome. The first STOP tap pauses the transport at its position or stops a preview. A second STOP tap while transport is paused returns to the start. Space keeps its existing stop-and-reset path. STOP controls playback. RECORD tap records the pattern where available. RECORD hold records the microphone. LEFT and RIGHT select the previous or next item and repeat while held.
 
-PAD BANK selects pad layer 2 as a latched command panel. Its main page opens screens and names four current-screen actions. More shows a context page for the remaining commands. Command pages keep Back, Undo, Redo and Panic on the bottom row. Redo and Panic remain unavailable until 93a. PAD BANK sends no unsolicited MIDI message. On the supported USB SMC-PAD, F12 MIDI can use a read-only status query to open the panel. The first layer 2 hit with a shipped panel binding only shows a panel that is still hidden. Later hits run cells. An explicit owner binding can replace a cell outside a question. P7 cancels and P8 confirms an already visible question on the first hit. PLAY and STOP never answer it. A layer 1 hit hides the panel. The status line shows PANEL when the menu opens. Entering or leaving the panel never stops the music. Knob bank 1 controls the screen. Bank 2 has only master on knob 8. Both banks work while the panel shows.
+PAD BANK selects pad layer 2 as a latched command panel. It shows up to 12 actions of the current screen or mode on one page. LEFT shows the screens view with the screens and the global actions. RIGHT returns to the actions. An action that does not fit goes to its own screen or mode. Every view keeps Back, Undo, Redo and Panic on the bottom row. Redo and Panic remain unavailable until 93a. PAD BANK sends no unsolicited MIDI message. On the supported USB SMC-PAD, F12 MIDI can use a read-only status query to open the panel. The first layer 2 hit with a shipped panel binding only shows a panel that is still hidden. Later hits run cells. An explicit owner binding can replace a cell outside a question. P11 cancels and P12 confirms an already visible question on the first hit. PLAY and STOP never answer it. A layer 1 hit hides the panel. The status line shows PANEL when the menu opens. Entering or leaving the panel never stops the music. Knob bank 1 controls the screen. Bank 2 has only master on knob 8. Both banks work while the panel shows.
 
 **SMC-PAD layout (change 124).** LEFT and RIGHT move the main list of each screen or mode.
 Knob 1 moves position. Bank 1 knobs 2–7 change values on the current page.
@@ -448,9 +448,10 @@ Change 126: pad values change only in pad edit. There, LEFT and RIGHT select the
 Knobs 7, 5, 3 and 1 follow up to four page values from top to bottom. Bank 2 keeps only master.
 Knob 8 changes master volume in both banks. Each knob detent is one step.
 The knob strip shows both banks in physical order and marks the last knob input.
-Tempo has a knob on the Pattern transport page. Pattern More has Tap Tempo.
-Change 125 puts Help on More, cell P10. The target panel uses P1–P12 for
-placements. P13 cancels, P14 applies Assign, and P15 switches to the commands.
+Tempo has a knob on the Pattern transport page. The A1 actions have Tap Tempo.
+Change 127 puts Help in the screens view. The P numbers are the numbers printed
+on the device. The target panel uses its 12 upper cells for placements.
+P1 cancels, P4 applies Assign, and P3 switches to the commands.
 See [the layout plan](plans/SMC-PAD-INTEGRATION.md#2-the-layout) for the roles.
 
 SHIFT has no assigned ptsr shortcut without a measured host message. Its printed pad shortcuts can change the SMC-PAD preset or octave. Use PAD BANK to open the panel. Destructive cells ask a question through every panel path.

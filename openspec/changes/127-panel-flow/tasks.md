@@ -18,6 +18,6 @@
 
 ## 4. Documents and checks
 
-- [ ] Update `docs/CONTROLLER-PATHS.md`, `docs/SMC-PAD.md` and the plans.
+- [x] Update `docs/CONTROLLER-PATHS.md`, `docs/SMC-PAD.md` and the plans.
 - [x] Run format, Clippy, changed tests and the fast pre-push checks.
 - [ ] Give the owner the build and the check.

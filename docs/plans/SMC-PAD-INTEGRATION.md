@@ -90,20 +90,23 @@ closes the panel before the next pad hit. The device retains its selected layer
 after release. If the panel stays hidden, its first command-layer hit only shows it.
 A playing-layer hit closes the panel. The status line shows PANEL while it is open.
 
-Read the main rows from top to bottom and the cells from left to right.
+Change 127 replaces the main page and the context pages with two views.
+A reveal shows up to 12 actions of the current screen or mode. LEFT shows the
+screens view. RIGHT shows the actions again. Read the screens view rows from top
+to bottom and the cells from left to right.
 
 1. Pads · Files · Chop · A1.
-2. FX · Mixer · Setup · More.
-3. Up to four actions for the current screen.
+2. FX · Mixer · Setup · Help.
+3. Save · Open · Learn · Exit.
 4. Back · Undo · Redo · Panic.
 
 A1 opens Pattern. Setup opens Settings. Mixer stays dim until `mixer-view`.
-Open Controller Help from More with P10. F1 still opens Help. More opens a context page. The Next and
-Main cells move between panel pages. LEFT and RIGHT keep their screen roles.
+Help opens Controller Help. F1 still opens Help. While the panel shows, LEFT and
+RIGHT move the views. With the panel hidden, they keep their screen roles.
 Panic uses only the double press from 93a. Its cell stays in the bottom-right corner.
 
 Keep related actions side by side in a physical row. Put the earlier, lower or
-negative action on the left. For questions, P7 is No and P8 is Yes.
+negative action on the left. For questions, P11 is No and P12 is Yes.
 Keep Undo to the left of Redo. Apply the same order to minus and plus, and to Previous
 and Next when both are on a panel page. Back closes the current mode first.
 Use the normal question route for an action that removes or replaces a target.
@@ -145,7 +148,7 @@ Remove the global roles for project scroll, tempo and bank selection from knobs 
 7 and 8. Use knob 1 for project scroll only in the picker.
 
 Put tempo on the Pattern transport page with swing, quantize and length.
-Pattern More uses P6 `tap` for Tap Tempo. The keyboard uses Alt+B.
+The A1 actions use P6 `tap` for Tap Tempo. The keyboard uses Alt+B.
 Files, Chop and Settings have no tempo knob.
 While ptsr Note Repeat is on, bank 1 knobs 1–4 use RATE, SWING, TEMPO and LATCH.
 These roles follow the printed labels. Keep this override tied to change 100.
