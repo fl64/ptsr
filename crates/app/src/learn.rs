@@ -1524,7 +1524,7 @@ impl App {
                 MidiListRow::SmcPadBank => tui::MidiRow::Action {
                     label: "SMC-PAD PAD BANK".into(),
                     who: if self.midi_gestures.smc_pad_bank_opens_panel {
-                        "Open panel"
+                        "Hold panel"
                     } else {
                         "Off"
                     }
@@ -1672,7 +1672,7 @@ impl App {
         self.result_notice(
             result,
             if enabled {
-                "PAD BANK opens the panel"
+                "Hold PAD BANK to show the panel"
             } else {
                 "PAD BANK shortcut off"
             }

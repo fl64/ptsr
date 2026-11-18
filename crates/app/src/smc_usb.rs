@@ -190,17 +190,42 @@ fn active<T: Transport>(transport: &mut T) -> Result<(), String> {
     read_status(transport)?.checked_pads().map(|_| ())
 }
 
+/// The PAD BANK hold (131): status 1 reads pressed for as long as the owner holds it.
 #[derive(Default)]
-struct PadBankPulse {
+struct PadBankHold {
     armed: bool,
+    held: bool,
 }
 
-impl PadBankPulse {
-    fn observe(&mut self, status: u8) -> bool {
-        let pressed = status == 1 && self.armed;
+impl PadBankHold {
+    /// Returns the new hold state on a change. A press counts only after a released status.
+    fn observe(&mut self, status: u8) -> Option<bool> {
+        let pressed = status == 1 && (self.armed || self.held);
         self.armed = status == 0;
-        pressed
+        (pressed != self.held).then(|| {
+            self.held = pressed;
+            pressed
+        })
     }
+
+    /// Forgets the source. Returns true if a hold must end first.
+    fn reset(&mut self) -> bool {
+        std::mem::take(self).held
+    }
+}
+
+fn end_hold(tx: &Sender<Raw>, hold: &mut PadBankHold, source: &mut Option<(String, u64)>) {
+    if hold.reset()
+        && let Some((port, setting)) = source.take()
+    {
+        let _ = tx.send(Raw::SmcPadBank {
+            port,
+            requested_at: Instant::now(),
+            setting,
+            held: false,
+        });
+    }
+    *source = None;
 }
 
 fn expected(index: usize) -> [u8; RECORD] {
@@ -362,8 +387,8 @@ fn available() -> Result<bool, String> {
 pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
     let mut present = false;
     let mut ready = false;
-    let mut previous_source = None;
-    let mut pulse = PadBankPulse::default();
+    let mut previous_source: Option<(String, u64)> = None;
+    let mut hold = PadBankHold::default();
     loop {
         let mut deadline = Instant::now() + CHECK_INTERVAL;
         match available() {
@@ -389,7 +414,7 @@ pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
                 {
                     let source = (port.clone(), setting);
                     if previous_source.as_ref() != Some(&source) {
-                        pulse = PadBankPulse::default();
+                        end_hold(&tx, &mut hold, &mut previous_source);
                         previous_source = Some(source);
                     }
                     transport.wait = PAD_BANK_INTERVAL;
@@ -398,24 +423,26 @@ pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
                         if requested_at >= deadline {
                             break;
                         }
+                        // A failed read or a preset change ends the hold (131).
                         let Ok(status) = read_status(&mut transport) else {
-                            previous_source = None;
+                            end_hold(&tx, &mut hold, &mut previous_source);
                             break;
                         };
                         let value = match status.checked_pads() {
                             Ok(value) => value,
                             Err(error) => {
                                 ready = false;
-                                previous_source = None;
+                                end_hold(&tx, &mut hold, &mut previous_source);
                                 let _ = tx.send(Raw::SmcSetup(Err(error)));
                                 break;
                             }
                         };
-                        if pulse.observe(value) {
+                        if let Some(held) = hold.observe(value) {
                             let _ = tx.send(Raw::SmcPadBank {
                                 port: port.clone(),
                                 requested_at,
                                 setting,
+                                held,
                             });
                         }
                         std::thread::sleep(
@@ -424,18 +451,18 @@ pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
                         );
                     }
                 } else {
-                    previous_source = None;
+                    end_hold(&tx, &mut hold, &mut previous_source);
                 }
             }
             Ok(false) if present => {
                 present = false;
                 ready = false;
-                previous_source = None;
+                end_hold(&tx, &mut hold, &mut previous_source);
                 let _ = tx.send(Raw::SmcLost);
             }
             Err(error) => {
                 ready = false;
-                previous_source = None;
+                end_hold(&tx, &mut hold, &mut previous_source);
                 let _ = tx.send(Raw::SmcSetup(Err(error)));
             }
             Ok(false) => {}
@@ -524,21 +551,34 @@ mod tests {
     }
 
     #[test]
-    fn pad_bank_status_detects_one_press_per_rising_edge_without_writes() {
+    fn pad_bank_status_gives_hold_edges_without_writes() {
         let mut device = Fake::measured();
-        let mut pulse = PadBankPulse::default();
+        let mut hold = PadBankHold::default();
+        // A press before the first released status does not count.
         let samples = [1, 0, 1, 1, 0, 2, 1, 0, 1];
-        let presses: Vec<_> = samples
+        let edges: Vec<_> = samples
             .into_iter()
             .map(|value| {
                 device.state[11] = value;
-                pulse.observe(read_status(&mut device).unwrap().checked_pads().unwrap())
+                hold.observe(read_status(&mut device).unwrap().checked_pads().unwrap())
             })
             .collect();
         assert_eq!(
-            presses,
-            [false, false, true, false, false, false, false, false, true]
+            edges,
+            [
+                None,
+                None,
+                Some(true),
+                None,
+                Some(false),
+                None,
+                None,
+                None,
+                Some(true)
+            ]
         );
+        assert!(hold.reset());
+        assert!(!hold.reset());
         assert_eq!(device.writes, 0);
         device.state[10] = 0;
         assert!(read_status(&mut device).unwrap().checked_pads().is_err());

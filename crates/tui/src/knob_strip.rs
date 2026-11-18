@@ -123,7 +123,7 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
     if let Some(operation) = strip.operation {
         help.push(Line::from(operation).fg(TEXT));
     }
-    help.push(Line::from("PAD BANK panel · PLAY play · STOP stop").fg(DIM));
+    help.push(Line::from("PAD BANK hold · PLAY play · STOP stop").fg(DIM));
     let remaining = usize::from(HELP_ROWS + 1).saturating_sub(help.len());
     help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);

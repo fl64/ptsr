@@ -260,7 +260,7 @@ pub fn load_from(user: &Path) -> Loaded {
                 .is_some_and(|setting| !setting.is_bool())
         {
             gestures.remove("smc_pad_bank_opens_panel");
-            error = Some("Invalid SMC-PAD PAD BANK setting. Using Open panel.".into());
+            error = Some("Invalid SMC-PAD PAD BANK setting. Using Hold panel.".into());
         }
         if !valid || !value.is_table() {
             let shown = saved.map_or_else(
