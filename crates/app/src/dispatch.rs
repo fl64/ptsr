@@ -44,6 +44,7 @@ pub(super) fn smc_live_pad_param(
 impl App {
     /// Runs an action; returns `true` to quit.
     pub(super) fn apply(&mut self, action: Action) -> bool {
+        super::diag::input(|| format!("action {action:?}"));
         let Some(action) = self.pattern_controls_own(action) else {
             return false;
         };
@@ -1607,6 +1608,7 @@ impl App {
                 {
                     self.learn_bind(profile, key);
                 }
+                super::diag::input(|| format!("midi {port} {msg} -> {meaning}"));
                 if self.input_log.len() == INPUT_LOG {
                     self.input_log.remove(0);
                 }

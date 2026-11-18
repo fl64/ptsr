@@ -1550,6 +1550,7 @@ dependencies = [
  "hound",
  "input",
  "jack",
+ "libc",
  "log",
  "midir",
  "ratatui",

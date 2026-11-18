@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{
-    AtomicU32, AtomicU64, AtomicUsize,
+    AtomicU8, AtomicU32, AtomicU64, AtomicUsize,
     Ordering::{Relaxed, SeqCst},
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub use crate::Command;
 use crate::Engine;
@@ -32,6 +32,31 @@ pub struct Stats {
     pad_epoch: AtomicU64,
     pad_positions: [PadPosition; crate::SLOTS],
     pattern_hits: [AtomicU64; crate::PADS],
+    /// Start of the running callback in microseconds after `epoch`, plus one; zero while idle.
+    callback_start: AtomicU64,
+    callback_stage: AtomicU8,
+    epoch: Instant,
+}
+
+/// The part of the callback that runs, for the diagnostic watch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    Commands = 1,
+    Project = 2,
+    Render = 3,
+    Publish = 4,
+}
+
+impl Stage {
+    fn from_u8(value: u8) -> Option<Self> {
+        Some(match value {
+            1 => Self::Commands,
+            2 => Self::Project,
+            3 => Self::Render,
+            4 => Self::Publish,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -97,11 +122,36 @@ impl Default for Stats {
             pad_epoch: AtomicU64::new(0),
             pad_positions: std::array::from_fn(|_| PadPosition::default()),
             pattern_hits: std::array::from_fn(|_| AtomicU64::new(0)),
+            callback_start: AtomicU64::new(0),
+            callback_stage: AtomicU8::new(0),
+            epoch: Instant::now(),
         }
     }
 }
 
 impl Stats {
+    fn callback_enter(&self, at: Instant) {
+        let micros = at.saturating_duration_since(self.epoch).as_micros() as u64;
+        self.callback_stage.store(Stage::Commands as u8, Relaxed);
+        self.callback_start.store(micros + 1, Relaxed);
+    }
+
+    fn callback_stage(&self, stage: Stage) {
+        self.callback_stage.store(stage as u8, Relaxed);
+    }
+
+    fn callback_leave(&self) {
+        self.callback_start.store(0, Relaxed);
+    }
+
+    /// How long the running callback has run at `now`, and its stage; `None` while idle.
+    pub fn callback_running(&self, now: Instant) -> Option<(Duration, Option<Stage>)> {
+        let start = self.callback_start.load(Relaxed).checked_sub(1)?;
+        let started = self.epoch + Duration::from_micros(start);
+        let stage = Stage::from_u8(self.callback_stage.load(Relaxed));
+        Some((now.saturating_duration_since(started), stage))
+    }
+
     /// Accepted transport state for this project, or no snapshot during a concurrent write.
     pub fn transport(&self, epoch: u64) -> Option<crate::transport::Snapshot> {
         self.transport.read(epoch)
@@ -345,6 +395,7 @@ impl Realtime {
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         flush_subnormals();
         let started = Instant::now();
+        self.stats.callback_enter(started);
         self.engine.poll_erasure_releases();
         for queue in self.commands.iter_mut() {
             for _ in 0..256 {
@@ -356,6 +407,7 @@ impl Realtime {
                 self.engine.handle(0, cmd);
             }
         }
+        self.stats.callback_stage(Stage::Project);
         if let Some(project) = &self.project {
             use std::sync::atomic::Ordering::{Acquire, Release};
             let epoch = project.epoch.load(Acquire);
@@ -466,7 +518,9 @@ impl Realtime {
                 project.ready.store(epoch, Release);
             }
         }
+        self.stats.callback_stage(Stage::Render);
         self.engine.process(left, right);
+        self.stats.callback_stage(Stage::Publish);
         self.stats
             .record_pad_positions(&self.engine.voices, &self.engine.pattern_hits, self.epoch);
         self.stats
@@ -477,6 +531,7 @@ impl Realtime {
         let budget = left.len() as f32 / self.sample_rate as f32;
         let permille = (started.elapsed().as_secs_f32() / budget * 1000.0) as u32;
         self.stats.load_peak_permille.fetch_max(permille, Relaxed);
+        self.stats.callback_leave();
     }
 }
 
@@ -965,5 +1020,23 @@ mod tests {
             product, 0.0,
             "subnormal flushing is on in the callback thread"
         );
+    }
+
+    #[test]
+    fn callback_watch_sees_only_a_running_callback() {
+        let stats = Stats::default();
+        let at = Instant::now();
+        assert_eq!(stats.callback_running(at), None);
+        stats.callback_enter(at);
+        stats.callback_stage(Stage::Render);
+        let later = at + Duration::from_millis(120);
+        let (duration, stage) = stats.callback_running(later).unwrap();
+        assert!(duration >= Duration::from_millis(119), "{duration:?}");
+        assert_eq!(stage, Some(Stage::Render));
+
+        let stats = Arc::new(Stats::default());
+        let mut rt = Realtime::new(crate::Engine::new(48_000), vec![], stats.clone(), 48_000);
+        rt.process(&mut [0.0; 64], &mut [0.0; 64]);
+        assert_eq!(stats.callback_running(Instant::now()), None);
     }
 }
