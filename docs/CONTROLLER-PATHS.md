@@ -32,7 +32,7 @@ press if the device is on the playing layer. No reveal hit is necessary.
 | Two hands | Playing pads trigger sound. LEFT and RIGHT select banks (`1/1`). Knob 8 controls master in both banks (`0/0`). | Pad hits are separate. |
 | SMC-PAD command panel | Enter with PAD BANK. Use a main cell (`1/3`) or More and a context cell (`2/4`). Next advances the context page. | The USB shortcut can omit the reveal hit. |
 | Chop the sound of a pad | Select a pad. Open Chop (`1/3`). Knob 1 moves the cursor (`0/0`). Main Cut, Parts, Hits, or Assign (`1/3`). Context page 1 Commit (`2/4`). PLAY previews (`1/1`). | Count target pads and answers separately. |
-| Edit a pad | Select a pad. Main Edit (`1/3`). LEFT or RIGHT changes the edit page (`1/1`). Turn knob 1 to select the page. Turn knobs 7, 5 and 3 for the page values, from top to bottom (`0/0`). | Back closes the edit. |
+| Edit a pad | Select a pad. Main Edit (`1/3`). LEFT or RIGHT changes the edit page (`1/1`). Turn knobs 7, 5, 3 and 1 for the page values, from top to bottom (`0/0`). | Back closes the edit. |
 | Read modes and operation results | Main Copy or Back (`1/3`). More, then P10 Help (`2/4`). In Help, P7/P8 select tabs and P9/P10 move (`1/1`). | Badges, results, and current knob roles are observations. |
 | Read pad playback | Hit a playing pad. Read PLAY (`0/0`). | Pad hits and releases are separate. |
 | Your own keys | Edit `~/.config/ptsr/keymap.toml`. | Keyboard-only document edit. |
@@ -42,12 +42,12 @@ press if the device is on the playing layer. No reveal hit is necessary.
 | Copy a pad without a growing name | Main Copy (`1/3`). Select a target on the panel. Clear uses context page 1 (`2/4`). Save uses context page 2 (`3/5`). Fixed Undo (`1/3`). | Read the generated name. |
 | A project for a track | Context page 1 Project on Pads or Files (`2/4`). Turn knob 1 (`0/0`). P8 opens the project (`1/2`). | A new name needs keyboard text. |
 | Load a sound onto a pad | Main Files (`1/3`). Knob 1 moves through entries (`0/0`). LEFT or RIGHT changes folders (`1/1`). Main Take or Load (`1/3`). | The file filter needs keyboard text. Count the target separately. |
-| Set up a pad | Main Edit (`1/3`). Knob 1 or LEFT and RIGHT change the page (`0/0` or `1/1`). Turn knobs 7, 5 and 3 (`0/0`). Context page 1 Mode, Clear, or Gate (`2/4`). | P7/P8 answer a question. |
-| Mute groups: the closed hat stops the open hat | Main Edit (`1/3`). Select TONE with knob 1 (`0/0`). Turn knob 3 for the mute group (`0/0`). | Listen to the pad hits. |
-| The pad panel in a small window | LEFT or RIGHT selects the edit page (`1/1`). Knobs 7, 5 and 3 change values (`0/0`). | Read both knob banks at the bottom. |
+| Set up a pad | Main Edit (`1/3`). LEFT and RIGHT change the page (`1/1`). Turn knobs 7, 5, 3 and 1 (`0/0`). Context page 1 Mode, Clear, or Gate (`2/4`). | P7/P8 answer a question. |
+| Mute groups: the closed hat stops the open hat | Main Edit (`1/3`). Select TONE with LEFT or RIGHT (`1/1` per page). Turn knob 3 for the mute group (`0/0`). | Listen to the pad hits. |
+| The pad panel in a small window | LEFT or RIGHT selects the edit page (`1/1`). Knobs 7, 5, 3 and 1 change values (`0/0`). | Read both knob banks at the bottom. |
 | Effects: drive, reverb, delay | Main FX (`1/3`). LEFT or RIGHT selects a slot (`1/1`). Knobs 2–4 edit the slot (`0/0`). In pad edit FX, knobs 5 and 3 set the pad sends (`0/0`). | Listen to each send. |
 | Undo a change to the pads | Fixed Undo (`1/3`). | A no-op Undo shows its message. |
-| What is set on a pad | Main Pads (`1/3`). Hit a pad or turn knob 1 (`0/0`). Context page 1 Mode (`2/4`). | Read pad state and values. |
+| What is set on a pad | Main Pads (`1/3`). Hit a pad (`0/0`). Context page 1 Mode (`2/4`). | Read pad state and values. |
 | Waves on the pads | Main Edit (`1/3`). On SOURCE, turn knobs 5 and 3 for pad region start and end (`0/0`). | Wave drawing is an observation. |
 | One look for the screens | Main Pads, Files, or Chop (`1/3` each). | Read the current page and list in the knob strip. |
 | Hide the pads | Pads context page 1 Grid (`2/4`). Other views use context page 2 Grid (`3/5`). | The hint shows the grid state. |

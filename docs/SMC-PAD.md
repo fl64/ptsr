@@ -26,13 +26,13 @@ Use a disposable project with a break on P1 and a different sound on P2.
 Number pads from the top-left cell to the bottom-right cell of the screen.
 
 1. On Pads, use LEFT and RIGHT to change banks. Turn bank 1 knob 1.
-   Check that the selected pad changes without a hit.
+   Check that the selected pad stays the same.
 2. Open Chop. Turn knob 2 slowly in both directions. Turn knobs 3–4 for the
    selected slice. Turn knobs 5–6 for the whole Chop region.
 3. From the main panel, press More, then P10 Help. Check that F1 shows the
    controller. Select knobs 3–6 on the diagram to read their full actions.
 4. Return to Pads. Turn bank 1 knobs 2–7 and bank 2 knobs 1–7. Check that no pad
-   value changes. Open pad edit. Turn knob 1 to change the page. On TONE, turn
+   value changes. Open pad edit. Press RIGHT to change the page. On TONE, turn
    knobs 7, 5 and 3. Check volume, pitch and mute group, from top to bottom.
    Check that the knob strip marks the knob and shows the value.
 5. Start playback. Turn knob 8 in each bank. Listen for smooth

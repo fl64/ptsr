@@ -444,8 +444,8 @@ PAD BANK selects pad layer 2 as a latched command panel. Its main page opens scr
 
 **SMC-PAD layout (change 124).** LEFT and RIGHT move the main list of each screen or mode.
 Knob 1 moves position. Bank 1 knobs 2–7 change values on the current page.
-Change 126: pad values change only in pad edit. There, knob 1 selects the page and
-knobs 7, 5 and 3 follow the page values from top to bottom. Bank 2 keeps only master.
+Change 126: pad values change only in pad edit. There, LEFT and RIGHT select the page.
+Knobs 7, 5, 3 and 1 follow up to four page values from top to bottom. Bank 2 keeps only master.
 Knob 8 changes master volume in both banks. Each knob detent is one step.
 The knob strip shows both banks in physical order and marks the last knob input.
 Tempo has a knob on the Pattern transport page. Pattern More has Tap Tempo.
