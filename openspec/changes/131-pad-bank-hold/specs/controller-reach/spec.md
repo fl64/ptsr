@@ -4,12 +4,18 @@
 
 With the hold shortcut on a verified USB SMC-PAD, the panel SHALL show while the status reads pressed and hide on the first released status.
 Each hold SHALL show the actions of the current screen or mode.
+During a hold, LEFT and RIGHT SHALL move the panel views, even with saved owner roles.
 A hold SHALL leave playback and modal controls in place. It SHALL have no MIDI learn action.
 
 #### Scenario: The panel shows only while PAD BANK is held
 - **WHEN** the owner holds PAD BANK, hits one cell and releases PAD BANK during playback
 - **THEN** the panel shows during the hold and the cell acts once
 - **AND** the panel hides on release and playback continues
+
+#### Scenario: A hold takes LEFT and RIGHT over saved roles
+- **WHEN** a saved owner map gives LEFT and RIGHT a Chop role and the owner holds PAD BANK on Chop
+- **THEN** LEFT and RIGHT move the panel views and the Chop selection stays
+- **AND** without a hold they keep the saved role
 
 #### Scenario: PAD BANK respects input overlays
 - **WHEN** the owner holds PAD BANK during a picker, Help, text entry or learning

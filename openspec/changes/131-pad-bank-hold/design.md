@@ -40,7 +40,7 @@ goes to the target of its press. Without the shortcut, the current layer rule st
 | A question is visible without a hold | The No and Yes pads answer. The other pads stay silent. |
 | The status read fails or the preset changes during a hold | The program treats it as a release and hides the panel. |
 | Help, a picker, text entry or learning opens during a hold | The panel hides. If the hold continues after the overlay closes, the panel shows again. |
-| LEFT or RIGHT during a hold | They move the panel views. Without a hold, they keep their screen roles. |
+| LEFT or RIGHT during a hold | They move the panel views, even with saved owner roles. Without a hold, they keep their screen roles. |
 | Disconnect during a hold | The panel clears. Reconnect waits for a released status. |
 | Two Master connections | A hold acts only on its own connection. |
 
