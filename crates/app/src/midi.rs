@@ -1612,7 +1612,6 @@ mod tests {
     }
 
     /// 126 input-devices: "Fast turn uses single steps".
-    /// Scenario "Fast turn and fine button" (input-devices). Change 126 replaces it until the archive.
     #[test]
     fn fast_turn_uses_single_steps() {
         let turns = relative_turns();

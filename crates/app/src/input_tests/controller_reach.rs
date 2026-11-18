@@ -460,7 +460,6 @@ fn keyboard_and_encoder_set_the_same_chop_threshold() {
 }
 
 /// Scenario "Fast encoder turns use single threshold steps" (controller-reach).
-/// Scenario "Fast encoder turns keep acceleration" (controller-reach). Change 126 replaces it until the archive.
 #[test]
 fn fast_encoder_turns_use_single_threshold_steps() {
     let sound = Arc::new(Sample::mono(vec![0.2; 32_000]));
@@ -2353,7 +2352,6 @@ fn pad_value(drive: &mut Drive, param: pads::Param) -> String {
 }
 
 /// Scenario "Pad knobs act only in pad edit" (controller-reach).
-/// Scenario "Pad inspector and editor share knob positions" (controller-reach). Change 126 replaces it until the archive.
 #[test]
 fn pad_knobs_act_only_in_pad_edit() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -2637,8 +2635,6 @@ fn a_chop_bound_turn_keeps_the_current_panel_page() {
 }
 
 /// Scenario "Bank 2 turns change no pad value" (controller-reach).
-/// Scenario "Bank 2 supplies the same live pad controls on every screen" (controller-reach).
-/// Change 126 replaces it until the archive.
 #[test]
 fn bank_2_turns_change_no_pad_value() {
     let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
