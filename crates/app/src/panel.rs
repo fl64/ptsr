@@ -496,8 +496,14 @@ mod tests {
             "load", "loop", "main", "mark", "marks", "mixer", "mode", "more", "next", "open",
             "order", "output", "pads", "panic", "parent", "parts", "play", "record", "redo",
             "row +", "row -", "rows", "save", "setup", "snap", "star", "start", "step", "tab",
-            "take", "undo", "whole",
+            "take", "tap", "undo", "whole", "pad", "used", "cancel", "apply", "menu", "target",
         ];
+        let check = |label: &str| {
+            assert!(
+                Line::raw(label).width() <= 6 && allowed.contains(&label),
+                "{label}"
+            );
+        };
         let mut panel = State::default();
         assert!(
             panel.config.warnings.is_empty(),
@@ -509,12 +515,15 @@ mod tests {
                 panel.page = page;
                 for cell in 1..=16 {
                     if let Some(label) = panel.label(view, cell) {
-                        assert!(
-                            Line::raw(label).width() <= 6 && allowed.contains(&label),
-                            "{view:?} page {page}, cell {cell}: {label}"
-                        );
+                        check(label);
                     }
                 }
+            }
+        }
+        let app = crate::tests::test_app();
+        for target in [Target::Copy, Target::Swap, Target::File, Target::Assign] {
+            for label in app.target_snapshot(target).labels.into_iter().flatten() {
+                check(&label);
             }
         }
     }

@@ -1949,7 +1949,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 175);
+    assert_eq!(checked + special, 176);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3313,4 +3313,61 @@ fn removed_smc_pad_knob_stays_unassigned_on_a_saved_map() {
     assert!(!saved["SMC-PAD"]["global"].contains_key("cc 37"));
     turn(&mut drive, 37, 65);
     assert_eq!(drive.app.master_db, volume);
+}
+
+/// Scenario "Pattern taps use the beat interval" (transport).
+#[test]
+fn pattern_taps_use_the_beat_interval() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut controller = reach_drive(panel::View::Pattern, sound.clone());
+    cell(&mut controller, panel_note(1));
+    cell(&mut controller, panel_note(8));
+    assert_eq!(
+        controller.app.panel.label(panel::View::Pattern, 6),
+        Some("tap")
+    );
+    let note = panel_note(6);
+    let start = Instant::now();
+    let tap = |drive: &mut Drive, offset: u64| {
+        let at = start + std::time::Duration::from_millis(offset);
+        drive
+            .midi()
+            .recorded_bytes_at(SMC, &[0x99, note, 100], &drive.project, at);
+        drive
+            .midi()
+            .recorded_bytes_at(SMC, &[0x89, note, 0], &drive.project, at);
+        drive.frame()
+    };
+    let initial = controller.app.transport.bpm;
+    tap(&mut controller, 0);
+    assert_eq!(controller.app.transport.bpm, initial);
+    let frame = tap(&mut controller, 400);
+    assert_eq!(controller.app.transport.bpm, 150.0);
+    assert!(
+        frame
+            .commands()
+            .into_iter()
+            .any(|command| matches!(command, Command::SetTempo { bpm } if *bpm == 150.0))
+    );
+    tap(&mut controller, 900);
+    assert_eq!(controller.app.transport.bpm, 133.3);
+    tap(&mut controller, 1_400);
+    assert_eq!(controller.app.transport.bpm, 128.6);
+    tap(&mut controller, 1_900);
+    assert_eq!(controller.app.transport.bpm, 120.0);
+    tap(&mut controller, 4_100);
+    assert_eq!(controller.app.transport.bpm, 120.0);
+    tap(&mut controller, 4_700);
+    assert_eq!(controller.app.transport.bpm, 100.0);
+
+    let mut keyboard = reach_drive(panel::View::Pattern, sound);
+    let initial = keyboard.app.transport.bpm;
+    keyboard.tap(KeyCode::Char('b'), M::ALT);
+    assert!(!keyboard.app.transport.taps.is_empty());
+    assert_eq!(keyboard.app.transport.bpm, initial);
+    keyboard.tap(KeyCode::F(2), M::NONE);
+    assert!(keyboard.app.transport.taps.is_empty());
+    keyboard.tap(KeyCode::Char('b'), M::ALT);
+    assert!(keyboard.app.transport.taps.is_empty());
+    assert_eq!(keyboard.app.transport.bpm, initial);
 }

@@ -94,6 +94,9 @@ impl App {
         }
         self.value_after(value_before, Instant::now());
         self.sync_panel_target();
+        if !self.transport.taps.is_empty() && !self.pattern_tempo_available() {
+            self.transport.taps.clear();
+        }
         quit
     }
 
@@ -290,6 +293,7 @@ impl App {
             Action::TransportToggle | Action::TempoStep { .. } | Action::MetronomeToggle
                 if self.transport_input_blocked() => {}
             Action::TransportToggle => self.send(Command::TransportToggle),
+            Action::TapTempo => self.tap_pattern_tempo(),
             Action::TempoStep { up, fine } => {
                 let step = if fine { 0.1 } else { 1.0 };
                 self.set_tempo(self.transport.bpm + if up { step } else { -step }, true);
@@ -1170,6 +1174,7 @@ impl App {
         self.observe_smc_knob(&ev);
         self.observe_smc_pad(&ev);
         let sequence = ev.sequence();
+        let received_at = ev.source().map(|source| source.at);
         let preview_ready = ev.preview_ready();
         let origin = ev
             .origin()
@@ -1205,7 +1210,9 @@ impl App {
                 self.acknowledge_notice();
             }
             self.midi_preview_blocked = !preview_ready;
+            self.transport.tap_input_at = received_at;
             self.midi_event_with_release(ev, released);
+            self.transport.tap_input_at = None;
             self.midi_preview_blocked = false;
             self.notice_origin = old;
         }

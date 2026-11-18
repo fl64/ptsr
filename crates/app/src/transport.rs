@@ -3,13 +3,17 @@
 use super::{Action, App, Command, Screen};
 use engine::transport::{DEFAULT_BPM, MAX_BPM, MIN_BPM, Snapshot};
 use std::cell::Cell;
+use std::collections::VecDeque;
 use std::sync::atomic::Ordering::Acquire;
+use std::time::{Duration, Instant};
 
 pub(super) const TEMPO_TARGET: u64 = u64::MAX - 1;
 
 pub(super) struct State {
     pub bpm: f64,
     pub metronome: bool,
+    pub(super) taps: VecDeque<Instant>,
+    pub(super) tap_input_at: Option<Instant>,
     accepted: Cell<(u64, Snapshot)>,
     pub(super) feedback: Option<(usize, u64)>,
     pub(super) pattern_hits: [u64; engine::PADS],
@@ -21,6 +25,8 @@ impl Default for State {
         Self {
             bpm: DEFAULT_BPM,
             metronome: false,
+            taps: VecDeque::new(),
+            tap_input_at: None,
             accepted: Cell::new((0, Snapshot::default())),
             feedback: None,
             pattern_hits: [0; engine::PADS],
@@ -124,7 +130,44 @@ impl App {
             })
     }
 
+    pub(super) fn pattern_tempo_available(&self) -> bool {
+        self.screen == Screen::Pads && (self.pattern_view.overview || self.pattern_panel.is_some())
+    }
+
+    pub(super) fn tap_pattern_tempo(&mut self) {
+        if !self.pattern_tempo_available() || self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        let now = self.transport.tap_input_at.unwrap_or_else(Instant::now);
+        let taps = &mut self.transport.taps;
+        if let Some(previous) = taps.back() {
+            let Some(gap) = now.checked_duration_since(*previous) else {
+                return;
+            };
+            if gap < Duration::from_millis(200) {
+                return;
+            }
+            if gap > Duration::from_secs(2) {
+                taps.clear();
+            }
+        }
+        taps.push_back(now);
+        if taps.len() > 4 {
+            taps.pop_front();
+        }
+        if taps.len() > 1 {
+            let beats = (taps.len() - 1) as f64;
+            let seconds = now.duration_since(*taps.front().unwrap()).as_secs_f64();
+            self.apply_tempo(beats * 60.0 / seconds, true);
+        }
+    }
+
     pub(super) fn set_tempo(&mut self, bpm: f64, external: bool) {
+        self.transport.taps.clear();
+        self.apply_tempo(bpm, external);
+    }
+
+    fn apply_tempo(&mut self, bpm: f64, external: bool) {
         let Some(bpm) = engine::transport::tempo(bpm) else {
             return;
         };

@@ -63,6 +63,7 @@ cells = [
   { cell = 3, label = "undo", action = "pattern.undo" },
   { cell = 4, label = "clear", action = "pattern.clear" },
   { cell = 5, label = "rows", action = "pattern.overview_empty_toggle" },
+  { cell = 6, label = "tap", action = "transport.tap" },
   { cell = 10, label = "help", action = "help.toggle" },
 ]
 
@@ -240,7 +241,6 @@ cells = [
 [[view]]
 name = "pattern"
 page = 3
-# Cell 1 is reserved for Tap Tempo.
 cells = [
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "record", action = "pattern.record" },

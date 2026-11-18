@@ -3764,7 +3764,6 @@ fn assign_deaf(a: &Action) -> bool {
             | Action::SliceEndDelete
     )
 }
-/// The heading an action is listed under in the full help, in the order of the headings.
 fn help_section(a: Action) -> usize {
     match a {
         Action::PadPress { .. }
@@ -3839,7 +3838,8 @@ fn help_section(a: Action) -> usize {
         | Action::PlayContext
         | Action::StopContext
         | Action::MetronomeToggle
-        | Action::TempoStep { .. } => 5,
+        | Action::TempoStep { .. }
+        | Action::TapTempo => 5,
         Action::RecordMic(_)
         | Action::RecordOutputToggle
         | Action::PatternRecord
