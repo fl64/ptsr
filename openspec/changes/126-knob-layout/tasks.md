@@ -21,6 +21,9 @@
 
 ## 5. Checks
 
-- [ ] Run format, Clippy, changed tests and the fast pre-push checks.
+- [x] Run format, Clippy, changed tests and the fast pre-push checks.
 - [x] Update `docs/SMC-PAD.md` and `docs/CONTROLLER-PATHS.md` for the new roles.
 - [ ] Record the physical checks after owner review.
+
+The fast run passed 1586 tests. The catalogue has 703 frames. Change 126 changes
+36 knob strip frames for the roles and the same 36 frames for the marked knob.
