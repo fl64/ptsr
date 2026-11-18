@@ -3,6 +3,7 @@
 mod badges;
 mod bank_scenarios;
 mod controller_map;
+mod controller_reach;
 mod copy;
 mod feedback;
 mod gestures;
@@ -4795,8 +4796,7 @@ impl TransitionFiles {
     fn pick(drive: &mut Drive, source: Source, name: &str, create: bool) {
         drive.registry_command(source, KeyCode::Char('p'), M::CONTROL, 88);
         assert!(drive.app.project_picker.is_some());
-        // The current project picker has keyboard selection and confirmation only.
-        // MIDI still enters through the production action and dispatch above.
+        // Typed names still use the keyboard; the controller can select and confirm a project.
         if create {
             for c in name.chars() {
                 drive.tap(KeyCode::Char(c), M::NONE);

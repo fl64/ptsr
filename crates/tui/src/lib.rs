@@ -8000,7 +8000,7 @@ mod tests {
         assert!(text.contains("PICK THE PROJECTS ROOT"), "{text}");
         assert!(text.contains("beats"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter pick · Esc cancel"), "{text}");
+        assert!(text.contains("Enter/P8 pick · Esc/P7 cancel"), "{text}");
         assert!(!text.contains("Projects root"), "{text}");
     }
 
@@ -8016,7 +8016,7 @@ mod tests {
         assert!(text.contains(" PROJECTS "), "{text}");
         assert!(text.contains("MyBeat"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter open"), "{text}");
+        assert!(text.contains("Enter/P8 open"), "{text}");
         assert!(!text.contains("name:"), "{text}");
     }
 
@@ -8031,7 +8031,7 @@ mod tests {
         });
         assert!(text.contains("no projects yet"), "{text}");
         assert!(text.contains("name: NewB"), "{text}");
-        assert!(text.contains("Enter create"), "{text}");
+        assert!(text.contains("Enter/P8 create"), "{text}");
         assert!(!text.contains("Enter open"), "{text}");
     }
 

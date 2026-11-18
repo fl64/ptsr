@@ -152,7 +152,7 @@ fn other_invalid_midi_state_has_no_fallback() {
         let bits = (drive.app.focus().pack().unwrap() & !(15 << 3)) | (bank << 3);
         drive.assert_invalid_input_rejected(bits);
     }
-    for bit in 20..32 {
+    for bit in 21..32 {
         let mut drive = Drive::invalid_state_checks();
         let bits = drive.app.focus().pack().unwrap() | (1 << bit);
         drive.assert_invalid_input_rejected(bits);

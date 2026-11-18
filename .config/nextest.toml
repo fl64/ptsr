@@ -9,6 +9,6 @@ final-status-level = "slow"
 max-threads = 4
 
 [[profile.default.overrides]]
-filter = 'test(screens::tests::) + test(input_tests::patterns::) + test(input_tests::badges::) + test(/render/) + test(/offline/) + test(count_in_before_the_first_recorded_beat) + test(input_tests::deferred_release_follows_its_actual_pad_across_modes)'
+filter = 'test(screens::tests::) + test(input_tests::patterns::) + test(input_tests::badges::) + test(/render/) + test(/offline/) + test(count_in_before_the_first_recorded_beat) + test(input_tests::deferred_release_follows_its_actual_pad_across_modes) + test(input_tests::controller_reach::shipped_panel_cells_match_keyboard_results_in_each_view) + test(input_tests::controller_reach::shipped_global_knobs_match_keyboard_results_in_each_view) + test(input_tests::controller_reach::shipped_transport_buttons_match_keyboard_results_in_each_view) + test(input_tests::controller_reach::shipped_left_and_right_buttons_match_keyboard_results_in_each_view) + test(input_tests::controller_reach::shipped_pad_knobs_match_keyboard_values_in_pad_views)'
 test-group = "slow"
 slow-timeout = { period = "30s", terminate-after = 20 }

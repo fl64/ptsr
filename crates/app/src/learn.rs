@@ -12,6 +12,7 @@ use crate::config::{Learned, MidiBinding};
 pub(super) enum MidiListRow {
     Response,
     HoldTime,
+    SmcPadBank,
     Reset {
         name: String,
         port: String,
@@ -134,7 +135,8 @@ pub fn drop_dead(learned: &mut Learned) -> Vec<String> {
                         || (device == "SMC-PAD"
                             && name == "none"
                             && key.parse::<Key>().is_ok_and(|key| {
-                                matches!(key, Key::Note(52..=67) | Key::Cc(27 | 28))
+                                group == input::Group::Pattern.key()
+                                    || matches!(key, Key::Note(52..=67) | Key::Cc(27 | 28))
                             }))
                     {
                         true
@@ -1127,6 +1129,24 @@ impl App {
     /// the bindings act for it.
     pub(super) fn seed_device(&mut self, port: &str, name: &str, reset: bool) {
         if !reset && self.seeded.iter().any(|s| s == name) {
+            if name == "SMC-PAD"
+                && !self
+                    .learned
+                    .get(name)
+                    .is_some_and(|groups| groups.contains_key(input::Group::Pattern.key()))
+                && let Some(profile) = self.profiles.iter().find(|profile| profile.name == name)
+            {
+                let roles: Vec<_> = profile
+                    .binding_roles()
+                    .into_iter()
+                    .filter(|(scope, _, _)| *scope == input::midi::Scope::Pattern)
+                    .collect();
+                if !roles.is_empty() {
+                    learn::seed_bindings(&mut self.learned, name, &roles);
+                    self.sync_learned(name, input::Group::Pattern);
+                    self.save_midi();
+                }
+            }
             self.migrate_fx_bindings();
             return;
         }
@@ -1252,6 +1272,18 @@ impl App {
         let sets = midi_sets();
         // the knob response first: one setting for every knob (58)
         let mut rows = vec![MidiListRow::Response, MidiListRow::HoldTime];
+        if self
+            .help_overlay
+            .controller
+            .smc_status
+            .as_ref()
+            .is_some_and(|(ready, _)| *ready)
+            && self.midi_devices.iter().any(|(port, name)| {
+                name == "SMC-PAD" && port.contains("SMC-PAD-Master") && !port.contains("(virtual)")
+            })
+        {
+            rows.push(MidiListRow::SmcPadBank);
+        }
         for (port, name) in &self.midi_devices {
             if !rows
                 .iter()
@@ -1454,6 +1486,17 @@ impl App {
                     taken: false,
                     stays: Vec::new(),
                 },
+                MidiListRow::SmcPadBank => tui::MidiRow::Action {
+                    label: "SMC-PAD PAD BANK".into(),
+                    who: if self.midi_gestures.smc_pad_bank_opens_panel {
+                        "Open panel"
+                    } else {
+                        "Off"
+                    }
+                    .into(),
+                    taken: false,
+                    stays: Vec::new(),
+                },
                 MidiListRow::Set { name, infos } => tui::MidiRow::Action {
                     label: name.to_string(),
                     who: format!("{} of {} learned", self.learned_in(infos), infos.len()),
@@ -1569,6 +1612,29 @@ impl App {
         self.result_notice(result, format!("MIDI hold time: {next} ms"));
     }
 
+    pub(super) fn set_smc_pad_bank(&mut self, enabled: bool) {
+        if self.midi_gestures.smc_pad_bank_opens_panel == enabled {
+            return;
+        }
+        self.midi_gestures.smc_pad_bank_opens_panel = enabled;
+        if let Some(midi) = &self.midi {
+            midi.set_pad_bank_shortcut(enabled);
+        }
+        let result = match &self.user_path {
+            Some(path) => config::save_section(path, "midi_gestures", &self.midi_gestures),
+            None => Err("settings are not saved: fix the config file first".into()),
+        };
+        self.result_notice(
+            result,
+            if enabled {
+                "PAD BANK opens the panel"
+            } else {
+                "PAD BANK shortcut off"
+            }
+            .into(),
+        );
+    }
+
     /// Opens the group of the selected row (`true`) or closes it, and selects its row.
     pub(super) fn midi_fold(&mut self, open: bool) {
         let list = self.midi_list();
@@ -1580,6 +1646,7 @@ impl App {
             Some(
                 MidiListRow::Response
                 | MidiListRow::HoldTime
+                | MidiListRow::SmcPadBank
                 | MidiListRow::Reset { .. }
                 | MidiListRow::Disabled { .. },
             )
@@ -2144,7 +2211,24 @@ mod tests {
         }
         let saved = app.learned.clone();
         app.seed_device("SMC-PAD-Master", "SMC-PAD", false);
-        assert_eq!(app.learned, saved);
+        let mut expected = saved;
+        expected.get_mut("SMC-PAD").unwrap().insert(
+            input::Group::Pattern.key().into(),
+            [
+                ("cc 30".into(), MidiBinding::Press("bank".into())),
+                ("cc 31".into(), MidiBinding::Press("pattern.bars".into())),
+                (
+                    "cc 32".into(),
+                    MidiBinding::Press("pattern.quantize".into()),
+                ),
+                (
+                    "cc 33".into(),
+                    MidiBinding::Press("pattern.strength".into()),
+                ),
+            ]
+            .into(),
+        );
+        assert_eq!(app.learned, expected);
         let mut profile = app.profiles.remove(0);
         crate::midi::apply_learned(&mut profile, &crate::midi::parse_learned(&app.learned));
         profile.set_seeded(true);
@@ -2170,6 +2254,68 @@ mod tests {
                 _ => unreachable!(),
             }
         }
+    }
+
+    /// Scenario "A1 encoder bindings survive profile seeding and owner changes" (controller-reach).
+    #[test]
+    fn a1_encoder_bindings_survive_profile_seeding_and_owner_changes() {
+        let mut app = crate::tests::test_app();
+        app.profiles.push(
+            input::midi::Profile::from_toml(
+                "smc-pad.toml",
+                include_str!("../../../config/devices/smc-pad.toml"),
+            )
+            .unwrap(),
+        );
+        app.midi_open.push(input::Group::Pattern);
+        let actions: Vec<_> = app
+            .midi_list()
+            .into_iter()
+            .filter_map(|row| match row {
+                MidiListRow::Action { info } if info.group == input::Group::Pattern => {
+                    Some(info.name)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            actions,
+            [
+                "bank",
+                "pattern.bars",
+                "pattern.quantize",
+                "pattern.strength"
+            ]
+        );
+        app.seeded.push("SMC-PAD".into());
+        let owner = [
+            ("cc 31".into(), MidiBinding::Press("none".into())),
+            (
+                "cc 32".into(),
+                MidiBinding::Press("pattern.strength".into()),
+            ),
+        ]
+        .into();
+        app.learned
+            .entry("SMC-PAD".into())
+            .or_default()
+            .insert(input::Group::Pattern.key().into(), owner);
+        app.learned
+            .get_mut("SMC-PAD")
+            .unwrap()
+            .insert(input::Group::Fx.key().into(), Default::default());
+        let saved = app.learned.clone();
+        app.seed_device("SMC-PAD-Master", "SMC-PAD", false);
+        assert_eq!(app.learned, saved);
+        assert!(drop_dead(&mut app.learned).is_empty());
+        assert_eq!(app.learned, saved);
+        app.learned
+            .get_mut("SMC-PAD")
+            .unwrap()
+            .insert(input::Group::Pattern.key().into(), Default::default());
+        let empty = app.learned.clone();
+        app.seed_device("SMC-PAD-Master", "SMC-PAD", false);
+        assert_eq!(app.learned, empty);
     }
 
     /// Scenario "Explicit none keeps one SMC-PAD cell inactive" (input-devices).

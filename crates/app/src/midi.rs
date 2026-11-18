@@ -77,6 +77,10 @@ pub enum Event {
         port: String,
         cell: u8,
     },
+    SmcPadBank {
+        port: String,
+        setting: u64,
+    },
     Action(Action),
     Param {
         port: String,
@@ -86,6 +90,8 @@ pub enum Event {
         takeover: bool,
     },
     Step {
+        port: String,
+        control: String,
         target: StepTarget,
         steps: i32,
         fine: bool,
@@ -97,9 +103,24 @@ pub enum Event {
 pub struct Shared {
     focus: AtomicU32,
     acknowledged: AtomicU64,
+    pad_bank_setting: AtomicU64,
 }
 
 impl Shared {
+    fn set_pad_bank_shortcut(&self, enabled: bool) {
+        // The UI is the only writer. Each change invalidates replies in flight.
+        let setting = self.pad_bank_setting.load(Relaxed);
+        if setting & 1 != u64::from(enabled) {
+            self.pad_bank_setting
+                .store(setting.wrapping_add(1), Relaxed);
+        }
+    }
+
+    fn pad_bank_shortcut(&self) -> Option<u64> {
+        let setting = self.pad_bank_setting.load(Relaxed);
+        (setting & 1 != 0).then_some(setting)
+    }
+
     /// Publishes valid state; rejects an invalid bank without changing the snapshot.
     pub fn publish(&self, focus: Focus) -> bool {
         let Some(bits) = focus.pack() else {
@@ -137,6 +158,11 @@ impl Shared {
 enum Raw {
     SmcSetup(Result<(), String>),
     SmcLost,
+    SmcPadBank {
+        port: String,
+        requested_at: Instant,
+        setting: u64,
+    },
     Connected(String, Option<Connection>),
     Disconnected(String, Option<Connection>),
     Msg(String, Msg, Stamp),
@@ -573,6 +599,11 @@ impl Midi {
     }
 
     #[cfg(test)]
+    pub fn recorded_smc_setup(&self) {
+        self.updates.send(Raw::SmcSetup(Ok(()))).unwrap();
+    }
+
+    #[cfg(test)]
     pub fn recorded_connection(&self, port: &str) -> Option<Connection> {
         self.recorded_connections
             .borrow()
@@ -641,6 +672,25 @@ impl Midi {
     pub fn set_hold_time(&self, time: Duration) {
         let _ = self.updates.send(Raw::HoldTime(time));
     }
+
+    pub(super) fn set_pad_bank_shortcut(&self, enabled: bool) {
+        self.shared.set_pad_bank_shortcut(enabled);
+    }
+
+    pub(super) fn pad_bank_shortcut_is_current(&self, setting: u64) -> bool {
+        self.shared.pad_bank_shortcut() == Some(setting)
+    }
+
+    #[cfg(test)]
+    pub(super) fn recorded_pad_bank(&self, port: &str, requested_at: Instant) {
+        self.updates
+            .send(Raw::SmcPadBank {
+                port: port.into(),
+                requested_at,
+                setting: self.shared.pad_bank_shortcut().unwrap_or_default(),
+            })
+            .unwrap();
+    }
 }
 
 /// `[midi]` of the user config to per-group maps; bad entries are logged and skipped.
@@ -696,7 +746,7 @@ pub fn start(
     commands: Option<rtrb::Producer<ProjectCommand>>,
     project: Option<Arc<ProjectState>>,
     shared: Arc<Shared>,
-    hold_time: Duration,
+    settings: crate::config::MidiGesturesConfig,
 ) -> Midi {
     for p in profiles.iter_mut() {
         apply_learned(p, &learned);
@@ -704,8 +754,11 @@ pub fn start(
     }
     let (raw_tx, raw_rx) = mpsc::channel();
     let (tx, rx) = mpsc::channel();
+    shared.set_pad_bank_shortcut(settings.smc_pad_bank_opens_panel);
     raw_tx
-        .send(Raw::HoldTime(hold_time))
+        .send(Raw::HoldTime(Duration::from_millis(
+            settings.hold_time_ms.into(),
+        )))
         .expect("set initial MIDI hold time");
     let scan_tx = raw_tx.clone();
     let scan_project = project.clone();
@@ -715,9 +768,10 @@ pub fn start(
         .expect("spawn midi-scan");
     if !virtual_mode() {
         let setup_tx = raw_tx.clone();
+        let setup_shared = shared.clone();
         std::thread::Builder::new()
             .name("smc-pad-setup".into())
-            .spawn(move || smc_usb::watch(setup_tx))
+            .spawn(move || smc_usb::watch(setup_tx, setup_shared))
             .expect("spawn smc-pad-setup");
     }
     let dispatch_shared = shared.clone();
@@ -861,6 +915,7 @@ fn dispatch(
     let mut invalid_reported = false;
     let mut smc_ready = false;
     let mut smc_status: Option<String> = None;
+    let mut pad_bank_after = HashMap::<String, Instant>::new();
     let dev_virtual = virtual_mode();
     loop {
         while let Some(command) = pending.pop_front() {
@@ -953,15 +1008,35 @@ fn dispatch(
                 smc_status = None;
                 continue;
             }
+            Raw::SmcPadBank {
+                port,
+                requested_at,
+                setting,
+            } => {
+                if smc_ready
+                    && shared.focus().is_ok()
+                    && shared.pad_bank_shortcut() == Some(setting)
+                    && pad_bank_after
+                        .get(&port)
+                        .is_some_and(|&cutoff| requested_at >= cutoff)
+                {
+                    ui.send(Event::SmcPadBank { port, setting }, None);
+                }
+                continue;
+            }
             Raw::Connected(port, _) => {
                 let profile = profiles
                     .iter()
                     .find(|p| p.matches(&port))
                     .map_or("default".into(), |p| p.name.clone());
+                if profile == "SMC-PAD" && port.contains("SMC-PAD-Master") {
+                    pad_bank_after.insert(port.clone(), Instant::now());
+                }
                 ui.send(Event::Connected { port, profile }, None);
                 continue;
             }
             Raw::Disconnected(port, _) => {
+                pad_bank_after.remove(&port);
                 if port.contains("SMC-PAD-Master") {
                     smc_ready = false;
                     smc_status = None;
@@ -1113,7 +1188,7 @@ fn dispatch(
         let (resolved, activity) = if guarded_encoder {
             (None, Activity::None)
         } else {
-            profile.resolve_input_modal(focus.screen, focus.mode.edit, modal, msg)
+            profile.resolve_input_mode(focus.screen, focus.mode, modal, msg)
         };
         if let Some(origin) = &mut ui.origin {
             origin.activity = activity;
@@ -1212,17 +1287,24 @@ fn dispatch(
         let allowed_while_ignored = matches!(resolved, Some(Resolved::PanelCell(_)))
             || (waiting && matches!(resolved, Some(Resolved::Action(_))))
             || (focus.mode.picker
-                && matches!(
+                && (matches!(
                     resolved,
                     Some(Resolved::Step {
                         target: StepTarget::List(ListTarget::Projects),
                         ..
                     })
-                ));
+                ) || (port.contains("SMC-PAD-Master")
+                    && matches!(resolved, Some(Resolved::Step { ref control, .. }) if matches!(control.as_str(), "e1" | "cc 30")))));
         if route == PadRoute::Ignore && !allowed_while_ignored {
             continue;
         }
 
+        if matches!(resolved, Some(Resolved::Action(Action::PadPress { .. })))
+            && matches!(msg, Msg::NoteOn { note: 36..=51, .. })
+            && let Some(cutoff) = pad_bank_after.get_mut(&port)
+        {
+            *cutoff = (*cutoff).max(at);
+        }
         match resolved {
             Some(Resolved::PanelCell(cell)) => {
                 ui.send(Event::PanelCell { port, cell }, Some(stamp));
@@ -1327,7 +1409,11 @@ fn dispatch(
                     Some(stamp),
                 );
             }
-            Some(Resolved::Step { target, steps, .. }) => {
+            Some(Resolved::Step {
+                control,
+                target,
+                steps,
+            }) => {
                 let count = speed
                     .entry((port.clone(), channel, msg.key()))
                     .or_insert((at, 0));
@@ -1353,6 +1439,8 @@ fn dispatch(
                 };
                 ui.send(
                     Event::Step {
+                        port,
+                        control,
                         target,
                         steps: steps * multiplier,
                         fine: is_fine,
@@ -1771,6 +1859,7 @@ mod tests {
                 screen_learn: false,
                 erase_pads: false,
                 step_edit: false,
+                pattern_controls: false,
             },
         };
         let shared = Arc::new(Shared::default());
@@ -3935,7 +4024,8 @@ mod tests {
             crate::panel::Choice::Page
         );
         let after = app.full_help_recording_keys(&keymap, true, None);
-        assert!(after.iter().any(|(_, text)| text.contains("Page 2/2")));
+        assert_eq!(app.panel.page_count(app.panel_view()), 5);
+        assert!(after.iter().any(|(_, text)| text.contains("Page 2/5")));
         assert!(after.iter().any(|(_, text)| text.contains("P1 mode")));
         assert!(
             after
@@ -4348,7 +4438,18 @@ mod tests {
             profile.control_action(Screen::Pads, false, "f8"),
             Some("master.volume")
         );
-        assert_eq!(profile.control_action(Screen::Files, false, "e8"), None);
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e6"),
+            Some("edit.page")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e7"),
+            Some("transport.tempo")
+        );
+        assert_eq!(
+            profile.control_action(Screen::Files, false, "e8"),
+            Some("bank")
+        );
     }
 
     /// Scenario "Replay covers the measured controller stream" (input-devices).

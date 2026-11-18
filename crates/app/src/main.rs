@@ -124,9 +124,10 @@ const NUDGE_FINE_MS: i32 = 4;
 /// Session changes are written this long after the last one.
 const SESSION_SAVE: Duration = Duration::from_secs(1);
 
-/// A step that loses what lies on pads, waiting for the owner's answer. `lines` is what the
-/// question showed: if the pads change before Enter, the question is shown again.
 enum Ask {
+    Exit {
+        lines: Vec<String>,
+    },
     Plan {
         lines: Vec<String>,
     },
@@ -383,7 +384,8 @@ fn folders_of(dir: &Path) -> Vec<PathBuf> {
 impl Ask {
     fn lines(&self) -> &[String] {
         match self {
-            Ask::Plan { lines }
+            Ask::Exit { lines }
+            | Ask::Plan { lines }
             | Ask::PutFile { lines, .. }
             | Ask::ResetProfile { lines, .. }
             | Ask::ResetPads { lines, .. }
@@ -1392,7 +1394,7 @@ fn main() -> std::io::Result<()> {
         app.audio.as_mut().and_then(|a| a.midi_commands.take()),
         app.audio.as_ref().map(|a| a.project.clone()),
         shared.clone(),
-        Duration::from_millis(app.midi_gestures.hold_time_ms.into()),
+        app.midi_gestures,
     ));
     if let Some(d) = app.audio.as_ref().and_then(|a| a.devices()) {
         log::info!("devices: outputs {:?}, inputs {:?}", d.outputs, d.inputs);
@@ -1876,9 +1878,7 @@ fn hint_for(app: &App) -> Option<&'static str> {
         Screen::Files => {
             Some("Enter takes a file, a pad hit puts it there; Ctrl+Enter: the selected pad.")
         }
-        Screen::Settings => {
-            Some("Left/Right applies at once and saves to ~/.config/ptsr/config.toml.")
-        }
+        Screen::Settings => Some("Left/Right or SMC E2 changes and saves the selected value."),
         Screen::Chop if app.plan.is_some() => Some(
             "Hit pads to plan where the slices go; J L pick the slice, PgUp/PgDn the bank; Enter applies.",
         ),
@@ -3697,9 +3697,7 @@ fn modifier_groups(
     vec![tui::HelpGroup { name, items }]
 }
 
-/// Short texts for the Ctrl view of the help line.
-/// The text of a Shift command in the Shift view of the help line (83a): what the
-/// shifted key does, not the unshifted command.
+/// Shift commands name their changed action in the help line (83a).
 fn shift_text(a: Action) -> String {
     match a {
         Action::ChopHitsBack => "fewer hit cuts".into(),
@@ -3749,6 +3747,7 @@ fn assign_deaf(a: &Action) -> bool {
             | Action::ChopEqualParts
             | Action::ChopHits
             | Action::ChopHitsBack
+            | Action::ThresholdStep(_)
             | Action::ChopAssign
             | Action::ChopZoom { .. }
             | Action::ChopRegionStart
@@ -3805,6 +3804,7 @@ fn help_section(a: Action) -> usize {
         | Action::ChopEqualParts
         | Action::ChopHits
         | Action::ChopHitsBack
+        | Action::ThresholdStep(_)
         | Action::ChopAssignOrder
         | Action::SliceBound { .. }
         | Action::ParamNext
@@ -4719,8 +4719,7 @@ mod tests {
                 copy_in_hand: true,
                 swap_in_hand: true,
                 pattern_pads: false,
-                erase_pads: false,
-                step_edit: false,
+                ..Mode::default()
             },
         };
         assert_eq!(app.focus(), expected);
@@ -8505,7 +8504,6 @@ Enter = "browser.hold"
             "a key and two words at most: {items:?}"
         );
     }
-
     /// screen-help 21: "Hold Alt".
     #[test]
     fn hold_alt() {
@@ -8534,6 +8532,7 @@ Enter = "browser.hold"
                     "T".to_string(),
                     "start or continue transport, or start a stopped preview".to_string()
                 ),
+                ("U".to_string(), "transport: play / stop".to_string()),
                 (
                     "Y".to_string(),
                     "pause transport or stop a preview; press again to reset".to_string()
@@ -15626,8 +15625,8 @@ Enter = "browser.hold"
     }
 
     /// 83a keyboard "Shipped modified chords have one role": every Ctrl/Alt chord of the
-    /// shipped map keeps one role across screens and edit layers, with the exceptions
-    /// the map comments name; no Ctrl+Shift+letter command, no plain/Shift pad command.
+    /// shipped map keeps one role across screens and edit layers, except Alt arrows;
+    /// no Ctrl+Shift+letter command, no plain/Shift pad command.
     #[test]
     fn shipped_modified_chords_have_one_role() {
         let (keymap, _) = input::Keymap::from_toml(super::DEFAULT_KEYMAP).unwrap();
@@ -15643,7 +15642,7 @@ Enter = "browser.hold"
                 let Some(rest) = k.strip_prefix("Ctrl+").or_else(|| k.strip_prefix("Alt+")) else {
                     continue;
                 };
-                if rest.chars().count() != 1 {
+                if rest.chars().count() != 1 || matches!(k.as_str(), "Alt+←" | "Alt+→") {
                     continue;
                 }
                 let c = rest.chars().next().unwrap();

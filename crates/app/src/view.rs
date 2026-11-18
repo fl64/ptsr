@@ -31,6 +31,7 @@ fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
     match action {
         Action::Back => Some(false),
         Action::Confirm => Some(true),
+        _ if matches!(ask, Ask::Exit { .. }) => None,
         Action::SettingsLearn if matches!(ask, Ask::ResetProfile { .. }) => Some(true),
         Action::BrowserLoad if matches!(ask, Ask::PutFile { .. }) => Some(true),
         Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit
@@ -354,6 +355,7 @@ impl App {
         use input::midi::{Activity, Msg, Profile, Resolved};
         let ask = self.ask.as_ref()?;
         let verb = match ask {
+            Ask::Exit { .. } => "exit",
             Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
             Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
             Ask::ClearPads { .. } | Ask::ClearPattern { .. } => "clear",
@@ -397,7 +399,12 @@ impl App {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
                 if port.contains("SMC-PAD-Master") {
-                    answers.push(format!("SMC P7: keep · P8: {verb}"));
+                    let cancel = if matches!(ask, Ask::Exit { .. }) {
+                        "P7/Back"
+                    } else {
+                        "P7"
+                    };
+                    answers.push(format!("SMC {cancel}: keep · P8: {verb}"));
                     continue;
                 }
                 // Match the worker's port selection. Assignment labels can search another layer.

@@ -285,7 +285,9 @@ impl App {
         };
         let profile = &devices[index].profile;
         let edit = self.edit_keys();
-        let action = |name: &str| profile.control_action(self.screen, edit, name);
+        let action = |name: &str| {
+            profile.control_action_context(self.screen, edit, self.pattern_panel.is_some(), name)
+        };
         let panel_role = |name: &str| {
             let cell = name.strip_prefix('c')?.parse::<u8>().ok()?;
             if profile.name != "SMC-PAD" || action(name) != Some("panel.cell") {

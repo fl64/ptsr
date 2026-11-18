@@ -91,11 +91,15 @@ pub struct KnobsConfig {
 #[serde(default)]
 pub struct MidiGesturesConfig {
     pub hold_time_ms: u32,
+    pub smc_pad_bank_opens_panel: bool,
 }
 
 impl Default for MidiGesturesConfig {
     fn default() -> Self {
-        Self { hold_time_ms: 300 }
+        Self {
+            hold_time_ms: 300,
+            smc_pad_bank_opens_panel: false,
+        }
     }
 }
 
@@ -250,6 +254,14 @@ pub fn load_from(user: &Path) -> Loaded {
                 .as_integer()
                 .is_some_and(|time| (200..=600).contains(&time) && time % 50 == 0)
         });
+        if let Some(gestures) = value.as_table_mut()
+            && gestures
+                .get("smc_pad_bank_opens_panel")
+                .is_some_and(|setting| !setting.is_bool())
+        {
+            gestures.remove("smc_pad_bank_opens_panel");
+            error = Some("invalid SMC-PAD PAD BANK setting; using Off".into());
+        }
         if !valid || !value.is_table() {
             let shown = saved.map_or_else(
                 || value.to_string(),
@@ -260,8 +272,11 @@ pub fn load_from(user: &Path) -> Loaded {
                 },
             );
             error = Some(format!("invalid MIDI hold time {shown}; using 300 ms"));
-            *value =
-                toml::Value::try_from(MidiGesturesConfig::default()).expect("hold time is TOML");
+            if let Some(gestures) = value.as_table_mut() {
+                gestures.remove("hold_time_ms");
+            } else {
+                *value = toml::Value::Table(toml::Table::new());
+            }
         }
     }
     let mut config: Config = toml::Value::Table(table).try_into().unwrap_or_else(|e| {
@@ -587,7 +602,10 @@ mod tests {
         save_section(
             &path,
             "midi_gestures",
-            &MidiGesturesConfig { hold_time_ms: 400 },
+            &MidiGesturesConfig {
+                hold_time_ms: 400,
+                ..MidiGesturesConfig::default()
+            },
         )
         .unwrap();
         let loaded = load_from(&path);

@@ -50,7 +50,8 @@ does not describe a complete SMC-PAD profile in the current build.
 
 1. Hit a pad to select the thing to work on: a pad, slice, step, channel, or slot.
 2. Press PAD BANK to select pad layer 2. The first layer 2 hit shows the command
-   panel if it is hidden. It runs no command. Hit a cell after the panel appears.
+   panel if it is hidden. It runs no command. With the optional F12 shortcut on,
+   a detected PAD BANK press opens the panel first. Hit a cell after the panel appears.
    The main page selects screens and shows four current-screen commands. More
    opens a context page. The bottom row keeps Back, Undo, Redo and Panic.
 3. Turn knob 1 in bank 1 to move the selection or cursor. Knobs 2–8 change
@@ -69,7 +70,7 @@ Panel access never changes the transport or stops a sounding voice. During play,
 knob bank 1 controls the screen and bank 2 controls the selected pad and master.
 Knobs keep working while the panel is visible.
 
-The first panel entry takes PAD BANK and two layer 2 hits. Later cell commands
+With the shortcut off, first panel entry takes PAD BANK and two layer 2 hits. With it on, a detected press can remove the reveal hit. Later cell commands
 take one hit while the panel is visible. Change 93 counts these physical presses
 and records the first-entry cost. A frequent action remains direct where a
 button, pad, or knob has that role. Do not count the first reveal as a command.
@@ -105,9 +106,7 @@ maps PLAY, STOP, RECORD, LEFT, and RIGHT on each screen and mode.
 PAD BANK latches physical pad layer 2, notes 52–67. PAD BANK itself sends no
 MIDI message. The first layer 2 hit while the panel is hidden only shows it.
 Later layer 2 hits run the named cells. A layer 1 hit hides the panel and follows
-the normal pad route. The screen cannot react to PAD BANK alone. It learns the
-new layer from the next pad note. The status line shows PANEL while the last
-pad note came from layer 2.
+the normal pad route. Pad notes still identify the layer. The optional `SMC-PAD PAD BANK` setting in F12 MIDI reads USB status on the supported preset. It opens the hidden panel on a detected press. The status line shows PANEL when the menu opens.
 
 The panel replaces the pad grid with 16 cells in the same physical layout.
 The main page gives cells 1–8 to Pads, Files, Chop, Pattern, FX, Settings,
@@ -174,6 +173,10 @@ defaults and tests unchanged.
 
 Bank 1 (CC 30–37) is the context of the screen. Bank 2 (CC 38–45) is the
 same on every screen.
+While A1 controls are open, the Pattern column replaces the underlying screen
+roles for encoders 1–4. Change 93 loads these roles from `[screens.pattern]`
+for a new device. For an already seeded SMC-PAD, it adds the group only if
+the group is absent. Closing the controls restores the screen roles.
 
 | Bank 1 knob | Pads | Pads edit | Files | Chop | Pattern | FX | Settings |
 |---|---|---|---|---|---|---|---|
@@ -203,8 +206,8 @@ shorter repeated path separately.
 | Chop by hits and lay out | Chop cell, knob for threshold, Hits cell, Assign cell, PAD BANK to layer 1, target pads, PAD BANK to layer 2, reveal hit, Apply cell |
 | Set a pad's decay | Hit the pad, turn bank 2 knob 5 |
 | Swap two pads | Hit pad A, Swap cell, hit pad B |
-| Open a project | Projects screen cell, knob 1, confirm cell |
-| Change the bank | LEFT or RIGHT on Pads |
+| Open a project | Pads context `proj` cell, knob 1 in the picker, P8 to confirm |
+| Change the bank | Turn first-bank encoder 8 |
 | Record the microphone onto a pad | Hold RECORD, hit the pad |
 
 The planned control-pages change shows a page for both "Chop the sound of a
@@ -316,28 +319,48 @@ Tasks:
 
 1. `docs/CONTROLLER-PATHS.md`: for every story in `docs/USER-STORIES.md`, the controller path
    and the count of presses, as in §2.4.
-2. A "text-only" list in `crates/input` (an `ActionInfo` flag): `pad.rename`, `browser.filter`,
-   the typed name of a new project, `app.quit`, keymap edits. Nothing else may be on it without
-   the owner's approval.
+2. Mark `pad.rename` and `browser.filter` as text entry in `ActionInfo`. A typed new-project
+   name and keymap edits are text operations outside that list. Keep `app.quit` outside
+   `ACTIONS` and MIDI learn. Give the SMC-PAD an explicit Exit context cell with a visible
+   question. P8 confirms it. P7 or Back cancels it. Ctrl+Q keeps its direct exit behavior.
+   No other exception may enter the reach inventory without the owner's approval.
 3. The reach test checks both directions. For each screen and mode, find a
    controller path for each non-text keyboard action. Use the SMC-PAD profile
    and `panel.toml`:
    direct button, pad hit, panel cell, or knob. Count a visible panel cell as one
-   press. Count the first panel entry separately: PAD BANK and two layer 2 hits.
+   press. Count first panel entry separately, with and without the extra reveal hit.
    Report any action without a path or any repeated path above two presses.
-   Keyboard side: every controller action has a key or key path, except layer
-   selection, its status mark, and an optional measured SHIFT quick look.
+   Keyboard side: every sampler action has a key or key path. PAD BANK selection,
+   its status mark, panel page navigation and an optional measured SHIFT quick look
+   are controller interface steps, not sampler actions.
+   Bind Alt+U to transport toggle on every screen. Keep Space preview on Files and Chop.
+   On Pads and Pads edit, bind Alt+Left and Alt+Right to silent pad selection.
+   Keep the existing Alt-arrow slice-bound keys on Chop.
+   On Chop and Chop edit, bind Ctrl+Alt+Up and Ctrl+Alt+Down to exact 1 dB
+   threshold steps. Compare them with encoder 3, including bounds and Undo.
    The test also checks that every mode has its badge
    (`VISUAL.md` §2.1).
-4. Fix the gaps the test shows. Expected ones: the project picker by knob and confirm; the
-   folder picker of the Paths tab; the settings values by knob; the splash closes on any
-   controller input; help (F1) as a panel cell or another explicit path. Do not reserve PLAY
-   hold for help: change 95 uses it for the metronome. Decide the help path in the design.
-5. The rule for later changes goes into `AGENTS.md`: a new action names its controller path in
-   its spec, and the reach test covers it.
+4. Close the gaps that the production-route test shows. Expected gaps include project
+   selection by encoder 1 and P8, Paths folder selection, and Settings values by encoder 2.
+   Help needs navigation after the existing panel cell opens it. Keep the accepted rule
+   that sound ends the splash. A silent controller action does not close it. PLAY hold
+   keeps its metronome role. Test Exit while a recording or save is pending.
+5. `AGENTS.md` already requires a controller path in the spec for each new action. Add the
+   reach test that enforces the rule for later changes.
 
-How to verify (owner): work a full session from start to a saved project with the keyboard out
-of reach: load, chop, lay out, shape, effects, save, switch projects.
+Owner steps without the keyboard:
+
+1. Load a sound and chop it.
+2. Assign slices to pads, shape the sound and add effects.
+3. Save the project and switch projects.
+4. Select Exit and press P8.
+
+Keyboard check: on Files and Chop, use Alt+U for transport and Space for preview.
+Repeat Alt+U in the Russian layout. Check the same transport result from page 2
+`trnspt` on the SMC-PAD. On Pads and Pads edit, compare Alt+Left and Alt+Right
+with the SMC-PAD LEFT and RIGHT buttons. A pad selection must not play sound.
+On Chop and Chop edit, compare Ctrl+Alt+Up and Ctrl+Alt+Down with encoder 3.
+Check the threshold, cuts, linked pads, -40 and 0 dB bounds, and Undo.
 
 ### Change 93a — `93a-controller-comfort`
 

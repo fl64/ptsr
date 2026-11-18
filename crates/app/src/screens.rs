@@ -803,7 +803,17 @@ fn fixture(case: Case, now: Instant) -> App {
             })
         }
         Mode::InputTab => app.settings_tab = 1,
-        Mode::MidiTab => app.settings_tab = 2,
+        Mode::MidiTab => {
+            app.settings_tab = 2;
+            app.midi_devices
+                .push(("SINCO SMC-PAD-Master 28:1".into(), "SMC-PAD".into()));
+            app.help_overlay.controller.smc_status = Some((true, "SMC-PAD encoders ready".into()));
+            app.midi_row = app
+                .midi_list()
+                .iter()
+                .position(|row| matches!(row, crate::learn::MidiListRow::SmcPadBank))
+                .unwrap();
+        }
         Mode::PathsTab | Mode::FolderPicker => app.settings_tab = 3,
         Mode::Slices128 => {
             let c = app.chop.as_mut().unwrap();
@@ -1307,7 +1317,7 @@ fn render_app_layers(
                 midi_devices: &[],
                 input_log: &[],
                 midi_rows: &midi_rows,
-                midi_row: 0,
+                midi_row: app.midi_row,
                 learning: midi_learning.as_deref(),
                 paths: Some(("/offline/projects", "/offline/samples")),
                 picker: (case.mode == Mode::FolderPicker).then(|| tui::PathPickerView {
@@ -1420,13 +1430,21 @@ fn check_frame(case: Case, buffer: &Buffer) {
     }
     match case.mode {
         Mode::PanelMain | Mode::PanelImageOn | Mode::PanelImageOff => {
-            require("1/2");
+            require(if matches!(case.screen, Screen::Pads | Screen::Chop) {
+                "1/5"
+            } else {
+                "1/4"
+            });
             require("8 more");
             require("13 back");
             require("16 panic");
         }
         Mode::PanelContext => {
-            require("2/2");
+            require(if matches!(case.screen, Screen::Pads | Screen::Chop) {
+                "2/5"
+            } else {
+                "2/4"
+            });
             require("11 next");
             require("12 main");
             require("15 redo");
@@ -1719,6 +1737,63 @@ fn check_frame(case: Case, buffer: &Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smc_pad_bank_setting_fits_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::MidiTab,
+                size,
+            };
+            let (_, frame) = render(case, &keymap);
+            let text: String = frame.content().iter().map(|cell| cell.symbol()).collect();
+            for label in ["SMC-PAD PAD BANK", "Off", "select Off or Open panel"] {
+                assert!(text.contains(label), "{}: {label}\n{text}", case.name());
+            }
+            check_frame(case, &frame);
+        }
+    }
+
+    #[test]
+    fn controller_picker_controls_fit_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for (screen, mode, labels) in [
+                (Screen::Pads, Mode::Picker, ["E1/↑↓", "Enter/P8", "Esc/P7"]),
+                (
+                    Screen::Settings,
+                    Mode::FolderPicker,
+                    ["E1/↑↓", "Enter/P8", "Esc/P7"],
+                ),
+            ] {
+                let case = Case { screen, mode, size };
+                let (_, frame) = render(case, &keymap);
+                let text = frame
+                    .content()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                for label in labels {
+                    assert!(text.contains(label), "{}: {label}\n{text}", case.name());
+                }
+                check_frame(case, &frame);
+            }
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::Normal,
+                size,
+            };
+            let (_, frame) = render(case, &keymap);
+            let text = frame
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(text.contains("SMC E2"), "{}\n{text}", case.name());
+        }
+    }
 
     /// Scenario "Long names stay readable at both sizes".
     #[test]
@@ -3263,17 +3338,23 @@ L="none"
                     size,
                 };
                 let now = Instant::now();
-                for page in [0, 1] {
+                let start = fixture(case, now);
+                let pages = start.panel.page_count(start.panel_view());
+                for page in 0..pages {
                     let mut app = fixture(case, now);
                     assert_eq!(
                         app.panel.press("SMC-PAD-Master", 1),
                         crate::panel::Press::Revealed
                     );
-                    if page == 1 {
+                    if page > 0 {
                         assert_eq!(
                             app.panel.choice(app.panel_view(), 8),
                             crate::panel::Choice::Page
                         );
+                        if page > 1 {
+                            app.panel
+                                .select_context_page(app.panel_view(), page as i32 - 1);
+                        }
                     }
                     let (_, buffer) = render_app(case, &keymap, app, now);
                     let rows: Vec<String> = buffer
@@ -3284,11 +3365,23 @@ L="none"
                     let text = rows.join("\n");
                     assert!(text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
                     assert!(
-                        text.contains(&format!("{}/2", page + 1)),
+                        text.contains(&format!("{}/{pages}", page + 1)),
                         "{screen:?} {size:?} {page}"
                     );
                     for label in ["13 back", "14 undo", "15 redo", "16 panic"] {
                         assert!(text.contains(label), "{screen:?} {size:?} {page}: {label}");
+                    }
+                    if page == 2 {
+                        assert!(text.contains("1 outrec") && text.contains("10 exit"));
+                    } else if page == 3 {
+                        assert!(text.contains("1 bpm -") && text.contains("6 A1 rec"));
+                    } else if page == 4 {
+                        let first = if screen == Screen::Pads {
+                            "1 view -"
+                        } else {
+                            "1 hits -"
+                        };
+                        assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");
                     }
                 }
             }

@@ -63,11 +63,11 @@ impl App {
 
     fn run(&mut self, action: Action) -> bool {
         // the folder picker is open: the keys go to it before the screen (11)
-        if self.path_picker.is_some() {
+        if self.ask.is_none() && self.path_picker.is_some() {
             self.picker_key(action);
             return false;
         }
-        if action == Action::Confirm && self.project_picker.is_some() {
+        if self.ask.is_none() && action == Action::Confirm && self.project_picker.is_some() {
             self.project_picker_confirm();
             return false;
         }
@@ -121,6 +121,10 @@ impl App {
                 | Action::BrowserHold
                 | Action::PadEdit => {
                     match self.ask.as_ref() {
+                        Some(Ask::Exit { .. }) => {
+                            self.ask = None;
+                            self.request_quit();
+                        }
                         Some(Ask::Plan { .. }) => self.apply_plan(),
                         Some(Ask::ResetProfile { .. }) => {}
                         Some(Ask::ResetPads { pads, .. }) => {
@@ -439,6 +443,9 @@ impl App {
                 if let Some(c) = self.chop.as_mut() {
                     c.zoom(zoom_in);
                 }
+            }
+            Action::ThresholdStep(step) if self.screen == Screen::Chop => {
+                self.step_threshold(i32::from(step));
             }
             Action::ChopRegionStart if self.screen == Screen::Chop => {
                 if let Some(c) = self.chop.as_mut() {
@@ -771,6 +778,15 @@ impl App {
             {
                 self.step_hold_time(step as isize)
             }
+            Action::SettingsValue(step)
+                if self.settings_tab == 2
+                    && matches!(
+                        self.midi_list().get(self.midi_row),
+                        Some(MidiListRow::SmcPadBank)
+                    ) =>
+            {
+                self.set_smc_pad_bank(step > 0);
+            }
             // MIDI tab: → opens the group of the selected row, ← closes it (28)
             Action::SettingsValue(step) if self.settings_tab == 2 => self.midi_fold(step > 0),
             // the Paths tab: Enter opens the folder picker of the selected root (11)
@@ -793,6 +809,9 @@ impl App {
                     Some(MidiListRow::Group { .. }) => self.midi_fold(true),
                     Some(MidiListRow::Response) => self.step_response(1),
                     Some(MidiListRow::HoldTime) => self.step_hold_time(1),
+                    Some(MidiListRow::SmcPadBank) => {
+                        self.set_smc_pad_bank(!self.midi_gestures.smc_pad_bank_opens_panel)
+                    }
                     Some(MidiListRow::Reset { name, port }) => {
                         self.ask = Some(Ask::ResetProfile {
                             lines: vec![
@@ -1085,6 +1104,7 @@ impl App {
                 pattern_pads: self.pattern_routes_pads(),
                 erase_pads: self.erase_pads,
                 step_edit: self.pattern_view.edit,
+                pattern_controls: self.pattern_panel.is_some(),
             },
         }
     }
@@ -1108,6 +1128,12 @@ impl App {
                 .is_some_and(|port| port.contains("SMC-PAD-Master"))
             && matches!(ev.control_key(), Some(input::midi::Key::Cc(27 | 28)))
             && matches!(ev.event, midi::Event::Action(action) if !matches!(action, Action::PlayContext | Action::StopContext));
+        let blocked_picker_value = self.path_picker.is_some()
+            && ev
+                .origin()
+                .is_some_and(|port| port.contains("SMC-PAD-Master"))
+            && matches!(ev.control_key(), Some(input::midi::Key::Cc(31)))
+            && matches!(ev.event, midi::Event::Action(Action::SettingsValue(_)));
         let suppressed = ev
             .origin()
             .zip(ev.control_key())
@@ -1118,7 +1144,7 @@ impl App {
             );
         if let Some(ev) = ev
             .current(self.audio.as_ref().map(|audio| audio.project.as_ref()))
-            .filter(|_| !suppressed && !blocked_transport_answer)
+            .filter(|_| !suppressed && !blocked_transport_answer && !blocked_picker_value)
         {
             let old = std::mem::replace(&mut self.notice_origin, origin);
             if owner_input {
@@ -1331,6 +1357,8 @@ impl App {
             || self.browser.in_hand.is_some()
             || self.pad_in_hand.is_some()
             || self.copy_in_hand.is_some()
+            || self.pads.marking
+            || !self.pads.marked.is_empty()
             || self.erase_pads
             || (self.screen == Screen::Files && !self.browser.filter.is_empty())
         {
@@ -1388,6 +1416,7 @@ impl App {
                 msg,
                 meaning,
             } => {
+                let mut answered_learning = false;
                 if port.contains("SMC-PAD-Master")
                     && let input::midi::Msg::NoteOn { note: 62 | 63, .. } = msg
                 {
@@ -1400,6 +1429,33 @@ impl App {
                         } else {
                             Action::Confirm
                         });
+                    } else if self
+                        .screen_learn
+                        .as_ref()
+                        .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+                    {
+                        self.question_pads.insert((port.clone(), key));
+                        if key == input::midi::Key::Note(62) {
+                            if let Some(learn) = self.screen_learn.as_mut() {
+                                learn.pending = None;
+                                learn.clearing = false;
+                            }
+                        } else {
+                            self.learn_confirm();
+                        }
+                        answered_learning = true;
+                    } else if self
+                        .learning
+                        .as_ref()
+                        .is_some_and(|learn| learn.pending.is_some())
+                    {
+                        self.question_pads.insert((port.clone(), key));
+                        if key == input::midi::Key::Note(62) {
+                            self.learning = None;
+                        } else {
+                            self.learned_save();
+                        }
+                        answered_learning = true;
                     }
                 }
                 self.help_overlay.controller.last_port = Some(port.clone());
@@ -1411,21 +1467,24 @@ impl App {
                 {
                     self.midi_run_hit(profile, key);
                 }
-                if let Some(l) = self.learning.as_mut()
+                if !answered_learning
+                    && let Some(l) = self.learning.as_mut()
                     && let Some((profile, key)) = l.feed(&profile, msg, now)
                 {
                     self.learned(profile, key);
                 }
                 // a button pressed for a parameter: the knob learner never hears a press, so
                 // the refusal is said here (57)
-                if let Some(l) = self.screen_learn.as_mut()
+                if !answered_learning
+                    && let Some(l) = self.screen_learn.as_mut()
                     && matches!(msg, input::midi::Msg::NoteOn { .. })
                     && l.picked.as_ref().is_some_and(|(n, _)| action_info(n).knob)
                 {
                     l.refused = true;
                     l.pending = None;
                 }
-                if let Some(l) = self.screen_learn.as_mut()
+                if !answered_learning
+                    && let Some(l) = self.screen_learn.as_mut()
                     && let Some((profile, key)) =
                         l.learner.as_mut().and_then(|r| r.feed(&profile, msg, now))
                 {
@@ -1437,6 +1496,17 @@ impl App {
                 self.input_log
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
+            midi::Event::SmcPadBank { port, setting } => {
+                if self.ask.is_none()
+                    && self.panel_input_available()
+                    && self
+                        .midi
+                        .as_ref()
+                        .is_some_and(|midi| midi.pad_bank_shortcut_is_current(setting))
+                {
+                    self.panel.reveal(&port);
+                }
+            }
             midi::Event::PanelCell { port, cell } => {
                 if !port.contains("SMC-PAD-Master") {
                     return;
@@ -1446,6 +1516,9 @@ impl App {
                         7 => {
                             self.apply(Action::Back);
                         }
+                        13 if matches!(self.ask, Some(Ask::Exit { .. })) => {
+                            self.apply(Action::Back);
+                        }
                         8 => {
                             self.apply(Action::Confirm);
                         }
@@ -1453,14 +1526,32 @@ impl App {
                     }
                     return;
                 }
+                if self.project_picker.is_some() || self.path_picker.is_some() {
+                    match cell {
+                        7 | 13 => self.panel_back(),
+                        8 => {
+                            self.apply(Action::Confirm);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                if self.help_open {
+                    if self.panel.owner() != Some(&port) {
+                        return;
+                    }
+                    if cell == 13 {
+                        self.panel_back();
+                    } else {
+                        self.help_panel_cell(cell);
+                    }
+                    return;
+                }
                 if self.pad_naming.is_some()
-                    || self.project_picker.is_some()
-                    || self.path_picker.is_some()
                     || self.browser.editing
                     || self.screen_learn.is_some()
                     || self.learning.is_some()
                     || self.midi_run.is_some()
-                    || self.help_open
                 {
                     if cell == 13 && self.panel.owner() == Some(&port) {
                         self.panel_back();
@@ -1473,6 +1564,14 @@ impl App {
                     match self.panel.choice(view, cell) {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);
+                        }
+                        super::panel::Choice::Exit => {
+                            self.ask = Some(Ask::Exit {
+                                lines: vec![
+                                    "Exit ptsr?".into(),
+                                    "P8 exit · P7 or Back stay".into(),
+                                ],
+                            });
                         }
                         super::panel::Choice::Back => {
                             self.panel_back();
@@ -1581,15 +1680,25 @@ impl App {
             }
             midi::Event::Action(action) => {
                 // quitting from a controller is not offered
+                let action = if self.path_picker.is_some()
+                    && matches!(&self.notice_origin, Origin::Device(port) if port.contains("SMC-PAD-Master"))
+                    && let Action::SettingsRow(step) = action
+                {
+                    Action::SettingsValue(step)
+                } else {
+                    action
+                };
                 self.apply(action);
             }
             midi::Event::Step {
+                port,
+                control,
                 target,
                 steps,
                 fine,
                 ..
             } => {
-                self.midi_step(target, steps, fine);
+                self.midi_step(&port, &control, target, steps, fine);
             }
             // open pattern controls: edit knobs 1-3 turn A1, other edit knobs wait (98b)
             midi::Event::Param {
@@ -1731,6 +1840,7 @@ impl App {
                         if let Some(c) = self.chop.as_mut() {
                             c.set_edge(end, v);
                         }
+                        self.slice_end = end;
                         self.lit = Some((Lit::Bound(end), now));
                         let changed = self.sync_links();
                         self.say_changed(changed, false);
@@ -2093,9 +2203,65 @@ impl App {
         }
     }
 
-    fn midi_step(&mut self, target: input::midi::StepTarget, steps: i32, fine: bool) {
+    fn step_threshold(&mut self, step_db: i32) {
+        if self.plan.is_some() || self.help_open || self.screen_learn.is_some() {
+            return;
+        }
+        if let Some(chop) = self.chop.as_mut() {
+            let next = (chop.threshold_db + step_db as f32).clamp(-40.0, 0.0);
+            chop.set_threshold(-next / 40.0);
+        }
+        let changed = self.sync_links();
+        self.say_changed(changed, false);
+    }
+
+    fn midi_step(
+        &mut self,
+        port: &str,
+        control: &str,
+        target: input::midi::StepTarget,
+        steps: i32,
+        fine: bool,
+    ) {
         use input::midi::{ListTarget, StepTarget};
-        if steps == 0 || self.ask.is_some() || self.path_picker.is_some() {
+        if steps == 0 || self.ask.is_some() {
+            return;
+        }
+        let smc_selector = port.contains("SMC-PAD-Master") && matches!(control, "e1" | "cc 30");
+        if self.path_picker.is_some() {
+            if smc_selector {
+                for _ in 0..steps.unsigned_abs() {
+                    self.picker_key(Action::SettingsRow(if steps > 0 { 1 } else { -1 }));
+                }
+            }
+            return;
+        }
+        if let Some(picker) = self.project_picker.as_mut() {
+            if (smc_selector || target == StepTarget::List(ListTarget::Projects))
+                && picker.naming.is_none()
+            {
+                picker.selected = (picker.selected as i64 + i64::from(steps))
+                    .clamp(0, picker.entries.len().saturating_sub(1) as i64)
+                    as usize;
+            }
+            return;
+        }
+        if port.contains("SMC-PAD-Master")
+            && matches!(control, "e6" | "cc 35")
+            && target == StepTarget::List(ListTarget::Page)
+        {
+            if self.panel.owner() == Some(port)
+                && !self.help_open
+                && self.pad_naming.is_none()
+                && !self.browser.editing
+                && self.screen_learn.is_none()
+                && self.learning.is_none()
+                && self.midi_run.is_none()
+            {
+                let view = self.panel_view();
+                self.panel.sync_view(view);
+                self.panel.select_context_page(view, steps);
+            }
             return;
         }
         if self.pattern_panel.is_some()
@@ -2134,17 +2300,19 @@ impl App {
                     Action::PagePrev
                 })
             }
-            StepTarget::List(ListTarget::Bank)
-                if matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx) =>
-            {
-                Some(if right {
-                    Action::BankNext
-                } else {
-                    Action::BankPrev
-                })
-            }
+            StepTarget::List(ListTarget::Bank) => Some(if right {
+                Action::BankNext
+            } else {
+                Action::BankPrev
+            }),
             StepTarget::Param(Param::Page) => {
-                return self.midi_step(StepTarget::List(ListTarget::Page), steps, fine);
+                return self.midi_step(
+                    port,
+                    control,
+                    StepTarget::List(ListTarget::Page),
+                    steps,
+                    fine,
+                );
             }
             StepTarget::Param(Param::Slot(k)) => {
                 if self.pattern_panel.is_some() {
@@ -2154,7 +2322,7 @@ impl App {
                     return;
                 }
                 if let Some(param) = self.slot_param(k) {
-                    return self.midi_step(StepTarget::Param(param), steps, fine);
+                    return self.midi_step(port, control, StepTarget::Param(param), steps, fine);
                 }
                 return;
             }
@@ -2239,18 +2407,14 @@ impl App {
                         chop.nudge_by(end, right, step);
                     }
                 }
+                self.slice_end = end;
                 self.lit = Some((Lit::Bound(end), Instant::now()));
                 let changed = self.sync_links();
                 self.say_changed(changed, false);
                 return;
             }
             StepTarget::Param(Param::Threshold) if self.screen == Screen::Chop => {
-                if let Some(chop) = self.chop.as_mut() {
-                    let next = (chop.threshold_db - steps as f32).clamp(-40.0, 0.0);
-                    chop.set_threshold(-next / 40.0);
-                }
-                let changed = self.sync_links();
-                self.say_changed(changed, false);
+                self.step_threshold(-steps);
                 return;
             }
             StepTarget::Param(param @ (Param::RegionStart | Param::RegionEnd))
@@ -2360,6 +2524,13 @@ impl App {
         if self.help_key(&k) {
             return false;
         }
+        if self.help_open
+            && self.screen == Screen::Pads
+            && matches!(k.code, event::KeyCode::Left | event::KeyCode::Right)
+            && k.modifiers == event::KeyModifiers::ALT
+        {
+            return false;
+        }
         if warning_shown
             && k.kind == event::KeyEventKind::Press
             && !matches!(k.code, event::KeyCode::Modifier(_))
@@ -2456,6 +2627,8 @@ mod relative_tests {
 
     fn turn(app: &mut App, target: StepTarget, steps: i32, fine: bool) {
         app.midi_event(midi::Event::Step {
+            port: "Relative test".into(),
+            control: "test".into(),
             target,
             steps,
             fine,

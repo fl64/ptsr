@@ -149,6 +149,46 @@ fn smc_controller_view_shows_setup_status() {
     assert!(rows.contains("encoders ready"), "{rows}");
 }
 
+/// Scenario "A1 encoders follow the open controls on every screen" (controller-reach).
+#[test]
+fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
+    let port = "SINCO SMC-PAD-Master 28:1";
+    let role = |drive: &mut Drive, control: &str| match &view(drive).body {
+        tui::ControllerBody::Drawing { rows, .. } => rows
+            .iter()
+            .flatten()
+            .flatten()
+            .find(|cell| cell.name == control)
+            .unwrap()
+            .label
+            .clone(),
+        tui::ControllerBody::List { rows, .. } => rows
+            .iter()
+            .find(|(name, _)| name.starts_with(&format!("{control} ")))
+            .unwrap()
+            .1
+            .clone(),
+        tui::ControllerBody::Empty { .. } => panic!("no controller"),
+    };
+    for size in SIZES {
+        let mut drive = Drive::smc_offline();
+        touch(&mut drive, port);
+        open(&mut drive, size);
+        assert!(role(&mut drive, "e2").contains("volume"));
+        drive.tap(KeyCode::Esc, M::NONE);
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        assert!(drive.app.pattern_panel.is_some());
+        open(&mut drive, size);
+        assert!(role(&mut drive, "e2").contains("bars"));
+        assert!(role(&mut drive, "e3").contains("quant"));
+        assert!(role(&mut drive, "e4").contains("str"));
+        drive.tap(KeyCode::Esc, M::NONE);
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        open(&mut drive, size);
+        assert!(role(&mut drive, "e2").contains("volume"));
+    }
+}
+
 #[test]
 fn controller_labels_follow_the_screen_and_the_edit() {
     let mut drive = Drive::new();

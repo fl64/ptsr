@@ -92,6 +92,8 @@ pub(super) fn describe(a: Action) -> String {
         Action::ChopEqualParts => "chop: equal parts 2, 4, 8, 16, 32".into(),
         Action::ChopHits => "chop: by hits, one threshold step lower per press (−6…−30 dB)".into(),
         Action::ChopHitsBack => "chop: by hits, one threshold step back (to −6 dB)".into(),
+        Action::ThresholdStep(step) if step < 0 => "chop: hit threshold down 1 dB".into(),
+        Action::ThresholdStep(_) => "chop: hit threshold up 1 dB".into(),
         Action::ChopAssignOrder => "assign: in order / by hand".into(),
         Action::SliceBound { end, right, .. } => format!(
             "chop: the slice {} {}",
@@ -310,6 +312,30 @@ impl App {
             self.help_overlay.pending_pages.push(next);
         } else {
             self.step_key_page(next);
+        }
+    }
+
+    pub(super) fn help_panel_cell(&mut self, cell: u8) {
+        use event::{KeyCode as K, KeyEvent, KeyModifiers as M};
+        if !self.help_navigation_allowed() {
+            return;
+        }
+        match cell {
+            7 | 8 => {
+                let modifiers = if cell == 7 { M::SHIFT } else { M::NONE };
+                self.help_key(&KeyEvent::new(K::Tab, modifiers));
+            }
+            9 | 10 if self.help_overlay.page == Page::Help => self.help_page(cell == 10),
+            9 | 10 => {
+                let code = match (self.help_overlay.page, cell) {
+                    (Page::Messages, 9) => K::PageUp,
+                    (Page::Messages, _) => K::PageDown,
+                    (_, 9) => K::Up,
+                    _ => K::Down,
+                };
+                self.help_key(&KeyEvent::new(code, M::NONE));
+            }
+            _ => {}
         }
     }
 

@@ -26,11 +26,11 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
     match &p.naming {
         Some(name) => {
             lines.push(format!("name: {name}").into());
-            lines.push(" Enter create · Esc cancel".fg(DIM).into());
+            lines.push(" Enter/P8 create · Esc/P7 back to list".fg(DIM).into());
         }
         None => {
             lines.push(
-                " Enter open · type a name to create · Esc close"
+                " E1/↑↓ select · Enter/P8 open · type a name · Esc/P7 close"
                     .fg(DIM)
                     .into(),
             );

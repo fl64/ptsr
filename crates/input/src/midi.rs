@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::{Action, Screen};
+use crate::{Action, Mode, Screen};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Msg {
@@ -363,6 +363,7 @@ pub enum Scope {
     Global,
     Screen(Screen),
     Edit(Screen),
+    Pattern,
 }
 
 /// A plain binding acts on press. A gesture waits for release or the hold threshold.
@@ -420,6 +421,8 @@ pub struct Profile {
     ccs: HashMap<u8, Control>,
     /// Screen sections; `None` key is `[screens.global]`.
     screens: HashMap<Option<Screen>, HashMap<String, Binding>>,
+    /// `[screens.pattern]`: encoder roles while A1 controls are open.
+    pattern: HashMap<String, Binding>,
     /// `[edit]`: control -> action while an edit mode is open, over the screens and learned.
     edit: HashMap<String, Binding>,
     /// Learned on the MIDI tab (user config); override `screens`, the edit groups (28)
@@ -552,6 +555,7 @@ impl Profile {
             notes,
             ccs: HashMap::new(),
             screens: HashMap::new(),
+            pattern: HashMap::new(),
             edit: HashMap::new(),
             learned: HashMap::new(),
             seeded: false,
@@ -697,7 +701,10 @@ impl Profile {
                     ..
                 })
             );
-            if relative && value.as_str().and_then(step_target_of).is_none() {
+            if relative
+                && value.as_str().and_then(step_target_of).is_none()
+                && value.as_str() != Some("settings.value_next")
+            {
                 return Err(err(&format!("{name}: relative knob needs a step target")));
             }
             if value
@@ -734,6 +741,7 @@ impl Profile {
         }
 
         let mut screens = HashMap::new();
+        let mut pattern = HashMap::new();
         let mut warnings = Vec::new();
         for (key, section) in t
             .get("screens")
@@ -742,7 +750,7 @@ impl Profile {
             .flatten()
         {
             let screen = match key.as_str() {
-                "global" => None,
+                "global" | "pattern" => None,
                 key => match Screen::from_key(key) {
                     Some(screen) => Some(screen),
                     None => continue,
@@ -765,7 +773,11 @@ impl Profile {
                     .map(|binding| (control.clone(), binding))
                 })
                 .collect();
-            screens.insert(screen, map);
+            if key == "pattern" {
+                pattern = map;
+            } else {
+                screens.insert(screen, map);
+            }
         }
         let edit = t
             .get("edit")
@@ -794,6 +806,7 @@ impl Profile {
             notes,
             ccs,
             screens,
+            pattern,
             edit,
             learned: HashMap::new(),
             seeded: false,
@@ -838,6 +851,17 @@ impl Profile {
         edit: bool,
         control: &str,
     ) -> Option<&'static str> {
+        self.control_action_context(screen, edit, false, control)
+    }
+
+    /// The effective role while the A1 controls overlay is open or closed.
+    pub fn control_action_context(
+        &self,
+        screen: Screen,
+        edit: bool,
+        pattern_controls: bool,
+        control: &str,
+    ) -> Option<&'static str> {
         let ch = self.channel.unwrap_or(1);
         let key = self.key_of(control).or_else(|| {
             let pad = control
@@ -857,7 +881,12 @@ impl Profile {
             },
             Key::Cc(cc) => Msg::Cc { ch, cc, value: 127 },
         };
-        match self.resolve_in(screen, edit, msg)? {
+        let mode = Mode {
+            edit,
+            pattern_controls,
+            ..Mode::default()
+        };
+        match self.resolve_input_mode(screen, mode, false, msg).0? {
             Resolved::Param { param, .. } => PARAMS
                 .iter()
                 .find_map(|(name, p)| (*p == param).then_some(*name)),
@@ -908,6 +937,11 @@ impl Profile {
                 if let Some(key) = self.key_of(control) {
                     out.push((scope, key, action.clone()));
                 }
+            }
+        }
+        for (control, action) in &self.pattern {
+            if let Some(key) = self.key_of(control) {
+                out.push((Scope::Pattern, key, action.clone()));
             }
         }
         for (control, action) in &self.edit {
@@ -1151,6 +1185,7 @@ impl Profile {
         let (control, slot) = match scope {
             // the edit groups are served by the profile's `[edit]` layer (28)
             Scope::Edit(_) => find(&self.edit),
+            Scope::Pattern => find(&self.pattern),
             Scope::Screen(s) => self
                 .screens
                 .get(&Some(s))
@@ -1214,8 +1249,27 @@ impl Profile {
         modal: bool,
         msg: Msg,
     ) -> (Option<Resolved>, Activity) {
+        self.resolve_input_mode(
+            screen,
+            Mode {
+                edit,
+                ..Mode::default()
+            },
+            modal,
+            msg,
+        )
+    }
+
+    /// Resolve input with the full overlay state from the UI snapshot.
+    pub fn resolve_input_mode(
+        &self,
+        screen: Screen,
+        mode: Mode,
+        modal: bool,
+        msg: Msg,
+    ) -> (Option<Resolved>, Activity) {
         let mut activity = Activity::None;
-        let resolved = self.resolve_inner(screen, edit, modal, msg, &mut activity);
+        let resolved = self.resolve_inner(screen, mode, modal, msg, &mut activity);
         (resolved, activity)
     }
 
@@ -1243,7 +1297,7 @@ impl Profile {
     fn resolve_inner(
         &self,
         screen: Screen,
-        edit: bool,
+        mode: Mode,
         modal: bool,
         msg: Msg,
         activity: &mut Activity,
@@ -1287,6 +1341,26 @@ impl Profile {
             Msg::NoteOn { note, .. } | Msg::NoteOff { note, .. } => self.notes.get(&note),
             Msg::Cc { cc, .. } => self.ccs.get(&cc),
         };
+        if mode.pattern_controls
+            && !modal
+            && !mode.text
+            && !mode.screen_learn
+            && !mode.midi_learn
+            && let Some(Control::Knob { name, .. }) = control
+            && (self.pattern.contains_key(name)
+                || self
+                    .learned
+                    .get(&Scope::Pattern)
+                    .is_some_and(|map| map.contains_key(&msg.key())))
+        {
+            let binding = self
+                .learned
+                .get(&Scope::Pattern)
+                .and_then(|map| map.get(&msg.key()))
+                .or_else(|| (!self.seeded).then(|| self.pattern.get(name)).flatten())?;
+            *activity = self.activity(msg, Some(binding.primary()));
+            return binding_resolved(binding, msg, value, on, encoding);
+        }
         let rules = screen.rules();
         if rules.fx_page_controls
             && let Some((action, name)) = self.fx_binding(msg.key())
@@ -1304,7 +1378,7 @@ impl Profile {
             return Some(resolved);
         }
         // FX has no separate edit mode; its inherited controls were resolved above.
-        let edit = edit && rules.midi_edit_layer;
+        let edit = mode.edit && rules.midi_edit_layer;
         // the learned edit group of the screen goes first inside the edit (28), over the
         // profile's `[edit]` layer; outside the edit it does nothing
         if edit
@@ -1337,7 +1411,10 @@ impl Profile {
         // seeded (59): the profile's roles live in the learned maps now
         if self.seeded
             && !(self.name == "SMC-PAD"
-                && matches!(control, Some(Control::Button(name)) if smc_new_control(name)))
+                && (matches!(control, Some(Control::Button(name)) if smc_new_control(name))
+                    || (screen == Screen::Settings
+                        && matches!(control, Some(Control::Knob { name, .. }) if name == "e2"))
+                    || matches!(control, Some(Control::Knob { name, .. }) if matches!(name.as_str(), "e6" | "e7" | "e8"))))
         {
             return None;
         }
@@ -1451,8 +1528,15 @@ fn learned_resolved(
         if !matches!(msg, Msg::Cc { .. }) {
             return None;
         }
-        let target = step_target_of(action)?;
         let steps = encoding.decode(value);
+        if action == "settings.value_next" {
+            return (steps != 0).then_some(Resolved::Action(Action::SettingsValue(if steps > 0 {
+                1
+            } else {
+                -1
+            })));
+        }
+        let target = step_target_of(action)?;
         return (steps != 0).then(|| Resolved::Step {
             control: msg.key().to_string(),
             target,
@@ -1800,6 +1884,146 @@ mod tests {
         assert!(matches!(turn(65), Some(Resolved::Step { steps: 1, .. })));
         assert!(matches!(turn(63), Some(Resolved::Step { steps: -1, .. })));
         assert_eq!(turn(64), None);
+    }
+
+    #[test]
+    fn relative_settings_value_uses_both_directions() {
+        let profile = Profile::from_toml(
+            "settings.toml",
+            "[device]\nname = 'Settings'\nmatch_port = 'Settings'\n[controls.knobs]\ne2 = { cc = 31, type = 'relative', encoding = 'offset64' }\n[screens.settings]\ne2 = 'settings.value_next'\n",
+        )
+        .unwrap();
+        let turn =
+            |value| profile.resolve(Screen::Settings, Msg::parse(&[0xB0, 31, value]).unwrap());
+        assert_eq!(turn(65), Some(Resolved::Action(Action::SettingsValue(1))));
+        assert_eq!(turn(63), Some(Resolved::Action(Action::SettingsValue(-1))));
+        assert_eq!(turn(64), None);
+        assert_eq!(
+            profile.control_action(Screen::Settings, false, "e2"),
+            Some("settings.value_next")
+        );
+    }
+
+    #[test]
+    fn seeded_smc_settings_value_keeps_an_owner_override() {
+        let mut profile = Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        profile.set_seeded(true);
+        let turn = Msg::parse(&[0xB0, 31, 65]).unwrap();
+        assert_eq!(
+            profile.resolve(Screen::Settings, turn),
+            Some(Resolved::Action(Action::SettingsValue(1)))
+        );
+        profile.set_learned(
+            Scope::Screen(Screen::Settings),
+            [(Key::Cc(31), "pad.pitch".into())].into(),
+        );
+        assert!(matches!(
+            profile.resolve(Screen::Settings, turn),
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PadPitch),
+                ..
+            })
+        ));
+    }
+
+    /// Scenario "A1 encoder bindings survive profile seeding and owner changes" (controller-reach).
+    #[test]
+    fn a1_encoder_context_uses_its_own_saved_binding() {
+        let mut profile = Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        let turn = Msg::parse(&[0xB0, 31, 65]).unwrap();
+        let mode = Mode {
+            pattern_controls: true,
+            ..Mode::default()
+        };
+        assert!(matches!(
+            profile
+                .resolve_input_mode(Screen::Pads, mode, false, turn)
+                .0,
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PatternBars),
+                ..
+            })
+        ));
+        profile.set_seeded(true);
+        profile.set_learned(
+            Scope::Pattern,
+            [(Key::Cc(31), "pattern.strength".into())].into(),
+        );
+        assert!(matches!(
+            profile
+                .resolve_input_mode(Screen::Pads, mode, false, turn)
+                .0,
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PatternStrength),
+                ..
+            })
+        ));
+        profile.set_learned(
+            Scope::Pattern,
+            [(Key::Cc(34), "pattern.strength".into())].into(),
+        );
+        assert!(matches!(
+            profile
+                .resolve_input_mode(
+                    Screen::Pads,
+                    mode,
+                    false,
+                    Msg::parse(&[0xB0, 34, 65]).unwrap()
+                )
+                .0,
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PatternStrength),
+                ..
+            })
+        ));
+        profile.set_learned(Scope::Pattern, [(Key::Cc(31), "none".into())].into());
+        assert_eq!(
+            profile
+                .resolve_input_mode(Screen::Pads, mode, false, turn)
+                .0,
+            None
+        );
+        assert_eq!(
+            profile.resolve_input_mode(Screen::Pads, mode, true, turn).0,
+            None
+        );
+    }
+
+    #[test]
+    fn seeded_smc_panel_and_transport_knobs_keep_owner_overrides() {
+        let mut profile = Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap();
+        profile.set_seeded(true);
+        for (cc, target) in [
+            (35, StepTarget::List(ListTarget::Page)),
+            (36, StepTarget::Param(Param::Tempo)),
+            (37, StepTarget::List(ListTarget::Bank)),
+        ] {
+            let msg = Msg::parse(&[0xB0, cc, 65]).unwrap();
+            assert!(matches!(
+                profile.resolve(Screen::Pads, msg),
+                Some(Resolved::Step { target: found, steps: 1, .. }) if found == target
+            ));
+        }
+        profile.set_learned(Scope::Global, [(Key::Cc(35), "pad.pitch".into())].into());
+        assert!(matches!(
+            profile.resolve(Screen::Pads, Msg::parse(&[0xB0, 35, 65]).unwrap()),
+            Some(Resolved::Step {
+                target: StepTarget::Param(Param::PadPitch),
+                ..
+            })
+        ));
     }
 
     /// 90 input-devices: "Absolute knob keeps its response".

@@ -86,7 +86,8 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                 }));
             }
             lines.push(Line::default());
-            lines.push(" Enter pick · Esc cancel".fg(DIM).into());
+            lines.push(" E1/↑↓ select · LEFT/RIGHT folder".fg(DIM).into());
+            lines.push(" Enter/P8 pick · Esc/P7 cancel".fg(DIM).into());
             return Paragraph::new(lines);
         }
         if let Some((projects, samples)) = st.paths {
@@ -108,6 +109,9 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                 let hint = match st.midi_rows.get(st.midi_row) {
                     Some(MidiRow::Action { label, .. }) if label == "hold time" => {
                         " J/L: change hold time by 50 ms. Saves at once."
+                    }
+                    Some(MidiRow::Action { label, .. }) if label == "SMC-PAD PAD BANK" => {
+                        " J/L: select Off or Open panel. Saves at once."
                     }
                     Some(MidiRow::Action { label, .. }) if label == "knob response" => {
                         " J/L: change knob response. Saves at once."

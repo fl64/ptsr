@@ -243,7 +243,7 @@ fn help_follows_effective_transport_bindings() {
     let mut drive = Drive::new();
     drive
         .keymap
-        .overlay("[global]\nSpace = \"none\"\nF9 = \"transport.toggle\"\n\"Ctrl+Up\" = \"none\"\n")
+        .overlay("[global]\nSpace = \"none\"\n\"Alt+U\" = \"none\"\nF9 = \"transport.toggle\"\n\"Ctrl+Up\" = \"none\"\n")
         .unwrap();
     for screen in Screen::ALL {
         drive.app.screen = screen;
@@ -734,6 +734,7 @@ fn transport_help_keeps_arrows_and_the_existing_edit_band() {
     let clock = transport_help(&map, Screen::Pads);
     for key in [
         "Space",
+        "Alt+U",
         "Ctrl+↑",
         "Ctrl+↓",
         "Ctrl+Shift+↑",
@@ -757,7 +758,11 @@ fn transport_help_keeps_arrows_and_the_existing_edit_band() {
     assert!(
         full_help(&map, Screen::Pads, true)
             .iter()
-            .any(|(keys, text)| keys == "Space" && text.contains("transport"))
+            .any(|(keys, text)| {
+                keys.split(' ').any(|key| key == "Space")
+                    && keys.split(' ').any(|key| key == "Alt+U")
+                    && text.contains("transport")
+            })
     );
 }
 
