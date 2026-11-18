@@ -14,7 +14,7 @@ pub struct KnobStrip {
     pub value: Option<String>,
 }
 
-const STRIP_WIDTH: u16 = 44;
+const STRIP_WIDTH: u16 = 40;
 
 impl Feedback {
     pub fn content_area(&self, mut area: Rect) -> Rect {
@@ -66,47 +66,53 @@ pub(super) fn draw_help(
 fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'_>>) {
     let left = Rect::new(area.x, area.y, STRIP_WIDTH, HELP_ROWS + 1);
     let right = Rect::new(left.right(), area.y, area.width - left.width, HELP_ROWS + 1);
-    let mut knobs = Vec::new();
-    for (row, first) in [7, 5, 3, 1].into_iter().enumerate() {
-        let mut line = Vec::new();
-        for bank in 0..2 {
-            let recent = strip.last_bank == Some(bank);
-            let bank_name = if row == 0 {
-                if bank == 0 { "B1 " } else { "B2 " }
-            } else {
-                "   "
-            };
-            let bank_style = if recent {
+    // Bank 1 in physical rows; bank 2 has only master, so it takes one cell (127).
+    let mark = |bank: usize| strip.last_bank == Some(bank);
+    let cell = |bank: usize, knob: usize| {
+        let (label, available) = strip.roles[bank][knob - 1];
+        let color = if !available {
+            DIM
+        } else if mark(bank) {
+            BRIGHT
+        } else {
+            TEXT
+        };
+        let span = Span::raw(format!("{knob} {:<6} ", clip_label(label, 6))).fg(color);
+        if mark(bank) && strip.last_knob == Some(knob - 1) {
+            span.fg(BG).bg(CYAN)
+        } else {
+            span
+        }
+    };
+    let bank_name = |bank: usize, text: &'static str| {
+        Span::styled(
+            text,
+            if mark(bank) {
                 Style::new().fg(BG).bg(CYAN).bold()
             } else {
                 Style::new().fg(DIM)
-            };
-            line.push(Span::styled(bank_name, bank_style));
-            for knob in [first, first + 1] {
-                let (label, available) = strip.roles[bank][knob - 1];
-                let color = if !available {
-                    DIM
-                } else if recent {
-                    BRIGHT
-                } else {
-                    TEXT
-                };
-                let cell = Span::raw(format!("{knob} {:<6} ", clip_label(label, 6))).fg(color);
-                line.push(if recent && strip.last_knob == Some(knob - 1) {
-                    cell.fg(BG).bg(CYAN)
-                } else {
-                    cell
-                });
-            }
-            line.push(Span::raw(" "));
+            },
+        )
+    };
+    let mut knobs = Vec::new();
+    for (row, first) in [7, 5, 3, 1].into_iter().enumerate() {
+        let mut line = vec![
+            if row == 0 {
+                bank_name(0, "B1 ")
+            } else {
+                Span::raw("   ")
+            },
+            cell(0, first),
+            cell(0, first + 1),
+        ];
+        if row == 0 {
+            line.push(bank_name(1, " B2 "));
+            line.push(cell(1, 8));
         }
         knobs.push(Line::from(line));
     }
     frame.render_widget(Paragraph::new(knobs).style(Style::new().bg(PANEL)), left);
-    let last = strip
-        .last_bank
-        .map_or(String::new(), |bank| format!(" · last {}", bank + 1));
-    let mut help = vec![Line::from(format!("< > {} · {}{last}", strip.list, strip.page)).fg(CYAN)];
+    let mut help = vec![Line::from(format!("◀ ▶ {} · {}", strip.list, strip.page)).fg(CYAN)];
     if let Some(value) = &strip.value {
         help.push(
             Line::from(clip_label(value, usize::from(right.width)))
@@ -117,7 +123,8 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
     if let Some(operation) = strip.operation {
         help.push(Line::from(operation).fg(TEXT));
     }
-    let remaining = usize::from(HELP_ROWS + 1) - help.len();
+    help.push(Line::from("PAD BANK panel · PLAY play · STOP stop").fg(DIM));
+    let remaining = usize::from(HELP_ROWS + 1).saturating_sub(help.len());
     help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);
 }

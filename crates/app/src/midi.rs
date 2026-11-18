@@ -3972,7 +3972,7 @@ mod tests {
                 question
                     .answers
                     .iter()
-                    .any(|answer| answer.contains("P7: keep · P8: clear"))
+                    .any(|answer| answer.contains("P11: keep · P12: clear"))
             );
             assert!(question.answers.iter().any(|answer| answer.contains("KB ")));
             assert!(
@@ -4008,22 +4008,18 @@ mod tests {
         assert!(
             before
                 .iter()
-                .any(|(_, text)| text.contains("First second-bank hit"))
+                .any(|(_, text)| text.contains("PAD BANK shows the panel"))
         );
-        assert!(before.iter().any(|(_, text)| text.contains("P1 pads")));
+        assert!(before.iter().any(|(_, text)| text.contains("P13 edit")));
         app.panel.press(SMC_MASTER, 1);
-        assert_eq!(
-            app.panel.choice(app.panel_view(), 8),
-            crate::panel::Choice::Page
-        );
+        app.panel.move_view(-1);
         let after = app.full_help_recording_keys(&keymap, true, None);
-        assert_eq!(app.panel.page_count(app.panel_view()), 5);
-        assert!(after.iter().any(|(_, text)| text.contains("Page 2/5")));
-        assert!(after.iter().any(|(_, text)| text.contains("P1 mode")));
+        assert!(after.iter().any(|(_, text)| text.contains("View: screens")));
+        assert!(after.iter().any(|(_, text)| text.contains("P13 pads")));
         assert!(
             after
                 .iter()
-                .any(|(_, text)| text.contains("P15 redo unavailable"))
+                .any(|(_, text)| text.contains("P3 redo unavailable"))
         );
         assert!(
             after
@@ -4044,17 +4040,13 @@ mod tests {
         });
         app.help_overlay.size = (120, 40);
         app.panel.press(SMC_MASTER, 1);
-        assert_eq!(
-            app.panel.choice(app.panel_view(), 8),
-            crate::panel::Choice::Page
-        );
         let (keymap, _) = input::Keymap::from_toml(crate::DEFAULT_KEYMAP).unwrap();
         app.controller_start();
         let view = app.controller_view(&keymap);
         let tui::ControllerBody::Drawing { rows, .. } = view.body else {
             panic!("SMC-PAD drawing missing");
         };
-        assert_eq!(rows[4][4].as_ref().unwrap().label, "[mode]");
+        assert_eq!(rows[4][4].as_ref().unwrap().label, "[edit]");
         assert_eq!(rows[7][6].as_ref().unwrap().label, "[redo]");
         assert!(rows[7][6].as_ref().unwrap().free);
         assert!(rows[7][7].as_ref().unwrap().free);
@@ -4332,8 +4324,8 @@ mod tests {
             ),
             (
                 Screen::Chop,
-                Action::MarkerSelect(-1),
-                Action::MarkerSelect(1),
+                Action::SmcList { next: false },
+                Action::SmcList { next: true },
             ),
         ] {
             for (cc, action) in [(25, left), (26, right)] {

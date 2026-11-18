@@ -29,6 +29,8 @@ const PREVIOUS: &[(Group, u8, &[Option<&str>])] = &[
     (Group::Pads, 36, &[None]),
     (Group::Files, 25, &[Some("browser.up")]),
     (Group::Files, 26, &[Some("browser.down")]),
+    (Group::Chop, 25, &[Some("marker.prev")]),
+    (Group::Chop, 26, &[Some("marker.next")]),
     (Group::Chop, 32, &[Some("chop.threshold")]),
     (Group::Chop, 33, &[Some("slice.start")]),
     (Group::Chop, 34, &[Some("slice.end")]),

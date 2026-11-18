@@ -1,388 +1,98 @@
-# SMC-PAD command cells use physical rows, top to bottom.
-# Cells 13-16 are fixed in the program: Back, Undo, Redo, Panic.
+# SMC-PAD actions (127): one page of up to 12 cells per view.
+# Cells 1-12 count from the top left, in physical rows. A second page is rejected.
+# The screens view and the bottom row (back, undo, redo, panic) are fixed in the program.
 
 [[view]]
 name = "pads"
-page = 0
+page = 1
 cells = [
-  { cell = 9, label = "edit", action = "pad.edit" },
-  { cell = 10, label = "copy", action = "pad.copy" },
-  { cell = 11, label = "take", action = "pad.take" },
-  { cell = 12, label = "mark", action = "pad.mark_toggle" },
+  { cell = 1, label = "edit", action = "pad.edit" },
+  { cell = 2, label = "copy", action = "pad.copy" },
+  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 4, label = "mark", action = "pad.mark_toggle" },
+  { cell = 5, label = "mode", action = "pad.mode_next" },
+  { cell = 6, label = "clear", action = "pad.clear" },
+  { cell = 7, label = "gate", action = "pad.pitch_gate_toggle" },
+  { cell = 8, label = "marks", action = "pad.mark_bank" },
+  { cell = 9, label = "grid", action = "ui.pads_toggle" },
+  { cell = 10, label = "output", action = "record.output" },
 ]
 
 [[view]]
-name = "pads"
+name = "pad_edit"
 page = 1
 cells = [
   { cell = 1, label = "mode", action = "pad.mode_next" },
-  { cell = 2, label = "marks", action = "pad.mark_bank" },
-  { cell = 3, label = "clear", action = "pad.clear" },
+  { cell = 2, label = "clear", action = "pad.clear" },
+  { cell = 3, label = "gate", action = "pad.pitch_gate_toggle" },
+  { cell = 4, label = "copy", action = "pad.copy" },
+]
+
+[[view]]
+name = "pattern"
+page = 1
+cells = [
+  { cell = 1, label = "step", action = "pattern.step_edit" },
+  { cell = 2, label = "grid -", action = "pattern.view_prev", pair = "grid:lower" },
+  { cell = 3, label = "grid +", action = "pattern.view_next", pair = "grid:upper" },
   { cell = 4, label = "knobs", action = "pattern.controls" },
   { cell = 5, label = "record", action = "pattern.record" },
   { cell = 6, label = "erase", action = "pattern.erase" },
-  { cell = 7, label = "gate", action = "pad.pitch_gate_toggle" },
-  { cell = 8, label = "grid", action = "ui.pads_toggle" },
-  { cell = 9, label = "open", action = "project.pick" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "pad_edit"
-page = 0
-cells = [
-]
-
-[[view]]
-name = "pad_edit"
-page = 1
-cells = [
-  { cell = 3, label = "mode", action = "pad.mode_next" },
-  { cell = 4, label = "clear", action = "pad.clear" },
-  { cell = 5, label = "gate", action = "pad.pitch_gate_toggle" },
-  { cell = 6, label = "save", action = "session.save" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "pattern"
-page = 0
-cells = [
-  { cell = 9, label = "step", action = "pattern.step_edit" },
-  { cell = 10, label = "grid -", action = "pattern.view_prev", pair = "grid:lower" },
-  { cell = 11, label = "grid +", action = "pattern.view_next", pair = "grid:upper" },
-  { cell = 12, label = "knobs", action = "pattern.controls" },
-]
-
-[[view]]
-name = "pattern"
-page = 1
-cells = [
-  { cell = 1, label = "record", action = "pattern.record" },
-  { cell = 2, label = "erase", action = "pattern.erase" },
-  { cell = 3, label = "undo", action = "pattern.undo" },
-  { cell = 4, label = "clear", action = "pattern.clear" },
-  { cell = 5, label = "rows", action = "pattern.overview_empty_toggle" },
-  { cell = 6, label = "tap", action = "transport.tap" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "files"
-page = 0
-cells = [
-  { cell = 9, label = "take", action = "browser.hold" },
-  { cell = 10, label = "load", action = "browser.load" },
-  { cell = 11, label = "parent", action = "browser.parent" },
-  { cell = 12, label = "star", action = "browser.favorite_toggle" },
+  { cell = 7, label = "undo", action = "pattern.undo" },
+  { cell = 8, label = "clear", action = "pattern.clear" },
+  { cell = 9, label = "rows", action = "pattern.overview_empty_toggle" },
+  { cell = 10, label = "tap", action = "transport.tap" },
 ]
 
 [[view]]
 name = "files"
 page = 1
 cells = [
-  { cell = 1, label = "enter", action = "browser.enter" },
-  { cell = 2, label = "auto", action = "browser.preview_toggle" },
-  { cell = 3, label = "chop", action = "screen.chop" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "chop"
-page = 0
-cells = [
-  { cell = 9, label = "cut", action = "chop.cut" },
-  { cell = 10, label = "parts", action = "chop.parts" },
-  { cell = 11, label = "hits", action = "chop.hits" },
-  { cell = 12, label = "assign", action = "chop.assign" },
+  { cell = 1, label = "take", action = "browser.hold" },
+  { cell = 2, label = "load", action = "browser.load" },
+  { cell = 3, label = "parent", action = "browser.parent" },
+  { cell = 4, label = "star", action = "browser.favorite_toggle" },
+  { cell = 5, label = "enter", action = "browser.enter" },
+  { cell = 6, label = "auto", action = "browser.preview_toggle" },
+  { cell = 7, label = "chop", action = "screen.chop" },
 ]
 
 [[view]]
 name = "chop"
 page = 1
 cells = [
-  { cell = 1, label = "loop", action = "chop.loop_toggle" },
-  { cell = 2, label = "play", action = "chop.play_mode" },
-  { cell = 3, label = "snap", action = "chop.snap_toggle" },
-  { cell = 4, label = "as pad", action = "chop.as_pad_toggle" },
-  { cell = 5, label = "edit", action = "chop.edit" },
-  { cell = 6, label = "commit", action = "chop.commit" },
-  { cell = 7, label = "start", action = "chop.region_start", pair = "region:lower" },
-  { cell = 8, label = "end", action = "chop.region_end", pair = "region:upper" },
-  { cell = 9, label = "whole", action = "chop.region_clear" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "chop_edit"
-page = 0
-cells = [
+  { cell = 1, label = "cut", action = "chop.cut" },
+  { cell = 2, label = "parts", action = "chop.parts" },
+  { cell = 3, label = "hits", action = "chop.hits" },
+  { cell = 4, label = "assign", action = "chop.assign" },
+  { cell = 5, label = "loop", action = "chop.loop_toggle" },
+  { cell = 6, label = "listen", action = "chop.play_mode" },
+  { cell = 7, label = "snap", action = "chop.snap_toggle" },
+  { cell = 8, label = "as pad", action = "chop.as_pad_toggle" },
+  { cell = 9, label = "start", action = "chop.region_start", pair = "region:lower" },
+  { cell = 10, label = "end", action = "chop.region_end", pair = "region:upper" },
+  { cell = 11, label = "edit", action = "chop.edit" },
+  { cell = 12, label = "commit", action = "chop.commit" },
 ]
 
 [[view]]
 name = "chop_edit"
 page = 1
 cells = [
-  { cell = 3, label = "level", action = "chop.normalize" },
-  { cell = 4, label = "save", action = "session.save" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "fx"
-page = 0
-cells = [
-]
-
-[[view]]
-name = "fx"
-page = 1
-cells = [
-  { cell = 3, label = "save", action = "session.save" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "settings"
-page = 0
-cells = [
-  { cell = 9, label = "tab", action = "settings.tab_next" },
-  { cell = 10, label = "learn", action = "settings.learn" },
-  { cell = 11, label = "clear", action = "settings.clear" },
-  { cell = 12, label = "save", action = "session.save" },
+  { cell = 1, label = "level", action = "chop.normalize" },
+  { cell = 2, label = "hits -", action = "chop.hits_back" },
+  { cell = 3, label = "cut -", action = "marker.delete" },
+  { cell = 4, label = "end -", action = "slice.end_delete" },
+  { cell = 5, label = "whole", action = "chop.region_clear" },
 ]
 
 [[view]]
 name = "settings"
 page = 1
 cells = [
-  { cell = 1, label = "row -", action = "settings.row_prev", pair = "row:lower" },
-  { cell = 2, label = "row +", action = "settings.row_next", pair = "row:upper" },
-  { cell = 5, label = "open", action = "project.pick" },
-  { cell = 10, label = "help", action = "help.toggle" },
-]
-
-[[view]]
-name = "pads"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "pads"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "pads"
-page = 4
-cells = [
-  { cell = 1, label = "grid -", action = "pattern.view_prev", pair = "grid:lower" },
-  { cell = 2, label = "grid +", action = "pattern.view_next", pair = "grid:upper" },
-  { cell = 3, label = "rows", action = "pattern.overview_empty_toggle" },
-  { cell = 4, label = "step", action = "pattern.step_edit" },
-]
-
-[[view]]
-name = "pad_edit"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "pad_edit"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "pattern"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "pattern"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "files"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "files"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "chop"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "chop"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "chop"
-page = 4
-cells = [
-  { cell = 1, label = "hits -", action = "chop.hits_back" },
-  { cell = 2, label = "cut -", action = "marker.delete" },
-  { cell = 3, label = "end -", action = "slice.end_delete" },
-  { cell = 4, label = "order", action = "chop.assign_order" },
-  { cell = 5, label = "level", action = "chop.normalize" },
-]
-
-[[view]]
-name = "chop_edit"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "chop_edit"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "chop_edit"
-page = 4
-cells = [
-  { cell = 1, label = "hits -", action = "chop.hits_back" },
-  { cell = 2, label = "cut -", action = "marker.delete" },
-  { cell = 3, label = "end -", action = "slice.end_delete" },
-  { cell = 4, label = "order", action = "chop.assign_order" },
-]
-
-[[view]]
-name = "fx"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "fx"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
-]
-
-[[view]]
-name = "settings"
-page = 2
-cells = [
-  { cell = 1, label = "output", action = "record.output" },
-  { cell = 2, label = "play", action = "transport.toggle" },
-  { cell = 3, label = "take", action = "pad.take" },
-  { cell = 4, label = "open", action = "project.pick" },
-  { cell = 5, label = "save", action = "session.save" },
-  { cell = 6, label = "grid", action = "ui.pads_toggle" },
-  { cell = 7, label = "learn", action = "learn.toggle" },
-  { cell = 8, label = "undo", action = "pattern.undo" },
-  { cell = 9, label = "knobs", action = "pattern.controls" },
-  { cell = 10, label = "exit", action = "app.quit" },
-]
-
-[[view]]
-name = "settings"
-page = 3
-cells = [
-  { cell = 5, label = "erase", action = "pattern.erase" },
-  { cell = 6, label = "record", action = "pattern.record" },
+  { cell = 1, label = "tab", action = "settings.tab_next" },
+  { cell = 2, label = "learn", action = "settings.learn" },
+  { cell = 3, label = "clear", action = "settings.clear" },
+  { cell = 5, label = "row -", action = "settings.row_prev", pair = "row:lower" },
+  { cell = 6, label = "row +", action = "settings.row_next", pair = "row:upper" },
 ]

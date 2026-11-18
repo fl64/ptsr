@@ -19,7 +19,8 @@ pub(super) enum View {
     Settings,
 }
 
-const MAIN: [(&str, Option<Action>); 7] = [
+/// The screens view (127): screens, Help and the global actions in cells 1–12.
+const SCREENS: [(&str, Option<Action>); 12] = [
     ("pads", Some(Action::ScreenPads)),
     ("files", Some(Action::ScreenFiles)),
     ("chop", Some(Action::ScreenChop)),
@@ -27,6 +28,11 @@ const MAIN: [(&str, Option<Action>); 7] = [
     ("fx", Some(Action::ScreenFx)),
     ("mixer", None),
     ("setup", Some(Action::ScreenSettings)),
+    ("help", Some(Action::HelpToggle)),
+    ("save", Some(Action::SessionSave)),
+    ("open", Some(Action::ProjectPick)),
+    ("learn", Some(Action::LearnToggle)),
+    ("exit", Some(Action::Quit)),
 ];
 
 impl View {
@@ -52,8 +58,7 @@ pub(super) struct Cell {
 }
 
 pub(super) struct Config {
-    cells: HashMap<(View, usize), [Option<Cell>; 12]>,
-    pages: HashMap<View, usize>,
+    cells: HashMap<View, [Option<Cell>; 12]>,
     pub warnings: Vec<String>,
 }
 
@@ -61,7 +66,6 @@ impl Config {
     pub(super) fn parse(file: &str, source: &str) -> Self {
         let mut config = Self {
             cells: HashMap::new(),
-            pages: HashMap::new(),
             warnings: Vec::new(),
         };
         let root: toml::Value = match toml::from_str(source) {
@@ -85,21 +89,25 @@ impl Config {
                 config.warnings.push(format!("{file}: unknown view {name}"));
                 continue;
             };
+            // Action pages start at 1; the screens view is fixed in the program.
             let Some(page) = row
                 .get("page")
                 .and_then(toml::Value::as_integer)
                 .and_then(|page| usize::try_from(page).ok())
+                .filter(|page| *page >= 1)
             else {
                 config
                     .warnings
                     .push(format!("{file}: {name}: invalid page"));
                 continue;
             };
-            config
-                .pages
-                .entry(view)
-                .and_modify(|count| *count = (*count).max(page + 1))
-                .or_insert(page + 1);
+            // A view has one page of 12 actions; more goes to its own screen or mode.
+            if page > 1 {
+                config.warnings.push(format!(
+                    "{file}: {name} page {page}: a view has one action page"
+                ));
+                continue;
+            }
             let Some(cells) = row.get("cells").and_then(toml::Value::as_array) else {
                 config
                     .warnings
@@ -119,18 +127,14 @@ impl Config {
                         .push(format!("{where_}: outside 1-12 or fixed bottom row"));
                     continue;
                 };
-                let key = (view, page, cell);
+                let key = (view, cell);
                 let slots = config
                     .cells
-                    .entry((view, page))
+                    .entry(view)
                     .or_insert_with(|| std::array::from_fn(|_| None));
                 if !seen.insert(key) {
                     slots[cell - 1] = None;
                     config.warnings.push(format!("{where_}: repeated cell"));
-                    continue;
-                }
-                if (page == 0 && !(9..=12).contains(&cell)) || (page > 0 && cell > 10) {
-                    config.warnings.push(format!("{where_}: reserved cell"));
                     continue;
                 }
                 let Some(label) = item.get("label").and_then(toml::Value::as_str) else {
@@ -162,15 +166,11 @@ impl Config {
         config
     }
 
-    pub(super) fn cell(&self, view: View, page: usize, cell: u8) -> Option<&Cell> {
+    pub(super) fn cell(&self, view: View, cell: u8) -> Option<&Cell> {
         self.cells
-            .get(&(view, page))?
+            .get(&view)?
             .get(usize::from(cell.checked_sub(1)?))?
             .as_ref()
-    }
-
-    pub(super) fn pages(&self, view: View) -> usize {
-        self.pages.get(&view).copied().unwrap_or(1)
     }
 }
 
@@ -213,7 +213,6 @@ pub(super) enum Choice {
     Action(Action),
     Exit,
     Back,
-    Page,
     Dim,
 }
 
@@ -221,7 +220,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             owner: None,
-            page: 0,
+            page: 1,
             view: None,
             target_menu: None,
             config: Config::parse(
@@ -249,7 +248,7 @@ impl State {
     pub(super) fn reveal(&mut self, port: &str) {
         if self.owner.is_none() {
             self.owner = Some(port.into());
-            self.page = 0;
+            self.page = 1;
             self.view = None;
         }
     }
@@ -285,49 +284,18 @@ impl State {
         self.page
     }
 
-    pub(super) fn page_count(&self, view: View) -> usize {
-        self.config.pages(view)
-    }
-
     pub(super) fn choice(&mut self, view: View, cell: u8) -> Choice {
-        match cell {
-            13 => Choice::Back,
-            14 => Choice::Action(Action::Undo),
-            15 | 16 => Choice::Dim,
-            1..=7 if self.page == 0 => MAIN[usize::from(cell - 1)]
-                .1
-                .map_or(Choice::Dim, Choice::Action),
-            8 if self.page == 0 => {
-                if self.page_count(view) > 1 {
-                    self.page = 1;
-                    Choice::Page
-                } else {
-                    Choice::Dim
-                }
-            }
-            11 if self.page > 0 => {
-                self.page = if self.page + 1 < self.page_count(view) {
-                    self.page + 1
-                } else {
-                    1
-                };
-                Choice::Page
-            }
-            12 if self.page > 0 => {
-                self.page = 0;
-                Choice::Page
-            }
-            1..=12 => self
-                .config
-                .cell(view, self.page, cell)
-                .map_or(Choice::Dim, |cell| {
-                    if cell.action == Action::Quit {
-                        Choice::Exit
-                    } else {
-                        Choice::Action(cell.action)
-                    }
-                }),
-            _ => Choice::Dim,
+        let action = match cell {
+            13 => return Choice::Back,
+            14 => return Choice::Action(Action::Undo),
+            1..=12 if self.page == 0 => SCREENS[usize::from(cell - 1)].1,
+            1..=12 => self.config.cell(view, cell).map(|cell| cell.action),
+            _ => None,
+        };
+        match action {
+            Some(Action::Quit) => Choice::Exit,
+            Some(action) => Choice::Action(action),
+            None => Choice::Dim,
         }
     }
 
@@ -337,34 +305,24 @@ impl State {
             (_, 14) => Some("undo"),
             (_, 15) => Some("redo"),
             (_, 16) => Some("panic"),
-            (0, 1..=7) => Some(MAIN[usize::from(cell - 1)].0),
-            (0, 8) => Some("more"),
-            (page, 11) if page > 0 => Some("next"),
-            (page, 12) if page > 0 => Some("main"),
-            _ => self
-                .config
-                .cell(view, self.page, cell)
-                .map(|cell| cell.label.as_str()),
+            (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0),
+            _ => self.config.cell(view, cell).map(|cell| cell.label.as_str()),
         }
     }
 
-    pub(super) fn main_page(&mut self) {
-        self.page = 0;
+    /// Move between the screens view (0) and the actions (1), without a wrap.
+    pub(super) fn move_view(&mut self, steps: i32) {
+        self.page = (self.page as i64 + i64::from(steps)).clamp(0, 1) as usize;
     }
 
-    pub(super) fn select_context_page(&mut self, view: View, steps: i32) {
-        if self.visible() && self.page > 0 {
-            let pages = self.page_count(view).saturating_sub(1);
-            if pages > 0 {
-                self.page = 1
-                    + ((self.page - 1) as i64 + i64::from(steps)).rem_euclid(pages as i64) as usize;
-            }
-        }
+    /// Show action page 1, the view that a reveal and a screen change open.
+    pub(super) fn first_actions(&mut self) {
+        self.page = 1;
     }
 
     pub(super) fn sync_view(&mut self, view: View) {
         if self.view.is_some_and(|previous| previous != view) {
-            self.page = 0;
+            self.page = 1;
             self.target_menu = None;
         }
         self.view = Some(view);
@@ -373,7 +331,7 @@ impl State {
     pub(super) fn hide(&mut self) {
         self.owner = None;
         self.target_menu = None;
-        self.page = 0;
+        self.page = 1;
         self.view = None;
     }
 
@@ -420,6 +378,14 @@ impl App {
         }
     }
 
+    /// During Assign, cell 4 of the Chop actions gives `order`: `assign` is already active.
+    pub(super) fn assign_order_cell(&self, cell: u8) -> bool {
+        cell == 4
+            && self.panel.page() == 1
+            && self.panel_view() == View::Chop
+            && self.panel_target() == Some(Target::Assign)
+    }
+
     pub(super) fn sync_panel_target(&mut self) {
         if self.panel.target_menu.is_some() && self.panel.target_menu != self.panel_target() {
             self.panel.target_menu = None;
@@ -438,9 +404,9 @@ impl App {
                     }
                 }
                 12 => "cancel",
-                13 if target == Target::Assign => "apply",
+                13 => "undo",
                 14 => "menu",
-                15 => "panic",
+                15 if target == Target::Assign => "apply",
                 _ => return None,
             };
             Some(label.into())
@@ -448,8 +414,8 @@ impl App {
         tui::CommandPanel {
             labels,
             page: 0,
-            pages: 1,
             view: target.title(),
+            target: true,
         }
     }
 
@@ -468,6 +434,9 @@ impl App {
                     return Some("target".into());
                 }
                 let cell = u8::try_from(index + 1).unwrap();
+                if self.assign_order_cell(cell) {
+                    return Some("order".into());
+                }
                 self.panel.label(view, cell).map(str::to_owned)
             });
             let name = match view {
@@ -483,8 +452,8 @@ impl App {
             tui::CommandPanel {
                 labels,
                 page: self.panel.page(),
-                pages: self.panel.page_count(view),
                 view: name,
+                target: false,
             }
         })
     }
@@ -501,10 +470,10 @@ mod tests {
             "A1", "as pad", "assign", "auto", "back", "chop", "clear", "commit", "copy", "cut",
             "cut -", "edit", "end", "end -", "enter", "erase", "exit", "files", "fx", "gate",
             "grid", "grid +", "grid -", "help", "hits", "hits -", "knobs", "learn", "level",
-            "load", "loop", "main", "mark", "marks", "mixer", "mode", "more", "next", "open",
-            "order", "output", "pads", "panic", "parent", "parts", "play", "record", "redo",
-            "row +", "row -", "rows", "save", "setup", "snap", "star", "start", "step", "tab",
-            "take", "tap", "undo", "whole", "pad", "used", "cancel", "apply", "menu", "target",
+            "listen", "load", "loop", "mark", "marks", "mixer", "mode", "open", "order", "output",
+            "pads", "panic", "parent", "parts", "record", "redo", "row +", "row -", "rows", "save",
+            "setup", "snap", "star", "start", "step", "tab", "take", "tap", "undo", "whole", "pad",
+            "used", "cancel", "apply", "menu", "target",
         ];
         let check = |label: &str| {
             assert!(
@@ -518,8 +487,9 @@ mod tests {
             "{:?}",
             panel.config.warnings
         );
-        for (view, count) in panel.config.pages.clone() {
-            for page in 0..count {
+        let views: Vec<View> = panel.config.cells.keys().copied().collect();
+        for view in views {
+            for page in 0..=1 {
                 panel.page = page;
                 for cell in 1..=16 {
                     if let Some(label) = panel.label(view, cell) {
@@ -536,42 +506,79 @@ mod tests {
         }
     }
 
+    /// Scenario "Shipped action pages match the table" (command-panel).
     #[test]
-    fn main_cells_follow_the_current_view() {
+    fn shipped_action_pages_match_the_table() {
         let config = Config::parse(
             "config/panel.toml",
             include_str!("../../../config/panel.toml"),
         );
         assert!(config.warnings.is_empty(), "{:?}", config.warnings);
-        for view in [
-            View::Pads,
-            View::PadEdit,
-            View::Pattern,
-            View::Files,
-            View::Chop,
-            View::ChopEdit,
-            View::Fx,
-            View::Settings,
-        ] {
-            assert_eq!(
-                config.pages(view),
-                if matches!(view, View::Pads | View::Chop | View::ChopEdit) {
-                    5
-                } else {
-                    4
-                },
-                "{view:?}"
-            );
-            let current_actions = (9..=12)
-                .filter(|&cell| config.cell(view, 0, cell).is_some())
-                .count();
-            let editor = matches!(view, View::PadEdit | View::ChopEdit | View::Fx);
-            assert_eq!(current_actions, if editor { 0 } else { 4 }, "{view:?}");
-            assert!(
-                (1..=10).any(|cell| config.cell(view, 1, cell).is_some()),
-                "{view:?}"
-            );
+        let table: [(View, &[&str]); 8] = [
+            (
+                View::Pads,
+                &[
+                    "edit", "copy", "take", "mark", "mode", "clear", "gate", "marks", "grid",
+                    "output",
+                ],
+            ),
+            (View::PadEdit, &["mode", "clear", "gate", "copy"]),
+            (
+                View::Pattern,
+                &[
+                    "step", "grid -", "grid +", "knobs", "record", "erase", "undo", "clear",
+                    "rows", "tap",
+                ],
+            ),
+            (
+                View::Files,
+                &["take", "load", "parent", "star", "enter", "auto", "chop"],
+            ),
+            (
+                View::Chop,
+                &[
+                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "start",
+                    "end", "edit", "commit",
+                ],
+            ),
+            (
+                View::ChopEdit,
+                &["level", "hits -", "cut -", "end -", "whole"],
+            ),
+            (View::Fx, &[]),
+            (
+                View::Settings,
+                &["tab", "learn", "clear", "", "row -", "row +"],
+            ),
+        ];
+        for (view, labels) in table {
+            let shipped: Vec<&str> = (1..=12)
+                .map(|cell| {
+                    config
+                        .cell(view, cell)
+                        .map_or("", |cell| cell.label.as_str())
+                })
+                .collect();
+            let mut expected = labels.to_vec();
+            expected.resize(12, "");
+            assert_eq!(shipped, expected, "{view:?}");
         }
+    }
+
+    /// Scenario "A second action page is rejected" (command-panel).
+    #[test]
+    fn a_second_action_page_is_rejected() {
+        let config = Config::parse(
+            "config/panel.toml",
+            "[[view]]\nname='chop'\npage=1\ncells=[{cell=1,label='cut',action='chop.cut'}]\n\
+             [[view]]\nname='chop'\npage=2\ncells=[{cell=1,label='edit',action='chop.edit'}]\n",
+        );
+        assert_eq!(
+            config.warnings,
+            ["config/panel.toml: chop page 2: a view has one action page"]
+        );
+        assert_eq!(config.cell(View::Chop, 1).unwrap().label, "cut");
+        assert!(config.cell(View::Chop, 2).is_none());
     }
 
     /// Scenario "Layout rejects a split or reversed panel pair" (command-panel).
@@ -609,7 +616,7 @@ mod tests {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 4);
+        assert_eq!(checked, 3);
         assert!(adjacent(7, 8), "No and Yes");
         assert!(adjacent(14, 15), "Undo and Redo");
         assert!(!adjacent(4, 5), "split row");
@@ -618,75 +625,45 @@ mod tests {
 
     /// Scenario "Fixed cells stay on the bottom row" (command-panel).
     #[test]
-    fn screen_and_context_pages_cover_more_than_16_commands() {
+    fn fixed_cells_stay_on_the_bottom_row() {
         let mut panel = State::default();
         panel.press("SMC-PAD-Master A", 8);
-        assert_eq!(panel.page(), 0);
-        assert_eq!(panel.choice(View::Pads, 8), Choice::Page);
         assert_eq!(panel.page(), 1);
-        assert_eq!(panel.label(View::Pads, 1), Some("mode"));
-        assert_eq!(panel.choice(View::Pads, 12), Choice::Page);
+        assert_eq!(panel.label(View::Pads, 1), Some("edit"));
+        panel.move_view(-1);
         assert_eq!(panel.page(), 0);
-        assert_eq!(panel.label(View::Pads, 9), Some("edit"));
-        for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo"), (16, "panic")] {
-            assert_eq!(panel.label(View::Pads, cell), Some(label));
+        assert_eq!(panel.label(View::Pads, 1), Some("pads"));
+        for view in [View::Pads, View::Files] {
+            panel.sync_view(view);
+            for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo"), (16, "panic")] {
+                assert_eq!(panel.label(view, cell), Some(label));
+            }
+            assert_eq!(panel.choice(view, 15), Choice::Dim);
+            assert_eq!(panel.choice(view, 16), Choice::Dim);
         }
-        assert_eq!(panel.choice(View::Pads, 15), Choice::Dim);
-        assert_eq!(panel.choice(View::Pads, 16), Choice::Dim);
-        panel.sync_view(View::Files);
-        assert_eq!(panel.page(), 0);
-        for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo"), (16, "panic")] {
-            assert_eq!(panel.label(View::Files, cell), Some(label));
-        }
+        assert_eq!(panel.page(), 1, "a screen change shows the actions");
     }
 
+    /// Scenario "LEFT and RIGHT move through the views" (command-panel).
     #[test]
-    fn context_pages_cycle_to_a_third_page() {
-        let config = Config::parse(
-            "config/panel.toml",
-            "[[view]]\nname='pads'\npage=0\ncells=[]\n\
-             [[view]]\nname='pads'\npage=1\ncells=[]\n\
-             [[view]]\nname='pads'\npage=2\ncells=[{cell=1,label='third',action='session.save'}]\n",
-        );
-        assert!(config.warnings.is_empty(), "{:?}", config.warnings);
-        let mut panel = State {
-            owner: Some("SMC-PAD-Master A".into()),
-            page: 0,
-            view: None,
-            target_menu: None,
-            config,
-        };
-        assert_eq!(panel.choice(View::Pads, 8), Choice::Page);
-        assert_eq!(panel.choice(View::Pads, 11), Choice::Page);
-        assert_eq!(panel.page(), 2);
-        assert_eq!(panel.label(View::Pads, 1), Some("third"));
-        assert_eq!(panel.choice(View::Pads, 11), Choice::Page);
-        assert_eq!(panel.page(), 1);
-    }
-
-    /// Scenario "Encoder selects a later context page" (controller-reach).
-    #[test]
-    fn encoder_page_selection_needs_a_visible_context_page() {
+    fn left_and_right_move_through_the_views() {
         let mut panel = State::default();
-        panel.select_context_page(View::Pads, 1);
-        assert_eq!(panel.page(), 0);
         panel.press("SMC-PAD-Master A", 8);
-        panel.select_context_page(View::Pads, 1);
-        assert_eq!(panel.page(), 0);
-        panel.choice(View::Pads, 8);
-        panel.select_context_page(View::Pads, 2);
-        assert_eq!(panel.page(), 3);
-        assert_eq!(panel.label(View::Pads, 5), Some("erase"));
-        panel.select_context_page(View::Pads, -1);
-        assert_eq!(panel.page(), 2);
-        assert_eq!(panel.label(View::Pads, 10), Some("exit"));
+        for (steps, page) in [(-1, 0), (-1, 0), (1, 1), (1, 1), (-2, 0), (2, 1)] {
+            panel.move_view(steps);
+            assert_eq!(panel.page(), page, "after {steps}");
+        }
+        assert_eq!(panel.label(View::Pads, 1), Some("edit"));
+        panel.move_view(-1);
+        assert_eq!(panel.label(View::Pads, 12), Some("exit"));
+        assert_eq!(panel.choice(View::Pads, 12), Choice::Exit);
     }
 
     #[test]
     fn invalid_panel_cells_do_not_disable_pad_play() {
         let config = Config::parse(
             "config/panel.toml",
-            "[[view]]\nname='pads'\npage=0\ncells=[\n\
+            "[[view]]\nname='pads'\npage=1\ncells=[\n\
              {cell=9,label='good',action='screen.files'},\n\
              {cell=10,label='bad',action='missing.action'},\n\
              {cell=13,label='fixed',action='ui.back'},\n\
@@ -699,9 +676,9 @@ mod tests {
                 .iter()
                 .all(|warning| warning.contains("config/panel.toml") && warning.contains("cell"))
         );
-        assert!(config.cell(View::Pads, 0, 9).is_none());
-        assert!(config.cell(View::Pads, 0, 10).is_none());
-        assert!(config.cell(View::Pads, 0, 13).is_none());
+        assert!(config.cell(View::Pads, 9).is_none());
+        assert!(config.cell(View::Pads, 10).is_none());
+        assert!(config.cell(View::Pads, 13).is_none());
     }
 
     #[test]

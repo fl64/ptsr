@@ -34,7 +34,7 @@ fn panel_target_pads_place_items_without_a_layer_switch() {
     drive.load_pad(2, existing.clone(), "existing");
     reveal(&mut drive);
 
-    press(&mut drive, 10);
+    press(&mut drive, 2);
     target(&drive, "COPY");
     check_silent(&press(&mut drive, 2));
     assert!(Arc::ptr_eq(
@@ -45,7 +45,7 @@ fn panel_target_pads_place_items_without_a_layer_switch() {
     assert_eq!(drive.app.panel.owner(), Some(SMC));
 
     drive.app.pads.selected = 0;
-    press(&mut drive, 10);
+    press(&mut drive, 2);
     check_silent(&press(&mut drive, 3));
     assert!(matches!(drive.app.ask, Some(Ask::CopyPad { .. })));
     press(&mut drive, 7);
@@ -63,7 +63,7 @@ fn panel_target_pads_place_items_without_a_layer_switch() {
 
     drive.app.pads.selected = 0;
     drive.load_pad(2, existing.clone(), "existing");
-    press(&mut drive, 11);
+    press(&mut drive, 3);
     target(&drive, "SWAP");
     check_silent(&press(&mut drive, 3));
     assert!(Arc::ptr_eq(
@@ -89,7 +89,7 @@ fn panel_target_pads_place_items_without_a_layer_switch() {
         .position(|entry| entry.name == "tone.wav")
         .unwrap();
     reveal(&mut file);
-    press(&mut file, 9);
+    press(&mut file, 1);
     target(&file, "FILE");
     check_silent(&press(&mut file, 2));
     while file.app.pads.loading[1].is_some() {
@@ -112,7 +112,7 @@ fn assign_applies_from_the_target_row() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut drive = reach_drive(panel::View::Chop, source.clone());
     reveal(&mut drive);
-    press(&mut drive, 12);
+    press(&mut drive, 4);
     target(&drive, "ASSIGN");
     press(&mut drive, 3);
     assert!(drive.app.plan.is_some());
@@ -135,7 +135,7 @@ fn assign_applies_from_the_target_row() {
 
     reveal(&mut drive);
     target(&drive, "ASSIGN");
-    press(&mut drive, 14);
+    press(&mut drive, 16);
     assert!(drive.app.plan.is_none());
     assert!(drive.app.pads.link[2].is_some());
     assert!(drive.app.pads.link[13].is_some());
@@ -144,7 +144,7 @@ fn assign_applies_from_the_target_row() {
 
     let mut cancel = reach_drive(panel::View::Chop, source);
     reveal(&mut cancel);
-    press(&mut cancel, 12);
+    press(&mut cancel, 4);
     target(&cancel, "ASSIGN");
     press(&mut cancel, 13);
     assert!(cancel.app.plan.is_none());
@@ -162,7 +162,7 @@ fn target_cells_retain_connection_and_release_priority() {
     drive.frame();
     assert!(drive.app.pads.held[0]);
     reveal(&mut drive);
-    press(&mut drive, 10);
+    press(&mut drive, 2);
     drive.midi().recorded_connect(SECOND);
     drive.frame();
     drive.bytes(SECOND, &[0x99, panel_note(2), 100]);

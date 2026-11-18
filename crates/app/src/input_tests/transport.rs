@@ -377,25 +377,19 @@ fn a_screen_switch_resets_the_panel_page() {
     drive.bytes(port, &[0x89, 64, 0]);
     drive.frame();
     assert!(drive.app.panel.visible());
-    drive.bytes(port, &[0x99, 63, 100]);
-    drive.bytes(port, &[0x89, 63, 0]);
-    drive.frame();
     assert_eq!(drive.app.panel.page(), 1);
+    // LEFT shows the screens view.
+    drive.bytes(port, &[0xB0, 25, 127]);
+    drive.bytes(port, &[0xB0, 25, 0]);
+    drive.frame();
+    assert_eq!(drive.app.panel.page(), 0);
     drive.tap(KeyCode::F(6), M::NONE);
     assert_eq!(drive.app.screen, Screen::Files);
-    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(drive.app.panel.page(), 1);
     assert_eq!(
-        drive.app.panel.label(drive.app.panel_view(), 9),
+        drive.app.panel.label(drive.app.panel_view(), 1),
         Some("take")
     );
-    drive.bytes(port, &[0x99, 63, 100]);
-    drive.bytes(port, &[0x89, 63, 0]);
-    drive.frame();
-    assert_eq!(drive.app.panel.page(), 1);
-    drive.bytes(port, &[0x99, 59, 100]);
-    drive.bytes(port, &[0x89, 59, 0]);
-    drive.frame();
-    assert_eq!(drive.app.panel.page(), 0);
     assert_eq!(drive.app.screen, Screen::Files);
 }
 

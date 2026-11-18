@@ -1415,7 +1415,7 @@ impl App {
         let menu = self.panel.target_menu == Some(target);
         if cell == 15 {
             self.panel.target_menu = (!menu).then_some(target);
-            self.panel.main_page();
+            self.panel.first_actions();
             return true;
         }
         if menu {
@@ -1434,7 +1434,10 @@ impl App {
             13 => {
                 self.apply(Action::Back);
             }
-            14 if target == Target::Assign => {
+            14 => {
+                self.apply(Action::Undo);
+            }
+            16 if target == Target::Assign => {
                 self.apply(Action::ChopCommit);
             }
             _ => {}
@@ -1688,9 +1691,26 @@ impl App {
                     if self.panel_target_cell(cell) {
                         return;
                     }
-                    match self.panel.choice(view, cell) {
+                    let choice = if self.assign_order_cell(cell) {
+                        super::panel::Choice::Action(Action::ChopAssignOrder)
+                    } else {
+                        self.panel.choice(view, cell)
+                    };
+                    match choice {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);
+                            // A screen hit, even on the current screen, shows its actions.
+                            if matches!(
+                                action,
+                                Action::ScreenPads
+                                    | Action::ScreenFiles
+                                    | Action::ScreenChop
+                                    | Action::ScreenPattern
+                                    | Action::ScreenFx
+                                    | Action::ScreenSettings
+                            ) {
+                                self.panel.first_actions();
+                            }
                             if action == Action::HelpToggle && self.help_open {
                                 self.help_overlay.page = super::help::Page::Controller;
                                 self.controller_start();
@@ -1700,14 +1720,14 @@ impl App {
                             self.ask = Some(Ask::Exit {
                                 lines: vec![
                                     "Exit ptsr?".into(),
-                                    "P8 exit · P7 or Back stay".into(),
+                                    "P12 exit · P11 or Back stay".into(),
                                 ],
                             });
                         }
                         super::panel::Choice::Back => {
                             self.panel_back();
                         }
-                        super::panel::Choice::Page | super::panel::Choice::Dim => {}
+                        super::panel::Choice::Dim => {}
                     }
                 }
             }
@@ -2350,6 +2370,18 @@ impl App {
     }
 
     fn smc_list(&mut self, next: bool) {
+        // A visible panel takes LEFT and RIGHT for its views (127); a question and the
+        // target view keep their own cells.
+        if self.panel.visible()
+            && self.panel_input_available()
+            && self.ask.is_none()
+            && self.panel_snapshot().is_some_and(|panel| !panel.target)
+        {
+            let view = self.panel_view();
+            self.panel.sync_view(view);
+            self.panel.move_view(if next { 1 } else { -1 });
+            return;
+        }
         if self.transport_input_blocked() || self.help_open || self.pattern_panel.is_some() {
             return;
         }
@@ -2379,6 +2411,13 @@ impl App {
                     Action::BrowserParent
                 }
             }
+            Screen::Chop => {
+                if next {
+                    Action::BankNext
+                } else {
+                    Action::BankPrev
+                }
+            }
             Screen::Fx => {
                 self.select_fx(usize::from(next));
                 return;
@@ -2389,7 +2428,6 @@ impl App {
                 self.midi_run = None;
                 return;
             }
-            _ => return,
         };
         self.run(action);
     }
@@ -2483,7 +2521,7 @@ impl App {
             {
                 let view = self.panel_view();
                 self.panel.sync_view(view);
-                self.panel.select_context_page(view, steps);
+                self.panel.move_view(steps);
             }
             return;
         }
