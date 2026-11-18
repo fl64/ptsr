@@ -343,6 +343,7 @@ impl Realtime {
 
     /// Called from the audio callback: no allocation, no locks, no I/O.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        flush_subnormals();
         let started = Instant::now();
         self.engine.poll_erasure_releases();
         for queue in self.commands.iter_mut() {
@@ -476,6 +477,28 @@ impl Realtime {
         let budget = left.len() as f32 / self.sample_rate as f32;
         let permille = (started.elapsed().as_secs_f32() / budget * 1000.0) as u32;
         self.stats.load_peak_permille.fetch_max(permille, Relaxed);
+    }
+}
+
+/// Treat subnormal floats as zero in this thread (129). Decaying reverb and filter tails
+/// otherwise reach subnormal values, which the processor calculates very slowly.
+#[inline]
+fn flush_subnormals() {
+    #[cfg(target_arch = "x86_64")]
+    // SAFETY: only the FTZ (bit 15) and DAZ (bit 6) flags of this thread's MXCSR change.
+    unsafe {
+        let mut csr: u32 = 0;
+        std::arch::asm!("stmxcsr [{}]", in(reg) &mut csr, options(nostack, preserves_flags));
+        csr |= 0x8040;
+        std::arch::asm!("ldmxcsr [{}]", in(reg) &csr, options(nostack, preserves_flags));
+    }
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: only the FZ flag (bit 24) of this thread's FPCR changes.
+    unsafe {
+        let mut fpcr: u64;
+        std::arch::asm!("mrs {}, fpcr", out(reg) fpcr, options(nomem, nostack, preserves_flags));
+        fpcr |= 1 << 24;
+        std::arch::asm!("msr fpcr, {}", in(reg) fpcr, options(nomem, nostack, preserves_flags));
     }
 }
 
@@ -869,5 +892,78 @@ mod tests {
             "a gap in the sound"
         );
         drop(ui);
+    }
+
+    /// A decaying drum hit, as the owner's recorded pads.
+    fn drum() -> Vec<f32> {
+        (0..12_000)
+            .map(|i| (i as f32 * 0.05).sin() * 0.5 * (-(i as f32) / 3_000.0).exp())
+            .collect()
+    }
+
+    /// Scenario "Decaying reverb tails reach exact silence" (audio-engine).
+    #[test]
+    fn decaying_reverb_tails_reach_exact_silence() {
+        use crate::filter::{FilterKind, FilterSettings};
+        use crate::fx::FxSettings;
+        const BLOCK: usize = 512;
+        let (mut tx, rx) = rtrb::RingBuffer::new(1024);
+        let mut send = |cmd| tx.push(cmd).unwrap();
+        send(Command::SetFx {
+            slot: 0,
+            settings: FxSettings::Reverb {
+                size: 0.85,
+                tone: 0.05,
+            },
+        });
+        send(Command::SetFx {
+            slot: 1,
+            settings: FxSettings::Reverb {
+                size: 0.16,
+                tone: 0.76,
+            },
+        });
+        for pad in 0..4 {
+            send(Command::SetPadFilter {
+                pad,
+                settings: FilterSettings {
+                    kind: FilterKind::LowPass,
+                    cutoff_hz: 1_122.0,
+                    resonance: 0.02,
+                },
+            });
+            send(Command::SetPadDrive { pad, drive: 0.01 });
+            send(Command::SetPadSends {
+                pad,
+                sends: [0.01, 0.01],
+            });
+        }
+        let pads = vec![drum(), drum(), drum(), drum()];
+        let mut rt = Realtime::new(
+            crate::Engine::with_sounds(48_000, crate::click(48_000), pads),
+            vec![rx],
+            Arc::new(Stats::default()),
+            48_000,
+        );
+        let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
+        for block in 0..1_000 {
+            if block % 8 == 0 {
+                send(Command::PadPress {
+                    pad: (block / 8) % 4,
+                    velocity: 0.4,
+                });
+            }
+            rt.process(&mut left, &mut right);
+        }
+        assert!(left.iter().any(|sample| *sample != 0.0), "the hits sound");
+        for _ in 0..60 * 48_000 / BLOCK {
+            rt.process(&mut left, &mut right);
+        }
+        assert!(left.iter().chain(&right).all(|sample| *sample == 0.0));
+        let product = std::hint::black_box(f32::MIN_POSITIVE) * std::hint::black_box(0.5);
+        assert_eq!(
+            product, 0.0,
+            "subnormal flushing is on in the callback thread"
+        );
     }
 }
