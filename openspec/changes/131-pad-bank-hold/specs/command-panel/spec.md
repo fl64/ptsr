@@ -21,7 +21,7 @@ Without the PAD BANK hold shortcut, the Master profile SHALL map 16 second-bank 
 
 ### Requirement: Visible questions use the two agreed pads
 
-While a question is visible, physical P7 SHALL cancel and P8 SHALL confirm on press, even with owner bindings and a hidden panel. With the hold shortcut on, they SHALL answer from either note bank without a hold, and the other pads SHALL play without a hold. Without it, other second-bank cells SHALL not reveal or act. PLAY and STOP SHALL never answer the question. Their context transport roles MAY act. Keyboard and learned answers SHALL keep their rules.
+While a question is visible, physical P7 SHALL cancel and P8 SHALL confirm on press, even with owner bindings and a hidden panel. With the hold shortcut on, they SHALL answer from either note bank without a hold, and the other pads SHALL stay silent. Without it, other second-bank cells SHALL not reveal or act. PLAY and STOP SHALL never answer the question. Their context transport roles MAY act. Keyboard and learned answers SHALL keep their rules.
 
 #### Scenario: P7 and P8 answer a visible question on the first hit
 - **WHEN** a question is visible and the owner presses P7 or P8 from a hidden panel in separate runs
@@ -31,7 +31,7 @@ While a question is visible, physical P7 SHALL cancel and P8 SHALL confirm on pr
 #### Scenario: A question takes its two pads without a hold
 - **WHEN** a question is visible, the hold shortcut is on and PAD BANK is not held
 - **THEN** P7 and P8 from either note bank answer the question
-- **AND** a hit on another pad plays that pad and the question stays
+- **AND** a hit on another pad stays silent and the question stays
 
 #### Scenario: A panel action followed by P8 confirms only the question
 - **WHEN** a destructive panel cell opens a question and P8 arrives before the next redraw

@@ -16,7 +16,7 @@ pressed for the full time that the owner holds the button.
 - Each hold shows the actions of the current screen or mode.
 - With the hold shortcut on, a pad hit acts by the hold, not by the device layer.
   Held: the hit runs the cell at that position. Not held: the hit plays the pad.
-- A visible question takes the No and Yes pads without a hold. The other pads play.
+- A visible question takes the No and Yes pads without a hold. The other pads stay silent, as now.
 - The F12 MIDI setting `SMC-PAD PAD BANK` offers `Hold panel` or `Off`.
 - Without the shortcut, the current layer rule stays: a second-layer hit shows the panel.
 - A hit on a panel cell lights that cell for 120 ms, as a pad hit does.

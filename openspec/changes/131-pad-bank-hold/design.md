@@ -4,7 +4,8 @@
 
 On 2026-11-18 the owner asked for the panel on a PAD BANK hold instead of a toggle.
 The owner chose hold only, without a toggle option, and a separate change after 127.
-A visible question takes its No and Yes pads without a hold.
+A visible question takes its No and Yes pads without a hold. The other pads stay
+silent during a question, as for the keyboard pads.
 The owner asked to see each hit on the panel. A hit cell lights for 120 ms, the
 `HIT_FLASH` time of a pad hit. A dim or empty cell lights grey, so the owner sees
 that the hit arrived but did nothing.
@@ -30,7 +31,7 @@ goes to the target of its press. Without the shortcut, the current layer rule st
 | The owner releases PAD BANK while a cell pad is still down | The panel hides. The pad release runs nothing and plays nothing. |
 | Copy or Take is in hand when the hold ends | The item stays in hand. A playing hit places it, as now. |
 | A question opens during a hold | The No and Yes pads answer. The other cells do nothing until release. |
-| A question is visible without a hold | The No and Yes pads answer. The other pads play. |
+| A question is visible without a hold | The No and Yes pads answer. The other pads stay silent. |
 | The status read fails or the preset changes during a hold | The program treats it as a release and hides the panel. |
 | Help, a picker, text entry or learning opens during a hold | The panel hides. If the hold continues after the overlay closes, the panel shows again. |
 | LEFT or RIGHT during a hold | They move the panel views. Without a hold, they keep their screen roles. |
