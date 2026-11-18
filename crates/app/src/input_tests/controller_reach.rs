@@ -2947,7 +2947,6 @@ fn pad_bank_row(drive: &Drive) -> Option<usize> {
 }
 
 /// Scenario "PAD BANK starts on hold and preserves a saved Off choice" (controller-reach).
-/// Scenario "PAD BANK starts open and preserves a saved Off choice" (controller-reach). Change 131 replaces it until the archive.
 /// Scenario "PAD BANK setting saves and defaults to off" (controller-reach).
 #[test]
 fn pad_bank_starts_on_hold_and_preserves_a_saved_off_choice() {
@@ -2990,7 +2989,6 @@ fn pad_bank_starts_on_hold_and_preserves_a_saved_off_choice() {
 }
 
 /// Scenario "The panel shows only while PAD BANK is held" (controller-reach).
-/// Scenario "PAD BANK opens the panel once before a pad hit" (controller-reach). Change 131 replaces it until the archive.
 #[test]
 fn the_panel_shows_only_while_pad_bank_is_held() {
     let mut drive = hold_drive();
@@ -3145,7 +3143,6 @@ fn a_pad_release_keeps_the_target_of_its_press() {
 }
 
 /// Scenario "A hit before the hold reply plays the pad" (controller-reach).
-/// Scenario "Late PAD BANK status keeps both pad routes" (controller-reach). Change 131 replaces it until the archive.
 #[test]
 fn a_hit_before_the_hold_reply_plays_the_pad() {
     let mut drive = hold_drive();
@@ -3197,7 +3194,6 @@ fn pad_bank_ignores_invalid_or_disconnected_sources() {
 }
 
 /// Scenario "First-hit reveal works without the hold shortcut" (controller-reach).
-/// Scenario "First-hit reveal survives a missing PAD BANK pulse" (controller-reach). Change 131 replaces it until the archive.
 #[test]
 fn first_hit_reveal_works_without_the_hold_shortcut() {
     // Shortcut off on a verified unit, then shortcut on with an unverified unit.
