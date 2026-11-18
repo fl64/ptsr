@@ -26,59 +26,26 @@ The Master profile SHALL map 16 second-bank notes to panel cells in the first ba
 
 ### Requirement: Panel fixed cells keep physical positions
 
-The panel SHALL draw 16 cells in the same top-to-bottom order as the physical pads. Its bottom row SHALL keep Back, Undo, Redo and Panic in cells 13 through 16. Redo and Panic SHALL be dim and inactive until change 93a.
+The panel SHALL draw 16 cells in the same top-to-bottom order as the physical pads.
+Each cell SHALL show the number printed on the device for that pad.
+Its bottom row SHALL keep back, undo, redo and panic in cells 13 through 16.
+Redo and Panic SHALL be dim and inactive until change 93a.
 
 #### Scenario: Fixed cells stay on the bottom row
-- **WHEN** the owner changes panel pages or screens
-- **THEN** cells 13 through 16 keep Back, Undo, Redo and Panic in physical left-to-right order
+- **WHEN** the owner changes panel views or screens
+- **THEN** cells 13 through 16 keep back, undo, redo and panic in physical left-to-right order
 - **AND** Redo and Panic are dim and run no action
 
-### Requirement: Panel pages expose screen and context commands
-
-The main page SHALL show Pads, Files, Chop and A1 on row 1,
-and FX, Mixer, Setup and More on row 2. Mixer SHALL stay dim until it exists.
-The main page SHALL have up to four current-view actions.
-More SHALL open page 1, with Help on P10 in each view.
-P11 (Next) SHALL cycle context pages. P12 (Main) SHALL return.
-The panel SHALL show the page and count. A screen change or exit SHALL restore Main.
-LEFT and RIGHT SHALL keep the current list. Keyboard paths SHALL remain.
-
-#### Scenario: Screen and context pages cover more than 16 commands
-- **WHEN** the owner selects More, cycles through context pages and presses Main
-- **THEN** the pages show their commands in physical order
-- **AND** the page move retains the fixed bottom row, count and transport
-
-#### Scenario: The panel header shows only the page
-- **WHEN** the panel shows over the Pads screen at either supported size
-- **THEN** its header row shows the view, page and count
-- **AND** no part of the bank strip remains on that row
-
-#### Scenario: A screen switch resets the panel page
-- **WHEN** the owner changes screen from a visible context page
-- **THEN** the new screen shows its main page and its own cells
-- **AND** LEFT and RIGHT move the current list
-
-#### Scenario: Main cells follow the current view
-- **WHEN** the owner visits the main page of each current view
-- **THEN** cells 9 through 12 show the available actions for that view
-- **AND** unused cells stay dim and change no value
-
-#### Scenario: Direct page controls replace panel steps
-- **WHEN** the owner changes an editor's page, parameter or value through the direct controls
-- **THEN** the shipped panel omits the replaced steps
-- **AND** the keyboard and learn actions remain available
-
-#### Scenario: The main panel gives Help one context route
-- **WHEN** the owner uses the shipped main panel in each view
-- **THEN** Mixer is dim and Settings uses P7
-- **AND** More and P10 open Controller Help
+#### Scenario: Cells show the device numbers
+- **WHEN** the panel shows at either supported size
+- **THEN** the bottom-left cell shows 1 and the top-right cell shows 16
 
 ### Requirement: Panel configuration names logical actions
 
-`config/panel.toml` SHALL name current-screen and mode cells with short labels and logical action IDs. The loader SHALL reject cells outside 1 through 12, repeated cells and unknown actions. It SHALL also reject labels wider than six terminal cells and attempts to replace the fixed bottom row. It SHALL name the file and cell in a notice. A bad cell SHALL stay inactive while valid cells and pad play continue. A valid cell SHALL use normal action dispatch and existing confirmation checks.
+`config/panel.toml` SHALL name action pages, starting at page 1, with short labels and logical action IDs. The loader SHALL reject cells outside 1 through 12, repeated cells, unknown actions and labels wider than six terminal cells. It SHALL name the file and cell in a notice. A bad cell SHALL stay inactive while valid cells and pad play continue. A valid cell SHALL use normal action dispatch and existing confirmation checks.
 
 #### Scenario: Invalid panel cells do not disable pad play
-- **WHEN** a panel file names an unknown action and repeats a fixed cell
+- **WHEN** a panel file names an unknown action and repeats a cell
 - **THEN** each bad cell is inactive and a notice names its file and cell
 - **AND** a valid screen cell still acts and first-bank pads still sound
 
@@ -141,21 +108,83 @@ The label check SHALL include fixed cells and the shipped panel file.
 
 ### Requirement: SMC-PAD target cells select pads on the current layer
 
-A visible target view SHALL use P1–P12 as pad positions in the current bank.
-It SHALL show that P13–P16 use the playing layer.
-P13 SHALL cancel. P14 SHALL apply Assign. P15 SHALL switch targets and commands.
-Questions, connection ownership and original held releases SHALL keep priority.
+A visible target view SHALL use cells 1 to 12 as pad positions in the current bank.
+It SHALL show that pads 13–16 use the playing layer.
+Cell 13 SHALL cancel. Cell 14 SHALL keep undo. Cell 15 SHALL switch targets and commands.
+Cell 16 SHALL apply Assign. Questions, ownership and original held releases SHALL keep priority.
+During Assign, the Chop actions SHALL show `order` in cell 4 instead of `assign`.
 
 #### Scenario: Panel target pads place items without a layer switch
-- **WHEN** the owner takes a pad, a copy or a file and selects P1 through P12 on the visible target view
+- **WHEN** the owner takes a pad, a copy or a file and selects cells 1 through 12 on the visible target view
 - **THEN** the matching pad gets the existing placement result without a layer change
 - **AND** a replacement question stays available to cancel or accept
 
 #### Scenario: Assign applies from the target row
 - **WHEN** the owner selects Assign targets on the visible command layer or playing layer
-- **THEN** the plan keeps those targets and P14 applies it on the visible target view
-- **AND** P13 cancels and P15 gives access to the other commands
+- **THEN** the plan keeps those targets and cell 16 applies it on the visible target view
+- **AND** cell 13 cancels, cell 14 stays undo and cell 15 gives access to the other commands
+
+#### Scenario: Assign shows order in the Chop actions
+- **WHEN** the owner opens the menu from the Assign target view
+- **THEN** cell 4 shows `order` and switches the plan as Tab does on the keyboard
 
 #### Scenario: Target cells retain connection and release priority
 - **WHEN** another Master sends a target hit or a held layer 1 pad releases during target selection
 - **THEN** only the owner can choose a target and the original held pad releases
+
+### Requirement: Panel views move with LEFT and RIGHT
+
+The panel SHALL have two views: screens on the left and the actions of the current view on the right.
+A reveal SHALL show the actions. LEFT SHALL show the screens view and RIGHT SHALL show the actions.
+A screen change SHALL show the actions of the new screen.
+A question or the target view SHALL keep its cells, and LEFT and RIGHT SHALL do nothing.
+
+#### Scenario: The panel opens on the screen actions
+- **WHEN** the owner reveals the panel on Chop
+- **THEN** the cells show the Chop actions
+- **AND** the header names the screens view on the left
+
+#### Scenario: LEFT and RIGHT move through the views
+- **WHEN** the owner presses LEFT and RIGHT on the visible panel of Pads
+- **THEN** LEFT shows the screens view and RIGHT shows the actions again
+- **AND** a second press in the same direction keeps the current view
+
+#### Scenario: A screen hit opens that screen with its actions
+- **WHEN** the owner hits Files in the screens view
+- **THEN** Files opens and the panel shows the Files actions
+
+### Requirement: The screens view opens screens and global actions
+
+The screens view SHALL show pads, files, chop and A1 in row 1; fx, mixer, setup and help in row 2; save, open, learn and exit in row 3.
+Mixer SHALL stay dim until it exists. Help SHALL open Controller Help.
+Global actions SHALL appear only in the screens view.
+
+#### Scenario: Global actions live in the screens view
+- **WHEN** the owner visits the screens view and every action page of each current view
+- **THEN** save, open, learn and exit appear only in the screens view
+- **AND** no action page shows play or help
+
+### Requirement: Each view has at most 12 actions
+
+A screen or mode SHALL have one action page with at most 12 actions in cells 1 through 12.
+An action that does not fit SHALL go to its own screen or mode.
+The loader SHALL reject a second action page with a notice.
+The shipped actions SHALL match the table. A dash is a dim cell.
+
+#### Scenario: Shipped action pages match the table
+- **WHEN** the layout test reads each view of the shipped panel file
+- **THEN** each view has one page with the labels and actions of the table in cell order
+
+#### Scenario: A second action page is rejected
+- **WHEN** a panel file gives a view a second action page
+- **THEN** a notice names the file and view, and the first page keeps its cells
+
+| View | Actions in cell order |
+| --- | --- |
+| Pads | edit, copy, take, mark, mode, clear, gate, marks, grid, output |
+| Pad edit | mode, clear, gate, copy |
+| A1 | step, grid -, grid +, knobs, record, erase, undo, clear, rows, tap |
+| Files | take, load, parent, star, enter, auto, chop |
+| Chop | cut, parts, hits, assign, loop, listen, snap, as pad, start, end, edit, commit |
+| Chop edit | level, hits -, cut -, end -, whole |
+| Settings | tab, learn, clear, —, row -, row + |

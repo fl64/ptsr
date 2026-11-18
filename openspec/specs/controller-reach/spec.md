@@ -7,7 +7,7 @@ Provide matching keyboard and SMC-PAD routes for sampler actions. Show the curre
 
 ### Requirement: Current actions have paths from both inputs
 
-For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Pad bank changes MAY use the Pads screen list. Tempo MAY use only Pattern transport. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. A Chop slice-bound turn SHALL select the same start or end bound as its keyboard route. The route SHALL use production input dispatch.
+Each keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile on each current screen and mode. Pad banks MAY use the Pads list. Tempo MAY use only Pattern transport. Pad and A1 commands MAY use their screen actions. Assign order MAY use the Chop menu. Each shipped SMC-PAD sampler action SHALL have a key or key path with the same result. A Chop slice-bound turn SHALL select the same bound as its key. Routes SHALL use production input dispatch.
 
 #### Scenario: Every current keyboard action has a controller route
 - **WHEN** the reach test visits each current screen and mode with the shipped keyboard map, SMC-PAD profile and panel map
@@ -73,18 +73,18 @@ The only controller-only steps SHALL be PAD BANK selection, its status mark and 
 
 ### Requirement: Controller routes keep short press paths
 
-Frequent actions SHALL use a direct button, pad or knob, or the first context page.
-From the visible main panel, a main command SHALL take one press.
-A first-page context command SHALL take two. Each later page SHALL add one Next press.
+Frequent actions SHALL use a direct button, pad or knob, or the actions of the current view.
+From the visible panel, an action on the shown view SHALL take one press.
+A LEFT or RIGHT press to the other view SHALL add one press.
 A hidden panel SHALL add PAD BANK, and a reveal hit if the panel stays closed.
 Count KNOB BANK, target hits and modal answers separately. A knob turn counts as zero.
 The reach table SHALL list the route and counts for each story in `docs/USER-STORIES.md`.
 
 #### Scenario: First entry and repeated commands have separate counts
-- **WHEN** the owner reaches a context command from a hidden panel and then repeats it from a visible panel
-- **THEN** the first count includes PAD BANK and includes a reveal hit when the shortcut is off or misses the tap
+- **WHEN** the owner reaches a screens-view command from a hidden panel and then repeats it from a visible panel
+- **THEN** the first count includes PAD BANK, LEFT and a reveal hit when the shortcut is off or misses the tap
 - **AND** the later count excludes PAD BANK and the reveal hit
-- **AND** each Next press adds one to a later page's path
+- **AND** each LEFT or RIGHT press adds one to the path
 - **AND** neither count treats a knob turn as a button press
 
 #### Scenario: Every story has a recorded controller path
@@ -137,22 +137,6 @@ without running a cell.
 - **THEN** the first command-layer hit reveals the panel
 - **AND** the next hit runs the visible cell once
 
-### Requirement: Added context cells provide missing actions
-
-Every panel view SHALL keep its main page, first context page and fixed bottom row. It SHALL add the common action cells in the table. Pads, Chop and Chop edit SHALL add the listed page 4 cells.
-
-#### Scenario: Added cells reach their current actions
-- **WHEN** the owner uses a listed cell in a screen or mode where its action works
-- **THEN** the action has the same result as its keyboard path
-- **AND** another screen or mode does not claim a route for a command that has no effect there
-
-| View | Page | Cells in order: label (`action`) |
-| --- | --- | --- |
-| Every view | 2 | `output` (`record.output`), `play` (`transport.toggle`), `take` (`pad.take`), `open` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `undo` (`pattern.undo`), `knobs` (`pattern.controls`), `exit` (`app.quit`) |
-| Every view | 3 | `erase` (`pattern.erase`), `record` (`pattern.record`) |
-| Pads | 4 | `grid -` (`pattern.view_prev`), `grid +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`), `step` (`pattern.step_edit`) |
-| Chop, Chop edit | 4 | `hits -` (`chop.hits_back`), `cut -` (`marker.delete`), `end -` (`slice.end_delete`), `order` (`chop.assign_order`) |
-
 ### Requirement: Pickers accept SMC-PAD selection without typed text
 
 In the project picker, SMC-PAD encoder 1 SHALL move the selection. P8 SHALL confirm the selected project, and P7 or Back SHALL cancel. These modal routes SHALL take priority over the screen behind the picker. A visible question SHALL keep its existing P7 and P8 priority. A failed project transition SHALL keep the current project, picker and selection.
@@ -182,14 +166,14 @@ On Settings, SMC-PAD encoder 2 SHALL change the selected value with the same bou
 
 ### Requirement: Help has a controller route
 
-More and P10 SHALL open Controller Help on each view. While Help shows, P7 and P8 SHALL
-select its tabs. P9 and P10 SHALL scroll or move the selected control. Back
-SHALL close Help. Help SHALL show the controls that work in its current tab.
-A Help cell SHALL leave the screen behind Help in place. F1 and the keyboard
+The help cell of the screens view SHALL open Controller Help on each view. While Help
+shows, cells 7 and 8 SHALL select its tabs. Cells 9 and 10 SHALL scroll or move the
+selected control. Back SHALL close Help. Help SHALL show the controls that work in its
+current tab. A Help cell SHALL leave the screen behind Help in place. F1 and the keyboard
 Help paths SHALL retain their results.
 
 #### Scenario: Help cells navigate without acting behind Help
-- **WHEN** the owner opens Help from the panel, uses P7 through P10 and then Back
+- **WHEN** the owner opens Help from the panel, uses cells 7 through 10 and then Back
 - **THEN** only the Help tab, scroll position or selected controller control changes before Help closes
 - **AND** the screen and its selected value remain unchanged
 
@@ -267,21 +251,26 @@ Assign and visible questions SHALL block bound turns.
 
 ### Requirement: The list buttons follow the current SMC-PAD mode
 
-LEFT and RIGHT SHALL select pad banks, pad edit pages, Pattern bars, Chop slices,
+LEFT and RIGHT SHALL select pad banks on Pads and Chop, pad edit pages, Pattern bars,
 Settings tabs or FX slots in the corresponding view.
 On Files, LEFT SHALL select the parent folder. RIGHT SHALL enter the selected folder.
 The current Load and Take paths SHALL handle files.
+While the panel of that controller shows, LEFT and RIGHT SHALL move the panel views instead.
 The input overlay SHALL keep its priority.
 
 #### Scenario: SMC-PAD list buttons name and move the same list
-- **WHEN** LEFT and RIGHT act on Pads, pad edit, Pattern, Chop, FX or Settings
+- **WHEN** LEFT and RIGHT act on Pads, pad edit, Pattern, Chop, FX or Settings with the panel hidden
 - **THEN** each button moves the list for that mode
 - **AND** the current selection remains within the list bounds
 
 #### Scenario: File list buttons navigate folders
-- **WHEN** the owner uses RIGHT with a selected file or folder
+- **WHEN** the owner uses RIGHT with a selected file or folder and the panel hidden
 - **THEN** a file remains selected and a folder opens
 - **AND** LEFT returns to the parent folder
+
+#### Scenario: A visible panel takes LEFT and RIGHT
+- **WHEN** the panel shows on Chop and the owner presses RIGHT
+- **THEN** the panel shows the next view and the selected slice stays the same
 
 ### Requirement: Both SMC-PAD banks pin master to knob 8
 
@@ -304,15 +293,6 @@ The keyboard and learned tempo actions SHALL retain their routes.
 - **WHEN** the owner turns the tempo position with and without Pattern controls open
 - **THEN** the turn changes tempo only while the Pattern controls are open
 - **AND** each step uses the same value as the 1 BPM keyboard step
-
-### Requirement: Panel buttons select context pages
-
-More, Next and Main SHALL move the shipped panel pages.
-A knob turn SHALL keep its screen or mode role while the panel shows.
-
-#### Scenario: Next selects a later context page
-- **WHEN** the owner presses Next on a context page
-- **THEN** the next page and its cell roles appear before the next action
 
 ### Requirement: SMC-PAD knob pairs share a physical row
 

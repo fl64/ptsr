@@ -2,7 +2,7 @@
 
 ### Requirement: Current actions have paths from both inputs
 
-For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Pad bank changes MAY use the Pads screen list. Tempo MAY use only Pattern transport. Pad commands MAY use the Pads actions and A1 commands the A1 actions, one screens-view press away. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. A Chop slice-bound turn SHALL select the same start or end bound as its keyboard route. The route SHALL use production input dispatch.
+Each keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile on each current screen and mode. Pad banks MAY use the Pads list. Tempo MAY use only Pattern transport. Pad and A1 commands MAY use their screen actions. Assign order MAY use the Chop menu. Each shipped SMC-PAD sampler action SHALL have a key or key path with the same result. A Chop slice-bound turn SHALL select the same bound as its key. Routes SHALL use production input dispatch.
 
 #### Scenario: Every current keyboard action has a controller route
 - **WHEN** the reach test visits each current screen and mode with the shipped keyboard map, SMC-PAD profile and panel map
