@@ -1101,6 +1101,13 @@ fn dispatch(
                 setting,
                 held,
             } => {
+                crate::diag::input(|| {
+                    format!(
+                        "PAD BANK {} after {} ms",
+                        if held { "held" } else { "released" },
+                        requested_at.elapsed().as_millis()
+                    )
+                });
                 if !held {
                     hold.end(&port, setting, &mut ui);
                 } else if smc_ready

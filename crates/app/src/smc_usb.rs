@@ -391,6 +391,7 @@ pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
     let mut hold = PadBankHold::default();
     loop {
         let mut deadline = Instant::now() + CHECK_INTERVAL;
+        let check_started = Instant::now();
         match available() {
             Ok(true) => {
                 present = true;
@@ -404,6 +405,13 @@ pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
                     Ok(transport)
                 });
                 ready = result.is_ok();
+                // The PAD BANK poll waits during this check; the diagnostic mode shows how long.
+                if crate::diag::enabled() {
+                    log::info!(
+                        "diag: SMC-PAD check {} ms",
+                        check_started.elapsed().as_millis()
+                    );
+                }
                 let _ = tx.send(Raw::SmcSetup(
                     result.as_ref().map(|_| ()).map_err(Clone::clone),
                 ));
