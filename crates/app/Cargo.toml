@@ -9,6 +9,7 @@ cpal = "0.18.2"
 engine = { version = "0.1.0", path = "../engine" }
 input = { version = "0.1.0", path = "../input" }
 jack = "0.13.5"
+libc = "0.2.191"
 log = "0.4.34"
 midir = "0.11.1"
 ratatui = "0.30.2"

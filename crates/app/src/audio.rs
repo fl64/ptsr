@@ -487,6 +487,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
     let client = client.activate_async(notify, process).map_err(err)?;
     // buffer size may be 0 right after activation; the real one arrives via the buffer_size callback
     log::info!("JACK: active @ {sample_rate} Hz");
+    crate::diag::watch_audio(&stats);
 
     Ok(Audio {
         backend: "jack",
@@ -609,6 +610,7 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
             })
             .map_err(err)?;
     stream.play().map_err(err)?;
+    crate::diag::watch_audio(&stats);
     log::info!("cpal: {sample_rate} Hz, {channels} ch, buffer {buffer_size}");
     Ok(Audio {
         backend: "cpal",

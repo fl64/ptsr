@@ -3,6 +3,7 @@ mod browser;
 mod chop;
 mod config;
 mod controller_map;
+mod diag;
 mod dispatch;
 mod graphics;
 mod help;
@@ -1183,7 +1184,7 @@ fn step_in(list: &[String], current: Option<&str>, step: isize) -> Option<String
 }
 
 fn main() -> std::io::Result<()> {
-    init_log();
+    diag::init_log();
     let loaded = config::load();
     let cfg = loaded.config.audio;
     let learned = loaded.config.midi;
@@ -4004,24 +4005,6 @@ fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, Strin
         ));
     }
     rows
-}
-
-/// Log to `$XDG_STATE_HOME/ptsr/ptsr.log`. The audio thread never logs.
-fn init_log() -> PathBuf {
-    let dir = config::xdg_dir("XDG_STATE_HOME", ".local/state");
-    let path = dir.join("ptsr.log");
-    let file = std::fs::create_dir_all(&dir).and_then(|_| {
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-    });
-    // the log did not open: run without it; the terminal is taken by the UI
-    if let Ok(f) = file {
-        let _ =
-            simplelog::WriteLogger::init(log::LevelFilter::Info, simplelog::Config::default(), f);
-    }
-    path
 }
 
 #[cfg(test)]
