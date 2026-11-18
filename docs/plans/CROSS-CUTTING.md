@@ -50,7 +50,7 @@ One action stops all sound at once: transport stop, all voices fade out over the
 
 ### 2.2 A controller goes away while something is held (task in change 89 and 92)
 
-- Unplug during an optional SHIFT or STOP hold: its panel view ends. Unplug while a
+- Unplug during an optional SHIFT hold: its panel view ends. Unplug while a
   pad is held: the existing gate release happens (spec "75-unplug-gate").
 - Disconnect clears the PANEL mark and the held gestures of that port. PAD BANK is
   local to the device; the program learns its layer from the next pad note after reconnect.
@@ -160,10 +160,9 @@ Each setting has a knob path.
 
 These are tasks inside the changes of `PATTERNS.md`:
 
-- **95 transport:** tap tempo (`transport.tap`: the mean of the last 4 taps, a reset after 2 s;
-  keyboard key in the design; SMC-PAD: a Pattern panel cell in 98, before it the bank 2 tempo
-  knob is enough). The metronome level (a setting, a knob path). A project switch stops the
-  transport and the recording first.
+- **95 transport:** metronome level uses a setting and a knob path. A project switch
+  stops transport and recording first. Change 125 gives Tap Tempo (`transport.tap`)
+  to Pattern. It uses up to four taps and starts a new sequence after two seconds.
 - **96 pattern play:** what a length change does: shorter — hits after the end are kept but not
   played (they come back when the length grows); show their count in the badge `2 hidden`.
 - **97 pattern record:** a recording pass while the transport stops by itself (panic, project

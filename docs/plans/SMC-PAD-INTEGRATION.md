@@ -46,7 +46,7 @@ Consequences:
 This section records the layout after the review of PR #27.
 Change 124 adds the new button and knob roles and the knob strip.
 See [the route table](../CONTROLLER-PATHS.md) for the current panel paths.
-The later panel change covers the new main menu, target flows and device warnings.
+Change 125 adds the main menu, target routes and device warnings.
 
 ### 2.1 Buttons and selection
 
@@ -82,7 +82,7 @@ press and has no panel role.
 ### 2.2 The command panel
 
 Change 124 replaces the panel steps for values, parameters and edit pages with
-direct controls. The later panel change uses the main menu and target routes below.
+direct controls. Change 125 uses the main menu and target routes below.
 
 Enable `SMC-PAD PAD BANK` by default on the supported USB unit after its status-read
 check passes. F12 MIDI offers `Open panel` and `Off`. A detected press opens the hidden
@@ -97,7 +97,7 @@ Read the main rows from top to bottom and the cells from left to right.
 4. Back · Undo · Redo · Panic.
 
 A1 opens Pattern. Setup opens Settings. Mixer stays dim until `mixer-view`.
-Move Help to More. F1 still opens Help. More opens a context page. The Next and
+Open Controller Help from More with P10. F1 still opens Help. More opens a context page. The Next and
 Main cells move between panel pages. LEFT and RIGHT keep their screen roles.
 Panic uses only the double press from 93a. Its cell stays in the bottom-right corner.
 
@@ -115,19 +115,14 @@ Use `grid -` and `grid +` for grid size. Keep product names such as A1 and FX.
 Remove the panel steps for values, parameters and edit pages when a direct route replaces them.
 Keep their keyboard and MIDI learn actions. Knobs change values. LEFT and RIGHT change edit pages.
 
-For Take, Copy, Swap, a file in hand and Assign, measure the path on the controller.
-Record the current and trial counts in [the route table](../CONTROLLER-PATHS.md).
-Compare these routes before choosing one:
+Use P1–P12 on the target panel for Take, Copy, Swap, file placement and Assign.
+Use the playing layer for P13–P16. P13 cancels on the target panel.
+P14 applies an Assign plan. P15 switches between targets and commands.
+A playing-layer hit closes the panel and retains the current target route.
 
-1. Use the playing layer for targets. After a target hit, show `PAD BANK for Apply`
-   when the mode needs another layer switch.
-2. In a visible target mode, use second-layer cells 1–12 as targets 1–12.
-   Put Apply and Cancel on the bottom row in that mode. Use the playing layer
-   for targets 13–16.
-
-Check the effect of each choice on normal pad sound, held Gate releases and
-questions. Record the measured counts and the owner's choice before implementation.
-One layer 1 hit still uses the normal pad or target route and closes the panel.
+The [route table](../CONTROLLER-PATHS.md#target-routes) compares the software
+press counts before and after the change. Record actual counts on the device
+during the combined owner check. Include any P7 or P8 question answer.
 
 ### 2.3 Knobs
 
@@ -147,8 +142,8 @@ that page. Give Pattern, FX and Chop their own value pages. Dim absent values.
 Remove the global roles for project scroll, tempo and bank selection from knobs 1,
 7 and 8. Use knob 1 for project scroll only in the picker.
 
-Put tempo on the Pattern transport page with swing, quantize and length. Use a
-context cell with the label `tempo` for Tap Tempo once that action is available.
+Put tempo on the Pattern transport page with swing, quantize and length.
+Pattern More uses P6 `tap` for Tap Tempo. The keyboard uses Alt+B.
 Files, Chop and Settings have no tempo knob.
 While ptsr Note Repeat is on, bank 1 knobs 1–4 use RATE, SWING, TEMPO and LATCH.
 These roles follow the printed labels. Keep this override tied to change 100.
@@ -199,7 +194,7 @@ strip and one-row help at 80 by 26 and 120 by 40.
 The [route table](../CONTROLLER-PATHS.md) keeps the shipped paths and lists the new goals.
 Aim for two presses for a screen change, three for a context command and zero for a
 value turn. Count the fallback reveal and each additional context page separately.
-Check the complete target flows on the physical SMC-PAD before selecting the route.
+Check the complete target flows on the physical SMC-PAD during owner review.
 
 Use the numbers printed on the controller when explaining SHIFT. Printed PAD1–8
 select presets. PAD9–12 set velocity curves. PAD13–16 set transpose and octave.
@@ -207,8 +202,8 @@ The swing labels refer to the separate device Note Repeat mode.
 See the [manufacturer manual](https://fccid.io/m/db5542b15b2598e8c9dd9db080d605408b44fc685456f1f797e95e1da99ab5b8.pdf).
 The panel's P7 and P8 use the screen grid order.
 
-- A note outside the supported pad range on the performance channel gives one
-  warning per occurrence of the problem. Use `SMC-PAD pads are shifted (SHIFT +
+- An unassigned note outside the supported pad ranges on channel 10 gives one
+  warning per Master connection. Use `SMC-PAD pads are shifted (SHIFT +
   PAD13–16 changes octave or transpose). Reset it on the device.` The warning
   cannot identify a shifted note that still matches the profile. Do not infer a
   different pad map.
@@ -222,7 +217,7 @@ The panel's P7 and P8 use the screen grid order.
 knob banks and their labels. To update a saved old map, open F12 MIDI and select
 `SMC-PAD layout review`. Compare the current and proposed roles. Accept one change
 or all listed changes. Use Esc or P7 to cancel.
-The next change, `smc-panel-polish`, covers the panel, target flows and device warnings.
+[Change 125](../../openspec/changes/125-smc-panel-polish/) adds target selection and device warnings.
 
 | Before | Owner decision | Proposed default |
 |---|---|---|
@@ -235,7 +230,7 @@ The next change, `smc-panel-polish`, covers the panel, target flows and device w
 | `smc-knob-pages` | Use the bank 2 order in §2.3 for the selected pad. | Yes. Dim unavailable actions. |
 | `smc-knob-pages` | Apply new roles to an existing profile after review. | Keep conflicts for the owner to resolve. |
 | `smc-panel-polish` | Enable PAD BANK detection on supported USB. | Yes, after its status-read check passes. |
-| `smc-panel-polish` | Use a layer switch with a hint or second-layer cells as targets. | Decide after physical press counts. |
+| `smc-panel-polish` | Use direct targets on the command layer for P1–P12. | Test the full layout and count presses during review. |
 | `smc-panel-polish` | Move Help from the main page to More. | Yes. |
 
 ## 3. The changes

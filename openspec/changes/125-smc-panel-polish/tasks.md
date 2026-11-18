@@ -1,22 +1,26 @@
 ## 1. Command panel
 
-- [ ] Set the main cells and move Help into More.
-- [ ] Check the shipped six-cell label glossary.
+- [x] Set the main cells and move Help into More.
+- [x] Check the shipped six-cell label glossary.
 
 ## 2. Target paths
 
-- [ ] Show target pads and Apply or Cancel.
-- [ ] Check replacements, release, ownership and layer changes.
-- [ ] Record the software paths and owner press counts.
+- [x] Show target pads and Apply or Cancel.
+- [x] Check replacements, release, ownership and layer changes.
+- [x] Record the software paths and counts.
 
 ## 3. Device setup
 
-- [ ] Default to Open panel on verified USB.
-- [ ] Warn on shifted pad notes and the wrong preset.
-- [ ] Document Note Repeat in F1 and the setup guide.
+- [x] Default to Open panel on verified USB.
+- [x] Warn on shifted pad notes and the wrong preset.
+- [x] Document Note Repeat in F1 and the setup guide.
 
 ## 4. Review
 
-- [ ] Run the required local checks and compare both screen sizes.
-- [ ] Provide one owner procedure for the knob and panel changes.
-- [ ] Record the separate hardware and listening results when available.
+- [x] Run the required local checks and compare both screen sizes.
+- [x] Provide one owner procedure for the knob and panel changes.
+- [ ] Record physical press counts and listening results during owner review.
+
+The fast run passed 1580 tests. The five input parity tests passed.
+The catalogue has 702 frames. It adds 4 target views and changes 40 frames
+from change 124. The setup guide gives the combined procedure.

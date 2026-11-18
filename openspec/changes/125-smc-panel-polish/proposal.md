@@ -13,6 +13,7 @@ labels and a short path from a command to its target pad.
 - Keep confirmation cells visible for replacements. Show a route to pads 13–16.
 - Warn about shifted pads and an unsupported active preset.
 - Explain device Note Repeat in F1 and the setup guide.
+- Show full knob operations in Controller Help. Add Tap Tempo on Pattern More.
 
 ## Capabilities
 
@@ -25,6 +26,8 @@ None.
 - `command-panel`: main cells, names, target cells and safety controls.
 - `controller-reach`: PAD BANK default and shorter target routes.
 - `input-devices`: warn about shifted pad notes and the active preset.
+- `screen-layout`: show the selected knob operation.
+- `transport`: set Pattern tempo from taps.
 
 ## Impact
 
@@ -46,7 +49,8 @@ It builds on the knob layout in change 124. Both changes share one owner test.
 3. Start Copy, Take or Assign. Select a target on the active panel.
 4. Try a target on the bottom row of the playing layer. Return to Apply.
 5. Cancel and accept a replacement on separate runs.
-6. Check both terminal sizes. Compare the visible counts with the route table.
+6. In Pattern, press More and tap P6 in time. Check the BPM.
+7. Check both terminal sizes. Compare the visible counts with the route table.
    Use `pads-panel-targets` and `chop-panel-targets`.
 
 ### Sound
