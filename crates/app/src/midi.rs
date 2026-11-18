@@ -907,7 +907,6 @@ fn dispatch(
         origin: None,
     };
     let mut positions: HashMap<(String, u8, Key), u8> = HashMap::new();
-    let mut speed: HashMap<(String, u8, Key), (Instant, u8)> = HashMap::new();
     let mut fine: HashMap<String, (u8, Key)> = HashMap::new();
     let mut held_controls: HashSet<(String, u8, Key)> = HashSet::new();
     let mut gestures = Gestures::new(DEFAULT_HOLD);
@@ -1048,7 +1047,6 @@ fn dispatch(
                 }
                 send_gesture_edges(&mut ui, gestures.disconnect(&port));
                 positions.retain(|(device, _, _), _| *device != port);
-                speed.retain(|(device, _, _), _| *device != port);
                 fine.remove(&port);
                 held_controls.retain(|(device, _, _)| *device != port);
                 // a held gate pad would hang without its note off
@@ -1430,35 +1428,14 @@ fn dispatch(
                 target,
                 steps,
             }) => {
-                let count = speed
-                    .entry((port.clone(), channel, msg.key()))
-                    .or_insert((at, 0));
-                count.1 = if at
-                    .checked_duration_since(count.0)
-                    .is_some_and(|gap| gap <= Duration::from_millis(40))
-                {
-                    count.1.saturating_add(1).min(4)
-                } else {
-                    1
-                };
-                count.0 = at;
+                // Each detent is one step at any speed: the owner found accelerated turns too coarse.
                 let is_fine = fine.contains_key(&port);
-                let multiplier = if is_fine {
-                    1
-                } else {
-                    match count.1 {
-                        1 => 1,
-                        2 => 2,
-                        3 => 4,
-                        _ => 8,
-                    }
-                };
                 ui.send(
                     Event::Step {
                         port,
                         control,
                         target,
-                        steps: steps * multiplier,
+                        steps,
                         fine: is_fine,
                     },
                     Some(stamp),
@@ -1634,9 +1611,10 @@ mod tests {
         turns
     }
 
-    /// 90 input-devices: "Fast turn and fine button".
+    /// 126 input-devices: "Fast turn uses single steps".
+    /// Scenario "Fast turn and fine button" (input-devices). Change 126 replaces it until the archive.
     #[test]
-    fn fast_turn_and_fine_button() {
+    fn fast_turn_uses_single_steps() {
         let turns = relative_turns();
         assert_eq!(turns.len(), 6);
         assert_eq!(
@@ -1646,10 +1624,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (1, false),
-                (2, false),
+                (1, false),
                 (-1, false),
                 (1, true),
-                (8, false),
+                (1, false),
                 (1, false)
             ]
         );

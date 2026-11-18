@@ -2409,9 +2409,9 @@ impl App {
             match self.screen {
                 Screen::Pads if self.edit => {
                     if right {
-                        Action::ParamNext
+                        Action::PageNext
                     } else {
-                        Action::ParamPrev
+                        Action::PagePrev
                     }
                 }
                 Screen::Pads => Action::PadSelect(if right {
@@ -2602,10 +2602,7 @@ impl App {
                 if self.help_open {
                     return;
                 }
-                Some(Action::TempoStep {
-                    up: right,
-                    fine: fine || steps.unsigned_abs() == 1,
-                })
+                Some(Action::TempoStep { up: right, fine })
             }
             StepTarget::Param(Param::Tempo) => Some(Action::TempoStep { up: right, fine }),
             StepTarget::Param(Param::Zoom) if self.screen == Screen::Chop => {

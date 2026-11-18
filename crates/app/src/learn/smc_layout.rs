@@ -5,43 +5,46 @@ use std::time::Instant;
 
 const DEVICE: &str = "SMC-PAD";
 
-// Only slots changed since the first complete map. None means the slot had no saved role.
-const PREVIOUS: &[(Group, u8, Option<&str>)] = &[
-    (Group::Global, 30, Some("projects.scroll")),
-    (Group::Global, 35, Some("edit.page")),
-    (Group::Global, 36, Some("transport.tempo")),
-    (Group::Global, 37, Some("bank")),
-    (Group::Global, 39, None),
-    (Group::Global, 41, Some("pad.cutoff")),
-    (Group::Global, 42, Some("pad.decay")),
-    (Group::Global, 43, None),
-    (Group::Pads, 25, Some("pad.select_left")),
-    (Group::Pads, 26, Some("pad.select_right")),
-    (Group::Pads, 30, Some("bank")),
-    (Group::Pads, 31, Some("pad.volume")),
-    (Group::Pads, 32, Some("pad.pitch")),
-    (Group::Pads, 33, Some("pad.cutoff")),
-    (Group::Pads, 34, Some("pad.decay")),
-    (Group::Pads, 35, None),
-    (Group::Pads, 36, None),
-    (Group::Files, 25, Some("browser.up")),
-    (Group::Files, 26, Some("browser.down")),
-    (Group::Chop, 32, Some("chop.threshold")),
-    (Group::Chop, 33, Some("slice.start")),
-    (Group::Chop, 34, Some("slice.end")),
-    (Group::Chop, 35, None),
-    (Group::Chop, 36, None),
-    (Group::Pattern, 30, Some("bank")),
-    (Group::Pattern, 31, Some("pattern.bars")),
-    (Group::Pattern, 34, None),
-    (Group::Fx, 25, None),
-    (Group::Fx, 26, None),
-    (Group::Fx, 31, None),
-    (Group::Fx, 32, None),
-    (Group::Fx, 33, None),
-    (Group::Fx, 35, Some("edit.page")),
-    (Group::Settings, 25, Some("settings.row_prev")),
-    (Group::Settings, 26, Some("settings.row_next")),
+// Known shipped roles of each changed slot: the first complete map, then change 124.
+// None means the slot had no saved role.
+const PREVIOUS: &[(Group, u8, &[Option<&str>])] = &[
+    (Group::Global, 30, &[Some("projects.scroll")]),
+    (Group::Global, 35, &[Some("edit.page")]),
+    (Group::Global, 36, &[Some("transport.tempo")]),
+    (Group::Global, 37, &[Some("bank")]),
+    (Group::Global, 38, &[Some("pad.volume")]),
+    (Group::Global, 39, &[None, Some("pad.cutoff")]),
+    (Group::Global, 40, &[Some("pad.pitch")]),
+    (Group::Global, 41, &[Some("pad.cutoff"), Some("pad.decay")]),
+    (Group::Global, 42, &[Some("pad.decay"), Some("pad.send_1")]),
+    (Group::Global, 43, &[None, Some("pad.send_2")]),
+    (Group::Pads, 25, &[Some("pad.select_left")]),
+    (Group::Pads, 26, &[Some("pad.select_right")]),
+    (Group::Pads, 30, &[Some("bank")]),
+    (Group::Pads, 31, &[Some("pad.volume")]),
+    (Group::Pads, 32, &[Some("pad.pitch")]),
+    (Group::Pads, 33, &[Some("pad.cutoff")]),
+    (Group::Pads, 34, &[Some("pad.decay")]),
+    (Group::Pads, 35, &[None]),
+    (Group::Pads, 36, &[None]),
+    (Group::Files, 25, &[Some("browser.up")]),
+    (Group::Files, 26, &[Some("browser.down")]),
+    (Group::Chop, 32, &[Some("chop.threshold")]),
+    (Group::Chop, 33, &[Some("slice.start")]),
+    (Group::Chop, 34, &[Some("slice.end")]),
+    (Group::Chop, 35, &[None]),
+    (Group::Chop, 36, &[None]),
+    (Group::Pattern, 30, &[Some("bank")]),
+    (Group::Pattern, 31, &[Some("pattern.bars")]),
+    (Group::Pattern, 34, &[None]),
+    (Group::Fx, 25, &[None]),
+    (Group::Fx, 26, &[None]),
+    (Group::Fx, 31, &[None]),
+    (Group::Fx, 32, &[None]),
+    (Group::Fx, 33, &[None]),
+    (Group::Fx, 35, &[Some("edit.page")]),
+    (Group::Settings, 25, &[Some("settings.row_prev")]),
+    (Group::Settings, 26, &[Some("settings.row_next")]),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,12 +93,12 @@ fn binding(learned: &Learned, group: Group, key: &str) -> Option<MidiBinding> {
     learned.get(DEVICE)?.get(group.key())?.get(key).cloned()
 }
 
-fn matches_old(current: Option<&MidiBinding>, old: Option<&str>) -> bool {
-    match (current, old) {
+fn matches_old(current: Option<&MidiBinding>, old: &[Option<&str>]) -> bool {
+    old.iter().any(|old| match (current, old) {
         (Some(MidiBinding::Press(name)), Some(old)) => name == old,
         (None, None) => true,
         _ => false,
-    }
+    })
 }
 
 impl App {
@@ -105,11 +108,8 @@ impl App {
                 name == DEVICE && port.contains("SMC-PAD-Master") && !port.contains("(virtual)")
             })
             || !PREVIOUS.iter().any(|&(group, cc, old)| {
-                old.is_some()
-                    && matches_old(
-                        binding(&self.learned, group, &Key::Cc(cc).to_string()).as_ref(),
-                        old,
-                    )
+                let current = binding(&self.learned, group, &Key::Cc(cc).to_string());
+                current.is_some() && matches_old(current.as_ref(), old)
             })
         {
             return Vec::new();

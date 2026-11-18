@@ -3474,13 +3474,15 @@ L="none"
                 .map(|row| row.iter().map(|cell| cell.symbol()).collect())
                 .collect();
             let top = rows.iter().position(|row| row.contains("B1 7")).unwrap();
+            let rows_text = rows.join("\n");
             assert!(
-                rows[top].contains("B2 7 pan") && rows[top].contains("< > Slice · Chop · last 2")
+                rows[top].contains("B2 7 -") && rows[top].contains("< > Slice · Chop · last 2"),
+                "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);
-            assert!(rows[top + 1].contains("5 reg[") && rows[top + 1].contains("5 send 1"));
-            assert!(rows[top + 2].contains("3 start") && rows[top + 2].contains("3 pitch"));
-            assert!(rows[top + 3].contains("1 cursor") && rows[top + 3].contains("2 cutoff"));
+            assert!(rows[top + 1].contains("5 reg[") && rows[top + 1].contains("5 -"));
+            assert!(rows[top + 2].contains("3 start") && rows[top + 2].contains("3 -"));
+            assert!(rows[top + 3].contains("1 cursor") && rows[top + 3].contains("2 -"));
             assert!(rows[..top].iter().any(|row| row.contains("16 panic")));
         }
     }

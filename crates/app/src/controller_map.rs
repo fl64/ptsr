@@ -366,7 +366,6 @@ impl App {
                     .unwrap_or_else(|| (input::short_label(action), false));
                 (label, !unavailable)
             }
-            None if name == "f7" => ("pan", false),
             None if name == "e6" && self.pattern_panel.is_some() => ("swing", false),
             None => ("-", false),
         }

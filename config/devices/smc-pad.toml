@@ -80,7 +80,6 @@ rows = [
 knob_pairs = [
   { scope = "chop", left = "slice.start", right = "slice.end" },
   { scope = "chop", left = "chop.region_start_pos", right = "chop.region_end_pos" },
-  { scope = "global", left = "pad.send_1", right = "pad.send_2" },
   { scope = "fx", left = "edit.param_2", right = "edit.param_3" },
 ]
 
@@ -104,12 +103,6 @@ c13 = "panel.cell.13"
 c14 = "panel.cell.14"
 c15 = "panel.cell.15"
 c16 = "panel.cell.16"
-f1 = "pad.volume"
-f2 = "pad.cutoff"
-f3 = "pad.pitch"
-f4 = "pad.decay"
-f5 = "pad.send_1"
-f6 = "pad.send_2"
 f8 = "master.volume"
 e1 = "smc.position"
 e8 = "master.volume"

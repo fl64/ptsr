@@ -4,15 +4,15 @@
 
 ## 2. Knob roles
 
-- [ ] Remove the pad value roles on Pads outside pad edit.
-- [ ] Select the page with knob 1 and map knobs 7, 5 and 3 in pad edit.
-- [ ] Remove the bank 2 pad roles and the global send pair.
-- [ ] Test the Pads, pad edit and bank 2 scenarios with raw MIDI.
+- [x] Remove the pad value roles on Pads outside pad edit.
+- [x] Select the page with knob 1 and map knobs 7, 5 and 3 in pad edit.
+- [x] Remove the bank 2 pad roles and the global send pair.
+- [x] Test the Pads, pad edit and bank 2 scenarios with raw MIDI.
 
 ## 3. Steps and saved maps
 
-- [ ] Remove the relative speed multiplier. Keep the fine button state.
-- [ ] Add the change 124 roles to the layout review. Test the review.
+- [x] Remove the relative speed multiplier. Keep the fine button state.
+- [x] Add the change 124 roles to the layout review. Test the review.
 
 ## 4. Knob strip
 

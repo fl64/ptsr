@@ -174,7 +174,7 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         let mut drive = Drive::smc_offline();
         touch(&mut drive, port);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e3").contains("volume"));
+        assert!(role(&mut drive, "e1").contains("pad"));
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         assert!(drive.app.pattern_panel.is_some());
@@ -186,7 +186,7 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e3").contains("volume"));
+        assert!(role(&mut drive, "e1").contains("pad"));
     }
 }
 
@@ -210,7 +210,7 @@ fn last_knob_input_marks_its_bank() {
     drive.frame();
     let strip = drive.app.smc_knob_strip().unwrap();
     assert_eq!(strip.last_bank, Some(1));
-    assert_eq!(strip.roles[1][6], ("pan", false));
+    assert_eq!(strip.roles[1][6], ("-", false));
     assert_eq!(drive.app.pads.volume_db[0], volume);
 
     let connection = drive.midi().recorded_connection(port).unwrap();
