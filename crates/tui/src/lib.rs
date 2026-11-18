@@ -822,7 +822,7 @@ pub struct Controller {
 
 /// Columns of one place on a device drawing.
 const PLACE_W: u16 = 8;
-/// Rows above and below a drawing: the device line, a gap, a gap and the detail line.
+/// List frame rows. The drawing omits the blank row above the detail.
 const CONTROLLER_FRAME_ROWS: u16 = 4;
 
 /// The drawing of `places` x `rows` fits the F1 frame of a terminal of `size`.
@@ -830,7 +830,7 @@ pub fn controller_fits(places: usize, rows: usize, size: (u16, u16), caption: bo
     let width = usize::from(size.0.saturating_sub(2));
     let height = help_page_height(size.1, caption);
     places * usize::from(PLACE_W) <= width
-        && rows * 2 + usize::from(CONTROLLER_FRAME_ROWS) <= height
+        && rows * 2 + usize::from(CONTROLLER_FRAME_ROWS - 1) <= height
 }
 
 /// List rows that fit the F1 frame under the device line and over the detail line.

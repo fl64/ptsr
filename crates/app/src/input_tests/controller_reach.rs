@@ -1054,24 +1054,22 @@ fn help_cells_navigate_without_acting_behind_help() {
     cell(&mut controller, panel_note(8));
     cell(&mut controller, panel_note(10));
     keyboard.tap(KeyCode::F(1), M::NONE);
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    keyboard.tap(KeyCode::Tab, M::NONE);
     assert!(controller.app.help_open);
     assert_eq!(
         controller.app.help_overlay.page,
         keyboard.app.help_overlay.page
     );
 
-    cell(&mut controller, 63);
-    keyboard.tap(KeyCode::Tab, M::NONE);
-    assert_eq!(
-        controller.app.help_overlay.page,
-        keyboard.app.help_overlay.page
-    );
-    cell(&mut controller, 63);
-    keyboard.tap(KeyCode::Tab, M::NONE);
-    assert_eq!(
-        controller.app.help_overlay.page,
-        keyboard.app.help_overlay.page
-    );
+    for _ in 0..3 {
+        cell(&mut controller, 63);
+        keyboard.tap(KeyCode::Tab, M::NONE);
+        assert_eq!(
+            controller.app.help_overlay.page,
+            keyboard.app.help_overlay.page
+        );
+    }
 
     let before = controller.app.controller_view(&controller.keymap).detail;
     cell(&mut controller, 57);
@@ -1936,6 +1934,10 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                     "{view:?} {action:?}: {:?}",
                     controller.app.input_log
                 );
+                if action == Action::HelpToggle {
+                    keyboard.tap(KeyCode::Tab, M::NONE);
+                    keyboard.tap(KeyCode::Tab, M::NONE);
+                }
                 let controller_frame = cell(&mut controller, panel_note(slot));
                 assert_eq!(
                     reach_result(&controller, &controller_frame),
@@ -1947,7 +1949,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 169);
+    assert_eq!(checked + special, 175);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));

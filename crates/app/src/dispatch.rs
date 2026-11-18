@@ -1677,6 +1677,10 @@ impl App {
                     match self.panel.choice(view, cell) {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);
+                            if action == Action::HelpToggle && self.help_open {
+                                self.help_overlay.page = super::help::Page::Controller;
+                                self.controller_start();
+                            }
                         }
                         super::panel::Choice::Exit => {
                             self.ask = Some(Ask::Exit {

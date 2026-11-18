@@ -35,7 +35,7 @@ LEFT and RIGHT SHALL keep the current list. Keyboard paths SHALL remain availabl
 #### Scenario: The main panel gives Help one context route
 - **WHEN** the owner uses the shipped main panel in each view
 - **THEN** Mixer is dim and Settings uses P7
-- **AND** More and P10 open Help
+- **AND** More and P10 open Controller Help
 
 ## ADDED Requirements
 

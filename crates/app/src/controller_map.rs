@@ -372,6 +372,50 @@ impl App {
         }
     }
 
+    fn smc_knob_detail(&self, name: &str, action: Option<&str>) -> Option<String> {
+        use input::midi::{PARAMS, Param, param_of};
+        let bank = if name.starts_with('e') { 1 } else { 2 };
+        let knob = name.get(1..)?.parse::<u8>().ok()?;
+        let (short, available) = self.smc_knob_role(name, action);
+        let purpose = match action {
+            Some("smc.position") => match self.smc_context().2 {
+                "pad" => "select a pad silently",
+                "step" => "select a step in the row",
+                "select" => "select a project",
+                "param" => "select a parameter",
+                position => position,
+            },
+            Some("chop.region_start_pos") => "Chop region start",
+            Some("chop.region_end_pos") => "Chop region end",
+            Some("pad.send_1") => "send to FX 1",
+            Some("pad.send_2") => "send to FX 2",
+            Some(action) => {
+                let param = match param_of(action) {
+                    Some(Param::SmcPageValue(knob)) => self.smc_page_value(knob),
+                    Some(Param::Slot(slot)) => self.slot_param(slot),
+                    param => param,
+                };
+                let effective = param
+                    .and_then(|param| PARAMS.iter().find(|(_, value)| *value == param))
+                    .map_or(action, |(name, _)| *name);
+                let text = label(effective);
+                if text.is_empty() {
+                    short
+                } else {
+                    text.strip_suffix(" (knob)").unwrap_or(text)
+                }
+            }
+            None if short == "-" => "unassigned",
+            None => short,
+        };
+        let state = if available || short == "-" {
+            ""
+        } else {
+            " · unavailable"
+        };
+        Some(format!("B{bank} K{knob} · {purpose}{state}"))
+    }
+
     pub(super) fn smc_knob_strip(&self) -> Option<tui::KnobStrip> {
         if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
             return None;
@@ -413,9 +457,20 @@ impl App {
             .as_ref()
             .filter(|_| ready)
             .map(|(_, bank, _)| *bank);
+        let operation = (self.screen == input::Screen::Chop
+            && ready
+            && ["e3", "e4", "e5", "e6"].map(action)
+                == [
+                    Some("slice.start"),
+                    Some("slice.end"),
+                    Some("chop.region_start_pos"),
+                    Some("chop.region_end_pos"),
+                ])
+        .then_some("B1 3–4 slice · 5–6 region");
         Some(tui::KnobStrip {
             page,
             list,
+            operation,
             roles,
             last_bank,
         })
@@ -529,7 +584,12 @@ impl App {
                         if free { " unavailable" } else { "" }
                     ),
                     None => {
-                        if let Some((role, _)) = value_role(name) {
+                        if profile.name == "SMC-PAD"
+                            && profile.kind_of(name) == Some(ControlKind::Knob)
+                            && let Some(detail) = self.smc_knob_detail(name, action(name))
+                        {
+                            detail
+                        } else if let Some((role, _)) = value_role(name) {
                             format!("{name} · {kind} · {role}")
                         } else {
                             match action(name) {

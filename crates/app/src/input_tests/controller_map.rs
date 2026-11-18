@@ -561,3 +561,38 @@ fn smc_pad_help_names_the_device_repeat_clock() {
         assert!(text.contains("Use ptsr Note Repeat"), "{text}");
     }
 }
+
+/// Scenario "Chop help identifies the slice and region knobs" (screen-layout).
+#[test]
+fn chop_help_identifies_the_slice_and_region_knobs() {
+    const SMC: &str = "SINCO SMC-PAD-Master 28:1";
+    for size in SIZES {
+        let mut drive = Drive::smc_offline();
+        drive.midi().recorded_smc_setup();
+        drive.frame();
+        drive.prepare_chop(Arc::new(Sample::mono(vec![0.25; 48_000])), 4);
+        drive.app.resize_help(size.0, size.1);
+        for note in [64, 63, 57] {
+            // Reveal, More, Help.
+            drive.bytes(SMC, &[0x99, note, 100]);
+            drive.bytes(SMC, &[0x89, note, 0]);
+            drive.frame();
+        }
+        assert_eq!(drive.app.help_overlay.page, Page::Controller);
+        assert_eq!(current(&mut drive), "SMC-PAD");
+        assert_eq!(
+            drive.app.smc_knob_strip().unwrap().operation,
+            Some("B1 3–4 slice · 5–6 region"),
+        );
+        for (key, detail) in [
+            (KeyCode::Down, "B1 K5 · Chop region start"),
+            (KeyCode::Right, "B1 K6 · Chop region end"),
+            (KeyCode::Down, "B1 K4 · slice end"),
+            (KeyCode::Left, "B1 K3 · slice start"),
+        ] {
+            drive.tap(key, M::NONE);
+            let text = screen(&mut drive, size).join("\n");
+            assert!(text.contains(detail), "{text}");
+        }
+    }
+}
