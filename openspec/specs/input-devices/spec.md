@@ -849,23 +849,16 @@ A profile SHALL retain a relative knob's encoding after the program copies its s
 - **WHEN** an X-Session Pro absolute knob turns with jump, pickup or scale selected
 - **THEN** it keeps the current position response and does not enter the relative step path
 
-### Requirement: Relative speed and fine mode stay per device
-
-The system SHALL count detents of one port, channel and CC in a 40 ms receipt-time window. It SHALL use multipliers 1, 2, 4 and 8 for one, two, three and at least four detents. A neutral CC SHALL not count as a detent. A disconnect SHALL clear speed history.
-
-#### Scenario: Fast turn and fine button
-- **WHEN** one knob sends four detents within 40 ms, then the owner holds a global fine button during four more detents
-- **THEN** the first group grows by multipliers 1, 2, 4 and 8
-- **AND** each detent under fine mode uses multiplier 1 until the button releases
-
 ### Requirement: A held button selects fine steps
 
-A global `knob.fine` button action SHALL disable acceleration on its port while held. Its original release, an invalid-state release or a disconnect SHALL clear fine mode. Fine mode SHALL not change stored precision.
+A global `knob.fine` button action SHALL set fine mode on its port while held.
+Its original release, an invalid-state release or a disconnect SHALL clear fine mode.
+Fine mode SHALL not change stored precision.
 
 #### Scenario: Two devices keep separate step state
 - **WHEN** two ports send the same CC and only the first port holds its fine button
-- **THEN** the second port keeps its own speed and normal steps
-- **AND** disconnecting the first port clears only its own fine and speed state
+- **THEN** the second port keeps its normal steps
+- **AND** disconnecting the first port clears only its own fine state
 
 ### Requirement: Relative steps keep input order
 
@@ -984,12 +977,12 @@ PLAY's tap SHALL act on release before 300 ms. Its metronome hold SHALL act once
 ### Requirement: An existing SMC-PAD map can adopt the reviewed layout
 
 New SMC-PAD profiles SHALL use the shipped roles.
-An existing map SHALL show the old and proposed roles before it changes.
-The program SHALL keep owner bindings and removals.
-An empty saved knob position SHALL remain unassigned unless the owner accepts a new role.
-An old role with unknown origin SHALL require approval before replacement.
+An existing map SHALL show old and proposed roles before it changes.
+The review SHALL know the roles before and after change 124.
+It SHALL keep owner bindings, removals and empty knobs unless the owner accepts a role.
+An old role of unknown origin SHALL need approval.
 Only approved changes SHALL persist. Cancel or save failure SHALL keep the old map.
-Other device profiles and USB preset records SHALL keep their state.
+Other devices and USB preset records SHALL keep their state.
 
 #### Scenario: Saved SMC-PAD roles survive the layout review
 - **WHEN** the owner reviews a saved map with a personal, removed or ambiguous assignment
@@ -1006,6 +999,11 @@ Other device profiles and USB preset records SHALL keep their state.
 - **WHEN** a saved map omits a knob role that the owner removed
 - **THEN** a turn uses no factory fallback for that role
 - **AND** the layout review does not restore the removed assignment
+
+#### Scenario: A change 124 map removes the bank 2 pad roles
+- **WHEN** the owner reviews a saved map with the change 124 bank 2 roles and applies all changes
+- **THEN** bank 2 knobs 1–6 have no role after restart
+- **AND** bank 2 knob 8 still changes master volume
 
 ### Requirement: SMC-PAD warns about shifted notes and a wrong preset
 
@@ -1027,3 +1025,14 @@ supported ptsr Note Repeat path.
 #### Scenario: SMC-PAD help names the device repeat clock
 - **WHEN** the owner reads the connected SMC-PAD map in F1
 - **THEN** it explains the device clock and names ptsr Note Repeat
+
+### Requirement: Relative knobs use one step per detent
+
+Each relative detent SHALL change its target by one step at any turn speed.
+The system SHALL not multiply steps by turn speed.
+A neutral CC SHALL not count as a detent.
+
+#### Scenario: Fast turn uses single steps
+- **WHEN** one knob sends four detents within 40 ms, then four more while the owner holds a global fine button
+- **THEN** each detent changes the target by one step
+- **AND** the fine button release changes no value

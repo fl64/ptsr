@@ -47,36 +47,13 @@ The pattern roles SHALL have a separate learned group. The owner's pattern bindi
 - **WHEN** a question, picker, text line or learning mode opens over A1 controls, or a held Gate pad crosses the controls' close
 - **THEN** the active input owner keeps priority, no A1 setting changes behind it, and the Gate release stops its original pad
 
-### Requirement: Chop threshold has matching keyboard steps
-
-On Chop and Chop edit, Ctrl+Alt+Up SHALL increase the hit threshold by 1 dB.
-Ctrl+Alt+Down SHALL decrease it by 1 dB.
-The keys SHALL keep their existing threshold actions.
-An isolated bank 1 knob 7 step SHALL use the same threshold interval.
-Fast turns SHALL keep their current acceleration.
-The threshold SHALL stay within -40 to 0 dB.
-
-#### Scenario: Keyboard and encoder set the same Chop threshold
-- **WHEN** keyboard and raw MIDI runs step the threshold in both directions at least 100 ms apart
-- **THEN** each run reaches the same threshold, cuts, linked pads and Undo state
-- **AND** an attempt to pass a bound creates no Undo entry
-
-#### Scenario: Fast encoder turns keep acceleration
-- **WHEN** bank 1 knob 7 sends two movement steps within 40 ms on Chop
-- **THEN** the existing MIDI speed rule accelerates the second step
-- **AND** two separate keyboard presses still change the threshold by exactly 2 dB
-
-#### Scenario: Threshold keys respect owner bindings and input owners
-- **WHEN** an owner replaces or removes a threshold key, or an input overlay owns input
-- **THEN** the owner entry or active mode keeps priority
-
 ### Requirement: Pads have a silent keyboard selection route
 
-On Pads and Pads edit, `Alt+Left` and `Alt+Right` SHALL select the adjacent pad in the same row, as SMC-PAD bank 1 knob 1 does on Pads. Selection at a row edge SHALL stay in place. These keys SHALL not hit a pad, change its value, stop a held Gate pad or end the splash. A key repeat SHALL not select another pad. Other screens SHALL keep their current Alt-arrow routes. Owner keymap entries and an active text line, question, picker, Help or learning mode SHALL keep priority.
+On Pads and Pads edit, `Alt+Left` and `Alt+Right` SHALL select the adjacent pad in the same row. Selection at a row edge SHALL stay in place. These keys SHALL not hit a pad, change its value, stop a held Gate pad or end the splash. A key repeat SHALL not select another pad. Other screens SHALL keep their current Alt-arrow routes. Owner keymap entries and an active text line, question, picker, Help or learning mode SHALL keep priority.
 
 #### Scenario: Keyboard selects a neighboring pad without sound
 - **WHEN** the owner presses `Alt+Left` or `Alt+Right` on Pads or Pads edit
-- **THEN** the selected pad matches the corresponding bank 1 knob 1 turn on Pads
+- **THEN** the adjacent pad in the same row becomes the selected pad
 - **AND** no pad plays, a held Gate keeps its release target and a repeat does not move again
 - **AND** selection stops at the row edge without changing a value or ending the splash
 
@@ -253,7 +230,7 @@ The reach test SHALL use the production question, picker and learning routes. It
 
 On Chop and Chop edit, bank 1 knob 2 SHALL change zoom in quarter steps on the log scale.
 The turn SHALL keep the cursor anchor and current limits.
-The knob SHALL apply movement immediately and retain acceleration.
+The knob SHALL apply each step immediately at any turn speed.
 Keyboard and other device zoom routes SHALL keep their step sizes.
 Assign and modal input rules SHALL keep their priority.
 
@@ -261,7 +238,7 @@ Assign and modal input rules SHALL keep their priority.
 - **WHEN** the owner sends four isolated movement steps on bank 1 knob 2
 - **THEN** each step changes the zoom by a quarter of a keyboard step on the log scale
 - **AND** the four steps give one keyboard step within frame rounding
-- **AND** reverse turns act at once and fast turns retain acceleration
+- **AND** reverse turns act at once and fast turns use the same step
 
 #### Scenario: SMC-PAD Chop zoom preserves Assign and question priority
 - **WHEN** the owner turns bank 1 knob 2 during Assign or a question
@@ -287,21 +264,6 @@ Assign and visible questions SHALL block bound turns.
 - **WHEN** the owner turns knob 6 with the Chop context page visible
 - **THEN** the turn changes the region end and keeps the panel page
 - **AND** the Next cell moves to a later context page
-
-### Requirement: Bank 2 follows the selected pad on each screen
-
-The shipped bank 2 knobs 1–6 SHALL be volume, cutoff, pitch, decay, send 1 and send 2.
-Each turn SHALL target the selected pad, even if other pads have marks.
-Knob 7 SHALL stay inactive until pan is available.
-Knob 8 SHALL adjust master volume.
-The bank 2 roles SHALL keep their meaning across screens and panel pages.
-The program SHALL keep owner bindings and input overlay rules.
-
-#### Scenario: Bank 2 supplies the same live pad controls on every screen
-- **WHEN** the owner selects a pad and turns bank 2 knobs 1–7 across screens and panel pages
-- **THEN** available roles change the named value of that pad
-- **AND** send 1 and send 2 change different slots and the dim pan role has no action
-- **AND** marked pads stay unchanged
 
 ### Requirement: The list buttons follow the current SMC-PAD mode
 
@@ -331,30 +293,17 @@ The shipped knob SHALL keep its role through screen and panel changes.
 - **THEN** both turns change master volume
 - **AND** neither turn changes a bank, pad parameter or tempo
 
-### Requirement: Bank 1 uses the current Pads and FX page positions
-
-The shipped bank 1 SHALL give its page values the positions in the design.
-The Pads inspector and pad edit SHALL use the same page positions.
-An unavailable position SHALL remain inactive.
-An FX turn SHALL change the current FX slot.
-A value turn SHALL retain the selected parameter and existing edit limits.
-
-#### Scenario: Pad inspector and editor share knob positions
-- **WHEN** the owner turns the shipped pad page knobs with the inspector and editor open in separate runs
-- **THEN** the same knob changes the same value in both runs
-- **AND** an unused position changes no value
-
 ### Requirement: Pattern transport supplies the shipped tempo knob
 
 Pattern transport SHALL provide tempo, Bars, Quantize and Strength on its current page.
-A slow tempo step SHALL change 0.1 BPM. A fast turn SHALL support 1 BPM steps.
+Each tempo step SHALL change 1 BPM, or 0.1 BPM while the owner holds fine mode.
 The shipped SMC-PAD map SHALL have no tempo knob or step cell outside this page.
 The keyboard and learned tempo actions SHALL retain their routes.
 
 #### Scenario: Tempo turns act only on the Pattern transport page
 - **WHEN** the owner turns the tempo position with and without Pattern controls open
 - **THEN** the turn changes tempo only while the Pattern controls are open
-- **AND** a slow turn uses the same value as the fine keyboard step
+- **AND** each step uses the same value as the 1 BPM keyboard step
 
 ### Requirement: Panel buttons select context pages
 
@@ -367,10 +316,10 @@ A knob turn SHALL keep its screen or mode role while the panel shows.
 
 ### Requirement: SMC-PAD knob pairs share a physical row
 
-The pad page tables and device layout SHALL mark their symmetric knob pairs.
+The device layout SHALL mark its symmetric knob pairs.
 Each pair SHALL use adjacent knobs in one physical row.
 The lower, earlier or first role SHALL be on the left.
-Unavailable roles SHALL keep their named positions and remain inactive.
+Pad edit values SHALL follow the screen column, not pairs.
 
 #### Scenario: Layout rejects a split or reversed knob pair
 - **WHEN** a shipped pair moves apart or reverses its roles
@@ -388,3 +337,57 @@ Only `Open panel` on a verified unit SHALL start extra read-only status requests
 - **THEN** the setting and disabled shortcut survive restart
 - **AND** a config without a saved choice uses Open panel
 - **AND** an unverified unit or other device does not show the setting
+
+### Requirement: Bank 2 has only the master role
+
+The shipped bank 2 knobs 1–7 SHALL have no role.
+Bank 2 knob 8 SHALL change master volume.
+An owner binding on bank 2 SHALL keep its action.
+
+#### Scenario: Bank 2 turns change no pad value
+- **WHEN** the owner selects a pad and turns bank 2 knobs 1–7 on each screen
+- **THEN** no pad value, page, bank or selection changes
+- **AND** bank 2 knob 8 changes master volume
+
+### Requirement: Pad edit knobs follow the screen rows
+
+On Pads outside pad edit, bank 1 knobs 1–7 SHALL have no role.
+The pads select a pad. The A1 overview keeps its knob 1 step route.
+A pad edit page SHALL have at most four values.
+In pad edit, bank 1 knobs 7, 5, 3 and 1 SHALL change the first to fourth value.
+Knobs 2, 4 and 6 and an absent value SHALL have no role in pad edit.
+LEFT and RIGHT SHALL select the page.
+A pad value turn SHALL use the target, scope and limits of the keyboard value keys.
+An FX turn SHALL change the current FX slot.
+
+#### Scenario: Pad knobs act only in pad edit
+- **WHEN** the owner turns bank 1 knobs 1–7 on Pads without pad edit
+- **THEN** no pad value changes
+- **AND** the selected pad stays the same
+
+#### Scenario: Pad edit knobs follow the screen rows
+- **WHEN** the owner opens pad edit, selects each page with LEFT or RIGHT and turns knobs 7, 5, 3 and 1
+- **THEN** the knobs change the page values in screen order from top to bottom
+- **AND** knobs 2, 4 and 6 and a knob without a value change nothing
+
+### Requirement: Chop threshold steps match the keyboard
+
+On Chop and Chop edit, Ctrl+Alt+Up SHALL increase the hit threshold by 1 dB.
+Ctrl+Alt+Down SHALL decrease it by 1 dB.
+The keys SHALL keep their existing threshold actions.
+Each bank 1 knob 7 step SHALL use the same 1 dB interval at any turn speed.
+The threshold SHALL stay within -40 to 0 dB.
+
+#### Scenario: Keyboard and encoder set the same Chop threshold
+- **WHEN** keyboard and raw MIDI runs step the threshold in both directions at least 100 ms apart
+- **THEN** each run reaches the same threshold, cuts, linked pads and Undo state
+- **AND** an attempt to pass a bound creates no Undo entry
+
+#### Scenario: Fast encoder turns use single threshold steps
+- **WHEN** bank 1 knob 7 sends two movement steps within 40 ms on Chop
+- **THEN** the threshold changes by exactly 2 dB
+- **AND** two separate keyboard presses give the same threshold
+
+#### Scenario: Threshold keys respect owner bindings and input owners
+- **WHEN** an owner replaces or removes a threshold key, or an input overlay owns input
+- **THEN** the owner entry or active mode keeps priority

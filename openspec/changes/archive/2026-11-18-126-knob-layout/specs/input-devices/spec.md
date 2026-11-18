@@ -27,13 +27,12 @@ Fine mode SHALL not change stored precision.
 ### Requirement: An existing SMC-PAD map can adopt the reviewed layout
 
 New SMC-PAD profiles SHALL use the shipped roles.
-An existing map SHALL show the old and proposed roles before it changes.
-The review SHALL accept the roles before change 124 and the roles of change 124.
-The program SHALL keep owner bindings and removals.
-An empty saved knob position SHALL remain unassigned unless the owner accepts a new role.
-An old role with unknown origin SHALL require approval before replacement.
+An existing map SHALL show old and proposed roles before it changes.
+The review SHALL know the roles before and after change 124.
+It SHALL keep owner bindings, removals and empty knobs unless the owner accepts a role.
+An old role of unknown origin SHALL need approval.
 Only approved changes SHALL persist. Cancel or save failure SHALL keep the old map.
-Other device profiles and USB preset records SHALL keep their state.
+Other devices and USB preset records SHALL keep their state.
 
 #### Scenario: Saved SMC-PAD roles survive the layout review
 - **WHEN** the owner reviews a saved map with a personal, removed or ambiguous assignment
