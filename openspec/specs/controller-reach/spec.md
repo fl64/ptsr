@@ -92,25 +92,6 @@ The reach table SHALL list the route and counts for each story in `docs/USER-STO
 - **THEN** each story has an SMC-PAD route and a press count in `docs/CONTROLLER-PATHS.md`
 - **AND** observation-only, text-only and other-device stories name their exception
 
-### Requirement: A verified PAD BANK press opens the current panel
-
-A valid released-to-pressed status SHALL open the hidden panel on its main
-page. A later valid press from the same Master port SHALL close its panel.
-Each press SHALL act once. The press SHALL leave playback and modal controls
-in place. It SHALL have no MIDI learn action.
-
-#### Scenario: PAD BANK opens the panel once before a pad hit
-- **WHEN** the shortcut is on and the controller gives a valid press
-- **THEN** the panel opens before a pad hit
-- **AND** the next command-layer hit acts once
-- **AND** the next valid press from its Master closes the panel without a pad hit
-- **AND** a new press opens the main page for the current screen
-
-#### Scenario: PAD BANK respects input overlays
-- **WHEN** the owner presses PAD BANK during a question, picker, Help, text entry or learning
-- **THEN** the overlay and target keep priority
-- **AND** the press has no MIDI learn action
-
 ### Requirement: PAD BANK status keeps its Master connection
 
 The program SHALL route a valid press to the matching Master connection. It SHALL wait for a valid released status after enable or reconnect. Disconnect SHALL clear panel ownership. A reply from an old connection SHALL NOT open the panel after reconnect.
@@ -119,23 +100,6 @@ The program SHALL route a valid press to the matching Master connection. It SHAL
 - **WHEN** a status reply is invalid, belongs to another connection or arrives after the SMC-PAD disconnects
 - **THEN** the reply opens no panel and another device keeps its current route
 - **AND** reconnect starts hidden and a pressed status cannot open the panel before a valid released status
-
-### Requirement: Status delays preserve first-hit reveal and pad play
-
-A status reply SHALL keep the current panel state if a playing or command pad
-hit on that Master port is newer than the request. If the shortcut is off,
-unavailable or late, the first command-layer hit SHALL reveal a hidden panel
-without running a cell.
-
-#### Scenario: Late PAD BANK status keeps both pad routes
-- **WHEN** a command-layer hit arrives before its PAD BANK status reply
-- **THEN** the hit can reveal the panel and the late reply leaves the panel in place
-- **AND** a first-bank hit before the reply keeps the panel hidden and retains its release
-
-#### Scenario: First-hit reveal survives a missing PAD BANK pulse
-- **WHEN** the shortcut is off or a tap gives no usable reply
-- **THEN** the first command-layer hit reveals the panel
-- **AND** the next hit runs the visible cell once
 
 ### Requirement: Pickers accept SMC-PAD selection without typed text
 
@@ -305,19 +269,6 @@ Pad edit values SHALL follow the screen column, not pairs.
 - **WHEN** a shipped pair moves apart or reverses its roles
 - **THEN** the layout check reports the pair and its positions
 
-### Requirement: Verified USB SMC-PAD uses the saved PAD BANK preference
-
-F12 MIDI SHALL offer `SMC-PAD PAD BANK` for a connected USB SMC-PAD after the
-preset and encoder checks pass. It SHALL save `Off` or `Open panel`.
-An absent setting SHALL use `Open panel`. A saved Off choice SHALL stay off.
-Only `Open panel` on a verified unit SHALL start extra read-only status requests.
-
-#### Scenario: PAD BANK starts open and preserves a saved Off choice
-- **WHEN** the owner opens MIDI settings on a verified USB unit and sets Off
-- **THEN** the setting and disabled shortcut survive restart
-- **AND** a config without a saved choice uses Open panel
-- **AND** an unverified unit or other device does not show the setting
-
 ### Requirement: Bank 2 has only the master role
 
 The shipped bank 2 knobs 1–7 SHALL have no role.
@@ -371,3 +322,72 @@ The threshold SHALL stay within -40 to 0 dB.
 #### Scenario: Threshold keys respect owner bindings and input owners
 - **WHEN** an owner replaces or removes a threshold key, or an input overlay owns input
 - **THEN** the owner entry or active mode keeps priority
+
+### Requirement: Holding PAD BANK shows the current panel
+
+With the hold shortcut on a verified USB SMC-PAD, the panel SHALL show while the status reads pressed and hide on the first released status.
+Each hold SHALL show the actions of the current screen or mode.
+During a hold, LEFT and RIGHT SHALL move the panel views, even with saved owner roles.
+A hold SHALL leave playback and modal controls in place. It SHALL have no MIDI learn action.
+
+#### Scenario: The panel shows only while PAD BANK is held
+- **WHEN** the owner holds PAD BANK, hits one cell and releases PAD BANK during playback
+- **THEN** the panel shows during the hold and the cell acts once
+- **AND** the panel hides on release and playback continues
+
+#### Scenario: A hold takes LEFT and RIGHT over saved roles
+- **WHEN** a saved owner map gives LEFT and RIGHT a Chop role and the owner holds PAD BANK on Chop
+- **THEN** LEFT and RIGHT move the panel views and the Chop selection stays
+- **AND** without a hold they keep the saved role
+
+#### Scenario: PAD BANK respects input overlays
+- **WHEN** the owner holds PAD BANK during a picker, Help, text entry or learning
+- **THEN** the overlay keeps priority and the panel stays hidden
+- **AND** the hold has no MIDI learn action
+
+### Requirement: The PAD BANK hold routes pad hits
+
+With the hold shortcut on, a pad hit SHALL act by the hold, not by the note bank of the device.
+While held, it SHALL run the cell at the same physical position. Otherwise, it SHALL play the pad.
+A release SHALL go to the target of its press.
+
+#### Scenario: A pad hit follows the hold, not the device layer
+- **WHEN** the device sends second-bank notes without a hold and first-bank notes during a hold
+- **THEN** the hits without a hold play their pads at the same physical positions
+- **AND** the hits during the hold run the cells at those positions
+
+#### Scenario: A pad release keeps the target of its press
+- **WHEN** the owner releases PAD BANK while a cell pad is down, then releases that pad
+- **THEN** the panel hides and the pad release runs no cell and plays no sound
+
+### Requirement: Status delays keep pad play
+
+With the hold shortcut on, a hit before the first pressed reply of a hold SHALL play the pad.
+A failed status read or a preset change SHALL act as a release.
+If the shortcut is off or unavailable, the first second-bank hit SHALL reveal a hidden panel without running a cell.
+
+#### Scenario: A hit before the hold reply plays the pad
+- **WHEN** a pad hit arrives after the PAD BANK press but before its pressed reply
+- **THEN** the pad plays once and the next hit during the hold runs a cell
+
+#### Scenario: A failed status read hides the panel
+- **WHEN** a status read fails or the preset changes during a hold
+- **THEN** the panel hides and the next pad hit plays
+
+#### Scenario: First-hit reveal works without the hold shortcut
+- **WHEN** the shortcut is off or the unit is not verified
+- **THEN** the first second-bank hit reveals the panel
+- **AND** the next hit runs the visible cell once
+
+### Requirement: Verified USB SMC-PAD saves the PAD BANK hold preference
+
+F12 MIDI SHALL offer `SMC-PAD PAD BANK` for a connected USB SMC-PAD after the
+preset and encoder checks pass. It SHALL save `Off` or `Hold panel`.
+An absent setting SHALL use `Hold panel`. A saved Off choice SHALL stay off.
+Only `Hold panel` on a verified unit SHALL start extra read-only status requests.
+
+#### Scenario: PAD BANK starts on hold and preserves a saved Off choice
+- **WHEN** the owner opens MIDI settings on a verified USB unit and sets Off
+- **THEN** the setting and disabled shortcut survive restart
+- **AND** a config without a saved choice uses Hold panel
+- **AND** an unverified unit or other device does not show the setting

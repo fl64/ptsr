@@ -15,4 +15,4 @@
 
 - [x] Update F1, `docs/CONTROLLER-PATHS.md`, `docs/SMC-PAD.md`, `docs/VISION.md` and the plan.
 - [x] Run format, Clippy, changed tests, the screen catalogue compare and the fast checks.
-- [ ] Give the owner the build and the check.
+- [x] Give the owner the build and the check.

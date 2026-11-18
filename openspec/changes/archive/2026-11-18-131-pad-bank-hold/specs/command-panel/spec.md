@@ -2,7 +2,7 @@
 
 ### Requirement: SMC-PAD second bank opens a command panel
 
-Without the PAD BANK hold shortcut, the Master profile SHALL map 16 second-bank notes to panel cells in the first bank's physical rows. An owner binding MAY replace a cell outside a question. The first panel-bound press while hidden SHALL reveal the panel without an action. Later presses SHALL run one visible cell. Releases SHALL run no cell. A first-bank press SHALL hide the panel and keep its pad action and original release. With the shortcut on, the PAD BANK hold SHALL decide the panel instead.
+Without the PAD BANK hold shortcut, the Master profile SHALL map 16 second-bank notes to panel cells in physical rows. An owner binding MAY replace a cell outside a question. A first panel-bound press while hidden SHALL only reveal the panel. Later presses SHALL run one visible cell. Releases SHALL run no cell. A first-bank press SHALL hide the panel and keep its pad action and release. With the shortcut on, the hold SHALL decide.
 
 #### Scenario: First second-bank hit only reveals the panel
 - **WHEN** the owner starts transport and sends a second-bank press and release with the shipped panel binding while the panel is hidden
