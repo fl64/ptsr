@@ -45,9 +45,9 @@ Current input owners SHALL keep their priority.
 
 #### Scenario: Slow Chop zoom uses smaller input steps
 - **WHEN** the owner sends four isolated movement steps on bank 1 knob 2
-- **THEN** the zoom changes by one current keyboard zoom step
-- **AND** a reverse turn cancels pending movement before it applies an opposite zoom step
-- **AND** fast turns retain acceleration
+- **THEN** each step changes the zoom by a quarter of a keyboard step on the log scale
+- **AND** the four steps give one keyboard step within frame rounding
+- **AND** reverse turns act at once and fast turns retain acceleration
 
 ### Requirement: Bank 2 follows the selected pad on each screen
 

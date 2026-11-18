@@ -59,9 +59,9 @@ Follow the keyboard value bounds and apply the same Undo and safety rules.
 
 For Chop, the K3 and K4 pair changes the selected slice. The K5 and K6 pair
 changes the whole Chop region. Reuse the current relative bound steps and link
-updates. Use four isolated steps on K2 for one former keyboard zoom step.
-A turn in the opposite direction cancels pending zoom movement first.
-Clear any pending movement when the source disconnects or the Chop closes.
+updates. On K2, each isolated step applies one quarter of a keyboard zoom step
+on the log scale. The current frame limits and rounding still apply.
+Apply a reverse turn at once. Store no pending zoom movement.
 Retain the relative acceleration rule for supported values and fast zoom turns.
 Keep the one dB threshold comparison for slow turns. Move that role to K7.
 
