@@ -197,6 +197,18 @@ impl HoldRoute {
         }
     }
 
+    /// For LEFT (CC 25) or RIGHT (CC 26) of a held Master: whether this is the press.
+    fn list_button(&self, port: &str, msg: Msg) -> Option<bool> {
+        match msg {
+            Msg::Cc {
+                ch: 1,
+                cc: 25 | 26,
+                value,
+            } if self.held.contains(port) => Some(value > 0),
+            _ => None,
+        }
+    }
+
     fn end(&mut self, port: &str, setting: u64, ui: &mut UiSender) {
         if self.held.remove(port) {
             ui.send(
@@ -1300,11 +1312,17 @@ fn dispatch(
         let guarded_encoder = !(smc_ready || (dev_virtual && port.contains("(virtual)")))
             && port.contains("SMC-PAD-Master")
             && matches!(msg, Msg::Cc { cc: 30..=45, .. });
-        let (resolved, activity) = if guarded_encoder {
+        let (mut resolved, activity) = if guarded_encoder {
             (None, Activity::None)
         } else {
             profile.resolve_input_mode(focus.screen, focus.mode, modal, msg)
         };
+        // During a PAD BANK hold, LEFT and RIGHT move the panel views over saved roles (131).
+        if let Some(next) = hold.list_button(&port, msg) {
+            resolved = next.then_some(Resolved::Action(Action::SmcList {
+                next: matches!(msg, Msg::Cc { cc: 26, .. }),
+            }));
+        }
         if let Some(origin) = &mut ui.origin {
             origin.activity = activity;
         }

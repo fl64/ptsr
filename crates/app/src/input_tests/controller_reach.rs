@@ -3050,6 +3050,31 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
     assert_eq!(checked, 53);
 }
 
+/// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
+#[test]
+fn a_hold_takes_left_and_right_over_saved_roles() {
+    let files = TransitionFiles::new();
+    let path = files.0.join("owner-chop-roles.toml");
+    std::fs::write(
+        &path,
+        "[devices]\nseeded = [\"SMC-PAD\"]\n\n[midi.\"SMC-PAD\".chop]\n\"cc 25\" = \"marker.prev\"\n\"cc 26\" = \"marker.next\"\n",
+    )
+    .unwrap();
+    let mut drive = saved_layout_drive(&path);
+    drive.prepare_chop(Arc::new(Sample::mono(vec![0.2; 48_000])), 4);
+    drive.app.publish_midi(&drive.shared);
+    let selected = drive.app.chop.as_ref().unwrap().selected;
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.panel.page(), 1);
+    assert_eq!(drive.app.chop.as_ref().unwrap().selected, selected);
+    hold(&mut drive, false);
+    list_button(&mut drive, true);
+    assert_ne!(drive.app.chop.as_ref().unwrap().selected, selected);
+}
+
 /// Scenario "PAD BANK respects input overlays" (controller-reach).
 #[test]
 fn pad_bank_respects_input_overlays() {
