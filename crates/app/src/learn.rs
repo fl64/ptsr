@@ -1,5 +1,7 @@
 //! MIDI learn: waits for a control and keeps learned assignments in the `[midi]` config shape.
 
+pub(crate) mod smc_layout;
+
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -13,6 +15,9 @@ pub(super) enum MidiListRow {
     Response,
     HoldTime,
     SmcPadBank,
+    SmcLayoutList(usize),
+    SmcLayoutApply,
+    SmcLayoutSlot(smc_layout::Slot),
     Reset {
         name: String,
         port: String,
@@ -136,7 +141,7 @@ pub fn drop_dead(learned: &mut Learned) -> Vec<String> {
                             && name == "none"
                             && key.parse::<Key>().is_ok_and(|key| {
                                 group == input::Group::Pattern.key()
-                                    || matches!(key, Key::Note(52..=67) | Key::Cc(27 | 28))
+                                    || matches!(key, Key::Note(52..=67) | Key::Cc(25..=28 | 30..=45))
                             }))
                     {
                         true
@@ -1284,6 +1289,14 @@ impl App {
         {
             rows.push(MidiListRow::SmcPadBank);
         }
+        let changes = self.smc_layout_slots();
+        if !changes.is_empty() {
+            rows.push(MidiListRow::SmcLayoutList(changes.len()));
+            if self.help_overlay.controller.smc_layout_open {
+                rows.extend(changes.into_iter().map(MidiListRow::SmcLayoutSlot));
+                rows.push(MidiListRow::SmcLayoutApply);
+            }
+        }
         for (port, name) in &self.midi_devices {
             if !rows
                 .iter()
@@ -1304,7 +1317,7 @@ impl App {
                     controls.iter().filter_map(|(key, binding)| {
                         let parsed = key.parse::<Key>().ok()?;
                         (matches!(binding, MidiBinding::Press(name) if name == "none")
-                            && matches!(parsed, Key::Note(52..=67) | Key::Cc(27 | 28)))
+                            && matches!(parsed, Key::Note(52..=67) | Key::Cc(25..=28 | 30..=45)))
                         .then(|| MidiListRow::Disabled {
                             profile: "SMC-PAD".into(),
                             group: group.clone(),
@@ -1455,6 +1468,24 @@ impl App {
                         stays,
                     }
                 }
+                MidiListRow::SmcLayoutList(count) => tui::MidiRow::Action {
+                    label: "SMC-PAD layout review".into(),
+                    who: format!("{count} changes"),
+                    taken: false,
+                    stays: Vec::new(),
+                },
+                MidiListRow::SmcLayoutApply => tui::MidiRow::Action {
+                    label: "Apply all layout changes".into(),
+                    who: String::new(),
+                    taken: false,
+                    stays: Vec::new(),
+                },
+                MidiListRow::SmcLayoutSlot(slot) => tui::MidiRow::Action {
+                    label: slot.label(),
+                    who: slot.summary(),
+                    taken: false,
+                    stays: Vec::new(),
+                },
                 MidiListRow::Reset { name, .. } => tui::MidiRow::Action {
                     label: "reset to profile".into(),
                     who: name.clone(),
@@ -1555,7 +1586,17 @@ impl App {
                 infos.len()
             ));
         }
-        let l = self.learning.as_ref()?;
+        let Some(l) = self.learning.as_ref() else {
+            if self.screen != Screen::Settings || self.settings_tab != 2 {
+                return None;
+            }
+            return match self.midi_list().get(self.midi_row) {
+                Some(MidiListRow::SmcLayoutList(_)) => Some(" Enter: show or hide changes".into()),
+                Some(MidiListRow::SmcLayoutSlot(_)) => Some(" Enter: review this change".into()),
+                Some(MidiListRow::SmcLayoutApply) => Some(" Enter: review the full update".into()),
+                _ => None,
+            };
+        };
         Some(match &l.pending {
             Some((profile, key)) => {
                 let replaced = self
@@ -1647,6 +1688,9 @@ impl App {
                 MidiListRow::Response
                 | MidiListRow::HoldTime
                 | MidiListRow::SmcPadBank
+                | MidiListRow::SmcLayoutList(_)
+                | MidiListRow::SmcLayoutApply
+                | MidiListRow::SmcLayoutSlot(_)
                 | MidiListRow::Reset { .. }
                 | MidiListRow::Disabled { .. },
             )

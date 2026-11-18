@@ -154,6 +154,11 @@ impl App {
                         );
                     }
                 }
+                Action::Confirm if matches!(&self.ask, Some(Ask::SmcLayout(_))) => {
+                    if let Some(Ask::SmcLayout(review)) = self.ask.take() {
+                        self.apply_smc_layout(review);
+                    }
+                }
                 Action::Confirm
                 | Action::ChopCommit
                 | Action::ChopEdit
@@ -165,7 +170,7 @@ impl App {
                             self.request_quit();
                         }
                         Some(Ask::Plan { .. }) => self.apply_plan(),
-                        Some(Ask::ResetProfile { .. }) => {}
+                        Some(Ask::ResetProfile { .. } | Ask::SmcLayout(_)) => {}
                         Some(Ask::ResetPads { pads, .. }) => {
                             let pads = pads.clone();
                             self.ask = None;
@@ -852,6 +857,11 @@ impl App {
                     Some(MidiListRow::SmcPadBank) => {
                         self.set_smc_pad_bank(!self.midi_gestures.smc_pad_bank_opens_panel)
                     }
+                    Some(MidiListRow::SmcLayoutList(_)) => {
+                        self.help_overlay.controller.smc_layout_open ^= true;
+                    }
+                    Some(MidiListRow::SmcLayoutApply) => self.ask_smc_layout(None),
+                    Some(MidiListRow::SmcLayoutSlot(slot)) => self.ask_smc_layout(Some(slot)),
                     Some(MidiListRow::Reset { name, port }) => {
                         self.ask = Some(Ask::ResetProfile {
                             lines: vec![

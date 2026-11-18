@@ -168,6 +168,7 @@ enum Raw {
     Msg(String, Msg, Stamp),
     /// New learned assignments of a profile in a group.
     Learned(String, Scope, HashMap<Key, Binding>),
+    LearnedSet(LearnedMaps),
     /// The roles of a profile are copied into the learned maps (59): only those act now.
     Seeded(String),
     HoldTime(Duration),
@@ -664,6 +665,10 @@ impl Midi {
             .send(Raw::Learned(profile.into(), group.scope(), map));
     }
 
+    pub(super) fn set_learned_groups(&self, maps: LearnedMaps) {
+        let _ = self.updates.send(Raw::LearnedSet(maps));
+    }
+
     /// The profile's roles live in the learned maps from now on (59).
     pub fn set_seeded(&self, profile: &str) {
         let _ = self.updates.send(Raw::Seeded(profile.into()));
@@ -1085,6 +1090,13 @@ fn dispatch(
                     }
                 }
                 learned.insert((name, scope), map);
+                continue;
+            }
+            Raw::LearnedSet(maps) => {
+                for profile in profiles.iter_mut().chain(defaults.values_mut()) {
+                    apply_learned(profile, &maps);
+                }
+                learned.extend(maps);
                 continue;
             }
             Raw::Seeded(name) => {

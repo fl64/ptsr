@@ -18,6 +18,7 @@ pub(super) struct State {
     pub last_port: Option<String>,
     /// The latest USB setup result for the measured SMC-PAD profile.
     pub smc_status: Option<(bool, String)>,
+    pub smc_layout_open: bool,
     pub smc_last_knob: Option<(String, usize, std::time::Instant)>,
 }
 

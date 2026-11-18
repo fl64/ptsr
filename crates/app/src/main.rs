@@ -121,7 +121,6 @@ const CHOP: usize = PADS + 1;
 /// Marker steps on the chop screen: coarse, and with Ctrl held.
 const NUDGE_MS: i32 = 20;
 const NUDGE_FINE_MS: i32 = 4;
-/// Session changes are written this long after the last one.
 const SESSION_SAVE: Duration = Duration::from_secs(1);
 
 enum Ask {
@@ -136,7 +135,7 @@ enum Ask {
         path: PathBuf,
         lines: Vec<String>,
     },
-    /// The MIDI tab: a device's bindings back to its profile (59).
+    SmcLayout(learn::smc_layout::Review),
     ResetProfile {
         name: String,
         port: String,
@@ -384,6 +383,7 @@ fn folders_of(dir: &Path) -> Vec<PathBuf> {
 impl Ask {
     fn lines(&self) -> &[String] {
         match self {
+            Ask::SmcLayout(review) => &review.lines,
             Ask::Exit { lines }
             | Ask::Plan { lines }
             | Ask::PutFile { lines, .. }

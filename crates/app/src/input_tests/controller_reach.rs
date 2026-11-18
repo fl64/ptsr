@@ -3053,3 +3053,173 @@ fn first_hit_reveal_survives_a_missing_pad_bank_pulse() {
         assert_eq!(drive.app.screen, Screen::Files);
     }
 }
+
+fn old_layout_file(files: &TransitionFiles) -> PathBuf {
+    let path = files.0.join("old-smc.toml");
+    std::fs::write(
+        &path,
+        r#"
+[devices]
+seeded = ["SMC-PAD", "Recorded pads", "X-Session Pro"]
+
+[midi."SMC-PAD".global]
+"cc 30" = "projects.scroll"
+"cc 35" = "pad.pitch"
+"cc 36" = "none"
+"cc 37" = "bank"
+"cc 38" = "pad.volume"
+"cc 45" = "master.volume"
+
+[midi."SMC-PAD".pads]
+"cc 25" = "pad.select_left"
+"cc 26" = "pad.select_right"
+"cc 30" = "bank"
+"cc 31" = "pad.volume"
+
+[midi."SMC-PAD".chop]
+"cc 34" = "slice.end"
+
+[midi."SMC-PAD".pattern]
+"cc 31" = "pattern.bars"
+
+[midi."SMC-PAD".fx]
+
+[midi."X-Session Pro".global]
+"cc 24" = "pad.pitch"
+"#,
+    )
+    .unwrap();
+    path
+}
+
+fn saved_layout_drive(path: &Path) -> Drive {
+    let mut drive = Drive::with_saved_bindings_and_smc(true, Some(path), true);
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    drive
+}
+
+fn select_layout_row(drive: &mut Drive, find: impl Fn(&MidiListRow) -> bool) {
+    let target = drive.app.midi_list().iter().position(find).unwrap();
+    while drive.app.midi_row != target {
+        let key = if drive.app.midi_row < target {
+            KeyCode::Down
+        } else {
+            KeyCode::Up
+        };
+        let previous = drive.app.midi_row;
+        drive.tap(key, M::NONE);
+        assert_ne!(drive.app.midi_row, previous);
+    }
+    drive.tap(KeyCode::Enter, M::NONE);
+}
+
+fn open_layout_review(drive: &mut Drive) {
+    drive.tap(KeyCode::F(12), M::NONE);
+    drive.tap(KeyCode::Tab, M::NONE);
+    drive.tap(KeyCode::Tab, M::NONE);
+    assert_eq!(drive.app.settings_tab, 2);
+    select_layout_row(drive, |row| matches!(row, MidiListRow::SmcLayoutList(_)));
+}
+
+fn select_layout_master(drive: &mut Drive) {
+    select_layout_row(
+        drive,
+        |row| matches!(row, MidiListRow::SmcLayoutSlot(slot) if slot.label().contains("(cc 37)")),
+    );
+    assert!(matches!(drive.app.ask, Some(Ask::SmcLayout(_))));
+}
+
+/// Scenario "Saved SMC-PAD roles survive the layout review" (input-devices).
+#[test]
+fn saved_smc_pad_roles_survive_the_layout_review() {
+    let files = TransitionFiles::new();
+    let path = old_layout_file(&files);
+    let mut drive = saved_layout_drive(&path);
+    let before = drive.app.learned.clone();
+    open_layout_review(&mut drive);
+
+    let rows = drive.app.midi_screen();
+    assert!(rows.iter().any(|row| matches!(row,
+        tui::MidiRow::Action { label, who, .. }
+            if label.contains("e8 (cc 37)") && who.contains("→") && who.contains("master")
+    )));
+    assert!(!drive.app.midi_list().iter().any(|row| matches!(row,
+        MidiListRow::SmcLayoutSlot(slot)
+            if ["cc 35)", "cc 36)", "cc 32)"].iter().any(|key| slot.label().contains(key))
+    )));
+    select_layout_master(&mut drive);
+    assert_eq!(drive.app.learned, before);
+    drive.tap(KeyCode::Enter, M::NONE);
+    let mut expected = before.clone();
+    expected
+        .get_mut("SMC-PAD")
+        .unwrap()
+        .get_mut("global")
+        .unwrap()
+        .insert("cc 37".into(), "master.volume".into());
+    assert_eq!(drive.app.learned, expected);
+    assert_eq!(config::load_from(&path).config.midi, expected);
+
+    let mut restarted = saved_layout_drive(&path);
+    assert_eq!(restarted.app.learned, expected);
+    let bank = restarted.app.pads.bank;
+    let volume = restarted.app.master_db;
+    turn(&mut restarted, 37, 65);
+    assert!(restarted.app.master_db > volume);
+    assert_eq!(restarted.app.pads.bank, bank);
+}
+
+/// Scenario "Canceled or refused layout updates are safe to retry" (input-devices).
+#[test]
+fn canceled_or_refused_layout_updates_are_safe_to_retry() {
+    let files = TransitionFiles::new();
+    let path = old_layout_file(&files);
+    let mut drive = saved_layout_drive(&path);
+    let before = drive.app.learned.clone();
+    open_layout_review(&mut drive);
+    select_layout_master(&mut drive);
+    cell(&mut drive, 62);
+    assert!(drive.app.ask.is_none());
+    assert_eq!(drive.app.learned, before);
+    assert_eq!(config::load_from(&path).config.midi, before);
+
+    drive.app.user_path = Some(files.0.join("A"));
+    select_layout_master(&mut drive);
+    cell(&mut drive, 63);
+    assert!(drive.app.ask.is_none());
+    assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
+    assert_eq!(drive.app.learned, before);
+    assert_eq!(config::load_from(&path).config.midi, before);
+    drive.tap(KeyCode::F(2), M::NONE);
+    let volume = drive.app.master_db;
+    let bank = drive.app.pads.bank;
+    turn(&mut drive, 37, 65);
+    assert_eq!(drive.app.master_db, volume);
+    assert_ne!(drive.app.pads.bank, bank);
+
+    drive.app.user_path = Some(path.clone());
+    drive.tap(KeyCode::F(12), M::NONE);
+    select_layout_row(&mut drive, |row| matches!(row, MidiListRow::SmcLayoutApply));
+    cell(&mut drive, 63);
+    assert!(drive.app.ask.is_none());
+    assert_eq!(drive.app.learned["X-Session Pro"], before["X-Session Pro"]);
+    assert_eq!(
+        drive.app.learned["SMC-PAD"]["global"]["cc 37"],
+        "master.volume"
+    );
+    assert_eq!(drive.app.learned["SMC-PAD"]["global"]["cc 35"], "pad.pitch");
+    assert_eq!(drive.app.learned["SMC-PAD"]["global"]["cc 36"], "none");
+    assert_eq!(config::load_from(&path).config.midi, drive.app.learned);
+    assert!(
+        !drive
+            .app
+            .midi_list()
+            .iter()
+            .any(|row| matches!(row, MidiListRow::SmcLayoutList(_)))
+    );
+    let bank = drive.app.pads.bank;
+    turn(&mut drive, 37, 65);
+    assert!(drive.app.master_db > volume);
+    assert_eq!(drive.app.pads.bank, bank);
+}
