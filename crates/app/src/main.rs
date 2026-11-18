@@ -1394,7 +1394,7 @@ fn main() -> std::io::Result<()> {
         app.audio.as_mut().and_then(|a| a.midi_commands.take()),
         app.audio.as_ref().map(|a| a.project.clone()),
         shared.clone(),
-        Duration::from_millis(app.midi_gestures.hold_time_ms.into()),
+        app.midi_gestures,
     ));
     if let Some(d) = app.audio.as_ref().and_then(|a| a.devices()) {
         log::info!("devices: outputs {:?}, inputs {:?}", d.outputs, d.inputs);

@@ -1,11 +1,12 @@
 //! Configure the measured SMC-PAD preset over its Private USB MIDI port.
 
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use midir::{Ignore, MidiInput, MidiOutput};
 
-use super::Raw;
+use super::{Raw, Shared};
 
 const PORT: &str = "SMC-PAD-Private";
 const SLOT: usize = 4;
@@ -15,6 +16,8 @@ const RECORD: usize = 6;
 const SIZE: usize = 28312;
 const CHUNK: usize = 1009;
 const WAIT: Duration = Duration::from_secs(3);
+const CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const PAD_BANK_INTERVAL: Duration = Duration::from_millis(52);
 
 fn packet(command: u8, data: &[u8]) -> Vec<u8> {
     let mut logical = vec![0, 0x59, command];
@@ -81,6 +84,8 @@ struct MidiTransport {
     _input: midir::MidiInputConnection<()>,
     output: midir::MidiOutputConnection,
     replies: Receiver<Vec<u8>>,
+    wait: Duration,
+    master: Option<String>,
 }
 
 impl Transport for MidiTransport {
@@ -89,7 +94,7 @@ impl Transport for MidiTransport {
             .send(&packet(command, data))
             .map_err(|e| format!("USB send: {e}"))?;
         let mut frame = Vec::new();
-        let deadline = Instant::now() + WAIT;
+        let deadline = Instant::now() + self.wait;
         loop {
             let remaining = deadline
                 .checked_duration_since(Instant::now())
@@ -150,7 +155,7 @@ fn write<T: Transport>(transport: &mut T, address: usize, bytes: &[u8]) -> Resul
     Ok(())
 }
 
-fn active<T: Transport>(transport: &mut T) -> Result<(), String> {
+fn status<T: Transport>(transport: &mut T) -> Result<u8, String> {
     let data = read(transport, 4, 0, 12)?;
     if data[10] != SLOT as u8 || data[6] != 2 {
         return Err(format!(
@@ -158,7 +163,24 @@ fn active<T: Transport>(transport: &mut T) -> Result<(), String> {
             data[10] + 1
         ));
     }
-    Ok(())
+    Ok(data[11])
+}
+
+fn active<T: Transport>(transport: &mut T) -> Result<(), String> {
+    status(transport).map(|_| ())
+}
+
+#[derive(Default)]
+struct PadBankPulse {
+    armed: bool,
+}
+
+impl PadBankPulse {
+    fn observe(&mut self, status: u8) -> bool {
+        let pressed = status == 1 && self.armed;
+        self.armed = status == 0;
+        pressed
+    }
 }
 
 fn expected(index: usize) -> [u8; RECORD] {
@@ -266,11 +288,18 @@ fn connect() -> Result<Option<MidiTransport>, String> {
     else {
         return Ok(None);
     };
-    let Some(output_port) = output
-        .ports()
-        .into_iter()
-        .find(|port| output.port_name(port).is_ok_and(|name| name.contains(PORT)))
-    else {
+    let private_id = input_port.id();
+    let private_client = private_id.split_once(':').map(|(client, _)| client);
+    let mut masters = input.ports().into_iter().filter_map(|port| {
+        let id = port.id();
+        let (client, _) = id.split_once(':')?;
+        let name = input.port_name(&port).ok()?;
+        (Some(client) == private_client && name.contains("SMC-PAD-Master")).then_some(name)
+    });
+    let master = masters.next().filter(|_| masters.next().is_none());
+    let Some(output_port) = output.ports().into_iter().find(|port| {
+        port.id() == private_id && output.port_name(port).is_ok_and(|name| name.contains(PORT))
+    }) else {
         return Ok(None);
     };
     let (tx, replies) = mpsc::channel();
@@ -292,6 +321,8 @@ fn connect() -> Result<Option<MidiTransport>, String> {
         _input: connection,
         output,
         replies,
+        wait: WAIT,
+        master,
     }))
 }
 
@@ -308,36 +339,79 @@ fn available() -> Result<bool, String> {
             .any(|port| output.port_name(port).is_ok_and(|name| name.contains(PORT))))
 }
 
-pub(super) fn watch(tx: Sender<Raw>) {
+pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
     let mut present = false;
     let mut ready = false;
+    let mut previous_source = None;
+    let mut pulse = PadBankPulse::default();
     loop {
+        let mut deadline = Instant::now() + CHECK_INTERVAL;
         match available() {
             Ok(true) => {
                 present = true;
                 let result = connect().and_then(|transport| {
                     let mut transport = transport.ok_or("SMC-PAD ports vanished")?;
                     if ready {
-                        checked(&mut transport)
+                        checked(&mut transport)?;
                     } else {
-                        configure(&mut transport)
+                        configure(&mut transport)?;
                     }
+                    Ok(transport)
                 });
                 ready = result.is_ok();
-                let _ = tx.send(Raw::SmcSetup(result));
+                let _ = tx.send(Raw::SmcSetup(
+                    result.as_ref().map(|_| ()).map_err(Clone::clone),
+                ));
+                deadline = Instant::now() + CHECK_INTERVAL;
+                if let Ok(mut transport) = result
+                    && let Some(port) = transport.master.take()
+                    && let Some(setting) = shared.pad_bank_shortcut()
+                {
+                    let source = (port.clone(), setting);
+                    if previous_source.as_ref() != Some(&source) {
+                        pulse = PadBankPulse::default();
+                        previous_source = Some(source);
+                    }
+                    transport.wait = PAD_BANK_INTERVAL;
+                    while shared.pad_bank_shortcut() == Some(setting) {
+                        let requested_at = Instant::now();
+                        if requested_at >= deadline {
+                            break;
+                        }
+                        let Ok(value) = status(&mut transport) else {
+                            previous_source = None;
+                            break;
+                        };
+                        if pulse.observe(value) {
+                            let _ = tx.send(Raw::SmcPadBank {
+                                port: port.clone(),
+                                requested_at,
+                                setting,
+                            });
+                        }
+                        std::thread::sleep(
+                            (requested_at + PAD_BANK_INTERVAL)
+                                .saturating_duration_since(Instant::now()),
+                        );
+                    }
+                } else {
+                    previous_source = None;
+                }
             }
             Ok(false) if present => {
                 present = false;
                 ready = false;
+                previous_source = None;
                 let _ = tx.send(Raw::SmcLost);
             }
             Err(error) => {
                 ready = false;
+                previous_source = None;
                 let _ = tx.send(Raw::SmcSetup(Err(error)));
             }
             Ok(false) => {}
         }
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
     }
 }
 
@@ -418,6 +492,27 @@ mod tests {
             }
             Err("unknown command".into())
         }
+    }
+
+    #[test]
+    fn pad_bank_status_detects_one_press_per_rising_edge_without_writes() {
+        let mut device = Fake::measured();
+        let mut pulse = PadBankPulse::default();
+        let samples = [1, 0, 1, 1, 0, 2, 1, 0, 1];
+        let presses: Vec<_> = samples
+            .into_iter()
+            .map(|value| {
+                device.state[11] = value;
+                pulse.observe(status(&mut device).unwrap())
+            })
+            .collect();
+        assert_eq!(
+            presses,
+            [false, false, true, false, false, false, false, false, true]
+        );
+        assert_eq!(device.writes, 0);
+        device.state[10] = 0;
+        assert!(status(&mut device).is_err());
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::config::{Learned, MidiBinding};
 pub(super) enum MidiListRow {
     Response,
     HoldTime,
+    SmcPadBank,
     Reset {
         name: String,
         port: String,
@@ -1271,6 +1272,18 @@ impl App {
         let sets = midi_sets();
         // the knob response first: one setting for every knob (58)
         let mut rows = vec![MidiListRow::Response, MidiListRow::HoldTime];
+        if self
+            .help_overlay
+            .controller
+            .smc_status
+            .as_ref()
+            .is_some_and(|(ready, _)| *ready)
+            && self.midi_devices.iter().any(|(port, name)| {
+                name == "SMC-PAD" && port.contains("SMC-PAD-Master") && !port.contains("(virtual)")
+            })
+        {
+            rows.push(MidiListRow::SmcPadBank);
+        }
         for (port, name) in &self.midi_devices {
             if !rows
                 .iter()
@@ -1473,6 +1486,17 @@ impl App {
                     taken: false,
                     stays: Vec::new(),
                 },
+                MidiListRow::SmcPadBank => tui::MidiRow::Action {
+                    label: "SMC-PAD PAD BANK".into(),
+                    who: if self.midi_gestures.smc_pad_bank_opens_panel {
+                        "Open panel"
+                    } else {
+                        "Off"
+                    }
+                    .into(),
+                    taken: false,
+                    stays: Vec::new(),
+                },
                 MidiListRow::Set { name, infos } => tui::MidiRow::Action {
                     label: name.to_string(),
                     who: format!("{} of {} learned", self.learned_in(infos), infos.len()),
@@ -1588,6 +1612,29 @@ impl App {
         self.result_notice(result, format!("MIDI hold time: {next} ms"));
     }
 
+    pub(super) fn set_smc_pad_bank(&mut self, enabled: bool) {
+        if self.midi_gestures.smc_pad_bank_opens_panel == enabled {
+            return;
+        }
+        self.midi_gestures.smc_pad_bank_opens_panel = enabled;
+        if let Some(midi) = &self.midi {
+            midi.set_pad_bank_shortcut(enabled);
+        }
+        let result = match &self.user_path {
+            Some(path) => config::save_section(path, "midi_gestures", &self.midi_gestures),
+            None => Err("settings are not saved: fix the config file first".into()),
+        };
+        self.result_notice(
+            result,
+            if enabled {
+                "PAD BANK opens the panel"
+            } else {
+                "PAD BANK shortcut off"
+            }
+            .into(),
+        );
+    }
+
     /// Opens the group of the selected row (`true`) or closes it, and selects its row.
     pub(super) fn midi_fold(&mut self, open: bool) {
         let list = self.midi_list();
@@ -1599,6 +1646,7 @@ impl App {
             Some(
                 MidiListRow::Response
                 | MidiListRow::HoldTime
+                | MidiListRow::SmcPadBank
                 | MidiListRow::Reset { .. }
                 | MidiListRow::Disabled { .. },
             )

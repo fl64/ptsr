@@ -77,6 +77,10 @@ pub enum Event {
         port: String,
         cell: u8,
     },
+    SmcPadBank {
+        port: String,
+        setting: u64,
+    },
     Action(Action),
     Param {
         port: String,
@@ -99,9 +103,23 @@ pub enum Event {
 pub struct Shared {
     focus: AtomicU32,
     acknowledged: AtomicU64,
+    pad_bank_setting: AtomicU64,
 }
 
 impl Shared {
+    fn set_pad_bank_shortcut(&self, enabled: bool) {
+        let _ = self
+            .pad_bank_setting
+            .fetch_update(Relaxed, Relaxed, |setting| {
+                (setting & 1 != u64::from(enabled)).then(|| setting.wrapping_add(1))
+            });
+    }
+
+    fn pad_bank_shortcut(&self) -> Option<u64> {
+        let setting = self.pad_bank_setting.load(Relaxed);
+        (setting & 1 != 0).then_some(setting)
+    }
+
     /// Publishes valid state; rejects an invalid bank without changing the snapshot.
     pub fn publish(&self, focus: Focus) -> bool {
         let Some(bits) = focus.pack() else {
@@ -139,6 +157,11 @@ impl Shared {
 enum Raw {
     SmcSetup(Result<(), String>),
     SmcLost,
+    SmcPadBank {
+        port: String,
+        requested_at: Instant,
+        setting: u64,
+    },
     Connected(String, Option<Connection>),
     Disconnected(String, Option<Connection>),
     Msg(String, Msg, Stamp),
@@ -648,6 +671,25 @@ impl Midi {
     pub fn set_hold_time(&self, time: Duration) {
         let _ = self.updates.send(Raw::HoldTime(time));
     }
+
+    pub(super) fn set_pad_bank_shortcut(&self, enabled: bool) {
+        self.shared.set_pad_bank_shortcut(enabled);
+    }
+
+    pub(super) fn pad_bank_shortcut_is_current(&self, setting: u64) -> bool {
+        self.shared.pad_bank_shortcut() == Some(setting)
+    }
+
+    #[cfg(test)]
+    pub(super) fn recorded_pad_bank(&self, port: &str, requested_at: Instant) {
+        self.updates
+            .send(Raw::SmcPadBank {
+                port: port.into(),
+                requested_at,
+                setting: self.shared.pad_bank_shortcut().unwrap_or_default(),
+            })
+            .unwrap();
+    }
 }
 
 /// `[midi]` of the user config to per-group maps; bad entries are logged and skipped.
@@ -703,7 +745,7 @@ pub fn start(
     commands: Option<rtrb::Producer<ProjectCommand>>,
     project: Option<Arc<ProjectState>>,
     shared: Arc<Shared>,
-    hold_time: Duration,
+    settings: crate::config::MidiGesturesConfig,
 ) -> Midi {
     for p in profiles.iter_mut() {
         apply_learned(p, &learned);
@@ -711,8 +753,11 @@ pub fn start(
     }
     let (raw_tx, raw_rx) = mpsc::channel();
     let (tx, rx) = mpsc::channel();
+    shared.set_pad_bank_shortcut(settings.smc_pad_bank_opens_panel);
     raw_tx
-        .send(Raw::HoldTime(hold_time))
+        .send(Raw::HoldTime(Duration::from_millis(
+            settings.hold_time_ms.into(),
+        )))
         .expect("set initial MIDI hold time");
     let scan_tx = raw_tx.clone();
     let scan_project = project.clone();
@@ -722,9 +767,10 @@ pub fn start(
         .expect("spawn midi-scan");
     if !virtual_mode() {
         let setup_tx = raw_tx.clone();
+        let setup_shared = shared.clone();
         std::thread::Builder::new()
             .name("smc-pad-setup".into())
-            .spawn(move || smc_usb::watch(setup_tx))
+            .spawn(move || smc_usb::watch(setup_tx, setup_shared))
             .expect("spawn smc-pad-setup");
     }
     let dispatch_shared = shared.clone();
@@ -868,6 +914,7 @@ fn dispatch(
     let mut invalid_reported = false;
     let mut smc_ready = false;
     let mut smc_status: Option<String> = None;
+    let mut pad_bank_after = HashMap::<String, Instant>::new();
     let dev_virtual = virtual_mode();
     loop {
         while let Some(command) = pending.pop_front() {
@@ -960,15 +1007,35 @@ fn dispatch(
                 smc_status = None;
                 continue;
             }
+            Raw::SmcPadBank {
+                port,
+                requested_at,
+                setting,
+            } => {
+                if smc_ready
+                    && shared.focus().is_ok()
+                    && shared.pad_bank_shortcut() == Some(setting)
+                    && pad_bank_after
+                        .get(&port)
+                        .is_some_and(|&cutoff| requested_at >= cutoff)
+                {
+                    ui.send(Event::SmcPadBank { port, setting }, None);
+                }
+                continue;
+            }
             Raw::Connected(port, _) => {
                 let profile = profiles
                     .iter()
                     .find(|p| p.matches(&port))
                     .map_or("default".into(), |p| p.name.clone());
+                if profile == "SMC-PAD" && port.contains("SMC-PAD-Master") {
+                    pad_bank_after.insert(port.clone(), Instant::now());
+                }
                 ui.send(Event::Connected { port, profile }, None);
                 continue;
             }
             Raw::Disconnected(port, _) => {
+                pad_bank_after.remove(&port);
                 if port.contains("SMC-PAD-Master") {
                     smc_ready = false;
                     smc_status = None;
@@ -1231,6 +1298,12 @@ fn dispatch(
             continue;
         }
 
+        if matches!(resolved, Some(Resolved::Action(Action::PadPress { .. })))
+            && matches!(msg, Msg::NoteOn { note: 36..=51, .. })
+            && let Some(cutoff) = pad_bank_after.get_mut(&port)
+        {
+            *cutoff = (*cutoff).max(at);
+        }
         match resolved {
             Some(Resolved::PanelCell(cell)) => {
                 ui.send(Event::PanelCell { port, cell }, Some(stamp));

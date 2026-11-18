@@ -2495,3 +2495,180 @@ fn bank_knob_does_not_act_behind_a_question_or_picker() {
     assert_eq!(folder.app.midi_row, 0);
     assert_eq!(folder.app.path_picker.as_ref().unwrap().selected, selected);
 }
+
+fn pad_bank_request(drive: &mut Drive, port: &str) -> Frame {
+    drive.midi().recorded_pad_bank(port, Instant::now());
+    drive.frame()
+}
+
+fn pad_bank_row(drive: &Drive) -> Option<usize> {
+    drive
+        .app
+        .midi_list()
+        .iter()
+        .position(|row| matches!(row, MidiListRow::SmcPadBank))
+}
+
+/// Scenario "PAD BANK setting saves and defaults to off" (controller-reach).
+#[test]
+fn pad_bank_setting_saves_and_defaults_to_off() {
+    let files = TransitionFiles::new();
+    let path = files.0.join("pad-bank-config.toml");
+    std::fs::write(&path, "[midi_gestures]\nhold_time_ms = 400\n").unwrap();
+    assert!(
+        !config::load_from(&path)
+            .config
+            .midi_gestures
+            .smc_pad_bank_opens_panel
+    );
+    assert!(pad_bank_row(&Drive::offline()).is_none());
+
+    let mut keyboard = smc_drive();
+    keyboard.app.user_path = Some(path.clone());
+    keyboard.app.midi_gestures = config::load_from(&path).config.midi_gestures;
+    let mut controller = smc_drive();
+    for drive in [&mut keyboard, &mut controller] {
+        drive.app.screen = Screen::Settings;
+        drive.app.settings_tab = 2;
+        drive.app.midi_row = pad_bank_row(drive).unwrap();
+        drive.app.publish_midi(&drive.shared);
+    }
+    keyboard.tap(KeyCode::Right, M::NONE);
+    turn(&mut controller, 31, 65);
+    assert!(keyboard.app.midi_gestures.smc_pad_bank_opens_panel);
+    assert!(controller.app.midi_gestures.smc_pad_bank_opens_panel);
+    let restored = config::load_from(&path).config.midi_gestures;
+    assert!(restored.smc_pad_bank_opens_panel);
+    assert_eq!(restored.hold_time_ms, 400);
+    keyboard.tap(KeyCode::Left, M::NONE);
+    assert!(
+        !config::load_from(&path)
+            .config
+            .midi_gestures
+            .smc_pad_bank_opens_panel
+    );
+}
+
+/// Scenario "PAD BANK opens the panel once before a pad hit" (controller-reach).
+#[test]
+fn pad_bank_opens_the_panel_once_before_a_pad_hit() {
+    let mut drive = smc_drive();
+    drive.app.set_smc_pad_bank(true);
+    let reveal = pad_bank_request(&mut drive, SMC);
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
+    assert_eq!(drive.app.panel.page(), 0);
+    assert!(reveal.commands().is_empty());
+    assert_eq!(drive.app.screen, Screen::Pads);
+    cell(&mut drive, panel_note(2));
+    assert_eq!(drive.app.screen, Screen::Files);
+    cell(&mut drive, panel_note(8));
+    assert_eq!(drive.app.panel.page(), 1);
+    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    assert_eq!(drive.app.panel.page(), 1);
+}
+
+/// Scenario "PAD BANK respects input overlays" (controller-reach).
+#[test]
+fn pad_bank_respects_input_overlays() {
+    let mut drive = smc_drive();
+    drive.app.set_smc_pad_bank(true);
+    drive.app.ask = Some(Ask::ResetPads {
+        pads: vec![1],
+        lines: vec!["Reset pad 2?".into()],
+    });
+    pad_bank_request(&mut drive, SMC);
+    assert!(drive.app.ask.is_some());
+    assert!(!drive.app.panel.visible());
+    drive.app.ask = None;
+
+    drive.app.help_open = true;
+    pad_bank_request(&mut drive, SMC);
+    assert!(!drive.app.panel.visible());
+    drive.app.help_open = false;
+
+    drive.app.pad_naming = Some((0, "Name".into()));
+    pad_bank_request(&mut drive, SMC);
+    assert!(!drive.app.panel.visible());
+    drive.app.pad_naming = None;
+
+    drive.app.project_picker = Some(ProjectPicker {
+        entries: vec!["A".into()],
+        selected: 0,
+        naming: None,
+    });
+    pad_bank_request(&mut drive, SMC);
+    assert!(!drive.app.panel.visible());
+    assert_eq!(drive.app.project_picker.take().unwrap().selected, 0);
+
+    drive.app.learning = Some(learn::Learning::new(action_info("transport.toggle")));
+    pad_bank_request(&mut drive, SMC);
+    assert!(!drive.app.panel.visible());
+    assert!(drive.app.learning.as_ref().unwrap().pending.is_none());
+}
+
+/// Scenario "Late PAD BANK status keeps both pad routes" (controller-reach).
+#[test]
+fn late_pad_bank_status_keeps_both_pad_routes() {
+    let mut drive = smc_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "gate");
+    drive.app.set_smc_pad_bank(true);
+    let requested_at = Instant::now();
+    cell(&mut drive, panel_note(2));
+    assert!(drive.app.panel.visible());
+    assert_eq!(drive.app.screen, Screen::Pads);
+    cell(&mut drive, panel_note(8));
+    assert_eq!(drive.app.panel.page(), 1);
+    drive.midi().recorded_pad_bank(SMC, requested_at);
+    drive.frame();
+    assert_eq!(drive.app.panel.page(), 1);
+
+    let requested_at = Instant::now();
+    drive.bytes(SMC, &[0x99, 48, 100]);
+    drive.midi().recorded_pad_bank(SMC, requested_at);
+    drive.frame();
+    assert!(!drive.app.panel.visible());
+    assert!(drive.app.pads.held[0]);
+    drive.bytes(SMC, &[0x89, 48, 0]);
+    drive.frame();
+    assert!(!drive.app.pads.held[0]);
+}
+
+/// Scenario "PAD BANK ignores invalid or disconnected sources" (controller-reach).
+#[test]
+fn pad_bank_ignores_invalid_or_disconnected_sources() {
+    let mut drive = smc_drive();
+    drive.app.set_smc_pad_bank(true);
+    pad_bank_request(&mut drive, XS_PORT);
+    assert!(!drive.app.panel.visible());
+    let old_request = Instant::now();
+    drive.midi().recorded_disconnect(SMC);
+    drive.frame();
+    pad_bank_request(&mut drive, SMC);
+    assert!(!drive.app.panel.visible());
+    drive.midi().recorded_connect(SMC);
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    drive.midi().recorded_pad_bank(SMC, old_request);
+    drive.frame();
+    assert!(!drive.app.panel.visible());
+    pad_bank_request(&mut drive, SMC);
+    assert!(drive.app.panel.visible());
+}
+
+/// Scenario "First-hit reveal survives a missing PAD BANK pulse" (controller-reach).
+#[test]
+fn first_hit_reveal_survives_a_missing_pad_bank_pulse() {
+    for enabled in [false, true] {
+        let mut drive = smc_drive();
+        drive.app.set_smc_pad_bank(enabled);
+        if !enabled {
+            pad_bank_request(&mut drive, SMC);
+            assert!(!drive.app.panel.visible());
+        }
+        cell(&mut drive, panel_note(2));
+        assert!(drive.app.panel.visible());
+        assert_eq!(drive.app.screen, Screen::Pads);
+        cell(&mut drive, panel_note(2));
+        assert_eq!(drive.app.screen, Screen::Files);
+    }
+}

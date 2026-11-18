@@ -215,12 +215,18 @@ impl State {
         &self.config.warnings
     }
 
+    pub(super) fn reveal(&mut self, port: &str) {
+        if self.owner.is_none() {
+            self.owner = Some(port.into());
+            self.page = 0;
+            self.view = None;
+        }
+    }
+
     pub(super) fn press(&mut self, port: &str, cell: u8) -> Press {
         match self.owner.as_deref() {
             None => {
-                self.owner = Some(port.into());
-                self.page = 0;
-                self.view = None;
+                self.reveal(port);
                 Press::Revealed
             }
             Some(owner) if owner == port => Press::Cell(cell),
@@ -363,37 +369,35 @@ impl App {
         }
     }
 
+    pub(super) fn panel_input_available(&self) -> bool {
+        let mode = self.focus().mode;
+        !self.help_open && !mode.text && !mode.picker && !mode.screen_learn && !mode.midi_learn
+    }
+
     pub(super) fn panel_snapshot(&self) -> Option<tui::CommandPanel> {
-        let focus = self.focus();
-        (self.panel.visible()
-            && !self.help_open
-            && !focus.mode.text
-            && !focus.mode.picker
-            && !focus.mode.screen_learn
-            && !focus.mode.midi_learn)
-            .then(|| {
-                let view = self.panel_view();
-                let labels = std::array::from_fn(|index| {
-                    let cell = u8::try_from(index + 1).unwrap();
-                    self.panel.label(view, cell).map(str::to_owned)
-                });
-                let name = match view {
-                    View::Pads => "PADS",
-                    View::PadEdit => "PAD EDIT",
-                    View::Pattern => "PATTERN",
-                    View::Files => "FILES",
-                    View::Chop => "CHOP",
-                    View::ChopEdit => "CHOP EDIT",
-                    View::Fx => "FX",
-                    View::Settings => "SETTINGS",
-                };
-                tui::CommandPanel {
-                    labels,
-                    page: self.panel.page(),
-                    pages: self.panel.page_count(view),
-                    view: name,
-                }
-            })
+        (self.panel.visible() && self.panel_input_available()).then(|| {
+            let view = self.panel_view();
+            let labels = std::array::from_fn(|index| {
+                let cell = u8::try_from(index + 1).unwrap();
+                self.panel.label(view, cell).map(str::to_owned)
+            });
+            let name = match view {
+                View::Pads => "PADS",
+                View::PadEdit => "PAD EDIT",
+                View::Pattern => "PATTERN",
+                View::Files => "FILES",
+                View::Chop => "CHOP",
+                View::ChopEdit => "CHOP EDIT",
+                View::Fx => "FX",
+                View::Settings => "SETTINGS",
+            };
+            tui::CommandPanel {
+                labels,
+                page: self.panel.page(),
+                pages: self.panel.page_count(view),
+                view: name,
+            }
+        })
     }
 }
 

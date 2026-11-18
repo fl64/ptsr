@@ -36,7 +36,7 @@
 
 - [x] 4.5 Record the measured PAD BANK pulse, optional MIDI setting and panel entry rules in OpenSpec.
 - [x] 4.6 Document both PAD BANK entry paths in the controller paths, user stories, owner checks, plan and vision. Check the new text before code.
-- [ ] 4.7 Add the MIDI setting and read-only status detection. Use the existing panel path. Test saving, pulse detection, source, overlays, input order, fallback and Gate release. Check the new Settings row in both terminal sizes.
+- [x] 4.7 Add the MIDI setting and read-only status detection. Use the existing panel path. Test saving, pulse detection, source, overlays, input order, fallback and Gate release. Check the new Settings row in both terminal sizes.
 
 ## 5. Owner documentation and final verification
 

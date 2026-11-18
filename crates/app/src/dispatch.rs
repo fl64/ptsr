@@ -778,6 +778,15 @@ impl App {
             {
                 self.step_hold_time(step as isize)
             }
+            Action::SettingsValue(step)
+                if self.settings_tab == 2
+                    && matches!(
+                        self.midi_list().get(self.midi_row),
+                        Some(MidiListRow::SmcPadBank)
+                    ) =>
+            {
+                self.set_smc_pad_bank(step > 0);
+            }
             // MIDI tab: → opens the group of the selected row, ← closes it (28)
             Action::SettingsValue(step) if self.settings_tab == 2 => self.midi_fold(step > 0),
             // the Paths tab: Enter opens the folder picker of the selected root (11)
@@ -800,6 +809,9 @@ impl App {
                     Some(MidiListRow::Group { .. }) => self.midi_fold(true),
                     Some(MidiListRow::Response) => self.step_response(1),
                     Some(MidiListRow::HoldTime) => self.step_hold_time(1),
+                    Some(MidiListRow::SmcPadBank) => {
+                        self.set_smc_pad_bank(!self.midi_gestures.smc_pad_bank_opens_panel)
+                    }
                     Some(MidiListRow::Reset { name, port }) => {
                         self.ask = Some(Ask::ResetProfile {
                             lines: vec![
@@ -1483,6 +1495,17 @@ impl App {
                 }
                 self.input_log
                     .push(format!("{port}   {msg}   -> {meaning}"));
+            }
+            midi::Event::SmcPadBank { port, setting } => {
+                if self.ask.is_none()
+                    && self.panel_input_available()
+                    && self
+                        .midi
+                        .as_ref()
+                        .is_some_and(|midi| midi.pad_bank_shortcut_is_current(setting))
+                {
+                    self.panel.reveal(&port);
+                }
             }
             midi::Event::PanelCell { port, cell } => {
                 if !port.contains("SMC-PAD-Master") {

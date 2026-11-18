@@ -803,7 +803,17 @@ fn fixture(case: Case, now: Instant) -> App {
             })
         }
         Mode::InputTab => app.settings_tab = 1,
-        Mode::MidiTab => app.settings_tab = 2,
+        Mode::MidiTab => {
+            app.settings_tab = 2;
+            app.midi_devices
+                .push(("SINCO SMC-PAD-Master 28:1".into(), "SMC-PAD".into()));
+            app.help_overlay.controller.smc_status = Some((true, "SMC-PAD encoders ready".into()));
+            app.midi_row = app
+                .midi_list()
+                .iter()
+                .position(|row| matches!(row, crate::learn::MidiListRow::SmcPadBank))
+                .unwrap();
+        }
         Mode::PathsTab | Mode::FolderPicker => app.settings_tab = 3,
         Mode::Slices128 => {
             let c = app.chop.as_mut().unwrap();
@@ -1307,7 +1317,7 @@ fn render_app_layers(
                 midi_devices: &[],
                 input_log: &[],
                 midi_rows: &midi_rows,
-                midi_row: 0,
+                midi_row: app.midi_row,
                 learning: midi_learning.as_deref(),
                 paths: Some(("/offline/projects", "/offline/samples")),
                 picker: (case.mode == Mode::FolderPicker).then(|| tui::PathPickerView {
@@ -1727,6 +1737,24 @@ fn check_frame(case: Case, buffer: &Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smc_pad_bank_setting_fits_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::MidiTab,
+                size,
+            };
+            let (_, frame) = render(case, &keymap);
+            let text: String = frame.content().iter().map(|cell| cell.symbol()).collect();
+            for label in ["SMC-PAD PAD BANK", "Off", "select Off or Open panel"] {
+                assert!(text.contains(label), "{}: {label}\n{text}", case.name());
+            }
+            check_frame(case, &frame);
+        }
+    }
 
     #[test]
     fn controller_picker_controls_fit_both_sizes() {
