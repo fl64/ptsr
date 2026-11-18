@@ -19,6 +19,7 @@ pressed for the full time that the owner holds the button.
 - A visible question takes the No and Yes pads without a hold. The other pads play.
 - The F12 MIDI setting `SMC-PAD PAD BANK` offers `Hold panel` or `Off`.
 - Without the shortcut, the current layer rule stays: a second-layer hit shows the panel.
+- A hit on a panel cell lights that cell for 120 ms, as a pad hit does.
 
 ## Capabilities
 
@@ -32,6 +33,7 @@ None.
 - `command-panel`: the second-layer rule without the shortcut and question pads.
 - `input-devices`: the two note ranges of one physical pad.
 - `screen-help`: the PAD BANK rule in F1.
+- `screen-layout`: the light of a hit panel cell.
 
 ## Impact
 
@@ -42,6 +44,7 @@ dependency.
 
 Owner checks, controller: hold PAD BANK and check that the panel shows. Hit a cell,
 release and check that the panel hides. Hit pads without PAD BANK on both device
-layers and check that they play. Open Exit and answer with P11 or P12 without PAD BANK.
+layers and check that they play. Open Exit and answer with P11 or P12 without PAD BANK. Hit an active cell and an empty
+cell and check that each lights for a short time.
 Owner checks, keyboard: keyboard keys and pad keys stay unchanged.
 Renders: none, because sound stays unchanged.

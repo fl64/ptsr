@@ -5,6 +5,9 @@
 On 2026-11-18 the owner asked for the panel on a PAD BANK hold instead of a toggle.
 The owner chose hold only, without a toggle option, and a separate change after 127.
 A visible question takes its No and Yes pads without a hold.
+The owner asked to see each hit on the panel. A hit cell lights for 120 ms, the
+`HIT_FLASH` time of a pad hit. A dim or empty cell lights grey, so the owner sees
+that the hit arrived but did nothing.
 
 ## Measurement
 

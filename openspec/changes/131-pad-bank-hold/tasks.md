@@ -9,6 +9,7 @@
 - [ ] Let a visible question take P7 and P8 from both note ranges without a hold.
 - [ ] Rename the F12 MIDI choice to `Hold panel`. Keep the config key.
 - [ ] Test each scenario with raw MIDI and status replies.
+- [ ] Light a hit panel cell for 120 ms. Test the drawing at both sizes.
 
 ## 3. Help and documents
 
