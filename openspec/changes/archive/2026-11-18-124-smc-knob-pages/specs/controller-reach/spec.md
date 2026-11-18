@@ -133,11 +133,10 @@ Unavailable roles SHALL keep their named positions and remain inactive.
 
 Frequent actions SHALL use a direct button, pad or knob, or the first context page.
 From the visible main panel, a main command SHALL take one press.
-A first-page context command SHALL take two presses. Each later page SHALL add one Next press.
-From a hidden panel, count one PAD BANK press and a reveal hit if the shortcut does not open the panel first.
-Count a required KNOB BANK press separately. A turn in the active knob bank SHALL count as zero presses.
-Count target hits and modal answers separately.
-The reach table SHALL list the route and counts for each action story in `docs/USER-STORIES.md`.
+A first-page context command SHALL take two. Each later page SHALL add one Next press.
+A hidden panel SHALL add PAD BANK, and a reveal hit if the panel stays closed.
+Count KNOB BANK, target hits and modal answers separately. A knob turn counts as zero.
+The reach table SHALL list the route and counts for each story in `docs/USER-STORIES.md`.
 
 #### Scenario: First entry and repeated commands have separate counts
 - **WHEN** the owner reaches a context command from a hidden panel and then repeats it from a visible panel

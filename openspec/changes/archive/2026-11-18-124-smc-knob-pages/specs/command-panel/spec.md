@@ -14,15 +14,14 @@ The layout check SHALL reject a split or reversed pair.
 
 ### Requirement: Panel pages expose screen and context commands
 
-The main page SHALL offer Pads, Files, Chop, Pattern, FX, Settings, Help and More.
-It SHALL provide up to four current-screen actions. Unused cells SHALL stay dim.
-More SHALL open the first context page. A context page SHALL offer up to ten actions.
-Next SHALL cycle context pages from cell 11. Main SHALL return from cell 12.
-The program SHALL show the page and count.
-A screen change or panel exit SHALL select the main page again.
-LEFT and RIGHT SHALL retain their current screen list.
-Direct controls SHALL replace shipped value, parameter and edit-page cells.
-Their keyboard and MIDI learn actions SHALL remain available.
+The main page SHALL offer Pads, Files, Chop, Pattern, FX, Settings, Help, More
+and up to four screen actions. Unused cells SHALL stay dim.
+More SHALL open context pages with up to ten actions each.
+Cell 11 (Next) SHALL cycle them, and cell 12 (Main) SHALL return.
+It SHALL show the page and count. A screen change or exit SHALL select Main.
+LEFT and RIGHT SHALL keep their screen list.
+Direct controls SHALL replace value, parameter and edit-page cells.
+Keyboard and learn actions SHALL remain.
 
 #### Scenario: Screen and context pages cover more than 16 commands
 - **WHEN** the owner selects More, cycles through context pages and presses Main
