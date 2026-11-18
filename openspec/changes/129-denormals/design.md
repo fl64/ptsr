@@ -18,5 +18,7 @@ and a repeat in each callback also covers an audio server that changes threads.
 
 - A unit test plays the owner-like FX set, then 60 s of silence. The output must reach
   exact zero, and a subnormal product in the callback thread must be zero.
-- The benchmark adds a decaying-tail workload with the 50 % maximum target.
+- The benchmark adds a decaying-tail workload. Without flushing, its mean load was
+  10.75 % and its maximum 105 %. With flushing, the mean was 0.31 %. The check fails
+  over a 2 % mean or a 50 % p99.
 - An offline render `renders/129-reverb-tails.wav` gives the tail for the owner.

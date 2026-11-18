@@ -140,6 +140,7 @@ fn main() -> io::Result<()> {
     report.write("steady playback", &mut io::stdout().lock())?;
     let switch_p99 = bench_switch(budget, &mut trace, switches)?;
     let (pattern_p99, dropped) = bench_pattern(budget, &mut trace, blocks)?;
+    let (tails_mean, tails_p99) = bench_tails(budget, &mut trace, blocks)?;
     let recording_exceeded = bench_recording(budget, &mut trace, blocks)?;
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/bench-diagnostics");
@@ -147,7 +148,7 @@ fn main() -> io::Result<()> {
     println!("Local callback trace: {}", path.display());
     if std::env::var_os("PTSR_BENCH_REPORT_ONLY").is_some() {
         println!(
-            "CI report only: steady p99 {p99:.2} %, switch p99 {switch_p99:.2} %, dense pattern p99 {pattern_p99:.2} %, dropped hits {dropped}, recording/erasure limit exceeded {recording_exceeded}"
+            "CI report only: steady p99 {p99:.2} %, switch p99 {switch_p99:.2} %, dense pattern p99 {pattern_p99:.2} %, dropped hits {dropped}, tails mean {tails_mean:.2} %, recording/erasure limit exceeded {recording_exceeded}"
         );
         return Ok(());
     }
@@ -157,6 +158,11 @@ fn main() -> io::Result<()> {
     }
     if pattern_p99 > 50.0 || dropped != 0 {
         eprintln!("EXCEEDED: dense pattern wall p99 is over 50 % or pattern hits were dropped");
+        std::process::exit(1);
+    }
+    // Subnormal tails gave about 11 % mean; flushed tails give about 0.3 % (129).
+    if tails_mean > 2.0 || tails_p99 > 50.0 {
+        eprintln!("EXCEEDED: decaying reverb tails mean is over 2 % or p99 is over 50 %");
         std::process::exit(1);
     }
     if recording_exceeded {
@@ -224,6 +230,78 @@ fn bench_recording(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<
         );
     }
     Ok(exceeded)
+}
+
+/// Pad hits into two reverbs, then measured decaying tails (129): subnormal tails slow the CPU.
+fn bench_tails(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<(f64, f64)> {
+    use engine::filter::{FilterKind, FilterSettings};
+    use engine::fx::FxSettings;
+    let drum: Vec<f32> = (0..12_000)
+        .map(|i| (i as f32 * 0.05).sin() * 0.5 * (-(i as f32) / 3_000.0).exp())
+        .collect();
+    let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
+    let mut send = |command| tx.push(command).unwrap();
+    send(Command::SetFx {
+        slot: 0,
+        settings: FxSettings::Reverb {
+            size: 0.85,
+            tone: 0.05,
+        },
+    });
+    send(Command::SetFx {
+        slot: 1,
+        settings: FxSettings::Reverb {
+            size: 0.16,
+            tone: 0.76,
+        },
+    });
+    for pad in 0..4 {
+        send(Command::SetPadFilter {
+            pad,
+            settings: FilterSettings {
+                kind: FilterKind::LowPass,
+                cutoff_hz: 1_122.0,
+                resonance: 0.02,
+            },
+        });
+        send(Command::SetPadDrive { pad, drive: 0.01 });
+        send(Command::SetPadSends {
+            pad,
+            sends: [0.01, 0.01],
+        });
+    }
+    let pads = vec![drum.clone(), drum.clone(), drum.clone(), drum];
+    let mut rt = Realtime::new(
+        Engine::with_sounds(SR, engine::click(SR), pads),
+        vec![rx],
+        Arc::new(Stats::default()),
+        SR,
+    );
+    let (mut left, mut right) = ([0.0; BLOCK], [0.0; BLOCK]);
+    // Ten seconds of hits, then the measured tails.
+    for block in 0..SR as usize * 10 / BLOCK {
+        if block % 32 == 0 {
+            send(Command::PadPress {
+                pad: (block / 32) % 4,
+                velocity: 0.4,
+            });
+        }
+        rt.process(&mut left, &mut right);
+    }
+    let samples = (0..blocks)
+        .map(|block| {
+            trace.measure("decaying reverb tails", 0, block, || {
+                rt.process(&mut left, &mut right)
+            })
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    let report = Report::new(&samples, budget)?;
+    println!("decaying reverb tails: two reverbs after 10 s of hits, block {BLOCK} @ {SR} Hz");
+    report.write("decaying reverb tails", &mut io::stdout().lock())?;
+    Ok((
+        report.wall.mean / budget * 100.0,
+        report.wall.p99 / budget * 100.0,
+    ))
 }
 
 fn bench_pattern(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<(f64, u64)> {
