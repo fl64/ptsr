@@ -108,11 +108,12 @@ pub struct Shared {
 
 impl Shared {
     fn set_pad_bank_shortcut(&self, enabled: bool) {
-        let _ = self
-            .pad_bank_setting
-            .fetch_update(Relaxed, Relaxed, |setting| {
-                (setting & 1 != u64::from(enabled)).then(|| setting.wrapping_add(1))
-            });
+        // The UI is the only writer. Each change invalidates replies in flight.
+        let setting = self.pad_bank_setting.load(Relaxed);
+        if setting & 1 != u64::from(enabled) {
+            self.pad_bank_setting
+                .store(setting.wrapping_add(1), Relaxed);
+        }
     }
 
     fn pad_bank_shortcut(&self) -> Option<u64> {
