@@ -2339,6 +2339,15 @@ impl App {
             }
             StepTarget::Param(Param::Tempo) => Some(Action::TempoStep { up: right, fine }),
             StepTarget::Param(Param::Zoom) if self.screen == Screen::Chop => {
+                if self.plan.is_none()
+                    && port.contains("SMC-PAD-Master")
+                    && matches!(control, "e2" | "cc 31")
+                {
+                    if let Some(chop) = self.chop.as_mut() {
+                        chop.zoom_quarter_steps(steps);
+                    }
+                    return;
+                }
                 Some(Action::ChopZoom { zoom_in: right })
             }
             StepTarget::Param(Param::Cursor) if self.screen == Screen::Chop => {

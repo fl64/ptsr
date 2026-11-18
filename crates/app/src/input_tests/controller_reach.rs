@@ -2249,8 +2249,6 @@ fn check_chop_context_encoders(view: panel::View) {
     for (cc, value, code, modifiers) in [
         (30, 63, KeyCode::Left, M::NONE),
         (30, 65, KeyCode::Right, M::NONE),
-        (31, 63, KeyCode::Down, M::NONE),
-        (31, 65, KeyCode::Up, M::NONE),
         (33, 63, KeyCode::Left, M::CONTROL),
         (33, 65, KeyCode::Right, M::CONTROL),
         (34, 63, KeyCode::Left, M::ALT),
@@ -2275,11 +2273,11 @@ fn check_chop_context_encoders(view: panel::View) {
             )
         };
         let before = result(&keyboard);
-        if view == panel::View::ChopEdit && cc <= 31 {
+        if view == panel::View::ChopEdit && cc == 30 {
             keyboard.tap(KeyCode::Esc, M::NONE);
         }
         keyboard.tap(code, modifiers);
-        if view == panel::View::ChopEdit && cc <= 31 {
+        if view == panel::View::ChopEdit && cc == 30 {
             keyboard.tap(KeyCode::Enter, M::NONE);
         }
         turn(&mut controller, cc, value);
@@ -2302,6 +2300,108 @@ fn shipped_chop_encoders_match_keyboard_outside_edit() {
 #[test]
 fn shipped_chop_encoders_match_keyboard_in_edit() {
     check_chop_context_encoders(panel::View::ChopEdit);
+}
+
+fn timed_chop_zoom(drive: &mut Drive, value: u8, at: Instant) {
+    drive
+        .midi()
+        .recorded_bytes_at(SMC, &[0xB0, 31, value], &drive.project, at);
+    drive.frame();
+}
+
+fn chop_view_len(drive: &Drive) -> usize {
+    let view = drive.app.chop.as_ref().unwrap().view;
+    view.end - view.start
+}
+
+/// Scenario "Slow Chop zoom uses smaller input steps" (controller-reach).
+#[test]
+fn slow_chop_zoom_uses_smaller_input_steps() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+    for view in [panel::View::Chop, panel::View::ChopEdit] {
+        for (key, value, exponent_sign) in [(KeyCode::Up, 65, -1.0), (KeyCode::Down, 63, 1.0)] {
+            let mut keyboard = reach_drive(view, sound.clone());
+            let mut controller = reach_drive(view, sound.clone());
+            for drive in [&mut keyboard, &mut controller] {
+                let chop = drive.app.chop.as_mut().unwrap();
+                chop.set_cursor(32_000);
+                chop.zoom(true);
+            }
+            let initial_len = chop_view_len(&keyboard);
+            if view == panel::View::ChopEdit {
+                keyboard.tap(KeyCode::Esc, M::NONE);
+            }
+            keyboard.tap(key, M::NONE);
+            let at = Instant::now();
+            let mut previous_len = initial_len;
+            for step in 1..=4 {
+                timed_chop_zoom(
+                    &mut controller,
+                    value,
+                    at + std::time::Duration::from_millis(100 * step),
+                );
+                let current_len = chop_view_len(&controller);
+                let factor = 2.0_f64.powf(exponent_sign * step as f64 / 4.0);
+                let expected = (initial_len as f64 * factor).round() as usize;
+                assert!(
+                    current_len.abs_diff(expected) <= 3,
+                    "{view:?} {key:?} {step}"
+                );
+                assert_ne!(current_len, previous_len, "each turn changes the view");
+                assert_eq!(controller.app.chop.as_ref().unwrap().cursor, 32_000);
+                previous_len = current_len;
+            }
+            let keyboard_chop = keyboard.app.chop.as_ref().unwrap();
+            let controller_chop = controller.app.chop.as_ref().unwrap();
+            assert!(chop_view_len(&controller).abs_diff(chop_view_len(&keyboard)) <= 3);
+            assert_eq!(controller_chop.saved(), keyboard_chop.saved());
+            assert_eq!(controller_chop.selected, keyboard_chop.selected);
+        }
+    }
+}
+
+#[test]
+fn smc_chop_zoom_retains_acceleration_and_reverses_at_view_limits() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+    let mut drive = reach_drive(panel::View::Chop, sound);
+    let at = Instant::now();
+    timed_chop_zoom(&mut drive, 63, at);
+    assert_eq!(chop_view_len(&drive), 96_000);
+
+    timed_chop_zoom(&mut drive, 65, at + std::time::Duration::from_millis(100));
+    let after_slow_turn = chop_view_len(&drive);
+    timed_chop_zoom(&mut drive, 65, at + std::time::Duration::from_millis(110));
+    let after_fast_turn = chop_view_len(&drive);
+    let expected = (after_slow_turn as f64 / 2.0_f64.sqrt()).round() as usize;
+    assert_eq!(after_fast_turn, expected);
+    assert!(after_fast_turn < after_slow_turn);
+
+    drive.app.chop.as_mut().unwrap().set_zoom(1.0);
+    let closest = chop_view_len(&drive);
+    timed_chop_zoom(&mut drive, 65, at + std::time::Duration::from_millis(200));
+    assert_eq!(chop_view_len(&drive), closest);
+    timed_chop_zoom(&mut drive, 63, at + std::time::Duration::from_millis(300));
+    assert!(chop_view_len(&drive) > closest);
+}
+
+/// Scenario "SMC-PAD Chop zoom preserves Assign and question priority" (controller-reach).
+#[test]
+fn smc_chop_zoom_preserves_assign_and_question_priority() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+    let mut drive = reach_drive(panel::View::Chop, sound);
+    let initial_len = chop_view_len(&drive);
+    drive.tap(KeyCode::Char('p'), M::NONE);
+    assert!(drive.app.plan.is_some());
+    turn(&mut drive, 31, 65);
+    assert_eq!(chop_view_len(&drive), initial_len);
+
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.plan.is_none());
+    drive.app.ask = Some(Ask::Exit { lines: vec![] });
+    drive.app.publish_midi(&drive.shared);
+    turn(&mut drive, 31, 65);
+    assert_eq!(chop_view_len(&drive), initial_len);
+    assert!(drive.app.ask.is_some());
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
