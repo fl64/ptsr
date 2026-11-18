@@ -85,17 +85,64 @@ The only controller-only steps SHALL be PAD BANK selection, its status mark and 
 
 ### Requirement: Controller routes keep short press paths
 
-A current frequent action SHALL have a direct SMC-PAD button, pad or knob route. Each other non-text action SHALL need at most two presses from the visible main panel. Knob turns, target pad hits and later modal answers do not count toward this limit. The reach table SHALL state the count from a hidden panel separately. That count SHALL include PAD BANK selection, a reveal hit and the action hit. It SHALL name a route and both counts for every action story in `docs/USER-STORIES.md`.
+Frequent actions SHALL have a direct SMC-PAD button, pad or knob route. Other non-text actions SHALL take at most two presses from the visible main panel. Exclude knob turns, target pad hits and later modal answers. The reach table SHALL list the route and counts for each action story in `docs/USER-STORIES.md`. From a hidden panel, count PAD BANK and the action hit. Count a reveal hit when PAD BANK does not open the panel first.
 
 #### Scenario: First entry and repeated commands have separate counts
 - **WHEN** the owner reaches a context command from a hidden panel and then repeats it from a visible panel
-- **THEN** the first count includes PAD BANK and the reveal hit, and the later count does not
+- **THEN** the first count includes PAD BANK and includes a reveal hit when the shortcut is off or misses the tap
+- **AND** the later count excludes PAD BANK and the reveal hit
 - **AND** neither count treats a knob turn as a button press
 
 #### Scenario: Every story has a recorded controller path
 - **WHEN** the reach test reads every action story in `docs/USER-STORIES.md`
 - **THEN** each story has an SMC-PAD route and a press count in `docs/CONTROLLER-PATHS.md`
 - **AND** observation-only, text-only and other-device stories name their exception
+
+### Requirement: PAD BANK detection is opt-in for USB SMC-PAD
+
+F12 MIDI SHALL offer `SMC-PAD PAD BANK` for a connected USB SMC-PAD with a supported preset. It SHALL save `Off` or `Open panel`. An absent setting SHALL use `Off`. Only `Open panel` SHALL start extra read-only status requests.
+
+#### Scenario: PAD BANK setting saves and defaults to off
+- **WHEN** the owner opens MIDI settings with a supported USB SMC-PAD, selects `Open panel` and restarts ptsr
+- **THEN** the setting shows the saved choice and enables status detection
+- **AND** a config without the setting starts with `Off`, while other devices do not show that control
+
+### Requirement: A verified PAD BANK press opens the current panel
+
+A valid released-to-pressed status SHALL open the hidden panel on the main page for the current screen. It SHALL leave an open panel on its current page. The press SHALL NOT run a cell or change playback. Questions, pickers, Help, text entry and learning SHALL keep priority. The press SHALL NOT become a MIDI-learn choice.
+
+#### Scenario: PAD BANK opens the panel once before a pad hit
+- **WHEN** the shortcut is on and the supported controller replies with released, pressed and repeated pressed status
+- **THEN** one reveal shows the current screen's main panel before the next pad hit
+- **AND** the reveal changes no playback or cell value, and the next second-bank hit runs its visible cell once
+- **AND** a later press while the panel is open keeps its current page
+
+#### Scenario: PAD BANK respects input overlays
+- **WHEN** a PAD BANK press arrives during a question, picker, Help, text entry or learning
+- **THEN** the current overlay and its target keep priority and no panel action runs
+- **AND** learning does not capture PAD BANK as the chosen control
+
+### Requirement: PAD BANK status keeps its Master connection
+
+The program SHALL route a valid press to the matching Master connection. It SHALL wait for a valid released status after enable or reconnect. Disconnect SHALL clear panel ownership. A reply from an old connection SHALL NOT open the panel after reconnect.
+
+#### Scenario: PAD BANK ignores invalid or disconnected sources
+- **WHEN** a status reply is invalid, belongs to another connection or arrives after the SMC-PAD disconnects
+- **THEN** the reply opens no panel and another device keeps its current route
+- **AND** reconnect starts hidden and a pressed status cannot open the panel before a valid released status
+
+### Requirement: Status delays preserve first-hit reveal and pad play
+
+A status reply SHALL NOT reopen the panel if a first-bank hit on that connection is newer than the request. If the shortcut is off, unavailable or late, the first second-bank hit SHALL reveal a hidden panel without running a cell.
+
+#### Scenario: Late PAD BANK status keeps both pad routes
+- **WHEN** a second-bank hit arrives before its PAD BANK status reply
+- **THEN** the hit reveals the panel without a cell action and the late reply does not reset its page
+- **AND** in a separate run, a first-bank hit before the reply keeps the panel hidden and a held Gate keeps its original release
+
+#### Scenario: First-hit reveal survives a missing PAD BANK pulse
+- **WHEN** the shortcut is off or a tap produces no usable status reply
+- **THEN** the first second-bank hit reveals the panel, and the next hit runs its visible cell once
 
 ### Requirement: Context page selection preserves the screen controls
 

@@ -40,7 +40,7 @@ The owner approved a distinct MIDI context for open A1 controls on 2026-11-17. L
 
 `ActionInfo` does not yet mark text entry. Add that metadata for `pad.rename` and `browser.filter`. A typed new-project name and keymap edits are document operations, not `ActionInfo` entries. `app.quit` stays outside `ACTIONS` and MIDI learn. The SMC-PAD panel offers Exit as an explicit context cell. No other action gets a text exception. The inventory separates a parameter turn from a button action and names equivalent routes when their action IDs differ.
 
-The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit. A target pad hit or a later modal answer is recorded separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
+The story table counts physical presses from the visible main panel and from a hidden panel. A visible context action takes More and its cell. Knob turns do not add presses. The first entry adds PAD BANK and a reveal hit with the shortcut off. With the shortcut on, count the shorter path when the panel opens before the first pad hit. Record the first-hit fallback too. Record a target pad hit or a later modal answer separately. A story that only describes visual state has zero command presses. An X-Session setup story names that device and is not presented as an SMC-PAD action.
 
 ### Context pages and modal controls
 
@@ -69,6 +69,14 @@ Pads adds page 4: `view -` (`pattern.view_prev`), `view +` (`pattern.view_next`)
 
 The global profile gives first-bank encoder 7 the existing `transport.tempo` step target and encoder 8 the existing `bank` step target. Encoder 6 uses the existing `edit.page` step target. Its physical control identity makes it panel navigation while the panel is visible and leaves it unassigned while hidden. Thus these routes add no public action or MIDI-learn item. Keep the context cell limit, fixed bottom row and existing owner override rule. A mode that cannot show its command has a recorded gap, not a silent fallback.
 
+### PAD BANK shortcut
+
+A capture on 2026-11-18 showed no unsolicited PAD BANK event on the three MIDI inputs. A read of 12 status bytes on the USB Private port showed a pulse in the last byte. The owner tapped PAD BANK six times. With a 52 ms poll interval, six runs of `01` appeared between runs of `00`. Each tap gave one or two `01` replies. This is one run on the supported preset. The last byte signals a press and does not identify the selected bank.
+
+Add `SMC-PAD PAD BANK` to F12 MIDI for a connected USB SMC-PAD with a supported preset. The values are `Off` and `Open panel`. Save the owner choice. Use `Off` when the setting is absent. Use the existing read-only status request on the USB Private port when the shortcut is on. Keep one poll in flight. Route a new press to the Master connection for the same controller.
+
+After enable or reconnect, arm on a valid `00`. Use the next valid `01` to request panel entry once. Require another `00` before a new request. Opening the panel does not run a cell. If the panel is already open, keep its current page. A held Gate keeps its original release. A first-bank hit still closes the panel. Ignore a reply that is older than that hit. An input overlay keeps priority. The first-hit reveal remains available if the shortcut is off or ptsr misses a tap.
+
 ## Risks and edge cases
 
 | Situation | Expected result | Status |
@@ -91,6 +99,13 @@ The global profile gives first-bank encoder 7 the existing `transport.tempo` ste
 | The Chop threshold reaches -40 or 0 dB | A further step keeps the threshold and cuts. It adds no Undo entry. | Covered by `keyboard_and_encoder_set_the_same_chop_threshold`. |
 | A threshold key arrives during Chop assign or an overlay | The active mode keeps priority. No threshold recut occurs behind it. | Covered by `threshold_keys_respect_owner_bindings_and_input_owners`. |
 | An owner map replaces a threshold key | The owner action or `none` wins over the shipped step. | Covered by `threshold_keys_respect_owner_bindings_and_input_owners`. |
+
+| PAD BANK gives consecutive high replies or a high reply on connect | Open only after a valid low value and one rising edge. Keep an open page in place. | Add a recorded status test. |
+| A question, picker, Help, text entry or learning owns input during the pulse | Keep the overlay and target. Do not reveal or activate a cell behind it. | Add an input priority test. |
+| A second-bank hit arrives before the status reply | The hit reveals the panel without an action. The late reply keeps the open page. | Add an input order test. |
+| A first-bank pad plays before a late reply | The hit closes the panel. The late reply cannot reopen it. The original release stops the same pad. | Add an input order and Gate test. |
+| A status reply cannot be tied to the current Master connection | Discard the reply. Reconnect starts hidden. Other controllers keep their actions. | Add a source and reconnect test. |
+| The USB request times out or the setting is off | First-hit reveal still works. No reply can run a cell. | Add a fallback test. |
 
 ## Open questions
 

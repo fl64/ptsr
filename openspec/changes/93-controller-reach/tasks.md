@@ -34,6 +34,10 @@
 - [x] 4.3 Fill remaining non-text action paths shown by the inventory. Keep each path within the specified press limit. Add named keyboard and raw MIDI scenarios.
 - [x] 4.4 Add Exit to a context page. Make the first hit open a question, P8 run the existing quit path once, and P7 or Back cancel. Keep Ctrl+Q and MIDI learn behavior. Test a pending save or recording.
 
+- [x] 4.5 Record the measured PAD BANK pulse, optional MIDI setting and panel entry rules in OpenSpec.
+- [ ] 4.6 Document both PAD BANK entry paths in the controller paths, user stories, owner checks, plan and vision. Check the new text before code.
+- [ ] 4.7 Add the MIDI setting and read-only status detection. Use the existing panel path. Test saving, pulse detection, source, overlays, input order, fallback and Gate release. Check the new Settings row in both terminal sizes.
+
 ## 5. Owner documentation and final verification
 
 - [x] 5.1 Update `docs/USER-STORIES.md` and `docs/LIVE-CHECKS.md` with exact keyboard and SMC-PAD steps. Report every proposal item and its screen-catalogue state before the owner check.
