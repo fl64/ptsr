@@ -178,8 +178,33 @@ fn every_current_keyboard_action_has_a_controller_route() {
             let tempo_ok = matches!(action, Action::TempoStep { .. })
                 && profile.control_action_context(Screen::Pads, false, true, "e2")
                     == Some("transport.tempo");
+            let direct_editor = match action {
+                Action::PagePrev | Action::PageNext => match screen {
+                    Screen::Pads | Screen::Fx => {
+                        profile.control_action(screen, false, "right") == Some("smc.list_next")
+                    }
+                    Screen::Chop => true,
+                    _ => false,
+                },
+                Action::ParamPrev | Action::ParamNext | Action::EditValue { .. } => match screen {
+                    Screen::Pads => {
+                        profile.control_action(screen, false, "e3") == Some("smc.page_3")
+                    }
+                    Screen::Fx => {
+                        profile.control_action(screen, false, "e2") == Some("edit.param_1")
+                    }
+                    Screen::Chop => {
+                        profile.control_action(screen, false, "e3") == Some("slice.start")
+                    }
+                    _ => false,
+                },
+                Action::SettingsValue(_) => {
+                    profile.control_action(screen, false, "e2") == Some("settings.value_next")
+                }
+                _ => false,
+            };
             assert!(
-                fixed || role_ok || variant_role_ok || bank_ok || tempo_ok,
+                fixed || role_ok || variant_role_ok || bank_ok || tempo_ok || direct_editor,
                 "{screen:?} key {key}: no SMC-PAD route for {named} ({action:?})"
             );
         }
@@ -1859,7 +1884,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 193);
+    assert_eq!(checked + special, 169);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -1899,30 +1924,6 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     cell(&mut controller, 63);
     cell(&mut controller, 61);
     assert_eq!(controller.app.plan, keyboard.app.plan);
-
-    for (slot, code, row) in [(6, 'i', 1), (7, 'k', 0), (8, 'j', 0), (9, 'l', 0)] {
-        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-        let mut keyboard = reach_drive(View::Pattern, sound.clone());
-        let mut controller = reach_drive(View::Pattern, sound);
-        for drive in [&mut keyboard, &mut controller] {
-            drive.tap(KeyCode::Char('n'), M::ALT);
-            if row == 1 {
-                drive.tap(KeyCode::Down, M::NONE);
-            }
-        }
-        keyboard.tap(KeyCode::Char(code), M::NONE);
-        cell(&mut controller, 64);
-        cell(&mut controller, 63);
-        cell(&mut controller, panel_note(slot));
-        assert_eq!(
-            controller.app.pattern_panel, keyboard.app.pattern_panel,
-            "{slot}"
-        );
-        assert_eq!(
-            controller.app.pads.pattern, keyboard.app.pads.pattern,
-            "{slot}"
-        );
-    }
 
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut keyboard = reach_drive(View::Pattern, sound.clone());
@@ -2345,6 +2346,29 @@ fn pad_inspector_and_editor_share_knob_positions() {
     turn(&mut fx, 31, 65);
     assert_eq!(fx.app.pads.fx[0], first);
     assert_ne!(fx.app.pads.fx[1].kind, second.kind);
+}
+
+/// Scenario "Direct page controls replace panel steps" (command-panel).
+#[test]
+fn direct_page_controls_replace_panel_steps() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::PadEdit, sound);
+    let pad = drive.app.pads.selected_abs();
+    cell(&mut drive, 64);
+    let snapshot = drive.app.panel_snapshot().unwrap();
+    assert!(snapshot.labels[8..12].iter().all(Option::is_none));
+    cell(&mut drive, panel_note(9));
+    assert_eq!(drive.app.pads.page().0, "TONE");
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.pads.page().0, "ENV");
+    let parameter = drive.app.pads.param;
+    turn(&mut drive, 30, 65);
+    assert_ne!(drive.app.pads.param, parameter);
+    turn(&mut drive, 32, 65);
+    assert_eq!(drive.app.pads.attack_ms[pad], 1);
+    for name in ["edit.param_next", "edit.page_next", "edit.value_inc"] {
+        assert!(input::ACTIONS.iter().any(|action| action.name == name));
+    }
 }
 
 fn check_chop_context_encoders(view: panel::View) {
