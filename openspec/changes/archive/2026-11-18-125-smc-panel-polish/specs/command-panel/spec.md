@@ -2,15 +2,13 @@
 
 ### Requirement: Panel pages expose screen and context commands
 
-The main page SHALL show Pads, Files, Chop and A1 on row 1.
-It SHALL show FX, Mixer, Setup and More on row 2.
-Mixer SHALL stay dim until the mixer screen is available.
+The main page SHALL show Pads, Files, Chop and A1 on row 1,
+and FX, Mixer, Setup and More on row 2. Mixer SHALL stay dim until it exists.
 The main page SHALL have up to four current-view actions.
-More SHALL open page 1. Help SHALL use P10 on that page in each view.
-Next SHALL cycle context pages from P11. Main SHALL return from P12.
-The panel SHALL show the current page and count.
-A screen change or panel exit SHALL restore the main page.
-LEFT and RIGHT SHALL keep the current list. Keyboard paths SHALL remain available.
+More SHALL open page 1, with Help on P10 in each view.
+P11 (Next) SHALL cycle context pages. P12 (Main) SHALL return.
+The panel SHALL show the page and count. A screen change or exit SHALL restore Main.
+LEFT and RIGHT SHALL keep the current list. Keyboard paths SHALL remain.
 
 #### Scenario: Screen and context pages cover more than 16 commands
 - **WHEN** the owner selects More, cycles through context pages and presses Main

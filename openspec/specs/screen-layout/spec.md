@@ -888,3 +888,15 @@ The F1 Controller tab SHALL show the same effective roles.
 - **THEN** the mark changes to the bank that sent the last turn
 - **AND** a neutral value or an absent action changes no control value
 - **AND** a disconnect clears the mark and stale input cannot set it again
+
+### Requirement: SMC-PAD Help explains the current knob operations
+
+Help from the SMC-PAD panel SHALL open F1 Controller for that device.
+The diagram SHALL label the active roles. The selected knob SHALL show its bank,
+physical number and full operation. On Chop, the footer SHALL distinguish the
+slice pair from the region pair when both pairs use the shipped roles.
+
+#### Scenario: Chop help identifies the slice and region knobs
+- **WHEN** the owner opens controller Help on Chop and selects the two bound pairs
+- **THEN** the detail names each physical knob and which bound it changes
+- **AND** both supported sizes show the difference between slice and region
