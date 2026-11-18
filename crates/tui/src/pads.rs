@@ -16,7 +16,16 @@ pub fn command_panel_area(area: Rect) -> Rect {
 }
 
 pub fn command_panel(frame: &mut Frame, panel: &CommandPanel, question_view: Option<&Question>) {
-    let [_, body, _, _] = frame_areas(frame.area());
+    command_panel_in(frame, frame.area(), panel, question_view);
+}
+
+pub fn command_panel_in(
+    frame: &mut Frame,
+    content: Rect,
+    panel: &CommandPanel,
+    question_view: Option<&Question>,
+) {
+    let [_, body, _, _] = frame_areas(content);
     let pad = pad_frame(body, false);
     frame.render_widget(
         Line::from(" PANEL · SMC ").fg(BG).bg(CYAN),

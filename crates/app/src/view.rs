@@ -328,6 +328,7 @@ impl FrameText {
         }
         tui::Feedback {
             inputs: Arc::clone(&self.inputs),
+            knob_strip: app.smc_knob_strip(),
             recording_seconds: app
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
@@ -344,6 +345,7 @@ impl App {
     pub(super) fn status_feedback_at(&self, now: Instant) -> tui::Feedback {
         tui::Feedback {
             inputs: self.input_sources.snapshot(now).into(),
+            knob_strip: None,
             recording_seconds: self
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),

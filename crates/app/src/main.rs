@@ -1746,12 +1746,13 @@ fn main() -> std::io::Result<()> {
         let mut want = Vec::new();
         let mut blockers = Vec::new();
         let drawn = term.try_draw(|f| -> std::io::Result<()> {
-            blockers = tui::overlay_areas(f.area(), &screen, &help, value);
+            let content = feedback.content_area(f.area());
+            blockers = tui::overlay_areas(content, &screen, &help, value);
             if panel.is_some() {
-                blockers.push(tui::command_panel_area(f.area()));
+                blockers.push(tui::command_panel_area(content));
             }
             if pattern_controls.is_some() {
-                blockers.push(tui::pattern_controls_area(f.area(), &screen));
+                blockers.push(tui::pattern_controls_area(content, &screen));
             }
             let commands = shown.before(graphics, app.screen, f.area(), cell_px, &blockers);
             graphics::send(&mut std::io::stdout(), &commands)?;
@@ -1765,20 +1766,19 @@ fn main() -> std::io::Result<()> {
                 graphics.then_some(&mut want),
             );
             if let Some(panel) = &panel {
-                tui::command_panel(f, panel, question.as_ref());
+                tui::command_panel_in(f, content, panel, question.as_ref());
             }
             if let Some(value) = value {
                 tui::value_popup(f, value);
             }
             if let Some(controls) = &pattern_controls {
-                tui::pattern_controls(f, &screen, controls);
+                tui::pattern_controls_in(f, content, &screen, controls);
             }
             Ok(())
         });
         if let Err(e) = drawn {
             break Err(e);
         }
-        // Only unobstructed pictures go out after the successful text frame.
         let commands = shown.after(&mut want, &blockers);
         if let Err(e) = graphics::send(&mut std::io::stdout(), &commands) {
             break Err(e);

@@ -564,6 +564,20 @@ fn validate(cases: &[Case]) -> Result<(), String> {
     }
 }
 
+fn fixture_smc_knob_strip(app: &mut App, now: Instant) {
+    let port = "SMC-PAD-Master offline";
+    app.profiles.push(
+        input::midi::Profile::from_toml(
+            "smc-pad.toml",
+            include_str!("../../../config/devices/smc-pad.toml"),
+        )
+        .unwrap(),
+    );
+    app.midi_devices.push((port.into(), "SMC-PAD".into()));
+    app.help_overlay.controller.smc_status = Some((true, "encoders ready".into()));
+    app.help_overlay.controller.smc_last_knob = Some((port.into(), 1, now));
+}
+
 fn fixture(case: Case, now: Instant) -> App {
     let mut app = super::tests::test_app();
     app.loader = None;
@@ -623,6 +637,17 @@ fn fixture(case: Case, now: Instant) -> App {
     }
     app.chop = Some(chop);
     app.notices = Notices::new(now);
+    if matches!(
+        case.mode,
+        Mode::PanelMain
+            | Mode::PanelContext
+            | Mode::PanelQuestion
+            | Mode::PanelUnavailable
+            | Mode::PanelImageOn
+            | Mode::PanelImageOff
+    ) {
+        fixture_smc_knob_strip(&mut app, now);
+    }
     match case.mode {
         Mode::PanelMain | Mode::PanelUnavailable | Mode::PanelImageOn | Mode::PanelImageOff => {
             app.panel.press("SMC-PAD-Master offline", 1);
@@ -1221,6 +1246,7 @@ fn render_app_layers(
         ]
         .into(),
         recording_seconds: app.recording.map(|_| 12),
+        knob_strip: app.smc_knob_strip(),
     };
     let status = tui::Status {
         badges: view::FrameText::default()
@@ -1354,13 +1380,23 @@ fn render_app_layers(
             .draw(|frame| {
                 tui::draw_cached(frame, &status, &screen, &help, &feedback, &mut cache, None);
                 if let Some(panel) = &panel {
-                    tui::command_panel(frame, panel, question.as_ref());
+                    tui::command_panel_in(
+                        frame,
+                        feedback.content_area(frame.area()),
+                        panel,
+                        question.as_ref(),
+                    );
                 }
                 if let Some(value) = &value {
                     tui::value_popup(frame, value);
                 }
                 if let Some(controls) = &pattern_controls {
-                    tui::pattern_controls(frame, &screen, controls);
+                    tui::pattern_controls_in(
+                        frame,
+                        feedback.content_area(frame.area()),
+                        &screen,
+                        controls,
+                    );
                 }
             })
             .unwrap()
@@ -3386,6 +3422,36 @@ L="none"
                     }
                 }
             }
+        }
+    }
+
+    /// Scenario "The strip identifies page, list and roles at both sizes" (screen-layout).
+    #[test]
+    fn the_strip_identifies_page_list_and_roles_at_both_sizes() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Chop,
+                mode: Mode::PanelMain,
+                size,
+            };
+            let now = Instant::now();
+            let app = fixture(case, now);
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let rows: Vec<String> = buffer
+                .content()
+                .chunks(usize::from(size.0))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                .collect();
+            let top = rows.iter().position(|row| row.contains("B1 7")).unwrap();
+            assert!(
+                rows[top].contains("B2 7 pan") && rows[top].contains("< > Slice · Chop · last 2")
+            );
+            assert!(rows[top].matches("8 master").count() == 2);
+            assert!(rows[top + 1].contains("5 reg[") && rows[top + 1].contains("5 send 1"));
+            assert!(rows[top + 2].contains("3 start") && rows[top + 2].contains("3 pitch"));
+            assert!(rows[top + 3].contains("1 cursor") && rows[top + 3].contains("2 cutoff"));
+            assert!(rows[..top].iter().any(|row| row.contains("16 panic")));
         }
     }
 

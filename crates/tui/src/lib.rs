@@ -14,6 +14,8 @@ mod files;
 mod fx;
 mod help;
 mod kitty;
+mod knob_strip;
+pub use knob_strip::KnobStrip;
 mod pads;
 mod pattern;
 mod settings;
@@ -36,7 +38,7 @@ pub use help::{
 };
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
-pub use pads::{CommandPanel, command_panel, command_panel_area};
+pub use pads::{CommandPanel, command_panel, command_panel_area, command_panel_in};
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
@@ -166,6 +168,7 @@ pub struct InputSource {
 #[derive(Default)]
 pub struct Feedback {
     pub inputs: Arc<[InputSource]>,
+    pub knob_strip: Option<KnobStrip>,
     pub recording_seconds: Option<u64>,
 }
 
@@ -975,7 +978,16 @@ pub fn pattern_controls_area(area: Rect, screen: &Screen) -> Rect {
 
 /// Draw after the screen and exclude this area from terminal wave pictures.
 pub fn pattern_controls(frame: &mut Frame, screen: &Screen, controls: &PatternControls) {
-    let area = pattern_controls_area(frame.area(), screen);
+    pattern_controls_in(frame, frame.area(), screen, controls);
+}
+
+pub fn pattern_controls_in(
+    frame: &mut Frame,
+    content: Rect,
+    screen: &Screen,
+    controls: &PatternControls,
+) {
+    let area = pattern_controls_area(content, screen);
     if area.width < 3 || area.height == 0 {
         return;
     }
@@ -1212,14 +1224,14 @@ fn draw_inner(
     };
     let mut help_rows = help_lines_at(
         help.groups,
-        frame.area().width,
+        knob_strip::help_width(frame.area(), feedback),
         HELP_ROWS as usize - usize::from(pitch_gate.is_some()),
     );
     if let Some(pitch_gate) = pitch_gate {
         help_rows.resize(HELP_ROWS as usize - 1, Line::default());
         help_rows.push(Line::from(format!(" {}", pitch_gate.help())).fg(DIM));
     }
-    let [top, body, notice, help_area] = frame_areas(frame.area());
+    let [top, body, notice, help_area] = frame_areas(feedback.content_area(frame.area()));
 
     match cache {
         Some(cache) => frame.render_widget(cache.row(s, feedback, top.width), top),
@@ -1260,21 +1272,7 @@ fn draw_inner(
         Screen::Files(f) => files(frame, body, f, s),
         Screen::Chop(c) => chop(frame, body, c, s, images),
     }
-    match help.learn {
-        Some(learn) => {
-            frame.render_widget(Block::new().bg(PANEL), help_area);
-            let lines = [
-                Line::from(clip_label(&learn.context, help_area.width as usize))
-                    .fg(MARK)
-                    .bold(),
-                Line::from(clip_label(&learn.detail, help_area.width as usize))
-                    .fg(if learn.warning { MAGENTA } else { DIM }),
-                Line::from(clip_label(&learn.controls, help_area.width as usize)).fg(CYAN),
-            ];
-            frame.render_widget(Paragraph::new(lines.to_vec()), help_area);
-        }
-        None => frame.render_widget(Paragraph::new(help_rows), help_area),
-    }
+    knob_strip::draw_help(frame, help_area, help, feedback, help_rows);
     match help.full {
         Some(FullHelp::Keys(rows)) => full_help(frame, body, rows),
         Some(FullHelp::KeyPage {
@@ -7199,6 +7197,7 @@ mod tests {
             }]
             .into(),
             recording_seconds: Some(12),
+            knob_strip: None,
         }
     }
 

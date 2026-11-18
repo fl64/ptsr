@@ -18,6 +18,7 @@ pub(super) struct State {
     pub last_port: Option<String>,
     /// The latest USB setup result for the measured SMC-PAD profile.
     pub smc_status: Option<(bool, String)>,
+    pub smc_last_knob: Option<(String, usize, std::time::Instant)>,
 }
 
 /// The full help text of an action; knob names outside the learn list have none.
@@ -255,6 +256,130 @@ impl App {
         *scroll = (*scroll).min(at).max((at + 1).saturating_sub(rows));
     }
 
+    pub(super) fn observe_smc_knob(&mut self, event: &super::midi::UiEvent) {
+        let super::midi::Event::Message {
+            port,
+            profile,
+            msg:
+                input::midi::Msg::Cc {
+                    ch: 1,
+                    cc,
+                    value: 63 | 65,
+                },
+            ..
+        } = &event.event
+        else {
+            return;
+        };
+        let Some(stamp) = event.source() else {
+            return;
+        };
+        let state = &mut self.help_overlay.controller;
+        if profile == "SMC-PAD"
+            && (30..=45).contains(cc)
+            && state.smc_status.as_ref().is_some_and(|(ready, _)| *ready)
+            && self
+                .input_sources
+                .connected()
+                .any(|(name, id)| name == port && id == stamp.connection)
+            && state
+                .smc_last_knob
+                .as_ref()
+                .is_none_or(|(_, _, at)| stamp.at >= *at)
+        {
+            state.smc_last_knob = Some((port.clone(), usize::from(*cc >= 38), stamp.at));
+        }
+    }
+
+    fn smc_context(&self) -> (&'static str, &'static str, &'static str) {
+        use super::panel::View;
+        if self.project_picker.is_some() {
+            ("Projects", "Project", "select")
+        } else if self.path_picker.is_some() {
+            ("Paths", "Folder", "folder")
+        } else if self.pattern_panel.is_some() {
+            ("Transport", "Page", "param")
+        } else {
+            match self.panel_view() {
+                View::Pads => (self.pads.page().0, "Bank", "pad"),
+                View::PadEdit => (self.pads.page().0, "Page", "param"),
+                View::Pattern => ("Pattern", "Bar", "step"),
+                View::Chop | View::ChopEdit => ("Chop", "Slice", "cursor"),
+                View::Files => ("Files", "Folder", "file"),
+                View::Settings => ("Settings", "Tab", "row"),
+                View::Fx => (["FX 1", "FX 2"][self.fx_slot], "Slot", "param"),
+            }
+        }
+    }
+
+    fn smc_knob_role(&self, name: &str, action: Option<&str>) -> (&'static str, bool) {
+        match action {
+            Some("smc.position") => (self.smc_context().2, true),
+            Some("master.volume") => ("master", true),
+            Some("settings.row") => ("row", true),
+            Some("settings.value_next") => ("value", true),
+            Some("files.scroll") => ("file", true),
+            Some("projects.scroll") => ("select", true),
+            Some(action) => {
+                let (label, unavailable) = self
+                    .smc_value_label(action)
+                    .unwrap_or_else(|| (input::short_label(action), false));
+                (label, !unavailable)
+            }
+            None if name == "f7" => ("pan", false),
+            None => ("-", false),
+        }
+    }
+
+    pub(super) fn smc_knob_strip(&self) -> Option<tui::KnobStrip> {
+        if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
+            return None;
+        }
+        let connected = self
+            .midi_devices
+            .iter()
+            .any(|(_, profile)| profile == "SMC-PAD");
+        let profile = self
+            .profiles
+            .iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .filter(|_| connected)?;
+        let edit = self.edit_keys();
+        let action = |name| {
+            profile.control_action_context(self.screen, edit, self.pattern_panel.is_some(), name)
+        };
+        let (page, list, _) = self.smc_context();
+        let ready = self
+            .help_overlay
+            .controller
+            .smc_status
+            .as_ref()
+            .is_some_and(|(ready, _)| *ready);
+        let names = [
+            ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8"],
+            ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"],
+        ];
+        let roles = names.map(|bank| {
+            bank.map(|name| {
+                let (label, available) = self.smc_knob_role(name, action(name));
+                (label, available && ready)
+            })
+        });
+        let last_bank = self
+            .help_overlay
+            .controller
+            .smc_last_knob
+            .as_ref()
+            .filter(|_| ready)
+            .map(|(_, bank, _)| *bank);
+        Some(tui::KnobStrip {
+            page,
+            list,
+            roles,
+            last_bank,
+        })
+    }
+
     fn smc_value_label(&self, action: &str) -> Option<(&'static str, bool)> {
         use input::midi::Param;
         let param = match input::midi::param_of(action)? {
@@ -266,6 +391,9 @@ impl App {
             Some(Param::PadSource) => "source",
             Some(Param::PadEffect(0)) => "drive",
             Some(Param::PadEffect(9)) => "group",
+            Some(Param::PadEffect(index @ 3..=8)) => {
+                self.pads.name(super::EFFECT_PARAMS[usize::from(index)])
+            }
             Some(param) => input::midi::PARAMS
                 .iter()
                 .find_map(|(name, value)| (*value == param).then_some(input::short_label(name)))
@@ -320,8 +448,18 @@ impl App {
             Some((label, cell >= 15 || label == "unavailable"))
         };
         let value_role = |name: &str| {
-            (profile.name == "SMC-PAD").then_some(())?;
-            self.smc_value_label(action(name)?)
+            if profile.name != "SMC-PAD" {
+                return None;
+            }
+            let knob = matches!(profile.kind_of(name), Some(ControlKind::Knob));
+            if knob {
+                let (label, available) = self.smc_knob_role(name, action(name));
+                Some((label, !available))
+            } else if matches!(action(name), Some("smc.list_prev" | "smc.list_next")) {
+                Some((self.smc_context().1, false))
+            } else {
+                None
+            }
         };
         let first = || match self.controller_drawing(profile) {
             Some(rows) => places(rows).first().map(|(_, _, n)| n.to_string()),
