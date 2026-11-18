@@ -1815,7 +1815,7 @@ mod tests {
             };
             let (_, frame) = render(case, &keymap);
             let text: String = frame.content().iter().map(|cell| cell.symbol()).collect();
-            for label in ["SMC-PAD PAD BANK", "Off", "select Off or Open panel"] {
+            for label in ["SMC-PAD PAD BANK", "Open panel", "select Off or Open panel"] {
                 assert!(text.contains(label), "{}: {label}\n{text}", case.name());
             }
             check_frame(case, &frame);

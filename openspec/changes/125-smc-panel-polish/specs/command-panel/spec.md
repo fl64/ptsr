@@ -50,17 +50,10 @@ The label check SHALL include fixed cells and the shipped panel file.
 
 ### Requirement: SMC-PAD target cells select pads on the current layer
 
-A visible panel SHALL replace its main cells with targets when Copy, Take,
-file placement or Assign needs a pad. P1 through P12 SHALL select the matching
-pad in the current bank. A target SHALL use the existing placement or Assign
-route. P13 SHALL cancel. P14 SHALL apply an Assign plan. P15 SHALL switch
-between targets and commands for the current mode. The target view SHALL show
-that pads 13 through 16 use the playing layer.
-
-Questions SHALL take priority. P7 SHALL cancel and P8 SHALL accept a visible
-replacement question. Another device SHALL not use the owning panel's targets.
-Playing-layer hits and held releases SHALL keep their routes.
-An Assign plan SHALL stay available after a playing-layer target closes the panel.
+A visible target view SHALL use P1–P12 as pad positions in the current bank.
+It SHALL show that P13–P16 use the playing layer.
+P13 SHALL cancel. P14 SHALL apply Assign. P15 SHALL switch targets and commands.
+Questions, connection ownership and original held releases SHALL keep priority.
 
 #### Scenario: Panel target pads place items without a layer switch
 - **WHEN** the owner takes a pad, a copy or a file and selects P1 through P12 on the visible target view

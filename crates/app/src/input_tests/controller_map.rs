@@ -505,3 +505,59 @@ fn controller_page_keeps_the_f1_frame() {
         );
     }
 }
+
+/// Scenario "Shifted pads warn once on the Master connection" (input-devices).
+#[test]
+fn shifted_pads_warn_once_on_the_master_connection() {
+    const SMC: &str = "SINCO SMC-PAD-Master 28:1";
+    let mut drive = Drive::smc_offline();
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    let warning_count = |drive: &Drive| {
+        drive
+            .app
+            .notices
+            .history()
+            .iter()
+            .filter(|notice| {
+                notice.level == Level::Warn && notice.text == crate::controller_map::SHIFT_NOTICE
+            })
+            .count()
+    };
+
+    drive.bytes(PAD_PORT, &[0x99, 32, 100]);
+    drive.bytes(SMC, &[0x90, 32, 100]);
+    drive.frame();
+    assert_eq!(warning_count(&drive), 0);
+    for note in [32, 33] {
+        drive.bytes(SMC, &[0x99, note, 100]);
+        drive.bytes(SMC, &[0x89, note, 0]);
+        assert_silent_target(&drive.frame());
+    }
+    assert_eq!(warning_count(&drive), 1);
+    assert!(!drive.app.panel.visible());
+    assert_eq!(drive.app.pads.selected, 0);
+
+    drive.midi().recorded_disconnect(SMC);
+    drive.midi().recorded_connect(SMC);
+    drive.frame();
+    drive.bytes(SMC, &[0x99, 32, 100]);
+    drive.frame();
+    assert_eq!(warning_count(&drive), 2);
+}
+
+/// Scenario "SMC-PAD help names the device repeat clock" (input-devices).
+#[test]
+fn smc_pad_help_names_the_device_repeat_clock() {
+    let mut drive = Drive::smc_offline();
+    touch(&mut drive, "SINCO SMC-PAD-Master 28:1");
+    for size in SIZES {
+        open(&mut drive, size);
+        let text = screen(&mut drive, size).join("\n");
+        assert!(
+            text.contains("Device Note Repeat uses its own clock."),
+            "{text}"
+        );
+        assert!(text.contains("Use ptsr Note Repeat"), "{text}");
+    }
+}

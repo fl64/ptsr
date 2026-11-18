@@ -815,6 +815,7 @@ pub struct Controller {
     /// The selected control in full: name, kind, action and its help.
     pub detail: String,
     pub navigation: String,
+    pub note: Option<&'static str>,
     /// The accepted recording state, as on the other tabs.
     pub caption: Option<String>,
 }

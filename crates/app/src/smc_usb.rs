@@ -155,19 +155,39 @@ fn write<T: Transport>(transport: &mut T, address: usize, bytes: &[u8]) -> Resul
     Ok(())
 }
 
-fn status<T: Transport>(transport: &mut T) -> Result<u8, String> {
-    let data = read(transport, 4, 0, 12)?;
-    if data[10] != SLOT as u8 || data[6] != 2 {
-        return Err(format!(
-            "SMC-PAD active preset differs from measured slot: {}",
-            data[10] + 1
-        ));
+struct Status {
+    mode: u8,
+    slot: u16,
+    pads: u8,
+}
+
+impl Status {
+    fn checked_pads(self) -> Result<u8, String> {
+        if self.slot != SLOT as u16 + 1 {
+            return Err(format!(
+                "Preset {} is active. Select preset {} to use the knobs.",
+                self.slot,
+                SLOT + 1
+            ));
+        }
+        if self.mode != 2 {
+            return Err(format!("Preset status has mode {}", self.mode));
+        }
+        Ok(self.pads)
     }
-    Ok(data[11])
+}
+
+fn read_status<T: Transport>(transport: &mut T) -> Result<Status, String> {
+    let data = read(transport, 4, 0, 12)?;
+    Ok(Status {
+        mode: data[6],
+        slot: u16::from(data[10]) + 1,
+        pads: data[11],
+    })
 }
 
 fn active<T: Transport>(transport: &mut T) -> Result<(), String> {
-    status(transport).map(|_| ())
+    read_status(transport)?.checked_pads().map(|_| ())
 }
 
 #[derive(Default)]
@@ -378,9 +398,18 @@ pub(super) fn watch(tx: Sender<Raw>, shared: Arc<Shared>) {
                         if requested_at >= deadline {
                             break;
                         }
-                        let Ok(value) = status(&mut transport) else {
+                        let Ok(status) = read_status(&mut transport) else {
                             previous_source = None;
                             break;
+                        };
+                        let value = match status.checked_pads() {
+                            Ok(value) => value,
+                            Err(error) => {
+                                ready = false;
+                                previous_source = None;
+                                let _ = tx.send(Raw::SmcSetup(Err(error)));
+                                break;
+                            }
                         };
                         if pulse.observe(value) {
                             let _ = tx.send(Raw::SmcPadBank {
@@ -503,7 +532,7 @@ mod tests {
             .into_iter()
             .map(|value| {
                 device.state[11] = value;
-                pulse.observe(status(&mut device).unwrap())
+                pulse.observe(read_status(&mut device).unwrap().checked_pads().unwrap())
             })
             .collect();
         assert_eq!(
@@ -512,7 +541,7 @@ mod tests {
         );
         assert_eq!(device.writes, 0);
         device.state[10] = 0;
-        assert!(status(&mut device).is_err());
+        assert!(read_status(&mut device).unwrap().checked_pads().is_err());
     }
 
     #[test]
@@ -591,7 +620,15 @@ mod tests {
         configure(&mut device).unwrap();
         checked(&mut device).unwrap();
         device.state[10] = 5;
-        assert!(checked(&mut device).is_err());
+        let message = "Preset 6 is active. Select preset 5 to use the knobs.";
+        assert_eq!(checked(&mut device).unwrap_err(), message);
+        assert_eq!(
+            read_status(&mut device)
+                .unwrap()
+                .checked_pads()
+                .unwrap_err(),
+            message
+        );
         device.state[10] = SLOT as u8;
         checked(&mut device).unwrap();
         let address = SLOT * STRIDE + ENCODERS;

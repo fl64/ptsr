@@ -484,7 +484,10 @@ pub(super) fn controller(frame: &mut Frame, area: Rect, c: &Controller) {
             Span::styled(name.clone(), Style::new().fg(DIM))
         });
     }
-    let mut lines = vec![Line::from(devices), Line::default()];
+    let note = c.note.map_or_else(Line::default, |text| {
+        Line::from(clip_label(text, width)).fg(DIM)
+    });
+    let mut lines = vec![Line::from(devices), note];
     match &c.body {
         ControllerBody::Empty { profiles } => {
             lines.push(Line::from("No MIDI device is connected."));

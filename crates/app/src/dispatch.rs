@@ -1168,6 +1168,7 @@ impl App {
     pub(super) fn midi_ui_event(&mut self, ev: midi::UiEvent) {
         self.input_sources.observe(&ev, Instant::now());
         self.observe_smc_knob(&ev);
+        self.observe_smc_pad(&ev);
         let sequence = ev.sequence();
         let preview_ready = ev.preview_ready();
         let origin = ev
@@ -1503,6 +1504,7 @@ impl App {
             }
             midi::Event::Disconnected { port } => {
                 self.panel.disconnect(&port);
+                self.help_overlay.controller.smc_shift_warned.remove(&port);
                 if port.contains("SMC-PAD-Master") {
                     self.help_overlay.controller.smc_status = None;
                     if self

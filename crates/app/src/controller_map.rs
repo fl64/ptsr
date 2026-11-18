@@ -1,9 +1,11 @@
 //! The F1 Controller tab (98j): the top of one connected device with the action of each
 //! control on the screen under F1.
 
-use super::{App, Keymap};
+use super::{App, Keymap, Level, input_sources, midi};
 use input::Action;
 use input::midi::{ControlKind, Profile};
+
+pub(super) const SHIFT_NOTICE: &str = "SMC-PAD pads are shifted (SHIFT + PAD13–16 changes octave or transpose). Reset it on the device.";
 
 #[derive(Default)]
 pub(super) struct State {
@@ -19,6 +21,7 @@ pub(super) struct State {
     /// The latest USB setup result for the measured SMC-PAD profile.
     pub smc_status: Option<(bool, String)>,
     pub smc_layout_open: bool,
+    pub smc_shift_warned: std::collections::HashMap<String, input_sources::Connection>,
     pub smc_last_knob: Option<(String, usize, std::time::Instant)>,
 }
 
@@ -292,6 +295,42 @@ impl App {
         }
     }
 
+    pub(super) fn observe_smc_pad(&mut self, ev: &midi::UiEvent) {
+        let midi::Event::Message {
+            port,
+            profile,
+            msg,
+            meaning,
+        } = &ev.event
+        else {
+            return;
+        };
+        if profile != "SMC-PAD" || !port.contains("SMC-PAD-Master") || meaning != "not assigned" {
+            return;
+        }
+        let input::midi::Msg::NoteOn { ch: 10, note, .. } = *msg else {
+            return;
+        };
+        let Some(stamp) = ev.source() else {
+            return;
+        };
+        if (36..=67).contains(&note)
+            || !self
+                .input_sources
+                .connected()
+                .any(|(name, connection)| name == port && connection == stamp.connection)
+        {
+            return;
+        }
+        let warned = &mut self.help_overlay.controller.smc_shift_warned;
+        if warned.insert(port.clone(), stamp.connection) != Some(stamp.connection) {
+            self.post_system_notice(
+                Level::Warn,
+                (SHIFT_NOTICE.into(), std::time::Instant::now()),
+            );
+        }
+    }
+
     fn smc_context(&self) -> (&'static str, &'static str, &'static str) {
         use super::panel::View;
         if self.project_picker.is_some() {
@@ -432,6 +471,7 @@ impl App {
                 current: 0,
                 body: tui::ControllerBody::Empty { profiles },
                 detail: String::new(),
+                note: None,
                 navigation,
                 caption,
             };
@@ -572,6 +612,9 @@ impl App {
             current: index,
             body,
             detail,
+            note: (profile.name == "SMC-PAD").then_some(
+                "Device Note Repeat uses its own clock. Use ptsr Note Repeat when available.",
+            ),
             navigation,
             caption,
         }

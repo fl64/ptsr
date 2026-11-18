@@ -2953,23 +2953,27 @@ fn pad_bank_row(drive: &Drive) -> Option<usize> {
         .position(|row| matches!(row, MidiListRow::SmcPadBank))
 }
 
+/// Scenario "PAD BANK starts open and preserves a saved Off choice" (controller-reach).
 /// Scenario "PAD BANK setting saves and defaults to off" (controller-reach).
 #[test]
-fn pad_bank_setting_saves_and_defaults_to_off() {
+fn pad_bank_starts_open_and_preserves_a_saved_off_choice() {
     let files = TransitionFiles::new();
     let path = files.0.join("pad-bank-config.toml");
     std::fs::write(&path, "[midi_gestures]\nhold_time_ms = 400\n").unwrap();
     assert!(
-        !config::load_from(&path)
+        config::load_from(&path)
             .config
             .midi_gestures
             .smc_pad_bank_opens_panel
     );
     assert!(pad_bank_row(&Drive::offline()).is_none());
 
-    let mut keyboard = smc_drive();
-    keyboard.app.user_path = Some(path.clone());
-    keyboard.app.midi_gestures = config::load_from(&path).config.midi_gestures;
+    let mut unverified = Drive::smc_offline();
+    assert!(pad_bank_row(&unverified).is_none());
+    pad_bank_request(&mut unverified, SMC);
+    assert!(!unverified.app.panel.visible());
+
+    let mut keyboard = saved_layout_drive(&path);
     let mut controller = smc_drive();
     for drive in [&mut keyboard, &mut controller] {
         drive.app.screen = Screen::Settings;
@@ -2977,20 +2981,17 @@ fn pad_bank_setting_saves_and_defaults_to_off() {
         drive.app.midi_row = pad_bank_row(drive).unwrap();
         drive.app.publish_midi(&drive.shared);
     }
-    keyboard.tap(KeyCode::Right, M::NONE);
-    turn(&mut controller, 31, 65);
-    assert!(keyboard.app.midi_gestures.smc_pad_bank_opens_panel);
-    assert!(controller.app.midi_gestures.smc_pad_bank_opens_panel);
-    let restored = config::load_from(&path).config.midi_gestures;
-    assert!(restored.smc_pad_bank_opens_panel);
-    assert_eq!(restored.hold_time_ms, 400);
     keyboard.tap(KeyCode::Left, M::NONE);
-    assert!(
-        !config::load_from(&path)
-            .config
-            .midi_gestures
-            .smc_pad_bank_opens_panel
-    );
+    turn(&mut controller, 31, 63);
+    assert!(!keyboard.app.midi_gestures.smc_pad_bank_opens_panel);
+    assert!(!controller.app.midi_gestures.smc_pad_bank_opens_panel);
+    let restored = config::load_from(&path).config.midi_gestures;
+    assert!(!restored.smc_pad_bank_opens_panel);
+    assert_eq!(restored.hold_time_ms, 400);
+
+    let mut restart = saved_layout_drive(&path);
+    pad_bank_request(&mut restart, SMC);
+    assert!(!restart.app.panel.visible());
 }
 
 /// Scenario "PAD BANK opens the panel once before a pad hit" (controller-reach).
