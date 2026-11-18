@@ -1425,8 +1425,7 @@ impl Profile {
             && !(self.name == "SMC-PAD"
                 && (matches!(control, Some(Control::Button(name)) if smc_new_control(name))
                     || (screen == Screen::Settings
-                        && matches!(control, Some(Control::Knob { name, .. }) if name == "e2"))
-                    || matches!(control, Some(Control::Knob { name, .. }) if matches!(name.as_str(), "e6" | "e7" | "e8"))))
+                        && matches!(control, Some(Control::Knob { name, .. }) if name == "e2"))))
         {
             return None;
         }
@@ -2010,14 +2009,14 @@ mod tests {
     }
 
     #[test]
-    fn seeded_smc_master_knob_keeps_owner_overrides() {
+    fn seeded_smc_master_knob_keeps_owner_overrides_and_removals() {
         let mut profile = Profile::from_toml(
             "smc-pad.toml",
             include_str!("../../../config/devices/smc-pad.toml"),
         )
         .unwrap();
         profile.set_seeded(true);
-        for cc in [35, 36] {
+        for cc in [35, 36, 37] {
             assert!(
                 profile
                     .resolve(Screen::Files, Msg::parse(&[0xB0, cc, 65]).unwrap())
@@ -2025,14 +2024,7 @@ mod tests {
             );
         }
         let turn = Msg::parse(&[0xB0, 37, 65]).unwrap();
-        assert!(matches!(
-            profile.resolve(Screen::Pads, turn),
-            Some(Resolved::Step {
-                target: StepTarget::Param(Param::MasterVolume),
-                steps: 1,
-                ..
-            })
-        ));
+        assert_eq!(profile.resolve(Screen::Pads, turn), None);
         profile.set_learned(Scope::Global, [(Key::Cc(37), "pad.pitch".into())].into());
         assert!(matches!(
             profile.resolve(Screen::Pads, turn),

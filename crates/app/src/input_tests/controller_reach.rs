@@ -3223,3 +3223,28 @@ fn canceled_or_refused_layout_updates_are_safe_to_retry() {
     assert!(drive.app.master_db > volume);
     assert_eq!(drive.app.pads.bank, bank);
 }
+
+/// Scenario "Removed SMC-PAD knob stays unassigned on a saved map" (input-devices).
+#[test]
+fn removed_smc_pad_knob_stays_unassigned_on_a_saved_map() {
+    let files = TransitionFiles::new();
+    let path = old_layout_file(&files);
+    let saved = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, saved.replace("\"cc 37\" = \"bank\"\n", "")).unwrap();
+    let mut drive = saved_layout_drive(&path);
+    let volume = drive.app.master_db;
+    turn(&mut drive, 37, 65);
+    assert_eq!(drive.app.master_db, volume);
+    assert_eq!(drive.app.pads.bank, 0);
+
+    open_layout_review(&mut drive);
+    assert!(!drive.app.midi_list().iter().any(|row| matches!(row,
+        MidiListRow::SmcLayoutSlot(slot) if slot.label().contains("cc 37)")
+    )));
+    select_layout_row(&mut drive, |row| matches!(row, MidiListRow::SmcLayoutApply));
+    drive.tap(KeyCode::Enter, M::NONE);
+    let saved = config::load_from(&path).config.midi;
+    assert!(!saved["SMC-PAD"]["global"].contains_key("cc 37"));
+    turn(&mut drive, 37, 65);
+    assert_eq!(drive.app.master_db, volume);
+}
