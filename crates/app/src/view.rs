@@ -31,7 +31,7 @@ fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
     match action {
         Action::Back => Some(false),
         Action::Confirm => Some(true),
-        _ if matches!(ask, Ask::Exit { .. }) => None,
+        _ if matches!(ask, Ask::Exit { .. } | Ask::SmcLayout(_)) => None,
         Action::SettingsLearn if matches!(ask, Ask::ResetProfile { .. }) => Some(true),
         Action::BrowserLoad if matches!(ask, Ask::PutFile { .. }) => Some(true),
         Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit
@@ -328,6 +328,7 @@ impl FrameText {
         }
         tui::Feedback {
             inputs: Arc::clone(&self.inputs),
+            knob_strip: app.smc_knob_strip(),
             recording_seconds: app
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
@@ -344,6 +345,7 @@ impl App {
     pub(super) fn status_feedback_at(&self, now: Instant) -> tui::Feedback {
         tui::Feedback {
             inputs: self.input_sources.snapshot(now).into(),
+            knob_strip: None,
             recording_seconds: self
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),
@@ -356,6 +358,7 @@ impl App {
         let ask = self.ask.as_ref()?;
         let verb = match ask {
             Ask::Exit { .. } => "exit",
+            Ask::SmcLayout(_) => "apply",
             Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
             Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
             Ask::ClearPads { .. } | Ask::ClearPattern { .. } => "clear",

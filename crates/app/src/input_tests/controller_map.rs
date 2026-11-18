@@ -174,19 +174,63 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         let mut drive = Drive::smc_offline();
         touch(&mut drive, port);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e2").contains("volume"));
+        assert!(role(&mut drive, "e3").contains("volume"));
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         assert!(drive.app.pattern_panel.is_some());
         open(&mut drive, size);
-        assert!(role(&mut drive, "e2").contains("bars"));
+        assert!(role(&mut drive, "e2").contains("tempo"));
+        assert!(role(&mut drive, "e5").contains("bars"));
         assert!(role(&mut drive, "e3").contains("quant"));
         assert!(role(&mut drive, "e4").contains("str"));
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e2").contains("volume"));
+        assert!(role(&mut drive, "e3").contains("volume"));
     }
+}
+
+/// Scenario "Last knob input marks its bank" (screen-layout).
+#[test]
+fn last_knob_input_marks_its_bank() {
+    let port = "SINCO SMC-PAD-Master 28:1";
+    let mut drive = Drive::smc_offline();
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, None);
+
+    drive.bytes(port, &[0xB0, 30, 65]);
+    drive.frame();
+    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, Some(0));
+    drive.bytes(port, &[0xB0, 38, 64]);
+    drive.frame();
+    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, Some(0));
+    let volume = drive.app.pads.volume_db[0];
+    drive.bytes(port, &[0xB0, 44, 65]);
+    drive.frame();
+    let strip = drive.app.smc_knob_strip().unwrap();
+    assert_eq!(strip.last_bank, Some(1));
+    assert_eq!(strip.roles[1][6], ("pan", false));
+    assert_eq!(drive.app.pads.volume_db[0], volume);
+
+    let connection = drive.midi().recorded_connection(port).unwrap();
+    drive.midi().recorded_disconnect(port);
+    drive.frame();
+    assert!(drive.app.smc_knob_strip().is_none());
+    drive.midi().recorded_connect(port);
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    drive.midi().recorded_bytes_from(
+        port,
+        &[0xB0, 45, 65],
+        &drive.project,
+        Some(crate::input_sources::Stamp {
+            connection,
+            at: Instant::now(),
+        }),
+    );
+    drive.frame();
+    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, None);
 }
 
 #[test]

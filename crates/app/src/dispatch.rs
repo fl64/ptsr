@@ -6,6 +6,41 @@ use super::{
     pad_name, pads,
 };
 
+pub(super) fn smc_live_pad_param(
+    port: &str,
+    control: &str,
+    target: input::midi::StepTarget,
+) -> Option<pads::Param> {
+    use input::midi::StepTarget;
+    if !port.contains("SMC-PAD-Master")
+        || !matches!(
+            control,
+            "f1" | "f2"
+                | "f3"
+                | "f4"
+                | "f5"
+                | "f6"
+                | "cc 38"
+                | "cc 39"
+                | "cc 40"
+                | "cc 41"
+                | "cc 42"
+                | "cc 43"
+        )
+    {
+        return None;
+    }
+    match target {
+        StepTarget::Param(Param::PadVolume) => Some(pads::Param::Volume),
+        StepTarget::Param(Param::PadCutoff) => Some(pads::Param::Cutoff),
+        StepTarget::Param(Param::PadPitch) => Some(pads::Param::Pitch),
+        StepTarget::Param(Param::PadDecay) => Some(pads::Param::Decay),
+        StepTarget::Param(Param::PadEffect(1)) => Some(pads::Param::Send1),
+        StepTarget::Param(Param::PadEffect(2)) => Some(pads::Param::Send2),
+        _ => None,
+    }
+}
+
 impl App {
     /// Runs an action; returns `true` to quit.
     pub(super) fn apply(&mut self, action: Action) -> bool {
@@ -64,6 +99,10 @@ impl App {
     fn run(&mut self, action: Action) -> bool {
         // the folder picker is open: the keys go to it before the screen (11)
         if self.ask.is_none() && self.path_picker.is_some() {
+            let action = match action {
+                Action::SmcList { next } => Action::SettingsValue(if next { 1 } else { -1 }),
+                action => action,
+            };
             self.picker_key(action);
             return false;
         }
@@ -115,6 +154,11 @@ impl App {
                         );
                     }
                 }
+                Action::Confirm if matches!(&self.ask, Some(Ask::SmcLayout(_))) => {
+                    if let Some(Ask::SmcLayout(review)) = self.ask.take() {
+                        self.apply_smc_layout(review);
+                    }
+                }
                 Action::Confirm
                 | Action::ChopCommit
                 | Action::ChopEdit
@@ -126,7 +170,7 @@ impl App {
                             self.request_quit();
                         }
                         Some(Ask::Plan { .. }) => self.apply_plan(),
-                        Some(Ask::ResetProfile { .. }) => {}
+                        Some(Ask::ResetProfile { .. } | Ask::SmcLayout(_)) => {}
                         Some(Ask::ResetPads { pads, .. }) => {
                             let pads = pads.clone();
                             self.ask = None;
@@ -307,6 +351,7 @@ impl App {
             Action::ScreenPattern => {
                 self.goto(Screen::Pads);
                 self.pattern_view.overview = true;
+                self.pattern_view.browse_cell = None;
             }
             Action::ScreenFiles => self.goto(Screen::Files),
             Action::ScreenFx => self.goto(Screen::Fx),
@@ -812,6 +857,11 @@ impl App {
                     Some(MidiListRow::SmcPadBank) => {
                         self.set_smc_pad_bank(!self.midi_gestures.smc_pad_bank_opens_panel)
                     }
+                    Some(MidiListRow::SmcLayoutList(_)) => {
+                        self.help_overlay.controller.smc_layout_open ^= true;
+                    }
+                    Some(MidiListRow::SmcLayoutApply) => self.ask_smc_layout(None),
+                    Some(MidiListRow::SmcLayoutSlot(slot)) => self.ask_smc_layout(Some(slot)),
                     Some(MidiListRow::Reset { name, port }) => {
                         self.ask = Some(Ask::ResetProfile {
                             lines: vec![
@@ -881,6 +931,7 @@ impl App {
                 }
             }
             Action::Confirm | Action::SettingsLearn | Action::SettingsClear => {}
+            Action::SmcList { next } => self.smc_list(next),
             Action::SettingsValue(step) => self.change(self.settings_row, step as isize),
             Action::SettingsTab => {
                 self.settings_tab = (self.settings_tab + 1) % 4;
@@ -1115,6 +1166,7 @@ impl App {
 
     pub(super) fn midi_ui_event(&mut self, ev: midi::UiEvent) {
         self.input_sources.observe(&ev, Instant::now());
+        self.observe_smc_knob(&ev);
         let sequence = ev.sequence();
         let preview_ready = ev.preview_ready();
         let origin = ev
@@ -1313,8 +1365,18 @@ impl App {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
         // a button runs its action through `apply`, which keeps the step itself
-        let before = (matches!(self.screen, Screen::Pads | Screen::Fx)
-            && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. }))
+        let live_pad = match &ev {
+            midi::Event::Step {
+                port,
+                control,
+                target,
+                ..
+            } => smc_live_pad_param(port, control, *target),
+            _ => None,
+        };
+        let before = (live_pad.is_some()
+            || (matches!(self.screen, Screen::Pads | Screen::Fx)
+                && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. })))
         .then(|| self.before());
         self.midi_event_inner(ev, released);
         if let Some(b) = before {
@@ -1406,6 +1468,15 @@ impl App {
                 self.panel.disconnect(&port);
                 if port.contains("SMC-PAD-Master") {
                     self.help_overlay.controller.smc_status = None;
+                    if self
+                        .help_overlay
+                        .controller
+                        .smc_last_knob
+                        .as_ref()
+                        .is_some_and(|(source, _, _)| *source == port)
+                    {
+                        self.help_overlay.controller.smc_last_knob = None;
+                    }
                 }
                 self.post_system_notice(Level::Warn, (format!("MIDI disconnected: {port}"), now));
                 self.midi_devices.retain(|(p, _)| *p != port);
@@ -2073,6 +2144,7 @@ impl App {
                     | Param::PadStart
                     | Param::PadEnd
                     | Param::Slot(_)
+                    | Param::SmcPageValue(_)
                     | Param::Page
                     | Param::PatternBars
                     | Param::PatternQuantize
@@ -2148,6 +2220,7 @@ impl App {
                         | Param::PadStart
                         | Param::PadEnd
                         | Param::Slot(_)
+                        | Param::SmcPageValue(_)
                         | Param::Page
                         | Param::PatternBars
                         | Param::PatternQuantize
@@ -2191,6 +2264,7 @@ impl App {
                             | Param::PadStart
                             | Param::PadEnd
                             | Param::Slot(_)
+                            | Param::SmcPageValue(_)
                             | Param::Page
                             | Param::PatternBars
                             | Param::PatternQuantize
@@ -2215,6 +2289,96 @@ impl App {
         self.say_changed(changed, false);
     }
 
+    fn smc_list(&mut self, next: bool) {
+        if self.transport_input_blocked() || self.help_open || self.pattern_panel.is_some() {
+            return;
+        }
+        let action = match self.screen {
+            Screen::Pads if self.pattern_view.overview => {
+                self.move_pattern_position(if next { 1 } else { -1 }, true);
+                return;
+            }
+            Screen::Pads if self.edit => {
+                if next {
+                    Action::PageNext
+                } else {
+                    Action::PagePrev
+                }
+            }
+            Screen::Pads => {
+                if next {
+                    Action::BankNext
+                } else {
+                    Action::BankPrev
+                }
+            }
+            Screen::Files => {
+                if next {
+                    Action::BrowserEnter
+                } else {
+                    Action::BrowserParent
+                }
+            }
+            Screen::Fx => {
+                self.select_fx(usize::from(next));
+                return;
+            }
+            Screen::Settings => {
+                self.settings_tab = (self.settings_tab + if next { 1 } else { 3 }) % 4;
+                self.learning = None;
+                self.midi_run = None;
+                return;
+            }
+            _ => return,
+        };
+        self.run(action);
+    }
+
+    fn smc_move_position(&mut self, steps: i32) {
+        if self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        if self.screen == Screen::Pads && self.pattern_view.overview && self.pattern_panel.is_none()
+        {
+            self.move_pattern_position(steps, false);
+            return;
+        }
+        let right = steps > 0;
+        let action = if self.pattern_panel.is_some() {
+            if right {
+                Action::PatternParamNext
+            } else {
+                Action::PatternParamPrev
+            }
+        } else {
+            match self.screen {
+                Screen::Pads if self.edit => {
+                    if right {
+                        Action::ParamNext
+                    } else {
+                        Action::ParamPrev
+                    }
+                }
+                Screen::Pads => Action::PadSelect(if right {
+                    input::Dir::Right
+                } else {
+                    input::Dir::Left
+                }),
+                Screen::Fx => {
+                    if right {
+                        Action::ParamNext
+                    } else {
+                        Action::ParamPrev
+                    }
+                }
+                _ => return,
+            }
+        };
+        for _ in 0..steps.unsigned_abs() {
+            self.run(action);
+        }
+    }
+
     fn midi_step(
         &mut self,
         port: &str,
@@ -2225,6 +2389,17 @@ impl App {
     ) {
         use input::midi::{ListTarget, StepTarget};
         if steps == 0 || self.ask.is_some() {
+            return;
+        }
+        if self.plan.is_some()
+            && port.contains("SMC-PAD-Master")
+            && matches!(
+                target,
+                StepTarget::Param(
+                    Param::SliceStart | Param::SliceEnd | Param::RegionStart | Param::RegionEnd
+                )
+            )
+        {
             return;
         }
         let smc_selector = port.contains("SMC-PAD-Master") && matches!(control, "e1" | "cc 30");
@@ -2264,6 +2439,20 @@ impl App {
             }
             return;
         }
+        if let Some(param) = smc_live_pad_param(port, control, target) {
+            if !self.transport_input_blocked() && !self.help_open {
+                self.pickup = None;
+                let commands = self.pads.step_selected_value(param, steps);
+                if !commands.is_empty() {
+                    for command in commands {
+                        self.send(command);
+                    }
+                    self.dirty();
+                    self.lit = Some((Lit::Pad(param), Instant::now()));
+                }
+            }
+            return;
+        }
         if self.pattern_panel.is_some()
             && (matches!(target, StepTarget::List(ListTarget::Page))
                 || matches!(target, StepTarget::Param(param) if !matches!(param,
@@ -2300,6 +2489,10 @@ impl App {
                     Action::PagePrev
                 })
             }
+            StepTarget::List(ListTarget::SmcPosition) => {
+                self.smc_move_position(steps);
+                return;
+            }
             StepTarget::List(ListTarget::Bank) => Some(if right {
                 Action::BankNext
             } else {
@@ -2313,6 +2506,15 @@ impl App {
                     steps,
                     fine,
                 );
+            }
+            StepTarget::Param(Param::SmcPageValue(knob)) => {
+                if !self.transport_input_blocked()
+                    && !self.help_open
+                    && let Some(param) = self.smc_page_value(knob)
+                {
+                    self.midi_step(port, control, StepTarget::Param(param), steps, fine);
+                }
+                return;
             }
             StepTarget::Param(Param::Slot(k)) => {
                 if self.pattern_panel.is_some() {
@@ -2337,8 +2539,30 @@ impl App {
             StepTarget::Param(Param::MasterVolume) => {
                 Some(Action::MasterVolume(if right { 1 } else { -1 }))
             }
+            StepTarget::Param(Param::Tempo)
+                if self.pattern_panel.is_some()
+                    && port.contains("SMC-PAD-Master")
+                    && matches!(control, "e2" | "cc 31") =>
+            {
+                if self.help_open {
+                    return;
+                }
+                Some(Action::TempoStep {
+                    up: right,
+                    fine: fine || steps.unsigned_abs() == 1,
+                })
+            }
             StepTarget::Param(Param::Tempo) => Some(Action::TempoStep { up: right, fine }),
             StepTarget::Param(Param::Zoom) if self.screen == Screen::Chop => {
+                if self.plan.is_none()
+                    && port.contains("SMC-PAD-Master")
+                    && matches!(control, "e2" | "cc 31")
+                {
+                    if let Some(chop) = self.chop.as_mut() {
+                        chop.zoom_quarter_steps(steps);
+                    }
+                    return;
+                }
                 Some(Action::ChopZoom { zoom_in: right })
             }
             StepTarget::Param(Param::Cursor) if self.screen == Screen::Chop => {

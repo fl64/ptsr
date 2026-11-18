@@ -168,6 +168,7 @@ enum Raw {
     Msg(String, Msg, Stamp),
     /// New learned assignments of a profile in a group.
     Learned(String, Scope, HashMap<Key, Binding>),
+    LearnedSet(LearnedMaps),
     /// The roles of a profile are copied into the learned maps (59): only those act now.
     Seeded(String),
     HoldTime(Duration),
@@ -664,6 +665,10 @@ impl Midi {
             .send(Raw::Learned(profile.into(), group.scope(), map));
     }
 
+    pub(super) fn set_learned_groups(&self, maps: LearnedMaps) {
+        let _ = self.updates.send(Raw::LearnedSet(maps));
+    }
+
     /// The profile's roles live in the learned maps from now on (59).
     pub fn set_seeded(&self, profile: &str) {
         let _ = self.updates.send(Raw::Seeded(profile.into()));
@@ -1085,6 +1090,13 @@ fn dispatch(
                     }
                 }
                 learned.insert((name, scope), map);
+                continue;
+            }
+            Raw::LearnedSet(maps) => {
+                for profile in profiles.iter_mut().chain(defaults.values_mut()) {
+                    apply_learned(profile, &maps);
+                }
+                learned.extend(maps);
                 continue;
             }
             Raw::Seeded(name) => {
@@ -4301,10 +4313,14 @@ mod tests {
         for (screen, left, right) in [
             (
                 Screen::Pads,
-                Action::PadSelect(input::Dir::Left),
-                Action::PadSelect(input::Dir::Right),
+                Action::SmcList { next: false },
+                Action::SmcList { next: true },
             ),
-            (Screen::Files, Action::BrowserUp, Action::BrowserDown),
+            (
+                Screen::Files,
+                Action::SmcList { next: false },
+                Action::SmcList { next: true },
+            ),
             (
                 Screen::Chop,
                 Action::MarkerSelect(-1),
@@ -4424,7 +4440,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             profile.control_action(Screen::Pads, false, "e1"),
-            Some("bank")
+            Some("smc.position")
         );
         assert_eq!(
             profile.control_action(Screen::Files, false, "e1"),
@@ -4438,17 +4454,11 @@ mod tests {
             profile.control_action(Screen::Pads, false, "f8"),
             Some("master.volume")
         );
-        assert_eq!(
-            profile.control_action(Screen::Files, false, "e6"),
-            Some("edit.page")
-        );
-        assert_eq!(
-            profile.control_action(Screen::Files, false, "e7"),
-            Some("transport.tempo")
-        );
+        assert_eq!(profile.control_action(Screen::Files, false, "e6"), None);
+        assert_eq!(profile.control_action(Screen::Files, false, "e7"), None);
         assert_eq!(
             profile.control_action(Screen::Files, false, "e8"),
-            Some("bank")
+            Some("master.volume")
         );
     }
 
@@ -4490,7 +4500,7 @@ mod tests {
         assert_eq!(
             events
                 .iter()
-                .filter(|event| matches!(event, Event::Action(Action::PadSelect(input::Dir::Left))))
+                .filter(|event| matches!(event, Event::Action(Action::SmcList { next: false })))
                 .count(),
             1
         );

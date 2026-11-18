@@ -77,6 +77,13 @@ rows = [
   ["",   "",   "",   "",   "c13", "c14", "c15", "c16", ""],
 ]
 
+knob_pairs = [
+  { scope = "chop", left = "slice.start", right = "slice.end" },
+  { scope = "chop", left = "chop.region_start_pos", right = "chop.region_end_pos" },
+  { scope = "global", left = "pad.send_1", right = "pad.send_2" },
+  { scope = "fx", left = "edit.param_2", right = "edit.param_3" },
+]
+
 [screens.global]
 play = { tap = "play.context", hold = "metronome.toggle" }
 stop = "stop.context"
@@ -98,27 +105,28 @@ c14 = "panel.cell.14"
 c15 = "panel.cell.15"
 c16 = "panel.cell.16"
 f1 = "pad.volume"
+f2 = "pad.cutoff"
 f3 = "pad.pitch"
-f4 = "pad.cutoff"
-f5 = "pad.decay"
+f4 = "pad.decay"
+f5 = "pad.send_1"
+f6 = "pad.send_2"
 f8 = "master.volume"
-e1 = "projects.scroll"
-e6 = "edit.page"
-e7 = "transport.tempo"
-e8 = "bank"
+e1 = "smc.position"
+e8 = "master.volume"
 
 [screens.pads]
-left = "pad.select_left"
-right = "pad.select_right"
-e1 = "bank"
-e2 = "pad.volume"
-e3 = "pad.pitch"
-e4 = "pad.cutoff"
-e5 = "pad.decay"
+left = "smc.list_prev"
+right = "smc.list_next"
+e2 = "smc.page_2"
+e3 = "smc.page_3"
+e4 = "smc.page_4"
+e5 = "smc.page_5"
+e6 = "smc.page_6"
+e7 = "smc.page_7"
 
 [screens.files]
-left = "browser.up"
-right = "browser.down"
+left = "smc.list_prev"
+right = "smc.list_next"
 e1 = "files.scroll"
 
 [screens.chop]
@@ -126,18 +134,28 @@ left = "marker.prev"
 right = "marker.next"
 e1 = "chop.cursor_pos"
 e2 = "chop.zoom"
-e3 = "chop.threshold"
-e4 = "slice.start"
-e5 = "slice.end"
+e3 = "slice.start"
+e4 = "slice.end"
+e5 = "chop.region_start_pos"
+e6 = "chop.region_end_pos"
+e7 = "chop.threshold"
 
 [screens.pattern]
-e1 = "bank"
-e2 = "pattern.bars"
+e1 = "smc.position"
+e2 = "transport.tempo"
 e3 = "pattern.quantize"
 e4 = "pattern.strength"
+e5 = "pattern.bars"
+
+[screens.fx]
+left = "smc.list_prev"
+right = "smc.list_next"
+e2 = "edit.param_1"
+e3 = "edit.param_2"
+e4 = "edit.param_3"
 
 [screens.settings]
-left = "settings.row_prev"
-right = "settings.row_next"
+left = "smc.list_prev"
+right = "smc.list_next"
 e1 = "settings.row"
 e2 = "settings.value_next"

@@ -18,6 +18,8 @@ pub(super) struct State {
     pub last_port: Option<String>,
     /// The latest USB setup result for the measured SMC-PAD profile.
     pub smc_status: Option<(bool, String)>,
+    pub smc_layout_open: bool,
+    pub smc_last_knob: Option<(String, usize, std::time::Instant)>,
 }
 
 /// The full help text of an action; knob names outside the learn list have none.
@@ -255,6 +257,157 @@ impl App {
         *scroll = (*scroll).min(at).max((at + 1).saturating_sub(rows));
     }
 
+    pub(super) fn observe_smc_knob(&mut self, event: &super::midi::UiEvent) {
+        let super::midi::Event::Message {
+            port,
+            profile,
+            msg:
+                input::midi::Msg::Cc {
+                    ch: 1,
+                    cc,
+                    value: 63 | 65,
+                },
+            ..
+        } = &event.event
+        else {
+            return;
+        };
+        let Some(stamp) = event.source() else {
+            return;
+        };
+        let state = &mut self.help_overlay.controller;
+        if profile == "SMC-PAD"
+            && (30..=45).contains(cc)
+            && state.smc_status.as_ref().is_some_and(|(ready, _)| *ready)
+            && self
+                .input_sources
+                .connected()
+                .any(|(name, id)| name == port && id == stamp.connection)
+            && state
+                .smc_last_knob
+                .as_ref()
+                .is_none_or(|(_, _, at)| stamp.at >= *at)
+        {
+            state.smc_last_knob = Some((port.clone(), usize::from(*cc >= 38), stamp.at));
+        }
+    }
+
+    fn smc_context(&self) -> (&'static str, &'static str, &'static str) {
+        use super::panel::View;
+        if self.project_picker.is_some() {
+            ("Projects", "Project", "select")
+        } else if self.path_picker.is_some() {
+            ("Paths", "Folder", "folder")
+        } else if self.pattern_panel.is_some() {
+            ("Transport", "Page", "param")
+        } else {
+            match self.panel_view() {
+                View::Pads => (self.pads.page().0, "Bank", "pad"),
+                View::PadEdit => (self.pads.page().0, "Page", "param"),
+                View::Pattern => ("Pattern", "Bar", "step"),
+                View::Chop | View::ChopEdit => ("Chop", "Slice", "cursor"),
+                View::Files => ("Files", "Folder", "file"),
+                View::Settings => ("Settings", "Tab", "row"),
+                View::Fx => (["FX 1", "FX 2"][self.fx_slot], "Slot", "param"),
+            }
+        }
+    }
+
+    fn smc_knob_role(&self, name: &str, action: Option<&str>) -> (&'static str, bool) {
+        match action {
+            Some("smc.position") => (self.smc_context().2, true),
+            Some("master.volume") => ("master", true),
+            Some("settings.row") => ("row", true),
+            Some("settings.value_next") => ("value", true),
+            Some("files.scroll") => ("file", true),
+            Some("projects.scroll") => ("select", true),
+            Some(action) => {
+                let (label, unavailable) = self
+                    .smc_value_label(action)
+                    .unwrap_or_else(|| (input::short_label(action), false));
+                (label, !unavailable)
+            }
+            None if name == "f7" => ("pan", false),
+            None if name == "e6" && self.pattern_panel.is_some() => ("swing", false),
+            None => ("-", false),
+        }
+    }
+
+    pub(super) fn smc_knob_strip(&self) -> Option<tui::KnobStrip> {
+        if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
+            return None;
+        }
+        let connected = self
+            .midi_devices
+            .iter()
+            .any(|(_, profile)| profile == "SMC-PAD");
+        let profile = self
+            .profiles
+            .iter()
+            .find(|profile| profile.name == "SMC-PAD")
+            .filter(|_| connected)?;
+        let edit = self.edit_keys();
+        let action = |name| {
+            profile.control_action_context(self.screen, edit, self.pattern_panel.is_some(), name)
+        };
+        let (page, list, _) = self.smc_context();
+        let ready = self
+            .help_overlay
+            .controller
+            .smc_status
+            .as_ref()
+            .is_some_and(|(ready, _)| *ready);
+        let names = [
+            ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8"],
+            ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"],
+        ];
+        let roles = names.map(|bank| {
+            bank.map(|name| {
+                let (label, available) = self.smc_knob_role(name, action(name));
+                (label, available && ready)
+            })
+        });
+        let last_bank = self
+            .help_overlay
+            .controller
+            .smc_last_knob
+            .as_ref()
+            .filter(|_| ready)
+            .map(|(_, bank, _)| *bank);
+        Some(tui::KnobStrip {
+            page,
+            list,
+            roles,
+            last_bank,
+        })
+    }
+
+    fn smc_value_label(&self, action: &str) -> Option<(&'static str, bool)> {
+        use input::midi::Param;
+        let param = match input::midi::param_of(action)? {
+            Param::SmcPageValue(knob) => {
+                let (label, param) = self.smc_page_role(knob).unwrap_or(("-", None));
+                return Some((label, param.is_none()));
+            }
+            Param::Slot(slot) => self.slot_param(slot),
+            _ => return None,
+        };
+        let text = match param {
+            Some(Param::PadSource) => "source",
+            Some(Param::PadEffect(0)) => "drive",
+            Some(Param::PadEffect(9)) => "group",
+            Some(Param::PadEffect(index @ 3..=8)) => {
+                self.pads.name(super::EFFECT_PARAMS[usize::from(index)])
+            }
+            Some(param) => input::midi::PARAMS
+                .iter()
+                .find_map(|(name, value)| (*value == param).then_some(input::short_label(name)))
+                .unwrap_or("-"),
+            None => "-",
+        };
+        Some((text, text == "-"))
+    }
+
     /// The tab as `tui` draws it.
     pub(super) fn controller_view(&mut self, keymap: &Keymap) -> tui::Controller {
         let key = |app: &App, action| {
@@ -299,6 +452,20 @@ impl App {
                 .unwrap_or("unavailable");
             Some((label, cell >= 15 || label == "unavailable"))
         };
+        let value_role = |name: &str| {
+            if profile.name != "SMC-PAD" {
+                return None;
+            }
+            let knob = matches!(profile.kind_of(name), Some(ControlKind::Knob));
+            if knob {
+                let (label, available) = self.smc_knob_role(name, action(name));
+                Some((label, !available))
+            } else if matches!(action(name), Some("smc.list_prev" | "smc.list_next")) {
+                Some((self.smc_context().1, false))
+            } else {
+                None
+            }
+        };
         let first = || match self.controller_drawing(profile) {
             Some(rows) => places(rows).first().map(|(_, _, n)| n.to_string()),
             None => profile.controls().first().map(|(n, _)| n.clone()),
@@ -318,10 +485,16 @@ impl App {
                         "{name} · {kind} · panel cell · {role}{}",
                         if free { " unavailable" } else { "" }
                     ),
-                    None => match action(name) {
-                        Some(a) => format!("{name} · {kind} · {a} · {}", label(a)),
-                        None => format!("{name} · {kind} · free"),
-                    },
+                    None => {
+                        if let Some((role, _)) = value_role(name) {
+                            format!("{name} · {kind} · {role}")
+                        } else {
+                            match action(name) {
+                                Some(a) => format!("{name} · {kind} · {a} · {}", label(a)),
+                                None => format!("{name} · {kind} · free"),
+                            }
+                        }
+                    }
                 }
             }
             None => String::new(),
@@ -349,13 +522,14 @@ impl App {
                                 }
                                 let (open, close) =
                                     brackets(profile.kind_of(name).unwrap_or(ControlKind::Button));
-                                let (short, free) = match panel_role(name) {
-                                    Some((role, free)) => (role, free),
-                                    None => (
-                                        action(name).map_or("-", input::short_label),
-                                        action(name).is_none(),
-                                    ),
-                                };
+                                let (short, free) =
+                                    match panel_role(name).or_else(|| value_role(name)) {
+                                        Some((role, free)) => (role, free),
+                                        None => (
+                                            action(name).map_or("-", input::short_label),
+                                            action(name).is_none(),
+                                        ),
+                                    };
                                 Some(tui::ControlCell {
                                     name: name.to_string(),
                                     label: format!("{open}{short}{close}"),
@@ -372,8 +546,11 @@ impl App {
                     .controls()
                     .iter()
                     .map(|(name, kind)| {
-                        let what =
-                            action(name).map_or("-".to_string(), |a| format!("{a} · {}", label(a)));
+                        let what = if let Some((role, _)) = value_role(name) {
+                            role.into()
+                        } else {
+                            action(name).map_or("-".to_string(), |a| format!("{a} · {}", label(a)))
+                        };
                         (format!("{name} {}", kind.name()), what)
                     })
                     .collect();

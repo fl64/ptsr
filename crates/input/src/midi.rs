@@ -141,6 +141,8 @@ pub const PARAMS: &[(&str, Param)] = &[
     ("pad.reso", Param::PadReso),
     ("pad.start", Param::PadStart),
     ("pad.end", Param::PadEnd),
+    ("pad.send_1", Param::PadEffect(1)),
+    ("pad.send_2", Param::PadEffect(2)),
     ("master.volume", Param::MasterVolume),
     ("transport.tempo", Param::Tempo),
     ("pattern.bars", Param::PatternBars),
@@ -156,6 +158,12 @@ pub const PARAMS: &[(&str, Param)] = &[
     ("edit.param_1", Param::Slot(0)),
     ("edit.param_2", Param::Slot(1)),
     ("edit.param_3", Param::Slot(2)),
+    ("smc.page_2", Param::SmcPageValue(2)),
+    ("smc.page_3", Param::SmcPageValue(3)),
+    ("smc.page_4", Param::SmcPageValue(4)),
+    ("smc.page_5", Param::SmcPageValue(5)),
+    ("smc.page_6", Param::SmcPageValue(6)),
+    ("smc.page_7", Param::SmcPageValue(7)),
     ("edit.page", Param::Page),
     // Keep the direct shared FX names from the former pad edit (82).
     ("pad.fx1_type", Param::PadEffect(3)),
@@ -207,6 +215,7 @@ pub enum Param {
     PadReso,
     /// The k-th parameter of the edit page (`edit.param_1..3`); the app picks the parameter.
     Slot(u8),
+    SmcPageValue(u8),
     /// The page of the edit (54): the travel split into equal parts, one per page.
     Page,
     /// Pads edit, the FX pages (56): the n-th of drive, send 1, send 2, then the kind and
@@ -221,6 +230,7 @@ pub enum ListTarget {
     Settings,
     Page,
     Bank,
+    SmcPosition,
 }
 
 impl ListTarget {
@@ -231,6 +241,7 @@ impl ListTarget {
             Self::Settings => "settings.row",
             Self::Page => "edit.page",
             Self::Bank => "bank",
+            Self::SmcPosition => "smc.position",
         }
     }
 }
@@ -248,6 +259,7 @@ fn list_target_of(name: &str) -> Option<ListTarget> {
         "settings.row" => Some(ListTarget::Settings),
         "edit.page" => Some(ListTarget::Page),
         "bank" => Some(ListTarget::Bank),
+        "smc.position" => Some(ListTarget::SmcPosition),
         _ => None,
     }
 }
@@ -1413,8 +1425,7 @@ impl Profile {
             && !(self.name == "SMC-PAD"
                 && (matches!(control, Some(Control::Button(name)) if smc_new_control(name))
                     || (screen == Screen::Settings
-                        && matches!(control, Some(Control::Knob { name, .. }) if name == "e2"))
-                    || matches!(control, Some(Control::Knob { name, .. }) if matches!(name.as_str(), "e6" | "e7" | "e8"))))
+                        && matches!(control, Some(Control::Knob { name, .. }) if name == "e2"))))
         {
             return None;
         }
@@ -1948,7 +1959,7 @@ mod tests {
                 .resolve_input_mode(Screen::Pads, mode, false, turn)
                 .0,
             Some(Resolved::Step {
-                target: StepTarget::Param(Param::PatternBars),
+                target: StepTarget::Param(Param::Tempo),
                 ..
             })
         ));
@@ -1998,27 +2009,25 @@ mod tests {
     }
 
     #[test]
-    fn seeded_smc_panel_and_transport_knobs_keep_owner_overrides() {
+    fn seeded_smc_master_knob_keeps_owner_overrides_and_removals() {
         let mut profile = Profile::from_toml(
             "smc-pad.toml",
             include_str!("../../../config/devices/smc-pad.toml"),
         )
         .unwrap();
         profile.set_seeded(true);
-        for (cc, target) in [
-            (35, StepTarget::List(ListTarget::Page)),
-            (36, StepTarget::Param(Param::Tempo)),
-            (37, StepTarget::List(ListTarget::Bank)),
-        ] {
-            let msg = Msg::parse(&[0xB0, cc, 65]).unwrap();
-            assert!(matches!(
-                profile.resolve(Screen::Pads, msg),
-                Some(Resolved::Step { target: found, steps: 1, .. }) if found == target
-            ));
+        for cc in [35, 36, 37] {
+            assert!(
+                profile
+                    .resolve(Screen::Files, Msg::parse(&[0xB0, cc, 65]).unwrap())
+                    .is_none()
+            );
         }
-        profile.set_learned(Scope::Global, [(Key::Cc(35), "pad.pitch".into())].into());
+        let turn = Msg::parse(&[0xB0, 37, 65]).unwrap();
+        assert_eq!(profile.resolve(Screen::Pads, turn), None);
+        profile.set_learned(Scope::Global, [(Key::Cc(37), "pad.pitch".into())].into());
         assert!(matches!(
-            profile.resolve(Screen::Pads, Msg::parse(&[0xB0, 35, 65]).unwrap()),
+            profile.resolve(Screen::Pads, turn),
             Some(Resolved::Step {
                 target: StepTarget::Param(Param::PadPitch),
                 ..

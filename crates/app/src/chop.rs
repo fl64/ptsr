@@ -783,14 +783,14 @@ impl Chop {
         } else {
             (len * 2).min(whole)
         };
-        if new_len == len {
-            return;
-        }
-        let at = (self.cursor.saturating_sub(self.view.start)) as f32 / len.max(1) as f32;
-        let start = (self.cursor as f32 - at * new_len as f32) as usize;
-        self.view.start = start.min(whole.saturating_sub(new_len));
-        self.view.end = self.view.start + new_len;
-        self.follow();
+        self.zoom_to_len(new_len);
+    }
+
+    pub(super) fn zoom_quarter_steps(&mut self, steps: i32) {
+        let len = self.view.end.saturating_sub(self.view.start);
+        let factor = 2.0_f64.powf(-f64::from(steps) / 4.0);
+        let new_len = (len as f64 * factor).round() as usize;
+        self.zoom_to_len(new_len.clamp(MIN_VIEW.min(len), self.sound.len()));
     }
 
     /// The zoom as a knob position 0..1 on a log scale: 0 is the whole file,
@@ -819,6 +819,11 @@ impl Chop {
             (MIN_VIEW as f32 * (span * (1.0 - pos.clamp(0.0, 1.0))).exp()).round() as usize
         }
         .clamp(MIN_VIEW.min(whole), whole);
+        self.zoom_to_len(len);
+    }
+
+    fn zoom_to_len(&mut self, len: usize) {
+        let whole = self.sound.len();
         let now = self.view.end.saturating_sub(self.view.start);
         if len == now {
             return;

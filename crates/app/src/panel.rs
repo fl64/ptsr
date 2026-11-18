@@ -431,11 +431,58 @@ mod tests {
                 },
                 "{view:?}"
             );
-            for cell in 9..=12 {
-                assert!(config.cell(view, 0, cell).is_some(), "{view:?} {cell}");
-            }
-            assert!(config.cell(view, 1, 1).is_some(), "{view:?}");
+            let current_actions = (9..=12)
+                .filter(|&cell| config.cell(view, 0, cell).is_some())
+                .count();
+            let editor = matches!(view, View::PadEdit | View::ChopEdit | View::Fx);
+            assert_eq!(current_actions, if editor { 0 } else { 4 }, "{view:?}");
+            assert!(
+                (1..=10).any(|cell| config.cell(view, 1, cell).is_some()),
+                "{view:?}"
+            );
         }
+    }
+
+    /// Scenario "Layout rejects a split or reversed panel pair" (command-panel).
+    #[test]
+    fn layout_rejects_a_split_or_reversed_panel_pair() {
+        let adjacent =
+            |left: i64, right: i64| left + 1 == right && (left - 1) / 4 == (right - 1) / 4;
+        let source: toml::Value =
+            toml::from_str(include_str!("../../../config/panel.toml")).unwrap();
+        let mut checked = 0;
+        for view in source["view"].as_array().unwrap() {
+            let mut pairs = HashMap::<&str, [Option<i64>; 2]>::new();
+            for cell in view["cells"].as_array().unwrap() {
+                let Some(pair) = cell.get("pair").and_then(toml::Value::as_str) else {
+                    continue;
+                };
+                let (name, side) = pair.split_once(':').unwrap();
+                let side = match side {
+                    "lower" => 0,
+                    "upper" => 1,
+                    _ => panic!("unknown side for {pair}"),
+                };
+                let slot = cell["cell"].as_integer().unwrap();
+                let previous = pairs.entry(name).or_default()[side].replace(slot);
+                assert!(previous.is_none(), "repeated side in {pair}");
+            }
+            for (name, slots) in pairs {
+                let [Some(left), Some(right)] = slots else {
+                    panic!("missing side in {name}")
+                };
+                assert!(
+                    adjacent(left, right),
+                    "{name} uses cells {left} and {right}"
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 4);
+        assert!(adjacent(7, 8), "No and Yes");
+        assert!(adjacent(14, 15), "Undo and Redo");
+        assert!(!adjacent(4, 5), "split row");
+        assert!(!adjacent(8, 7), "reversed roles");
     }
 
     /// Scenario "Fixed cells stay on the bottom row" (command-panel).
@@ -485,6 +532,7 @@ mod tests {
         assert_eq!(panel.page(), 1);
     }
 
+    /// Scenario "Encoder selects a later context page" (controller-reach).
     #[test]
     fn encoder_page_selection_needs_a_visible_context_page() {
         let mut panel = State::default();
@@ -496,7 +544,7 @@ mod tests {
         panel.choice(View::Pads, 8);
         panel.select_context_page(View::Pads, 2);
         assert_eq!(panel.page(), 3);
-        assert_eq!(panel.label(View::Pads, 1), Some("bpm -"));
+        assert_eq!(panel.label(View::Pads, 5), Some("erase"));
         panel.select_context_page(View::Pads, -1);
         assert_eq!(panel.page(), 2);
         assert_eq!(panel.label(View::Pads, 10), Some("exit"));

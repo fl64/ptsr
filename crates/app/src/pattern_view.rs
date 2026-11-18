@@ -61,6 +61,7 @@ pub(super) struct State {
     pub edit: bool,
     pub cursor_cell: usize,
     pub cursor_visited: bool,
+    pub browse_cell: Option<usize>,
     pub selected_event: Option<SelectedEvent>,
     pub midi_presses: std::collections::HashSet<(usize, u64)>,
     pub step_generations: Vec<u64>,
@@ -75,6 +76,7 @@ impl Default for State {
             edit: false,
             cursor_cell: 0,
             cursor_visited: false,
+            browse_cell: None,
             selected_event: None,
             midi_presses: std::collections::HashSet::new(),
             step_generations: vec![0; MAX_HITS],
@@ -322,6 +324,49 @@ impl super::App {
             self.pattern_view.cursor_cell.saturating_sub(1)
         };
         self.pattern_view.selected_event = None;
+    }
+
+    pub(super) fn move_pattern_position(&mut self, steps: i32, bars: bool) {
+        if !self.pattern_view.overview || self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        let Ok(model) = self.step_model() else {
+            return;
+        };
+        let per_bar = model.division.cells_per_bar() as usize;
+        let count = usize::from(model.bars) * per_bar;
+        let cursor = if self.pattern_view.edit {
+            self.pattern_view.cursor_cell
+        } else if let Some(cell) = self.pattern_view.browse_cell {
+            cell
+        } else {
+            position(
+                self.pattern_snapshot(),
+                u32::from(model.bars) * TICKS_PER_BAR,
+            )
+            .map_or(0, |tick| (tick / model.division.spacing()) as usize)
+        }
+        .min(count.saturating_sub(1));
+        let next = if bars {
+            let bar = cursor / per_bar;
+            let next_bar = bar
+                .saturating_add_signed(steps as isize)
+                .min(usize::from(model.bars).saturating_sub(1));
+            if next_bar == bar {
+                return;
+            }
+            next_bar * per_bar
+        } else {
+            cursor
+                .saturating_add_signed(steps as isize)
+                .min(count.saturating_sub(1))
+        };
+        self.pattern_view.browse_cell = Some(next);
+        if self.pattern_view.edit {
+            self.pattern_view.cursor_cell = next;
+            self.pattern_view.cursor_visited = true;
+            self.pattern_view.selected_event = None;
+        }
     }
 
     pub(super) fn choose_step_event(&mut self, next: bool) {
@@ -578,12 +623,28 @@ impl super::App {
         view.total_cells = (u32::from(model.bars) * model.division.cells_per_bar()) as usize;
         let page =
             tui::pattern_overview_page_cells(width as usize, view.beat_cells, view.total_cells);
-        view.first_cell = if self.pattern_view.edit {
-            self.pattern_view.cursor_cell
+        let browse_cell = self.pattern_view.browse_cell.map(|cell| {
+            if self.pattern_view.edit {
+                self.pattern_view.cursor_cell
+            } else {
+                cell
+            }
+            .min(view.total_cells.saturating_sub(1))
+        });
+        view.first_cell = if let Some(cursor) = browse_cell {
+            let per_bar = model.division.cells_per_bar() as usize;
+            let bar = cursor / per_bar;
+            let step = cursor % per_bar;
+            view.header = format!("bar {} · step {} · {}", bar + 1, step + 1, view.header);
+            bar * per_bar + step / page * page
         } else {
-            view.playhead.unwrap_or(0)
-        } / page
-            * page;
+            let cursor = if self.pattern_view.edit {
+                self.pattern_view.cursor_cell
+            } else {
+                view.playhead.unwrap_or(0)
+            };
+            cursor / page * page
+        };
         let end = (view.first_cell + page).min(view.total_cells);
         (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
         if self.pattern_view.edit {
@@ -617,8 +678,12 @@ impl super::App {
             );
             return;
         }
-        let old_tick = self.pattern_view.cursor_cell as u32 * self.pattern_view.division.spacing();
+        let old_spacing = self.pattern_view.division.spacing();
+        let old_tick = self.pattern_view.cursor_cell as u32 * old_spacing;
         self.pattern_view.division.change(next);
+        if let Some(cell) = self.pattern_view.browse_cell.as_mut() {
+            *cell = *cell * old_spacing as usize / self.pattern_view.division.spacing() as usize;
+        }
         if self.pattern_view.edit {
             self.pattern_view.cursor_cell =
                 (old_tick / self.pattern_view.division.spacing()) as usize;

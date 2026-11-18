@@ -781,6 +781,9 @@ pub enum Action {
     SettingsRow(i8),
     SettingsValue(i8),
     SettingsTab,
+    SmcList {
+        next: bool,
+    },
     /// MIDI tab: wait for a control for the selected action / clear its learned control.
     SettingsLearn,
     SettingsClear,
@@ -1001,6 +1004,8 @@ impl Action {
             "settings.value_prev" => Self::SettingsValue(-1),
             "settings.value_next" => Self::SettingsValue(1),
             "settings.tab_next" => Self::SettingsTab,
+            "smc.list_prev" => Self::SmcList { next: false },
+            "smc.list_next" => Self::SmcList { next: true },
             "settings.learn" => Self::SettingsLearn,
             "settings.clear" => Self::SettingsClear,
             _ => return None,
@@ -1221,6 +1226,12 @@ pub fn short_label(action: &str) -> &'static str {
         "settings.value_prev" => "val<",
         "settings.value_next" => "val>",
         "settings.tab_next" => "tab>",
+        "smc.list_prev" => "list <",
+        "smc.list_next" => "list >",
+        "smc.position" => "pos",
+        "smc.page_2" | "smc.page_3" | "smc.page_4" | "smc.page_5" | "smc.page_6" | "smc.page_7" => {
+            "value"
+        }
         "settings.learn" => "learn",
         "settings.clear" => "clear",
         "browser.up" => "file^",
@@ -1280,6 +1291,8 @@ pub fn short_label(action: &str) -> &'static str {
         "chop.edit_only" => "edit",
         "chop.assign" => "assign",
         "chop.normalize" => "normal",
+        "pad.send_1" => "send 1",
+        "pad.send_2" => "send 2",
         "pad.fx1_type" => "fx1typ",
         "pad.fx1_size" => "fx1siz",
         "pad.fx1_tone" => "fx1ton",
@@ -1293,6 +1306,18 @@ pub fn short_label(action: &str) -> &'static str {
 /// Every action a key or a controller can drive, by group. Quitting is left out on purpose:
 /// a stray controller press must not close the program during a set.
 pub const ACTIONS: &[ActionInfo] = &[
+    ActionInfo {
+        name: "smc.list_prev",
+        label: "previous item in the main list",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "smc.list_next",
+        label: "next item in the main list",
+        group: Group::Global,
+        knob: false,
+    },
     ActionInfo {
         name: "play.context",
         label: "start or continue context playback",

@@ -156,7 +156,7 @@ pub(super) fn pad_frame(area: Rect, hidden: bool) -> PadFrame {
     }
     let free = area.height.saturating_sub(FRAME_ROWS);
     let waves = (free.saturating_sub(STRIP_FULL) / PAD_H).min(3);
-    let strip_h = (free - waves * PAD_H).max(STRIP_MIN);
+    let strip_h = (free - waves * PAD_H).max(STRIP_MIN.min(free));
     let [title, strip, body] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(strip_h),

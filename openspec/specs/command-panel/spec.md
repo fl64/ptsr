@@ -35,22 +35,34 @@ The panel SHALL draw 16 cells in the same top-to-bottom order as the physical pa
 
 ### Requirement: Panel pages expose screen and context commands
 
-The main page SHALL offer Pads, Files, Chop, Pattern, FX, Settings, Help and More, plus four current-screen actions. More SHALL open a context page. Each context page SHALL have up to ten actions, Next in cell 11 and Main in cell 12. Next SHALL cycle through context pages. The active page and count SHALL stay visible. A screen change or panel exit SHALL select the main page again. LEFT and RIGHT SHALL keep their current item-selection roles.
+The main page SHALL offer Pads, Files, Chop, Pattern, FX, Settings, Help, More
+and up to four screen actions. Unused cells SHALL stay dim.
+More SHALL open context pages with up to ten actions each.
+Cell 11 (Next) SHALL cycle them, and cell 12 (Main) SHALL return.
+It SHALL show the page and count. A screen change or exit SHALL select Main.
+LEFT and RIGHT SHALL keep their screen list.
+Direct controls SHALL replace value, parameter and edit-page cells.
+Keyboard and learn actions SHALL remain.
 
 #### Scenario: Screen and context pages cover more than 16 commands
-- **WHEN** the owner opens the panel, selects More, cycles through two context pages and returns with Main
-- **THEN** each page shows its current-screen actions in the same physical cell order
-- **AND** the bottom row stays fixed, the page count stays visible, and no page change stops transport
+- **WHEN** the owner selects More, cycles through context pages and presses Main
+- **THEN** the pages show their commands in physical order
+- **AND** the page move retains the fixed bottom row, count and transport
 
 #### Scenario: A screen switch resets the panel page
-- **WHEN** the context page is visible and a screen cell or the keyboard changes screens
-- **THEN** the new screen shows the panel main page with its own four current-screen actions
-- **AND** LEFT and RIGHT still select items instead of changing panel pages
+- **WHEN** a visible context page is open and the owner changes screen
+- **THEN** the new screen shows the main page with its own cells
+- **AND** LEFT and RIGHT move the current screen list
 
 #### Scenario: Main cells follow the current view
-- **WHEN** the owner visits Pads, pad edit, Files, Chop, A1 overview, FX and Settings with the panel visible
-- **THEN** cells 9 through 12 show and run the actions in the change design for that view
-- **AND** an unavailable action stays dim without changing another view
+- **WHEN** the owner visits the main page of each current view
+- **THEN** cells 9 through 12 show the available actions for that view
+- **AND** unused cells stay dim and change no value
+
+#### Scenario: Direct page controls replace panel steps
+- **WHEN** the owner changes an editor's page, parameter or value through the direct controls
+- **THEN** the shipped panel omits the replaced steps
+- **AND** the keyboard and learn actions remain available
 
 ### Requirement: Panel configuration names logical actions
 
@@ -98,3 +110,13 @@ The panel SHALL belong to the Master connection that revealed it. Another contro
 - **WHEN** the SMC-PAD disconnects while its panel shows and one of its Gate pads is held
 - **THEN** the panel and mark disappear and that Gate receives its original release once
 - **AND** another device's held control remains active and a reconnect starts with a hidden panel
+
+### Requirement: Configured symmetric pairs share a panel row
+
+The shipped panel map SHALL identify both roles of each symmetric action pair.
+The lower, earlier or negative role SHALL be left of its neighbor.
+The layout check SHALL reject a split or reversed pair.
+
+#### Scenario: Layout rejects a split or reversed panel pair
+- **WHEN** one member of a shipped panel pair moves to a different row or the pair reverses
+- **THEN** the layout check reports that the positions are invalid
