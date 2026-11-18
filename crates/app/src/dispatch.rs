@@ -1372,6 +1372,7 @@ impl App {
         released: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     ) {
         let value_before = self.value_before_midi(&ev);
+        let knob = matches!(&ev, midi::Event::Step { port, .. } if port.contains("SMC-PAD-Master"));
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
         // a button runs its action through `apply`, which keeps the step itself
@@ -1399,7 +1400,11 @@ impl App {
         }
         self.cuts_changed(cuts);
         self.follow_loop();
-        self.value_after(value_before, Instant::now());
+        let now = Instant::now();
+        self.value_after(value_before, now);
+        if let Some(shown) = self.value_popup.as_mut().filter(|shown| shown.at == now) {
+            shown.knob = knob;
+        }
     }
 
     fn panel_target_cell(&mut self, cell: u8) -> bool {
@@ -1520,7 +1525,7 @@ impl App {
                         .controller
                         .smc_last_knob
                         .as_ref()
-                        .is_some_and(|(source, _, _)| *source == port)
+                        .is_some_and(|last| last.port == port)
                     {
                         self.help_overlay.controller.smc_last_knob = None;
                     }
@@ -2407,18 +2412,6 @@ impl App {
             }
         } else {
             match self.screen {
-                Screen::Pads if self.edit => {
-                    if right {
-                        Action::ParamNext
-                    } else {
-                        Action::ParamPrev
-                    }
-                }
-                Screen::Pads => Action::PadSelect(if right {
-                    input::Dir::Right
-                } else {
-                    input::Dir::Left
-                }),
                 Screen::Fx => {
                     if right {
                         Action::ParamNext
@@ -2544,6 +2537,18 @@ impl App {
                     Action::PagePrev
                 })
             }
+            StepTarget::List(ListTarget::SmcPosition)
+                if self.screen == Screen::Pads && self.edit && !self.pattern_view.overview =>
+            {
+                // In pad edit, knob 1 is the fourth page value.
+                return self.midi_step(
+                    port,
+                    control,
+                    StepTarget::Param(Param::SmcPageValue(1)),
+                    steps,
+                    fine,
+                );
+            }
             StepTarget::List(ListTarget::SmcPosition) => {
                 self.smc_move_position(steps);
                 return;
@@ -2602,10 +2607,7 @@ impl App {
                 if self.help_open {
                     return;
                 }
-                Some(Action::TempoStep {
-                    up: right,
-                    fine: fine || steps.unsigned_abs() == 1,
-                })
+                Some(Action::TempoStep { up: right, fine })
             }
             StepTarget::Param(Param::Tempo) => Some(Action::TempoStep { up: right, fine }),
             StepTarget::Param(Param::Zoom) if self.screen == Screen::Chop => {

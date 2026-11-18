@@ -8,6 +8,10 @@ pub struct KnobStrip {
     pub operation: Option<&'static str>,
     pub roles: [[(&'static str, bool); 8]; 2],
     pub last_bank: Option<usize>,
+    /// The last turned knob of `last_bank`, as index 0–7.
+    pub last_knob: Option<usize>,
+    /// The knob, value name, target and amount while its value pop-up shows.
+    pub value: Option<String>,
 }
 
 const STRIP_WIDTH: u16 = 44;
@@ -87,7 +91,12 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
                 } else {
                     TEXT
                 };
-                line.push(Span::raw(format!("{knob} {:<6} ", clip_label(label, 6))).fg(color));
+                let cell = Span::raw(format!("{knob} {:<6} ", clip_label(label, 6))).fg(color);
+                line.push(if recent && strip.last_knob == Some(knob - 1) {
+                    cell.fg(BG).bg(CYAN)
+                } else {
+                    cell
+                });
             }
             line.push(Span::raw(" "));
         }
@@ -98,10 +107,51 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
         .last_bank
         .map_or(String::new(), |bank| format!(" · last {}", bank + 1));
     let mut help = vec![Line::from(format!("< > {} · {}{last}", strip.list, strip.page)).fg(CYAN)];
+    if let Some(value) = &strip.value {
+        help.push(
+            Line::from(clip_label(value, usize::from(right.width)))
+                .fg(BRIGHT)
+                .bold(),
+        );
+    }
     if let Some(operation) = strip.operation {
         help.push(Line::from(operation).fg(TEXT));
     }
     let remaining = usize::from(HELP_ROWS + 1) - help.len();
     help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn strip_marks_the_turned_knob_and_shows_its_value() {
+        let mut roles = [[("-", false); 8]; 2];
+        roles[0][6] = ("volume", true);
+        roles[0][7] = ("master", true);
+        let strip = KnobStrip {
+            page: "TONE",
+            list: "Page",
+            operation: None,
+            roles,
+            last_bank: Some(0),
+            last_knob: Some(6),
+            value: Some("B1 7 volume · pad 1 · +1 dB".into()),
+        };
+        for width in [80, 120] {
+            let mut term = Terminal::new(TestBackend::new(width, HELP_ROWS + 1)).unwrap();
+            term.draw(|frame| draw_strip(frame, frame.area(), &strip, Vec::new()))
+                .unwrap();
+            let buffer = term.backend().buffer();
+            let row = |y: u16| -> String { (0..width).map(|x| buffer[(x, y)].symbol()).collect() };
+            assert!(row(1).contains("B1 7 volume · pad 1 · +1 dB"), "{}", row(1));
+            let x = row(0).find("7 volume").unwrap() as u16;
+            assert_eq!(buffer[(x, 0)].bg, CYAN, "{width}");
+            let master = row(0).find("8 master").unwrap() as u16;
+            assert_ne!(buffer[(master, 0)].bg, CYAN, "{width}");
+        }
+    }
 }

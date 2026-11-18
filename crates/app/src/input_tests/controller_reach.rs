@@ -459,9 +459,9 @@ fn keyboard_and_encoder_set_the_same_chop_threshold() {
     }
 }
 
-/// Scenario "Fast encoder turns keep acceleration" (controller-reach).
+/// Scenario "Fast encoder turns use single threshold steps" (controller-reach).
 #[test]
-fn fast_encoder_turns_keep_acceleration() {
+fn fast_encoder_turns_use_single_threshold_steps() {
     let sound = Arc::new(Sample::mono(vec![0.2; 32_000]));
     let mut keyboard = reach_drive(panel::View::Chop, sound.clone());
     let mut controller = reach_drive(panel::View::Chop, sound);
@@ -477,7 +477,7 @@ fn fast_encoder_turns_keep_acceleration() {
         controller.frame();
     }
     assert_eq!(keyboard.app.chop.as_ref().unwrap().threshold_db, -2.0);
-    assert_eq!(controller.app.chop.as_ref().unwrap().threshold_db, -3.0);
+    assert_eq!(controller.app.chop.as_ref().unwrap().threshold_db, -2.0);
 }
 
 /// Scenario "Threshold keys respect owner bindings and input owners" (controller-reach).
@@ -571,82 +571,48 @@ fn exact_chop_threshold_keys_resolve_in_both_terminal_modes() {
 /// Scenario "Keyboard selects a neighboring pad without sound" (controller-reach).
 #[test]
 fn keyboard_selects_a_neighboring_pad_without_sound() {
-    let view = panel::View::Pads;
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-    let mut keyboard = reach_drive(view, sound.clone());
-    let mut controller = reach_drive(view, sound);
-    let at = Instant::now();
-    for (index, (start, code, value, selected)) in [
-        (0, KeyCode::Left, 63, 0),
-        (0, KeyCode::Right, 65, 1),
-        (3, KeyCode::Right, 65, 3),
-        (4, KeyCode::Left, 63, 4),
-        (7, KeyCode::Left, 63, 6),
-        (15, KeyCode::Right, 65, 15),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        for drive in [&mut keyboard, &mut controller] {
-            drive.app.pads.selected = start;
-            drive.app.splash = true;
-            drive.app.publish_midi(&drive.shared);
+    for view in [panel::View::Pads, panel::View::PadEdit] {
+        let mut keyboard = reach_drive(view, sound.clone());
+        for (start, code, selected) in [
+            (0, KeyCode::Left, 0),
+            (0, KeyCode::Right, 1),
+            (3, KeyCode::Right, 3),
+            (4, KeyCode::Left, 4),
+            (7, KeyCode::Left, 6),
+            (15, KeyCode::Right, 15),
+        ] {
+            keyboard.app.pads.selected = start;
+            keyboard.app.splash = true;
+            let before = keyboard.seen();
+            let key_frame = keyboard.tap(code, M::ALT);
+            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
+            assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
+            assert!(key_frame.commands().is_empty(), "{view:?} key hit");
+            assert!(keyboard.app.splash, "{view:?} splash");
+            keyboard.key(code, M::ALT, KeyEventKind::Repeat);
+            keyboard.key(code, M::ALT, KeyEventKind::Release);
+            assert!(keyboard.frame().commands().is_empty());
+            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
         }
-        let before = keyboard.seen();
-        let key_frame = keyboard.tap(code, M::ALT);
-        controller.midi().recorded_bytes_at(
-            SMC,
-            &[0xB0, 30, value],
-            &controller.project,
-            at + std::time::Duration::from_millis(100 * index as u64),
-        );
-        let button_frame = controller.frame();
-        assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
-        assert_eq!(keyboard.seen(), controller.seen(), "{view:?} {start}");
-        assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
-        assert!(key_frame.commands().is_empty(), "{view:?} key hit");
-        assert!(button_frame.commands().is_empty(), "{view:?} button hit");
-        assert!(
-            keyboard.app.splash && controller.app.splash,
-            "{view:?} splash"
-        );
-        keyboard.key(code, M::ALT, KeyEventKind::Repeat);
-        keyboard.key(code, M::ALT, KeyEventKind::Release);
-        assert!(keyboard.frame().commands().is_empty());
-        assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
     }
 
-    for drive in [&mut keyboard, &mut controller] {
-        drive.app.pads.selected = 0;
-        drive.app.pads.gate[0] = true;
-        drive.app.publish_midi(&drive.shared);
-    }
+    let mut keyboard = reach_drive(panel::View::Pads, sound);
+    keyboard.app.pads.selected = 0;
+    keyboard.app.pads.gate[0] = true;
     keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Press);
     keyboard.frame();
-    controller.bytes(SMC, &[0x99, 48, 80]);
-    controller.frame();
-    assert!(keyboard.app.pads.held[0] && controller.app.pads.held[0]);
+    assert!(keyboard.app.pads.held[0]);
     assert!(keyboard.tap(KeyCode::Right, M::ALT).commands().is_empty());
-    controller.midi().recorded_bytes_at(
-        SMC,
-        &[0xB0, 30, 65],
-        &controller.project,
-        Instant::now() + std::time::Duration::from_millis(1_000),
-    );
-    assert!(controller.frame().commands().is_empty());
     assert_eq!(keyboard.app.pads.selected, 1);
-    assert_eq!(keyboard.seen(), controller.seen());
     keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Release);
     let key_release = keyboard.frame();
-    controller.bytes(SMC, &[0x89, 48, 0]);
-    controller.frame();
     assert!(
         key_release
             .commands()
             .iter()
             .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
     );
-    assert_eq!(keyboard.seen(), controller.seen());
     assert!(!keyboard.app.pads.held[0]);
     assert_eq!(keyboard.app.pads.selected, 1);
 }
@@ -1328,16 +1294,16 @@ fn tempo_turns_act_only_on_the_pattern_transport_page() {
     }
     let bpm = keyboard.app.transport.bpm;
     let at = Instant::now() + std::time::Duration::from_millis(100);
-    keyboard.tap(KeyCode::Up, M::CONTROL | M::SHIFT);
+    keyboard.tap(KeyCode::Up, M::CONTROL);
     timed_knob_two(&mut controller, 65, at);
     assert_eq!(controller.app.transport.bpm, keyboard.app.transport.bpm);
-    assert!((controller.app.transport.bpm - bpm - 0.1).abs() < 0.0001);
+    assert!((controller.app.transport.bpm - bpm - 1.0).abs() < 0.0001);
     timed_knob_two(
         &mut controller,
         65,
         at + std::time::Duration::from_millis(10),
     );
-    assert!((controller.app.transport.bpm - bpm - 2.1).abs() < 0.0001);
+    assert!((controller.app.transport.bpm - bpm - 2.0).abs() < 0.0001);
     controller.tap(KeyCode::Char('n'), M::ALT);
     assert!(controller.app.pattern_panel.is_none());
     let bpm = controller.app.transport.bpm;
@@ -2187,9 +2153,12 @@ fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
     keyboard.tap(KeyCode::Tab, M::NONE);
     list_button(&mut edit, true);
     assert_eq!(edit.app.pads.page().0, keyboard.app.pads.page().0);
-    let before = edit.app.pads.param;
+    let (before, page) = (edit.app.pads.param, edit.app.pads.page().0);
     turn(&mut edit, 30, 65);
-    assert_ne!(edit.app.pads.param, before);
+    assert_eq!(
+        (edit.app.pads.param, edit.app.pads.page().0),
+        (before, page)
+    );
     assert_eq!(edit.app.pads.bank, 0);
 
     let mut pattern = reach_drive(panel::View::Pattern, sound.clone());
@@ -2297,24 +2266,14 @@ fn both_banks_pin_master_to_the_top_right_knob() {
 /// This matrix creates 54 app instances, so it belongs to the slow group.
 #[test]
 fn shipped_pad_knobs_match_keyboard_values_in_pad_views() {
-    for view in [
-        panel::View::Pads,
-        panel::View::PadEdit,
-        panel::View::Pattern,
-    ] {
+    for view in [panel::View::PadEdit] {
         for (cc, param, key, value) in [
-            (32, pads::Param::Volume, KeyCode::Left, 63),
+            (36, pads::Param::Volume, KeyCode::Left, 63),
             (34, pads::Param::Pitch, KeyCode::Right, 65),
-            (32, pads::Param::Cutoff, KeyCode::Left, 63),
-            (33, pads::Param::Decay, KeyCode::Right, 65),
-            (38, pads::Param::Volume, KeyCode::Left, 63),
-            (40, pads::Param::Pitch, KeyCode::Right, 65),
-            (39, pads::Param::Cutoff, KeyCode::Left, 63),
-            (41, pads::Param::Decay, KeyCode::Right, 65),
+            (34, pads::Param::Cutoff, KeyCode::Left, 63),
+            (34, pads::Param::Decay, KeyCode::Right, 65),
+            (32, pads::Param::Release, KeyCode::Right, 65),
         ] {
-            if cc < 38 && view == panel::View::Pattern {
-                continue;
-            }
             let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
             let mut keyboard = reach_drive(view, sound.clone());
             let mut controller = reach_drive(view, sound);
@@ -2376,34 +2335,107 @@ fn shipped_files_knob_matches_keyboard_selection() {
     );
 }
 
-/// Scenario "Pad inspector and editor share knob positions" (controller-reach).
-#[test]
-fn pad_inspector_and_editor_share_knob_positions() {
-    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-    for view in [panel::View::Pads, panel::View::PadEdit] {
-        let mut drive = reach_drive(view, sound.clone());
-        let selected = drive.app.pads.selected_abs();
-        let pad = drive.app.pads.snapshot(selected);
-        turn(&mut drive, 33, 65);
-        assert!(
-            drive.app.pads.snapshot(selected) == pad,
-            "{view:?} Tone pan"
-        );
-        turn(&mut drive, 32, 63);
-        assert_eq!(drive.app.pads.volume_db[selected], -1);
-        drive.app.pads.param = pads::Param::Attack;
-        let isolated = Instant::now() + std::time::Duration::from_millis(100);
-        for cc in [32, 33] {
-            drive
-                .midi()
-                .recorded_bytes_at(SMC, &[0xB0, cc, 65], &drive.project, isolated);
-            drive.frame();
-        }
-        assert_eq!(drive.app.pads.attack_ms[selected], 1);
-        assert_eq!(drive.app.pads.decay_ms[selected], 1);
-        assert_eq!(drive.app.pads.param, pads::Param::Attack);
+fn pad_value(drive: &mut Drive, param: pads::Param) -> String {
+    let abs = drive.app.pads.selected_abs();
+    let region = drive.app.pads.region[abs];
+    match param {
+        pads::Param::Start => return region.start.to_string(),
+        // "To the end" and the explicit end of the 4 800-frame test sample are the same end.
+        pads::Param::End => return region.end.min(4_800).to_string(),
+        _ => {}
     }
+    let current = drive.app.pads.param;
+    drive.app.pads.param = param;
+    let value = drive.app.pads.param_value();
+    drive.app.pads.param = current;
+    value
+}
 
+/// Scenario "Pad knobs act only in pad edit" (controller-reach).
+#[test]
+fn pad_knobs_act_only_in_pad_edit() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    for param in [
+        pads::Param::Volume,
+        pads::Param::Attack,
+        pads::Param::Cutoff,
+        pads::Param::Start,
+        pads::Param::Send1,
+    ] {
+        let mut drive = reach_drive(panel::View::Pads, sound.clone());
+        drive.app.pads.param = param;
+        let abs = drive.app.pads.selected_abs();
+        let pad = drive.app.pads.snapshot(abs);
+        for cc in 31..=36 {
+            for value in [65, 63] {
+                turn(&mut drive, cc, value);
+            }
+        }
+        assert!(drive.app.pads.snapshot(abs) == pad, "{param:?}");
+        assert_eq!(drive.app.pads.param, param);
+
+        let selected = drive.app.pads.selected;
+        drive.bytes(SMC, &[0xB0, 30, 65]);
+        let frame = drive.frame();
+        assert_eq!(drive.app.pads.selected, selected);
+        assert!(!frame.commands().iter().any(|command| matches!(
+            command,
+            Command::PadPress { .. } | Command::PadRelease { .. }
+        )));
+        assert!(drive.app.pads.snapshot(abs) == pad, "{param:?}");
+    }
+}
+
+/// Scenario "Pad edit knobs follow the screen rows" (controller-reach).
+#[test]
+fn pad_edit_knobs_follow_the_screen_rows() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::PadEdit, sound);
+    drive.app.pads.param = pads::Param::Volume;
+    let abs = drive.app.pads.selected_abs();
+    let mut names = Vec::new();
+    for _ in 0..5 {
+        let (name, params) = drive.app.pads.page();
+        names.push(name);
+        for (index, cc) in [36, 34, 32].into_iter().enumerate() {
+            let param = params[index];
+            let others = |drive: &mut Drive| {
+                params
+                    .iter()
+                    .filter(|other| **other != param)
+                    .map(|other| pad_value(drive, *other))
+                    .collect::<Vec<_>>()
+            };
+            let (before, rest) = (pad_value(&mut drive, param), others(&mut drive));
+            // The end starts at the sample end, so it can only move back.
+            turn(
+                &mut drive,
+                cc,
+                if param == pads::Param::End { 63 } else { 65 },
+            );
+            // One loaded sample gives the source knob no other choice.
+            if param != pads::Param::Source {
+                assert_ne!(pad_value(&mut drive, param), before, "{name} knob {cc}");
+            }
+            assert_eq!(others(&mut drive), rest, "{name} knob {cc}");
+        }
+        let pad = drive.app.pads.snapshot(abs);
+        for cc in [31, 33, 35] {
+            for value in [65, 63] {
+                turn(&mut drive, cc, value);
+            }
+        }
+        // Knob 1 is the fourth value; the current pages have three.
+        turn(&mut drive, 30, 65);
+        assert!(drive.app.pads.snapshot(abs) == pad, "{name}");
+        list_button(&mut drive, true);
+    }
+    assert_eq!(names, ["TONE", "ENV", "FILTER", "SOURCE", "FX"]);
+}
+
+#[test]
+fn fx_knobs_change_the_current_slot() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut fx = reach_drive(panel::View::Fx, sound);
     let first = fx.app.pads.fx[0];
     let second = fx.app.pads.fx[1];
@@ -2426,10 +2458,11 @@ fn direct_page_controls_replace_panel_steps() {
     assert_eq!(drive.app.pads.page().0, "TONE");
     list_button(&mut drive, true);
     assert_eq!(drive.app.pads.page().0, "ENV");
-    let parameter = drive.app.pads.param;
-    turn(&mut drive, 30, 65);
-    assert_ne!(drive.app.pads.param, parameter);
-    turn(&mut drive, 32, 65);
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.pads.page().0, "FILTER");
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.pads.page().0, "ENV");
+    turn(&mut drive, 36, 65);
     assert_eq!(drive.app.pads.attack_ms[pad], 1);
     for name in ["edit.param_next", "edit.page_next", "edit.value_inc"] {
         assert!(input::ACTIONS.iter().any(|action| action.name == name));
@@ -2601,49 +2634,37 @@ fn a_chop_bound_turn_keeps_the_current_panel_page() {
     assert_eq!(drive.app.panel.page(), 2);
 }
 
-/// Scenario "Bank 2 supplies the same live pad controls on every screen" (controller-reach).
+/// Scenario "Bank 2 turns change no pad value" (controller-reach).
 #[test]
-fn bank_2_supplies_the_same_live_pad_controls_on_every_screen() {
+fn bank_2_turns_change_no_pad_value() {
     let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
     for view in ALL_VIEWS {
         let mut drive = reach_drive(view, sound.clone());
-        drive.load_pad(1, sound.clone(), "other");
         drive.app.pads.selected = 0;
-        drive.app.pads.marked.insert(1);
-        drive.app.pads.cutoff_hz[0] = 1_200.0;
-        drive.app.pads.decay_ms[0] = 50;
-        drive.app.pads.sends[0] = [10, 20];
-        let untouched = drive.app.pads.snapshot(1);
-        let volume = drive.app.pads.volume_db[0];
-        let pitch = drive.app.pads.pitch[0];
-        let page = drive.app.pads.param;
-        cell(&mut drive, 64);
-        assert!(drive.app.panel.visible());
-
-        turn(&mut drive, 38, 63);
-        assert_eq!(drive.app.pads.volume_db[0], volume - 1, "{view:?}");
-        turn(&mut drive, 39, 65);
-        assert!(drive.app.pads.cutoff_hz[0] > 1_200.0, "{view:?}");
-        turn(&mut drive, 40, 65);
-        assert_eq!(drive.app.pads.pitch[0], pitch + 1, "{view:?}");
-        turn(&mut drive, 41, 65);
-        assert_eq!(drive.app.pads.decay_ms[0], 51, "{view:?}");
-        turn(&mut drive, 42, 65);
-        assert_eq!(drive.app.pads.sends[0], [11, 20], "{view:?}");
-        turn(&mut drive, 43, 65);
-        assert_eq!(drive.app.pads.sends[0], [11, 21], "{view:?}");
-        let selected = drive.app.pads.snapshot(0);
-        turn(&mut drive, 44, 65);
-        assert!(drive.app.pads.snapshot(0) == selected, "{view:?}");
-        assert!(drive.app.pads.snapshot(1) == untouched, "{view:?}");
-        assert_eq!(drive.app.pads.param, page);
-        assert_eq!(drive.app.panel.page(), 0);
-
-        drive.app.ask = Some(Ask::Exit { lines: vec![] });
-        drive.app.publish_midi(&drive.shared);
-        turn(&mut drive, 38, 63);
-        assert!(drive.app.pads.snapshot(0) == selected, "{view:?}");
-        assert!(drive.app.ask.is_some());
+        let pad = drive.app.pads.snapshot(0);
+        let (page, bank, selected) = (
+            drive.app.pads.page().0,
+            drive.app.pads.bank,
+            drive.app.pads.selected,
+        );
+        for cc in 38..=44 {
+            for value in [63, 65] {
+                turn(&mut drive, cc, value);
+            }
+        }
+        assert!(drive.app.pads.snapshot(0) == pad, "{view:?}");
+        assert_eq!(
+            (
+                drive.app.pads.page().0,
+                drive.app.pads.bank,
+                drive.app.pads.selected
+            ),
+            (page, bank, selected),
+            "{view:?}"
+        );
+        let db = drive.app.master_db;
+        turn(&mut drive, 45, 63);
+        assert_eq!(drive.app.master_db, db - 1, "{view:?}");
     }
 }
 
@@ -2706,7 +2727,7 @@ fn slow_chop_zoom_uses_smaller_input_steps() {
 }
 
 #[test]
-fn smc_chop_zoom_retains_acceleration_and_reverses_at_view_limits() {
+fn smc_chop_zoom_uses_single_steps_and_reverses_at_view_limits() {
     let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
     let mut drive = reach_drive(panel::View::Chop, sound);
     let at = Instant::now();
@@ -2717,7 +2738,7 @@ fn smc_chop_zoom_retains_acceleration_and_reverses_at_view_limits() {
     let after_slow_turn = chop_view_len(&drive);
     timed_knob_two(&mut drive, 65, at + std::time::Duration::from_millis(110));
     let after_fast_turn = chop_view_len(&drive);
-    let expected = (after_slow_turn as f64 / 2.0_f64.sqrt()).round() as usize;
+    let expected = (after_slow_turn as f64 / 2.0_f64.powf(0.25)).round() as usize;
     assert_eq!(after_fast_turn, expected);
     assert!(after_fast_turn < after_slow_turn);
 
@@ -2850,8 +2871,11 @@ fn a1_position_and_master_keep_their_routes_and_close_restores_pads() {
         drive.app.pads.param = pads::Param::Volume;
         drive.app.publish_midi(&drive.shared);
     }
-    keyboard.tap(KeyCode::Left, M::NONE);
-    turn(&mut controller, 32, 63);
+    // Closed A1 controls give knob 1 back to Pads, where it has no role.
+    let param = controller.app.pattern_panel;
+    turn(&mut controller, 30, 65);
+    assert_eq!(controller.app.pattern_panel, param);
+    assert_eq!(controller.app.pads.selected, 0);
     assert_eq!(controller.seen().pads, keyboard.seen().pads);
 }
 
@@ -3327,6 +3351,82 @@ fn removed_smc_pad_knob_stays_unassigned_on_a_saved_map() {
     assert!(!saved["SMC-PAD"]["global"].contains_key("cc 37"));
     turn(&mut drive, 37, 65);
     assert_eq!(drive.app.master_db, volume);
+}
+
+/// Scenario "A change 124 map removes the bank 2 pad roles" (input-devices).
+#[test]
+fn a_change_124_map_removes_the_bank_2_pad_roles() {
+    let files = TransitionFiles::new();
+    let path = files.0.join("smc-124.toml");
+    std::fs::write(
+        &path,
+        r#"
+[devices]
+seeded = ["SMC-PAD", "Recorded pads", "X-Session Pro"]
+
+[midi."SMC-PAD".global]
+"cc 30" = "smc.position"
+"cc 37" = "master.volume"
+"cc 38" = "pad.volume"
+"cc 39" = "pad.cutoff"
+"cc 40" = "pad.pitch"
+"cc 41" = "pad.decay"
+"cc 42" = "pad.send_1"
+"cc 43" = "pad.send_2"
+"cc 45" = "master.volume"
+
+[midi."SMC-PAD".pads]
+"cc 31" = "smc.page_2"
+"cc 36" = "smc.page_7"
+"#,
+    )
+    .unwrap();
+    let mut drive = saved_layout_drive(&path);
+    open_layout_review(&mut drive);
+    select_layout_row(&mut drive, |row| matches!(row, MidiListRow::SmcLayoutApply));
+    drive.tap(KeyCode::Enter, M::NONE);
+    let saved = config::load_from(&path).config.midi;
+    for cc in 38..=43 {
+        assert!(
+            !saved["SMC-PAD"]["global"].contains_key(&format!("cc {cc}")),
+            "cc {cc}"
+        );
+    }
+    assert_eq!(saved["SMC-PAD"]["pads"].len(), 2);
+
+    let mut restarted = saved_layout_drive(&path);
+    let abs = restarted.app.pads.selected_abs();
+    let pad = restarted.app.pads.snapshot(abs);
+    for cc in 38..=43 {
+        turn(&mut restarted, cc, 65);
+    }
+    assert!(restarted.app.pads.snapshot(abs) == pad);
+    let volume = restarted.app.master_db;
+    turn(&mut restarted, 45, 65);
+    assert!(restarted.app.master_db > volume);
+}
+
+/// Scenario "The strip shows the turned knob and its value" (screen-layout).
+/// `knob_strip::tests` draws the same strip at both supported widths.
+#[test]
+fn the_strip_shows_the_turned_knob_and_its_value() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::PadEdit, sound);
+    drive.app.pads.param = pads::Param::Volume;
+    turn(&mut drive, 36, 65);
+    let at = drive.app.value_popup.as_ref().unwrap().at;
+    let strip = drive.app.smc_knob_strip(at).unwrap();
+    assert_eq!((strip.last_bank, strip.last_knob), (Some(0), Some(6)));
+    assert_eq!(strip.roles[0][6], ("volume", true));
+    let value = strip.value.unwrap();
+    assert!(value.starts_with("B1 7 volume"), "{value}");
+    assert!(value.contains("+1 dB"), "{value}");
+
+    let later = at + crate::LIT_FOR;
+    assert!(drive.app.smc_knob_strip(later).unwrap().value.is_none());
+    drive.tap(KeyCode::Right, M::NONE);
+    let at = drive.app.value_popup.as_ref().unwrap().at;
+    assert!(drive.app.smc_knob_strip(at).unwrap().value.is_none());
 }
 
 /// Scenario "Pattern taps use the beat interval" (transport).

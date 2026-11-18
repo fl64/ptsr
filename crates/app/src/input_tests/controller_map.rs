@@ -174,7 +174,8 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         let mut drive = Drive::smc_offline();
         touch(&mut drive, port);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e3").contains("volume"));
+        let knob_1 = role(&mut drive, "e1");
+        assert!(knob_1.contains('-') && !knob_1.contains("pad"), "{knob_1}");
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         assert!(drive.app.pattern_panel.is_some());
@@ -186,7 +187,8 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e3").contains("volume"));
+        let knob_1 = role(&mut drive, "e1");
+        assert!(knob_1.contains('-') && !knob_1.contains("pad"), "{knob_1}");
     }
 }
 
@@ -197,26 +199,35 @@ fn last_knob_input_marks_its_bank() {
     let mut drive = Drive::smc_offline();
     drive.midi().recorded_smc_setup();
     drive.frame();
-    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, None);
+    assert_eq!(
+        drive.app.smc_knob_strip(Instant::now()).unwrap().last_bank,
+        None
+    );
 
     drive.bytes(port, &[0xB0, 30, 65]);
     drive.frame();
-    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, Some(0));
+    assert_eq!(
+        drive.app.smc_knob_strip(Instant::now()).unwrap().last_bank,
+        Some(0)
+    );
     drive.bytes(port, &[0xB0, 38, 64]);
     drive.frame();
-    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, Some(0));
+    assert_eq!(
+        drive.app.smc_knob_strip(Instant::now()).unwrap().last_bank,
+        Some(0)
+    );
     let volume = drive.app.pads.volume_db[0];
     drive.bytes(port, &[0xB0, 44, 65]);
     drive.frame();
-    let strip = drive.app.smc_knob_strip().unwrap();
+    let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
     assert_eq!(strip.last_bank, Some(1));
-    assert_eq!(strip.roles[1][6], ("pan", false));
+    assert_eq!(strip.roles[1][6], ("-", false));
     assert_eq!(drive.app.pads.volume_db[0], volume);
 
     let connection = drive.midi().recorded_connection(port).unwrap();
     drive.midi().recorded_disconnect(port);
     drive.frame();
-    assert!(drive.app.smc_knob_strip().is_none());
+    assert!(drive.app.smc_knob_strip(Instant::now()).is_none());
     drive.midi().recorded_connect(port);
     drive.midi().recorded_smc_setup();
     drive.frame();
@@ -230,7 +241,10 @@ fn last_knob_input_marks_its_bank() {
         }),
     );
     drive.frame();
-    assert_eq!(drive.app.smc_knob_strip().unwrap().last_bank, None);
+    assert_eq!(
+        drive.app.smc_knob_strip(Instant::now()).unwrap().last_bank,
+        None
+    );
 }
 
 #[test]
@@ -581,7 +595,7 @@ fn chop_help_identifies_the_slice_and_region_knobs() {
         assert_eq!(drive.app.help_overlay.page, Page::Controller);
         assert_eq!(current(&mut drive), "SMC-PAD");
         assert_eq!(
-            drive.app.smc_knob_strip().unwrap().operation,
+            drive.app.smc_knob_strip(Instant::now()).unwrap().operation,
             Some("B1 3–4 slice · 5–6 region"),
         );
         for (key, detail) in [
