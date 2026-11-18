@@ -15,8 +15,8 @@ A first reveal SHALL not show an action result. A disconnect or first-bank hit S
 - **AND** Redo and Panic remain visibly unavailable and no first-reveal command result appears
 
 #### Scenario: The header names the view and its neighbors
-- **WHEN** the panel shows action page 1 of Chop at either supported size
-- **THEN** the header shows the screens view on the left, Chop actions 1 of 2 and action page 2 on the right
+- **WHEN** the panel shows the Chop actions at either supported size
+- **THEN** the header shows the screens view on the left and the Chop actions in the middle
 - **AND** the action cells and the screen cells use different colors
 
 ### Requirement: The SMC-PAD knob strip shows both banks and the current list

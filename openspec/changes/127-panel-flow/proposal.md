@@ -10,14 +10,16 @@ screen count from the top, but the device prints its numbers from the bottom.
 ## What Changes
 
 - PAD BANK opens the actions of the current screen.
-- While the panel shows, LEFT and RIGHT move through a row of views:
-  screens, then action page 1, action page 2 and later pages.
+- While the panel shows, LEFT shows the screens view and RIGHT shows the actions.
+- A screen or mode has at most 12 actions on one page. An action that does not fit goes
+  to its own screen or mode.
 - The screens view opens a screen with one hit. It also has Help, save, open,
   learn and exit.
 - Every view keeps back, undo, redo and panic on the bottom row.
 - The panel draws each view in its own color. A header row names the view and the
   views on the left and right. The cells show the numbers printed on the device.
 - The target view keeps undo on its fixed cell. Apply moves to the panic cell.
+- LEFT and RIGHT on Chop select pad banks, as on Pads.
 - The footer shows only bank 1 knobs in physical order and a short button summary.
 
 ## Capabilities
@@ -48,7 +50,7 @@ no migration. The keyboard routes stay the same. The sound stays the same.
 
 1. On Chop, press PAD BANK. Check that the panel shows the Chop actions.
 2. Press LEFT. Check the screens view. Hit FILES. Check that Files opens with its actions.
-3. Press RIGHT on an action page. Check the next page. Press LEFT twice. Check the screens view.
+3. Press LEFT. Check the screens view. Press RIGHT. Check the actions again.
 4. Read the header. Check the view name and the views on the left and right.
 5. Check that the cell numbers match the numbers printed on the device.
 6. Start Copy. Check undo on its cell and apply on the panic cell for Assign.

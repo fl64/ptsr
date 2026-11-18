@@ -1,8 +1,23 @@
 ## MODIFIED Requirements
 
+### Requirement: Current actions have paths from both inputs
+
+For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Pad bank changes MAY use the Pads screen list. Tempo MAY use only Pattern transport. Pad commands MAY use the Pads actions and A1 commands the A1 actions, one screens-view press away. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. A Chop slice-bound turn SHALL select the same start or end bound as its keyboard route. The route SHALL use production input dispatch.
+
+#### Scenario: Every current keyboard action has a controller route
+- **WHEN** the reach test visits each current screen and mode with the shipped keyboard map, SMC-PAD profile and panel map
+- **THEN** each non-text keyboard action reaches the same result through raw SMC-PAD MIDI
+- **AND** the test reports the screen, mode and action if no controller route exists
+
+#### Scenario: Every current controller action has a keyboard route
+- **WHEN** the reach test visits each shipped SMC-PAD button, pad, panel cell and knob role
+- **THEN** each sampler action reaches the same result from the keyboard
+- **AND** a Chop slice-bound turn selects the same start or end bound as its keyboard route
+- **AND** the test reports any action without a key or key path, apart from panel navigation
+
 ### Requirement: The list buttons follow the current SMC-PAD mode
 
-LEFT and RIGHT SHALL select pad banks, pad edit pages, Pattern bars, Chop slices,
+LEFT and RIGHT SHALL select pad banks on Pads and Chop, pad edit pages, Pattern bars,
 Settings tabs or FX slots in the corresponding view.
 On Files, LEFT SHALL select the parent folder. RIGHT SHALL enter the selected folder.
 The current Load and Take paths SHALL handle files.
@@ -38,16 +53,16 @@ Help paths SHALL retain their results.
 
 ### Requirement: Controller routes keep short press paths
 
-Frequent actions SHALL use a direct button, pad or knob, or action page 1.
+Frequent actions SHALL use a direct button, pad or knob, or the actions of the current view.
 From the visible panel, an action on the shown view SHALL take one press.
-Each LEFT or RIGHT press to another view SHALL add one press.
+A LEFT or RIGHT press to the other view SHALL add one press.
 A hidden panel SHALL add PAD BANK, and a reveal hit if the panel stays closed.
 Count KNOB BANK, target hits and modal answers separately. A knob turn counts as zero.
 The reach table SHALL list the route and counts for each story in `docs/USER-STORIES.md`.
 
 #### Scenario: First entry and repeated commands have separate counts
-- **WHEN** the owner reaches an action page 2 command from a hidden panel and then repeats it from a visible panel
-- **THEN** the first count includes PAD BANK, RIGHT and a reveal hit when the shortcut is off or misses the tap
+- **WHEN** the owner reaches a screens-view command from a hidden panel and then repeats it from a visible panel
+- **THEN** the first count includes PAD BANK, LEFT and a reveal hit when the shortcut is off or misses the tap
 - **AND** the later count excludes PAD BANK and the reveal hit
 - **AND** each LEFT or RIGHT press adds one to the path
 - **AND** neither count treats a knob turn as a button press
@@ -67,4 +82,4 @@ The reach table SHALL list the route and counts for each story in `docs/USER-STO
 ### Requirement: Added context cells provide missing actions
 
 **Reason**: Change 127 moves global actions to the screens view and lists every action page in one table.
-**Migration**: `Action pages follow the shipped table` in `command-panel`.
+**Migration**: `Each view has at most 12 actions` in `command-panel`.
