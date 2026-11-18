@@ -993,9 +993,9 @@ fn another_controller_keeps_its_global_knob_in_the_project_picker() {
     assert_eq!(drive.app.project_picker.as_ref().unwrap().selected, 1);
 }
 
-/// Scenario "Next selects a later context page" (controller-reach). Change 127 replaces it until the archive.
+/// A visible panel keeps RIGHT from the bank; the A1 grid cell matches the keyboard.
 #[test]
-fn next_selects_a_later_context_page() {
+fn a1_grid_cell_matches_the_keyboard() {
     let mut keyboard = smc_drive();
     let mut controller = smc_drive();
     let before = controller.app.pattern_view.division.grid();
@@ -1082,9 +1082,9 @@ fn help_cells_navigate_without_acting_behind_help() {
     assert_eq!(controller.app.pads.selected_abs(), selected);
 }
 
-/// Scenario "The main panel gives Help one context route" (command-panel).
+/// The screens view opens Help and Setup; Mixer stays dim.
 #[test]
-fn the_main_panel_gives_help_one_context_route() {
+fn the_screens_view_opens_help_and_setup() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     for view in ALL_VIEWS {
         let mut drive = reach_drive(view, sound.clone());
@@ -1242,9 +1242,9 @@ fn first_entry_and_repeated_commands_have_separate_counts() {
     assert_eq!(knob.app.pads.bank, 0);
 }
 
-/// Scenario "Added cells reach their current actions" (controller-reach).
+/// The A1 knobs cell opens the same pattern controls as the keyboard.
 #[test]
-fn added_cells_reach_their_current_actions() {
+fn a1_knobs_cell_matches_the_keyboard() {
     let mut keyboard = smc_drive();
     let mut controller = smc_drive();
     keyboard.tap(KeyCode::PageDown, M::NONE);
@@ -2392,9 +2392,9 @@ fn fx_knobs_change_the_current_slot() {
     assert_ne!(fx.app.pads.fx[1].kind, second.kind);
 }
 
-/// Scenario "Direct page controls replace panel steps" (command-panel).
+/// Pad edit pages move with LEFT and RIGHT while the panel is hidden.
 #[test]
-fn direct_page_controls_replace_panel_steps() {
+fn pad_edit_pages_move_with_the_hidden_panel() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut shown = reach_drive(panel::View::PadEdit, sound.clone());
     cell(&mut shown, 64);
@@ -3381,7 +3381,6 @@ fn the_strip_shows_the_turned_knob_and_its_value() {
 }
 
 /// Scenario "The panel opens on the screen actions" (command-panel).
-/// Scenario "Main cells follow the current view" (command-panel). Change 127 replaces it until the archive.
 #[test]
 fn the_panel_opens_on_the_screen_actions() {
     let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
@@ -3395,7 +3394,6 @@ fn the_panel_opens_on_the_screen_actions() {
 }
 
 /// Scenario "A screen hit opens that screen with its actions" (command-panel).
-/// Scenario "Screen and context pages cover more than 16 commands" (command-panel). Change 127 replaces it until the archive.
 #[test]
 fn a_screen_hit_opens_that_screen_with_its_actions() {
     let mut drive = smc_drive();

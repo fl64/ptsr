@@ -368,9 +368,9 @@ fn context_play_and_stop_match_keyboard_and_raw_midi() {
     }
 }
 
-/// Scenario "A screen switch resets the panel page" (command-panel).
+/// A keyboard screen change shows the actions of the new screen.
 #[test]
-fn a_screen_switch_resets_the_panel_page() {
+fn a_screen_switch_shows_the_new_actions() {
     let mut drive = Drive::smc_offline();
     let port = "SINCO SMC-PAD-Master 28:1";
     drive.bytes(port, &[0x99, 64, 100]);

@@ -817,7 +817,6 @@ mod tests {
     }
 
     /// Scenario "The header names the view and its neighbors" (screen-layout).
-    /// Scenario "The panel header shows only the page" (command-panel). Change 127 replaces it until the archive.
     #[test]
     fn the_header_names_the_view_and_its_neighbors() {
         for (width, height) in [(80, 26), (120, 40)] {
