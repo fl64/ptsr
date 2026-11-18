@@ -77,6 +77,13 @@ rows = [
   ["",   "",   "",   "",   "c13", "c14", "c15", "c16", ""],
 ]
 
+knob_pairs = [
+  { scope = "chop", left = "slice.start", right = "slice.end" },
+  { scope = "chop", left = "chop.region_start_pos", right = "chop.region_end_pos" },
+  { scope = "global", left = "pad.send_1", right = "pad.send_2" },
+  { scope = "fx", left = "edit.param_2", right = "edit.param_3" },
+]
+
 [screens.global]
 play = { tap = "play.context", hold = "metronome.toggle" }
 stop = "stop.context"

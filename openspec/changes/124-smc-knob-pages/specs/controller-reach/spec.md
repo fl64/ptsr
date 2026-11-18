@@ -116,6 +116,17 @@ A knob turn SHALL keep its screen or mode role while the panel shows.
 - **WHEN** the owner presses Next on a context page
 - **THEN** the next page and its cell roles appear before the next action
 
+### Requirement: SMC-PAD knob pairs share a physical row
+
+The pad page tables and device layout SHALL mark their symmetric knob pairs.
+Each pair SHALL use adjacent knobs in one physical row.
+The lower, earlier or first role SHALL be on the left.
+Unavailable roles SHALL keep their named positions and remain inactive.
+
+#### Scenario: Layout rejects a split or reversed knob pair
+- **WHEN** a shipped pair moves apart or reverses its roles
+- **THEN** the layout check reports the pair and its positions
+
 ## MODIFIED Requirements
 
 ### Requirement: Chop threshold has matching keyboard steps

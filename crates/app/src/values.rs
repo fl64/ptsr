@@ -85,62 +85,78 @@ impl Shown {
     }
 }
 
-const SMC_PAD_PAGES: [(&str, [Option<Param>; 6]); 5] = [
-    (
-        "TONE",
-        [
-            Some(Param::PadEffect(9)),
-            Some(Param::PadVolume),
-            None,
-            Some(Param::PadPitch),
-            None,
-            None,
+type KnobRole = (&'static str, Option<Param>);
+
+struct PadKnobPage {
+    name: &'static str,
+    main: KnobRole,
+    lower_pair: [KnobRole; 2],
+    upper_pair: [KnobRole; 2],
+    single: KnobRole,
+}
+
+impl PadKnobPage {
+    fn role(&self, knob: u8) -> Option<KnobRole> {
+        match knob {
+            2 => Some(self.main),
+            3..=4 => Some(self.lower_pair[usize::from(knob - 3)]),
+            5..=6 => Some(self.upper_pair[usize::from(knob - 5)]),
+            7 => Some(self.single),
+            _ => None,
+        }
+    }
+}
+
+const EMPTY_KNOB: KnobRole = ("-", None);
+
+const SMC_PAD_PAGES: [PadKnobPage; 5] = [
+    PadKnobPage {
+        name: "TONE",
+        main: ("group", Some(Param::PadEffect(9))),
+        lower_pair: [("volume", Some(Param::PadVolume)), ("pan", None)],
+        upper_pair: [("pitch", Some(Param::PadPitch)), ("fine", None)],
+        single: EMPTY_KNOB,
+    },
+    PadKnobPage {
+        name: "ENV",
+        main: EMPTY_KNOB,
+        lower_pair: [
+            ("attack", Some(Param::PadAttack)),
+            ("decay", Some(Param::PadDecay)),
         ],
-    ),
-    (
-        "ENV",
-        [
-            None,
-            Some(Param::PadAttack),
-            Some(Param::PadDecay),
-            None,
-            Some(Param::PadRelease),
-            None,
+        upper_pair: [("hold", None), ("releas", Some(Param::PadRelease))],
+        single: EMPTY_KNOB,
+    },
+    PadKnobPage {
+        name: "FILTER",
+        main: ("filter", Some(Param::PadFilter)),
+        lower_pair: [
+            ("cutoff", Some(Param::PadCutoff)),
+            ("reso", Some(Param::PadReso)),
         ],
-    ),
-    (
-        "FILTER",
-        [
-            Some(Param::PadFilter),
-            Some(Param::PadCutoff),
-            Some(Param::PadReso),
-            None,
-            None,
-            None,
+        upper_pair: [("amount", None), ("e.dec", None)],
+        single: ("keytrk", None),
+    },
+    PadKnobPage {
+        name: "SOURCE",
+        main: ("source", Some(Param::PadSource)),
+        lower_pair: [
+            ("start", Some(Param::PadStart)),
+            ("end", Some(Param::PadEnd)),
         ],
-    ),
-    (
-        "SOURCE",
-        [
-            Some(Param::PadSource),
-            Some(Param::PadStart),
-            Some(Param::PadEnd),
-            None,
-            None,
-            None,
+        upper_pair: [("loop <", None), ("loop >", None)],
+        single: EMPTY_KNOB,
+    },
+    PadKnobPage {
+        name: "FX",
+        main: ("drive", Some(Param::PadEffect(0))),
+        lower_pair: [
+            ("send 1", Some(Param::PadEffect(1))),
+            ("send 2", Some(Param::PadEffect(2))),
         ],
-    ),
-    (
-        "FX",
-        [
-            Some(Param::PadEffect(0)),
-            Some(Param::PadEffect(1)),
-            Some(Param::PadEffect(2)),
-            None,
-            None,
-            None,
-        ],
-    ),
+        upper_pair: [EMPTY_KNOB; 2],
+        single: EMPTY_KNOB,
+    },
 ];
 
 impl App {
@@ -663,17 +679,20 @@ impl App {
         }
     }
 
-    pub(super) fn smc_page_value(&self, knob: u8) -> Option<Param> {
+    pub(super) fn smc_page_role(&self, knob: u8) -> Option<KnobRole> {
         if self.screen != Screen::Pads || self.pattern_view.overview || self.pattern_panel.is_some()
         {
             return None;
         }
-        let page = self.pads.page().0;
-        let (_, positions) = SMC_PAD_PAGES.iter().find(|(name, _)| *name == page)?;
-        positions
-            .get(usize::from(knob.checked_sub(2)?))
-            .copied()
-            .flatten()
+        let name = self.pads.page().0;
+        SMC_PAD_PAGES
+            .iter()
+            .find(|page| page.name == name)?
+            .role(knob)
+    }
+
+    pub(super) fn smc_page_value(&self, knob: u8) -> Option<Param> {
+        self.smc_page_role(knob)?.1
     }
 
     /// The parameter in knob slot `k` of the open edit page; `None` outside an edit mode
@@ -710,6 +729,90 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Layout rejects a split or reversed knob pair" (controller-reach).
+    #[test]
+    fn layout_rejects_a_split_or_reversed_knob_pair() {
+        use input::Group;
+        use input::midi::Profile;
+
+        let source = include_str!("../../../config/devices/smc-pad.toml");
+        let profile = Profile::from_toml("smc-pad.toml", source).unwrap();
+        let layout = profile.layout().unwrap();
+        let position = |name| {
+            layout
+                .iter()
+                .enumerate()
+                .find_map(|(row, slots)| {
+                    slots
+                        .iter()
+                        .position(|slot| slot.as_deref() == Some(name))
+                        .map(|column| (row, column))
+                })
+                .unwrap()
+        };
+        let adjacent = |left, right| {
+            let (left_row, left_column) = position(left);
+            let (right_row, right_column) = position(right);
+            left_row == right_row && left_column + 1 == right_column
+        };
+        assert!(!adjacent("e4", "e5"), "split row");
+        assert!(!adjacent("e4", "e3"), "reversed roles");
+
+        let config: toml::Value = toml::from_str(source).unwrap();
+        let roles = profile.roles();
+        let pairs = config["layout"]["knob_pairs"].as_array().unwrap();
+        for (pair, (expected_group, expected_left, expected_right)) in pairs.iter().zip([
+            (Group::Chop, "slice.start", "slice.end"),
+            (Group::Chop, "chop.region_start_pos", "chop.region_end_pos"),
+            (Group::Global, "pad.send_1", "pad.send_2"),
+            (Group::Fx, "edit.param_2", "edit.param_3"),
+        ]) {
+            let group = Group::from_key(pair["scope"].as_str().unwrap()).unwrap();
+            let left = pair["left"].as_str().unwrap();
+            let right = pair["right"].as_str().unwrap();
+            assert_eq!(
+                (group, left, right),
+                (expected_group, expected_left, expected_right)
+            );
+            let control = |role| {
+                let (_, key, _) = roles
+                    .iter()
+                    .find(|(scope, _, action)| *scope == group.scope() && action == role)
+                    .unwrap();
+                profile.name_of(*key).unwrap()
+            };
+            let (first, second) = (control(left), control(right));
+            assert!(
+                adjacent(first, second),
+                "{left}/{right} use {first}/{second}"
+            );
+        }
+        assert_eq!(pairs.len(), 4);
+
+        for (page, lower, upper) in [
+            ("TONE", ["volume", "pan"], ["pitch", "fine"]),
+            ("ENV", ["attack", "decay"], ["hold", "releas"]),
+            ("FILTER", ["cutoff", "reso"], ["amount", "e.dec"]),
+            ("SOURCE", ["start", "end"], ["loop <", "loop >"]),
+            ("FX", ["send 1", "send 2"], ["-", "-"]),
+        ] {
+            let table = SMC_PAD_PAGES
+                .iter()
+                .find(|table| table.name == page)
+                .unwrap();
+            let at = |knob| table.role(knob).unwrap().0;
+            for (roles, knobs, names) in
+                [(lower, [3, 4], ["e3", "e4"]), (upper, [5, 6], ["e5", "e6"])]
+            {
+                assert!(
+                    adjacent(names[0], names[1]),
+                    "{page} {roles:?} use {names:?}"
+                );
+                assert_eq!(knobs.map(at), roles, "{page} knobs {knobs:?}");
+            }
+        }
+    }
 
     #[test]
     fn buffer_choice_ranges_do_not_claim_an_actual_server_size() {

@@ -328,6 +328,7 @@ impl App {
                 (label, !unavailable)
             }
             None if name == "f7" => ("pan", false),
+            None if name == "e6" && self.pattern_panel.is_some() => ("swing", false),
             None => ("-", false),
         }
     }
@@ -384,7 +385,10 @@ impl App {
     fn smc_value_label(&self, action: &str) -> Option<(&'static str, bool)> {
         use input::midi::Param;
         let param = match input::midi::param_of(action)? {
-            Param::SmcPageValue(knob) => self.smc_page_value(knob),
+            Param::SmcPageValue(knob) => {
+                let (label, param) = self.smc_page_role(knob).unwrap_or(("-", None));
+                return Some((label, param.is_none()));
+            }
             Param::Slot(slot) => self.slot_param(slot),
             _ => return None,
         };
