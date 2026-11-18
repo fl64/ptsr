@@ -17,6 +17,11 @@ LEFT and RIGHT SHALL keep the current list. Keyboard paths SHALL remain availabl
 - **THEN** the pages show their commands in physical order
 - **AND** the page move retains the fixed bottom row, count and transport
 
+#### Scenario: The panel header shows only the page
+- **WHEN** the panel shows over the Pads screen at either supported size
+- **THEN** its header row shows the view, page and count
+- **AND** no part of the bank strip remains on that row
+
 #### Scenario: A screen switch resets the panel page
 - **WHEN** the owner changes screen from a visible context page
 - **THEN** the new screen shows its main page and its own cells

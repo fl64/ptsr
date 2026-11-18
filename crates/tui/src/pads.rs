@@ -34,6 +34,8 @@ pub fn command_panel_in(
             ..pad.title
         },
     );
+    // The bank strip under the header is wider than the header text.
+    frame.render_widget(Clear, pad.bank);
     frame.render_widget(
         Line::from(format!(
             " PANEL · SMC | {} {}/{}",
@@ -735,4 +737,40 @@ fn envelope_cell(
 
 fn mode(gate: bool) -> &'static str {
     if gate { "gate" } else { "one-shot" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    /// Scenario "The panel header shows only the page" (command-panel).
+    #[test]
+    fn the_panel_header_shows_only_the_page() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let panel = CommandPanel {
+                labels: std::array::from_fn(|_| None),
+                page: 0,
+                pages: 5,
+                view: "PADS",
+            };
+            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+            term.draw(|frame| {
+                let area = frame.area();
+                let filler = "x".repeat(usize::from(area.width));
+                let lines = vec![Line::from(filler); usize::from(area.height)];
+                frame.render_widget(Paragraph::new(lines), area);
+                command_panel_in(frame, area, &panel, None);
+            })
+            .unwrap();
+            let [_, body, _, _] = frame_areas(Rect::new(0, 0, width, height));
+            let bank = pad_frame(body, false).bank;
+            let buffer = term.backend().buffer();
+            let row: String = (bank.x..bank.right())
+                .map(|x| buffer[(x, bank.y)].symbol())
+                .collect();
+            assert!(row.contains("PANEL · SMC | PADS 1/5"), "{row}");
+            assert!(!row.contains('x'), "{width}x{height}: {row}");
+        }
+    }
 }
