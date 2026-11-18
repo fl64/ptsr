@@ -89,12 +89,20 @@ def title_has_id(title: str, identifier: str) -> bool:
     return False
 
 
+def _archive_order(folder: Path) -> tuple[str, tuple[int, str], str]:
+    # Text order puts change 124 before change 93 on the same archive date.
+    date, rest = folder.name[:10], folder.name[11:]
+    match = CHANGE_ID.match(rest)
+    number = _id_key(match[1]) if match else (sys.maxsize, "")
+    return date, number, folder.name
+
+
 def check_archived(root: Path) -> tuple[list[str], int]:
     errors: list[str] = []
     # The key keeps requirement identity for later REMOVED and RENAMED entries.
     active: dict[tuple[str, str, str], str] = {}
     archive = root / "openspec/changes/archive"
-    folders = sorted(path for path in archive.iterdir() if path.is_dir())
+    folders = sorted((path for path in archive.iterdir() if path.is_dir()), key=_archive_order)
     for folder in folders:
         specs = folder / "specs"
         if not specs.is_dir():

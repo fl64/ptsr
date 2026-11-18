@@ -56,6 +56,19 @@ class SpecSyncTests(unittest.TestCase):
         errors, _, count = self.audit()
         self.assertEqual((errors, count), ([], 0))
 
+    def test_same_date_archives_apply_in_number_order(self) -> None:
+        self.delta("2026-11-18-93-reach", """## ADDED Requirements
+### Requirement: Old pages
+#### Scenario: Old page
+""")
+        self.delta("2026-11-18-124-knobs", """## REMOVED Requirements
+### Requirement: Old pages
+**Reason**: Knobs replace it.
+""")
+        self.main_spec("# patterns Specification\n")
+        errors, _, count = self.audit()
+        self.assertEqual((errors, count), ([], 0))
+
     def test_modified_requirement_cannot_silently_drop_old_scenario(self) -> None:
         self.delta("2026-11-01-01-play", """## ADDED Requirements
 ### Requirement: Play
