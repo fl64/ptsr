@@ -118,13 +118,22 @@ fn every_current_keyboard_action_has_a_controller_route() {
             Screen::Fx => &[View::Fx],
             Screen::Settings => &[View::Settings],
         };
-        let mut panel_actions = Vec::new();
+        let pads_actions: Vec<Action> = [View::Pads, View::Pattern]
+            .into_iter()
+            .flat_map(|view| (1..=12).map(move |cell| (view, cell)))
+            .filter_map(|(view, cell)| panel.cell(view, cell).map(|cell| cell.action))
+            .collect();
+        // The screens view holds the global actions (127).
+        let mut panel_actions = vec![
+            Action::SessionSave,
+            Action::ProjectPick,
+            Action::LearnToggle,
+            Action::Quit,
+        ];
         for view in views {
-            for page in 0..panel.pages(*view) {
-                for cell in 1..=12 {
-                    if let Some(cell) = panel.cell(*view, page, cell) {
-                        panel_actions.push(cell.action);
-                    }
+            for cell in 1..=12 {
+                if let Some(cell) = panel.cell(*view, cell) {
+                    panel_actions.push(cell.action);
                 }
             }
         }
@@ -157,7 +166,20 @@ fn every_current_keyboard_action_has_a_controller_route() {
                     | "ui.back"
                     | "ui.confirm"
                     | "transport.play_stop"
+                    // PLAY and STOP replace the panel cell (127).
+                    | "transport.toggle"
             );
+            // Pad commands live in the Pads actions and A1 commands in the A1 actions (127).
+            let pads_screen = matches!(
+                named,
+                "pad.take"
+                    | "record.output"
+                    | "pattern.controls"
+                    | "pattern.record"
+                    | "pattern.erase"
+                    | "pattern.undo"
+                    | "ui.pads_toggle"
+            ) && pads_actions.contains(&action);
             let bank_select = named.starts_with("bank.");
             let role = aliases.iter().find(|(name, _, _)| *name == named).copied();
             let role_ok = role.is_some_and(|(_, control, expected)| {
@@ -206,8 +228,17 @@ fn every_current_keyboard_action_has_a_controller_route() {
                 }
                 _ => false,
             };
+            // Assign shows order in cell 4 of the Chop actions (127).
+            let assign_order = action == Action::ChopAssignOrder && screen == Screen::Chop;
             assert!(
-                fixed || role_ok || variant_role_ok || bank_ok || tempo_ok || direct_editor,
+                fixed
+                    || assign_order
+                    || role_ok
+                    || variant_role_ok
+                    || bank_ok
+                    || tempo_ok
+                    || direct_editor
+                    || pads_screen,
                 "{screen:?} key {key}: no SMC-PAD route for {named} ({action:?})"
             );
         }
@@ -252,20 +283,14 @@ fn every_current_controller_action_has_a_keyboard_route() {
         View::Fx,
         View::Settings,
     ] {
-        for page in 0..panel.pages(view) {
+        {
             for slot in 1..=12 {
-                let Some(cell) = panel.cell(view, page, slot) else {
+                let Some(cell) = panel.cell(view, slot) else {
                     continue;
                 };
                 let mut route = State::default();
                 assert_eq!(route.press(SMC, 1), Press::Revealed);
-                if page > 0 {
-                    assert_eq!(route.choice(view, 8), Choice::Page);
-                    if page > 1 {
-                        route.select_context_page(view, page as i32 - 1);
-                    }
-                }
-                assert_eq!(route.page(), page);
+                assert_eq!(route.page(), 1);
                 assert_eq!(
                     route.choice(view, slot),
                     if cell.action == Action::Quit {
@@ -273,7 +298,7 @@ fn every_current_controller_action_has_a_keyboard_route() {
                     } else {
                         Choice::Action(cell.action)
                     },
-                    "{view:?} page {page} cell {cell:?}"
+                    "{view:?} cell {cell:?}"
                 );
                 let contextual = match cell.action {
                     Action::ChopCommit => has("chop.edit"),
@@ -286,7 +311,7 @@ fn every_current_controller_action_has_a_keyboard_route() {
                 };
                 assert!(
                     keyboard.contains(&cell.action) || contextual,
-                    "{view:?} page {page} cell {cell:?}: no keyboard route"
+                    "{view:?} cell {cell:?}: no keyboard route"
                 );
             }
         }
@@ -968,40 +993,39 @@ fn another_controller_keeps_its_global_knob_in_the_project_picker() {
     assert_eq!(drive.app.project_picker.as_ref().unwrap().selected, 1);
 }
 
-/// Scenario "Next selects a later context page" (controller-reach).
+/// A visible panel keeps RIGHT from the bank; the A1 grid cell matches the keyboard.
 #[test]
-fn next_selects_a_later_context_page() {
+fn a1_grid_cell_matches_the_keyboard() {
     let mut keyboard = smc_drive();
     let mut controller = smc_drive();
     let before = controller.app.pattern_view.division.grid();
     keyboard.tap(KeyCode::Up, M::ALT);
 
     let mut hidden = smc_drive();
-    turn(&mut hidden, 35, 65);
-    assert_eq!(hidden.app.panel.page(), 0);
+    list_button(&mut hidden, true);
+    assert_eq!(
+        hidden.app.pads.bank, 1,
+        "a hidden panel leaves RIGHT to the bank"
+    );
     assert_eq!(hidden.app.pattern_view.division.grid(), before);
     cell(&mut controller, 64);
-    cell(&mut controller, 63);
     assert_eq!(controller.app.panel.page(), 1);
     let master = controller.app.master_db;
     controller.bytes(XS_PORT, &[0xB0, 14, 0]);
     controller.frame();
     assert_ne!(controller.app.master_db, master);
     assert_eq!(controller.app.panel.page(), 1);
-    for _ in 1..4 {
-        cell(&mut controller, panel_note(11));
-    }
+    list_button(&mut controller, true);
+    assert_eq!(controller.app.panel.page(), 1);
+    assert_eq!(controller.app.pads.bank, 0, "a visible panel takes RIGHT");
+    // Grid moved to the A1 actions (127): LEFT, then A1.
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(4));
     assert_eq!(
-        controller.app.panel.page(),
-        4,
-        "{:?}",
-        controller.app.input_log
-    );
-    assert_eq!(
-        controller.app.panel_snapshot().unwrap().labels[1].as_deref(),
+        controller.app.panel_snapshot().unwrap().labels[2].as_deref(),
         Some("grid +")
     );
-    cell(&mut controller, 65);
+    cell(&mut controller, panel_note(3));
     assert_ne!(controller.app.pattern_view.division.grid(), before);
     assert_eq!(
         controller.app.pattern_view.division.grid(),
@@ -1017,8 +1041,8 @@ fn help_cells_navigate_without_acting_behind_help() {
     let mut keyboard = smc_drive();
     let selected = controller.app.pads.selected_abs();
     cell(&mut controller, 64);
+    list_button(&mut controller, false);
     cell(&mut controller, panel_note(8));
-    cell(&mut controller, panel_note(10));
     keyboard.tap(KeyCode::F(1), M::NONE);
     keyboard.tap(KeyCode::Tab, M::NONE);
     keyboard.tap(KeyCode::Tab, M::NONE);
@@ -1058,29 +1082,30 @@ fn help_cells_navigate_without_acting_behind_help() {
     assert_eq!(controller.app.pads.selected_abs(), selected);
 }
 
-/// Scenario "The main panel gives Help one context route" (command-panel).
+/// The screens view opens Help and Setup; Mixer stays dim.
 #[test]
-fn the_main_panel_gives_help_one_context_route() {
+fn the_screens_view_opens_help_and_setup() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     for view in ALL_VIEWS {
         let mut drive = reach_drive(view, sound.clone());
         let screen = drive.app.screen;
         cell(&mut drive, panel_note(1));
+        list_button(&mut drive, false);
         let main = drive.app.panel_snapshot().unwrap();
         assert_eq!(main.labels[5].as_deref(), Some("mixer"));
         assert_eq!(main.labels[6].as_deref(), Some("setup"));
         cell(&mut drive, panel_note(6));
         assert_eq!(drive.app.screen, screen);
         assert!(!drive.app.help_open);
+        assert_eq!(drive.app.panel.label(view, 8), Some("help"));
         cell(&mut drive, panel_note(8));
-        assert_eq!(drive.app.panel.label(view, 10), Some("help"));
-        cell(&mut drive, panel_note(10));
         assert!(drive.app.help_open, "{view:?}");
         assert_eq!(drive.app.screen, screen);
     }
 
     let mut drive = smc_drive();
     cell(&mut drive, panel_note(1));
+    list_button(&mut drive, false);
     cell(&mut drive, panel_note(7));
     assert_eq!(drive.app.screen, Screen::Settings);
 }
@@ -1091,30 +1116,29 @@ fn exit_needs_a_second_smc_press() {
     let mut drive = smc_drive();
     drive.app.session_dirty = Some(Instant::now());
     cell(&mut drive, 64);
-    cell(&mut drive, 63);
-    cell(&mut drive, panel_note(11));
-    assert_eq!(drive.app.panel.page(), 2);
-    cell(&mut drive, 57);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
+    cell(&mut drive, panel_note(12));
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
     assert!(!drive.app.quit_requested);
     assert!(drive.app.session_dirty.is_some());
     cell(&mut drive, 62);
     assert!(drive.app.ask.is_none());
     assert!(!drive.app.quit_requested);
-    assert_eq!(drive.app.panel.page(), 2);
+    assert_eq!(drive.app.panel.page(), 0);
 
-    cell(&mut drive, 57);
+    cell(&mut drive, panel_note(12));
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
     cell(&mut drive, 52);
     assert!(drive.app.ask.is_none());
     assert!(!drive.app.quit_requested);
 
-    cell(&mut drive, 57);
+    cell(&mut drive, panel_note(12));
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
     cell(&mut drive, 63);
     assert!(drive.app.ask.is_none());
     assert!(drive.app.quit_requested);
-    assert_eq!(drive.app.panel.page(), 2);
+    assert_eq!(drive.app.panel.page(), 0);
 
     let mut keyboard = smc_drive();
     assert!(keyboard.app.keyboard_event(
@@ -1153,10 +1177,9 @@ fn exit_question_keeps_a_pending_a1_save_until_confirmation() {
     assert!(drive.app.pending_manual_save.is_some());
 
     cell(&mut drive, 64);
-    cell(&mut drive, 63);
-    cell(&mut drive, panel_note(11));
-    assert_eq!(drive.app.panel.page(), 2);
-    cell(&mut drive, 57);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
+    cell(&mut drive, panel_note(12));
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
     assert!(drive.app.pending_manual_save.is_some());
     assert!(!drive.app.quit_requested);
@@ -1165,7 +1188,7 @@ fn exit_question_keeps_a_pending_a1_save_until_confirmation() {
     assert!(drive.app.pending_manual_save.is_some());
     assert!(!drive.app.quit_requested);
 
-    cell(&mut drive, 57);
+    cell(&mut drive, panel_note(12));
     cell(&mut drive, 63);
     assert!(drive.app.quit_requested);
     assert!(drive.app.quit_ready());
@@ -1180,51 +1203,37 @@ fn exit_question_keeps_a_pending_a1_save_until_confirmation() {
 fn first_entry_and_repeated_commands_have_separate_counts() {
     let mut first = smc_drive();
     let mut first_cell_hits = 0;
-    for note in [64, 63, 64] {
-        cell(&mut first, note);
+    for slot in [1, 5] {
+        cell(&mut first, panel_note(slot));
         first_cell_hits += 1;
     }
     assert!(first.app.pads.gate[0]);
-    assert_eq!(1 + first_cell_hits, 4); // PAD BANK plus reveal, More and Mode.
+    assert_eq!(1 + first_cell_hits, 3); // PAD BANK plus reveal and Mode.
 
     let mut repeated = smc_drive();
-    cell(&mut repeated, 64); // Reveal before the counted visible-main route.
-    let mut repeated_cell_hits = 0;
-    for note in [63, 64] {
-        cell(&mut repeated, note);
-        repeated_cell_hits += 1;
-    }
+    cell(&mut repeated, 64); // Reveal before the counted visible route.
+    cell(&mut repeated, panel_note(5));
     assert!(repeated.app.pads.gate[0]);
-    assert_eq!(repeated_cell_hits, 2);
 
     let mut shortcut = smc_drive();
     shortcut.app.set_smc_pad_bank(true);
     pad_bank_request(&mut shortcut, SMC);
-    let mut shortcut_presses = 1;
-    for slot in [8, 1] {
-        cell(&mut shortcut, panel_note(slot));
-        shortcut_presses += 1;
-    }
-    assert!(shortcut.app.pads.gate[0]);
-    assert_eq!(shortcut_presses, 3);
+    cell(&mut shortcut, panel_note(5));
+    assert!(shortcut.app.pads.gate[0]); // PAD BANK and Mode: two presses.
 
     let mut screen = smc_drive();
     screen.app.set_smc_pad_bank(true);
     pad_bank_request(&mut screen, SMC);
+    list_button(&mut screen, false);
     cell(&mut screen, panel_note(2));
-    assert_eq!(screen.app.screen, Screen::Files);
+    assert_eq!(screen.app.screen, Screen::Files); // PAD BANK, LEFT and Files.
 
     let mut later = smc_drive();
     cell(&mut later, panel_note(1));
-    let mut visible_presses = 0;
-    for (slot, expected_page) in [(8, 1), (11, 2), (11, 3), (11, 4)] {
-        cell(&mut later, panel_note(slot));
-        visible_presses += 1;
-        assert_eq!(later.app.panel.page(), expected_page);
-    }
-    assert_eq!(later.app.panel.label(panel::View::Pads, 4), Some("step"));
-    assert_eq!(visible_presses + 1, 5); // One more hit reaches the action.
-    assert_eq!(visible_presses + 3, 7); // PAD BANK, reveal and the action.
+    list_button(&mut later, false);
+    assert_eq!(later.app.panel.page(), 0);
+    assert_eq!(later.app.panel.label(panel::View::Pads, 4), Some("A1"));
+    // PAD BANK, the reveal, LEFT and A1: four presses; visible: two.
 
     let mut knob = smc_drive();
     let db = knob.app.master_db;
@@ -1233,9 +1242,9 @@ fn first_entry_and_repeated_commands_have_separate_counts() {
     assert_eq!(knob.app.pads.bank, 0);
 }
 
-/// Scenario "Added cells reach their current actions" (controller-reach).
+/// The A1 knobs cell opens the same pattern controls as the keyboard.
 #[test]
-fn added_cells_reach_their_current_actions() {
+fn a1_knobs_cell_matches_the_keyboard() {
     let mut keyboard = smc_drive();
     let mut controller = smc_drive();
     keyboard.tap(KeyCode::PageDown, M::NONE);
@@ -1244,34 +1253,16 @@ fn added_cells_reach_their_current_actions() {
 
     keyboard.tap(KeyCode::Char('n'), M::ALT);
     cell(&mut controller, 64);
-    cell(&mut controller, 63);
-    cell(&mut controller, panel_note(11));
-    assert_eq!(controller.app.panel.page(), 2);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(4));
+    assert_eq!(controller.app.panel_view(), panel::View::Pattern);
     assert_eq!(
-        controller.app.panel_snapshot().unwrap().labels[2].as_deref(),
-        Some("take")
+        controller.app.panel_snapshot().unwrap().labels[3].as_deref(),
+        Some("knobs")
     );
-    cell(&mut controller, 56);
+    cell(&mut controller, panel_note(4));
     assert_eq!(controller.app.pattern_panel, keyboard.app.pattern_panel);
     assert!(controller.app.pattern_panel.is_some());
-}
-
-#[test]
-fn take_cell_keeps_settings_screen_and_swap_target() {
-    let mut keyboard = smc_drive();
-    let mut controller = smc_drive();
-    for drive in [&mut keyboard, &mut controller] {
-        drive.app.screen = Screen::Settings;
-        drive.app.publish_midi(&drive.shared);
-    }
-    keyboard.tap(KeyCode::Char('x'), M::CONTROL);
-    cell(&mut controller, 64);
-    cell(&mut controller, 63);
-    cell(&mut controller, panel_note(11));
-    assert_eq!(controller.app.panel.page(), 2);
-    cell(&mut controller, 66);
-    assert_eq!(controller.app.pad_in_hand, keyboard.app.pad_in_hand);
-    assert_eq!(controller.app.screen, keyboard.app.screen);
 }
 
 /// Scenario "Tempo turns act only on the Pattern transport page" (controller-reach).
@@ -1359,21 +1350,6 @@ fn shared_transport_key_keeps_previews_on_files_and_chop() {
                     "{screen:?} {letter} {kind:?}"
                 );
             }
-
-            cell(&mut controller, 64);
-            cell(&mut controller, 63);
-            cell(&mut controller, panel_note(11));
-            assert_eq!(controller.app.panel.page(), 2);
-            let frame = cell(&mut controller, 65);
-            assert_eq!(
-                frame
-                    .commands()
-                    .iter()
-                    .filter(|command| matches!(command, Command::TransportToggle))
-                    .count(),
-                1,
-                "{screen:?} page 2 trnspt"
-            );
 
             let frame = keyboard.tap(KeyCode::Char(' '), M::NONE);
             assert!(
@@ -1478,7 +1454,8 @@ fn owner_transport_key_and_modal_input_keep_priority() {
 
 #[test]
 fn grid_cell_keeps_the_screen_and_matches_ctrl_o() {
-    for screen in [Screen::Pads, Screen::Files, Screen::Chop, Screen::Settings] {
+    // The grid cell is on Pads action page 1 (127).
+    for screen in [Screen::Pads] {
         let mut keyboard = smc_drive();
         let mut controller = smc_drive();
         for drive in [&mut keyboard, &mut controller] {
@@ -1487,10 +1464,8 @@ fn grid_cell_keeps_the_screen_and_matches_ctrl_o() {
         }
         keyboard.tap(KeyCode::Char('o'), M::CONTROL);
         cell(&mut controller, 64);
-        cell(&mut controller, 63);
-        cell(&mut controller, panel_note(11));
-        assert_eq!(controller.app.panel.page(), 2);
-        cell(&mut controller, 61);
+        assert_eq!(controller.app.panel.page(), 1);
+        cell(&mut controller, panel_note(9));
         assert_eq!(controller.app.ui.hide_pads, keyboard.app.ui.hide_pads);
         assert_eq!(controller.app.screen, screen);
     }
@@ -1499,12 +1474,12 @@ fn grid_cell_keeps_the_screen_and_matches_ctrl_o() {
 #[test]
 fn pattern_record_and_erase_cells_match_keyboard_modes() {
     for (note, code, modifiers) in [
-        (60, KeyCode::Char('e'), M::ALT),
-        (61, KeyCode::Char('r'), M::CONTROL),
+        (61, KeyCode::Char('e'), M::ALT),
+        (60, KeyCode::Char('r'), M::CONTROL),
     ] {
         let mut keyboard = smc_drive();
         let mut controller = smc_drive();
-        if note == 60 {
+        if note == 61 {
             let pattern = session::PatternState {
                 slot: "A1".into(),
                 bars: 1,
@@ -1517,10 +1492,9 @@ fn pattern_record_and_erase_cells_match_keyboard_modes() {
         }
         let keyboard_frame = keyboard.tap(code, modifiers);
         cell(&mut controller, 64);
-        cell(&mut controller, 63);
-        cell(&mut controller, 58);
-        cell(&mut controller, 58);
-        assert_eq!(controller.app.panel.page(), 3);
+        list_button(&mut controller, false);
+        cell(&mut controller, panel_note(4)); // A1 actions (127).
+        assert_eq!(controller.app.panel_view(), panel::View::Pattern);
         let controller_frame = cell(&mut controller, note);
         assert_eq!(controller.app.erase_pads, keyboard.app.erase_pads);
         assert_eq!(
@@ -1530,7 +1504,7 @@ fn pattern_record_and_erase_cells_match_keyboard_modes() {
                 .map(|state| state.phase),
             keyboard.app.pattern_record_state().map(|state| state.phase)
         );
-        if note == 60 {
+        if note == 61 {
             assert!(controller.app.erase_pads);
         } else {
             for frame in [keyboard_frame, controller_frame] {
@@ -1558,25 +1532,24 @@ fn every_reachable_mode_shows_its_badge() {
         match mode {
             "mark" => {
                 keyboard.tap(KeyCode::Char('m'), M::NONE);
-                cell(&mut controller, 59);
+                cell(&mut controller, panel_note(4));
             }
             "edit" => {
                 keyboard.tap(KeyCode::Enter, M::NONE);
-                cell(&mut controller, 56);
+                cell(&mut controller, panel_note(1));
             }
             "copy" => {
                 keyboard.tap(KeyCode::Char('c'), M::CONTROL);
-                cell(&mut controller, 57);
+                cell(&mut controller, panel_note(2));
             }
             "swap" => {
                 keyboard.tap(KeyCode::Char('x'), M::CONTROL);
-                cell(&mut controller, 58);
+                cell(&mut controller, panel_note(3));
             }
             _ => {
                 keyboard.tap(KeyCode::F(10), M::NONE);
-                cell(&mut controller, 63);
+                list_button(&mut controller, false);
                 cell(&mut controller, panel_note(11));
-                cell(&mut controller, 62);
             }
         }
         assert_eq!(
@@ -1609,11 +1582,10 @@ fn learning_answer_keeps_its_chosen_control() {
     let mut drive = smc_drive();
     drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "source");
     cell(&mut drive, 64);
-    cell(&mut drive, 57); // Copy is the action to learn.
+    cell(&mut drive, panel_note(2)); // Copy is the action to learn.
     cell(&mut drive, panel_note(15)); // Open the command pages from the target view.
-    cell(&mut drive, 63);
+    list_button(&mut drive, false);
     cell(&mut drive, panel_note(11));
-    cell(&mut drive, 62);
     assert_eq!(drive.app.learn_picked().unwrap().0, "pad.copy");
     cell(&mut drive, 63);
     assert_eq!(
@@ -1797,7 +1769,7 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// The shipped panel has 225 cells, so this production-input matrix belongs to the slow group.
+/// The shipped panel has 53 action cells, so this production-input matrix belongs to the slow group.
 #[test]
 fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     use panel::{Config, View};
@@ -1810,32 +1782,12 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     let mut checked = 0;
     let mut special = 0;
     for view in ALL_VIEWS {
-        for page in 0..config.pages(view) {
+        {
             for slot in 1..=12 {
-                let Some(cell_info) = config.cell(view, page, slot) else {
+                let Some(cell_info) = config.cell(view, slot) else {
                     continue;
                 };
                 let action = cell_info.action;
-                if view == View::ChopEdit && action == Action::ChopAssignOrder {
-                    let mut controller =
-                        reach_drive(view, Arc::new(Sample::mono(vec![0.2; 4_800])));
-                    cell(&mut controller, 64);
-                    cell(&mut controller, 63);
-                    for _ in 1..4 {
-                        cell(&mut controller, panel_note(11));
-                    }
-                    assert_eq!(controller.app.panel.page(), 4);
-                    let before = controller.seen();
-                    let frame = cell(&mut controller, panel_note(slot));
-                    assert_eq!(
-                        controller.seen(),
-                        before,
-                        "Chop edit order must stay inactive"
-                    );
-                    assert!(frame.commands().is_empty());
-                    special += 1;
-                    continue;
-                }
                 if matches!(
                     action,
                     Action::Quit
@@ -1871,9 +1823,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                             })
                             .map(|kind| (name, code, modifiers, kind))
                     })
-                    .unwrap_or_else(|| {
-                        panic!("{view:?} page {page} cell {slot}: no key for {action:?}")
-                    });
+                    .unwrap_or_else(|| panic!("{view:?} cell {slot}: no key for {action:?}"));
                 let keyboard_frame = if key.3 == KeyEventKind::Repeat {
                     for drive in [&mut keyboard, &mut controller] {
                         drive.key(key.1, key.2, KeyEventKind::Press);
@@ -1888,15 +1838,9 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                     keyboard.tap(key.1, key.2)
                 };
                 cell(&mut controller, 64);
-                if page > 0 {
-                    cell(&mut controller, 63);
-                    for _ in 1..page {
-                        cell(&mut controller, panel_note(11));
-                    }
-                }
                 assert_eq!(
                     controller.app.panel.page(),
-                    page,
+                    1,
                     "{view:?} {action:?}: {:?}",
                     controller.app.input_log
                 );
@@ -1908,14 +1852,14 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                 assert_eq!(
                     reach_result(&controller, &controller_frame),
                     reach_result(&keyboard, &keyboard_frame),
-                    "{view:?} page {page} cell {slot} {action:?} key {}",
+                    "{view:?} cell {slot} {action:?} key {}",
                     key.0
                 );
                 checked += 1;
             }
         }
     }
-    assert_eq!(checked + special, 176);
+    assert_eq!(checked + special, 53);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -1930,9 +1874,8 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             &mut keyboard.mods,
         ));
         cell(&mut controller, 64);
-        cell(&mut controller, 63);
-        cell(&mut controller, panel_note(11));
-        cell(&mut controller, 57);
+        list_button(&mut controller, false);
+        cell(&mut controller, panel_note(12));
         assert!(
             matches!(controller.app.ask, Some(Ask::Exit { .. })),
             "{view:?}"
@@ -1952,8 +1895,11 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     keyboard.tap(KeyCode::Tab, M::NONE);
     keyboard.tap(KeyCode::Enter, M::NONE);
     cell(&mut controller, 64);
-    cell(&mut controller, 63);
-    cell(&mut controller, 61);
+    cell(&mut controller, panel_note(4)); // Assign opens the target view.
+    cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
+    cell(&mut controller, panel_note(4)); // Order replaces assign while Assign is open.
+    cell(&mut controller, panel_note(15)); // Back to the target pads.
+    cell(&mut controller, panel_note(1)); // Start the order at pad 1, as Enter does.
     assert_eq!(controller.app.plan, keyboard.app.plan);
 
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -2192,13 +2138,14 @@ fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
         if view == panel::View::ChopEdit {
             keyboard.tap(KeyCode::Esc, M::NONE);
         }
-        keyboard.tap(KeyCode::Char('l'), M::NONE);
+        // LEFT and RIGHT select pad banks on Chop, as on Pads (127).
+        keyboard.tap(KeyCode::PageDown, M::NONE);
         list_button(&mut chop, true);
-        assert_eq!(chop.app.chop.as_ref().unwrap().selected, 2);
-        assert_eq!(
-            chop.app.chop.as_ref().unwrap().selected,
-            keyboard.app.chop.as_ref().unwrap().selected
-        );
+        assert_eq!(chop.app.pads.bank, 1, "{view:?}");
+        assert_eq!(chop.app.pads.bank, keyboard.app.pads.bank, "{view:?}");
+        assert_eq!(chop.app.chop.as_ref().unwrap().selected, 1, "{view:?}");
+        list_button(&mut chop, false);
+        assert_eq!(chop.app.pads.bank, 0, "{view:?}");
     }
 
     let mut fx = reach_drive(panel::View::Fx, sound.clone());
@@ -2445,16 +2392,17 @@ fn fx_knobs_change_the_current_slot() {
     assert_ne!(fx.app.pads.fx[1].kind, second.kind);
 }
 
-/// Scenario "Direct page controls replace panel steps" (command-panel).
+/// Pad edit pages move with LEFT and RIGHT while the panel is hidden.
 #[test]
-fn direct_page_controls_replace_panel_steps() {
+fn pad_edit_pages_move_with_the_hidden_panel() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut shown = reach_drive(panel::View::PadEdit, sound.clone());
+    cell(&mut shown, 64);
+    let snapshot = shown.app.panel_snapshot().unwrap();
+    assert!(snapshot.labels[4..12].iter().all(Option::is_none));
+    // The pages move with LEFT and RIGHT while the panel is hidden.
     let mut drive = reach_drive(panel::View::PadEdit, sound);
     let pad = drive.app.pads.selected_abs();
-    cell(&mut drive, 64);
-    let snapshot = drive.app.panel_snapshot().unwrap();
-    assert!(snapshot.labels[8..12].iter().all(Option::is_none));
-    cell(&mut drive, panel_note(9));
     assert_eq!(drive.app.pads.page().0, "TONE");
     list_button(&mut drive, true);
     assert_eq!(drive.app.pads.page().0, "ENV");
@@ -2625,13 +2573,13 @@ fn a_chop_bound_turn_keeps_the_current_panel_page() {
     let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
     let mut drive = reach_drive(panel::View::Chop, sound);
     cell(&mut drive, 64);
-    cell(&mut drive, 63);
     assert_eq!(drive.app.panel.page(), 1);
     turn(&mut drive, 35, 63);
     assert_eq!(drive.app.panel.page(), 1);
     assert!(drive.app.chop.as_ref().unwrap().range.end < 96_000);
-    cell(&mut drive, panel_note(11));
-    assert_eq!(drive.app.panel.page(), 2);
+    list_button(&mut drive, false);
+    turn(&mut drive, 35, 63);
+    assert_eq!(drive.app.panel.page(), 0);
 }
 
 /// Scenario "Bank 2 turns change no pad value" (controller-reach).
@@ -3027,19 +2975,21 @@ fn pad_bank_opens_the_panel_once_before_a_pad_hit() {
     drive.app.set_smc_pad_bank(true);
     let reveal = pad_bank_request(&mut drive, SMC);
     assert_eq!(drive.app.panel.owner(), Some(SMC));
-    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(drive.app.panel.page(), 1);
     assert!(reveal.commands().is_empty());
     assert_eq!(drive.app.screen, Screen::Pads);
+    list_button(&mut drive, false);
     cell(&mut drive, panel_note(2));
     assert_eq!(drive.app.screen, Screen::Files);
-    cell(&mut drive, panel_note(8));
     assert_eq!(drive.app.panel.page(), 1);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
     const SECOND: &str = "SINCO SMC-PAD-Master 32:1";
     drive.midi().recorded_connect(SECOND);
     drive.frame();
     assert!(pad_bank_request(&mut drive, SECOND).commands().is_empty());
     assert_eq!(drive.app.panel.owner(), Some(SMC));
-    assert_eq!(drive.app.panel.page(), 1);
+    assert_eq!(drive.app.panel.page(), 0);
 
     assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
     assert!(!drive.app.panel.visible());
@@ -3047,7 +2997,7 @@ fn pad_bank_opens_the_panel_once_before_a_pad_hit() {
 
     assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
     assert_eq!(drive.app.panel.owner(), Some(SMC));
-    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(drive.app.panel.page(), 1);
     assert_eq!(drive.app.screen, Screen::Files);
 }
 
@@ -3153,6 +3103,7 @@ fn first_hit_reveal_survives_a_missing_pad_bank_pulse() {
         cell(&mut drive, panel_note(2));
         assert!(drive.app.panel.visible());
         assert_eq!(drive.app.screen, Screen::Pads);
+        list_button(&mut drive, false);
         cell(&mut drive, panel_note(2));
         assert_eq!(drive.app.screen, Screen::Files);
     }
@@ -3429,18 +3380,131 @@ fn the_strip_shows_the_turned_knob_and_its_value() {
     assert!(drive.app.smc_knob_strip(at).unwrap().value.is_none());
 }
 
+/// Scenario "The panel opens on the screen actions" (command-panel).
+#[test]
+fn the_panel_opens_on_the_screen_actions() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
+    let mut drive = reach_drive(panel::View::Chop, sound);
+    cell(&mut drive, 64);
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert_eq!((panel.page, panel.view), (1, "CHOP"));
+    assert!(!panel.target);
+    assert_eq!(panel.labels[0].as_deref(), Some("cut"));
+    assert_eq!(panel.labels[3].as_deref(), Some("assign"));
+}
+
+/// Scenario "A screen hit opens that screen with its actions" (command-panel).
+#[test]
+fn a_screen_hit_opens_that_screen_with_its_actions() {
+    let mut drive = smc_drive();
+    cell(&mut drive, 64);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
+    cell(&mut drive, panel_note(2));
+    assert_eq!(drive.app.screen, Screen::Files);
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert_eq!((panel.page, panel.view), (1, "FILES"));
+    assert_eq!(panel.labels[0].as_deref(), Some("take"));
+    // A hit on the current screen also shows its actions.
+    list_button(&mut drive, false);
+    cell(&mut drive, panel_note(2));
+    assert_eq!(drive.app.panel.page(), 1);
+}
+
+/// Scenario "Global actions live in the screens view" (command-panel).
+#[test]
+fn global_actions_live_in_the_screens_view() {
+    for (cell, label) in [
+        (9, "save"),
+        (10, "open"),
+        (11, "learn"),
+        (12, "exit"),
+        (8, "help"),
+    ] {
+        let mut screens = panel::State::default();
+        screens.move_view(-1);
+        assert_eq!(screens.label(panel::View::Pads, cell), Some(label));
+    }
+    for view in ALL_VIEWS {
+        {
+            let mut route = panel::State::default();
+            for cell in 1..=12 {
+                let choice = route.choice(view, cell);
+                assert!(
+                    !matches!(
+                        choice,
+                        panel::Choice::Exit
+                            | panel::Choice::Action(
+                                Action::SessionSave
+                                    | Action::ProjectPick
+                                    | Action::LearnToggle
+                                    | Action::HelpToggle
+                                    | Action::TransportToggle
+                            )
+                    ),
+                    "{view:?} cell {cell}: {choice:?}"
+                );
+            }
+        }
+    }
+}
+
+/// Scenario "Assign shows order in the Chop actions" (command-panel).
+#[test]
+fn assign_shows_order_in_the_chop_actions() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(panel::View::Chop, sound.clone());
+    let mut controller = reach_drive(panel::View::Chop, sound);
+    keyboard.tap(KeyCode::Char('p'), M::NONE);
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    cell(&mut controller, 64);
+    assert_eq!(
+        controller.app.panel_snapshot().unwrap().labels[3].as_deref(),
+        Some("assign")
+    );
+    cell(&mut controller, panel_note(4)); // Assign opens the target view.
+    cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
+    assert_eq!(
+        controller.app.panel_snapshot().unwrap().labels[3].as_deref(),
+        Some("order")
+    );
+    cell(&mut controller, panel_note(4));
+    assert!(matches!(
+        controller.app.plan,
+        Some(chop::Plan::InOrder(None))
+    ));
+    assert_eq!(controller.app.plan, keyboard.app.plan);
+}
+
+/// Scenario "A visible panel takes LEFT and RIGHT" (controller-reach).
+#[test]
+fn a_visible_panel_takes_left_and_right() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
+    let mut drive = reach_drive(panel::View::Chop, sound);
+    let selected = drive.app.chop.as_ref().unwrap().selected;
+    cell(&mut drive, 64);
+    list_button(&mut drive, false);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
+    list_button(&mut drive, true);
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.panel.page(), 1);
+    assert_eq!(drive.app.pads.bank, 0);
+    assert_eq!(drive.app.chop.as_ref().unwrap().selected, selected);
+    assert_eq!(drive.app.screen, Screen::Chop);
+}
+
 /// Scenario "Pattern taps use the beat interval" (transport).
 #[test]
 fn pattern_taps_use_the_beat_interval() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut controller = reach_drive(panel::View::Pattern, sound.clone());
     cell(&mut controller, panel_note(1));
-    cell(&mut controller, panel_note(8));
     assert_eq!(
-        controller.app.panel.label(panel::View::Pattern, 6),
+        controller.app.panel.label(panel::View::Pattern, 10),
         Some("tap")
     );
-    let note = panel_note(6);
+    let note = panel_note(10);
     let start = Instant::now();
     let tap = |drive: &mut Drive, offset: u64| {
         let at = start + std::time::Duration::from_millis(offset);

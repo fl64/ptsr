@@ -87,7 +87,7 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
             }
             lines.push(Line::default());
             lines.push(" E1/↑↓ select · LEFT/RIGHT folder".fg(DIM).into());
-            lines.push(" Enter/P8 pick · Esc/P7 cancel".fg(DIM).into());
+            lines.push(" Enter/P12 pick · Esc/P11 cancel".fg(DIM).into());
             return Paragraph::new(lines);
         }
         if let Some((projects, samples)) = st.paths {

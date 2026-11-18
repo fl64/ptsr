@@ -358,7 +358,7 @@ impl App {
                 View::Pads => (self.pads.page().0, "Bank", ""),
                 View::PadEdit => (self.pads.page().0, "Page", "param"),
                 View::Pattern => ("Pattern", "Bar", "step"),
-                View::Chop | View::ChopEdit => ("Chop", "Slice", "cursor"),
+                View::Chop | View::ChopEdit => ("Chop", "Bank", "cursor"),
                 View::Files => ("Files", "Folder", "file"),
                 View::Settings => ("Settings", "Tab", "row"),
                 View::Fx => (["FX 1", "FX 2"][self.fx_slot], "Slot", "param"),

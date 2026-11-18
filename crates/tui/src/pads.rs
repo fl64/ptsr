@@ -5,9 +5,29 @@ use super::*;
 /// The current command labels for the SMC-PAD second bank.
 pub struct CommandPanel {
     pub labels: [Option<String>; 16],
+    /// 0 is the screens view; 1 is the actions of the current view (127).
     pub page: usize,
-    pub pages: usize,
     pub view: &'static str,
+    /// A target view (Copy, Assign and others) instead of the screens or action pages.
+    pub target: bool,
+}
+
+/// The number that the device prints on the pad of top-down `cell` 1–16.
+pub fn device_number(cell: usize) -> usize {
+    let (row, column) = ((cell - 1) / 4, (cell - 1) % 4);
+    (3 - row) * 4 + column + 1
+}
+
+/// The header: the shown view in the middle, its neighbors on the left and right.
+fn panel_header(panel: &CommandPanel) -> String {
+    if panel.target {
+        return format!(" PANEL · SMC │ {}", panel.view);
+    }
+    if panel.page == 0 {
+        " · │ SCREENS │ actions ›".to_string()
+    } else {
+        format!(" ‹ screens │ {} actions │ ·", panel.view)
+    }
 }
 
 pub fn command_panel_area(area: Rect) -> Rect {
@@ -36,15 +56,13 @@ pub fn command_panel_in(
     );
     // The bank strip under the header is wider than the header text.
     frame.render_widget(Clear, pad.bank);
+    let accent = if panel.page == 0 && !panel.target {
+        MAGENTA
+    } else {
+        CYAN
+    };
     frame.render_widget(
-        Line::from(format!(
-            " PANEL · SMC | {} {}/{}",
-            panel.view,
-            panel.page + 1,
-            panel.pages
-        ))
-        .fg(CYAN)
-        .bg(BG),
+        Line::from(panel_header(panel)).fg(accent).bg(BG).bold(),
         pad.bank,
     );
     let rows = Layout::vertical([Constraint::Length(PAD_H + pad.waves); 4]).split(pad.grid);
@@ -52,16 +70,34 @@ pub fn command_panel_in(
         let cells = Layout::horizontal([Constraint::Length(pad.grid.width / 4); 4]).split(*area);
         for (column, area) in cells.iter().enumerate() {
             let index = row * 4 + column;
-            let label = panel.labels[index].as_deref().unwrap_or("-");
+            let label = panel.labels[index].as_deref().unwrap_or("");
             let active =
                 panel.labels[index].is_some() && !matches!(label, "mixer" | "redo" | "panic");
-            let color = if active { CYAN } else { DIM };
+            // Three zones: screens, the actions of the current view, the fixed bottom row.
+            let zone = if row == 3 {
+                TEXT
+            } else if panel.page == 0 && !panel.target {
+                MAGENTA
+            } else {
+                CYAN
+            };
+            let color = if active { zone } else { DIM };
             let cell = Block::bordered()
-                .title(Line::from(format!("{} {label}", index + 1)).fg(color))
-                .border_style(Style::new().fg(if active { BORDER } else { DIM }))
+                .title(Line::from(device_number(index + 1).to_string()).fg(DIM))
+                .border_style(Style::new().fg(if active { zone } else { BORDER }))
                 .style(Style::new().bg(PANEL));
+            let inner = cell.inner(*area);
             frame.render_widget(Clear, *area);
             frame.render_widget(cell, *area);
+            if inner.height > 0 {
+                let middle = Rect {
+                    y: inner.y + inner.height.saturating_sub(1) / 2,
+                    height: 1,
+                    ..inner
+                };
+                let text = Line::from(label).fg(color).bold().centered();
+                frame.render_widget(text, middle);
+            }
         }
     }
     if let Some(question_view) = question_view {
@@ -744,33 +780,83 @@ mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
 
-    /// Scenario "The panel header shows only the page" (command-panel).
+    fn render(
+        panel: &CommandPanel,
+        width: u16,
+        height: u16,
+    ) -> (Vec<String>, Terminal<TestBackend>) {
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|frame| {
+            let area = frame.area();
+            let filler = "x".repeat(usize::from(area.width));
+            let lines = vec![Line::from(filler); usize::from(area.height)];
+            frame.render_widget(Paragraph::new(lines), area);
+            command_panel_in(frame, area, panel, None);
+        })
+        .unwrap();
+        let rows = term
+            .backend()
+            .buffer()
+            .content()
+            .chunks(usize::from(width))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect();
+        (rows, term)
+    }
+
+    fn panel(page: usize) -> CommandPanel {
+        let mut labels: [Option<String>; 16] = std::array::from_fn(|_| None);
+        labels[0] = Some("cut".into());
+        labels[12] = Some("back".into());
+        CommandPanel {
+            labels,
+            page,
+            view: "CHOP",
+            target: false,
+        }
+    }
+
+    /// Scenario "The header names the view and its neighbors" (screen-layout).
     #[test]
-    fn the_panel_header_shows_only_the_page() {
+    fn the_header_names_the_view_and_its_neighbors() {
         for (width, height) in [(80, 26), (120, 40)] {
-            let panel = CommandPanel {
-                labels: std::array::from_fn(|_| None),
-                page: 0,
-                pages: 5,
-                view: "PADS",
-            };
-            let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
-            term.draw(|frame| {
-                let area = frame.area();
-                let filler = "x".repeat(usize::from(area.width));
-                let lines = vec![Line::from(filler); usize::from(area.height)];
-                frame.render_widget(Paragraph::new(lines), area);
-                command_panel_in(frame, area, &panel, None);
-            })
-            .unwrap();
             let [_, body, _, _] = frame_areas(Rect::new(0, 0, width, height));
-            let bank = pad_frame(body, false).bank;
-            let buffer = term.backend().buffer();
-            let row: String = (bank.x..bank.right())
-                .map(|x| buffer[(x, bank.y)].symbol())
+            let frame = pad_frame(body, false);
+            let (rows, actions) = render(&panel(1), width, height);
+            let header: String = rows[usize::from(frame.bank.y)]
+                .chars()
+                .skip(usize::from(frame.bank.x))
+                .take(usize::from(frame.bank.width))
                 .collect();
-            assert!(row.contains("PANEL · SMC | PADS 1/5"), "{row}");
-            assert!(!row.contains('x'), "{width}x{height}: {row}");
+            assert!(header.contains("‹ screens │ CHOP actions │ ·"), "{header}");
+            assert!(!header.contains('x'), "{width}x{height}: {header}");
+            let (rows, screens) = render(&panel(0), width, height);
+            assert!(rows[usize::from(frame.bank.y)].contains("· │ SCREENS │ actions ›"));
+            // The first cell border is cyan for actions and magenta for screens.
+            let corner = (frame.grid.x, frame.grid.y);
+            assert_eq!(actions.backend().buffer()[corner].fg, CYAN);
+            assert_eq!(screens.backend().buffer()[corner].fg, MAGENTA);
+        }
+    }
+
+    /// Scenario "Cells show the device numbers" (command-panel).
+    #[test]
+    fn cells_show_the_device_numbers() {
+        assert_eq!((device_number(13), device_number(4)), (1, 16));
+        assert_eq!((device_number(1), device_number(16)), (13, 4));
+        for (width, height) in [(80, 26), (120, 40)] {
+            let [_, body, _, _] = frame_areas(Rect::new(0, 0, width, height));
+            let grid = pad_frame(body, false).grid;
+            let (rows, _) = render(&panel(1), width, height);
+            let top = &rows[usize::from(grid.y)];
+            let bottom = rows
+                .iter()
+                .rev()
+                .find(|row| row.contains("─1─") || row.contains("┌1─"))
+                .unwrap();
+            assert!(top.contains("┌13"), "{top}");
+            assert!(top.contains("┌16"), "{top}");
+            assert!(bottom.contains("┌1─"), "{bottom}");
         }
     }
 }

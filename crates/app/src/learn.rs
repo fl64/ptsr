@@ -522,7 +522,11 @@ impl App {
     /// Notes what an action did, for "do, then F10" (57): a pad hit its pad, a value step
     /// the parameter it changed, a command its entry of the learn list.
     pub(super) fn note_done(&mut self, action: Action) {
-        if self.screen_learn.is_some() || action == Action::LearnToggle {
+        // Moving the panel views to reach Learn is not the action to learn (127).
+        if self.screen_learn.is_some()
+            || action == Action::LearnToggle
+            || (matches!(action, Action::SmcList { .. }) && self.panel.visible())
+        {
             return;
         }
         let group = self.layer_group();

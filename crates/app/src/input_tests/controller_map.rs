@@ -586,12 +586,16 @@ fn chop_help_identifies_the_slice_and_region_knobs() {
         drive.frame();
         drive.prepare_chop(Arc::new(Sample::mono(vec![0.25; 48_000])), 4);
         drive.app.resize_help(size.0, size.1);
-        for note in [64, 63, 57] {
-            // Reveal, More, Help.
-            drive.bytes(SMC, &[0x99, note, 100]);
-            drive.bytes(SMC, &[0x89, note, 0]);
-            drive.frame();
-        }
+        // Reveal, LEFT to the screens view, Help (cell 8).
+        drive.bytes(SMC, &[0x99, 64, 100]);
+        drive.bytes(SMC, &[0x89, 64, 0]);
+        drive.frame();
+        drive.bytes(SMC, &[0xB0, 25, 127]);
+        drive.bytes(SMC, &[0xB0, 25, 0]);
+        drive.frame();
+        drive.bytes(SMC, &[0x99, 63, 100]);
+        drive.bytes(SMC, &[0x89, 63, 0]);
+        drive.frame();
         assert_eq!(drive.app.help_overlay.page, Page::Controller);
         assert_eq!(current(&mut drive), "SMC-PAD");
         assert_eq!(

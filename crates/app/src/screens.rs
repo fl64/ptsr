@@ -671,8 +671,9 @@ fn fixture(case: Case, now: Instant) -> App {
             app.panel.press("SMC-PAD-Master offline", 1);
         }
         Mode::PanelContext => {
+            // The screens view, one LEFT press from the actions (127).
             app.panel.press("SMC-PAD-Master offline", 1);
-            app.panel.choice(app.panel_view(), 8);
+            app.panel.move_view(-1);
         }
         Mode::PanelQuestion => {
             app.panel.press("SMC-PAD-Master offline", 1);
@@ -1493,31 +1494,23 @@ fn check_frame(case: Case, buffer: &Buffer) {
     }
     match case.mode {
         Mode::PanelMain | Mode::PanelImageOn | Mode::PanelImageOff => {
-            require(if matches!(case.screen, Screen::Pads | Screen::Chop) {
-                "1/5"
-            } else {
-                "1/4"
-            });
-            require("8 more");
-            require("13 back");
-            require("16 panic");
+            require(" actions │ ·");
+            require("‹ screens");
+            require("back");
+            require("panic");
         }
         Mode::PanelContext => {
-            require(if matches!(case.screen, Screen::Pads | Screen::Chop) {
-                "2/5"
-            } else {
-                "2/4"
-            });
-            require("11 next");
-            require("12 main");
-            require("15 redo");
+            require("SCREENS");
+            require("files");
+            require("exit");
+            require("redo");
         }
         Mode::PanelTargets => {
             require("13–16 PAD BANK");
-            require("13 cancel");
-            require("15 menu");
+            require("cancel");
+            require("menu");
             if case.screen == Screen::Chop {
-                require("14 apply");
+                require("apply");
             }
         }
         Mode::PanelQuestion => {
@@ -1526,8 +1519,8 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("PANEL · SMC");
         }
         Mode::PanelUnavailable => {
-            require("15 redo");
-            require("16 panic");
+            require("redo");
+            require("panic");
         }
         Mode::PanelDisconnected => assert!(!text.contains("PANEL · SMC"), "{text}"),
         Mode::QuietEmpty => require("—"),
@@ -1832,11 +1825,15 @@ mod tests {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
         for size in SIZES {
             for (screen, mode, labels) in [
-                (Screen::Pads, Mode::Picker, ["E1/↑↓", "Enter/P8", "Esc/P7"]),
+                (
+                    Screen::Pads,
+                    Mode::Picker,
+                    ["E1/↑↓", "Enter/P12", "Esc/P11"],
+                ),
                 (
                     Screen::Settings,
                     Mode::FolderPicker,
-                    ["E1/↑↓", "Enter/P8", "Esc/P7"],
+                    ["E1/↑↓", "Enter/P12", "Esc/P11"],
                 ),
             ] {
                 let case = Case { screen, mode, size };
@@ -3409,24 +3406,13 @@ L="none"
                     size,
                 };
                 let now = Instant::now();
-                let start = fixture(case, now);
-                let pages = start.panel.page_count(start.panel_view());
-                for page in 0..pages {
+                for page in 0..=1_i32 {
                     let mut app = fixture(case, now);
                     assert_eq!(
                         app.panel.press("SMC-PAD-Master", 1),
                         crate::panel::Press::Revealed
                     );
-                    if page > 0 {
-                        assert_eq!(
-                            app.panel.choice(app.panel_view(), 8),
-                            crate::panel::Choice::Page
-                        );
-                        if page > 1 {
-                            app.panel
-                                .select_context_page(app.panel_view(), page as i32 - 1);
-                        }
-                    }
+                    app.panel.move_view(page - 1);
                     let (_, buffer) = render_app(case, &keymap, app, now);
                     let rows: Vec<String> = buffer
                         .content()
@@ -3435,26 +3421,31 @@ L="none"
                         .collect();
                     let text = rows.join("\n");
                     assert!(text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
-                    assert!(
-                        text.contains(&format!("{}/{pages}", page + 1)),
-                        "{screen:?} {size:?} {page}"
-                    );
-                    for label in ["13 back", "14 undo", "15 redo", "16 panic"] {
+                    let shown = if page == 0 {
+                        "SCREENS".to_string()
+                    } else {
+                        let name = match screen {
+                            Screen::Pads => "PADS",
+                            Screen::Files => "FILES",
+                            Screen::Chop => "CHOP",
+                            Screen::Fx => "FX",
+                            Screen::Settings => "SETTINGS",
+                        };
+                        format!("{name} actions")
+                    };
+                    assert!(text.contains(&shown), "{screen:?} {size:?} {page}: {shown}");
+                    for label in ["back", "undo", "redo", "panic"] {
                         assert!(text.contains(label), "{screen:?} {size:?} {page}: {label}");
                     }
-                    if page == 2 {
-                        assert!(text.contains("1 output") && text.contains("10 exit"));
-                    } else if page == 3 {
-                        assert!(!text.contains("1 bpm -"));
-                        assert!(text.contains("5 erase") && text.contains("6 record"));
-                    } else if page == 4 {
-                        let first = if screen == Screen::Pads {
-                            "1 grid -"
-                        } else {
-                            "1 hits -"
-                        };
-                        assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");
-                    }
+                    let first = match (page, screen) {
+                        (0, _) => "files",
+                        (1, Screen::Pads) => "edit",
+                        (1, Screen::Files) => "take",
+                        (1, Screen::Chop) => "cut",
+                        (1, Screen::Settings) => "tab",
+                        _ => "back",
+                    };
+                    assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");
                 }
             }
         }
@@ -3481,14 +3472,18 @@ L="none"
             let top = rows.iter().position(|row| row.contains("B1 7")).unwrap();
             let rows_text = rows.join("\n");
             assert!(
-                rows[top].contains("B2 7 -") && rows[top].contains("< > Slice · Chop · last 2"),
+                rows[top].contains("B2 8 master") && rows[top].contains("◀ ▶ Bank · Chop"),
                 "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);
-            assert!(rows[top + 1].contains("5 reg[") && rows[top + 1].contains("5 -"));
-            assert!(rows[top + 2].contains("3 start") && rows[top + 2].contains("3 -"));
-            assert!(rows[top + 3].contains("1 cursor") && rows[top + 3].contains("2 -"));
-            assert!(rows[..top].iter().any(|row| row.contains("16 panic")));
+            assert!(rows[top + 1].contains("5 reg[") && !rows[top + 1].contains("B2"));
+            assert!(rows[top + 2].contains("3 start"));
+            assert!(rows[top + 3].contains("1 cursor"));
+            assert!(
+                rows.iter().any(|row| row.contains("PAD BANK panel")),
+                "{rows_text}"
+            );
+            assert!(rows[..top].iter().any(|row| row.contains("panic")));
         }
     }
 

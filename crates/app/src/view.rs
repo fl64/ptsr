@@ -403,11 +403,11 @@ impl App {
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
                 if port.contains("SMC-PAD-Master") {
                     let cancel = if matches!(ask, Ask::Exit { .. }) {
-                        "P7/Back"
+                        "P11/Back"
                     } else {
-                        "P7"
+                        "P11"
                     };
-                    answers.push(format!("SMC {cancel}: keep · P8: {verb}"));
+                    answers.push(format!("SMC {cancel}: keep · P12: {verb}"));
                     continue;
                 }
                 // Match the worker's port selection. Assignment labels can search another layer.
@@ -793,16 +793,19 @@ impl App {
             let view = self.panel_view();
             rows.push((
                 "SMC-PAD".into(),
-                format!("First second-bank hit shows the panel. Page {}/{}. PLAY starts or continues. STOP pauses; press again to reset.", self.panel.page() + 1, self.panel.page_count(view)),
+                format!("PAD BANK shows the panel; LEFT and RIGHT move its views. View: {}. PLAY starts or continues. STOP pauses; press again to reset.", if self.panel.page() == 0 { "screens" } else { "actions" }),
             ));
             for first in [1, 5, 9, 13] {
                 let cells = (first..first + 4)
                     .map(|cell| {
                         let name = self.panel.label(view, cell).unwrap_or("unavailable");
                         if cell >= 15 || name == "unavailable" {
-                            format!("P{cell} {name} unavailable")
+                            format!(
+                                "P{} {name} unavailable",
+                                tui::device_number(usize::from(cell))
+                            )
                         } else {
-                            format!("P{cell} {name}")
+                            format!("P{} {name}", tui::device_number(usize::from(cell)))
                         }
                     })
                     .collect::<Vec<_>>();

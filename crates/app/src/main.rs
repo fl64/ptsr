@@ -1062,7 +1062,7 @@ impl App {
     fn goto(&mut self, screen: Screen) {
         let from = self.screen;
         self.screen = screen;
-        self.panel.main_page();
+        self.panel.first_actions();
         self.pattern_view.overview = false;
         self.pattern_view.edit = false;
         self.pattern_view.selected_event = None;

@@ -245,9 +245,9 @@ fn full_help_block(
     } else {
         "scroll"
     };
-    let base = format!(" Tab/Shift+Tab/P7/P8 · F1/Esc/Back · P9/P10 {purpose} ");
+    let base = format!(" Tab/Shift+Tab/P11/P12 · F1/Esc/Back · P5/P6 {purpose} ");
     let footer = if tab == Tab::Messages {
-        " Tab/Shift+Tab/P7/P8 · F1/Esc close/Back · P9/P10/↑↓ scroll · PgUp/PgDn page ".to_owned()
+        " Tab/Shift+Tab/P11/P12 · F1/Esc close/Back · P5/P6/↑↓ scroll · PgUp/PgDn page ".to_owned()
     } else if navigation.is_empty() {
         base
     } else if Line::raw(format!("{base}· {navigation}")).width()

@@ -123,8 +123,8 @@ right = "smc.list_next"
 e1 = "files.scroll"
 
 [screens.chop]
-left = "marker.prev"
-right = "marker.next"
+left = "smc.list_prev"
+right = "smc.list_next"
 e1 = "chop.cursor_pos"
 e2 = "chop.zoom"
 e3 = "slice.start"

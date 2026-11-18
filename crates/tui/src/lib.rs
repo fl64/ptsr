@@ -39,7 +39,7 @@ pub use help::{
 };
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
-pub use pads::{CommandPanel, command_panel, command_panel_area, command_panel_in};
+pub use pads::{CommandPanel, command_panel, command_panel_area, command_panel_in, device_number};
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
@@ -7988,7 +7988,7 @@ mod tests {
         assert!(text.contains("PICK THE PROJECTS ROOT"), "{text}");
         assert!(text.contains("beats"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter/P8 pick · Esc/P7 cancel"), "{text}");
+        assert!(text.contains("Enter/P12 pick · Esc/P11 cancel"), "{text}");
         assert!(!text.contains("Projects root"), "{text}");
     }
 
@@ -8004,7 +8004,7 @@ mod tests {
         assert!(text.contains(" PROJECTS "), "{text}");
         assert!(text.contains("MyBeat"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter/P8 open"), "{text}");
+        assert!(text.contains("Enter/P12 open"), "{text}");
         assert!(!text.contains("name:"), "{text}");
     }
 
@@ -8019,7 +8019,7 @@ mod tests {
         });
         assert!(text.contains("no projects yet"), "{text}");
         assert!(text.contains("name: NewB"), "{text}");
-        assert!(text.contains("Enter/P8 create"), "{text}");
+        assert!(text.contains("Enter/P12 create"), "{text}");
         assert!(!text.contains("Enter open"), "{text}");
     }
 

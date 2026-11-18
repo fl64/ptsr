@@ -853,12 +853,22 @@ At 80 by 26 and 120 by 40, the command panel SHALL draw its 4 by 4 cell grid in 
 
 ### Requirement: Panel state and unavailable cells stay visible
 
-The title SHALL show `PANEL · SMC` for the active SMC-PAD connection. The status SHALL name the current page after a second-layer press. A new page or screen SHALL update the labels before the next cell acts. Disabled Redo, Panic and unsupported context cells SHALL appear dim with no active-action claim. A first reveal SHALL not show an action result. A disconnect or first-bank hit SHALL remove the panel mark.
+The title SHALL show `PANEL · SMC` for the active SMC-PAD connection.
+A header row SHALL name the shown view and the views on its left and right.
+Action cells, screen cells and the bottom row SHALL use three different colors.
+A new view or screen SHALL update the labels before the next cell acts.
+Disabled Redo, Panic and empty cells SHALL appear dim with no active-action claim.
+A first reveal SHALL not show an action result. A disconnect or first-bank hit SHALL remove the panel mark.
 
 #### Scenario: Panel feedback follows the active connection and page
-- **WHEN** the owner reveals the panel, changes its page and then disconnects the SMC-PAD
-- **THEN** the badge and labels follow that connection and page, then disappear on disconnect
+- **WHEN** the owner reveals the panel, changes its view and then disconnects the SMC-PAD
+- **THEN** the badge, header and labels follow that connection and view, then disappear on disconnect
 - **AND** Redo and Panic remain visibly unavailable and no first-reveal command result appears
+
+#### Scenario: The header names the view and its neighbors
+- **WHEN** the panel shows the Chop actions at either supported size
+- **THEN** the header shows the screens view on the left and the Chop actions in the middle
+- **AND** the action cells and the screen cells use different colors
 
 ### Requirement: Panel catalogue includes its states
 
@@ -871,18 +881,17 @@ The offline screen catalogue SHALL cover panel main, context, question, unavaila
 
 ### Requirement: The SMC-PAD knob strip shows both banks and the current list
 
-The strip SHALL show both banks side by side at 80 by 26 and 120 by 40.
-Each bank SHALL show rows 7–8, 5–6, 3–4 and 1–2 from top to bottom.
-The strip SHALL name the page and dim unavailable roles.
-The help row SHALL show the current role of LEFT and RIGHT.
-The mark SHALL show the last valid knob and its bank. Disconnect SHALL clear it.
-While the value pop-up shows, the help row SHALL name that knob, value, target and amount.
-The F1 Controller tab SHALL show the same effective roles.
+At 80 by 26 and 120 by 40, the strip SHALL show bank 1 as rows 7–8, 5–6, 3–4 and 1–2, and one bank 2 master line.
+It SHALL name the page and dim unavailable roles.
+The help row SHALL show the roles of LEFT, RIGHT, PAD BANK, PLAY and STOP.
+The mark SHALL show the last knob and its bank until disconnect.
+During the value pop-up, the help row SHALL name the knob, value, target and amount.
+F1 Controller SHALL show the same roles.
 
 #### Scenario: The strip identifies page, list and roles at both sizes
 - **WHEN** the owner views each supported size with the SMC-PAD connected
-- **THEN** both knob banks fit in physical order
-- **AND** the page, list and unavailable roles are visible
+- **THEN** bank 1 fits in physical order and the bank 2 master line shows
+- **AND** the page, list, button roles and unavailable roles are visible
 
 #### Scenario: Last knob input marks its bank
 - **WHEN** valid knob movement arrives from bank 1 and then bank 2
