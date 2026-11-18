@@ -98,12 +98,12 @@ fn every_current_keyboard_action_has_a_controller_route() {
         ("chop.cursor_right", "e1", "chop.cursor_pos"),
         ("chop.zoom_in", "e2", "chop.zoom"),
         ("chop.zoom_out", "e2", "chop.zoom"),
-        ("chop.threshold_up", "e3", "chop.threshold"),
-        ("chop.threshold_down", "e3", "chop.threshold"),
-        ("slice.start_left", "e4", "slice.start"),
-        ("slice.start_right", "e4", "slice.start"),
-        ("slice.end_left", "e5", "slice.end"),
-        ("slice.end_right", "e5", "slice.end"),
+        ("chop.threshold_up", "e7", "chop.threshold"),
+        ("chop.threshold_down", "e7", "chop.threshold"),
+        ("slice.start_left", "e3", "slice.start"),
+        ("slice.start_right", "e3", "slice.start"),
+        ("slice.end_left", "e4", "slice.end"),
+        ("slice.end_right", "e4", "slice.end"),
         ("play.context", "play", "play.context"),
         ("stop.context", "stop", "stop.context"),
         ("metronome.toggle", "play", "play.context"),
@@ -170,7 +170,7 @@ fn every_current_keyboard_action_has_a_controller_route() {
                     profile.control_action(screen, false, "e1") == Some("chop.cursor_pos")
                 }
                 Action::SliceBound { end, .. } => {
-                    profile.control_action(screen, false, if end { "e5" } else { "e4" })
+                    profile.control_action(screen, false, if end { "e4" } else { "e3" })
                         == Some(if end { "slice.end" } else { "slice.start" })
                 }
                 _ => false,
@@ -287,6 +287,8 @@ fn every_current_controller_action_has_a_keyboard_route() {
             "chop.zoom" => has("chop.zoom_in") && has("chop.zoom_out"),
             "slice.start" => has("slice.start_left") && has("slice.start_right"),
             "slice.end" => has("slice.end_left") && has("slice.end_right"),
+            "chop.region_start_pos" => has("chop.region_start"),
+            "chop.region_end_pos" => has("chop.region_end"),
             "edit.page" => has("edit.page_prev") && has("edit.page_next"),
             "pad.volume" | "pad.pitch" | "pad.cutoff" | "pad.decay" | "pattern.bars"
             | "pattern.quantize" | "pattern.strength" => {
@@ -361,7 +363,7 @@ fn keyboard_and_encoder_set_the_same_chop_threshold() {
             keyboard.tap(key, M::CONTROL | M::ALT);
             controller.midi().recorded_bytes_at(
                 SMC,
-                &[0xB0, 32, midi],
+                &[0xB0, 36, midi],
                 &controller.project,
                 at + std::time::Duration::from_millis(100 * i as u64),
             );
@@ -397,7 +399,7 @@ fn keyboard_and_encoder_set_the_same_chop_threshold() {
             };
             let midi = if bound == -40.0 { 65 } else { 63 };
             keyboard.tap(key, M::CONTROL | M::ALT);
-            turn(&mut controller, 32, midi);
+            turn(&mut controller, 36, midi);
             assert_eq!(
                 threshold_result(&keyboard),
                 before,
@@ -425,7 +427,7 @@ fn fast_encoder_turns_keep_acceleration() {
         keyboard.tap(KeyCode::Down, M::CONTROL | M::ALT);
         controller.midi().recorded_bytes_at(
             SMC,
-            &[0xB0, 32, 65],
+            &[0xB0, 36, 65],
             &controller.project,
             at + std::time::Duration::from_millis(10 * i),
         );
@@ -478,7 +480,7 @@ fn threshold_keys_respect_owner_bindings_and_input_owners() {
         }
         let before = threshold_result(&drive);
         drive.tap(KeyCode::Down, M::CONTROL | M::ALT);
-        turn(&mut drive, 32, 65);
+        turn(&mut drive, 36, 65);
         assert_eq!(threshold_result(&drive), before, "{overlay}");
     }
 }
@@ -1264,7 +1266,7 @@ fn shared_transport_key_keeps_previews_on_files_and_chop() {
 
             cell(&mut controller, 64);
             cell(&mut controller, 63);
-            turn(&mut controller, 35, 65);
+            cell(&mut controller, panel_note(11));
             assert_eq!(controller.app.panel.page(), 2);
             let frame = cell(&mut controller, 65);
             assert_eq!(
@@ -1390,7 +1392,7 @@ fn grid_cell_keeps_the_screen_and_matches_ctrl_o() {
         keyboard.tap(KeyCode::Char('o'), M::CONTROL);
         cell(&mut controller, 64);
         cell(&mut controller, 63);
-        turn(&mut controller, 35, 65);
+        cell(&mut controller, panel_note(11));
         assert_eq!(controller.app.panel.page(), 2);
         cell(&mut controller, 61);
         assert_eq!(controller.app.ui.hide_pads, keyboard.app.ui.hide_pads);
@@ -1720,7 +1722,9 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                         reach_drive(view, Arc::new(Sample::mono(vec![0.2; 4_800])));
                     cell(&mut controller, 64);
                     cell(&mut controller, 63);
-                    turn(&mut controller, 35, 63);
+                    for _ in 1..4 {
+                        cell(&mut controller, panel_note(11));
+                    }
                     assert_eq!(controller.app.panel.page(), 4);
                     let before = controller.seen();
                     let frame = cell(&mut controller, panel_note(slot));
@@ -1787,20 +1791,8 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                 cell(&mut controller, 64);
                 if page > 0 {
                     cell(&mut controller, 63);
-                    match page {
-                        2 => turn(&mut controller, 35, 65),
-                        3 => {
-                            turn(&mut controller, 35, 65);
-                            controller.midi().recorded_bytes_at(
-                                SMC,
-                                &[0xB0, 35, 65],
-                                &controller.project,
-                                Instant::now() + std::time::Duration::from_millis(100),
-                            );
-                            controller.frame();
-                        }
-                        4 => turn(&mut controller, 35, 63),
-                        _ => {}
+                    for _ in 1..page {
+                        cell(&mut controller, panel_note(11));
                     }
                 }
                 assert_eq!(
@@ -1836,7 +1828,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
         ));
         cell(&mut controller, 64);
         cell(&mut controller, 63);
-        turn(&mut controller, 35, 65);
+        cell(&mut controller, panel_note(11));
         cell(&mut controller, 57);
         assert!(
             matches!(controller.app.ask, Some(Ask::Exit { .. })),
@@ -2249,10 +2241,10 @@ fn check_chop_context_encoders(view: panel::View) {
     for (cc, value, code, modifiers) in [
         (30, 63, KeyCode::Left, M::NONE),
         (30, 65, KeyCode::Right, M::NONE),
-        (33, 63, KeyCode::Left, M::CONTROL),
-        (33, 65, KeyCode::Right, M::CONTROL),
-        (34, 63, KeyCode::Left, M::ALT),
-        (34, 65, KeyCode::Right, M::ALT),
+        (32, 63, KeyCode::Left, M::CONTROL),
+        (32, 65, KeyCode::Right, M::CONTROL),
+        (33, 63, KeyCode::Left, M::ALT),
+        (33, 65, KeyCode::Right, M::ALT),
     ] {
         let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
         let mut keyboard = reach_drive(view, sound.clone());
@@ -2300,6 +2292,114 @@ fn shipped_chop_encoders_match_keyboard_outside_edit() {
 #[test]
 fn shipped_chop_encoders_match_keyboard_in_edit() {
     check_chop_context_encoders(panel::View::ChopEdit);
+}
+
+/// Scenario "Chop knobs move two separate bound pairs" (controller-reach).
+#[test]
+fn chop_knobs_move_two_separate_bound_pairs() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+    for view in [panel::View::Chop, panel::View::ChopEdit] {
+        for (cc, value, linked_slice) in [(32, 65, 1), (33, 63, 1), (34, 65, 0), (35, 63, 3)] {
+            let mut drive = reach_drive(view, sound.clone());
+            assert!(drive.app.chop.as_mut().unwrap().select_slice(1));
+            drive.link_chop_pad(5, linked_slice);
+            let before = drive.app.chop.as_ref().unwrap();
+            let saved = before.saved();
+            let slice = before.slices()[1];
+            let region = before.range;
+            let pad_region = drive.app.pads.region[5];
+            let pad_link = drive.app.pads.link[5];
+            let step = before.view_step(1);
+
+            turn(&mut drive, cc, value);
+            let chop = drive.app.chop.as_ref().unwrap();
+            let actual_slice = chop.slices()[1];
+            let actual_region = chop.range;
+            let expected = match cc {
+                32 => (
+                    Region {
+                        start: slice.start + step,
+                        ..slice
+                    },
+                    region,
+                ),
+                33 => (
+                    Region {
+                        end: slice.end - step,
+                        ..slice
+                    },
+                    region,
+                ),
+                34 => (
+                    slice,
+                    Region {
+                        start: region.start + step,
+                        ..region
+                    },
+                ),
+                _ => (
+                    slice,
+                    Region {
+                        end: region.end - step,
+                        ..region
+                    },
+                ),
+            };
+            assert_eq!((actual_slice, actual_region), expected, "{view:?} CC {cc}");
+            if cc < 34 {
+                assert_eq!(drive.app.pads.region[5], chop.slices()[linked_slice]);
+                assert_ne!(drive.app.pads.region[5], pad_region);
+                assert_eq!(drive.app.pads.link[5], pad_link);
+            } else {
+                assert_eq!(drive.app.pads.region[5], pad_region);
+                assert_eq!(drive.app.pads.link[5], None);
+            }
+            drive.tap(KeyCode::Char('z'), M::CONTROL);
+            assert_eq!(drive.app.chop.as_ref().unwrap().saved(), saved);
+            assert_eq!(drive.app.pads.region[5], pad_region);
+            assert_eq!(drive.app.pads.link[5], pad_link);
+        }
+    }
+}
+
+/// Scenario "Chop bounds wait during Assign and questions" (controller-reach).
+#[test]
+fn chop_bounds_wait_during_assign_and_questions() {
+    for assign in [true, false] {
+        let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+        let mut drive = reach_drive(panel::View::Chop, sound);
+        assert!(drive.app.chop.as_mut().unwrap().select_slice(1));
+        if assign {
+            drive.tap(KeyCode::Char('p'), M::NONE);
+            assert!(drive.app.plan.is_some());
+        } else {
+            drive.app.ask = Some(Ask::Exit { lines: vec![] });
+            drive.app.publish_midi(&drive.shared);
+        }
+        let before = drive.app.chop.as_ref().unwrap().saved();
+        let plan = drive.app.plan.clone();
+        for (cc, value) in [(32, 65), (33, 63), (34, 65), (35, 63)] {
+            turn(&mut drive, cc, value);
+            assert_eq!(drive.app.chop.as_ref().unwrap().saved(), before);
+            assert_eq!(drive.app.plan, plan);
+            assert_eq!(drive.app.ask.is_some(), !assign);
+        }
+    }
+}
+
+/// Scenario "A Chop bound turn keeps the current panel page" (controller-reach).
+#[test]
+fn a_chop_bound_turn_keeps_the_current_panel_page() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 96_000]));
+    let mut drive = reach_drive(panel::View::Chop, sound);
+    cell(&mut drive, 64);
+    cell(&mut drive, 63);
+    assert_eq!(drive.app.panel.page(), 1);
+    turn(&mut drive, 35, 63);
+    assert_eq!(drive.app.panel.page(), 1);
+    assert!(drive.app.chop.as_ref().unwrap().range.end < 96_000);
+    cell(&mut drive, panel_note(11));
+    assert_eq!(drive.app.panel.page(), 2);
 }
 
 fn timed_chop_zoom(drive: &mut Drive, value: u8, at: Instant) {

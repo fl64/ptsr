@@ -2227,6 +2227,17 @@ impl App {
         if steps == 0 || self.ask.is_some() {
             return;
         }
+        if self.plan.is_some()
+            && port.contains("SMC-PAD-Master")
+            && matches!(
+                target,
+                StepTarget::Param(
+                    Param::SliceStart | Param::SliceEnd | Param::RegionStart | Param::RegionEnd
+                )
+            )
+        {
+            return;
+        }
         let smc_selector = port.contains("SMC-PAD-Master") && matches!(control, "e1" | "cc 30");
         if self.path_picker.is_some() {
             if smc_selector {
