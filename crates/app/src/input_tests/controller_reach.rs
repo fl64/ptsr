@@ -572,82 +572,48 @@ fn exact_chop_threshold_keys_resolve_in_both_terminal_modes() {
 /// Scenario "Keyboard selects a neighboring pad without sound" (controller-reach).
 #[test]
 fn keyboard_selects_a_neighboring_pad_without_sound() {
-    let view = panel::View::Pads;
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-    let mut keyboard = reach_drive(view, sound.clone());
-    let mut controller = reach_drive(view, sound);
-    let at = Instant::now();
-    for (index, (start, code, value, selected)) in [
-        (0, KeyCode::Left, 63, 0),
-        (0, KeyCode::Right, 65, 1),
-        (3, KeyCode::Right, 65, 3),
-        (4, KeyCode::Left, 63, 4),
-        (7, KeyCode::Left, 63, 6),
-        (15, KeyCode::Right, 65, 15),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        for drive in [&mut keyboard, &mut controller] {
-            drive.app.pads.selected = start;
-            drive.app.splash = true;
-            drive.app.publish_midi(&drive.shared);
+    for view in [panel::View::Pads, panel::View::PadEdit] {
+        let mut keyboard = reach_drive(view, sound.clone());
+        for (start, code, selected) in [
+            (0, KeyCode::Left, 0),
+            (0, KeyCode::Right, 1),
+            (3, KeyCode::Right, 3),
+            (4, KeyCode::Left, 4),
+            (7, KeyCode::Left, 6),
+            (15, KeyCode::Right, 15),
+        ] {
+            keyboard.app.pads.selected = start;
+            keyboard.app.splash = true;
+            let before = keyboard.seen();
+            let key_frame = keyboard.tap(code, M::ALT);
+            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
+            assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
+            assert!(key_frame.commands().is_empty(), "{view:?} key hit");
+            assert!(keyboard.app.splash, "{view:?} splash");
+            keyboard.key(code, M::ALT, KeyEventKind::Repeat);
+            keyboard.key(code, M::ALT, KeyEventKind::Release);
+            assert!(keyboard.frame().commands().is_empty());
+            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
         }
-        let before = keyboard.seen();
-        let key_frame = keyboard.tap(code, M::ALT);
-        controller.midi().recorded_bytes_at(
-            SMC,
-            &[0xB0, 30, value],
-            &controller.project,
-            at + std::time::Duration::from_millis(100 * index as u64),
-        );
-        let button_frame = controller.frame();
-        assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
-        assert_eq!(keyboard.seen(), controller.seen(), "{view:?} {start}");
-        assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
-        assert!(key_frame.commands().is_empty(), "{view:?} key hit");
-        assert!(button_frame.commands().is_empty(), "{view:?} button hit");
-        assert!(
-            keyboard.app.splash && controller.app.splash,
-            "{view:?} splash"
-        );
-        keyboard.key(code, M::ALT, KeyEventKind::Repeat);
-        keyboard.key(code, M::ALT, KeyEventKind::Release);
-        assert!(keyboard.frame().commands().is_empty());
-        assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
     }
 
-    for drive in [&mut keyboard, &mut controller] {
-        drive.app.pads.selected = 0;
-        drive.app.pads.gate[0] = true;
-        drive.app.publish_midi(&drive.shared);
-    }
+    let mut keyboard = reach_drive(panel::View::Pads, sound);
+    keyboard.app.pads.selected = 0;
+    keyboard.app.pads.gate[0] = true;
     keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Press);
     keyboard.frame();
-    controller.bytes(SMC, &[0x99, 48, 80]);
-    controller.frame();
-    assert!(keyboard.app.pads.held[0] && controller.app.pads.held[0]);
+    assert!(keyboard.app.pads.held[0]);
     assert!(keyboard.tap(KeyCode::Right, M::ALT).commands().is_empty());
-    controller.midi().recorded_bytes_at(
-        SMC,
-        &[0xB0, 30, 65],
-        &controller.project,
-        Instant::now() + std::time::Duration::from_millis(1_000),
-    );
-    assert!(controller.frame().commands().is_empty());
     assert_eq!(keyboard.app.pads.selected, 1);
-    assert_eq!(keyboard.seen(), controller.seen());
     keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Release);
     let key_release = keyboard.frame();
-    controller.bytes(SMC, &[0x89, 48, 0]);
-    controller.frame();
     assert!(
         key_release
             .commands()
             .iter()
             .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
     );
-    assert_eq!(keyboard.seen(), controller.seen());
     assert!(!keyboard.app.pads.held[0]);
     assert_eq!(keyboard.app.pads.selected, 1);
 }
@@ -2188,9 +2154,12 @@ fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
     keyboard.tap(KeyCode::Tab, M::NONE);
     list_button(&mut edit, true);
     assert_eq!(edit.app.pads.page().0, keyboard.app.pads.page().0);
-    let before = edit.app.pads.param;
+    let (before, page) = (edit.app.pads.param, edit.app.pads.page().0);
     turn(&mut edit, 30, 65);
-    assert_ne!(edit.app.pads.param, before);
+    assert_eq!(
+        (edit.app.pads.param, edit.app.pads.page().0),
+        (before, page)
+    );
     assert_eq!(edit.app.pads.bank, 0);
 
     let mut pattern = reach_drive(panel::View::Pattern, sound.clone());
@@ -2410,7 +2379,7 @@ fn pad_knobs_act_only_in_pad_edit() {
         let selected = drive.app.pads.selected;
         drive.bytes(SMC, &[0xB0, 30, 65]);
         let frame = drive.frame();
-        assert_ne!(drive.app.pads.selected, selected);
+        assert_eq!(drive.app.pads.selected, selected);
         assert!(!frame.commands().iter().any(|command| matches!(
             command,
             Command::PadPress { .. } | Command::PadRelease { .. }
@@ -2458,8 +2427,10 @@ fn pad_edit_knobs_follow_the_screen_rows() {
                 turn(&mut drive, cc, value);
             }
         }
-        assert!(drive.app.pads.snapshot(abs) == pad, "{name}");
+        // Knob 1 is the fourth value; the current pages have three.
         turn(&mut drive, 30, 65);
+        assert!(drive.app.pads.snapshot(abs) == pad, "{name}");
+        list_button(&mut drive, true);
     }
     assert_eq!(names, ["TONE", "ENV", "FILTER", "SOURCE", "FX"]);
 }
@@ -2489,9 +2460,9 @@ fn direct_page_controls_replace_panel_steps() {
     assert_eq!(drive.app.pads.page().0, "TONE");
     list_button(&mut drive, true);
     assert_eq!(drive.app.pads.page().0, "ENV");
-    turn(&mut drive, 30, 65);
+    list_button(&mut drive, true);
     assert_eq!(drive.app.pads.page().0, "FILTER");
-    turn(&mut drive, 30, 63);
+    list_button(&mut drive, false);
     assert_eq!(drive.app.pads.page().0, "ENV");
     turn(&mut drive, 36, 65);
     assert_eq!(drive.app.pads.attack_ms[pad], 1);
@@ -2904,9 +2875,11 @@ fn a1_position_and_master_keep_their_routes_and_close_restores_pads() {
         drive.app.pads.param = pads::Param::Volume;
         drive.app.publish_midi(&drive.shared);
     }
-    keyboard.tap(KeyCode::Right, M::ALT);
+    // Closed A1 controls give knob 1 back to Pads, where it has no role.
+    let param = controller.app.pattern_panel;
     turn(&mut controller, 30, 65);
-    assert_eq!(controller.app.pads.selected, 1);
+    assert_eq!(controller.app.pattern_panel, param);
+    assert_eq!(controller.app.pads.selected, 0);
     assert_eq!(controller.seen().pads, keyboard.seen().pads);
 }
 

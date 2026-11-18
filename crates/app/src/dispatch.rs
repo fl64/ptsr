@@ -2412,18 +2412,6 @@ impl App {
             }
         } else {
             match self.screen {
-                Screen::Pads if self.edit => {
-                    if right {
-                        Action::PageNext
-                    } else {
-                        Action::PagePrev
-                    }
-                }
-                Screen::Pads => Action::PadSelect(if right {
-                    input::Dir::Right
-                } else {
-                    input::Dir::Left
-                }),
                 Screen::Fx => {
                     if right {
                         Action::ParamNext
@@ -2548,6 +2536,18 @@ impl App {
                 } else {
                     Action::PagePrev
                 })
+            }
+            StepTarget::List(ListTarget::SmcPosition)
+                if self.screen == Screen::Pads && self.edit && !self.pattern_view.overview =>
+            {
+                // In pad edit, knob 1 is the fourth page value.
+                return self.midi_step(
+                    port,
+                    control,
+                    StepTarget::Param(Param::SmcPageValue(1)),
+                    steps,
+                    fine,
+                );
             }
             StepTarget::List(ListTarget::SmcPosition) => {
                 self.smc_move_position(steps);

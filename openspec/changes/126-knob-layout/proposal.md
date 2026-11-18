@@ -10,9 +10,10 @@ the knob strip, so the owner did not see what changed.
 
 ## What Changes
 
-- Outside pad edit, bank 1 on Pads keeps only knob 1 (pad selection) and knob 8 (master).
-- In pad edit, knob 1 selects the page. Knobs 7, 5 and 3 change the first, second
-  and third value of the page. This order matches the rows on the screen.
+- Outside pad edit, bank 1 on Pads keeps only knob 8 (master). The pads select a pad.
+  The keyboard keeps Alt+Left and Alt+Right for a selection without sound.
+- In pad edit, LEFT and RIGHT select the page. A page has up to four values.
+  Knobs 7, 5, 3 and 1 change them in the order of the rows on the screen.
 - Bank 2 keeps only master on knob 8.
 - Each knob step changes a value by one step. Fast turns do not accelerate.
   The Pattern tempo knob changes 1 BPM per step.
@@ -46,9 +47,9 @@ The panel cell numbers follow in a separate change.
 
 ### Controller
 
-1. On Pads, turn knobs 2–7 in both banks. Check that no pad value changes.
-2. Turn bank 1 knob 1. Check that the selected pad changes without sound.
-3. Open pad edit. Turn knob 1. Check that the page changes.
+1. On Pads, turn knobs 1–7 in both banks. Check that no pad value or selection changes.
+2. Press Alt+Right on the keyboard. Check that the next pad is selected without sound.
+3. Open pad edit. Press RIGHT. Check that the page changes. Turn knob 1. Check that nothing changes.
 4. On TONE, turn knobs 7, 5 and 3. Check volume, pitch and mute group.
 5. Turn knob 7 slowly and quickly. Check that each step changes volume by 1 dB.
 6. Look at the knob strip after each turn. Check the marked knob, value and pad.

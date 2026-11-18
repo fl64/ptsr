@@ -355,7 +355,7 @@ impl App {
             ("Transport", "Page", "param")
         } else {
             match self.panel_view() {
-                View::Pads => (self.pads.page().0, "Bank", "pad"),
+                View::Pads => (self.pads.page().0, "Bank", ""),
                 View::PadEdit => (self.pads.page().0, "Page", "param"),
                 View::Pattern => ("Pattern", "Bar", "step"),
                 View::Chop | View::ChopEdit => ("Chop", "Slice", "cursor"),
@@ -368,7 +368,14 @@ impl App {
 
     fn smc_knob_role(&self, name: &str, action: Option<&str>) -> (&'static str, bool) {
         match action {
-            Some("smc.position") => (self.smc_context().2, true),
+            Some("smc.position") => match self.smc_context().2 {
+                "" => ("-", false),
+                "param" if self.screen == input::Screen::Pads && self.edit => {
+                    let (label, param) = self.smc_page_role(1).unwrap_or(("-", None));
+                    (label, param.is_some())
+                }
+                position => (position, true),
+            },
             Some("master.volume") => ("master", true),
             Some("settings.row") => ("row", true),
             Some("settings.value_next") => ("value", true),
@@ -392,7 +399,8 @@ impl App {
         let (short, available) = self.smc_knob_role(name, action);
         let purpose = match action {
             Some("smc.position") => match self.smc_context().2 {
-                "pad" => "select a pad silently",
+                "" => short,
+                "param" if self.screen == input::Screen::Pads && self.edit => short,
                 "step" => "select a step in the row",
                 "select" => "select a project",
                 "param" => "select a parameter",

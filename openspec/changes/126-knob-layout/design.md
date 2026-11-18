@@ -4,7 +4,9 @@
 
 The owner made these decisions on 2026-11-18 after a test of changes 124 and 125:
 
-- Pad values change only in pad edit. Knob 1 selects the page there.
+- Pad values change only in pad edit. LEFT and RIGHT select the page there.
+- A page has at most four values on knobs 7, 5, 3 and 1. A new value that does not fit goes to a new page.
+- Knob 1 does not select pads. The pads do that. The keyboard keeps its silent selection.
 - The value knobs follow the screen order from top to bottom.
 - Bank 2 has no pad roles.
 - Relative knobs have no acceleration. The owner will ask for it again if necessary.
@@ -18,8 +20,8 @@ gives them the same order.
 
 | Mode | K1 | K3 | K5 | K7 | K2, K4, K6 | K8 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Pads | Silent pad selection in the row | — | — | — | — | Master |
-| Pad edit | Page | Value 3 | Value 2 | Value 1 | — | Master |
+| Pads | — | — | — | — | — | Master |
+| Pad edit | Value 4 | Value 3 | Value 2 | Value 1 | — | Master |
 
 A dash is an empty position. An empty position changes nothing.
 
@@ -34,7 +36,9 @@ A dash is an empty position. An empty position changes nothing.
 The values come from the page list in the program. A later page value gets the
 next free knob in the left column only after a spec change.
 The knob uses the same value target as the keyboard value keys in pad edit,
-including marked pads. Knob 1 uses the existing page action and its bounds.
+including marked pads. The current pages have three values, so knob 1 has no role yet.
+Knob 1 keeps the A1 overview step and its roles on the other screens.
+A pad hit in pad edit selects that pad, so the open page edits the new pad.
 LEFT and RIGHT keep their current routes. The other screens keep their roles.
 
 ## Bank 2

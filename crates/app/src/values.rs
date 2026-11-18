@@ -90,7 +90,7 @@ impl Shown {
 type KnobRole = (&'static str, Option<Param>);
 
 /// Pad edit values follow the screen column from the top knob down.
-const PAD_EDIT_KNOBS: [u8; 3] = [7, 5, 3];
+const PAD_EDIT_KNOBS: [u8; 4] = [7, 5, 3, 1];
 
 fn pad_knob_label(param: pads::Param) -> &'static str {
     match param {

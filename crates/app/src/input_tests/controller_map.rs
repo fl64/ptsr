@@ -174,7 +174,8 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         let mut drive = Drive::smc_offline();
         touch(&mut drive, port);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e1").contains("pad"));
+        let knob_1 = role(&mut drive, "e1");
+        assert!(knob_1.contains('-') && !knob_1.contains("pad"), "{knob_1}");
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         assert!(drive.app.pattern_panel.is_some());
@@ -186,7 +187,8 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e1").contains("pad"));
+        let knob_1 = role(&mut drive, "e1");
+        assert!(knob_1.contains('-') && !knob_1.contains("pad"), "{knob_1}");
     }
 }
 

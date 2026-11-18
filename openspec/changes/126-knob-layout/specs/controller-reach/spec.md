@@ -13,22 +13,24 @@ An owner binding on bank 2 SHALL keep its action.
 
 ### Requirement: Pad edit knobs follow the screen rows
 
-On Pads outside pad edit, bank 1 knobs 2–7 SHALL have no role.
-In pad edit, bank 1 knob 1 SHALL select the page.
-Knobs 7, 5 and 3 SHALL change the first, second and third value of the page.
-Knobs 2, 4 and 6 SHALL have no role in pad edit.
+On Pads outside pad edit, bank 1 knobs 1–7 SHALL have no role.
+The pads select a pad. The A1 overview keeps its knob 1 step route.
+A pad edit page SHALL have at most four values.
+In pad edit, bank 1 knobs 7, 5, 3 and 1 SHALL change the first to fourth value.
+Knobs 2, 4 and 6 and an absent value SHALL have no role in pad edit.
+LEFT and RIGHT SHALL select the page.
 A pad value turn SHALL use the target, scope and limits of the keyboard value keys.
 An FX turn SHALL change the current FX slot.
 
 #### Scenario: Pad knobs act only in pad edit
-- **WHEN** the owner turns bank 1 knobs 2–7 on Pads without pad edit
+- **WHEN** the owner turns bank 1 knobs 1–7 on Pads without pad edit
 - **THEN** no pad value changes
-- **AND** bank 1 knob 1 still selects a pad without a hit
+- **AND** the selected pad stays the same
 
 #### Scenario: Pad edit knobs follow the screen rows
-- **WHEN** the owner opens pad edit, selects each page with knob 1 and turns knobs 7, 5 and 3
-- **THEN** the knobs change the first, second and third value of the page from top to bottom
-- **AND** knobs 2, 4 and 6 change no value
+- **WHEN** the owner opens pad edit, selects each page with LEFT or RIGHT and turns knobs 7, 5, 3 and 1
+- **THEN** the knobs change the page values in screen order from top to bottom
+- **AND** knobs 2, 4 and 6 and a knob without a value change nothing
 
 ### Requirement: Chop threshold steps match the keyboard
 
@@ -53,6 +55,21 @@ The threshold SHALL stay within -40 to 0 dB.
 - **THEN** the owner entry or active mode keeps priority
 
 ## MODIFIED Requirements
+
+### Requirement: Pads have a silent keyboard selection route
+
+On Pads and Pads edit, `Alt+Left` and `Alt+Right` SHALL select the adjacent pad in the same row. Selection at a row edge SHALL stay in place. These keys SHALL not hit a pad, change its value, stop a held Gate pad or end the splash. A key repeat SHALL not select another pad. Other screens SHALL keep their current Alt-arrow routes. Owner keymap entries and an active text line, question, picker, Help or learning mode SHALL keep priority.
+
+#### Scenario: Keyboard selects a neighboring pad without sound
+- **WHEN** the owner presses `Alt+Left` or `Alt+Right` on Pads or Pads edit
+- **THEN** the adjacent pad in the same row becomes the selected pad
+- **AND** no pad plays, a held Gate keeps its release target and a repeat does not move again
+- **AND** selection stops at the row edge without changing a value or ending the splash
+
+#### Scenario: Silent selection respects owner bindings and overlays
+- **WHEN** an owner keymap replaces an Alt-arrow key or sets it to `none`, or an input overlay owns the key
+- **THEN** the owner entry or overlay acts first and the pad selection stays unchanged
+- **AND** Chop keeps its existing Alt-arrow slice-bound route
 
 ### Requirement: Pattern transport supplies the shipped tempo knob
 
