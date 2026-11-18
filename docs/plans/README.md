@@ -295,7 +295,7 @@ before code. The imported plans do not override an existing requirement.
   First entry is PAD BANK plus two layer 2 hits. The first hit only shows the panel.
   Count first entry and repeated commands separately. Test both from each screen and mode.
   Do not assume an unchanging panel row proves that a command is reachable inside a picker or a question.
-- **Protect the latched panel too (92):** PAD BANK layer 2 needs no held button.
+- **Protect the panel too (92):** a panel cell acts on one hit during a PAD BANK hold.
   A destructive cell asks a question before it removes or replaces anything.
   The rule applies to every panel access path. Keep X-Session direct defaults unchanged.
 - **No hidden bug fixes (85):** the pending-action acknowledgement changes a race outcome.

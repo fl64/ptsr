@@ -71,7 +71,7 @@ once"). Rules:
 
 For the SMC-PAD, clear pad, clear pattern, reset pad, apply a plan over
 occupied pads and delete a slot open a question (`ASK`) through every panel path.
-A latched layer-2 cell needs no held button, so the panel alone is not a safety guard.
+A panel cell acts on one hit during a PAD BANK hold, so the panel alone is not a safety guard.
 Only physical P8 or another explicit Yes path confirms. Physical P7 cancels.
 Both act on the first press when a question is visible, even from a hidden panel.
 PLAY and STOP never answer a question. Keep the X-Session direct safe defaults

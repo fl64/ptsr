@@ -20,6 +20,21 @@ preset, select preset 5. See the [hardware map](plans/SMC-PAD-INTEGRATION.md#1-w
 
 See [SMC-PAD paths](CONTROLLER-PATHS.md) for button and pad routes.
 
+## Presets
+
+The device keeps 8 presets. SHIFT with the printed PAD1–PAD8 selects one.
+A preset holds what each pad, knob and button sends.
+
+| Preset | Pads | PAD BANK |
+| --- | --- | --- |
+| 1 Performance, 3–8 user | Note pads on channel 10, the same in each preset | Shows the second bank only during a hold |
+| 2 DAW | Mackie Control (MCP) pads | Latches. ptsr does not support this preset. |
+
+ptsr uses preset 5. It changes only the knob records of preset 5 to relative steps.
+The other presets stay as they are. A read of all 8 presets on 2026-11-18 found no
+better preset for ptsr. The PAD BANK light shows the second bank of the device.
+On preset 5 it is on only during a hold.
+
 ## Check the layout
 
 Use a disposable project with a break on pad 1 and a different sound on pad 2.
