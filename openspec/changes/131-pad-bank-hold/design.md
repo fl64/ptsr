@@ -15,7 +15,13 @@ that the hit arrived but did nothing.
 On 2026-11-18 a status poll every 52 ms gave 595 replies in 31 s. Three taps gave
 pressed in 3, 2 and 2 replies in sequence. Two holds gave pressed without a gap for
 2.1 s (42 replies) and 2.6 s (50 replies). The first poll after each release gave
-released. The device switches its pad layer on each press.
+released.
+
+On 2026-11-18 ptsr read all 8 presets. Bank 8 is the PAD BANK bank. It has Note
+pads in every preset except preset 2 (DAW, MCP pads). A third-party description of the
+device reports that PAD BANK acts only during a hold on a Note bank and latches on an
+MCP bank. Preset 5 has the factory pads. It differs only in the encoder records
+that ptsr sets. The owner keeps preset 5.
 
 ## Pad routing
 

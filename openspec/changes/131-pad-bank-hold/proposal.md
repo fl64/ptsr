@@ -2,12 +2,11 @@
 
 ## Why
 
-PAD BANK switches the pad layer inside the SMC-PAD and keeps it after release.
-The program sees the button only through a status poll every 52 ms and switches
-the panel on each detected press. A missed press or a layer left from an earlier
-run puts the panel and the device layer out of step. On 2026-11-18 the panel
-showed while the device sent first-layer notes, so a panel hit played a pad and
-closed the panel. A measurement on the same day showed that the status reads
+On preset 5 the SMC-PAD sends its second pad bank only during a PAD BANK hold.
+The program saw the button through a status poll every 52 ms. It switched the
+panel on each detected press. Thus the panel stayed after release, but the device
+went back to its first bank. On 2026-11-18 the panel showed while the device sent
+first-bank notes, so a panel hit played a pad and closed the panel. A measurement on the same day showed that the status reads
 pressed for the full time that the owner holds the button.
 
 ## What Changes
