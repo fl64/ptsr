@@ -191,6 +191,21 @@ impl App {
         if self.screen_learn.is_some() {
             return None;
         }
+        if let midi::Event::Step {
+            port,
+            control,
+            target,
+            ..
+        } = event
+        {
+            let param = super::dispatch::smc_live_pad_param(port, control, *target)?;
+            let abs = self.pads.selected_abs();
+            return self.capture_value(Target::Pad {
+                abs,
+                param,
+                scope: vec![abs],
+            });
+        }
         let midi::Event::Param { param, .. } = event else {
             return None;
         };

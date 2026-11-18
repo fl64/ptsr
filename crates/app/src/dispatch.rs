@@ -6,6 +6,41 @@ use super::{
     pad_name, pads,
 };
 
+pub(super) fn smc_live_pad_param(
+    port: &str,
+    control: &str,
+    target: input::midi::StepTarget,
+) -> Option<pads::Param> {
+    use input::midi::StepTarget;
+    if !port.contains("SMC-PAD-Master")
+        || !matches!(
+            control,
+            "f1" | "f2"
+                | "f3"
+                | "f4"
+                | "f5"
+                | "f6"
+                | "cc 38"
+                | "cc 39"
+                | "cc 40"
+                | "cc 41"
+                | "cc 42"
+                | "cc 43"
+        )
+    {
+        return None;
+    }
+    match target {
+        StepTarget::Param(Param::PadVolume) => Some(pads::Param::Volume),
+        StepTarget::Param(Param::PadCutoff) => Some(pads::Param::Cutoff),
+        StepTarget::Param(Param::PadPitch) => Some(pads::Param::Pitch),
+        StepTarget::Param(Param::PadDecay) => Some(pads::Param::Decay),
+        StepTarget::Param(Param::PadEffect(1)) => Some(pads::Param::Send1),
+        StepTarget::Param(Param::PadEffect(2)) => Some(pads::Param::Send2),
+        _ => None,
+    }
+}
+
 impl App {
     /// Runs an action; returns `true` to quit.
     pub(super) fn apply(&mut self, action: Action) -> bool {
@@ -1313,8 +1348,18 @@ impl App {
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
         // a button runs its action through `apply`, which keeps the step itself
-        let before = (matches!(self.screen, Screen::Pads | Screen::Fx)
-            && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. }))
+        let live_pad = match &ev {
+            midi::Event::Step {
+                port,
+                control,
+                target,
+                ..
+            } => smc_live_pad_param(port, control, *target),
+            _ => None,
+        };
+        let before = (live_pad.is_some()
+            || (matches!(self.screen, Screen::Pads | Screen::Fx)
+                && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. })))
         .then(|| self.before());
         self.midi_event_inner(ev, released);
         if let Some(b) = before {
@@ -2272,6 +2317,20 @@ impl App {
                 let view = self.panel_view();
                 self.panel.sync_view(view);
                 self.panel.select_context_page(view, steps);
+            }
+            return;
+        }
+        if let Some(param) = smc_live_pad_param(port, control, target) {
+            if !self.transport_input_blocked() && !self.help_open {
+                self.pickup = None;
+                let commands = self.pads.step_selected_value(param, steps);
+                if !commands.is_empty() {
+                    for command in commands {
+                        self.send(command);
+                    }
+                    self.dirty();
+                    self.lit = Some((Lit::Pad(param), Instant::now()));
+                }
             }
             return;
         }

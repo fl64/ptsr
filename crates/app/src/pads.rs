@@ -1469,6 +1469,25 @@ impl Pads {
     /// Applies a keyboard pad action; returns the engine commands to send.
     /// Non-pad actions are ignored.
     pub fn apply(&mut self, action: Action) -> Vec<Command> {
+        self.apply_to_pad(action, None)
+    }
+
+    pub(super) fn step_selected_value(&mut self, param: Param, steps: i32) -> Vec<Command> {
+        let selected = self.selected_abs();
+        let previous = std::mem::replace(&mut self.param, param);
+        let action = Action::EditValue {
+            up: steps > 0,
+            fine: true,
+        };
+        let mut commands = Vec::new();
+        for _ in 0..steps.unsigned_abs() {
+            commands.extend(self.apply_to_pad(action, Some(selected)));
+        }
+        self.param = previous;
+        commands
+    }
+
+    fn apply_to_pad(&mut self, action: Action, single: Option<usize>) -> Vec<Command> {
         match action {
             Action::PadPress { pad, velocity } if pad < PADS_PER_BANK => {
                 self.press(pad, velocity, HitSource::Keyboard)
@@ -1572,11 +1591,12 @@ impl Pads {
                 };
                 // a relative change: every pad of the scope moves by the step,
                 // a pad at a limit stays there and is counted for the pop-up
+                let scope = |pads: &Self| single.map_or_else(|| pads.scope_pads(), |abs| vec![abs]);
                 let mut cmds = Vec::new();
                 let mut limits = 0;
                 match self.param {
                     Param::Volume => {
-                        for abs in self.scope_pads() {
+                        for abs in scope(self) {
                             let db = (self.volume_db[abs] + step).clamp(MIN_DB, MAX_DB);
                             if db == self.volume_db[abs] {
                                 limits += 1;
@@ -1590,7 +1610,7 @@ impl Pads {
                         }
                     }
                     Param::Pitch => {
-                        for abs in self.scope_pads() {
+                        for abs in scope(self) {
                             let semitones =
                                 (self.pitch[abs] + step).clamp(-PITCH_LIMIT, PITCH_LIMIT);
                             if semitones == self.pitch[abs] {
@@ -1605,7 +1625,7 @@ impl Pads {
                         }
                     }
                     Param::Attack | Param::Decay | Param::Release => {
-                        for abs in self.scope_pads() {
+                        for abs in scope(self) {
                             let ms = self.env_ms(abs) as i32;
                             let new = (ms + step as i32 * env_ms).clamp(0, ENV_MS_LIMIT) as u16;
                             if new as i32 == ms {
@@ -1631,7 +1651,7 @@ impl Pads {
                     Param::Drive | Param::Send1 | Param::Send2 => {
                         let pct = if fine { 1 } else { 10 } * step as i16;
                         let param = self.param;
-                        for abs in self.scope_pads() {
+                        for abs in scope(self) {
                             let now = self.pad_pct(abs, param);
                             let new = (now as i16 + pct).clamp(0, 100) as u8;
                             if new == now {
@@ -1683,7 +1703,7 @@ impl Pads {
                         }
                     }
                     Param::Filter | Param::Cutoff | Param::Reso => {
-                        for abs in self.scope_pads() {
+                        for abs in scope(self) {
                             let changed = match self.param {
                                 Param::Filter => {
                                     let i = KINDS.iter().position(|&k| k == self.filter[abs]);

@@ -141,6 +141,8 @@ pub const PARAMS: &[(&str, Param)] = &[
     ("pad.reso", Param::PadReso),
     ("pad.start", Param::PadStart),
     ("pad.end", Param::PadEnd),
+    ("pad.send_1", Param::PadEffect(1)),
+    ("pad.send_2", Param::PadEffect(2)),
     ("master.volume", Param::MasterVolume),
     ("transport.tempo", Param::Tempo),
     ("pattern.bars", Param::PatternBars),

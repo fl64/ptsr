@@ -290,8 +290,8 @@ fn every_current_controller_action_has_a_keyboard_route() {
             "chop.region_start_pos" => has("chop.region_start"),
             "chop.region_end_pos" => has("chop.region_end"),
             "edit.page" => has("edit.page_prev") && has("edit.page_next"),
-            "pad.volume" | "pad.pitch" | "pad.cutoff" | "pad.decay" | "pattern.bars"
-            | "pattern.quantize" | "pattern.strength" => {
+            "pad.volume" | "pad.pitch" | "pad.cutoff" | "pad.decay" | "pad.send_1"
+            | "pad.send_2" | "pattern.bars" | "pattern.quantize" | "pattern.strength" => {
                 has("edit.value_dec") && has("edit.value_inc")
             }
             "pad.select_left" | "pad.select_right" => {
@@ -2400,6 +2400,52 @@ fn a_chop_bound_turn_keeps_the_current_panel_page() {
     assert!(drive.app.chop.as_ref().unwrap().range.end < 96_000);
     cell(&mut drive, panel_note(11));
     assert_eq!(drive.app.panel.page(), 2);
+}
+
+/// Scenario "Bank 2 supplies the same live pad controls on every screen" (controller-reach).
+#[test]
+fn bank_2_supplies_the_same_live_pad_controls_on_every_screen() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
+    for view in ALL_VIEWS {
+        let mut drive = reach_drive(view, sound.clone());
+        drive.load_pad(1, sound.clone(), "other");
+        drive.app.pads.selected = 0;
+        drive.app.pads.marked.insert(1);
+        drive.app.pads.cutoff_hz[0] = 1_200.0;
+        drive.app.pads.decay_ms[0] = 50;
+        drive.app.pads.sends[0] = [10, 20];
+        let untouched = drive.app.pads.snapshot(1);
+        let volume = drive.app.pads.volume_db[0];
+        let pitch = drive.app.pads.pitch[0];
+        let page = drive.app.pads.param;
+        cell(&mut drive, 64);
+        assert!(drive.app.panel.visible());
+
+        turn(&mut drive, 38, 63);
+        assert_eq!(drive.app.pads.volume_db[0], volume - 1, "{view:?}");
+        turn(&mut drive, 39, 65);
+        assert!(drive.app.pads.cutoff_hz[0] > 1_200.0, "{view:?}");
+        turn(&mut drive, 40, 65);
+        assert_eq!(drive.app.pads.pitch[0], pitch + 1, "{view:?}");
+        turn(&mut drive, 41, 65);
+        assert_eq!(drive.app.pads.decay_ms[0], 51, "{view:?}");
+        turn(&mut drive, 42, 65);
+        assert_eq!(drive.app.pads.sends[0], [11, 20], "{view:?}");
+        turn(&mut drive, 43, 65);
+        assert_eq!(drive.app.pads.sends[0], [11, 21], "{view:?}");
+        let selected = drive.app.pads.snapshot(0);
+        turn(&mut drive, 44, 65);
+        assert!(drive.app.pads.snapshot(0) == selected, "{view:?}");
+        assert!(drive.app.pads.snapshot(1) == untouched, "{view:?}");
+        assert_eq!(drive.app.pads.param, page);
+        assert_eq!(drive.app.panel.page(), 0);
+
+        drive.app.ask = Some(Ask::Exit { lines: vec![] });
+        drive.app.publish_midi(&drive.shared);
+        turn(&mut drive, 38, 63);
+        assert!(drive.app.pads.snapshot(0) == selected, "{view:?}");
+        assert!(drive.app.ask.is_some());
+    }
 }
 
 fn timed_chop_zoom(drive: &mut Drive, value: u8, at: Instant) {

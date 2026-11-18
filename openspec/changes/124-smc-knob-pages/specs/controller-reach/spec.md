@@ -34,6 +34,21 @@ Assign and visible questions SHALL block bound turns.
 - **WHEN** the owner turns a bound knob during Assign or a visible question
 - **THEN** the bounds, plan and question stay in place
 
+### Requirement: Bank 2 follows the selected pad on each screen
+
+The shipped bank 2 knobs 1–6 SHALL be volume, cutoff, pitch, decay, send 1 and send 2.
+Each turn SHALL target the selected pad, even if other pads have marks.
+Knob 7 SHALL stay inactive until pan is available.
+Knob 8 SHALL adjust master volume.
+The bank 2 roles SHALL keep their meaning across screens and panel pages.
+The program SHALL keep owner bindings and input overlay rules.
+
+#### Scenario: Bank 2 supplies the same live pad controls on every screen
+- **WHEN** the owner selects a pad and turns bank 2 knobs 1–7 across screens and panel pages
+- **THEN** available roles change the named value of that pad
+- **AND** send 1 and send 2 change different slots and the dim pan role has no action
+- **AND** marked pads stay unchanged
+
 ## MODIFIED Requirements
 
 ### Requirement: Chop threshold has matching keyboard steps

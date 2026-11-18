@@ -1280,6 +1280,8 @@ pub fn short_label(action: &str) -> &'static str {
         "chop.edit_only" => "edit",
         "chop.assign" => "assign",
         "chop.normalize" => "normal",
+        "pad.send_1" => "send 1",
+        "pad.send_2" => "send 2",
         "pad.fx1_type" => "fx1typ",
         "pad.fx1_size" => "fx1siz",
         "pad.fx1_tone" => "fx1ton",
