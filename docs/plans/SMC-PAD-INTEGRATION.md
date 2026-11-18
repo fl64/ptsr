@@ -85,10 +85,10 @@ Change 124 replaces the panel steps for values, parameters and edit pages with
 direct controls. Change 125 uses the main menu and target routes below.
 
 Enable `SMC-PAD PAD BANK` by default on the supported USB unit after its status-read
-check passes. F12 MIDI offers `Open panel` and `Off`. A detected press opens or
-closes the panel before the next pad hit. The device retains its selected layer
-after release. If the panel stays hidden, its first command-layer hit only shows it.
-A playing-layer hit closes the panel. The status line shows PANEL while it is open.
+check passes. F12 MIDI offers `Hold panel` and `Off`. From change 131, the panel
+shows while PAD BANK is held, and the hold, not the device layer, decides if a pad
+hit runs a cell or plays. With `Off`, the first command-layer hit only shows a hidden
+panel, and a playing-layer hit closes it. The status line shows PANEL while it is open.
 
 Change 127 replaces the main page and the context pages with two views.
 A reveal shows up to 12 actions of the current screen or mode. LEFT shows the

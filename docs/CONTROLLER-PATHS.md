@@ -6,12 +6,13 @@ Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
 
-The counts give **visible panel / hidden panel with reveal**. The hidden
-count includes one PAD BANK press and one hit to reveal the panel. On verified
-USB, F12 MIDI defaults to `Open panel`. A detected press opens or closes the panel.
-The next detected press returns to the playing grid without a pad hit.
+The counts give **visible panel / hidden panel with reveal**. On verified USB,
+F12 MIDI defaults to `Hold panel` (change 131). The panel shows while PAD BANK is
+held, and a pad hit during the hold runs its cell. The hold counts as one press.
+With `Off` or an unverified unit, the hidden count includes one PAD BANK press and
+one hit to reveal the panel.
 
-| Action | Panel visible | PAD BANK opens the panel | PAD BANK and a reveal hit |
+| Action | Panel visible | PAD BANK held | PAD BANK and a reveal hit |
 | --- | --- | --- | --- |
 | Action of the current view | 1 | 2 | 3 |
 | Screens view cell | 2 | 3 | 4 |
@@ -24,11 +25,11 @@ view. RIGHT shows the actions again. A screen hit opens that screen and shows it
 actions. The bottom row is P1 Back, P2 Undo, P3 Redo and P4 Panic on every view.
 The P numbers are the numbers printed on the device.
 
-A visible panel takes LEFT and RIGHT. To change a bank, a page or a folder with
-LEFT and RIGHT, press PAD BANK to hide the panel first.
+A visible panel takes LEFT and RIGHT. Without a hold, LEFT and RIGHT change a
+bank, a page or a folder.
 Count KNOB BANK separately if a turn needs the other knob bank. Count target pad
-hits separately. A visible modal question takes P11 (No) or P12 (Yes) on the
-command layer. Add one PAD BANK press if the device is on the playing layer.
+hits separately. A visible modal question takes P11 (No) or P12 (Yes) without a
+hold. With `Off`, add one PAD BANK press if the device is on the playing layer.
 No reveal hit is necessary.
 
 | User story | SMC-PAD route and command counts | Exception or limit |
