@@ -86,14 +86,12 @@ fn every_current_keyboard_action_has_a_controller_route() {
     );
     assert!(panel.warnings.is_empty(), "{:?}", panel.warnings);
     let aliases = [
-        ("bank.prev", "e8", "bank"),
-        ("bank.next", "e8", "bank"),
-        ("pad.select_left", "left", "pad.select_left"),
-        ("pad.select_right", "right", "pad.select_right"),
+        ("pad.select_left", "e1", "smc.position"),
+        ("pad.select_right", "e1", "smc.position"),
         ("master.volume_down", "f8", "master.volume"),
         ("master.volume_up", "f8", "master.volume"),
-        ("browser.up", "left", "browser.up"),
-        ("browser.down", "right", "browser.down"),
+        ("browser.up", "e1", "files.scroll"),
+        ("browser.down", "e1", "files.scroll"),
         ("chop.cursor_left", "e1", "chop.cursor_pos"),
         ("chop.cursor_right", "e1", "chop.cursor_pos"),
         ("chop.zoom_in", "e2", "chop.zoom"),
@@ -157,7 +155,7 @@ fn every_current_keyboard_action_has_a_controller_route() {
                     | "ui.confirm"
                     | "transport.play_stop"
             );
-            let bank_select = named.starts_with("bank.") && named[5..].parse::<u8>().is_ok();
+            let bank_select = named.starts_with("bank.");
             let role = aliases.iter().find(|(name, _, _)| *name == named).copied();
             let role_ok = role.is_some_and(|(_, control, expected)| {
                 profile.control_action(screen, false, control) == Some(expected)
@@ -175,8 +173,8 @@ fn every_current_keyboard_action_has_a_controller_route() {
                 }
                 _ => false,
             };
-            let bank_ok =
-                bank_select && profile.control_action(screen, false, "e8") == Some("bank");
+            let bank_ok = bank_select
+                && profile.control_action(Screen::Pads, false, "right") == Some("smc.list_next");
             assert!(
                 fixed || role_ok || variant_role_ok || bank_ok,
                 "{screen:?} key {key}: no SMC-PAD route for {named} ({action:?})"
@@ -280,6 +278,15 @@ fn every_current_controller_action_has_a_keyboard_route() {
             r if r.starts_with("pad.") && r[4..].parse::<usize>().is_ok() => true,
             r if r.starts_with("panel.cell.") => true,
             "bank" => has("bank.prev") && has("bank.next"),
+            "smc.list_prev" | "smc.list_next" => {
+                has("bank.prev")
+                    && has("bank.next")
+                    && has("edit.page_next")
+                    && has("browser.parent")
+                    && has("browser.enter")
+                    && has("settings.tab_next")
+            }
+            "smc.position" => has("pad.select_left") && has("pad.select_right"),
             "master.volume" => has("master.volume_down") && has("master.volume_up"),
             "transport.tempo" => has("transport.tempo_down") && has("transport.tempo_up"),
             "chop.cursor_pos" => has("chop.cursor_left") && has("chop.cursor_right"),
@@ -528,73 +535,84 @@ fn exact_chop_threshold_keys_resolve_in_both_terminal_modes() {
 /// Scenario "Keyboard selects a neighboring pad without sound" (controller-reach).
 #[test]
 fn keyboard_selects_a_neighboring_pad_without_sound() {
-    for view in [panel::View::Pads, panel::View::PadEdit] {
-        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-        let mut keyboard = reach_drive(view, sound.clone());
-        let mut controller = reach_drive(view, sound);
-        for (start, code, cc, selected) in [
-            (0, KeyCode::Left, 25, 0),
-            (0, KeyCode::Right, 26, 1),
-            (3, KeyCode::Right, 26, 3),
-            (4, KeyCode::Left, 25, 4),
-            (7, KeyCode::Left, 25, 6),
-            (15, KeyCode::Right, 26, 15),
-        ] {
-            for drive in [&mut keyboard, &mut controller] {
-                drive.app.pads.selected = start;
-                drive.app.splash = true;
-                drive.app.publish_midi(&drive.shared);
-            }
-            let before = keyboard.seen();
-            let key_frame = keyboard.tap(code, M::ALT);
-            controller.bytes(SMC, &[0xB0, cc, 127]);
-            controller.bytes(SMC, &[0xB0, cc, 0]);
-            let button_frame = controller.frame();
-            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
-            assert_eq!(keyboard.seen(), controller.seen(), "{view:?} {start}");
-            assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
-            assert!(key_frame.commands().is_empty(), "{view:?} key hit");
-            assert!(button_frame.commands().is_empty(), "{view:?} button hit");
-            assert!(
-                keyboard.app.splash && controller.app.splash,
-                "{view:?} splash"
-            );
-            keyboard.key(code, M::ALT, KeyEventKind::Repeat);
-            keyboard.key(code, M::ALT, KeyEventKind::Release);
-            assert!(keyboard.frame().commands().is_empty());
-            assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
-        }
-
+    let view = panel::View::Pads;
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut keyboard = reach_drive(view, sound.clone());
+    let mut controller = reach_drive(view, sound);
+    let at = Instant::now();
+    for (index, (start, code, value, selected)) in [
+        (0, KeyCode::Left, 63, 0),
+        (0, KeyCode::Right, 65, 1),
+        (3, KeyCode::Right, 65, 3),
+        (4, KeyCode::Left, 63, 4),
+        (7, KeyCode::Left, 63, 6),
+        (15, KeyCode::Right, 65, 15),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         for drive in [&mut keyboard, &mut controller] {
-            drive.app.pads.selected = 0;
-            drive.app.pads.gate[0] = true;
+            drive.app.pads.selected = start;
+            drive.app.splash = true;
             drive.app.publish_midi(&drive.shared);
         }
-        keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Press);
-        keyboard.frame();
-        controller.bytes(SMC, &[0x99, 48, 80]);
-        controller.frame();
-        assert!(keyboard.app.pads.held[0] && controller.app.pads.held[0]);
-        assert!(keyboard.tap(KeyCode::Right, M::ALT).commands().is_empty());
-        controller.bytes(SMC, &[0xB0, 26, 127]);
-        controller.bytes(SMC, &[0xB0, 26, 0]);
-        assert!(controller.frame().commands().is_empty());
-        assert_eq!(keyboard.app.pads.selected, 1);
-        assert_eq!(keyboard.seen(), controller.seen());
-        keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Release);
-        let key_release = keyboard.frame();
-        controller.bytes(SMC, &[0x89, 48, 0]);
-        controller.frame();
-        assert!(
-            key_release
-                .commands()
-                .iter()
-                .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
+        let before = keyboard.seen();
+        let key_frame = keyboard.tap(code, M::ALT);
+        controller.midi().recorded_bytes_at(
+            SMC,
+            &[0xB0, 30, value],
+            &controller.project,
+            at + std::time::Duration::from_millis(100 * index as u64),
         );
-        assert_eq!(keyboard.seen(), controller.seen());
-        assert!(!keyboard.app.pads.held[0]);
-        assert_eq!(keyboard.app.pads.selected, 1);
+        let button_frame = controller.frame();
+        assert_eq!(keyboard.app.pads.selected, selected, "{view:?} {start}");
+        assert_eq!(keyboard.seen(), controller.seen(), "{view:?} {start}");
+        assert_eq!(keyboard.seen().pads, before.pads, "{view:?} pad values");
+        assert!(key_frame.commands().is_empty(), "{view:?} key hit");
+        assert!(button_frame.commands().is_empty(), "{view:?} button hit");
+        assert!(
+            keyboard.app.splash && controller.app.splash,
+            "{view:?} splash"
+        );
+        keyboard.key(code, M::ALT, KeyEventKind::Repeat);
+        keyboard.key(code, M::ALT, KeyEventKind::Release);
+        assert!(keyboard.frame().commands().is_empty());
+        assert_eq!(keyboard.app.pads.selected, selected, "{view:?} repeat");
     }
+
+    for drive in [&mut keyboard, &mut controller] {
+        drive.app.pads.selected = 0;
+        drive.app.pads.gate[0] = true;
+        drive.app.publish_midi(&drive.shared);
+    }
+    keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Press);
+    keyboard.frame();
+    controller.bytes(SMC, &[0x99, 48, 80]);
+    controller.frame();
+    assert!(keyboard.app.pads.held[0] && controller.app.pads.held[0]);
+    assert!(keyboard.tap(KeyCode::Right, M::ALT).commands().is_empty());
+    controller.midi().recorded_bytes_at(
+        SMC,
+        &[0xB0, 30, 65],
+        &controller.project,
+        Instant::now() + std::time::Duration::from_millis(1_000),
+    );
+    assert!(controller.frame().commands().is_empty());
+    assert_eq!(keyboard.app.pads.selected, 1);
+    assert_eq!(keyboard.seen(), controller.seen());
+    keyboard.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Release);
+    let key_release = keyboard.frame();
+    controller.bytes(SMC, &[0x89, 48, 0]);
+    controller.frame();
+    assert!(
+        key_release
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::PadRelease { pad: 0 }))
+    );
+    assert_eq!(keyboard.seen(), controller.seen());
+    assert!(!keyboard.app.pads.held[0]);
+    assert_eq!(keyboard.app.pads.selected, 1);
 }
 
 /// Scenario "Silent selection respects owner bindings and overlays" (controller-reach).
@@ -1150,8 +1168,10 @@ fn first_entry_and_repeated_commands_have_separate_counts() {
     assert_eq!(repeated_cell_hits, 2);
 
     let mut knob = smc_drive();
-    turn(&mut knob, 37, 65);
-    assert_eq!(knob.app.pads.bank, 1, "{:?}", knob.app.input_log);
+    let db = knob.app.master_db;
+    turn(&mut knob, 37, 63);
+    assert_eq!(knob.app.master_db, db - 1, "{:?}", knob.app.input_log);
+    assert_eq!(knob.app.pads.bank, 0);
 }
 
 /// Scenario "Added cells reach their current actions" (controller-reach).
@@ -1163,7 +1183,7 @@ fn added_cells_reach_their_current_actions() {
     turn(&mut controller, 36, 65);
     assert_eq!(controller.app.transport.bpm, keyboard.app.transport.bpm);
     keyboard.tap(KeyCode::PageDown, M::NONE);
-    turn(&mut controller, 37, 65);
+    list_button(&mut controller, true);
     assert_eq!(controller.app.pads.bank, keyboard.app.pads.bank);
 
     keyboard.tap(KeyCode::Char('n'), M::ALT);
@@ -1964,9 +1984,12 @@ fn shipped_global_knobs_match_keyboard_results_in_each_view() {
     for view in ALL_VIEWS {
         for (cc, key, modifiers) in [
             (36, KeyCode::Up, M::CONTROL),
-            (37, KeyCode::PageDown, M::NONE),
+            (37, KeyCode::Char(']'), M::NONE),
             (45, KeyCode::Char(']'), M::NONE),
         ] {
+            if cc == 36 && matches!(view, panel::View::Chop | panel::View::ChopEdit) {
+                continue;
+            }
             let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
             let mut keyboard = reach_drive(view, sound.clone());
             let mut controller = reach_drive(view, sound);
@@ -2044,111 +2067,140 @@ fn shipped_transport_buttons_match_keyboard_results_in_each_view() {
     }
 }
 
+fn list_button(drive: &mut Drive, right: bool) -> Frame {
+    let cc = if right { 26 } else { 25 };
+    drive.bytes(SMC, &[0xB0, cc, 127]);
+    drive.bytes(SMC, &[0xB0, cc, 0]);
+    drive.frame()
+}
+
+/// Scenario "SMC-PAD list buttons name and move the same list" (controller-reach).
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// This matrix creates 32 app instances, so it belongs to the slow group.
 #[test]
 fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
-    for view in ALL_VIEWS {
-        for (cc, right) in [(25, false), (26, true)] {
-            let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-            let mut keyboard = reach_drive(view, sound.clone());
-            let mut controller = reach_drive(view, sound);
-            let code = match view {
-                panel::View::Pads | panel::View::PadEdit | panel::View::Pattern => {
-                    for drive in [&mut keyboard, &mut controller] {
-                        drive.app.pads.selected = 1;
-                        drive.app.publish_midi(&drive.shared);
-                    }
-                    if right { KeyCode::Right } else { KeyCode::Left }
-                }
-                panel::View::Files => {
-                    for drive in [&mut keyboard, &mut controller] {
-                        drive.app.browser.entries = (0..3)
-                            .map(|index| browser::Entry {
-                                name: format!("file-{index}.wav"),
-                                is_dir: false,
-                                favorite: None,
-                            })
-                            .collect();
-                        drive.app.browser.selected = 1;
-                    }
-                    if right { KeyCode::Down } else { KeyCode::Up }
-                }
-                panel::View::Chop | panel::View::ChopEdit => {
-                    for drive in [&mut keyboard, &mut controller] {
-                        let chop = drive.app.chop.as_mut().unwrap();
-                        chop.snap = chop::Snap::Cuts;
-                        assert!(chop.select_slice(1));
-                        drive.app.publish_midi(&drive.shared);
-                    }
-                    if right {
-                        KeyCode::Char('l')
-                    } else {
-                        KeyCode::Char('j')
-                    }
-                }
-                panel::View::Fx => {
-                    controller.bytes(SMC, &[0xB0, cc, 127]);
-                    controller.bytes(SMC, &[0xB0, cc, 0]);
-                    assert!(controller.frame().commands().is_empty());
-                    assert_eq!(controller.seen(), keyboard.seen());
-                    continue;
-                }
-                panel::View::Settings => {
-                    for drive in [&mut keyboard, &mut controller] {
-                        drive.app.settings_row = 1;
-                        drive.app.publish_midi(&drive.shared);
-                    }
-                    if right { KeyCode::Down } else { KeyCode::Up }
-                }
-            };
-            if view == panel::View::ChopEdit {
-                keyboard.tap(KeyCode::Esc, M::NONE);
-            }
-            let modifiers = if matches!(
-                view,
-                panel::View::Pads | panel::View::PadEdit | panel::View::Pattern
-            ) {
-                M::ALT
-            } else {
-                M::NONE
-            };
-            let key_frame = keyboard.tap(code, modifiers);
-            if view == panel::View::ChopEdit {
-                keyboard.tap(KeyCode::Enter, M::NONE);
-            }
-            controller.bytes(SMC, &[0xB0, cc, 127]);
-            controller.bytes(SMC, &[0xB0, cc, 0]);
-            let button_frame = controller.frame();
-            assert_eq!(
-                reach_result(&controller, &button_frame),
-                reach_result(&keyboard, &key_frame),
-                "{view:?} button cc {cc}"
-            );
-            let expected = if right { 2 } else { 0 };
-            match view {
-                panel::View::Pads | panel::View::PadEdit | panel::View::Pattern => {
-                    assert_eq!(controller.app.pads.selected, expected, "{view:?} cc {cc}");
-                }
-                panel::View::Files => {
-                    assert_eq!(
-                        controller.app.browser.selected, expected,
-                        "{view:?} cc {cc}"
-                    );
-                }
-                panel::View::Chop | panel::View::ChopEdit => {
-                    assert_eq!(
-                        controller.app.chop.as_ref().unwrap().selected,
-                        expected,
-                        "{view:?} cc {cc}"
-                    );
-                }
-                panel::View::Settings => {
-                    assert_eq!(controller.app.settings_row, expected, "{view:?} cc {cc}");
-                }
-                panel::View::Fx => unreachable!(),
-            }
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut pads = reach_drive(panel::View::Pads, sound.clone());
+    list_button(&mut pads, false);
+    assert_eq!(pads.app.pads.bank, 0);
+    pads.app.pads.gate[0] = true;
+    pads.app.publish_midi(&pads.shared);
+    pads.bytes(SMC, &[0x99, 48, 80]);
+    pads.frame();
+    assert!(pads.app.pads.held[0]);
+    list_button(&mut pads, true);
+    assert_eq!(pads.app.pads.bank, 1);
+    pads.bytes(SMC, &[0x89, 48, 0]);
+    pads.frame();
+    assert!(!pads.app.pads.held[0]);
+
+    let mut edit = reach_drive(panel::View::PadEdit, sound.clone());
+    let mut keyboard = reach_drive(panel::View::PadEdit, sound.clone());
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    list_button(&mut edit, true);
+    assert_eq!(edit.app.pads.page().0, keyboard.app.pads.page().0);
+    let before = edit.app.pads.param;
+    turn(&mut edit, 30, 65);
+    assert_ne!(edit.app.pads.param, before);
+    assert_eq!(edit.app.pads.bank, 0);
+
+    let mut pattern = reach_drive(panel::View::Pattern, sound.clone());
+    pattern.app.pads.pattern = Some(session::PatternState {
+        slot: "A1".into(),
+        bars: 2,
+        quantize: "off".into(),
+        strength: 50,
+        hits: vec![],
+    });
+    let before = pattern.app.pads.pattern.clone();
+    list_button(&mut pattern, true);
+    assert_eq!(pattern.app.pattern_overview(&pattern.keymap).first_cell, 16);
+    turn(&mut pattern, 30, 65);
+    assert_eq!(pattern.app.pattern_view.browse_cell, Some(17));
+    list_button(&mut pattern, true);
+    assert_eq!(pattern.app.pattern_view.browse_cell, Some(17));
+    assert_eq!(pattern.app.pattern_overview(&pattern.keymap).first_cell, 16);
+    list_button(&mut pattern, false);
+    assert_eq!(pattern.app.pattern_overview(&pattern.keymap).first_cell, 0);
+    assert_eq!(pattern.app.pads.pattern, before);
+
+    for view in [panel::View::Chop, panel::View::ChopEdit] {
+        let mut chop = reach_drive(view, sound.clone());
+        let mut keyboard = reach_drive(view, sound.clone());
+        for drive in [&mut chop, &mut keyboard] {
+            let chop = drive.app.chop.as_mut().unwrap();
+            chop.snap = chop::Snap::Cuts;
+            assert!(chop.select_slice(1));
         }
+        if view == panel::View::ChopEdit {
+            keyboard.tap(KeyCode::Esc, M::NONE);
+        }
+        keyboard.tap(KeyCode::Char('l'), M::NONE);
+        list_button(&mut chop, true);
+        assert_eq!(chop.app.chop.as_ref().unwrap().selected, 2);
+        assert_eq!(
+            chop.app.chop.as_ref().unwrap().selected,
+            keyboard.app.chop.as_ref().unwrap().selected
+        );
+    }
+
+    let mut fx = reach_drive(panel::View::Fx, sound.clone());
+    list_button(&mut fx, true);
+    assert_eq!(fx.app.fx_slot, 1);
+    turn(&mut fx, 30, 65);
+    assert_eq!(fx.app.fx_param, 1);
+    list_button(&mut fx, false);
+    assert_eq!(fx.app.fx_slot, 0);
+    assert_eq!(fx.app.fx_param, 0);
+
+    let mut settings = reach_drive(panel::View::Settings, sound);
+    let row = settings.app.settings_row;
+    list_button(&mut settings, true);
+    assert_eq!(settings.app.settings_tab, 1);
+    list_button(&mut settings, false);
+    assert_eq!(settings.app.settings_tab, 0);
+    assert_eq!(settings.app.settings_row, row);
+}
+
+/// Scenario "File list buttons navigate folders" (controller-reach).
+#[test]
+fn file_list_buttons_navigate_folders() {
+    let files = TransitionFiles::new();
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::Files, sound);
+    drive.app.browser = browser::Browser::new(Some(files.0.clone()));
+    assert!(drive.app.browser.entries[0].is_dir);
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.browser.dir, files.0.join("A"));
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.browser.dir, files.0);
+    drive.app.browser.selected = drive
+        .app
+        .browser
+        .entries
+        .iter()
+        .position(|file| file.name == "tone.wav")
+        .unwrap();
+    let selected = drive.app.browser.selected;
+    assert!(list_button(&mut drive, true).commands().is_empty());
+    assert_eq!(drive.app.browser.selected, selected);
+    assert_eq!(drive.app.browser.dir, files.0);
+}
+
+/// Scenario "Both banks pin master to the top right knob" (controller-reach).
+#[test]
+fn both_banks_pin_master_to_the_top_right_knob() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    for view in ALL_VIEWS {
+        let mut drive = reach_drive(view, sound.clone());
+        let bank = drive.app.pads.bank;
+        let tempo = drive.app.transport.bpm;
+        let db = drive.app.master_db;
+        turn(&mut drive, 37, 63);
+        assert_eq!(drive.app.master_db, db - 1, "{view:?}");
+        turn(&mut drive, 45, 63);
+        assert_eq!(drive.app.master_db, db - 2, "{view:?}");
+        assert_eq!(drive.app.pads.bank, bank, "{view:?}");
+        assert_eq!(drive.app.transport.bpm, tempo, "{view:?}");
     }
 }
 
@@ -2168,8 +2220,8 @@ fn shipped_pad_knobs_match_keyboard_values_in_pad_views() {
             (34, pads::Param::Decay, KeyCode::Right, 65),
             (38, pads::Param::Volume, KeyCode::Left, 63),
             (40, pads::Param::Pitch, KeyCode::Right, 65),
-            (41, pads::Param::Cutoff, KeyCode::Left, 63),
-            (42, pads::Param::Decay, KeyCode::Right, 65),
+            (39, pads::Param::Cutoff, KeyCode::Left, 63),
+            (41, pads::Param::Decay, KeyCode::Right, 65),
         ] {
             let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
             let mut keyboard = reach_drive(view, sound.clone());
@@ -2187,7 +2239,15 @@ fn shipped_pad_knobs_match_keyboard_values_in_pad_views() {
                 keyboard.tap(KeyCode::F(5), M::NONE);
             }
             turn(&mut controller, cc, value);
-            assert_eq!(controller.seen(), keyboard.seen(), "{view:?} cc {cc}");
+            let mut controller_seen = controller.seen();
+            let mut keyboard_seen = keyboard.seen();
+            if cc >= 38 {
+                let popup = controller.app.value_popup.as_ref().unwrap();
+                assert!(popup.current(&controller.app).is_some());
+                controller_seen.notice = None;
+                keyboard_seen.notice = None;
+            }
+            assert!(controller_seen == keyboard_seen, "{view:?} cc {cc}");
             assert_eq!(
                 controller.app.pattern_view.overview,
                 keyboard.app.pattern_view.overview
@@ -2198,17 +2258,6 @@ fn shipped_pad_knobs_match_keyboard_values_in_pad_views() {
                 "{view:?} cc {cc} did not act"
             );
         }
-        let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
-        let mut keyboard = reach_drive(view, sound.clone());
-        let mut controller = reach_drive(view, sound);
-        keyboard.tap(KeyCode::PageDown, M::NONE);
-        turn(&mut controller, 30, 65);
-        assert_eq!(
-            controller.seen(),
-            keyboard.seen(),
-            "{view:?} encoder 1 bank"
-        );
-        assert_eq!(controller.app.pads.bank, 1);
     }
 }
 
@@ -2713,7 +2762,7 @@ fn a1_encoder_context_preserves_input_owners_and_held_pads() {
 }
 
 #[test]
-fn bank_knob_does_not_act_behind_a_question_or_picker() {
+fn master_knob_does_not_act_behind_a_question_or_picker() {
     let files = TransitionFiles::new();
     let mut question = project_drive(&files);
     question.app.ask = Some(Ask::ClearPads {

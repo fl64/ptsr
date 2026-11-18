@@ -3783,7 +3783,7 @@ fn help_section(a: Action) -> usize {
         | Action::PadCopy
         | Action::PadRename
         | Action::LearnToggle => 0,
-        Action::BankNext | Action::BankPrev | Action::BankSelect(_) => 1,
+        Action::BankNext | Action::BankPrev | Action::BankSelect(_) | Action::SmcList { .. } => 1,
         Action::BrowserUp
         | Action::BrowserDown
         | Action::BrowserEnter

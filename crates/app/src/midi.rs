@@ -4301,10 +4301,14 @@ mod tests {
         for (screen, left, right) in [
             (
                 Screen::Pads,
-                Action::PadSelect(input::Dir::Left),
-                Action::PadSelect(input::Dir::Right),
+                Action::SmcList { next: false },
+                Action::SmcList { next: true },
             ),
-            (Screen::Files, Action::BrowserUp, Action::BrowserDown),
+            (
+                Screen::Files,
+                Action::SmcList { next: false },
+                Action::SmcList { next: true },
+            ),
             (
                 Screen::Chop,
                 Action::MarkerSelect(-1),
@@ -4424,7 +4428,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             profile.control_action(Screen::Pads, false, "e1"),
-            Some("bank")
+            Some("smc.position")
         );
         assert_eq!(
             profile.control_action(Screen::Files, false, "e1"),
@@ -4448,7 +4452,7 @@ mod tests {
         );
         assert_eq!(
             profile.control_action(Screen::Files, false, "e8"),
-            Some("bank")
+            Some("master.volume")
         );
     }
 
@@ -4490,7 +4494,7 @@ mod tests {
         assert_eq!(
             events
                 .iter()
-                .filter(|event| matches!(event, Event::Action(Action::PadSelect(input::Dir::Left))))
+                .filter(|event| matches!(event, Event::Action(Action::SmcList { next: false })))
                 .count(),
             1
         );

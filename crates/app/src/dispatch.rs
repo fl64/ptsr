@@ -99,6 +99,10 @@ impl App {
     fn run(&mut self, action: Action) -> bool {
         // the folder picker is open: the keys go to it before the screen (11)
         if self.ask.is_none() && self.path_picker.is_some() {
+            let action = match action {
+                Action::SmcList { next } => Action::SettingsValue(if next { 1 } else { -1 }),
+                action => action,
+            };
             self.picker_key(action);
             return false;
         }
@@ -342,6 +346,7 @@ impl App {
             Action::ScreenPattern => {
                 self.goto(Screen::Pads);
                 self.pattern_view.overview = true;
+                self.pattern_view.browse_cell = None;
             }
             Action::ScreenFiles => self.goto(Screen::Files),
             Action::ScreenFx => self.goto(Screen::Fx),
@@ -916,6 +921,7 @@ impl App {
                 }
             }
             Action::Confirm | Action::SettingsLearn | Action::SettingsClear => {}
+            Action::SmcList { next } => self.smc_list(next),
             Action::SettingsValue(step) => self.change(self.settings_row, step as isize),
             Action::SettingsTab => {
                 self.settings_tab = (self.settings_tab + 1) % 4;
@@ -2260,6 +2266,96 @@ impl App {
         self.say_changed(changed, false);
     }
 
+    fn smc_list(&mut self, next: bool) {
+        if self.transport_input_blocked() || self.help_open || self.pattern_panel.is_some() {
+            return;
+        }
+        let action = match self.screen {
+            Screen::Pads if self.pattern_view.overview => {
+                self.move_pattern_position(if next { 1 } else { -1 }, true);
+                return;
+            }
+            Screen::Pads if self.edit => {
+                if next {
+                    Action::PageNext
+                } else {
+                    Action::PagePrev
+                }
+            }
+            Screen::Pads => {
+                if next {
+                    Action::BankNext
+                } else {
+                    Action::BankPrev
+                }
+            }
+            Screen::Files => {
+                if next {
+                    Action::BrowserEnter
+                } else {
+                    Action::BrowserParent
+                }
+            }
+            Screen::Fx => {
+                self.select_fx(usize::from(next));
+                return;
+            }
+            Screen::Settings => {
+                self.settings_tab = (self.settings_tab + if next { 1 } else { 3 }) % 4;
+                self.learning = None;
+                self.midi_run = None;
+                return;
+            }
+            _ => return,
+        };
+        self.run(action);
+    }
+
+    fn smc_move_position(&mut self, steps: i32) {
+        if self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        if self.screen == Screen::Pads && self.pattern_view.overview && self.pattern_panel.is_none()
+        {
+            self.move_pattern_position(steps, false);
+            return;
+        }
+        let right = steps > 0;
+        let action = if self.pattern_panel.is_some() {
+            if right {
+                Action::PatternParamNext
+            } else {
+                Action::PatternParamPrev
+            }
+        } else {
+            match self.screen {
+                Screen::Pads if self.edit => {
+                    if right {
+                        Action::ParamNext
+                    } else {
+                        Action::ParamPrev
+                    }
+                }
+                Screen::Pads => Action::PadSelect(if right {
+                    input::Dir::Right
+                } else {
+                    input::Dir::Left
+                }),
+                Screen::Fx => {
+                    if right {
+                        Action::ParamNext
+                    } else {
+                        Action::ParamPrev
+                    }
+                }
+                _ => return,
+            }
+        };
+        for _ in 0..steps.unsigned_abs() {
+            self.run(action);
+        }
+    }
+
     fn midi_step(
         &mut self,
         port: &str,
@@ -2369,6 +2465,10 @@ impl App {
                 } else {
                     Action::PagePrev
                 })
+            }
+            StepTarget::List(ListTarget::SmcPosition) => {
+                self.smc_move_position(steps);
+                return;
             }
             StepTarget::List(ListTarget::Bank) => Some(if right {
                 Action::BankNext

@@ -42,6 +42,8 @@ pub(super) fn describe(a: Action) -> String {
             )
         }
         Action::BankNext => "next bank".into(),
+        Action::SmcList { next: false } => "previous item in the main list".into(),
+        Action::SmcList { next: true } => "next item in the main list".into(),
         Action::BankPrev => "previous bank".into(),
         Action::BankSelect(b) => format!("bank {}", b + 1),
         Action::MasterVolume(s) if s < 0 => "master volume down 1 dB".into(),

@@ -223,6 +223,7 @@ pub enum ListTarget {
     Settings,
     Page,
     Bank,
+    SmcPosition,
 }
 
 impl ListTarget {
@@ -233,6 +234,7 @@ impl ListTarget {
             Self::Settings => "settings.row",
             Self::Page => "edit.page",
             Self::Bank => "bank",
+            Self::SmcPosition => "smc.position",
         }
     }
 }
@@ -250,6 +252,7 @@ fn list_target_of(name: &str) -> Option<ListTarget> {
         "settings.row" => Some(ListTarget::Settings),
         "edit.page" => Some(ListTarget::Page),
         "bank" => Some(ListTarget::Bank),
+        "smc.position" => Some(ListTarget::SmcPosition),
         _ => None,
     }
 }
@@ -2010,7 +2013,7 @@ mod tests {
         for (cc, target) in [
             (35, StepTarget::List(ListTarget::Page)),
             (36, StepTarget::Param(Param::Tempo)),
-            (37, StepTarget::List(ListTarget::Bank)),
+            (37, StepTarget::Param(Param::MasterVolume)),
         ] {
             let msg = Msg::parse(&[0xB0, cc, 65]).unwrap();
             assert!(matches!(

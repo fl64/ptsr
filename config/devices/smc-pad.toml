@@ -104,23 +104,22 @@ f4 = "pad.decay"
 f5 = "pad.send_1"
 f6 = "pad.send_2"
 f8 = "master.volume"
-e1 = "projects.scroll"
+e1 = "smc.position"
 e6 = "edit.page"
 e7 = "transport.tempo"
-e8 = "bank"
+e8 = "master.volume"
 
 [screens.pads]
-left = "pad.select_left"
-right = "pad.select_right"
-e1 = "bank"
+left = "smc.list_prev"
+right = "smc.list_next"
 e2 = "pad.volume"
 e3 = "pad.pitch"
 e4 = "pad.cutoff"
 e5 = "pad.decay"
 
 [screens.files]
-left = "browser.up"
-right = "browser.down"
+left = "smc.list_prev"
+right = "smc.list_next"
 e1 = "files.scroll"
 
 [screens.chop]
@@ -140,8 +139,12 @@ e2 = "pattern.bars"
 e3 = "pattern.quantize"
 e4 = "pattern.strength"
 
+[screens.fx]
+left = "smc.list_prev"
+right = "smc.list_next"
+
 [screens.settings]
-left = "settings.row_prev"
-right = "settings.row_next"
+left = "smc.list_prev"
+right = "smc.list_next"
 e1 = "settings.row"
 e2 = "settings.value_next"
