@@ -51,7 +51,8 @@ pub fn command_panel_in(
         for (column, area) in cells.iter().enumerate() {
             let index = row * 4 + column;
             let label = panel.labels[index].as_deref().unwrap_or("-");
-            let active = panel.labels[index].is_some() && index != 14 && index != 15;
+            let active =
+                panel.labels[index].is_some() && label != "mixer" && index != 14 && index != 15;
             let color = if active { CYAN } else { DIM };
             let cell = Block::bordered()
                 .title(Line::from(format!("{} {label}", index + 1)).fg(color))

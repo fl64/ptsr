@@ -450,7 +450,10 @@ impl App {
                 .panel
                 .label(self.panel_view(), cell)
                 .unwrap_or("unavailable");
-            Some((label, cell >= 15 || label == "unavailable"))
+            Some((
+                label,
+                cell >= 15 || matches!(label, "unavailable" | "mixer"),
+            ))
         };
         let value_role = |name: &str| {
             if profile.name != "SMC-PAD" {

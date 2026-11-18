@@ -19,6 +19,16 @@ pub(super) enum View {
     Settings,
 }
 
+const MAIN: [(&str, Option<Action>); 7] = [
+    ("pads", Some(Action::ScreenPads)),
+    ("files", Some(Action::ScreenFiles)),
+    ("chop", Some(Action::ScreenChop)),
+    ("A1", Some(Action::ScreenPattern)),
+    ("fx", Some(Action::ScreenFx)),
+    ("mixer", None),
+    ("setup", Some(Action::ScreenSettings)),
+];
+
 impl View {
     fn parse(name: &str) -> Option<Self> {
         Some(match name {
@@ -255,18 +265,9 @@ impl State {
             13 => Choice::Back,
             14 => Choice::Action(Action::Undo),
             15 | 16 => Choice::Dim,
-            1..=7 if self.page == 0 => {
-                let name = [
-                    "screen.pads",
-                    "screen.files",
-                    "screen.chop",
-                    "screen.pattern",
-                    "screen.fx",
-                    "screen.settings",
-                    "help.toggle",
-                ][usize::from(cell - 1)];
-                Choice::Action(Action::parse(name).unwrap())
-            }
+            1..=7 if self.page == 0 => MAIN[usize::from(cell - 1)]
+                .1
+                .map_or(Choice::Dim, Choice::Action),
             8 if self.page == 0 => {
                 if self.page_count(view) > 1 {
                     self.page = 1;
@@ -307,11 +308,8 @@ impl State {
             (_, 14) => Some("undo"),
             (_, 15) => Some("redo"),
             (_, 16) => Some("panic"),
-            (0, 1..=8) => Some(
-                [
-                    "pads", "files", "chop", "ptrn", "fx", "sets", "help", "more",
-                ][usize::from(cell - 1)],
-            ),
+            (0, 1..=7) => Some(MAIN[usize::from(cell - 1)].0),
+            (0, 8) => Some("more"),
             (page, 11) if page > 0 => Some("next"),
             (page, 12) if page > 0 => Some("main"),
             _ => self
@@ -404,6 +402,39 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Shipped labels fit the panel glossary" (command-panel).
+    #[test]
+    fn shipped_labels_fit_the_panel_glossary() {
+        let allowed = [
+            "A1", "as pad", "assign", "auto", "back", "chop", "clear", "commit", "copy", "cut",
+            "cut -", "edit", "end", "end -", "enter", "erase", "exit", "files", "fx", "gate",
+            "grid", "grid +", "grid -", "help", "hits", "hits -", "knobs", "learn", "level",
+            "load", "loop", "main", "mark", "marks", "mixer", "mode", "more", "next", "open",
+            "order", "output", "pads", "panic", "parent", "parts", "play", "record", "redo",
+            "row +", "row -", "rows", "save", "setup", "snap", "star", "start", "step", "tab",
+            "take", "undo", "whole",
+        ];
+        let mut panel = State::default();
+        assert!(
+            panel.config.warnings.is_empty(),
+            "{:?}",
+            panel.config.warnings
+        );
+        for (view, count) in panel.config.pages.clone() {
+            for page in 0..count {
+                panel.page = page;
+                for cell in 1..=16 {
+                    if let Some(label) = panel.label(view, cell) {
+                        assert!(
+                            Line::raw(label).width() <= 6 && allowed.contains(&label),
+                            "{view:?} page {page}, cell {cell}: {label}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn main_cells_follow_the_current_view() {

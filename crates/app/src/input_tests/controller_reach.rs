@@ -1030,7 +1030,7 @@ fn next_selects_a_later_context_page() {
     );
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[1].as_deref(),
-        Some("view +")
+        Some("grid +")
     );
     cell(&mut controller, 65);
     assert_ne!(controller.app.pattern_view.division.grid(), before);
@@ -1048,7 +1048,8 @@ fn help_cells_navigate_without_acting_behind_help() {
     let mut keyboard = smc_drive();
     let selected = controller.app.pads.selected_abs();
     cell(&mut controller, 64);
-    cell(&mut controller, 62);
+    cell(&mut controller, panel_note(8));
+    cell(&mut controller, panel_note(10));
     keyboard.tap(KeyCode::F(1), M::NONE);
     assert!(controller.app.help_open);
     assert_eq!(
@@ -1088,6 +1089,33 @@ fn help_cells_navigate_without_acting_behind_help() {
     assert!(!controller.app.help_open);
     assert_eq!(controller.app.screen, Screen::Pads);
     assert_eq!(controller.app.pads.selected_abs(), selected);
+}
+
+/// Scenario "The main panel gives Help one context route" (command-panel).
+#[test]
+fn the_main_panel_gives_help_one_context_route() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    for view in ALL_VIEWS {
+        let mut drive = reach_drive(view, sound.clone());
+        let screen = drive.app.screen;
+        cell(&mut drive, panel_note(1));
+        let main = drive.app.panel_snapshot().unwrap();
+        assert_eq!(main.labels[5].as_deref(), Some("mixer"));
+        assert_eq!(main.labels[6].as_deref(), Some("setup"));
+        cell(&mut drive, panel_note(6));
+        assert_eq!(drive.app.screen, screen);
+        assert!(!drive.app.help_open);
+        cell(&mut drive, panel_note(8));
+        assert_eq!(drive.app.panel.label(view, 10), Some("help"));
+        cell(&mut drive, panel_note(10));
+        assert!(drive.app.help_open, "{view:?}");
+        assert_eq!(drive.app.screen, screen);
+    }
+
+    let mut drive = smc_drive();
+    cell(&mut drive, panel_note(1));
+    cell(&mut drive, panel_note(7));
+    assert_eq!(drive.app.screen, Screen::Settings);
 }
 
 /// Scenario "Exit needs a second SMC-PAD press" (controller-reach).
