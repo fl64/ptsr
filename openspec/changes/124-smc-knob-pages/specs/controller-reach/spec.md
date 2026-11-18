@@ -129,6 +129,28 @@ Unavailable roles SHALL keep their named positions and remain inactive.
 
 ## MODIFIED Requirements
 
+### Requirement: Controller routes keep short press paths
+
+Frequent actions SHALL use a direct button, pad or knob, or the first context page.
+From the visible main panel, a main command SHALL take one press.
+A first-page context command SHALL take two presses. Each later page SHALL add one Next press.
+From a hidden panel, count one PAD BANK press and a reveal hit if the shortcut does not open the panel first.
+Count a required KNOB BANK press separately. A turn in the active knob bank SHALL count as zero presses.
+Count target hits and modal answers separately.
+The reach table SHALL list the route and counts for each action story in `docs/USER-STORIES.md`.
+
+#### Scenario: First entry and repeated commands have separate counts
+- **WHEN** the owner reaches a context command from a hidden panel and then repeats it from a visible panel
+- **THEN** the first count includes PAD BANK and includes a reveal hit when the shortcut is off or misses the tap
+- **AND** the later count excludes PAD BANK and the reveal hit
+- **AND** each Next press adds one to a later page's path
+- **AND** neither count treats a knob turn as a button press
+
+#### Scenario: Every story has a recorded controller path
+- **WHEN** the reach test reads every action story in `docs/USER-STORIES.md`
+- **THEN** each story has an SMC-PAD route and a press count in `docs/CONTROLLER-PATHS.md`
+- **AND** observation-only, text-only and other-device stories name their exception
+
 ### Requirement: Chop threshold has matching keyboard steps
 
 On Chop and Chop edit, Ctrl+Alt+Up SHALL increase the hit threshold by 1 dB.

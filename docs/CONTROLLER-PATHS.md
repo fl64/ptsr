@@ -1,82 +1,91 @@
 # SMC-PAD paths for current stories
 
-This table covers the headings in [User stories](USER-STORIES.md) for change 93. It describes the shipped SMC-PAD profile and panel map. Raw MIDI tests check software routes. The owner has not yet checked these routes on the physical device.
+This table covers the headings in [User stories](USER-STORIES.md).
+It describes the SMC-PAD profile and command panel for change 124.
+Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
 
-For a supported USB SMC-PAD, set `SMC-PAD PAD BANK` to `Open panel` in F12 MIDI to skip the reveal hit when the shortcut detects the tap in time. The hidden counts in the table describe `Off` and the fallback path. Subtract one from a hidden count that includes a reveal hit when PAD BANK opens the panel first.
+The counts give **visible main panel / hidden panel with reveal**. The hidden
+count includes one PAD BANK press and one hit to reveal the panel. Set
+`SMC-PAD PAD BANK` to `Open panel` in F12 MIDI to omit the reveal hit when
+the supported USB shortcut opens the panel before the first pad hit.
 
-Each pair is **visible / hidden**: button presses from the visible main panel, then from a hidden panel. A main cell is `1/3`: the hidden route adds PAD BANK and one reveal hit. A context cell is `2/4`: More and the action cell, with the same two entry presses when hidden. E6 turns select a context page without a button press. A first-bank knob is `0/0`. PLAY, STOP and RECORD are `1/1`. A modal P7 or P8 answer is `1/2`: it needs PAD BANK from the first bank, but no reveal hit. The count excludes knob turns, target pad hits and later modal answers. A first-bank pad hit is a separate sound or target action. An owner binding can replace a shipped cell.
-
-| User story | SMC-PAD route and command counts | Exception or limit |
-| --- | --- | --- |
-| Terms | Read the screen and pad labels (`0/0`). | Observation. |
-| Two hands | First-bank pads play. E8 selects banks (`0/0`). Help is main P7 (`1/3`). | Pad hits are separate. |
-| SMC-PAD command panel | PAD BANK, reveal, main cell (`1/3`). More and context cell (`2/4`). E6 selects later pages (`0/0`). | Local PAD BANK has no host MIDI message. |
-| Chop the sound of a pad | First-bank pad selects. Main Chop (`1/3`). E1 cursor (`0/0`). Main Cut, Parts, Hits or Assign (`1/3`). Context Commit (`2/4`). PLAY preview (`1/1`). | Target pads and a replacement answer are separate. |
-| Edit a pad | First-bank pad selects. Main Edit (`1/3`). Pad-edit main page and parameter cells (`1/3`). Context value cells (`2/4`). Back (`1/3`). | First-bank hits remain playable. |
-| Read modes and operation results | Main Copy (`1/3`). Fixed Back (`1/3`). Main Help (`1/3`). Help P7/P8 tabs and P9/P10 move (`1/1` while open). | Result levels, status, and badges are observations (`0/0`). |
-| Read pad playback | First-bank hit starts a voice. Watch PLAY (`0/0`). | Playback and release use the pad, not a command cell. |
-| Your own keys | Edit `~/.config/ptsr/keymap.toml` with typed text. | Keyboard-only document edit. |
-| The splash screen | Open a screen from a main cell (`1/3`). Play a first-bank pad. | Splash text is an observation (`0/0`). Silent input does not end it. |
-| Play a beat | First-bank pads play. Transport toggle is context page 2 P2 (`2/4`). | A Gate release belongs to its original pad. |
-| Name a pad | Open and edit its name with `Ctrl+N` and typed text. | Keyboard-only text entry. |
-| Copy a pad without a growing name | Main Copy (`1/3`). First-bank target pad. Context Clear (`2/4`). Fixed Undo (`1/3`). Context Save (`2/4`). | The generated name is an observation. |
-| A project for a track | Context Project (`2/4`). E1 selects (`0/0`). P8 opens (`1/2`). Files main Favorite (`1/3`). | A new project name needs keyboard text. |
-| Load a sound onto a pad | Main Files (`1/3`). E1 or LEFT/RIGHT browses (`0/0` or `1/1`). Main Take or Load (`1/3`). Context preview toggle (`2/4`). | File filtering needs keyboard text. Target pad is separate. |
-| Set up a pad | Main Edit (`1/3`). Page and parameter main cells (`1/3`). Context value cells (`2/4`). Context Mode, Mark bank, Clear or Gate (`2/4`). E8 selects bank (`0/0`). | A question takes P7/P8 separately. |
-| Mute groups: the closed hat stops the open hat | Main Edit (`1/3`). Page and parameter cells (`1/3`). Context value cells (`2/4`). Fixed Undo (`1/3`). | Pad hits and audible result are separate. |
-| The pad panel in a small window | Page and parameter main cells (`1/3`). | Folding, labels and arrows are observations (`0/0`). |
-| Effects: drive, reverb, delay | Main FX (`1/3`). FX page and parameter main cells (`1/3`). Context value cells (`2/4`). Fixed Undo (`1/3`). | Listen to existing renders. No new sound route. |
-| Undo a change to the pads | Fixed Undo (`1/3`). | A no-op Undo shows its existing message. |
-| What is set on a pad | Main Pads (`1/3`). First-bank pad selects. Context Mode (`2/4`). | Mode line, mark and changed-value brightness are observations (`0/0`). |
-| Waves on the pads | Main Pads (`1/3`). Page and value cells as in Set up a pad. | Wave drawing is an observation (`0/0`). |
-| One look for the screens | Main Pads, Files or Chop (`1/3` each). | Layout is an observation (`0/0`). |
-| Hide the pads | Pads context Grid (`2/4`). Other views use page 2 Grid (`2/4`). | Hidden grid state remains visible in the hint. |
-| Set up a pad with the X-Session Pro | Use the X-Session profile and its own physical controls. | Other-device story. The SMC-PAD does not claim its hardware route. |
-| Chop a break | Main Chop (`1/3`). E1 cursor, E2 zoom, E3 threshold, E4/E5 bounds (`0/0`). Main Cut, Parts, Hits, Assign (`1/3`). Page 4 Hits back, Delete cut, Delete end, Order (`2/4`). | PLAY is `1/1`. Target pads and answers are separate. |
-| Keyboard and controller pads on Chop | First-bank pad selects or assigns. E8 selects bank (`0/0`). | A pad hit and its release are separate from command counts. |
-| Select what plays | Chop context Play mode, Loop or As pad (`2/4` each). PLAY and STOP preview (`1/1`). | The playback bar is an observation. |
-| Move the bounds of a slice | E4 moves the start and E5 moves the end (`0/0`). | A knob step follows the current wave view. |
-| Bounds in edit mode | Chop context Edit (`2/4`). Edit main parameter cells (`1/3`). Context value cells (`2/4`). Back (`1/3`). | The amber bound is an observation. |
-| Assign the slices to the pads | Chop main Assign (`1/3`). First-bank target pads. Page 4 Order (`2/4`). Chop context Commit (`2/4`). Back (`1/3`). | P7/P8 answer replacement separately. |
-| Assign mode ignores the rest | Use the Assign cell (`1/3`). Try another cell (`1/3`). | The refusal and unchanged plan are observations (`0/0`). |
-| Swap pads | Pads main Take (`1/3`) or page 2 Take on any view (`2/4`). First-bank target pad. Back (`1/3`). | The target hit is separate. |
-| Select file, copy and swap targets without a hit sound | Files main Take (`1/3`) or Pads main Copy/Take (`1/3`). First-bank target pad. P7/P8 answer (`1/2`). | Target hits are separate and silent in these modes. |
-| Controller commands and the next pad hit | Use Take (`1/3`), bank E8 (`0/0`), then a first-bank target pad. | Watch the input order and held release (`0/0`). |
-| MIDI knobs | Main Settings (`1/3`). Main Tab and Learn (`1/3`). E1 selects a row and E2 changes a value (`0/0`). P8 accepts a pending choice (`1/2`). | A device binding can replace the shipped map. |
-| Bind the controller directly on the screen | Use its action cell. Page 2 Learn (`2/4`). Touch a control. P8 saves or P7 cancels a pending choice (`1/2`). | Back leaves learning. Typed action names are not needed. |
-| Record sound | Hold RECORD for microphone (`1/1`). Page 2 Outrec toggles output capture (`2/4`). | Recorded file placement uses a first-bank target pad. |
-| Session | Context Save (`2/4`). Page 2 Exit (`2/4`), then P8 to leave or P7/Back to stay (`1/2`). | Automatic save is an observation (`0/0`). |
-
-## Layout review after change 93
-
-The table above records the routes in PR #27. The following routes are targets
-for [the new layout](plans/SMC-PAD-INTEGRATION.md#2-the-layout). The owner accepted change 93. Its archive is complete. Change 124 specifies the button and knob routes. Count pad hits, layer switches and command
-presses as separate columns in the owner record.
-
-| Task with the panel hidden | Target route | Target press count |
-| --- | --- | --- |
-| Open a screen | PAD BANK, then a main cell | 2 when PAD BANK opens the panel first |
-| Run a command on the first context page | PAD BANK, More, then the action cell | 3 when PAD BANK opens the panel first |
-| Run a command on a later context page | PAD BANK, More, Next until the page appears, then the action cell | 3 plus one press per Next |
-| Change a value on the current page | Turn its knob in the active bank | 0 button presses |
-| Change a list, pad bank, bar page or tab | Press LEFT or RIGHT | 1 per move |
-| Open Help | PAD BANK, More, then Help | 3 when PAD BANK opens the panel first |
-
-A missed or disabled PAD BANK shortcut adds one reveal hit. If the owner
-needs to change a knob bank before a value turn, count that button press.
-Keep frequent context commands on the first page or give them a direct route.
-The counts below start on the main page. More opens context page 1.
-Each Next press advances one page. This table gives expected counts for change 124.
-
-| Action | Panel visible | PAD BANK opens the panel | PAD BANK and a reveal hit |
+| Action | Main panel visible | PAD BANK opens the panel | PAD BANK and a reveal hit |
 | --- | --- | --- | --- |
 | Main cell | 1 | 2 | 3 |
 | Context page 1 cell | 2 | 3 | 4 |
 | Context page 2 cell | 3 | 4 | 5 |
 | Context page 3 cell | 4 | 5 | 6 |
 | Context page 4 cell | 5 | 6 | 7 |
+| Knob turn in the active bank | 0 | 0 | 0 |
+| LEFT, RIGHT, PLAY, STOP or RECORD | 1 | 1 | 1 |
+
+More opens context page 1. Next advances one page. Count KNOB BANK separately
+if a turn needs the other knob bank. Count target pad hits separately.
+A visible modal question takes P7 or P8 on the command layer. Add one PAD BANK
+press if the device is on the playing layer. No reveal hit is necessary.
+
+| User story | SMC-PAD route and command counts | Exception or limit |
+| --- | --- | --- |
+| Terms | Read the screen and pad labels (`0/0`). | Observation. |
+| Two hands | Playing pads trigger sound. LEFT and RIGHT select banks (`1/1`). Knob 8 controls master in both banks (`0/0`). | Pad hits are separate. |
+| SMC-PAD command panel | Enter with PAD BANK. Use a main cell (`1/3`) or More and a context cell (`2/4`). Next advances the context page. | The USB shortcut can omit the reveal hit. |
+| Chop the sound of a pad | Select a pad. Open Chop (`1/3`). Knob 1 moves the cursor (`0/0`). Main Cut, Parts, Hits, or Assign (`1/3`). Context page 1 Commit (`2/4`). PLAY previews (`1/1`). | Count target pads and answers separately. |
+| Edit a pad | Select a pad. Main Edit (`1/3`). LEFT or RIGHT changes the edit page (`1/1`). Turn knob 1 to select a parameter. Turn knobs 2–7 for page values (`0/0`). | Back closes the edit. |
+| Read modes and operation results | Main Copy, Back, or Help (`1/3`). In Help, P7/P8 select tabs and P9/P10 move (`1/1`). | Badges, results, and current knob roles are observations. |
+| Read pad playback | Hit a playing pad. Read PLAY (`0/0`). | Pad hits and releases are separate. |
+| Your own keys | Edit `~/.config/ptsr/keymap.toml`. | Keyboard-only document edit. |
+| The splash screen | Open a screen from a main cell (`1/3`). Play a pad in the playing layer. | Splash text is an observation. A silent hit keeps it open. |
+| Play a beat | Hit playing pads. PLAY and STOP control transport (`1/1`). | A Gate release belongs to its original pad. |
+| Name a pad | Press `Ctrl+N` and type a name. | Keyboard-only text entry. |
+| Copy a pad without a growing name | Main Copy (`1/3`). Select a target in the playing layer. Context page 1 Clear or Save (`2/4`). Fixed Undo (`1/3`). | Read the generated name. |
+| A project for a track | Context page 1 Project on Pads or Files (`2/4`). Turn knob 1 (`0/0`). P8 opens the project (`1/2`). | A new name needs keyboard text. |
+| Load a sound onto a pad | Main Files (`1/3`). Knob 1 moves through entries (`0/0`). LEFT or RIGHT changes folders (`1/1`). Main Take or Load (`1/3`). | The file filter needs keyboard text. Count the target separately. |
+| Set up a pad | Turn the current Pads page knobs 2–7 (`0/0`). Main Edit (`1/3`), then LEFT or RIGHT changes the page (`1/1`). Context page 1 Mode, Clear, or Gate (`2/4`). | P7/P8 answer a question. |
+| Mute groups: the closed hat stops the open hat | Main Edit (`1/3`). Select TONE with LEFT or RIGHT (`1/1` per page). Turn knob 2 for the mute group (`0/0`). | Listen to the pad hits. |
+| The pad panel in a small window | LEFT or RIGHT selects the edit page (`1/1`). Knobs 2–7 change values (`0/0`). | Read both knob banks at the bottom. |
+| Effects: drive, reverb, delay | Main FX (`1/3`). LEFT or RIGHT selects a slot (`1/1`). Knobs 2–4 edit the slot. Bank 2 knobs 5 and 6 set its pad sends (`0/0`). | Listen to each send. |
+| Undo a change to the pads | Fixed Undo (`1/3`). | A no-op Undo shows its message. |
+| What is set on a pad | Main Pads (`1/3`). Hit a pad or turn knob 1 (`0/0`). Context page 1 Mode (`2/4`). | Read pad state and values. |
+| Waves on the pads | Main Pads (`1/3`). Turn SOURCE knobs 3 and 4 for pad region bounds (`0/0`). | Wave drawing is an observation. |
+| One look for the screens | Main Pads, Files, or Chop (`1/3` each). | Read the current page and list in the knob strip. |
+| Hide the pads | Pads context page 1 Grid (`2/4`). Other views use context page 2 Grid (`3/5`). | The hint shows the grid state. |
+| Set up a pad with the X-Session Pro | Use the X-Session profile and its controls. | Other-device story. |
+| Chop a break | Main Chop (`1/3`). Knobs 1 and 2 move cursor and zoom. Knobs 3–6 move bounds. Knob 7 sets threshold (`0/0`). Main Cut, Parts, Hits, or Assign (`1/3`). Context page 4 Hits back, Delete cut, Delete end, or Order (`5/7`). | Select a slice before removing a bound. |
+| Keyboard and controller pads on Chop | Hit playing pads to select or assign. LEFT and RIGHT select a slice (`1/1`). | Pad hits and releases are separate. |
+| Select what plays | Chop context page 1 Play mode, Loop, or As pad (`2/4` each). PLAY and STOP control preview (`1/1`). | The playback bar is an observation. |
+| Move the bounds of a slice | Turn knobs 3 and 4 for slice start and end (`0/0`). | Steps follow the wave view. |
+| Bounds in edit mode | Chop context page 1 Edit (`2/4`). Turn knobs 3 and 4 for the slice. Turn knobs 5 and 6 for the region (`0/0`). | Read the bound indicator. |
+| Assign the slices to the pads | Main Assign (`1/3`). Select targets. Context page 4 Order (`5/7`). Context page 1 Commit (`2/4`). | Count layer switches, target hits, and replacement answers separately. |
+| Assign mode ignores the rest | Main Assign (`1/3`). Try Cut from the visible main panel (`1/1`). | The refusal leaves the plan in place. |
+| Swap pads | Pads main Take (`1/3`) or context page 2 Take (`3/5`). Select a target in the playing layer. | Count the target separately. |
+| Select file, copy and swap targets without a hit sound | Files main Take or Pads main Copy or Take (`1/3`). Select a target in the playing layer. P7/P8 answer (`1/2`). | The target hit stays silent. |
+| Controller commands and the next pad hit | Use Take (`1/3`), LEFT or RIGHT on Pads (`1/1`), then select a target pad. | Check input order and Gate release. |
+| MIDI knobs | Main Settings (`1/3`). LEFT or RIGHT selects MIDI (`1/1` per tab). Knob 1 selects a row and knob 2 changes a setting (`0/0`). | Enter opens the layout review for saved maps with legacy roles. |
+| Bind the controller directly on the screen | Use the action. Context page 2 Learn (`3/5`). Touch a control. P8 saves or P7 cancels (`1/2`). | Back closes learning. |
+| Record sound | Hold RECORD for microphone (`1/1`). Context page 2 Output record (`3/5`). | Place recorded sounds using the playing layer. |
+| Session | Context page 1 or 2 Save (`2/4` or `3/5`). Context page 2 Exit (`3/5`). P8 leaves or P7 stays (`1/2`). | Read the save state. |
+
+## Set or delete a Chop bound with a pad cell
+
+1. Turn bank 1 knob 1 to the required point.
+2. On the main panel, press P9 Cut to add a slice start.
+3. For the Chop region, open More. Press P7 Start or P8 End to use the
+   cursor position. Press P9 Whole to clear the region.
+4. To delete the selected slice start, open context page 4. Press P2
+   Delete cut. To delete a manual slice end, press P3 Delete end.
+
+The route from the main panel to context page 4 is More and three Next presses.
+Press P8 to accept a visible question. Press P7 to cancel.
+
+## Later panel layout
+
+The later panel change targets two presses for a screen and three for a
+context page 1 command. These counts use the PAD BANK shortcut. A value
+change takes zero presses when its knob bank is active.
+Help stays on the main panel in change 124. The later change places it in More.
+See [the layout plan](plans/SMC-PAD-INTEGRATION.md#2-the-layout).
 
 ### Target flow counts to measure on the SMC-PAD
 
@@ -103,4 +112,5 @@ the [owner decisions](plans/SMC-PAD-INTEGRATION.md#24-routes-preset-checks-and-o
 
 ## Open owner checks
 
-The software tests do not establish physical E6, E7 or E8 movement, physical PAD BANK order, terminal composition or listening results. Use [Live checks](LIVE-CHECKS.md) for those passes. This change has no new render. `renders/92-command-panel.wav` is the existing transport reference.
+Use [Live checks](LIVE-CHECKS.md) for the physical device, terminal composition,
+and listening checks. The transport reference is `renders/92-command-panel.wav`.

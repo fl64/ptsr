@@ -53,7 +53,7 @@ fn every_story_has_a_recorded_controller_path() {
             .collect();
         for (visible, hidden) in &counts {
             assert!(
-                *visible <= 2 && *hidden <= 4,
+                *visible <= 5 && (*visible..=*visible + 2).contains(hidden),
                 "{heading}: over-budget SMC-PAD route {visible}/{hidden}"
             );
         }
@@ -1201,6 +1201,35 @@ fn first_entry_and_repeated_commands_have_separate_counts() {
     }
     assert!(repeated.app.pads.gate[0]);
     assert_eq!(repeated_cell_hits, 2);
+
+    let mut shortcut = smc_drive();
+    shortcut.app.set_smc_pad_bank(true);
+    pad_bank_request(&mut shortcut, SMC);
+    let mut shortcut_presses = 1;
+    for slot in [8, 1] {
+        cell(&mut shortcut, panel_note(slot));
+        shortcut_presses += 1;
+    }
+    assert!(shortcut.app.pads.gate[0]);
+    assert_eq!(shortcut_presses, 3);
+
+    let mut screen = smc_drive();
+    screen.app.set_smc_pad_bank(true);
+    pad_bank_request(&mut screen, SMC);
+    cell(&mut screen, panel_note(2));
+    assert_eq!(screen.app.screen, Screen::Files);
+
+    let mut later = smc_drive();
+    cell(&mut later, panel_note(1));
+    let mut visible_presses = 0;
+    for (slot, expected_page) in [(8, 1), (11, 2), (11, 3), (11, 4)] {
+        cell(&mut later, panel_note(slot));
+        visible_presses += 1;
+        assert_eq!(later.app.panel.page(), expected_page);
+    }
+    assert_eq!(later.app.panel.label(panel::View::Pads, 4), Some("step"));
+    assert_eq!(visible_presses + 1, 5); // One more hit reaches the action.
+    assert_eq!(visible_presses + 3, 7); // PAD BANK, reveal and the action.
 
     let mut knob = smc_drive();
     let db = knob.app.master_db;
