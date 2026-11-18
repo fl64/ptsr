@@ -115,29 +115,24 @@ The reach table SHALL list the route and counts for each story in `docs/USER-STO
 - **THEN** each story has an SMC-PAD route and a press count in `docs/CONTROLLER-PATHS.md`
 - **AND** observation-only, text-only and other-device stories name their exception
 
-### Requirement: PAD BANK detection is opt-in for USB SMC-PAD
-
-F12 MIDI SHALL offer `SMC-PAD PAD BANK` for a connected USB SMC-PAD with a supported preset. It SHALL save `Off` or `Open panel`. An absent setting SHALL use `Off`. Only `Open panel` SHALL start extra read-only status requests.
-
-#### Scenario: PAD BANK setting saves and defaults to off
-- **WHEN** the owner opens MIDI settings with a supported USB SMC-PAD, selects `Open panel` and restarts ptsr
-- **THEN** the setting shows the saved choice and enables status detection
-- **AND** a config without the setting starts with `Off`, while other devices do not show that control
-
 ### Requirement: A verified PAD BANK press opens the current panel
 
-A valid released-to-pressed status SHALL open the hidden panel on the main page for the current screen. It SHALL leave an open panel on its current page. The press SHALL NOT run a cell or change playback. Questions, pickers, Help, text entry and learning SHALL keep priority. The press SHALL NOT become a MIDI-learn choice.
+A valid released-to-pressed status SHALL open the hidden panel on its main
+page. A later valid press from the same Master port SHALL close its panel.
+Each press SHALL act once. The press SHALL leave playback and modal controls
+in place. It SHALL have no MIDI learn action.
 
 #### Scenario: PAD BANK opens the panel once before a pad hit
-- **WHEN** the shortcut is on and the supported controller replies with released, pressed and repeated pressed status
-- **THEN** one reveal shows the current screen's main panel before the next pad hit
-- **AND** the reveal changes no playback or cell value, and the next second-bank hit runs its visible cell once
-- **AND** a later press while the panel is open keeps its current page
+- **WHEN** the shortcut is on and the controller gives a valid press
+- **THEN** the panel opens before a pad hit
+- **AND** the next command-layer hit acts once
+- **AND** the next valid press from its Master closes the panel without a pad hit
+- **AND** a new press opens the main page for the current screen
 
 #### Scenario: PAD BANK respects input overlays
-- **WHEN** a PAD BANK press arrives during a question, picker, Help, text entry or learning
-- **THEN** the current overlay and its target keep priority and no panel action runs
-- **AND** learning does not capture PAD BANK as the chosen control
+- **WHEN** the owner presses PAD BANK during a question, picker, Help, text entry or learning
+- **THEN** the overlay and target keep priority
+- **AND** the press has no MIDI learn action
 
 ### Requirement: PAD BANK status keeps its Master connection
 
@@ -150,16 +145,20 @@ The program SHALL route a valid press to the matching Master connection. It SHAL
 
 ### Requirement: Status delays preserve first-hit reveal and pad play
 
-A status reply SHALL NOT reopen the panel if a first-bank hit on that connection is newer than the request. If the shortcut is off, unavailable or late, the first second-bank hit SHALL reveal a hidden panel without running a cell.
+A status reply SHALL keep the current panel state if a playing or command pad
+hit on that Master port is newer than the request. If the shortcut is off,
+unavailable or late, the first command-layer hit SHALL reveal a hidden panel
+without running a cell.
 
 #### Scenario: Late PAD BANK status keeps both pad routes
-- **WHEN** a second-bank hit arrives before its PAD BANK status reply
-- **THEN** the hit reveals the panel without a cell action and the late reply does not reset its page
-- **AND** in a separate run, a first-bank hit before the reply keeps the panel hidden and a held Gate keeps its original release
+- **WHEN** a command-layer hit arrives before its PAD BANK status reply
+- **THEN** the hit can reveal the panel and the late reply leaves the panel in place
+- **AND** a first-bank hit before the reply keeps the panel hidden and retains its release
 
 #### Scenario: First-hit reveal survives a missing PAD BANK pulse
-- **WHEN** the shortcut is off or a tap produces no usable status reply
-- **THEN** the first second-bank hit reveals the panel, and the next hit runs its visible cell once
+- **WHEN** the shortcut is off or a tap gives no usable reply
+- **THEN** the first command-layer hit reveals the panel
+- **AND** the next hit runs the visible cell once
 
 ### Requirement: Added context cells provide missing actions
 
@@ -172,10 +171,10 @@ Every panel view SHALL keep its main page, first context page and fixed bottom r
 
 | View | Page | Cells in order: label (`action`) |
 | --- | --- | --- |
-| Every view | 2 | `outrec` (`record.output`), `trnspt` (`transport.toggle`), `take` (`pad.take`), `proj` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `A1undo` (`pattern.undo`), `A1 ctl` (`pattern.controls`), `exit` (`app.quit`) |
-| Every view | 3 | `erase` (`pattern.erase`), `A1 rec` (`pattern.record`) |
-| Pads | 4 | `view -` (`pattern.view_prev`), `view +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`), `step` (`pattern.step_edit`) |
-| Chop, Chop edit | 4 | `hits -` (`chop.hits_back`), `delcut` (`marker.delete`), `delend` (`slice.end_delete`), `order` (`chop.assign_order`) |
+| Every view | 2 | `output` (`record.output`), `play` (`transport.toggle`), `take` (`pad.take`), `open` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `undo` (`pattern.undo`), `knobs` (`pattern.controls`), `exit` (`app.quit`) |
+| Every view | 3 | `erase` (`pattern.erase`), `record` (`pattern.record`) |
+| Pads | 4 | `grid -` (`pattern.view_prev`), `grid +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`), `step` (`pattern.step_edit`) |
+| Chop, Chop edit | 4 | `hits -` (`chop.hits_back`), `cut -` (`marker.delete`), `end -` (`slice.end_delete`), `order` (`chop.assign_order`) |
 
 ### Requirement: Pickers accept SMC-PAD selection without typed text
 
@@ -206,7 +205,11 @@ On Settings, SMC-PAD encoder 2 SHALL change the selected value with the same bou
 
 ### Requirement: Help has a controller route
 
-The main panel Help cell SHALL open Help. While Help shows, P7 and P8 SHALL select the previous and next Help tab. P9 and P10 SHALL scroll Help or Messages, or move the selected control on the Controller tab. Back SHALL close Help. Help SHALL show these controller controls. A Help cell SHALL not act on the screen behind Help. Keyboard Help keys and their results SHALL stay available.
+More and P10 SHALL open Controller Help on each view. While Help shows, P7 and P8 SHALL
+select its tabs. P9 and P10 SHALL scroll or move the selected control. Back
+SHALL close Help. Help SHALL show the controls that work in its current tab.
+A Help cell SHALL leave the screen behind Help in place. F1 and the keyboard
+Help paths SHALL retain their results.
 
 #### Scenario: Help cells navigate without acting behind Help
 - **WHEN** the owner opens Help from the panel, uses P7 through P10 and then Back
@@ -372,3 +375,16 @@ Unavailable roles SHALL keep their named positions and remain inactive.
 #### Scenario: Layout rejects a split or reversed knob pair
 - **WHEN** a shipped pair moves apart or reverses its roles
 - **THEN** the layout check reports the pair and its positions
+
+### Requirement: Verified USB SMC-PAD uses the saved PAD BANK preference
+
+F12 MIDI SHALL offer `SMC-PAD PAD BANK` for a connected USB SMC-PAD after the
+preset and encoder checks pass. It SHALL save `Off` or `Open panel`.
+An absent setting SHALL use `Open panel`. A saved Off choice SHALL stay off.
+Only `Open panel` on a verified unit SHALL start extra read-only status requests.
+
+#### Scenario: PAD BANK starts open and preserves a saved Off choice
+- **WHEN** the owner opens MIDI settings on a verified USB unit and sets Off
+- **THEN** the setting and disabled shortcut survive restart
+- **AND** a config without a saved choice uses Open panel
+- **AND** an unverified unit or other device does not show the setting

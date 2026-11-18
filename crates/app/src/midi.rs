@@ -993,7 +993,7 @@ fn dispatch(
                 let ready = result.is_ok();
                 let message = match result {
                     Ok(()) => "SMC-PAD encoders ready".into(),
-                    Err(error) => format!("SMC-PAD encoder setup: {error}"),
+                    Err(error) => format!("SMC-PAD encoder setup. {error}"),
                 };
                 if smc_ready != ready || smc_status.as_deref() != Some(&message) {
                     ui.send(
@@ -1311,9 +1311,13 @@ fn dispatch(
             continue;
         }
 
-        if matches!(resolved, Some(Resolved::Action(Action::PadPress { .. })))
-            && matches!(msg, Msg::NoteOn { note: 36..=51, .. })
-            && let Some(cutoff) = pad_bank_after.get_mut(&port)
+        if matches!(
+            (&resolved, msg),
+            (
+                Some(Resolved::Action(Action::PadPress { .. })),
+                Msg::NoteOn { note: 36..=51, .. }
+            ) | (Some(Resolved::PanelCell(_)), Msg::NoteOn { .. })
+        ) && let Some(cutoff) = pad_bank_after.get_mut(&port)
         {
             *cutoff = (*cutoff).max(at);
         }
@@ -4218,6 +4222,34 @@ mod tests {
             .collect();
         assert_eq!(steps, [1, -1]);
         assert!(events.iter().any(|event| matches!(event, Event::Message { meaning, .. } if meaning == "SMC-PAD encoder setup incomplete")));
+    }
+
+    /// Scenario "A wrong preset gives its number and blocks knob turns" (input-devices).
+    #[test]
+    fn a_wrong_preset_gives_its_number_and_blocks_knob_turns() {
+        let message = "Preset 6 is active. Select preset 5 to use the knobs.";
+        let raw = vec![
+            Raw::SmcSetup(Ok(())),
+            Raw::SmcSetup(Err(message.into())),
+            Raw::Msg(SMC_MASTER.into(), knob(37, 65), test_stamp()),
+            Raw::SmcSetup(Ok(())),
+            Raw::Msg(SMC_MASTER.into(), knob(37, 65), test_stamp()),
+        ];
+        let (events, _) = dispatched(raw, smc_profiles(), on_screen(0, 0));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::SetupStatus {
+            ready: false, message: shown
+        } if shown == &format!("SMC-PAD encoder setup. {message}")))
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, Event::Step { .. }))
+                .count(),
+            1
+        );
     }
 
     #[test]

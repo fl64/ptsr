@@ -1,15 +1,15 @@
 # SMC-PAD paths for current stories
 
 This table covers the headings in [User stories](USER-STORIES.md).
-It describes the SMC-PAD profile and command panel for change 124.
+It describes the SMC-PAD profile and command panel for changes 124 and 125.
 Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
 
 The counts give **visible main panel / hidden panel with reveal**. The hidden
-count includes one PAD BANK press and one hit to reveal the panel. Set
-`SMC-PAD PAD BANK` to `Open panel` in F12 MIDI to omit the reveal hit when
-the supported USB shortcut opens the panel before the first pad hit.
+count includes one PAD BANK press and one hit to reveal the panel. On verified
+USB, F12 MIDI defaults to `Open panel`. A detected press opens or closes the panel.
+The next detected press returns to the playing grid without a pad hit.
 
 | Action | Main panel visible | PAD BANK opens the panel | PAD BANK and a reveal hit |
 | --- | --- | --- | --- |
@@ -33,13 +33,13 @@ press if the device is on the playing layer. No reveal hit is necessary.
 | SMC-PAD command panel | Enter with PAD BANK. Use a main cell (`1/3`) or More and a context cell (`2/4`). Next advances the context page. | The USB shortcut can omit the reveal hit. |
 | Chop the sound of a pad | Select a pad. Open Chop (`1/3`). Knob 1 moves the cursor (`0/0`). Main Cut, Parts, Hits, or Assign (`1/3`). Context page 1 Commit (`2/4`). PLAY previews (`1/1`). | Count target pads and answers separately. |
 | Edit a pad | Select a pad. Main Edit (`1/3`). LEFT or RIGHT changes the edit page (`1/1`). Turn knob 1 to select a parameter. Turn knobs 2–7 for page values (`0/0`). | Back closes the edit. |
-| Read modes and operation results | Main Copy, Back, or Help (`1/3`). In Help, P7/P8 select tabs and P9/P10 move (`1/1`). | Badges, results, and current knob roles are observations. |
+| Read modes and operation results | Main Copy or Back (`1/3`). More, then P10 Help (`2/4`). In Help, P7/P8 select tabs and P9/P10 move (`1/1`). | Badges, results, and current knob roles are observations. |
 | Read pad playback | Hit a playing pad. Read PLAY (`0/0`). | Pad hits and releases are separate. |
 | Your own keys | Edit `~/.config/ptsr/keymap.toml`. | Keyboard-only document edit. |
 | The splash screen | Open a screen from a main cell (`1/3`). Play a pad in the playing layer. | Splash text is an observation. A silent hit keeps it open. |
-| Play a beat | Hit playing pads. PLAY and STOP control transport (`1/1`). | A Gate release belongs to its original pad. |
+| Play a beat | Hit playing pads. PLAY and STOP control transport (`1/1`). Pattern More, P6 Tap sets tempo (`2/4` for the first tap). | A Gate release belongs to its original pad. |
 | Name a pad | Press `Ctrl+N` and type a name. | Keyboard-only text entry. |
-| Copy a pad without a growing name | Main Copy (`1/3`). Select a target in the playing layer. Context page 1 Clear or Save (`2/4`). Fixed Undo (`1/3`). | Read the generated name. |
+| Copy a pad without a growing name | Main Copy (`1/3`). Select a target on the panel. Clear uses context page 1 (`2/4`). Save uses context page 2 (`3/5`). Fixed Undo (`1/3`). | Read the generated name. |
 | A project for a track | Context page 1 Project on Pads or Files (`2/4`). Turn knob 1 (`0/0`). P8 opens the project (`1/2`). | A new name needs keyboard text. |
 | Load a sound onto a pad | Main Files (`1/3`). Knob 1 moves through entries (`0/0`). LEFT or RIGHT changes folders (`1/1`). Main Take or Load (`1/3`). | The file filter needs keyboard text. Count the target separately. |
 | Set up a pad | Turn the current Pads page knobs 2–7 (`0/0`). Main Edit (`1/3`), then LEFT or RIGHT changes the page (`1/1`). Context page 1 Mode, Clear, or Gate (`2/4`). | P7/P8 answer a question. |
@@ -52,15 +52,15 @@ press if the device is on the playing layer. No reveal hit is necessary.
 | One look for the screens | Main Pads, Files, or Chop (`1/3` each). | Read the current page and list in the knob strip. |
 | Hide the pads | Pads context page 1 Grid (`2/4`). Other views use context page 2 Grid (`3/5`). | The hint shows the grid state. |
 | Set up a pad with the X-Session Pro | Use the X-Session profile and its controls. | Other-device story. |
-| Chop a break | Main Chop (`1/3`). Knobs 1 and 2 move cursor and zoom. Knobs 3–6 move bounds. Knob 7 sets threshold (`0/0`). Main Cut, Parts, Hits, or Assign (`1/3`). Context page 4 Hits back, Delete cut, Delete end, or Order (`5/7`). | Select a slice before removing a bound. |
+| Chop a break | Main Chop (`1/3`). Knobs 1 and 2 move cursor and zoom. Knobs 3–6 move bounds. Knob 7 sets threshold (`0/0`). Main Cut, Parts, Hits, or Assign (`1/3`). Context page 4 Hits back, Cut -, End -, or Order (`5/7`). | Select a slice before removing a bound. |
 | Keyboard and controller pads on Chop | Hit playing pads to select or assign. LEFT and RIGHT select a slice (`1/1`). | Pad hits and releases are separate. |
 | Select what plays | Chop context page 1 Play mode, Loop, or As pad (`2/4` each). PLAY and STOP control preview (`1/1`). | The playback bar is an observation. |
 | Move the bounds of a slice | Turn knobs 3 and 4 for slice start and end (`0/0`). | Steps follow the wave view. |
 | Bounds in edit mode | Chop context page 1 Edit (`2/4`). Turn knobs 3 and 4 for the slice. Turn knobs 5 and 6 for the region (`0/0`). | Read the bound indicator. |
-| Assign the slices to the pads | Main Assign (`1/3`). Select targets. Context page 4 Order (`5/7`). Context page 1 Commit (`2/4`). | Count layer switches, target hits, and replacement answers separately. |
-| Assign mode ignores the rest | Main Assign (`1/3`). Try Cut from the visible main panel (`1/1`). | The refusal leaves the plan in place. |
-| Swap pads | Pads main Take (`1/3`) or context page 2 Take (`3/5`). Select a target in the playing layer. | Count the target separately. |
-| Select file, copy and swap targets without a hit sound | Files main Take or Pads main Copy or Take (`1/3`). Select a target in the playing layer. P7/P8 answer (`1/2`). | The target hit stays silent. |
+| Assign the slices to the pads | Main Assign (`1/3`). Select targets. Press P14 Apply. P15 Menu gives access to Order on context page 4. | Count layer switches, target hits, and replacement answers separately. |
+| Assign mode ignores the rest | Main Assign (`1/3`). Press P15 Menu. Try Cut from the main panel. | The refusal leaves the plan in place. |
+| Swap pads | Pads main Take (`1/3`) or context page 2 Take (`3/5`). Use P1–P12 on the target panel or P13–P16 on the playing layer. | Count the target separately. |
+| Select file, copy and swap targets without a hit sound | Files main Take or Pads main Copy or Take (`1/3`). Use P1–P12 on the target panel or P13–P16 on the playing layer. P7/P8 answer (`1/2`). | The target hit stays silent. |
 | Controller commands and the next pad hit | Use Take (`1/3`), LEFT or RIGHT on Pads (`1/1`), then select a target pad. | Check input order and Gate release. |
 | MIDI knobs | Main Settings (`1/3`). LEFT or RIGHT selects MIDI (`1/1` per tab). Knob 1 selects a row and knob 2 changes a setting (`0/0`). | Enter opens the layout review for saved maps with legacy roles. |
 | Bind the controller directly on the screen | Use the action. Context page 2 Learn (`3/5`). Touch a control. P8 saves or P7 cancels (`1/2`). | Back closes learning. |
@@ -74,41 +74,31 @@ press if the device is on the playing layer. No reveal hit is necessary.
 3. For the Chop region, open More. Press P7 Start or P8 End to use the
    cursor position. Press P9 Whole to clear the region.
 4. To delete the selected slice start, open context page 4. Press P2
-   Delete cut. To delete a manual slice end, press P3 Delete end.
+   `cut -`. To delete a manual slice end, press P3 `end -`.
 
 The route from the main panel to context page 4 is More and three Next presses.
 Press P8 to accept a visible question. Press P7 to cancel.
 
-## Later panel layout
+## Target routes
 
-The later panel change targets two presses for a screen and three for a
-context page 1 command. These counts use the PAD BANK shortcut. A value
-change takes zero presses when its knob bank is active.
-Help stays on the main panel in change 124. The later change places it in More.
-See [the layout plan](plans/SMC-PAD-INTEGRATION.md#2-the-layout).
+Start on the playing layer with the panel hidden. Select a source before Copy or
+Take. In Files, select a file. In Chop, prepare one slice for each test.
+Use P1–P12 on the target panel. Switch to the playing layer for P13–P16.
+For Assign, press P14 Apply. P13 cancels. P15 switches between targets and commands.
 
-### Target flow counts to measure on the SMC-PAD
+The software counts below include PAD BANK switches and one target hit.
+Each count gives **detected shortcut / reveal fallback**.
+Count any Yes or No answer separately. For multiple targets, count each extra hit.
 
-Start each run in the playing bank with the panel hidden. Use one disposable
-project. Record the exact sequence and the result. Count PAD BANK switches,
-reveal hits, command cells, target hits, and any confirmation pressed.
-Run the current route with the shortcut off and on. Then trial each proposed
-target route. Repeat a target within P1–12 and within P13–16.
-
-| Flow | Current route to measure | Result to check | Physical count |
+| Flow | Change 124 | Change 125, target 1–12 | Change 125, target 13–16 |
 | --- | --- | --- | --- |
-| Take | Select Take, switch layers, then select a target. | The held item reaches only the selected pad. | Pending |
-| Copy | Select Copy, switch layers, then select a target. | The source keeps its sound and only the target changes. | Pending |
-| Swap | Select the swap route, switch layers, then select the target. | Only the source and target exchange their data. | Pending |
-| File in hand | Select a file, take it, switch layers, then place it. | The file reaches the target without a preview hit. | Pending |
-| Assign | Start Assign, switch layers for targets, then switch back for Apply. | The plan applies once. A replacement asks first. | Pending |
+| Copy, Take or file in hand | 4 / 5 | 3 / 4 | 4 / 5 |
+| Assign one target and apply | 7 / 9 | 4 / 5 | 6 / 8 |
 
-Compare the layer switch with a hint against targets on second-layer cells
-1–12. For the second route, keep Apply and Cancel on the bottom row.
-Targets 13–16 still use the playing layer. Include P7 and P8 separately if
-a question appears. Check that a held Gate releases its original pad.
-After the device check, record the measured counts and choose the route in
-the [owner decisions](plans/SMC-PAD-INTEGRATION.md#24-routes-preset-checks-and-owner-decisions).
+For the first row, use main Copy, Take or Files Take. For Assign on change 124,
+More and Commit follow the return to the command layer. In change 125, P14 applies.
+Repeat with an occupied pad. Check the question and count P7 or P8 separately.
+Record the actual device sequence. Physical press counts remain open.
 
 ## Open owner checks
 

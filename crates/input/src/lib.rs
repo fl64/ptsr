@@ -604,6 +604,7 @@ pub enum Action {
     TransportToggle,
     PlayContext,
     StopContext,
+    TapTempo,
     TempoStep {
         up: bool,
         fine: bool,
@@ -846,6 +847,7 @@ impl Action {
             "transport.toggle" => Self::TransportToggle,
             "play.context" => Self::PlayContext,
             "stop.context" => Self::StopContext,
+            "transport.tap" => Self::TapTempo,
             "transport.tempo_up" => Self::TempoStep {
                 up: true,
                 fine: false,
@@ -1120,6 +1122,7 @@ pub fn short_label(action: &str) -> &'static str {
         "transport.tempo_up_fine" => "bpm+.1",
         "transport.tempo_down_fine" => "bpm-.1",
         "transport.tempo" => "tempo",
+        "transport.tap" => "tap",
         "screen.pads" => "pads",
         "screen.pattern" => "ptrn",
         "screen.settings" => "setup",
@@ -1339,6 +1342,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "metronome.toggle",
         label: "metronome on / off",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.tap",
+        label: "tap tempo in Pattern",
         group: Group::Global,
         knob: false,
     },

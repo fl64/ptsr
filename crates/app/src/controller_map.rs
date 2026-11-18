@@ -1,9 +1,11 @@
 //! The F1 Controller tab (98j): the top of one connected device with the action of each
 //! control on the screen under F1.
 
-use super::{App, Keymap};
+use super::{App, Keymap, Level, input_sources, midi};
 use input::Action;
 use input::midi::{ControlKind, Profile};
+
+pub(super) const SHIFT_NOTICE: &str = "SMC-PAD pads are shifted (SHIFT + PAD13–16 changes octave or transpose). Reset it on the device.";
 
 #[derive(Default)]
 pub(super) struct State {
@@ -19,6 +21,7 @@ pub(super) struct State {
     /// The latest USB setup result for the measured SMC-PAD profile.
     pub smc_status: Option<(bool, String)>,
     pub smc_layout_open: bool,
+    pub smc_shift_warned: std::collections::HashMap<String, input_sources::Connection>,
     pub smc_last_knob: Option<(String, usize, std::time::Instant)>,
 }
 
@@ -292,6 +295,42 @@ impl App {
         }
     }
 
+    pub(super) fn observe_smc_pad(&mut self, ev: &midi::UiEvent) {
+        let midi::Event::Message {
+            port,
+            profile,
+            msg,
+            meaning,
+        } = &ev.event
+        else {
+            return;
+        };
+        if profile != "SMC-PAD" || !port.contains("SMC-PAD-Master") || meaning != "not assigned" {
+            return;
+        }
+        let input::midi::Msg::NoteOn { ch: 10, note, .. } = *msg else {
+            return;
+        };
+        let Some(stamp) = ev.source() else {
+            return;
+        };
+        if (36..=67).contains(&note)
+            || !self
+                .input_sources
+                .connected()
+                .any(|(name, connection)| name == port && connection == stamp.connection)
+        {
+            return;
+        }
+        let warned = &mut self.help_overlay.controller.smc_shift_warned;
+        if warned.insert(port.clone(), stamp.connection) != Some(stamp.connection) {
+            self.post_system_notice(
+                Level::Warn,
+                (SHIFT_NOTICE.into(), std::time::Instant::now()),
+            );
+        }
+    }
+
     fn smc_context(&self) -> (&'static str, &'static str, &'static str) {
         use super::panel::View;
         if self.project_picker.is_some() {
@@ -331,6 +370,50 @@ impl App {
             None if name == "e6" && self.pattern_panel.is_some() => ("swing", false),
             None => ("-", false),
         }
+    }
+
+    fn smc_knob_detail(&self, name: &str, action: Option<&str>) -> Option<String> {
+        use input::midi::{PARAMS, Param, param_of};
+        let bank = if name.starts_with('e') { 1 } else { 2 };
+        let knob = name.get(1..)?.parse::<u8>().ok()?;
+        let (short, available) = self.smc_knob_role(name, action);
+        let purpose = match action {
+            Some("smc.position") => match self.smc_context().2 {
+                "pad" => "select a pad silently",
+                "step" => "select a step in the row",
+                "select" => "select a project",
+                "param" => "select a parameter",
+                position => position,
+            },
+            Some("chop.region_start_pos") => "Chop region start",
+            Some("chop.region_end_pos") => "Chop region end",
+            Some("pad.send_1") => "send to FX 1",
+            Some("pad.send_2") => "send to FX 2",
+            Some(action) => {
+                let param = match param_of(action) {
+                    Some(Param::SmcPageValue(knob)) => self.smc_page_value(knob),
+                    Some(Param::Slot(slot)) => self.slot_param(slot),
+                    param => param,
+                };
+                let effective = param
+                    .and_then(|param| PARAMS.iter().find(|(_, value)| *value == param))
+                    .map_or(action, |(name, _)| *name);
+                let text = label(effective);
+                if text.is_empty() {
+                    short
+                } else {
+                    text.strip_suffix(" (knob)").unwrap_or(text)
+                }
+            }
+            None if short == "-" => "unassigned",
+            None => short,
+        };
+        let state = if available || short == "-" {
+            ""
+        } else {
+            " · unavailable"
+        };
+        Some(format!("B{bank} K{knob} · {purpose}{state}"))
     }
 
     pub(super) fn smc_knob_strip(&self) -> Option<tui::KnobStrip> {
@@ -374,9 +457,20 @@ impl App {
             .as_ref()
             .filter(|_| ready)
             .map(|(_, bank, _)| *bank);
+        let operation = (self.screen == input::Screen::Chop
+            && ready
+            && ["e3", "e4", "e5", "e6"].map(action)
+                == [
+                    Some("slice.start"),
+                    Some("slice.end"),
+                    Some("chop.region_start_pos"),
+                    Some("chop.region_end_pos"),
+                ])
+        .then_some("B1 3–4 slice · 5–6 region");
         Some(tui::KnobStrip {
             page,
             list,
+            operation,
             roles,
             last_bank,
         })
@@ -432,6 +526,7 @@ impl App {
                 current: 0,
                 body: tui::ControllerBody::Empty { profiles },
                 detail: String::new(),
+                note: None,
                 navigation,
                 caption,
             };
@@ -450,7 +545,10 @@ impl App {
                 .panel
                 .label(self.panel_view(), cell)
                 .unwrap_or("unavailable");
-            Some((label, cell >= 15 || label == "unavailable"))
+            Some((
+                label,
+                cell >= 15 || matches!(label, "unavailable" | "mixer"),
+            ))
         };
         let value_role = |name: &str| {
             if profile.name != "SMC-PAD" {
@@ -486,7 +584,12 @@ impl App {
                         if free { " unavailable" } else { "" }
                     ),
                     None => {
-                        if let Some((role, _)) = value_role(name) {
+                        if profile.name == "SMC-PAD"
+                            && profile.kind_of(name) == Some(ControlKind::Knob)
+                            && let Some(detail) = self.smc_knob_detail(name, action(name))
+                        {
+                            detail
+                        } else if let Some((role, _)) = value_role(name) {
                             format!("{name} · {kind} · {role}")
                         } else {
                             match action(name) {
@@ -569,6 +672,9 @@ impl App {
             current: index,
             body,
             detail,
+            note: (profile.name == "SMC-PAD").then_some(
+                "Device Note Repeat uses its own clock. Use ptsr Note Repeat when available.",
+            ),
             navigation,
             caption,
         }

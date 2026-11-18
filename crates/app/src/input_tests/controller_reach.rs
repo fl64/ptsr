@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[path = "panel_targets.rs"]
+mod panel_targets;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 fn smc_drive() -> Drive {
@@ -1030,7 +1033,7 @@ fn next_selects_a_later_context_page() {
     );
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[1].as_deref(),
-        Some("view +")
+        Some("grid +")
     );
     cell(&mut controller, 65);
     assert_ne!(controller.app.pattern_view.division.grid(), before);
@@ -1048,26 +1051,25 @@ fn help_cells_navigate_without_acting_behind_help() {
     let mut keyboard = smc_drive();
     let selected = controller.app.pads.selected_abs();
     cell(&mut controller, 64);
-    cell(&mut controller, 62);
+    cell(&mut controller, panel_note(8));
+    cell(&mut controller, panel_note(10));
     keyboard.tap(KeyCode::F(1), M::NONE);
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    keyboard.tap(KeyCode::Tab, M::NONE);
     assert!(controller.app.help_open);
     assert_eq!(
         controller.app.help_overlay.page,
         keyboard.app.help_overlay.page
     );
 
-    cell(&mut controller, 63);
-    keyboard.tap(KeyCode::Tab, M::NONE);
-    assert_eq!(
-        controller.app.help_overlay.page,
-        keyboard.app.help_overlay.page
-    );
-    cell(&mut controller, 63);
-    keyboard.tap(KeyCode::Tab, M::NONE);
-    assert_eq!(
-        controller.app.help_overlay.page,
-        keyboard.app.help_overlay.page
-    );
+    for _ in 0..3 {
+        cell(&mut controller, 63);
+        keyboard.tap(KeyCode::Tab, M::NONE);
+        assert_eq!(
+            controller.app.help_overlay.page,
+            keyboard.app.help_overlay.page
+        );
+    }
 
     let before = controller.app.controller_view(&controller.keymap).detail;
     cell(&mut controller, 57);
@@ -1088,6 +1090,33 @@ fn help_cells_navigate_without_acting_behind_help() {
     assert!(!controller.app.help_open);
     assert_eq!(controller.app.screen, Screen::Pads);
     assert_eq!(controller.app.pads.selected_abs(), selected);
+}
+
+/// Scenario "The main panel gives Help one context route" (command-panel).
+#[test]
+fn the_main_panel_gives_help_one_context_route() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    for view in ALL_VIEWS {
+        let mut drive = reach_drive(view, sound.clone());
+        let screen = drive.app.screen;
+        cell(&mut drive, panel_note(1));
+        let main = drive.app.panel_snapshot().unwrap();
+        assert_eq!(main.labels[5].as_deref(), Some("mixer"));
+        assert_eq!(main.labels[6].as_deref(), Some("setup"));
+        cell(&mut drive, panel_note(6));
+        assert_eq!(drive.app.screen, screen);
+        assert!(!drive.app.help_open);
+        cell(&mut drive, panel_note(8));
+        assert_eq!(drive.app.panel.label(view, 10), Some("help"));
+        cell(&mut drive, panel_note(10));
+        assert!(drive.app.help_open, "{view:?}");
+        assert_eq!(drive.app.screen, screen);
+    }
+
+    let mut drive = smc_drive();
+    cell(&mut drive, panel_note(1));
+    cell(&mut drive, panel_note(7));
+    assert_eq!(drive.app.screen, Screen::Settings);
 }
 
 /// Scenario "Exit needs a second SMC-PAD press" (controller-reach).
@@ -1615,6 +1644,7 @@ fn learning_answer_keeps_its_chosen_control() {
     drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "source");
     cell(&mut drive, 64);
     cell(&mut drive, 57); // Copy is the action to learn.
+    cell(&mut drive, panel_note(15)); // Open the command pages from the target view.
     cell(&mut drive, 63);
     cell(&mut drive, panel_note(11));
     cell(&mut drive, 62);
@@ -1692,7 +1722,9 @@ fn learning_answer_keeps_its_chosen_control() {
 }
 
 fn panel_note(slot: u8) -> u8 {
-    [64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59][usize::from(slot - 1)]
+    [
+        64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59, 52, 53, 54, 55,
+    ][usize::from(slot - 1)]
 }
 
 const ALL_VIEWS: [panel::View; 8] = [
@@ -1902,6 +1934,10 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                     "{view:?} {action:?}: {:?}",
                     controller.app.input_log
                 );
+                if action == Action::HelpToggle {
+                    keyboard.tap(KeyCode::Tab, M::NONE);
+                    keyboard.tap(KeyCode::Tab, M::NONE);
+                }
                 let controller_frame = cell(&mut controller, panel_note(slot));
                 assert_eq!(
                     reach_result(&controller, &controller_frame),
@@ -1913,7 +1949,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 169);
+    assert_eq!(checked + special, 176);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -2919,23 +2955,27 @@ fn pad_bank_row(drive: &Drive) -> Option<usize> {
         .position(|row| matches!(row, MidiListRow::SmcPadBank))
 }
 
+/// Scenario "PAD BANK starts open and preserves a saved Off choice" (controller-reach).
 /// Scenario "PAD BANK setting saves and defaults to off" (controller-reach).
 #[test]
-fn pad_bank_setting_saves_and_defaults_to_off() {
+fn pad_bank_starts_open_and_preserves_a_saved_off_choice() {
     let files = TransitionFiles::new();
     let path = files.0.join("pad-bank-config.toml");
     std::fs::write(&path, "[midi_gestures]\nhold_time_ms = 400\n").unwrap();
     assert!(
-        !config::load_from(&path)
+        config::load_from(&path)
             .config
             .midi_gestures
             .smc_pad_bank_opens_panel
     );
     assert!(pad_bank_row(&Drive::offline()).is_none());
 
-    let mut keyboard = smc_drive();
-    keyboard.app.user_path = Some(path.clone());
-    keyboard.app.midi_gestures = config::load_from(&path).config.midi_gestures;
+    let mut unverified = Drive::smc_offline();
+    assert!(pad_bank_row(&unverified).is_none());
+    pad_bank_request(&mut unverified, SMC);
+    assert!(!unverified.app.panel.visible());
+
+    let mut keyboard = saved_layout_drive(&path);
     let mut controller = smc_drive();
     for drive in [&mut keyboard, &mut controller] {
         drive.app.screen = Screen::Settings;
@@ -2943,20 +2983,17 @@ fn pad_bank_setting_saves_and_defaults_to_off() {
         drive.app.midi_row = pad_bank_row(drive).unwrap();
         drive.app.publish_midi(&drive.shared);
     }
-    keyboard.tap(KeyCode::Right, M::NONE);
-    turn(&mut controller, 31, 65);
-    assert!(keyboard.app.midi_gestures.smc_pad_bank_opens_panel);
-    assert!(controller.app.midi_gestures.smc_pad_bank_opens_panel);
-    let restored = config::load_from(&path).config.midi_gestures;
-    assert!(restored.smc_pad_bank_opens_panel);
-    assert_eq!(restored.hold_time_ms, 400);
     keyboard.tap(KeyCode::Left, M::NONE);
-    assert!(
-        !config::load_from(&path)
-            .config
-            .midi_gestures
-            .smc_pad_bank_opens_panel
-    );
+    turn(&mut controller, 31, 63);
+    assert!(!keyboard.app.midi_gestures.smc_pad_bank_opens_panel);
+    assert!(!controller.app.midi_gestures.smc_pad_bank_opens_panel);
+    let restored = config::load_from(&path).config.midi_gestures;
+    assert!(!restored.smc_pad_bank_opens_panel);
+    assert_eq!(restored.hold_time_ms, 400);
+
+    let mut restart = saved_layout_drive(&path);
+    pad_bank_request(&mut restart, SMC);
+    assert!(!restart.app.panel.visible());
 }
 
 /// Scenario "PAD BANK opens the panel once before a pad hit" (controller-reach).
@@ -2973,8 +3010,21 @@ fn pad_bank_opens_the_panel_once_before_a_pad_hit() {
     assert_eq!(drive.app.screen, Screen::Files);
     cell(&mut drive, panel_note(8));
     assert_eq!(drive.app.panel.page(), 1);
-    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    const SECOND: &str = "SINCO SMC-PAD-Master 32:1";
+    drive.midi().recorded_connect(SECOND);
+    drive.frame();
+    assert!(pad_bank_request(&mut drive, SECOND).commands().is_empty());
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
     assert_eq!(drive.app.panel.page(), 1);
+
+    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    assert!(!drive.app.panel.visible());
+    assert_eq!(drive.app.screen, Screen::Files);
+
+    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
+    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(drive.app.screen, Screen::Files);
 }
 
 /// Scenario "PAD BANK respects input overlays" (controller-reach).
@@ -3031,6 +3081,7 @@ fn late_pad_bank_status_keeps_both_pad_routes() {
     drive.midi().recorded_pad_bank(SMC, requested_at);
     drive.frame();
     assert_eq!(drive.app.panel.page(), 1);
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
 
     let requested_at = Instant::now();
     drive.bytes(SMC, &[0x99, 48, 100]);
@@ -3276,4 +3327,61 @@ fn removed_smc_pad_knob_stays_unassigned_on_a_saved_map() {
     assert!(!saved["SMC-PAD"]["global"].contains_key("cc 37"));
     turn(&mut drive, 37, 65);
     assert_eq!(drive.app.master_db, volume);
+}
+
+/// Scenario "Pattern taps use the beat interval" (transport).
+#[test]
+fn pattern_taps_use_the_beat_interval() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut controller = reach_drive(panel::View::Pattern, sound.clone());
+    cell(&mut controller, panel_note(1));
+    cell(&mut controller, panel_note(8));
+    assert_eq!(
+        controller.app.panel.label(panel::View::Pattern, 6),
+        Some("tap")
+    );
+    let note = panel_note(6);
+    let start = Instant::now();
+    let tap = |drive: &mut Drive, offset: u64| {
+        let at = start + std::time::Duration::from_millis(offset);
+        drive
+            .midi()
+            .recorded_bytes_at(SMC, &[0x99, note, 100], &drive.project, at);
+        drive
+            .midi()
+            .recorded_bytes_at(SMC, &[0x89, note, 0], &drive.project, at);
+        drive.frame()
+    };
+    let initial = controller.app.transport.bpm;
+    tap(&mut controller, 0);
+    assert_eq!(controller.app.transport.bpm, initial);
+    let frame = tap(&mut controller, 400);
+    assert_eq!(controller.app.transport.bpm, 150.0);
+    assert!(
+        frame
+            .commands()
+            .into_iter()
+            .any(|command| matches!(command, Command::SetTempo { bpm } if *bpm == 150.0))
+    );
+    tap(&mut controller, 900);
+    assert_eq!(controller.app.transport.bpm, 133.3);
+    tap(&mut controller, 1_400);
+    assert_eq!(controller.app.transport.bpm, 128.6);
+    tap(&mut controller, 1_900);
+    assert_eq!(controller.app.transport.bpm, 120.0);
+    tap(&mut controller, 4_100);
+    assert_eq!(controller.app.transport.bpm, 120.0);
+    tap(&mut controller, 4_700);
+    assert_eq!(controller.app.transport.bpm, 100.0);
+
+    let mut keyboard = reach_drive(panel::View::Pattern, sound);
+    let initial = keyboard.app.transport.bpm;
+    keyboard.tap(KeyCode::Char('b'), M::ALT);
+    assert!(!keyboard.app.transport.taps.is_empty());
+    assert_eq!(keyboard.app.transport.bpm, initial);
+    keyboard.tap(KeyCode::F(2), M::NONE);
+    assert!(keyboard.app.transport.taps.is_empty());
+    keyboard.tap(KeyCode::Char('b'), M::ALT);
+    assert!(keyboard.app.transport.taps.is_empty());
+    assert_eq!(keyboard.app.transport.bpm, initial);
 }

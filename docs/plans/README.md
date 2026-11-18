@@ -366,7 +366,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | 91 | How do the SMC-PAD encoders enter relative mode without MidiSuite? | Change 91 reads and saves the active preset, writes only its 16 encoder records, then checks the read-back. A failed check leaves encoder actions off and reports the problem. USB write behavior on this unit remains unverified. |
 | 92 | Is PAD BANK layer 2 the main panel path? | Yes. It latches the panel. |
 | 92 | Does the first layer 2 hit only show a hidden panel? | Yes. It runs no cell. |
-| 93a | Does holding STOP open the panel? | Off by default. Add an optional setting in 93a. |
+| 93a | What does STOP do? | STOP controls playback. PAD BANK opens the panel. |
 | 93a | How does Panic work? | Cell 16 stays dim in 92. In 93a, a question-free double press runs Panic. |
 | 92 | May an SMC panel cell apply a layout or answer a replacement question? | Yes, with a visible question for destructive changes through every panel path. Keep X-Session direct defaults unchanged |
 | 93a | Where are Panic, Undo, and Redo? | Fixed panel cells. Panic needs a double press. |

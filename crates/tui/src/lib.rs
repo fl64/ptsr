@@ -34,7 +34,8 @@ use help::{
     message_history_caption, question, question_area,
 };
 pub use help::{
-    help_dropped, help_key_lines, help_page_height, help_rows, message_lines, messages_page_height,
+    controller_fits, controller_list_rows, help_dropped, help_key_lines, help_page_height,
+    help_rows, message_lines, messages_page_height,
 };
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
@@ -815,27 +816,15 @@ pub struct Controller {
     /// The selected control in full: name, kind, action and its help.
     pub detail: String,
     pub navigation: String,
+    pub note: Option<&'static str>,
     /// The accepted recording state, as on the other tabs.
     pub caption: Option<String>,
 }
 
 /// Columns of one place on a device drawing.
 const PLACE_W: u16 = 8;
-/// Rows above and below a drawing: the device line, a gap, a gap and the detail line.
+/// List frame rows. The drawing omits the blank row above the detail.
 const CONTROLLER_FRAME_ROWS: u16 = 4;
-
-/// The drawing of `places` x `rows` fits the F1 frame of a terminal of `size`.
-pub fn controller_fits(places: usize, rows: usize, size: (u16, u16), caption: bool) -> bool {
-    let width = usize::from(size.0.saturating_sub(2));
-    let height = help_page_height(size.1, caption);
-    places * usize::from(PLACE_W) <= width
-        && rows * 2 + usize::from(CONTROLLER_FRAME_ROWS) <= height
-}
-
-/// List rows that fit the F1 frame under the device line and over the detail line.
-pub fn controller_list_rows(terminal_height: u16, caption: bool) -> usize {
-    help_page_height(terminal_height, caption).saturating_sub(usize::from(CONTROLLER_FRAME_ROWS))
-}
 
 /// A drawing snapshot. Stored confirmation targets remain in the application.
 pub struct Question {

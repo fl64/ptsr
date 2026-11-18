@@ -366,6 +366,19 @@ fn help_caption(frame: &mut Frame, inner: Rect, caption: Option<&str>) -> Rect {
     }
 }
 
+/// The drawing of `places` x `rows` fits the F1 frame of a terminal of `size`.
+pub fn controller_fits(places: usize, rows: usize, size: (u16, u16), caption: bool) -> bool {
+    let width = usize::from(size.0.saturating_sub(2));
+    let height = help_page_height(size.1, caption);
+    places * usize::from(PLACE_W) <= width
+        && rows * 2 + usize::from(CONTROLLER_FRAME_ROWS - 1) <= height
+}
+
+/// List rows that fit the F1 frame under the device line and over the detail line.
+pub fn controller_list_rows(terminal_height: u16, caption: bool) -> usize {
+    help_page_height(terminal_height, caption).saturating_sub(usize::from(CONTROLLER_FRAME_ROWS))
+}
+
 pub(super) fn full_help(frame: &mut Frame, area: Rect, rows: &[(String, String)]) {
     full_help_paged(frame, area, rows, 0, None, "");
 }
@@ -484,7 +497,10 @@ pub(super) fn controller(frame: &mut Frame, area: Rect, c: &Controller) {
             Span::styled(name.clone(), Style::new().fg(DIM))
         });
     }
-    let mut lines = vec![Line::from(devices), Line::default()];
+    let note = c.note.map_or_else(Line::default, |text| {
+        Line::from(clip_label(text, width)).fg(DIM)
+    });
+    let mut lines = vec![Line::from(devices), note];
     match &c.body {
         ControllerBody::Empty { profiles } => {
             lines.push(Line::from("No MIDI device is connected."));

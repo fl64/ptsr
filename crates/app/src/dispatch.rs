@@ -93,6 +93,10 @@ impl App {
             self.preview_selection();
         }
         self.value_after(value_before, Instant::now());
+        self.sync_panel_target();
+        if !self.transport.taps.is_empty() && !self.pattern_tempo_available() {
+            self.transport.taps.clear();
+        }
         quit
     }
 
@@ -289,6 +293,7 @@ impl App {
             Action::TransportToggle | Action::TempoStep { .. } | Action::MetronomeToggle
                 if self.transport_input_blocked() => {}
             Action::TransportToggle => self.send(Command::TransportToggle),
+            Action::TapTempo => self.tap_pattern_tempo(),
             Action::TempoStep { up, fine } => {
                 let step = if fine { 0.1 } else { 1.0 };
                 self.set_tempo(self.transport.bpm + if up { step } else { -step }, true);
@@ -1167,7 +1172,9 @@ impl App {
     pub(super) fn midi_ui_event(&mut self, ev: midi::UiEvent) {
         self.input_sources.observe(&ev, Instant::now());
         self.observe_smc_knob(&ev);
+        self.observe_smc_pad(&ev);
         let sequence = ev.sequence();
+        let received_at = ev.source().map(|source| source.at);
         let preview_ready = ev.preview_ready();
         let origin = ev
             .origin()
@@ -1203,7 +1210,9 @@ impl App {
                 self.acknowledge_notice();
             }
             self.midi_preview_blocked = !preview_ready;
+            self.transport.tap_input_at = received_at;
             self.midi_event_with_release(ev, released);
+            self.transport.tap_input_at = None;
             self.midi_preview_blocked = false;
             self.notice_origin = old;
         }
@@ -1379,6 +1388,7 @@ impl App {
                 && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. })))
         .then(|| self.before());
         self.midi_event_inner(ev, released);
+        self.sync_panel_target();
         if let Some(b) = before {
             let what = match self.lit_now() {
                 Some(Lit::Pad(p)) => self.param_step_name(p),
@@ -1389,6 +1399,41 @@ impl App {
         self.cuts_changed(cuts);
         self.follow_loop();
         self.value_after(value_before, Instant::now());
+    }
+
+    fn panel_target_cell(&mut self, cell: u8) -> bool {
+        use super::panel::Target;
+        let Some(target) = self.panel_target() else {
+            return false;
+        };
+        let menu = self.panel.target_menu == Some(target);
+        if cell == 15 {
+            self.panel.target_menu = (!menu).then_some(target);
+            self.panel.main_page();
+            return true;
+        }
+        if menu {
+            return false;
+        }
+        match cell {
+            1..=12 => {
+                self.pad_hit(
+                    usize::from(cell - 1),
+                    1.0,
+                    pads::HitSource::Midi,
+                    midi::PadSound::UiUnattempted { deferred: true },
+                    None,
+                );
+            }
+            13 => {
+                self.apply(Action::Back);
+            }
+            14 if target == Target::Assign => {
+                self.apply(Action::ChopCommit);
+            }
+            _ => {}
+        }
+        true
     }
 
     fn panel_back(&mut self) {
@@ -1466,6 +1511,7 @@ impl App {
             }
             midi::Event::Disconnected { port } => {
                 self.panel.disconnect(&port);
+                self.help_overlay.controller.smc_shift_warned.remove(&port);
                 if port.contains("SMC-PAD-Master") {
                     self.help_overlay.controller.smc_status = None;
                     if self
@@ -1575,7 +1621,7 @@ impl App {
                         .as_ref()
                         .is_some_and(|midi| midi.pad_bank_shortcut_is_current(setting))
                 {
-                    self.panel.reveal(&port);
+                    self.panel.toggle(&port);
                 }
             }
             midi::Event::PanelCell { port, cell } => {
@@ -1632,9 +1678,16 @@ impl App {
                 if self.panel.press(&port, cell) == super::panel::Press::Cell(cell) {
                     let view = self.panel_view();
                     self.panel.sync_view(view);
+                    if self.panel_target_cell(cell) {
+                        return;
+                    }
                     match self.panel.choice(view, cell) {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);
+                            if action == Action::HelpToggle && self.help_open {
+                                self.help_overlay.page = super::help::Page::Controller;
+                                self.controller_start();
+                            }
                         }
                         super::panel::Choice::Exit => {
                             self.ask = Some(Ask::Exit {

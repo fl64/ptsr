@@ -193,7 +193,7 @@ impl App {
         };
         let target = match action {
             Action::MasterVolume(_) => Target::Master,
-            Action::TempoStep { .. } => Target::Tempo,
+            Action::TempoStep { .. } | Action::TapTempo => Target::Tempo,
             Action::PatternValueDec | Action::PatternValueInc => {
                 Target::Pattern(*super::pattern_record::Setting::ALL.get(self.pattern_panel?)?)
             }

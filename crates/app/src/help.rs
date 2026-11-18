@@ -152,6 +152,7 @@ pub(super) fn describe(a: Action) -> String {
         Action::PlayContext => "start or continue transport, or start a stopped preview".into(),
         Action::StopContext => "pause transport or stop a preview; press again to reset".into(),
         Action::MetronomeToggle => "metronome: on / off".into(),
+        Action::TapTempo => "tap tempo in Pattern".into(),
         Action::TempoStep { up, fine } => format!(
             "tempo {} {} BPM",
             if up { "up" } else { "down" },

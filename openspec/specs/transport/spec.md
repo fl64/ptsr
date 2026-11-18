@@ -138,3 +138,19 @@ If `stop.context` pauses during A1 CountIn, it SHALL cancel CountIn with transpo
 - **WHEN** an A1 pass records hits and context STOP arrives before the pass ends
 - **THEN** recording finishes with its accepted hits and one Undo step
 - **AND** transport pauses at the accepted position without an orphaned recording phase
+
+### Requirement: Pattern accepts taps for tempo
+
+Pattern SHALL offer Tap Tempo on its first context page, P6. Alt+B SHALL use
+the same action. Tempo SHALL use the mean interval of up to four taps.
+A gap longer than two seconds SHALL start a new sequence.
+The first tap SHALL leave tempo as it was. Intervals under 200 ms SHALL be ignored.
+The program SHALL use MIDI receipt times. Tap Tempo SHALL act only in Pattern
+or its controls.
+
+#### Scenario: Pattern taps use the beat interval
+- **WHEN** two Pattern tap presses arrive 400 ms apart
+- **THEN** the tempo becomes 150 BPM after the second press
+- **AND** the four most recent taps determine the average interval
+- **AND** a gap longer than two seconds or a press outside Pattern changes no tempo
+- **AND** Alt+B opens the same tap sequence

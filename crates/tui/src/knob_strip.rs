@@ -5,6 +5,7 @@ use super::{Block, Frame, Line, Paragraph, Rect, Span, Style, Stylize, clip_labe
 pub struct KnobStrip {
     pub page: &'static str,
     pub list: &'static str,
+    pub operation: Option<&'static str>,
     pub roles: [[(&'static str, bool); 8]; 2],
     pub last_bank: Option<usize>,
 }
@@ -97,6 +98,10 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
         .last_bank
         .map_or(String::new(), |bank| format!(" · last {}", bank + 1));
     let mut help = vec![Line::from(format!("< > {} · {}{last}", strip.list, strip.page)).fg(CYAN)];
-    help.extend(rows.into_iter().take(HELP_ROWS as usize));
+    if let Some(operation) = strip.operation {
+        help.push(Line::from(operation).fg(TEXT));
+    }
+    let remaining = usize::from(HELP_ROWS + 1) - help.len();
+    help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);
 }

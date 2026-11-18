@@ -121,6 +121,7 @@ impl Drive {
             let loaded = config::load_from(path);
             assert_eq!(loaded.user_path.as_deref(), Some(path));
             app.user_path = loaded.user_path;
+            app.midi_gestures = loaded.config.midi_gestures;
             app.learned = loaded.config.midi;
             assert!(learn::drop_dead(&mut app.learned).is_empty());
             app.seeded = loaded.config.devices.seeded;
@@ -156,6 +157,10 @@ impl Drive {
             project.clone(),
             shared.clone(),
         );
+        midi.set_pad_bank_shortcut(app.midi_gestures.smc_pad_bank_opens_panel);
+        midi.set_hold_time(std::time::Duration::from_millis(
+            app.midi_gestures.hold_time_ms.into(),
+        ));
         app.midi = Some(midi);
         let (keymap, warnings) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
