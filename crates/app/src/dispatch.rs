@@ -93,6 +93,7 @@ impl App {
             self.preview_selection();
         }
         self.value_after(value_before, Instant::now());
+        self.sync_panel_target();
         quit
     }
 
@@ -1379,6 +1380,7 @@ impl App {
                 && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. })))
         .then(|| self.before());
         self.midi_event_inner(ev, released);
+        self.sync_panel_target();
         if let Some(b) = before {
             let what = match self.lit_now() {
                 Some(Lit::Pad(p)) => self.param_step_name(p),
@@ -1389,6 +1391,41 @@ impl App {
         self.cuts_changed(cuts);
         self.follow_loop();
         self.value_after(value_before, Instant::now());
+    }
+
+    fn panel_target_cell(&mut self, cell: u8) -> bool {
+        use super::panel::Target;
+        let Some(target) = self.panel_target() else {
+            return false;
+        };
+        let menu = self.panel.target_menu == Some(target);
+        if cell == 15 {
+            self.panel.target_menu = (!menu).then_some(target);
+            self.panel.main_page();
+            return true;
+        }
+        if menu {
+            return false;
+        }
+        match cell {
+            1..=12 => {
+                self.pad_hit(
+                    usize::from(cell - 1),
+                    1.0,
+                    pads::HitSource::Midi,
+                    midi::PadSound::UiUnattempted { deferred: true },
+                    None,
+                );
+            }
+            13 => {
+                self.apply(Action::Back);
+            }
+            14 if target == Target::Assign => {
+                self.apply(Action::ChopCommit);
+            }
+            _ => {}
+        }
+        true
     }
 
     fn panel_back(&mut self) {
@@ -1632,6 +1669,9 @@ impl App {
                 if self.panel.press(&port, cell) == super::panel::Press::Cell(cell) {
                     let view = self.panel_view();
                     self.panel.sync_view(view);
+                    if self.panel_target_cell(cell) {
+                        return;
+                    }
                     match self.panel.choice(view, cell) {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);

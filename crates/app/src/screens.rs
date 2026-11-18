@@ -102,6 +102,7 @@ enum Mode {
     PanelMain,
     PanelContext,
     PanelQuestion,
+    PanelTargets,
     PanelUnavailable,
     PanelDisconnected,
     PanelImageOn,
@@ -202,6 +203,7 @@ impl Mode {
         Self::PanelMain,
         Self::PanelContext,
         Self::PanelQuestion,
+        Self::PanelTargets,
         Self::PanelUnavailable,
         Self::PanelDisconnected,
         Self::PanelImageOn,
@@ -302,6 +304,7 @@ impl Mode {
             Self::PanelMain => "panel-main",
             Self::PanelContext => "panel-context",
             Self::PanelQuestion => "panel-question",
+            Self::PanelTargets => "panel-targets",
             Self::PanelUnavailable => "panel-unavailable",
             Self::PanelDisconnected => "panel-disconnected",
             Self::PanelImageOn => "panel-image-on",
@@ -365,7 +368,10 @@ impl Mode {
             | Self::QuestionProfile => screen == Screen::Settings,
             Self::Hidden => matches!(screen, Screen::Pads | Screen::Files | Screen::Chop),
             Self::Text => matches!(screen, Screen::Pads | Screen::Files),
-            Self::PanelQuestion | Self::PanelUnavailable | Self::PanelDisconnected => {
+            Self::PanelQuestion
+            | Self::PanelTargets
+            | Self::PanelUnavailable
+            | Self::PanelDisconnected => {
                 matches!(screen, Screen::Pads | Screen::Chop)
             }
             Self::PanelImageOn | Self::PanelImageOff => screen == Screen::Chop,
@@ -531,7 +537,13 @@ fn validate(cases: &[Case]) -> Result<(), String> {
         }
         if matches!(screen, Screen::Pads | Screen::Chop) {
             modes.extend(
-                ["panel-question", "panel-unavailable", "panel-disconnected"].map(str::to_owned),
+                [
+                    "panel-question",
+                    "panel-targets",
+                    "panel-unavailable",
+                    "panel-disconnected",
+                ]
+                .map(str::to_owned),
             );
         }
         if screen == Screen::Chop {
@@ -642,6 +654,7 @@ fn fixture(case: Case, now: Instant) -> App {
         Mode::PanelMain
             | Mode::PanelContext
             | Mode::PanelQuestion
+            | Mode::PanelTargets
             | Mode::PanelUnavailable
             | Mode::PanelImageOn
             | Mode::PanelImageOff
@@ -662,6 +675,14 @@ fn fixture(case: Case, now: Instant) -> App {
                 pads: vec![0],
                 lines: vec!["Clear pad 1?".into(), "Enter: clear · Esc: keep".into()],
             });
+        }
+        Mode::PanelTargets => {
+            app.panel.reveal("SMC-PAD-Master offline");
+            if case.screen == Screen::Chop {
+                app.start_assign();
+            } else {
+                app.take_copy();
+            }
         }
         Mode::PanelDisconnected => {
             app.panel.press("SMC-PAD-Master offline", 1);
@@ -1427,6 +1448,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::PanelMain
         | Mode::PanelContext
         | Mode::PanelQuestion
+        | Mode::PanelTargets
         | Mode::PanelUnavailable
         | Mode::PanelImageOn
         | Mode::PanelImageOff => require("PANEL · SMC"),
@@ -1484,6 +1506,14 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("11 next");
             require("12 main");
             require("15 redo");
+        }
+        Mode::PanelTargets => {
+            require("13–16 PAD BANK");
+            require("13 cancel");
+            require("15 menu");
+            if case.screen == Screen::Chop {
+                require("14 apply");
+            }
         }
         Mode::PanelQuestion => {
             require("ASK");

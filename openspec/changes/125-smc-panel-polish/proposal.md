@@ -47,6 +47,7 @@ It builds on the knob layout in change 124. Both changes share one owner test.
 4. Try a target on the bottom row of the playing layer. Return to Apply.
 5. Cancel and accept a replacement on separate runs.
 6. Check both terminal sizes. Compare the visible counts with the route table.
+   Use `pads-panel-targets` and `chop-panel-targets`.
 
 ### Sound
 

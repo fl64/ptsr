@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[path = "panel_targets.rs"]
+mod panel_targets;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 fn smc_drive() -> Drive {
@@ -1643,6 +1646,7 @@ fn learning_answer_keeps_its_chosen_control() {
     drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "source");
     cell(&mut drive, 64);
     cell(&mut drive, 57); // Copy is the action to learn.
+    cell(&mut drive, panel_note(15)); // Open the command pages from the target view.
     cell(&mut drive, 63);
     cell(&mut drive, panel_note(11));
     cell(&mut drive, 62);
@@ -1720,7 +1724,9 @@ fn learning_answer_keeps_its_chosen_control() {
 }
 
 fn panel_note(slot: u8) -> u8 {
-    [64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59][usize::from(slot - 1)]
+    [
+        64, 65, 66, 67, 60, 61, 62, 63, 56, 57, 58, 59, 52, 53, 54, 55,
+    ][usize::from(slot - 1)]
 }
 
 const ALL_VIEWS: [panel::View; 8] = [

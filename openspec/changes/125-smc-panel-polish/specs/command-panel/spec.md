@@ -47,3 +47,31 @@ The label check SHALL include fixed cells and the shipped panel file.
 #### Scenario: Shipped labels fit the panel glossary
 - **WHEN** a shipped panel label exceeds six cells or uses an unknown word
 - **THEN** the label check fails
+
+### Requirement: SMC-PAD target cells select pads on the current layer
+
+A visible panel SHALL replace its main cells with targets when Copy, Take,
+file placement or Assign needs a pad. P1 through P12 SHALL select the matching
+pad in the current bank. A target SHALL use the existing placement or Assign
+route. P13 SHALL cancel. P14 SHALL apply an Assign plan. P15 SHALL switch
+between targets and commands for the current mode. The target view SHALL show
+that pads 13 through 16 use the playing layer.
+
+Questions SHALL take priority. P7 SHALL cancel and P8 SHALL accept a visible
+replacement question. Another device SHALL not use the owning panel's targets.
+Playing-layer hits and held releases SHALL keep their routes.
+An Assign plan SHALL stay available after a playing-layer target closes the panel.
+
+#### Scenario: Panel target pads place items without a layer switch
+- **WHEN** the owner takes a pad, a copy or a file and selects P1 through P12 on the visible target view
+- **THEN** the matching pad gets the existing placement result without a layer change
+- **AND** a replacement question stays available to cancel or accept
+
+#### Scenario: Assign applies from the target row
+- **WHEN** the owner selects Assign targets on the visible command layer or playing layer
+- **THEN** the plan keeps those targets and P14 applies it on the visible target view
+- **AND** P13 cancels and P15 gives access to the other commands
+
+#### Scenario: Target cells retain connection and release priority
+- **WHEN** another Master sends a target hit or a held layer 1 pad releases during target selection
+- **THEN** only the owner can choose a target and the original held pad releases

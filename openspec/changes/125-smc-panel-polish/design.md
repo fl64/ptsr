@@ -27,7 +27,8 @@ review build. Record the prior and new software routes in the route table.
 Record actual button counts on the device during the owner check.
 
 A target view uses cells 1–12 for the matching pad positions of the current
-bank. P13 cancels. P14 applies an Assign plan. A Copy, Swap or file target
+bank. P13 cancels. P14 applies an Assign plan. P15 switches between targets
+and the command pages. The command pages keep Undo and Order within reach. A Copy, Swap or file target
 uses the existing placement action on the target hit. Targets 13–16 still
 use the playing layer. The first layer 1 hit closes the panel as before.
 On return, the target view makes Apply available when Assign is still open.
