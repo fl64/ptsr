@@ -76,6 +76,8 @@ impl Capture {
 pub(super) struct Shown {
     capture: Capture,
     pub(super) at: Instant,
+    /// An SMC-PAD knob step made this value; the knob strip names it.
+    pub(super) knob: bool,
 }
 
 impl Shown {
@@ -327,7 +329,11 @@ impl App {
                 after = actual;
             }
         }
-        self.value_popup = Some(Shown { capture: after, at });
+        self.value_popup = Some(Shown {
+            capture: after,
+            at,
+            knob: false,
+        });
     }
 
     fn capture_value(&self, target: Target) -> Option<Capture> {

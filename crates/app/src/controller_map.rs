@@ -22,7 +22,16 @@ pub(super) struct State {
     pub smc_status: Option<(bool, String)>,
     pub smc_layout_open: bool,
     pub smc_shift_warned: std::collections::HashMap<String, input_sources::Connection>,
-    pub smc_last_knob: Option<(String, usize, std::time::Instant)>,
+    pub smc_last_knob: Option<SmcKnobInput>,
+}
+
+/// The last valid SMC-PAD knob step on one connection.
+pub struct SmcKnobInput {
+    pub port: String,
+    pub bank: usize,
+    /// Physical knob 1–8 as index 0–7.
+    pub knob: usize,
+    pub at: std::time::Instant,
 }
 
 /// The full help text of an action; knob names outside the learn list have none.
@@ -289,9 +298,14 @@ impl App {
             && state
                 .smc_last_knob
                 .as_ref()
-                .is_none_or(|(_, _, at)| stamp.at >= *at)
+                .is_none_or(|last| stamp.at >= last.at)
         {
-            state.smc_last_knob = Some((port.clone(), usize::from(*cc >= 38), stamp.at));
+            state.smc_last_knob = Some(SmcKnobInput {
+                port: port.clone(),
+                bank: usize::from(*cc >= 38),
+                knob: usize::from((cc - 30) % 8),
+                at: stamp.at,
+            });
         }
     }
 
@@ -415,7 +429,7 @@ impl App {
         Some(format!("B{bank} K{knob} · {purpose}{state}"))
     }
 
-    pub(super) fn smc_knob_strip(&self) -> Option<tui::KnobStrip> {
+    pub(super) fn smc_knob_strip(&self, now: std::time::Instant) -> Option<tui::KnobStrip> {
         if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
             return None;
         }
@@ -449,13 +463,25 @@ impl App {
                 (label, available && ready)
             })
         });
-        let last_bank = self
+        let last = self
             .help_overlay
             .controller
             .smc_last_knob
             .as_ref()
-            .filter(|_| ready)
-            .map(|(_, bank, _)| *bank);
+            .filter(|_| ready);
+        let value = last
+            .filter(|_| self.value_popup.as_ref().is_some_and(|shown| shown.knob))
+            .zip(self.current_value_at(now))
+            .map(|(last, value)| {
+                format!(
+                    "B{} {} {} · {} · {}",
+                    last.bank + 1,
+                    last.knob + 1,
+                    value.parameter,
+                    value.object,
+                    value.formatted
+                )
+            });
         let operation = (self.screen == input::Screen::Chop
             && ready
             && ["e3", "e4", "e5", "e6"].map(action)
@@ -471,7 +497,9 @@ impl App {
             list,
             operation,
             roles,
-            last_bank,
+            last_bank: last.map(|last| last.bank),
+            last_knob: last.map(|last| last.knob),
+            value,
         })
     }
 

@@ -328,7 +328,7 @@ impl FrameText {
         }
         tui::Feedback {
             inputs: Arc::clone(&self.inputs),
-            knob_strip: app.smc_knob_strip(),
+            knob_strip: app.smc_knob_strip(now),
             recording_seconds: app
                 .recording
                 .map(|(_, start)| now.saturating_duration_since(start).as_secs()),

@@ -587,7 +587,12 @@ fn fixture_smc_knob_strip(app: &mut App, now: Instant) {
     );
     app.midi_devices.push((port.into(), "SMC-PAD".into()));
     app.help_overlay.controller.smc_status = Some((true, "encoders ready".into()));
-    app.help_overlay.controller.smc_last_knob = Some((port.into(), 1, now));
+    app.help_overlay.controller.smc_last_knob = Some(crate::controller_map::SmcKnobInput {
+        port: port.into(),
+        bank: 1,
+        knob: 0,
+        at: now,
+    });
 }
 
 fn fixture(case: Case, now: Instant) -> App {
@@ -1267,7 +1272,7 @@ fn render_app_layers(
         ]
         .into(),
         recording_seconds: app.recording.map(|_| 12),
-        knob_strip: app.smc_knob_strip(),
+        knob_strip: app.smc_knob_strip(now),
     };
     let status = tui::Status {
         badges: view::FrameText::default()

@@ -16,8 +16,8 @@
 
 ## 4. Knob strip
 
-- [ ] Mark the last turned knob and show its value in the help row.
-- [ ] Compare the 80x26 and 120x40 ANSI screens against the base.
+- [x] Mark the last turned knob and show its value in the help row.
+- [x] Compare the 80x26 and 120x40 ANSI screens against the base.
 
 ## 5. Checks
 

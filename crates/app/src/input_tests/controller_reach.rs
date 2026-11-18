@@ -3437,6 +3437,29 @@ seeded = ["SMC-PAD", "Recorded pads", "X-Session Pro"]
     assert!(restarted.app.master_db > volume);
 }
 
+/// Scenario "The strip shows the turned knob and its value" (screen-layout).
+/// `knob_strip::tests` draws the same strip at both supported widths.
+#[test]
+fn the_strip_shows_the_turned_knob_and_its_value() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::PadEdit, sound);
+    drive.app.pads.param = pads::Param::Volume;
+    turn(&mut drive, 36, 65);
+    let at = drive.app.value_popup.as_ref().unwrap().at;
+    let strip = drive.app.smc_knob_strip(at).unwrap();
+    assert_eq!((strip.last_bank, strip.last_knob), (Some(0), Some(6)));
+    assert_eq!(strip.roles[0][6], ("volume", true));
+    let value = strip.value.unwrap();
+    assert!(value.starts_with("B1 7 volume"), "{value}");
+    assert!(value.contains("+1 dB"), "{value}");
+
+    let later = at + crate::LIT_FOR;
+    assert!(drive.app.smc_knob_strip(later).unwrap().value.is_none());
+    drive.tap(KeyCode::Right, M::NONE);
+    let at = drive.app.value_popup.as_ref().unwrap().at;
+    assert!(drive.app.smc_knob_strip(at).unwrap().value.is_none());
+}
+
 /// Scenario "Pattern taps use the beat interval" (transport).
 #[test]
 fn pattern_taps_use_the_beat_interval() {
