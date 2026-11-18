@@ -151,7 +151,9 @@ command panel and context PLAY/STOP in [PR #26](https://github.com/fl64/ptsr/pul
 The owner accepted it on 2026-11-16 and reported that PLAY works in its build.
 Its archive is `openspec/changes/archive/2026-11-16-92-command-panel/`.
 Other physical, keyboard, graphics, and listening checks remain open.
-Controller reach (93) and comfort (93a) remain open. The SMC-PAD is not autonomous yet.
+The owner accepted controller reach (93) on 2026-11-18 in [PR #27](https://github.com/fl64/ptsr/pull/27).
+See [the archive](../openspec/changes/archive/2026-11-18-93-controller-reach/) and the [separate owner checks](LIVE-CHECKS.md#93-controller-reach).
+Change 93a covers controller comfort.
 The offline report checks are in `docs/LIVE-CHECKS.md`, section 84a.
 
 [Vision version 3](VISION.md) keeps longer-term ideas, including the launcher, modulation,

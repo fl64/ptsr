@@ -42,4 +42,4 @@
 
 - [x] 5.1 Update `docs/USER-STORIES.md` and `docs/LIVE-CHECKS.md` with exact keyboard and SMC-PAD steps. Report every proposal item and its screen-catalogue state before the owner check.
 - [x] 5.2 Complete the implementation step after tests name all active scenarios. Run format, changed-crate Clippy, `task test:changed`, `task screens`, `task test:fast`, `task specs:check`, `task names`, STE lint and `git diff --check`. Report each required failure, including one resolved later. Commit the code only after these checks pass. This change has no new render or audio-thread benchmark requirement.
-- [ ] 5.3 Publish one PR to `master`. Wait for Change names, Specs and Rust CI to pass. Keep unreported physical and listening checks open until the owner reports them.
+- [x] 5.3 Publish one PR to `master`. Wait for Change names, Specs and Rust CI to pass. Keep unreported physical and listening checks open until the owner reports them.
