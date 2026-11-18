@@ -35,6 +35,9 @@ pub struct Stats {
     /// Start of the running callback in microseconds after `epoch`, plus one; zero while idle.
     callback_start: AtomicU64,
     callback_stage: AtomicU8,
+    /// Completed callbacks and their summed duration in microseconds.
+    callback_count: AtomicU64,
+    callback_busy_us: AtomicU64,
     epoch: Instant,
 }
 
@@ -124,6 +127,8 @@ impl Default for Stats {
             pattern_hits: std::array::from_fn(|_| AtomicU64::new(0)),
             callback_start: AtomicU64::new(0),
             callback_stage: AtomicU8::new(0),
+            callback_count: AtomicU64::new(0),
+            callback_busy_us: AtomicU64::new(0),
             epoch: Instant::now(),
         }
     }
@@ -140,8 +145,19 @@ impl Stats {
         self.callback_stage.store(stage as u8, Relaxed);
     }
 
-    fn callback_leave(&self) {
+    fn callback_leave(&self, busy: Duration) {
         self.callback_start.store(0, Relaxed);
+        self.callback_count.fetch_add(1, Relaxed);
+        self.callback_busy_us
+            .fetch_add(busy.as_micros() as u64, Relaxed);
+    }
+
+    /// Completed callbacks and their summed duration in microseconds.
+    pub fn callback_totals(&self) -> (u64, u64) {
+        (
+            self.callback_count.load(Relaxed),
+            self.callback_busy_us.load(Relaxed),
+        )
     }
 
     /// How long the running callback has run at `now`, and its stage; `None` while idle.
@@ -529,9 +545,10 @@ impl Realtime {
         self.stats.recording.record(self.engine.recording());
 
         let budget = left.len() as f32 / self.sample_rate as f32;
-        let permille = (started.elapsed().as_secs_f32() / budget * 1000.0) as u32;
+        let busy = started.elapsed();
+        let permille = (busy.as_secs_f32() / budget * 1000.0) as u32;
         self.stats.load_peak_permille.fetch_max(permille, Relaxed);
-        self.stats.callback_leave();
+        self.stats.callback_leave(busy);
     }
 }
 
@@ -1038,5 +1055,6 @@ mod tests {
         let mut rt = Realtime::new(crate::Engine::new(48_000), vec![], stats.clone(), 48_000);
         rt.process(&mut [0.0; 64], &mut [0.0; 64]);
         assert_eq!(stats.callback_running(Instant::now()), None);
+        assert_eq!(stats.callback_totals().0, 1);
     }
 }

@@ -12,6 +12,8 @@ The owner wants a diagnostic mode that can stay in the program for later problem
 - In diagnostic mode, write each keyboard action and each MIDI input to the log.
 - In diagnostic mode, write a log line when one audio callback runs longer than 100 ms.
   The line gives the duration and the callback stage.
+- In diagnostic mode, log the callback count, the callback time and the CPU time of
+  each real-time thread once a second.
 - In diagnostic mode, lower the soft real-time CPU limit below the hard limit.
   The kernel then sends SIGXCPU first, and the program writes it to the log.
 - Without diagnostic mode, the log stays as it is now.

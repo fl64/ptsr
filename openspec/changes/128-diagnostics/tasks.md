@@ -17,3 +17,7 @@
 The changed run passed 1585 tests. The callback benchmark stays within the 50 % target:
 32 voices p99 7.19 %, maximum 14.98 %. The SIGXCPU line needs a real-time thread
 and has no automatic test.
+The second step adds the load line each second. One benchmark run exceeded the target
+once in dense pattern playback (51.72 % of 20000 samples) at load average 10.
+Two repeats on this branch gave 24.65 % and 17.69 %, and two runs on master gave
+24.34 % and 17.49 %.

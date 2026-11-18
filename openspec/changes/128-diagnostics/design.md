@@ -26,6 +26,15 @@ In diagnostic mode, the program sets the soft limit to half the hard limit after
 the audio start. A SIGXCPU handler writes a fixed line to the log file with
 `write`, which is safe in a signal handler. The process continues to the hard limit.
 
+## Load each second
+
+The first owner test logged SIGXCPU but no stalled callback. The real-time thread
+used more than 100 ms of CPU without a sleep, but no single callback was long.
+Each second, the diagnostic thread logs the callback count, the summed callback
+time and the CPU time of each real-time thread of the process. It reads the thread
+policy and CPU time from `/proc/self/task/<tid>/stat`. The last line before a kill
+shows if the audio server calls the callback too often or uses the CPU itself.
+
 ## Inputs
 
 Each keyboard action and each MIDI input gives one info line in diagnostic mode.

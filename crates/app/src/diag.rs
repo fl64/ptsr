@@ -15,6 +15,7 @@ static LOG_FD: AtomicI32 = AtomicI32::new(-1);
 
 const STALL: Duration = Duration::from_millis(100);
 const WATCH_EVERY: Duration = Duration::from_millis(20);
+const SUMMARY_EVERY: Duration = Duration::from_secs(1);
 
 /// Diagnostic mode from the command line or the environment.
 fn requested(mut args: impl Iterator<Item = String>, env: Option<String>) -> bool {
@@ -96,11 +97,15 @@ pub fn watch_audio(stats: &Arc<Stats>) {
         .name("ptsr-diag".into())
         .spawn(move || {
             let mut reported = None;
+            let mut summary = Summary::new(stats.callback_totals(), rt_threads());
             loop {
                 std::thread::sleep(WATCH_EVERY);
                 let now = Instant::now();
                 if let Some(line) = stall_report(stats.callback_running(now), &mut reported, now) {
                     log::warn!("{line}");
+                }
+                if let Some(line) = summary.next(now, stats.callback_totals(), rt_threads()) {
+                    log::info!("{line}");
                 }
             }
         });
@@ -108,6 +113,93 @@ pub fn watch_audio(stats: &Arc<Stats>) {
         log::warn!("diagnostic watch did not start: {e}");
     }
     lower_rt_limit();
+}
+
+/// A real-time thread of this process: id, name and CPU time in clock ticks.
+#[derive(Clone, Debug, PartialEq)]
+struct RtThread {
+    tid: u32,
+    name: String,
+    ticks: u64,
+}
+
+/// Parse `/proc/self/task/<tid>/stat`; `None` for a normal (non real-time) thread.
+fn parse_stat(tid: u32, stat: &str) -> Option<RtThread> {
+    let open = stat.find('(')?;
+    let close = stat.rfind(')')?;
+    let name = stat.get(open + 1..close)?.to_string();
+    // Fields after the name start with field 3 (state); see proc(5).
+    let fields: Vec<&str> = stat.get(close + 1..)?.split_whitespace().collect();
+    let field = |number: usize| fields.get(number - 3)?.parse::<u64>().ok();
+    let policy = field(41)?;
+    (policy != 0).then(|| RtThread {
+        tid,
+        name,
+        ticks: field(14).unwrap_or(0) + field(15).unwrap_or(0),
+    })
+}
+
+fn rt_threads() -> Vec<RtThread> {
+    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .filter_map(|entry| {
+            let tid = entry.file_name().to_str()?.parse().ok()?;
+            let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
+            parse_stat(tid, &stat)
+        })
+        .collect()
+}
+
+/// Once a second: callback count and time, and the CPU time of each real-time thread.
+struct Summary {
+    at: Instant,
+    totals: (u64, u64),
+    threads: Vec<RtThread>,
+    tick_ms: u64,
+}
+
+impl Summary {
+    fn new(totals: (u64, u64), threads: Vec<RtThread>) -> Self {
+        // SAFETY: sysconf has no preconditions.
+        let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+        Self {
+            at: Instant::now(),
+            totals,
+            threads,
+            tick_ms: 1000 / u64::try_from(ticks).unwrap_or(100).max(1),
+        }
+    }
+
+    fn next(&mut self, now: Instant, totals: (u64, u64), threads: Vec<RtThread>) -> Option<String> {
+        if now.saturating_duration_since(self.at) < SUMMARY_EVERY {
+            return None;
+        }
+        let calls = totals.0.saturating_sub(self.totals.0);
+        let busy = totals.1.saturating_sub(self.totals.1) / 1000;
+        let mut line = format!("diag: callbacks {calls}/s, callback busy {busy} ms/s");
+        for thread in &threads {
+            let before = self
+                .threads
+                .iter()
+                .find(|old| old.tid == thread.tid)
+                .map_or(thread.ticks, |old| old.ticks);
+            let cpu = thread.ticks.saturating_sub(before) * self.tick_ms;
+            line.push_str(&format!(
+                "; rt {} {} cpu {cpu} ms/s",
+                thread.tid, thread.name
+            ));
+        }
+        if threads.is_empty() {
+            line.push_str("; no rt threads");
+        }
+        self.at = now;
+        self.totals = totals;
+        self.threads = threads;
+        Some(line)
+    }
 }
 
 extern "C" fn on_sigxcpu(_: libc::c_int) {
@@ -171,6 +263,36 @@ mod tests {
         assert_eq!(stall_report(None, &mut reported, later), None);
         let next = later + Duration::from_millis(500);
         assert!(stall_report(slow, &mut reported, next).is_some());
+    }
+
+    /// Scenario "Diagnostic mode reports the real-time load each second" (audio-engine).
+    #[test]
+    fn diagnostic_mode_reports_the_real_time_load_each_second() {
+        let fifo = "4321 (data-loop.0) S 1 2 3 4 5 6 7 8 9 10 30 20 0 0 -11 0 30 0 \
+                    100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5 20 1 0 0 0 0";
+        let normal = fifo.replace(" 20 1 0 0 0 0", " 0 0 0 0 0 0");
+        let thread = parse_stat(4321, fifo).unwrap();
+        assert_eq!((thread.name.as_str(), thread.ticks), ("data-loop.0", 50));
+        assert_eq!(parse_stat(4321, &normal), None);
+
+        let start = Instant::now();
+        let mut summary = Summary {
+            at: start,
+            totals: (0, 0),
+            threads: vec![thread.clone()],
+            tick_ms: 10,
+        };
+        assert_eq!(summary.next(start, (90, 4_000), Vec::new()), None);
+        let later = start + SUMMARY_EVERY;
+        let busy = RtThread {
+            ticks: 70,
+            ..thread
+        };
+        let line = summary.next(later, (375, 9_000), vec![busy]).unwrap();
+        assert_eq!(
+            line,
+            "diag: callbacks 375/s, callback busy 9 ms/s; rt 4321 data-loop.0 cpu 200 ms/s"
+        );
     }
 
     /// Scenario "Normal start keeps the log quiet" (audio-engine).
