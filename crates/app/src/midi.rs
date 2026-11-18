@@ -1311,9 +1311,13 @@ fn dispatch(
             continue;
         }
 
-        if matches!(resolved, Some(Resolved::Action(Action::PadPress { .. })))
-            && matches!(msg, Msg::NoteOn { note: 36..=51, .. })
-            && let Some(cutoff) = pad_bank_after.get_mut(&port)
+        if matches!(
+            (&resolved, msg),
+            (
+                Some(Resolved::Action(Action::PadPress { .. })),
+                Msg::NoteOn { note: 36..=51, .. }
+            ) | (Some(Resolved::PanelCell(_)), Msg::NoteOn { .. })
+        ) && let Some(cutoff) = pad_bank_after.get_mut(&port)
         {
             *cutoff = (*cutoff).max(at);
         }

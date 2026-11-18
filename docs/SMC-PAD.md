@@ -4,8 +4,9 @@
 2. Select device preset 5 with SHIFT and the printed PAD5.
 3. Open F1 and select Controller. On SMC-PAD, check for `encoders ready`.
 4. Open F12 MIDI. The verified USB device offers `SMC-PAD PAD BANK`.
-5. Use `Open panel` to open the command panel on each detected PAD BANK press.
-   Use `Off` to open it with the first hit on the command layer.
+5. With `Open panel`, press PAD BANK once to open the panel. Press it again
+   to return to the playing grid. The device keeps its selected layer after release.
+   With `Off`, the first pad hit on each layer updates the panel.
 
 If a saved map has old assignments, select `SMC-PAD layout review` in F12 MIDI.
 Compare the current and proposed roles. Accept the roles to replace.
@@ -38,7 +39,8 @@ Number pads from the top-left cell to the bottom-right cell of the screen.
    Play the source and target. Check the two sounds.
 7. Start Assign in Chop. Choose a target on the same layer. Press P14 Apply.
    Repeat with a target on P13–P16 of the playing layer. Return to Apply.
-8. Repeat a screen change with Open panel, then with Off. Count PAD BANK,
+8. Press PAD BANK twice with Open panel. Check that the playing grid returns
+   before a pad hit. Repeat a screen change with Open panel, then with Off. Count PAD BANK,
    reveal hits and action presses. Use the [target counts](CONTROLLER-PATHS.md#target-routes)
    for Copy and Assign. Record the route and the result.
 

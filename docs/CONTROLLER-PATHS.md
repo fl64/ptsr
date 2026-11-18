@@ -8,7 +8,8 @@ Raw MIDI tests check these paths. Physical press counts remain open.
 
 The counts give **visible main panel / hidden panel with reveal**. The hidden
 count includes one PAD BANK press and one hit to reveal the panel. On verified
-USB, F12 MIDI defaults to `Open panel`. A detected press omits the reveal hit.
+USB, F12 MIDI defaults to `Open panel`. A detected press opens or closes the panel.
+The next detected press returns to the playing grid without a pad hit.
 
 | Action | Main panel visible | PAD BANK opens the panel | PAD BANK and a reveal hit |
 | --- | --- | --- | --- |

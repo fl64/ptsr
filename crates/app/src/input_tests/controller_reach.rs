@@ -3010,8 +3010,21 @@ fn pad_bank_opens_the_panel_once_before_a_pad_hit() {
     assert_eq!(drive.app.screen, Screen::Files);
     cell(&mut drive, panel_note(8));
     assert_eq!(drive.app.panel.page(), 1);
-    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    const SECOND: &str = "SINCO SMC-PAD-Master 32:1";
+    drive.midi().recorded_connect(SECOND);
+    drive.frame();
+    assert!(pad_bank_request(&mut drive, SECOND).commands().is_empty());
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
     assert_eq!(drive.app.panel.page(), 1);
+
+    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    assert!(!drive.app.panel.visible());
+    assert_eq!(drive.app.screen, Screen::Files);
+
+    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
+    assert_eq!(drive.app.panel.page(), 0);
+    assert_eq!(drive.app.screen, Screen::Files);
 }
 
 /// Scenario "PAD BANK respects input overlays" (controller-reach).
@@ -3068,6 +3081,7 @@ fn late_pad_bank_status_keeps_both_pad_routes() {
     drive.midi().recorded_pad_bank(SMC, requested_at);
     drive.frame();
     assert_eq!(drive.app.panel.page(), 1);
+    assert_eq!(drive.app.panel.owner(), Some(SMC));
 
     let requested_at = Instant::now();
     drive.bytes(SMC, &[0x99, 48, 100]);

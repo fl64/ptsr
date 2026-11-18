@@ -14,8 +14,10 @@ Keep Panic dim until the double press from 93a is available.
 Use `knobs`, `record`, `open`, `grid -` and `grid +`. Each label fits six cells.
 
 Start with Open panel for a supported USB controller after a valid status check.
-Keep a saved Off choice. A press that the status check misses still permits
-the first-hit reveal. The shortcut has no action on another controller.
+Keep a saved Off choice. PAD BANK latches the hardware layer after release.
+A detected press opens or closes the owning panel on each layer change.
+A playing or command pad hit after a status request takes priority over its reply.
+A missed press still permits the first-hit reveal. The shortcut acts on its Master port.
 
 ## Target choice
 

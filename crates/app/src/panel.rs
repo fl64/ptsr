@@ -254,6 +254,14 @@ impl State {
         }
     }
 
+    pub(super) fn toggle(&mut self, port: &str) {
+        if self.owner() == Some(port) {
+            self.hide();
+        } else {
+            self.reveal(port);
+        }
+    }
+
     pub(super) fn press(&mut self, port: &str, cell: u8) -> Press {
         match self.owner.as_deref() {
             None => {

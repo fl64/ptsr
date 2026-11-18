@@ -1621,7 +1621,7 @@ impl App {
                         .as_ref()
                         .is_some_and(|midi| midi.pad_bank_shortcut_is_current(setting))
                 {
-                    self.panel.reveal(&port);
+                    self.panel.toggle(&port);
                 }
             }
             midi::Event::PanelCell { port, cell } => {
