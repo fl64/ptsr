@@ -85,6 +85,64 @@ impl Shown {
     }
 }
 
+const SMC_PAD_PAGES: [(&str, [Option<Param>; 6]); 5] = [
+    (
+        "TONE",
+        [
+            Some(Param::PadEffect(9)),
+            Some(Param::PadVolume),
+            None,
+            Some(Param::PadPitch),
+            None,
+            None,
+        ],
+    ),
+    (
+        "ENV",
+        [
+            None,
+            Some(Param::PadAttack),
+            Some(Param::PadDecay),
+            None,
+            Some(Param::PadRelease),
+            None,
+        ],
+    ),
+    (
+        "FILTER",
+        [
+            Some(Param::PadFilter),
+            Some(Param::PadCutoff),
+            Some(Param::PadReso),
+            None,
+            None,
+            None,
+        ],
+    ),
+    (
+        "SOURCE",
+        [
+            Some(Param::PadSource),
+            Some(Param::PadStart),
+            Some(Param::PadEnd),
+            None,
+            None,
+            None,
+        ],
+    ),
+    (
+        "FX",
+        [
+            Some(Param::PadEffect(0)),
+            Some(Param::PadEffect(1)),
+            Some(Param::PadEffect(2)),
+            None,
+            None,
+            None,
+        ],
+    ),
+];
+
 impl App {
     fn pad_value_target(&self, param: pads::Param) -> Target {
         let scope = if param.slot().is_some()
@@ -191,29 +249,44 @@ impl App {
         if self.screen_learn.is_some() {
             return None;
         }
-        if let midi::Event::Step {
-            port,
-            control,
-            target,
-            ..
-        } = event
-        {
-            let param = super::dispatch::smc_live_pad_param(port, control, *target)?;
-            let abs = self.pads.selected_abs();
-            return self.capture_value(Target::Pad {
-                abs,
-                param,
-                scope: vec![abs],
-            });
-        }
-        let midi::Event::Param { param, .. } = event else {
-            return None;
+        let param = match event {
+            midi::Event::Param { param, .. } => *param,
+            midi::Event::Step {
+                port,
+                control,
+                target,
+                ..
+            } if port.contains("SMC-PAD-Master") => {
+                if let Some(param) = super::dispatch::smc_live_pad_param(port, control, *target) {
+                    let abs = self.pads.selected_abs();
+                    return self.capture_value(Target::Pad {
+                        abs,
+                        param,
+                        scope: vec![abs],
+                    });
+                }
+                match *target {
+                    input::midi::StepTarget::Param(Param::SmcPageValue(knob)) => {
+                        self.smc_page_value(knob)?
+                    }
+                    input::midi::StepTarget::Param(Param::Slot(slot)) => self.slot_param(slot)?,
+                    input::midi::StepTarget::Param(
+                        param @ (Param::MasterVolume
+                        | Param::Tempo
+                        | Param::PatternBars
+                        | Param::PatternQuantize
+                        | Param::PatternStrength),
+                    ) => param,
+                    _ => return None,
+                }
+            }
+            _ => return None,
         };
         let chop = |param| Target::Chop {
             param,
             slice: self.chop.as_ref().map_or(0, |c| c.selected),
         };
-        let target = match *param {
+        let target = match param {
             Param::MasterVolume => Target::Master,
             Param::Tempo => Target::Tempo,
             param @ (Param::PatternBars | Param::PatternQuantize | Param::PatternStrength) => {
@@ -222,10 +295,10 @@ impl App {
             Param::PadVolume => self.pad_value_target(pads::Param::Volume),
             Param::PadPitch => self.pad_value_target(pads::Param::Pitch),
             Param::PadAttack | Param::PadDecay | Param::PadRelease => {
-                self.pad_value_target(super::pad_env(*param))
+                self.pad_value_target(super::pad_env(param))
             }
             Param::PadFilter | Param::PadCutoff | Param::PadReso => {
-                self.pad_value_target(super::pad_filter(*param))
+                self.pad_value_target(super::pad_filter(param))
             }
             Param::PadSource => self.pad_value_target(pads::Param::Source),
             Param::PadStart => self.pad_value_target(pads::Param::Start),
@@ -239,7 +312,7 @@ impl App {
             Param::RegionEnd => chop(C::RegionEnd),
             Param::Threshold => chop(C::Threshold),
             // Slot resolution calls production dispatch again with the concrete parameter.
-            Param::Slot(_) | Param::Page => return None,
+            Param::Slot(_) | Param::SmcPageValue(_) | Param::Page => return None,
         };
         self.capture_value(target)
     }
@@ -588,6 +661,19 @@ impl App {
             Some(k) => format!("FX {} {}", k + 1, self.pads.name(p)),
             None => self.pads.name(p).into(),
         }
+    }
+
+    pub(super) fn smc_page_value(&self, knob: u8) -> Option<Param> {
+        if self.screen != Screen::Pads || self.pattern_view.overview || self.pattern_panel.is_some()
+        {
+            return None;
+        }
+        let page = self.pads.page().0;
+        let (_, positions) = SMC_PAD_PAGES.iter().find(|(name, _)| *name == page)?;
+        positions
+            .get(usize::from(knob.checked_sub(2)?))
+            .copied()
+            .flatten()
     }
 
     /// The parameter in knob slot `k` of the open edit page; `None` outside an edit mode

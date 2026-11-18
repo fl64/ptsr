@@ -202,10 +202,6 @@ cells = [
 name = "pads"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -240,10 +236,6 @@ cells = [
 name = "pad_edit"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -268,10 +260,6 @@ cells = [
 name = "pattern"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -296,10 +284,6 @@ cells = [
 name = "files"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -324,10 +308,6 @@ cells = [
 name = "chop"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -362,10 +342,6 @@ cells = [
 name = "chop_edit"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -400,10 +376,6 @@ cells = [
 name = "fx"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]
@@ -428,10 +400,6 @@ cells = [
 name = "settings"
 page = 3
 cells = [
-  { cell = 1, label = "bpm -", action = "transport.tempo_down" },
-  { cell = 2, label = "bpm +", action = "transport.tempo_up" },
-  { cell = 3, label = "bpm-.1", action = "transport.tempo_down_fine" },
-  { cell = 4, label = "bpm+.1", action = "transport.tempo_up_fine" },
   { cell = 5, label = "erase", action = "pattern.erase" },
   { cell = 6, label = "A1 rec", action = "pattern.record" },
 ]

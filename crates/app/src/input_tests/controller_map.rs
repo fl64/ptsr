@@ -174,18 +174,19 @@ fn smc_controller_tab_names_a1_encoder_roles_until_the_controls_close() {
         let mut drive = Drive::smc_offline();
         touch(&mut drive, port);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e2").contains("volume"));
+        assert!(role(&mut drive, "e3").contains("volume"));
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         assert!(drive.app.pattern_panel.is_some());
         open(&mut drive, size);
-        assert!(role(&mut drive, "e2").contains("bars"));
+        assert!(role(&mut drive, "e2").contains("tempo"));
+        assert!(role(&mut drive, "e5").contains("bars"));
         assert!(role(&mut drive, "e3").contains("quant"));
         assert!(role(&mut drive, "e4").contains("str"));
         drive.tap(KeyCode::Esc, M::NONE);
         drive.tap(KeyCode::Char('n'), M::ALT);
         open(&mut drive, size);
-        assert!(role(&mut drive, "e2").contains("volume"));
+        assert!(role(&mut drive, "e3").contains("volume"));
     }
 }
 

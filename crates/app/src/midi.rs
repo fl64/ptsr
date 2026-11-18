@@ -4442,14 +4442,8 @@ mod tests {
             profile.control_action(Screen::Pads, false, "f8"),
             Some("master.volume")
         );
-        assert_eq!(
-            profile.control_action(Screen::Files, false, "e6"),
-            Some("edit.page")
-        );
-        assert_eq!(
-            profile.control_action(Screen::Files, false, "e7"),
-            Some("transport.tempo")
-        );
+        assert_eq!(profile.control_action(Screen::Files, false, "e6"), None);
+        assert_eq!(profile.control_action(Screen::Files, false, "e7"), None);
         assert_eq!(
             profile.control_action(Screen::Files, false, "e8"),
             Some("master.volume")

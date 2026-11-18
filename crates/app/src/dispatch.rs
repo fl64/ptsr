@@ -2124,6 +2124,7 @@ impl App {
                     | Param::PadStart
                     | Param::PadEnd
                     | Param::Slot(_)
+                    | Param::SmcPageValue(_)
                     | Param::Page
                     | Param::PatternBars
                     | Param::PatternQuantize
@@ -2199,6 +2200,7 @@ impl App {
                         | Param::PadStart
                         | Param::PadEnd
                         | Param::Slot(_)
+                        | Param::SmcPageValue(_)
                         | Param::Page
                         | Param::PatternBars
                         | Param::PatternQuantize
@@ -2242,6 +2244,7 @@ impl App {
                             | Param::PadStart
                             | Param::PadEnd
                             | Param::Slot(_)
+                            | Param::SmcPageValue(_)
                             | Param::Page
                             | Param::PatternBars
                             | Param::PatternQuantize
@@ -2484,6 +2487,15 @@ impl App {
                     fine,
                 );
             }
+            StepTarget::Param(Param::SmcPageValue(knob)) => {
+                if !self.transport_input_blocked()
+                    && !self.help_open
+                    && let Some(param) = self.smc_page_value(knob)
+                {
+                    self.midi_step(port, control, StepTarget::Param(param), steps, fine);
+                }
+                return;
+            }
             StepTarget::Param(Param::Slot(k)) => {
                 if self.pattern_panel.is_some() {
                     if let Some(&setting) = super::pattern_record::Setting::ALL.get(k as usize) {
@@ -2506,6 +2518,19 @@ impl App {
             }
             StepTarget::Param(Param::MasterVolume) => {
                 Some(Action::MasterVolume(if right { 1 } else { -1 }))
+            }
+            StepTarget::Param(Param::Tempo)
+                if self.pattern_panel.is_some()
+                    && port.contains("SMC-PAD-Master")
+                    && matches!(control, "e2" | "cc 31") =>
+            {
+                if self.help_open {
+                    return;
+                }
+                Some(Action::TempoStep {
+                    up: right,
+                    fine: fine || steps.unsigned_abs() == 1,
+                })
             }
             StepTarget::Param(Param::Tempo) => Some(Action::TempoStep { up: right, fine }),
             StepTarget::Param(Param::Zoom) if self.screen == Screen::Chop => {

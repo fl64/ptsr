@@ -105,17 +105,17 @@ f5 = "pad.send_1"
 f6 = "pad.send_2"
 f8 = "master.volume"
 e1 = "smc.position"
-e6 = "edit.page"
-e7 = "transport.tempo"
 e8 = "master.volume"
 
 [screens.pads]
 left = "smc.list_prev"
 right = "smc.list_next"
-e2 = "pad.volume"
-e3 = "pad.pitch"
-e4 = "pad.cutoff"
-e5 = "pad.decay"
+e2 = "smc.page_2"
+e3 = "smc.page_3"
+e4 = "smc.page_4"
+e5 = "smc.page_5"
+e6 = "smc.page_6"
+e7 = "smc.page_7"
 
 [screens.files]
 left = "smc.list_prev"
@@ -134,14 +134,18 @@ e6 = "chop.region_end_pos"
 e7 = "chop.threshold"
 
 [screens.pattern]
-e1 = "bank"
-e2 = "pattern.bars"
+e1 = "smc.position"
+e2 = "transport.tempo"
 e3 = "pattern.quantize"
 e4 = "pattern.strength"
+e5 = "pattern.bars"
 
 [screens.fx]
 left = "smc.list_prev"
 right = "smc.list_next"
+e2 = "edit.param_1"
+e3 = "edit.param_2"
+e4 = "edit.param_3"
 
 [screens.settings]
 left = "smc.list_prev"

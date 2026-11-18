@@ -485,6 +485,7 @@ mod tests {
         assert_eq!(panel.page(), 1);
     }
 
+    /// Scenario "Encoder selects a later context page" (controller-reach).
     #[test]
     fn encoder_page_selection_needs_a_visible_context_page() {
         let mut panel = State::default();
@@ -496,7 +497,7 @@ mod tests {
         panel.choice(View::Pads, 8);
         panel.select_context_page(View::Pads, 2);
         assert_eq!(panel.page(), 3);
-        assert_eq!(panel.label(View::Pads, 1), Some("bpm -"));
+        assert_eq!(panel.label(View::Pads, 5), Some("erase"));
         panel.select_context_page(View::Pads, -1);
         assert_eq!(panel.page(), 2);
         assert_eq!(panel.label(View::Pads, 10), Some("exit"));

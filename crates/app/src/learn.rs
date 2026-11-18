@@ -2215,8 +2215,8 @@ mod tests {
         expected.get_mut("SMC-PAD").unwrap().insert(
             input::Group::Pattern.key().into(),
             [
-                ("cc 30".into(), MidiBinding::Press("bank".into())),
-                ("cc 31".into(), MidiBinding::Press("pattern.bars".into())),
+                ("cc 30".into(), MidiBinding::Press("smc.position".into())),
+                ("cc 31".into(), MidiBinding::Press("transport.tempo".into())),
                 (
                     "cc 32".into(),
                     MidiBinding::Press("pattern.quantize".into()),
@@ -2225,6 +2225,7 @@ mod tests {
                     "cc 33".into(),
                     MidiBinding::Press("pattern.strength".into()),
                 ),
+                ("cc 34".into(), MidiBinding::Press("pattern.bars".into())),
             ]
             .into(),
         );

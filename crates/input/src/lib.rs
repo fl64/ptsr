@@ -1229,6 +1229,9 @@ pub fn short_label(action: &str) -> &'static str {
         "smc.list_prev" => "list <",
         "smc.list_next" => "list >",
         "smc.position" => "pos",
+        "smc.page_2" | "smc.page_3" | "smc.page_4" | "smc.page_5" | "smc.page_6" | "smc.page_7" => {
+            "value"
+        }
         "settings.learn" => "learn",
         "settings.clear" => "clear",
         "browser.up" => "file^",

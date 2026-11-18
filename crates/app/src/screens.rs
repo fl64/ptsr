@@ -3374,7 +3374,8 @@ L="none"
                     if page == 2 {
                         assert!(text.contains("1 outrec") && text.contains("10 exit"));
                     } else if page == 3 {
-                        assert!(text.contains("1 bpm -") && text.contains("6 A1 rec"));
+                        assert!(!text.contains("1 bpm -"));
+                        assert!(text.contains("5 erase") && text.contains("6 A1 rec"));
                     } else if page == 4 {
                         let first = if screen == Screen::Pads {
                             "1 view -"

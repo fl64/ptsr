@@ -34,6 +34,11 @@ Assign and visible questions SHALL block bound turns.
 - **WHEN** the owner turns a bound knob during Assign or a visible question
 - **THEN** the bounds, plan and question stay in place
 
+#### Scenario: A Chop bound turn keeps the current panel page
+- **WHEN** the owner turns knob 6 with the Chop context page visible
+- **THEN** the turn changes the region end and keeps the panel page
+- **AND** the Next cell moves to a later context page
+
 ### Requirement: Bank 2 follows the selected pad on each screen
 
 The shipped bank 2 knobs 1–6 SHALL be volume, cutoff, pitch, decay, send 1 and send 2.
@@ -77,6 +82,40 @@ The shipped knob SHALL keep its role through screen and panel changes.
 - **THEN** both turns change master volume
 - **AND** neither turn changes a bank, pad parameter or tempo
 
+### Requirement: Bank 1 uses the current Pads and FX page positions
+
+The shipped bank 1 SHALL give its page values the positions in the design.
+The Pads inspector and pad edit SHALL use the same page positions.
+An unavailable position SHALL remain inactive.
+An FX turn SHALL change the current FX slot.
+A value turn SHALL retain the selected parameter and existing edit limits.
+
+#### Scenario: Pad inspector and editor share knob positions
+- **WHEN** the owner turns the shipped pad page knobs with the inspector and editor open in separate runs
+- **THEN** the same knob changes the same value in both runs
+- **AND** an unused position changes no value
+
+### Requirement: Pattern transport supplies the shipped tempo knob
+
+Pattern transport SHALL provide tempo, Bars, Quantize and Strength on its current page.
+A slow tempo step SHALL change 0.1 BPM. A fast turn SHALL support 1 BPM steps.
+The shipped SMC-PAD map SHALL have no tempo knob or step cell outside this page.
+The keyboard and learned tempo actions SHALL retain their routes.
+
+#### Scenario: Tempo turns act only on the Pattern transport page
+- **WHEN** the owner turns the tempo position with and without Pattern controls open
+- **THEN** the turn changes tempo only while the Pattern controls are open
+- **AND** a slow turn uses the same value as the fine keyboard step
+
+### Requirement: Panel buttons select context pages
+
+More, Next and Main SHALL move the shipped panel pages.
+A knob turn SHALL keep its screen or mode role while the panel shows.
+
+#### Scenario: Next selects a later context page
+- **WHEN** the owner presses Next on a context page
+- **THEN** the next page and its cell roles appear before the next action
+
 ## MODIFIED Requirements
 
 ### Requirement: Chop threshold has matching keyboard steps
@@ -102,27 +141,9 @@ The threshold SHALL stay within -40 to 0 dB.
 - **WHEN** an owner replaces or removes a threshold key, or an input overlay owns input
 - **THEN** the owner entry or active mode keeps priority
 
-### Requirement: Context page selection preserves the screen controls
-
-On Chop and Chop edit, first-bank knob 6 SHALL keep its region-end role.
-On other screens, knob 6 SHALL select a context page only while the panel shows.
-The program SHALL show the selected page and its labels before another cell acts.
-More and one context cell SHALL reach a first context page action.
-On Chop and Chop edit, the Next cell SHALL move to later context pages.
-
-#### Scenario: Encoder selects a later context page
-- **WHEN** the panel shows a context page outside Chop and Chop edit and the owner turns knob 6
-- **THEN** the later page labels show before another cell acts
-- **AND** the screen value and bank stay in place
-
-#### Scenario: A Chop bound turn keeps the current panel page
-- **WHEN** the owner turns knob 6 with the Chop context page visible
-- **THEN** the turn changes the region end and keeps the panel page
-- **AND** the Next cell moves to a later context page
-
 ### Requirement: Current actions have paths from both inputs
 
-For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Pad bank changes MAY use the Pads screen list. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. A Chop slice-bound turn SHALL select the same start or end bound as its keyboard route. The route SHALL use production input dispatch.
+For each current screen and mode, each effective keyboard action that needs no typed text SHALL have a route from the shipped SMC-PAD profile. Pad bank changes MAY use the Pads screen list. Tempo MAY use only Pattern transport. Each shipped SMC-PAD sampler action SHALL have a keyboard key or key path with the same result. A Chop slice-bound turn SHALL select the same start or end bound as its keyboard route. The route SHALL use production input dispatch.
 
 #### Scenario: Every current keyboard action has a controller route
 - **WHEN** the reach test visits each current screen and mode with the shipped keyboard map, SMC-PAD profile and panel map
@@ -152,7 +173,7 @@ On Pads and Pads edit, `Alt+Left` and `Alt+Right` SHALL select the adjacent pad 
 
 ### Requirement: Added context cells provide missing actions
 
-Every panel view SHALL keep its main page, first context page and fixed bottom row. It SHALL add the common action cells in the table. Pads, Chop and Chop edit SHALL add the listed page 4 cells. Outside Chop and Chop edit, encoder 7 SHALL keep its tempo role until the Pattern transport page is available.
+Every panel view SHALL keep its main page, first context page and fixed bottom row. It SHALL add the common action cells in the table. Pads, Chop and Chop edit SHALL add the listed page 4 cells.
 
 #### Scenario: Added cells reach their current actions
 - **WHEN** the owner uses a listed cell in a screen or mode where its action works
@@ -162,6 +183,26 @@ Every panel view SHALL keep its main page, first context page and fixed bottom r
 | View | Page | Cells in order: label (`action`) |
 | --- | --- | --- |
 | Every view | 2 | `outrec` (`record.output`), `trnspt` (`transport.toggle`), `take` (`pad.take`), `proj` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `A1undo` (`pattern.undo`), `A1 ctl` (`pattern.controls`), `exit` (`app.quit`) |
-| Every view | 3 | `bpm -` (`transport.tempo_down`), `bpm +` (`transport.tempo_up`), `bpm-.1` (`transport.tempo_down_fine`), `bpm+.1` (`transport.tempo_up_fine`), `erase` (`pattern.erase`), `A1 rec` (`pattern.record`) |
+| Every view | 3 | `erase` (`pattern.erase`), `A1 rec` (`pattern.record`) |
 | Pads | 4 | `view -` (`pattern.view_prev`), `view +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`), `step` (`pattern.step_edit`) |
 | Chop, Chop edit | 4 | `hits -` (`chop.hits_back`), `delcut` (`marker.delete`), `delend` (`slice.end_delete`), `order` (`chop.assign_order`) |
+
+### Requirement: A1 controls use the shipped pattern encoder context
+
+While A1 controls are open, their value page SHALL take priority over the screen.
+Knob 1 SHALL select the parameter. The other knobs SHALL apply the named values.
+Closing the controls SHALL restore the screen roles.
+Master volume, held releases, panel cells and overlays SHALL retain priority.
+The Controller tab SHALL show the current roles.
+
+#### Scenario: A1 encoders follow the open controls on every screen
+- **WHEN** separate keyboard and raw MIDI runs change Bars, Quantize or Strength in A1 controls
+- **THEN** both runs reach the same values and bounds
+- **AND** closing A1 controls restores the screen roles
+
+## REMOVED Requirements
+
+### Requirement: Context page selection preserves the screen controls
+
+**Reason**: The review reserves knobs for position and values.
+**Migration**: Use More, Next and Main to change panel pages.

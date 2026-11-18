@@ -255,6 +255,26 @@ impl App {
         *scroll = (*scroll).min(at).max((at + 1).saturating_sub(rows));
     }
 
+    fn smc_value_label(&self, action: &str) -> Option<(&'static str, bool)> {
+        use input::midi::Param;
+        let param = match input::midi::param_of(action)? {
+            Param::SmcPageValue(knob) => self.smc_page_value(knob),
+            Param::Slot(slot) => self.slot_param(slot),
+            _ => return None,
+        };
+        let text = match param {
+            Some(Param::PadSource) => "source",
+            Some(Param::PadEffect(0)) => "drive",
+            Some(Param::PadEffect(9)) => "group",
+            Some(param) => input::midi::PARAMS
+                .iter()
+                .find_map(|(name, value)| (*value == param).then_some(input::short_label(name)))
+                .unwrap_or("-"),
+            None => "-",
+        };
+        Some((text, text == "-"))
+    }
+
     /// The tab as `tui` draws it.
     pub(super) fn controller_view(&mut self, keymap: &Keymap) -> tui::Controller {
         let key = |app: &App, action| {
@@ -299,6 +319,10 @@ impl App {
                 .unwrap_or("unavailable");
             Some((label, cell >= 15 || label == "unavailable"))
         };
+        let value_role = |name: &str| {
+            (profile.name == "SMC-PAD").then_some(())?;
+            self.smc_value_label(action(name)?)
+        };
         let first = || match self.controller_drawing(profile) {
             Some(rows) => places(rows).first().map(|(_, _, n)| n.to_string()),
             None => profile.controls().first().map(|(n, _)| n.clone()),
@@ -318,10 +342,16 @@ impl App {
                         "{name} · {kind} · panel cell · {role}{}",
                         if free { " unavailable" } else { "" }
                     ),
-                    None => match action(name) {
-                        Some(a) => format!("{name} · {kind} · {a} · {}", label(a)),
-                        None => format!("{name} · {kind} · free"),
-                    },
+                    None => {
+                        if let Some((role, _)) = value_role(name) {
+                            format!("{name} · {kind} · {role}")
+                        } else {
+                            match action(name) {
+                                Some(a) => format!("{name} · {kind} · {a} · {}", label(a)),
+                                None => format!("{name} · {kind} · free"),
+                            }
+                        }
+                    }
                 }
             }
             None => String::new(),
@@ -349,13 +379,14 @@ impl App {
                                 }
                                 let (open, close) =
                                     brackets(profile.kind_of(name).unwrap_or(ControlKind::Button));
-                                let (short, free) = match panel_role(name) {
-                                    Some((role, free)) => (role, free),
-                                    None => (
-                                        action(name).map_or("-", input::short_label),
-                                        action(name).is_none(),
-                                    ),
-                                };
+                                let (short, free) =
+                                    match panel_role(name).or_else(|| value_role(name)) {
+                                        Some((role, free)) => (role, free),
+                                        None => (
+                                            action(name).map_or("-", input::short_label),
+                                            action(name).is_none(),
+                                        ),
+                                    };
                                 Some(tui::ControlCell {
                                     name: name.to_string(),
                                     label: format!("{open}{short}{close}"),
@@ -372,8 +403,11 @@ impl App {
                     .controls()
                     .iter()
                     .map(|(name, kind)| {
-                        let what =
-                            action(name).map_or("-".to_string(), |a| format!("{a} · {}", label(a)));
+                        let what = if let Some((role, _)) = value_role(name) {
+                            role.into()
+                        } else {
+                            action(name).map_or("-".to_string(), |a| format!("{a} · {}", label(a)))
+                        };
                         (format!("{name} {}", kind.name()), what)
                     })
                     .collect();
