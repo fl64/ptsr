@@ -49,6 +49,22 @@ without running a cell.
 - **THEN** the first command-layer hit reveals the panel
 - **AND** the next hit runs the visible cell once
 
+### Requirement: Added context cells provide missing actions
+
+Every panel view SHALL keep its main page, first context page and fixed bottom row. It SHALL add the common action cells in the table. Pads, Chop and Chop edit SHALL add the listed page 4 cells.
+
+#### Scenario: Added cells reach their current actions
+- **WHEN** the owner uses a listed cell in a screen or mode where its action works
+- **THEN** the action has the same result as its keyboard path
+- **AND** another screen or mode does not claim a route for a command that has no effect there
+
+| View | Page | Cells in order: label (`action`) |
+| --- | --- | --- |
+| Every view | 2 | `output` (`record.output`), `play` (`transport.toggle`), `take` (`pad.take`), `open` (`project.pick`), `save` (`session.save`), `grid` (`ui.pads_toggle`), `learn` (`learn.toggle`), `undo` (`pattern.undo`), `knobs` (`pattern.controls`), `exit` (`app.quit`) |
+| Every view | 3 | `erase` (`pattern.erase`), `record` (`pattern.record`) |
+| Pads | 4 | `grid -` (`pattern.view_prev`), `grid +` (`pattern.view_next`), `rows` (`pattern.overview_empty_toggle`), `step` (`pattern.step_edit`) |
+| Chop, Chop edit | 4 | `hits -` (`chop.hits_back`), `cut -` (`marker.delete`), `end -` (`slice.end_delete`), `order` (`chop.assign_order`) |
+
 ## ADDED Requirements
 
 ### Requirement: Verified USB SMC-PAD uses the saved PAD BANK preference
