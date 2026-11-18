@@ -43,6 +43,8 @@ panel without an action. Each later hit runs its visible cell. The panel uses
 the same top-to-bottom rows as the first-bank pads. A first-bank hit hides it
 and keeps that pad's sound and release.
 
+For a supported USB SMC-PAD, F12 MIDI offers `SMC-PAD PAD BANK`. Select `Open panel` to show the panel on the button press. Wait for the menu labels before choosing a cell. If the menu stays hidden, the first cell hit still shows it. Select `Off` to use only that path.
+
 The main page has Pads, Files, Chop, Pattern, FX, Settings, Help and More.
 Four cells show actions for the current screen. More opens a context page.
 Next cycles context pages, and Main returns to the first page. The bottom row
@@ -70,7 +72,7 @@ parts, or `H` for cuts at hits. Press `P`, hit the target pads, and press `Enter
 apply the layout. Press `Space` to listen. Press `F2` or `Esc` to return to Pads.
 
 **SMC-PAD:** Hit the first-bank pad to select its sample. Select PAD BANK 2 and
-hit any panel cell once to show the panel. Hit Chop. Turn the first encoder on
+hit a panel cell once if the panel stays hidden. Hit Chop. Turn the first encoder on
 knob bank 1 to move the cursor. The Chop main page has Cut, Parts, Hits and
 Assign. Its context page has Commit. Use PAD BANK 1 for target pad hits. Use
 PAD BANK 2 again to reveal the panel and select Commit. A replacement question
@@ -94,7 +96,7 @@ pitch, cutoff and decay, plus master volume. It has no pan or send assignment.
 
 **Done when:** Change 93 verifies a path to every pad parameter without typed
 text. A command in a visible panel takes one cell hit. The first panel entry
-takes PAD BANK and two second-bank hits.
+takes PAD BANK and two second-bank hits with the shortcut off. With the panel already open after PAD BANK, press only the action cell.
 
 ## Read modes and operation results
 

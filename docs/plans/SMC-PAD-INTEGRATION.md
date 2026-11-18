@@ -50,7 +50,8 @@ does not describe a complete SMC-PAD profile in the current build.
 
 1. Hit a pad to select the thing to work on: a pad, slice, step, channel, or slot.
 2. Press PAD BANK to select pad layer 2. The first layer 2 hit shows the command
-   panel if it is hidden. It runs no command. Hit a cell after the panel appears.
+   panel if it is hidden. It runs no command. With the optional F12 shortcut on,
+   a detected PAD BANK press opens the panel first. Hit a cell after the panel appears.
    The main page selects screens and shows four current-screen commands. More
    opens a context page. The bottom row keeps Back, Undo, Redo and Panic.
 3. Turn knob 1 in bank 1 to move the selection or cursor. Knobs 2–8 change
@@ -69,7 +70,7 @@ Panel access never changes the transport or stops a sounding voice. During play,
 knob bank 1 controls the screen and bank 2 controls the selected pad and master.
 Knobs keep working while the panel is visible.
 
-The first panel entry takes PAD BANK and two layer 2 hits. Later cell commands
+With the shortcut off, first panel entry takes PAD BANK and two layer 2 hits. With it on, a detected press can remove the reveal hit. Later cell commands
 take one hit while the panel is visible. Change 93 counts these physical presses
 and records the first-entry cost. A frequent action remains direct where a
 button, pad, or knob has that role. Do not count the first reveal as a command.
@@ -105,9 +106,7 @@ maps PLAY, STOP, RECORD, LEFT, and RIGHT on each screen and mode.
 PAD BANK latches physical pad layer 2, notes 52–67. PAD BANK itself sends no
 MIDI message. The first layer 2 hit while the panel is hidden only shows it.
 Later layer 2 hits run the named cells. A layer 1 hit hides the panel and follows
-the normal pad route. The screen cannot react to PAD BANK alone. It learns the
-new layer from the next pad note. The status line shows PANEL while the last
-pad note came from layer 2.
+the normal pad route. Pad notes still identify the layer. The optional `SMC-PAD PAD BANK` setting in F12 MIDI reads USB status on the supported preset. It opens the hidden panel on a detected press. The status line shows PANEL when the menu opens.
 
 The panel replaces the pad grid with 16 cells in the same physical layout.
 The main page gives cells 1–8 to Pads, Files, Chop, Pattern, FX, Settings,
@@ -329,7 +328,7 @@ Tasks:
    controller path for each non-text keyboard action. Use the SMC-PAD profile
    and `panel.toml`:
    direct button, pad hit, panel cell, or knob. Count a visible panel cell as one
-   press. Count the first panel entry separately: PAD BANK and two layer 2 hits.
+   press. Count first panel entry separately, with and without the extra reveal hit.
    Report any action without a path or any repeated path above two presses.
    Keyboard side: every sampler action has a key or key path. PAD BANK selection,
    its status mark, panel page navigation and an optional measured SHIFT quick look

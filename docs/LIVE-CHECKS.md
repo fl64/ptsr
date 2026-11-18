@@ -2273,7 +2273,9 @@ The checks below need the physical device. Recorded MIDI tests cannot establish 
 
 ### Physical SMC-PAD pass
 
-- [ ] Select PAD BANK 2 and reveal the panel with one hit. From its main page,
+- [ ] Open F12 > MIDI on the supported USB SMC-PAD. Check that `SMC-PAD PAD BANK` starts at `Off`. Select `Open panel` and restart ptsr. Check the value again.
+- [ ] Open Chop in the playing bank. Tap PAD BANK. Wait for the menu labels before a pad hit. Press Cut and check that it acts once. Return to the playing bank and hit a Gate pad. Check that the panel closes and the same pad stops on release.
+- [ ] Set `SMC-PAD PAD BANK` to `Off`. Select PAD BANK 2 and reveal the panel with one hit. From its main page,
   use More and one action cell. Count four presses from a hidden panel and two
   from the visible main panel. Turn encoder 6 to pages 2, 3 and 4. Check the
   page label and cell labels before you act. Check that encoder 6 does not change

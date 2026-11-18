@@ -4,6 +4,8 @@ This table covers the headings in [User stories](USER-STORIES.md) for change 93.
 
 ## Count a command
 
+For a supported USB SMC-PAD, set `SMC-PAD PAD BANK` to `Open panel` in F12 MIDI to skip the reveal hit when the shortcut detects the tap in time. The hidden counts in the table describe `Off` and the fallback path. Subtract one from a hidden count that includes a reveal hit when PAD BANK opens the panel first.
+
 Each pair is **visible / hidden**: button presses from the visible main panel, then from a hidden panel. A main cell is `1/3`: the hidden route adds PAD BANK and one reveal hit. A context cell is `2/4`: More and the action cell, with the same two entry presses when hidden. E6 turns select a context page without a button press. A first-bank knob is `0/0`. PLAY, STOP and RECORD are `1/1`. A modal P7 or P8 answer is `1/2`: it needs PAD BANK from the first bank, but no reveal hit. The count excludes knob turns, target pad hits and later modal answers. A first-bank pad hit is a separate sound or target action. An owner binding can replace a shipped cell.
 
 | User story | SMC-PAD route and command counts | Exception or limit |
