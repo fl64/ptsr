@@ -442,6 +442,13 @@ them. The keys in use are in `config/keymap.toml`; the table below is historical
 
 PAD BANK selects pad layer 2 as a latched command panel. Its main page opens screens and names four current-screen actions. More shows a context page for the remaining commands. Its bottom row always shows Back, Undo, Redo and Panic. Redo and Panic remain unavailable until 93a. PAD BANK sends no unsolicited MIDI message. On the supported USB SMC-PAD, F12 MIDI can use a read-only status query to open the panel. The first layer 2 hit with a shipped panel binding only shows a panel that is still hidden. Later hits run cells. An explicit owner binding can replace a cell outside a question. P7 cancels and P8 confirms an already visible question on the first hit. PLAY and STOP never answer it. A layer 1 hit hides the panel. The status line shows PANEL when the menu opens. Entering or leaving the panel never stops the music. Knob bank 1 controls the screen. Bank 2 controls the selected pad and master on every screen. Both banks work while the panel shows.
 
+**Planned layout (change 124).** LEFT and RIGHT move the main list of each screen or mode.
+Knob 1 moves position. Bank 1 knobs 2–7 change values on the current page.
+Bank 2 changes the selected pad. Knob 8 changes master volume in both banks.
+The knob strip shows both banks in physical order and marks the last knob input.
+Tempo has a knob on the Pattern transport page.
+See [the layout plan](plans/SMC-PAD-INTEGRATION.md#2-the-layout) for the roles.
+
 SHIFT has no assigned ptsr shortcut without a measured host message. Its printed pad shortcuts can change the SMC-PAD preset or octave. Change 93a can add an optional STOP hold path, off by default. Destructive cells ask a question through every panel path.
 
 **Visual control:** at one look the owner sees what the pads do now, what plays, what records, what waits and what the last press did. Badges in the title line show the modes (yellow: the pads do something other than sound; cyan: on or playing; magenta: records, waits or asks). Pads show small glyphs for the mode (target, planned slice, step, erase). Messages have levels (done, info, warning, error), and an error stays until the next action; F1 keeps the last messages. A knob change shows the value on every screen. The status line shows the transport, the recording, the connected devices and the audio state. The hints name the controls of the device that the owner used last.

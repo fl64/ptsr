@@ -49,6 +49,58 @@ Each pair is **visible / hidden**: button presses from the visible main panel, t
 | Record sound | Hold RECORD for microphone (`1/1`). Page 2 Outrec toggles output capture (`2/4`). | Recorded file placement uses a first-bank target pad. |
 | Session | Context Save (`2/4`). Page 2 Exit (`2/4`), then P8 to leave or P7/Back to stay (`1/2`). | Automatic save is an observation (`0/0`). |
 
+## Layout review after change 93
+
+The table above records the routes in PR #27. The following routes are targets
+for [the new layout](plans/SMC-PAD-INTEGRATION.md#2-the-layout). The owner accepted change 93. Its archive is complete. Change 124 specifies the button and knob routes. Count pad hits, layer switches and command
+presses as separate columns in the owner record.
+
+| Task with the panel hidden | Target route | Target press count |
+| --- | --- | --- |
+| Open a screen | PAD BANK, then a main cell | 2 when PAD BANK opens the panel first |
+| Run a command on the first context page | PAD BANK, More, then the action cell | 3 when PAD BANK opens the panel first |
+| Run a command on a later context page | PAD BANK, More, Next until the page appears, then the action cell | 3 plus one press per Next |
+| Change a value on the current page | Turn its knob in the active bank | 0 button presses |
+| Change a list, pad bank, bar page or tab | Press LEFT or RIGHT | 1 per move |
+| Open Help | PAD BANK, More, then Help | 3 when PAD BANK opens the panel first |
+
+A missed or disabled PAD BANK shortcut adds one reveal hit. If the owner
+needs to change a knob bank before a value turn, count that button press.
+Keep frequent context commands on the first page or give them a direct route.
+The counts below start on the main page. More opens context page 1.
+Each Next press advances one page. This table gives expected counts for change 124.
+
+| Action | Panel visible | PAD BANK opens the panel | PAD BANK and a reveal hit |
+| --- | --- | --- | --- |
+| Main cell | 1 | 2 | 3 |
+| Context page 1 cell | 2 | 3 | 4 |
+| Context page 2 cell | 3 | 4 | 5 |
+| Context page 3 cell | 4 | 5 | 6 |
+| Context page 4 cell | 5 | 6 | 7 |
+
+### Target flow counts to measure on the SMC-PAD
+
+Start each run in the playing bank with the panel hidden. Use one disposable
+project. Record the exact sequence and the result. Count PAD BANK switches,
+reveal hits, command cells, target hits, and any confirmation pressed.
+Run the current route with the shortcut off and on. Then trial each proposed
+target route. Repeat a target within P1–12 and within P13–16.
+
+| Flow | Current route to measure | Result to check | Physical count |
+| --- | --- | --- | --- |
+| Take | Select Take, switch layers, then select a target. | The held item reaches only the selected pad. | Pending |
+| Copy | Select Copy, switch layers, then select a target. | The source keeps its sound and only the target changes. | Pending |
+| Swap | Select the swap route, switch layers, then select the target. | Only the source and target exchange their data. | Pending |
+| File in hand | Select a file, take it, switch layers, then place it. | The file reaches the target without a preview hit. | Pending |
+| Assign | Start Assign, switch layers for targets, then switch back for Apply. | The plan applies once. A replacement asks first. | Pending |
+
+Compare the layer switch with a hint against targets on second-layer cells
+1–12. For the second route, keep Apply and Cancel on the bottom row.
+Targets 13–16 still use the playing layer. Include P7 and P8 separately if
+a question appears. Check that a held Gate releases its original pad.
+After the device check, record the measured counts and choose the route in
+the [owner decisions](plans/SMC-PAD-INTEGRATION.md#24-routes-preset-checks-and-owner-decisions).
+
 ## Open owner checks
 
 The software tests do not establish physical E6, E7 or E8 movement, physical PAD BANK order, terminal composition or listening results. Use [Live checks](LIVE-CHECKS.md) for those passes. This change has no new render. `renders/92-command-panel.wav` is the existing transport reference.
