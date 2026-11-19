@@ -3427,8 +3427,6 @@ fn first_hit_reveal_works_without_the_hold_shortcut() {
 }
 
 /// Scenario "A question takes pads 1 and 4 without a hold" (command-panel).
-/// Scenario "A question takes its two pads without a hold" (command-panel): change 134
-/// replaces it until the archive.
 #[test]
 fn a_question_takes_pads_1_and_4_without_a_hold() {
     let mut drive = hold_drive();

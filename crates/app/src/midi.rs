@@ -3968,8 +3968,6 @@ mod tests {
     }
 
     /// 134 command-panel: "Pad 1 and pad 4 answer a visible question on the first hit".
-    /// Scenario "P7 and P8 answer a visible question on the first hit" (command-panel):
-    /// change 134 replaces it until the archive.
     /// Notes 52 and 55 are the second-bank notes of device pads 1 and 4.
     #[test]
     fn pad_1_and_pad_4_answer_a_visible_question_on_the_first_hit() {
@@ -4021,8 +4019,6 @@ mod tests {
     }
 
     /// Scenario "PLAY and STOP do not answer a pad 1 and pad 4 question" (command-panel).
-    /// Scenario "PLAY and STOP do not answer a question" (command-panel): change 134
-    /// replaces it until the archive.
     #[test]
     fn play_and_stop_do_not_answer_a_pad_1_and_pad_4_question() {
         for (cc, command) in [

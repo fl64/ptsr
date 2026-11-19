@@ -52,8 +52,6 @@ fn check_silent(frame: &Frame) {
 }
 
 /// Scenario "All sixteen pads take an item in hand" (command-panel).
-/// Scenario "Panel target pads place items without a layer switch" (command-panel): change
-/// 134 replaces it until the archive.
 #[test]
 fn all_sixteen_pads_take_an_item_in_hand() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -129,8 +127,6 @@ fn all_sixteen_pads_take_an_item_in_hand() {
 }
 
 /// Scenario "Assign places slices on the playing layer and applies on a hold" (command-panel).
-/// Scenario "Assign applies from the target row" (command-panel): change 134 replaces it
-/// until the archive.
 #[test]
 fn assign_places_slices_on_the_playing_layer_and_applies_on_a_hold() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -195,8 +191,6 @@ fn a_hold_in_target_mode_shows_only_the_mode_commands() {
 }
 
 /// Scenario "Target pads keep their connection and release" (command-panel).
-/// Scenario "Target cells retain connection and release priority" (command-panel): change
-/// 134 replaces it until the archive.
 #[test]
 fn target_pads_keep_their_connection_and_release() {
     const SECOND: &str = "SINCO SMC-PAD-Master 32:1";
