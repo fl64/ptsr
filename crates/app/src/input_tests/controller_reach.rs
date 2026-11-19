@@ -827,10 +827,10 @@ fn request_exit_with_save_failure(drive: &mut Drive, controller: bool) {
             question
                 .answers
                 .iter()
-                .any(|line| line.contains("P11/Back: keep · P12: exit"))
+                .any(|line| line.contains("P1: keep · P4: exit"))
         );
         hold(drive, false);
-        cell(drive, 63);
+        cell(drive, 55); // Device pad 4 confirms (134).
         assert!(!drive.app.try_finish_exit());
         drive.app.publish_midi(&drive.shared);
     } else {
@@ -868,19 +868,22 @@ fn exit_recovery_uses_confirm_and_back_from_both_inputs() {
         let question = drive.app.question_view(&drive.keymap).unwrap();
         assert_eq!(question.body[0], "Save failed · A");
         assert!(refusal.ends_with(&question.body[1]));
-        assert!(question.answers[0].contains("Enter: Retry Save"));
-        assert!(question.answers[0].contains("Esc: Back"));
+        // After an SMC-PAD input the answer row names only the pads (134).
+        if !controller {
+            assert!(question.answers[0].contains("Enter: Retry Save"));
+            assert!(question.answers[0].contains("Esc: Back"));
+        }
         assert!(
             question
                 .answers
                 .iter()
-                .any(|line| line.contains("P11: Back") && line.contains("P12: Retry Save"))
+                .any(|line| line.contains("P1: Back") && line.contains("P4: Retry Save"))
         );
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert!(drive.app.notices.history().is_empty());
 
         if controller {
-            cell(&mut drive, 46);
+            cell(&mut drive, 36);
         } else {
             drive.tap(KeyCode::Esc, M::NONE);
         }
@@ -892,7 +895,7 @@ fn exit_recovery_uses_confirm_and_back_from_both_inputs() {
         request_exit_with_save_failure(&mut drive, controller);
         std::fs::write(&tmp, b"occupied again").unwrap();
         if controller {
-            for note in [47, 63] {
+            for note in [39, 55] {
                 drive.bytes(SMC, &[0x99, note, 100]);
                 drive.bytes(SMC, &[0x89, note, 0]);
             }
@@ -921,8 +924,8 @@ fn exit_recovery_uses_confirm_and_back_from_both_inputs() {
         std::fs::remove_file(&tmp).unwrap();
         if controller {
             for _ in 0..2 {
-                drive.bytes(SMC, &[0x99, 47, 100]);
-                drive.bytes(SMC, &[0x89, 47, 0]);
+                drive.bytes(SMC, &[0x99, 39, 100]);
+                drive.bytes(SMC, &[0x89, 39, 0]);
             }
             drive.frame();
         } else {
@@ -983,19 +986,19 @@ fn exit_questions_use_the_printed_pads_in_either_bank() {
                 cell(&mut drive, note + offset);
                 assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
             }
-            cell(&mut drive, 46 + offset);
-            assert!(drive.app.ask.is_none(), "P11 in bank offset {offset}");
+            cell(&mut drive, 36 + offset);
+            assert!(drive.app.ask.is_none(), "P1 in bank offset {offset}");
             assert!(!drive.app.quit_requested);
             assert!(
                 question
                     .answers
                     .iter()
-                    .any(|line| line.contains("P11/Back: keep · P12: exit"))
+                    .any(|line| line.contains("P1: keep · P4: exit"))
             );
 
             exit(&mut drive);
-            cell(&mut drive, 47 + offset);
-            assert!(drive.app.quit_requested, "P12 in bank offset {offset}");
+            cell(&mut drive, 39 + offset);
+            assert!(drive.app.quit_requested, "P4 in bank offset {offset}");
             assert!(!drive.app.try_finish_exit());
             drive.app.publish_midi(&drive.shared);
             let question = drive.app.question_view(&drive.keymap).unwrap();
@@ -1003,18 +1006,18 @@ fn exit_questions_use_the_printed_pads_in_either_bank() {
                 question
                     .answers
                     .iter()
-                    .any(|line| line.contains("P11: Back · P12: Retry Save"))
+                    .any(|line| line.contains("P1: Back · P4: Retry Save"))
             );
-            cell(&mut drive, 46 + offset);
+            cell(&mut drive, 36 + offset);
             assert!(drive.app.ask.is_none());
             assert_eq!(std::fs::read(&path).unwrap(), before);
 
             exit(&mut drive);
-            cell(&mut drive, 47 + offset);
+            cell(&mut drive, 39 + offset);
             assert!(!drive.app.try_finish_exit());
             drive.app.publish_midi(&drive.shared);
             std::fs::remove_file(&blocker).unwrap();
-            cell(&mut drive, 47 + offset);
+            cell(&mut drive, 39 + offset);
             assert!(drive.app.ask.is_none());
             assert!(!drive.app.quit_requested);
             assert_eq!(session::load_existing(&path).unwrap().pads["0"].pitch, 5);

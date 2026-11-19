@@ -1207,13 +1207,14 @@ impl App {
             Some(Ask::ExitRecovery { offered_at, .. })
                 if received_at.is_some_and(|at| at <= offered_at)
         ) && match &ev.event {
-            midi::Event::Action(Action::Confirm) | midi::Event::PanelCell { cell: 8, .. } => true,
+            // Device pad 4 answers Yes since change 134.
+            midi::Event::Action(Action::Confirm) | midi::Event::PanelCell { cell: 16, .. } => true,
             midi::Event::Message {
                 port,
                 msg:
-                    input::midi::Msg::NoteOn { note: 63, .. }
+                    input::midi::Msg::NoteOn { note: 55, .. }
                     | input::midi::Msg::NoteOn {
-                        ch: 10, note: 47, ..
+                        ch: 10, note: 39, ..
                     },
                 ..
             } => port.contains("SMC-PAD-Master"),

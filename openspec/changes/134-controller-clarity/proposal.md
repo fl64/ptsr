@@ -62,6 +62,7 @@ None.
 - `controller-reach`: Learn, Exit, Help and picker answers, and refusal messages.
 - `screen-layout`: device pad numbers, knob numbers on rows and the mode line.
 - `screen-help`: hints by the last input device.
+- `projects`: the exit questions of change 133 answer with device pads 1 and 4.
 
 ## Impact
 
