@@ -73,7 +73,7 @@ step and its cancel control. It stays after the PAD BANK release.
 | Swap pads | Pads Take (`1/3`). From another screen, Screens Pads, then Take (`3/5`). Release PAD BANK and hit any of the 16 pads. | Count the target separately. |
 | Select file, copy and swap targets without a hit sound | Files Take or Pads Copy or Take (`1/3`). Release PAD BANK and hit any of the 16 pads. P1/P4 answer (`1/2`). | The target hit stays silent. |
 | Controller commands and the next pad hit | Use Take (`1/3`). With the panel hidden, use LEFT or RIGHT on Pads (`1/1`), then select a target pad. | Check input order and Gate release. |
-| MIDI knobs | Screens Setup (`2/4`). Settings Tab selects MIDI (`1/3` per tab). Knob 1 selects a row and knob 2 changes a setting (`0/0`). | Enter opens the layout review for saved maps with legacy roles. |
+| MIDI knobs | Screens Setup (`2/4`). With the panel hidden, RIGHT selects the MIDI tab (`1/1` per tab). Knob 1 selects a row and knob 2 changes a setting (`0/0`). | Enter opens the layout review for saved maps with legacy roles. |
 | Bind the controller directly on the screen | Use the action. Screens Learn (`2/4`). Touch a control. P4 saves or P1 cancels (`1/2`). | P1 with no choice leaves learning. |
 | Record sound | Hold RECORD for microphone (`1/1`). Pads Output records the output (`1/3`). | Place recorded sounds using the playing layer. |
 | Session | Screens Save (`2/4`). Screens Exit (`2/4`). P4 leaves or P1 stays (`1/2`). | Read the save state. |
@@ -82,7 +82,7 @@ step and its cancel control. It stays after the PAD BANK release.
 
 1. Turn bank 1 knob 1 to the required point.
 2. In the Chop actions, press P13 Cut to add a slice start.
-3. For the Chop region, press P5 Start or P6 End to use the cursor position.
+3. For the Chop region, turn knobs 5 and 6. Press P5 Whole to restore the whole sound.
 4. Press P7 Edit to open Chop edit. Press P9 Whole to clear the region.
 5. To delete the selected slice start in Chop edit, press P15 `cut -`.
    To delete a manual slice end, press P16 `end -`.
