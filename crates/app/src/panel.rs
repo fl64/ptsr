@@ -415,7 +415,50 @@ impl App {
         }
     }
 
+    /// The panel of a mode that takes the screen (134): only the cells that act there.
+    fn modal_snapshot(&self) -> Option<tui::CommandPanel> {
+        let pending = self
+            .screen_learn
+            .as_ref()
+            .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+            || self
+                .learning
+                .as_ref()
+                .is_some_and(|learn| learn.pending.is_some());
+        let (view, cells): (&'static str, &[(usize, &str)]) = if self.help_open {
+            (
+                "HELP · LEFT RIGHT tabs",
+                &[(8, "up"), (9, "down"), (12, "close")],
+            )
+        } else if self.project_picker.is_some() || self.path_picker.is_some() {
+            ("LIST · knob 1 moves", &[(12, "close"), (15, "open")])
+        } else if self.screen_learn.is_some() || self.learning.is_some() {
+            if pending {
+                ("LEARN", &[(12, "cancel"), (15, "save")])
+            } else {
+                ("LEARN · touch a control", &[(12, "back")])
+            }
+        } else {
+            ("TEXT · type on the keyboard", &[(12, "back")])
+        };
+        Some(tui::CommandPanel {
+            labels: std::array::from_fn(|index| {
+                cells
+                    .iter()
+                    .find(|(cell, _)| *cell == index)
+                    .map(|(_, label)| (*label).to_string())
+            }),
+            page: self.panel.page(),
+            view,
+            target: true,
+            flash: self.panel_flash(),
+        })
+    }
+
     pub(super) fn panel_snapshot(&self) -> Option<tui::CommandPanel> {
+        if self.panel.visible() && !self.panel_input_available() {
+            return self.modal_snapshot();
+        }
         (self.panel.visible() && self.panel_input_available()).then(|| {
             // Behind a question only its two answers show (134).
             if self.ask.is_some() {
@@ -484,7 +527,8 @@ mod tests {
             "listen", "load", "loop", "mark", "marks", "mixer", "mode", "open", "order", "output",
             "pads", "no", "yes", "parent", "parts", "record", "redo", "row +", "row -", "rows",
             "save", "setup", "snap", "star", "start", "step", "tab", "take", "tap", "undo",
-            "whole", "pad", "used", "cancel", "apply", "menu", "target",
+            "whole", "pad", "used", "cancel", "apply", "menu", "target", "close", "up", "down",
+            "save",
         ];
         let check = |label: &str| {
             assert!(

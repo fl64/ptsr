@@ -3268,9 +3268,15 @@ fn a_hold_takes_left_and_right_over_saved_roles() {
 #[test]
 fn pad_bank_respects_input_overlays() {
     let mut drive = hold_drive();
+    // Each overlay keeps priority: the panel shows only its own cells (134).
+    let overlay = |drive: &Drive| {
+        let panel = drive.app.panel_snapshot().unwrap();
+        assert!(panel.target, "{}", panel.view);
+        assert!(panel.labels[12].is_some(), "{}", panel.view);
+    };
     drive.app.help_open = true;
     hold(&mut drive, true);
-    assert!(drive.app.panel_snapshot().is_none());
+    overlay(&drive);
     drive.app.help_open = false;
     // The panel shows again while the hold continues.
     assert!(drive.app.panel_snapshot().is_some());
@@ -3278,7 +3284,7 @@ fn pad_bank_respects_input_overlays() {
 
     drive.app.pad_naming = Some((0, "Name".into()));
     hold(&mut drive, true);
-    assert!(drive.app.panel_snapshot().is_none());
+    overlay(&drive);
     hold(&mut drive, false);
     drive.app.pad_naming = None;
 
@@ -3288,13 +3294,13 @@ fn pad_bank_respects_input_overlays() {
         naming: None,
     });
     hold(&mut drive, true);
-    assert!(drive.app.panel_snapshot().is_none());
+    overlay(&drive);
     hold(&mut drive, false);
     assert_eq!(drive.app.project_picker.take().unwrap().selected, 0);
 
     drive.app.learning = Some(learn::Learning::new(action_info("transport.toggle")));
     hold(&mut drive, true);
-    assert!(drive.app.panel_snapshot().is_none());
+    overlay(&drive);
     assert!(drive.app.learning.as_ref().unwrap().pending.is_none());
 }
 
@@ -3705,6 +3711,131 @@ fn a_question_changes_answer_words_with_the_device() {
         !answers.iter().any(|answer| answer.starts_with("KB ")),
         "{answers:?}"
     );
+}
+
+/// Holds PAD BANK, reads the device pad 1 label, presses pad 1 and releases.
+fn exit_by_hold(drive: &mut Drive) -> Option<String> {
+    hold(drive, true);
+    let label = drive
+        .app
+        .panel_snapshot()
+        .and_then(|panel| panel.labels[12].clone());
+    cell(drive, panel_note(13));
+    hold(drive, false);
+    label
+}
+
+/// Opens a cell of the screens view during a hold.
+fn screens_cell(drive: &mut Drive, slot: u8) {
+    hold(drive, true);
+    list_button(drive, false);
+    cell(drive, panel_note(slot));
+    hold(drive, false);
+}
+
+/// Runs an action cell of the current view during a hold.
+fn action_cell(drive: &mut Drive, slot: u8) {
+    hold(drive, true);
+    cell(drive, panel_note(slot));
+    hold(drive, false);
+}
+
+/// Scenario "A hold in Help shows the close cell" (command-panel).
+#[test]
+fn a_hold_in_help_shows_the_close_cell() {
+    let mut drive = hold_drive();
+    screens_cell(&mut drive, 8);
+    assert!(drive.app.help_open);
+    hold(&mut drive, true);
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert_eq!(panel.labels[12].as_deref(), Some("close"));
+    assert_eq!(panel.labels[8].as_deref(), Some("up"));
+    assert_eq!(panel.labels[9].as_deref(), Some("down"));
+    cell(&mut drive, panel_note(13));
+    hold(&mut drive, false);
+    assert!(!drive.app.help_open);
+}
+
+/// Scenario "No mode is a dead end for the SMC-PAD" (command-panel).
+#[test]
+fn no_mode_is_a_dead_end_for_the_smc_pad() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let check = |name: &str, drive: &mut Drive, open: fn(&Drive) -> bool| {
+        assert!(open(drive), "{name}: the mode is open");
+        let label = exit_by_hold(drive);
+        assert!(label.is_some(), "{name}: pad 1 has no label");
+        assert!(!open(drive), "{name}: pad 1 does not leave");
+    };
+
+    let mut drive = hold_drive();
+    screens_cell(&mut drive, 8);
+    check("Help", &mut drive, |d| d.app.help_open);
+
+    let files = TransitionFiles::new();
+    let mut drive = hold_drive();
+    drive.app.paths.projects = files.0.clone();
+    drive.app.project = Some(Project {
+        name: "A".into(),
+        folder: files.0.join("A"),
+    });
+    drive.app.user_path = Some(files.0.join("config.toml"));
+    drive.app.publish_midi(&drive.shared);
+    screens_cell(&mut drive, 10);
+    check("project list", &mut drive, |d| {
+        d.app.project_picker.is_some()
+    });
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, sound.clone());
+    screens_cell(&mut drive, 11);
+    check("screen learn", &mut drive, |d| d.app.screen_learn.is_some());
+
+    let mut drive = hold_drive();
+    drive.app.screen = Screen::Settings;
+    drive.app.settings_tab = 2;
+    drive.app.learning = Some(learn::Learning::new(action_info("pad.copy")));
+    drive.app.publish_midi(&drive.shared);
+    check("MIDI learn", &mut drive, |d| d.app.learning.is_some());
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, sound.clone());
+    drive.tap(KeyCode::Char('n'), M::CONTROL);
+    check("pad name", &mut drive, |d| d.app.pad_naming.is_some());
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Files, sound.clone());
+    drive.tap(KeyCode::Char('/'), M::NONE);
+    check("file filter", &mut drive, |d| d.app.browser.editing);
+
+    let mut drive = hold_drive();
+    drive.app.session_dirty = Some(Instant::now());
+    screens_cell(&mut drive, 12);
+    check("exit question", &mut drive, |d| d.app.ask.is_some());
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, sound.clone());
+    action_cell(&mut drive, 2);
+    check("copy", &mut drive, |d| d.app.copy_in_hand.is_some());
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, sound.clone());
+    action_cell(&mut drive, 3);
+    check("swap", &mut drive, |d| d.app.pad_in_hand.is_some());
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, sound.clone());
+    action_cell(&mut drive, 1);
+    check("pad edit", &mut drive, |d| d.app.edit);
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, sound.clone());
+    action_cell(&mut drive, 4);
+    check("marking", &mut drive, |d| d.app.pads.marking);
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, sound.clone());
+    action_cell(&mut drive, 4);
+    check("assign", &mut drive, |d| d.app.plan.is_some());
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, sound.clone());
+    action_cell(&mut drive, 11);
+    check("chop edit", &mut drive, |d| d.app.edit);
+
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Pattern, sound.clone());
+    action_cell(&mut drive, 4);
+    check("A1 knobs", &mut drive, |d| d.app.pattern_panel.is_some());
 }
 
 /// Scenario "A cell hit lights the cell" (screen-layout).

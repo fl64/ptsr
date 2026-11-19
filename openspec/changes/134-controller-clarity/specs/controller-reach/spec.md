@@ -1,5 +1,27 @@
 ## MODIFIED Requirements
 
+### Requirement: Holding PAD BANK shows the current panel
+
+With the hold shortcut on a verified USB SMC-PAD, the panel SHALL show while the status reads pressed and hide on the first released status.
+Each hold SHALL show the actions of the current screen or mode.
+During a hold, LEFT and RIGHT SHALL move the panel views, even with saved owner roles.
+A hold SHALL leave playback and modal controls in place. It SHALL have no MIDI learn action.
+
+#### Scenario: The panel shows only while PAD BANK is held
+- **WHEN** the owner holds PAD BANK, hits one cell and releases PAD BANK during playback
+- **THEN** the panel shows during the hold and the cell acts once
+- **AND** the panel hides on release and playback continues
+
+#### Scenario: A hold takes LEFT and RIGHT over saved roles
+- **WHEN** a saved owner map gives LEFT and RIGHT a Chop role and the owner holds PAD BANK on Chop
+- **THEN** LEFT and RIGHT move the panel views and the Chop selection stays
+- **AND** without a hold they keep the saved role
+
+#### Scenario: PAD BANK respects input overlays
+- **WHEN** the owner holds PAD BANK during a picker, Help, text entry or learning
+- **THEN** the overlay keeps priority and the panel shows only the cells of that overlay
+- **AND** the hold changes no overlay state and has no MIDI learn action
+
 ### Requirement: Pickers accept SMC-PAD selection without typed text
 
 In the project picker, SMC-PAD knob 1 SHALL move the selection. Device pad 4 SHALL confirm the selected project, and device pad 1 SHALL cancel. These modal routes SHALL take priority over the screen behind the picker. A visible question SHALL keep its pad 1 and pad 4 priority. A failed project transition SHALL keep the current project, picker and selection. The picker hint SHALL name `knob 1`.

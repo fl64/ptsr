@@ -778,8 +778,9 @@ impl App {
                 self.pattern_view.edit = false;
                 self.pattern_view.selected_event = None;
             }
-            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
+            // The A1 settings lie over the A1 view: Back closes the top one first (134).
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
+            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
             Action::Back if self.erase_pads => self.erase_pads = false,
             Action::Back if self.pattern_erasing() => self.toggle_pattern_erase(),

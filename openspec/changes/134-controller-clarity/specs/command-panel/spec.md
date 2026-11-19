@@ -105,3 +105,18 @@ While a question is visible and the panel shows, device pad 1 SHALL read `no` an
 #### Scenario: The panel behind a question shows no and yes
 - **WHEN** a replace question opens from a panel cell
 - **THEN** the panel shows `no` on pad 1, `yes` on pad 4 and no other label
+
+### Requirement: Every mode shows its way out on a hold
+
+A PAD BANK hold SHALL show a panel in every mode, also in Help, the project list, the folder list, learning and text entry. The panel SHALL show only the cells that act in that mode. Device pad 1 SHALL close or cancel the mode. In Help, cells 9 and 10 SHALL move. In a list, device pad 4 SHALL open the selected entry. While learning with a pending choice, device pad 4 SHALL save it. Other cells SHALL be dim.
+
+#### Scenario: A hold in Help shows the close cell
+- **WHEN** Help shows and the owner holds PAD BANK
+- **THEN** the panel shows close on device pad 1 and up and down on cells 9 and 10
+- **AND** device pad 1 closes Help
+
+#### Scenario: No mode is a dead end for the SMC-PAD
+- **WHEN** the owner enters each current mode in separate runs and holds PAD BANK
+- **THEN** the panel shows a label on device pad 1
+- **AND** device pad 1 during the hold leaves that mode or closes its question
+
