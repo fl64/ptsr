@@ -1527,7 +1527,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require(" actions │ ·");
             require("‹ screens");
             require("back");
-            require("panic");
+            require("redo");
         }
         Mode::PanelContext => {
             require("SCREENS");
@@ -1547,10 +1547,10 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("ASK");
             require("KB");
             require("PANEL · SMC");
+            require("yes");
         }
         Mode::PanelUnavailable => {
             require("redo");
-            require("panic");
         }
         Mode::PanelDisconnected => assert!(!text.contains("PANEL · SMC"), "{text}"),
         Mode::QuietEmpty => require("—"),
@@ -1864,12 +1864,12 @@ mod tests {
                 (
                     Screen::Pads,
                     Mode::Picker,
-                    ["E1/↑↓", "Enter/P12", "Esc/P11"],
+                    ["knob 1/↑↓", "Enter/P4", "Esc/P1"],
                 ),
                 (
                     Screen::Settings,
                     Mode::FolderPicker,
-                    ["E1/↑↓", "Enter/P12", "Esc/P11"],
+                    ["knob 1/↑↓", "Enter/P4", "Esc/P1"],
                 ),
             ] {
                 let case = Case { screen, mode, size };
@@ -3470,7 +3470,7 @@ L="none"
                         format!("{name} actions")
                     };
                     assert!(text.contains(&shown), "{screen:?} {size:?} {page}: {shown}");
-                    for label in ["back", "undo", "redo", "panic"] {
+                    for label in ["back", "undo", "redo"] {
                         assert!(text.contains(label), "{screen:?} {size:?} {page}: {label}");
                     }
                     let first = match (page, screen) {
@@ -3519,7 +3519,7 @@ L="none"
                 rows.iter().any(|row| row.contains("PAD BANK hold")),
                 "{rows_text}"
             );
-            assert!(rows[..top].iter().any(|row| row.contains("panic")));
+            assert!(rows[..top].iter().any(|row| row.contains("redo")));
         }
     }
 

@@ -33,12 +33,13 @@ Help paths SHALL retain their results.
 
 ### Requirement: Controller can finish learning
 
-With an F10 or MIDI-tab learning choice pending, device pad 4 SHALL save that choice and device pad 1 SHALL cancel it. With no choice pending, device pad 1 SHALL leave learning. The answer SHALL not replace the chosen control or run a panel action. With no choice pending, device pads 1 and 4 SHALL remain available as controls to learn. The learning prompt SHALL name these pads after an SMC-PAD input.
+With an F10 or MIDI-tab learning choice pending, device pad 4 SHALL save that choice and device pad 1 SHALL cancel it. With no choice pending, device pad 1 SHALL leave learning and device pad 4 SHALL remain available as a control to learn. The answer SHALL not replace the chosen control or run a panel action. The learning prompt SHALL name these pads after an SMC-PAD input.
 
 #### Scenario: Learning answer keeps its chosen control
-- **WHEN** the owner selects an action, presses device pad 1 as the control to learn and then presses pad 4
+- **WHEN** the owner selects an action, presses device pad 4 as the control to learn and then presses pad 4 again
 - **THEN** the first press becomes the pending control and the second saves it once
 - **AND** a separate pending choice followed by pad 1 cancels without a new choice or screen action
+- **AND** pad 1 with no choice pending leaves learning
 
 ### Requirement: SMC-PAD Exit asks before quit
 

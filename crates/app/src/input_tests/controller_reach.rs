@@ -758,7 +758,7 @@ fn controller_opens_a_selected_project() {
         }
         assert_eq!(drive.app.project_picker.as_ref().unwrap().selected, 1);
         if controller {
-            cell(&mut drive, 63);
+            cell(&mut drive, 55);
         } else {
             drive.tap(KeyCode::Enter, M::NONE);
         }
@@ -1038,7 +1038,7 @@ fn controller_selects_a_paths_folder() {
             files.0.join("B")
         );
         if controller {
-            cell(&mut drive, 63);
+            cell(&mut drive, 55);
         } else {
             drive.tap(KeyCode::Enter, M::NONE);
         }
@@ -1047,7 +1047,7 @@ fn controller_selects_a_paths_folder() {
     }
     let mut drive = folder_drive(&files);
     turn(&mut drive, 30, 65);
-    cell(&mut drive, 62);
+    cell(&mut drive, 52);
     assert!(drive.app.path_picker.is_none());
     assert_eq!(drive.app.paths.projects, files.0);
 }
@@ -1191,14 +1191,14 @@ fn modal_answer_wins_over_panel_entry() {
         lines: vec!["Reset pad 2?".into()],
     });
     drive.app.publish_midi(&drive.shared);
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert!(drive.app.ask.is_none());
     assert!(drive.app.project_picker.is_some());
     assert!(!drive.app.panel.visible());
     drive.bytes(SMC, &[0x89, 48, 0]);
     drive.frame();
     assert!(!drive.app.pads.held[0]);
-    cell(&mut drive, 62);
+    cell(&mut drive, 52);
     assert!(drive.app.project_picker.is_none());
 }
 
@@ -1256,7 +1256,7 @@ fn a1_grid_cell_matches_the_keyboard() {
     assert_eq!(controller.app.pads.bank, keyboard.app.pads.bank);
 }
 
-/// Scenario "Help cells navigate without acting behind Help" (controller-reach).
+/// Scenario "Help cells navigate without acting behind Help" (controller-reach): LEFT and RIGHT select tabs (134).
 #[test]
 fn help_cells_navigate_without_acting_behind_help() {
     let mut controller = smc_drive();
@@ -1275,7 +1275,7 @@ fn help_cells_navigate_without_acting_behind_help() {
     );
 
     for _ in 0..3 {
-        cell(&mut controller, 63);
+        list_button(&mut controller, true);
         keyboard.tap(KeyCode::Tab, M::NONE);
         assert_eq!(
             controller.app.help_overlay.page,
@@ -1292,7 +1292,7 @@ fn help_cells_navigate_without_acting_behind_help() {
         controller.app.controller_view(&controller.keymap).detail,
         before
     );
-    cell(&mut controller, 62);
+    list_button(&mut controller, false);
     keyboard.tap(KeyCode::BackTab, M::SHIFT);
     assert_eq!(
         controller.app.help_overlay.page,
@@ -1344,7 +1344,7 @@ fn exit_needs_a_second_smc_press() {
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
     assert!(!drive.app.quit_requested);
     assert!(drive.app.session_dirty.is_some());
-    cell(&mut drive, 62);
+    cell(&mut drive, 52);
     assert!(drive.app.ask.is_none());
     assert!(!drive.app.quit_requested);
     assert_eq!(drive.app.panel.page(), 0);
@@ -1357,7 +1357,7 @@ fn exit_needs_a_second_smc_press() {
 
     cell(&mut drive, panel_note(12));
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert!(drive.app.ask.is_none());
     assert!(drive.app.quit_requested);
     assert_eq!(drive.app.panel.page(), 0);
@@ -1405,13 +1405,13 @@ fn exit_question_keeps_a_pending_a1_save_until_confirmation() {
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
     assert!(drive.app.pending_manual_save.is_some());
     assert!(!drive.app.quit_requested);
-    cell(&mut drive, 62);
+    cell(&mut drive, 52);
     assert!(drive.app.ask.is_none());
     assert!(drive.app.pending_manual_save.is_some());
     assert!(!drive.app.quit_requested);
 
     cell(&mut drive, panel_note(12));
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert!(drive.app.quit_requested);
     assert!(drive.app.quit_ready());
     assert!(drive.app.pending_manual_save.is_none());
@@ -1809,7 +1809,7 @@ fn learning_answer_keeps_its_chosen_control() {
     list_button(&mut drive, false);
     cell(&mut drive, panel_note(11));
     assert_eq!(drive.app.learn_picked().unwrap().0, "pad.copy");
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert_eq!(
         drive
             .app
@@ -1820,13 +1820,13 @@ fn learning_answer_keeps_its_chosen_control() {
             .as_ref()
             .unwrap()
             .1,
-        input::midi::Key::Note(63)
+        input::midi::Key::Note(55)
     );
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert!(drive.app.screen_learn.is_none());
     let bindings = learn::group_bindings(&drive.app.learned, "SMC-PAD", input::Group::Pads);
     assert_eq!(
-        bindings.get(&input::midi::Key::Note(63)).unwrap().primary(),
+        bindings.get(&input::midi::Key::Note(55)).unwrap().primary(),
         "pad.copy"
     );
 
@@ -1835,7 +1835,7 @@ fn learning_answer_keeps_its_chosen_control() {
     cancelled.app.settings_tab = 2;
     cancelled.app.learning = Some(learn::Learning::new(action_info("pad.copy")));
     cancelled.app.publish_midi(&cancelled.shared);
-    cell(&mut cancelled, 63);
+    cell(&mut cancelled, 55);
     assert_eq!(
         cancelled
             .app
@@ -1846,39 +1846,24 @@ fn learning_answer_keeps_its_chosen_control() {
             .as_ref()
             .unwrap()
             .1,
-        input::midi::Key::Note(63)
+        input::midi::Key::Note(55)
     );
-    cell(&mut cancelled, 62);
+    cell(&mut cancelled, 52);
     assert!(cancelled.app.learning.is_none());
     let bindings = learn::group_bindings(&cancelled.app.learned, "SMC-PAD", input::Group::Pads);
     assert!(
         bindings
-            .get(&input::midi::Key::Note(63))
+            .get(&input::midi::Key::Note(55))
             .is_none_or(|b| b.primary() != "pad.copy")
     );
 
     cancelled.app.learning = Some(learn::Learning::new(action_info("pad.copy")));
     cancelled.app.publish_midi(&cancelled.shared);
-    cell(&mut cancelled, 62);
-    assert_eq!(
-        cancelled
-            .app
-            .learning
-            .as_ref()
-            .unwrap()
-            .pending
-            .as_ref()
-            .unwrap()
-            .1,
-        input::midi::Key::Note(62)
-    );
-    cell(&mut cancelled, 63);
+    // Device pad 1 with no choice pending leaves learning (134).
+    cell(&mut cancelled, 52);
     assert!(cancelled.app.learning.is_none());
     let bindings = learn::group_bindings(&cancelled.app.learned, "SMC-PAD", input::Group::Pads);
-    assert_eq!(
-        bindings.get(&input::midi::Key::Note(62)).unwrap().primary(),
-        "pad.copy"
-    );
+    assert!(!bindings.contains_key(&input::midi::Key::Note(52)));
 }
 
 fn panel_note(slot: u8) -> u8 {
@@ -2106,7 +2091,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             "{view:?}"
         );
         assert!(!controller.app.quit_requested, "{view:?}");
-        cell(&mut controller, 63);
+        cell(&mut controller, 55);
         assert_eq!(
             controller.app.quit_requested, keyboard.app.quit_requested,
             "{view:?}"
@@ -2145,7 +2130,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     }
     keyboard.tap(KeyCode::Enter, M::NONE);
     cell(&mut controller, 64);
-    cell(&mut controller, 63);
+    cell(&mut controller, panel_note(8)); // A1 clear opens its question.
     cell(&mut controller, 67);
     assert_eq!(
         controller.app.ask.as_ref().map(Ask::lines),
@@ -3415,9 +3400,11 @@ fn first_hit_reveal_works_without_the_hold_shortcut() {
     }
 }
 
-/// Scenario "A question takes its two pads without a hold" (command-panel).
+/// Scenario "A question takes pads 1 and 4 without a hold" (command-panel).
+/// Scenario "A question takes its two pads without a hold" (command-panel): change 134
+/// replaces it until the archive.
 #[test]
-fn a_question_takes_its_two_pads_without_a_hold() {
+fn a_question_takes_pads_1_and_4_without_a_hold() {
     let mut drive = hold_drive();
     drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "top left");
     drive.app.session_dirty = Some(Instant::now());
@@ -3430,8 +3417,8 @@ fn a_question_takes_its_two_pads_without_a_hold() {
     cell(&mut drive, 48);
     assert!(drive.app.pads.hit_at[0].is_none());
     assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
-    // P7 from the first layer cancels without a hold.
-    cell(&mut drive, 46);
+    // Device pad 1 from the first layer cancels without a hold.
+    cell(&mut drive, 36);
     assert!(drive.app.ask.is_none());
     assert!(!drive.app.quit_requested);
 
@@ -3439,9 +3426,81 @@ fn a_question_takes_its_two_pads_without_a_hold() {
     list_button(&mut drive, false);
     cell(&mut drive, panel_note(12));
     hold(&mut drive, false);
-    // P8 from the second layer confirms.
-    cell(&mut drive, 63);
+    // Device pad 4 from the second layer confirms.
+    cell(&mut drive, 55);
     assert!(drive.app.quit_requested);
+}
+
+/// Scenario "A panel action followed by pad 4 confirms only the question" (command-panel).
+#[test]
+fn a_panel_action_followed_by_pad_4_confirms_only_the_question() {
+    let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let existing = Arc::new(Sample::mono(vec![0.4; 4_800]));
+    let mut drive = smc_drive();
+    drive.load_pad(0, source.clone(), "source");
+    drive.load_pad(2, existing, "existing");
+    cell(&mut drive, panel_note(1));
+    cell(&mut drive, panel_note(2)); // Copy pad 1.
+    // The occupied target and device pad 4 reach the program before one redraw.
+    drive.bytes(SMC, &[0x99, 50, 100]);
+    drive.bytes(SMC, &[0x89, 50, 0]);
+    drive.bytes(SMC, &[0x99, 55, 100]);
+    drive.bytes(SMC, &[0x89, 55, 0]);
+    drive.frame();
+    assert!(drive.app.ask.is_none());
+    assert!(Arc::ptr_eq(
+        drive.app.pads.sound[2].as_ref().unwrap(),
+        &source
+    ));
+    let changed = (0..16)
+        .filter(|&pad| pad != 0 && drive.app.pads.sound[pad].is_some())
+        .count();
+    assert_eq!(changed, 1, "only the asked target changes");
+}
+
+/// Scenario "A held pad 4 release does not answer" (command-panel).
+#[test]
+fn a_held_pad_4_release_does_not_answer() {
+    let mut drive = hold_drive();
+    // Device pad 4 is note 39 on the first layer, the bottom-right pad 15.
+    drive.load_pad(15, Arc::new(Sample::mono(vec![0.2; 48_000])), "gate");
+    drive.app.pads.gate[15] = true;
+    drive.app.session_dirty = Some(Instant::now());
+    drive.app.publish_midi(&drive.shared);
+    drive.bytes(SMC, &[0x99, 39, 100]);
+    drive.frame();
+    assert!(drive.app.pads.held[15]);
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    cell(&mut drive, panel_note(12));
+    hold(&mut drive, false);
+    assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+    drive.bytes(SMC, &[0x89, 39, 0]);
+    drive.frame();
+    // The offline drive sends no engine commands; the held state shows the release.
+    assert!(!drive.app.pads.held[15], "the Gate ends once");
+    assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+    assert!(!drive.app.quit_requested);
+}
+
+/// Scenario "The panel behind a question shows no and yes" (command-panel).
+#[test]
+fn the_panel_behind_a_question_shows_no_and_yes() {
+    let mut drive = smc_drive();
+    drive.app.session_dirty = Some(Instant::now());
+    cell(&mut drive, panel_note(1));
+    list_button(&mut drive, false);
+    cell(&mut drive, panel_note(12)); // Exit asks.
+    assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+    let panel = drive.app.panel_snapshot().unwrap();
+    for (index, label) in panel.labels.iter().enumerate() {
+        let want = match index {
+            12 => Some("no"),
+            15 => Some("yes"),
+            _ => None,
+        };
+        assert_eq!(label.as_deref(), want, "cell {}", index + 1);
+    }
 }
 
 /// Scenario "A cell hit lights the cell" (screen-layout).
@@ -3589,14 +3648,14 @@ fn canceled_or_refused_layout_updates_are_safe_to_retry() {
     let before = drive.app.learned.clone();
     open_layout_review(&mut drive);
     select_layout_master(&mut drive);
-    cell(&mut drive, 62);
+    cell(&mut drive, 52);
     assert!(drive.app.ask.is_none());
     assert_eq!(drive.app.learned, before);
     assert_eq!(config::load_from(&path).config.midi, before);
 
     drive.app.user_path = Some(files.0.join("A"));
     select_layout_master(&mut drive);
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert!(drive.app.ask.is_none());
     assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
     assert_eq!(drive.app.learned, before);
@@ -3611,7 +3670,7 @@ fn canceled_or_refused_layout_updates_are_safe_to_retry() {
     drive.app.user_path = Some(path.clone());
     drive.tap(KeyCode::F(12), M::NONE);
     select_layout_row(&mut drive, |row| matches!(row, MidiListRow::SmcLayoutApply));
-    cell(&mut drive, 63);
+    cell(&mut drive, 55);
     assert!(drive.app.ask.is_none());
     assert_eq!(drive.app.learned["X-Session Pro"], before["X-Session Pro"]);
     assert_eq!(

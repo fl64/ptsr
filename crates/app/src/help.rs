@@ -324,10 +324,6 @@ impl App {
             return;
         }
         match cell {
-            7 | 8 => {
-                let modifiers = if cell == 7 { M::SHIFT } else { M::NONE };
-                self.help_key(&KeyEvent::new(K::Tab, modifiers));
-            }
             9 | 10 if self.help_overlay.page == Page::Help => self.help_page(cell == 10),
             9 | 10 => {
                 let code = match (self.help_overlay.page, cell) {
@@ -339,6 +335,15 @@ impl App {
                 self.help_key(&KeyEvent::new(code, M::NONE));
             }
             _ => {}
+        }
+    }
+
+    /// LEFT and RIGHT select the Help tabs (134).
+    pub(super) fn help_tab(&mut self, next: bool) {
+        use event::{KeyCode as K, KeyEvent, KeyModifiers as M};
+        if self.help_navigation_allowed() {
+            let modifiers = if next { M::NONE } else { M::SHIFT };
+            self.help_key(&KeyEvent::new(K::Tab, modifiers));
         }
     }
 

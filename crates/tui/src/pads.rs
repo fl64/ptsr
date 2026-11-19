@@ -73,8 +73,7 @@ pub fn command_panel_in(
         for (column, area) in cells.iter().enumerate() {
             let index = row * 4 + column;
             let label = panel.labels[index].as_deref().unwrap_or("");
-            let active =
-                panel.labels[index].is_some() && !matches!(label, "mixer" | "redo" | "panic");
+            let active = panel.labels[index].is_some() && !matches!(label, "mixer" | "redo");
             // Three zones: screens, the actions of the current view, the fixed bottom row.
             let zone = if row == 3 {
                 TEXT

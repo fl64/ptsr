@@ -1578,12 +1578,12 @@ impl App {
                 let mut answered_learning = false;
                 if port.contains("SMC-PAD-Master")
                     && let input::midi::Msg::NoteOn { note, ch, .. } = msg
-                    && (matches!(note, 62 | 63) || (ch == 10 && matches!(note, 46 | 47)))
+                    && (matches!(note, 52 | 55) || (ch == 10 && matches!(note, 36 | 39)))
                 {
                     // The derived pad event keeps its original MIDI key across PAD BANK routing.
                     let key = raw_key.unwrap_or_else(|| msg.key());
-                    let second_bank = matches!(note, 62 | 63);
-                    let cancel = matches!(note, 46 | 62);
+                    let second_bank = matches!(note, 52 | 55);
+                    let cancel = matches!(note, 36 | 52);
                     self.question_pads.remove(&(port.clone(), key));
                     if self.ask.is_some()
                         && (second_bank
@@ -1626,6 +1626,14 @@ impl App {
                         } else {
                             self.learned_save();
                         }
+                        answered_learning = true;
+                    } else if key == input::midi::Key::Note(52)
+                        && (self.screen_learn.is_some() || self.learning.is_some())
+                    {
+                        // Device pad 1 is Back: with no choice pending it leaves learning (134).
+                        self.question_pads.insert((port.clone(), key));
+                        self.screen_learn = None;
+                        self.learning = None;
                         answered_learning = true;
                     }
                 }
@@ -1692,17 +1700,10 @@ impl App {
                 }
                 if self.ask.is_some() {
                     match cell {
-                        7 => {
+                        13 => {
                             self.apply(Action::Back);
                         }
-                        13 if matches!(
-                            self.ask,
-                            Some(Ask::Exit { .. } | Ask::ExitRecovery { .. })
-                        ) =>
-                        {
-                            self.apply(Action::Back);
-                        }
-                        8 => {
+                        16 => {
                             self.apply(Action::Confirm);
                         }
                         _ => {}
@@ -1711,8 +1712,8 @@ impl App {
                 }
                 if self.project_picker.is_some() || self.path_picker.is_some() {
                     match cell {
-                        7 | 13 => self.panel_back(),
-                        8 => {
+                        13 => self.panel_back(),
+                        16 => {
                             self.apply(Action::Confirm);
                         }
                         _ => {}
@@ -1775,10 +1776,7 @@ impl App {
                         }
                         super::panel::Choice::Exit => {
                             self.ask = Some(Ask::Exit {
-                                lines: vec![
-                                    "Exit ptsr?".into(),
-                                    "P12 exit · P11 or Back stay".into(),
-                                ],
+                                lines: vec!["Exit ptsr?".into(), "P4 exit · P1 stay".into()],
                             });
                         }
                         super::panel::Choice::Back => {
@@ -2437,6 +2435,10 @@ impl App {
             let view = self.panel_view();
             self.panel.sync_view(view);
             self.panel.move_view(if next { 1 } else { -1 });
+            return;
+        }
+        if self.help_open && self.ask.is_none() {
+            self.help_tab(next);
             return;
         }
         if self.transport_input_blocked() || self.help_open || self.pattern_panel.is_some() {

@@ -7988,7 +7988,7 @@ mod tests {
         assert!(text.contains("PICK THE PROJECTS ROOT"), "{text}");
         assert!(text.contains("beats"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter/P12 pick · Esc/P11 cancel"), "{text}");
+        assert!(text.contains("Enter/P4 pick · Esc/P1 cancel"), "{text}");
         assert!(!text.contains("Projects root"), "{text}");
     }
 

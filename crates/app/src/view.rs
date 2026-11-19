@@ -431,12 +431,7 @@ impl App {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
                 if port.contains("SMC-PAD-Master") {
-                    let cancel = if matches!(ask, Ask::Exit { .. }) {
-                        "P11/Back"
-                    } else {
-                        "P11"
-                    };
-                    answers.push(format!("SMC {cancel}: {cancel_verb} · P12: {verb}"));
+                    answers.push(format!("SMC P1: {cancel_verb} · P4: {verb}"));
                     continue;
                 }
                 // Match the worker's port selection. Assignment labels can search another layer.

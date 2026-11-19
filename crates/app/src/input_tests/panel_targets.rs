@@ -48,14 +48,14 @@ fn panel_target_pads_place_items_without_a_layer_switch() {
     press(&mut drive, 2);
     check_silent(&press(&mut drive, 3));
     assert!(matches!(drive.app.ask, Some(Ask::CopyPad { .. })));
-    press(&mut drive, 7);
+    press(&mut drive, 13);
     assert!(Arc::ptr_eq(
         drive.app.pads.sound[2].as_ref().unwrap(),
         &existing
     ));
     target(&drive, "COPY");
     press(&mut drive, 3);
-    press(&mut drive, 8);
+    press(&mut drive, 16);
     assert!(Arc::ptr_eq(
         drive.app.pads.sound[2].as_ref().unwrap(),
         &source

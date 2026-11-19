@@ -300,7 +300,6 @@ impl State {
             (_, 13) => Some("back"),
             (_, 14) => Some("undo"),
             (_, 15) => Some("redo"),
-            (_, 16) => Some("panic"),
             (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0),
             _ => self.config.cell(view, cell).map(|cell| cell.label.as_str()),
         }
@@ -425,6 +424,20 @@ impl App {
 
     pub(super) fn panel_snapshot(&self) -> Option<tui::CommandPanel> {
         (self.panel.visible() && self.panel_input_available()).then(|| {
+            // Behind a question only its two answers show (134).
+            if self.ask.is_some() {
+                return tui::CommandPanel {
+                    labels: std::array::from_fn(|index| match index {
+                        12 => Some("no".into()),
+                        15 => Some("yes".into()),
+                        _ => None,
+                    }),
+                    page: self.panel.page(),
+                    view: "QUESTION",
+                    target: true,
+                    flash: self.panel_flash(),
+                };
+            }
             let target = self.panel_target();
             if let Some(target) = target
                 && self.ask.is_none()
@@ -476,9 +489,9 @@ mod tests {
             "cut -", "edit", "end", "end -", "enter", "erase", "exit", "files", "fx", "gate",
             "grid", "grid +", "grid -", "help", "hits", "hits -", "knobs", "learn", "level",
             "listen", "load", "loop", "mark", "marks", "mixer", "mode", "open", "order", "output",
-            "pads", "panic", "parent", "parts", "record", "redo", "row +", "row -", "rows", "save",
-            "setup", "snap", "star", "start", "step", "tab", "take", "tap", "undo", "whole", "pad",
-            "used", "cancel", "apply", "menu", "target",
+            "pads", "no", "yes", "parent", "parts", "record", "redo", "row +", "row -", "rows",
+            "save", "setup", "snap", "star", "start", "step", "tab", "take", "tap", "undo",
+            "whole", "pad", "used", "cancel", "apply", "menu", "target",
         ];
         let check = |label: &str| {
             assert!(
@@ -640,9 +653,10 @@ mod tests {
         assert_eq!(panel.label(View::Pads, 1), Some("pads"));
         for view in [View::Pads, View::Files] {
             panel.sync_view(view);
-            for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo"), (16, "panic")] {
+            for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo")] {
                 assert_eq!(panel.label(view, cell), Some(label));
             }
+            assert_eq!(panel.label(view, 16), None, "no cell shows Panic");
             assert_eq!(panel.choice(view, 15), Choice::Dim);
             assert_eq!(panel.choice(view, 16), Choice::Dim);
         }

@@ -505,7 +505,7 @@ fn controller_page_keeps_the_f1_frame() {
                 x("HELP"),
                 x("MESSAGES"),
                 x("CONTROLLER"),
-                rows[footer].find("Tab/Shift+Tab").unwrap(),
+                rows[footer].find("Tab/LEFT/RIGHT").unwrap(),
                 rows[footer].find("F1/Esc").unwrap(),
             ]);
             drive.tap(KeyCode::Tab, M::NONE);
