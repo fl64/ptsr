@@ -594,7 +594,7 @@ fn help_shows_pad_1_bottom_left() {
     assert!(row_of("P13") < row_of("P1"), "{text}");
     assert_eq!(row_of("P1"), row_of("P4"), "{text}");
     assert!(
-        text.contains("PAD BANK hold: actions of this screen"),
+        text.contains("PAD BANK: screen actions, LEFT: screens."),
         "{text}"
     );
 }

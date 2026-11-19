@@ -681,10 +681,11 @@ impl App {
             if profile.name != "SMC-PAD" || action(name) != Some("panel.cell") {
                 return None;
             }
+            // The control row's pad 4 is dim when nothing waits for a yes (134).
             let label = self
                 .panel
                 .label(self.panel_view(), cell)
-                .unwrap_or("unavailable");
+                .unwrap_or(if cell == 16 { "-" } else { "unavailable" });
             Some((
                 label,
                 cell >= 15 || matches!(label, "unavailable" | "mixer"),
@@ -770,14 +771,17 @@ impl App {
                                 }
                                 let (open, close) =
                                     brackets(profile.kind_of(name).unwrap_or(ControlKind::Button));
-                                let (short, free) =
-                                    match panel_role(name).or_else(|| value_role(name)) {
-                                        Some((role, free)) => (role, free),
-                                        None => (
-                                            action(name).map_or("-", input::short_label),
-                                            action(name).is_none(),
-                                        ),
-                                    };
+                                let (short, free) = match panel_role(name)
+                                    .or_else(|| value_role(name))
+                                {
+                                    Some((role, free)) => (role.to_string(), free),
+                                    None => (
+                                        pad_label(action(name)).unwrap_or_else(|| {
+                                            action(name).map_or("-", input::short_label).to_string()
+                                        }),
+                                        action(name).is_none(),
+                                    ),
+                                };
                                 Some(tui::ControlCell {
                                     name: smc_printed(&profile.name, name),
                                     label: format!("{open}{short}{close}"),
@@ -818,12 +822,21 @@ impl App {
             body,
             detail,
             note: (profile.name == "SMC-PAD").then_some(
-                "Device Note Repeat uses its own clock. Use ptsr Note Repeat when available. PAD BANK hold: actions of this screen, LEFT: screens.",
+                "Device Note Repeat uses its own clock. Use ptsr Note Repeat when available. PAD BANK: screen actions, LEFT: screens.",
             ),
             navigation,
             caption,
         }
     }
+}
+
+/// `pad.3` reads by the pad name on the grid: `pad3`, or the device number with an
+/// SMC-PAD connection (134).
+fn pad_label(action: Option<&str>) -> Option<String> {
+    let index: usize = action?.strip_prefix("pad.")?.parse().ok()?;
+    (1..=16)
+        .contains(&index)
+        .then(|| format!("pad{}", tui::pads::pad_tag(index - 1)))
 }
 
 /// The SMC-PAD pads as printed (134): `p1`, the top-left pad of the profile, is P13;

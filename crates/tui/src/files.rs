@@ -44,7 +44,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     // the title carries what the screen says: the file in hand or the error (31)
     let note = match (f.in_hand, f.error) {
         (Some(name), _) if pads::smc_words() => {
-            format!("   In hand: {name}. Hit a pad to put it there. PAD BANK + 1 puts it back.")
+            format!("   In hand: {name}. Hit a pad. PAD BANK + 1 puts it back.")
                 .fg(MAGENTA)
         }
         (Some(name), _) => format!(

@@ -1635,7 +1635,8 @@ fn main() -> std::io::Result<()> {
                     let mut view = pads_view(
                         &mut app.pads,
                         pickup,
-                        app.pad_in_hand,
+                        app.pad_in_hand
+                            .or(app.copy_in_hand.as_ref().map(|copy| copy.0)),
                         out,
                         splash,
                         app.rate,
