@@ -13,6 +13,8 @@ context: |
   Each change to input or to the screen checks each step of its scenarios against this goal and counts the presses.
   If a requirement contradicts this goal, stop and give the owner two or three plain options in Russian.
   See the section "Controller usability goal" in AGENTS.md.
+  A change can add or change a scenario, a mode or an SMC-PAD action.
+  Then its tasks.md lists the mode walker test, the hint tests, the 80x26 check, the label glossary and the route table entry.
 
   The current baseline includes sample loading, chopping, pad play and shaping, projects, recording, MIDI learn and shared FX.
   The owner accepted change 82, which adds F4 FX and safe X-Session controls. Its archive is complete.

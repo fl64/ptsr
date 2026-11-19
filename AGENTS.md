@@ -115,6 +115,12 @@ Use three levels of checks. Select the level by the scope of the change.
 - Before the owner check of a change, estimate its scope. Tell the owner which level you recommend, why, and how long it takes. Do not start a full walk without the owner's agreement.
 - A change of sound, documents or internal code only needs level 1.
 - When a walk finds a problem, add an automatic test for it if possible, so that level 1 finds it next time.
+- When you add or change a user scenario, a mode or an SMC-PAD action, include these checks in the same change:
+  1. Add each new mode to the mode walker test in `crates/app/src/input_tests/controller_reach.rs`. The test enters every mode in several starting states, opens Help and a question over it, and checks the way back with device pad 1.
+  2. Test the hints after an SMC-PAD input and after a key. Test the screen at 80×26 and at 120×40.
+  3. Give a new panel label one meaning. Add it to the label glossary test.
+  4. Count the presses of the new route. Add the route to the route table for keyboard and SMC-PAD.
+  5. Tell the owner the scope and the recommended walk level.
 - Give the owner manual checks as short arrow chains. Write `[P1]` for a pad or a button, `` `CHOP` `` for a screen or a mode and «text» for text on the screen.
 
 ## Real time — you must not break it
