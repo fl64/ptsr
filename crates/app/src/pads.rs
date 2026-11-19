@@ -2953,9 +2953,9 @@ mod tests {
                 semitones: 8
             }
         )));
-        for pad in 16..32 {
+        for (pad, &pitch) in p.pitch.iter().enumerate().take(32).skip(16) {
             let want = if pad == 19 { 8 } else { 3 };
-            assert_eq!(p.pitch[pad], want, "pad {pad} follows");
+            assert_eq!(pitch, want, "pad {pad} follows");
         }
         assert_eq!(p.pitch[19], 8, "the differences stay");
         assert_eq!(p.pitch[0], 0, "other banks do not move");
@@ -3025,9 +3025,9 @@ mod tests {
                 ..
             }
         )));
-        for pad in 16..32 {
+        for (pad, &release) in p.release_ms.iter().enumerate().take(32).skip(16) {
             let want = if pad == 19 { 105 } else { 5 };
-            assert_eq!(p.release_ms[pad], want, "pad {pad} follows");
+            assert_eq!(release, want, "pad {pad} follows");
         }
         assert_eq!(p.release_ms[0], 0, "other banks do not move");
         // the value of the selected pad pops up
@@ -3396,13 +3396,9 @@ mod tests {
         }
         let cmds = p.apply(Action::PadParam(-3));
         assert_eq!(cmds.len(), PADS, "every pad gets its own gain");
-        for abs in 0..PADS {
+        for (abs, &db) in p.volume_db.iter().enumerate().take(PADS) {
             // pad 63 sat at +5: the differences stay
-            assert_eq!(
-                p.volume_db[abs],
-                if abs == 63 { 2 } else { -3 },
-                "pad {abs}"
-            );
+            assert_eq!(db, if abs == 63 { 2 } else { -3 }, "pad {abs}");
         }
     }
 
@@ -3437,8 +3433,8 @@ mod tests {
         assert!(p.apply(Action::PadMarkBank).is_empty());
         let cmds = p.apply(Action::PadModeNext);
         assert_eq!(cmds.len(), PADS_PER_BANK);
-        for i in 0..PADS_PER_BANK {
-            assert!(p.gate[i], "pad {i}");
+        for (i, &gate) in p.gate.iter().enumerate().take(PADS_PER_BANK) {
+            assert!(gate, "pad {i}");
         }
         assert!(!p.gate[16], "the bank next door is untouched");
         assert!(cmds.iter().all(|c| matches!(

@@ -11200,8 +11200,8 @@ fn pitch_gate_keyboard_toggle_works_in_both_layouts() {
                     command,
                     Command::SetPadPitchGate { enabled: false, .. }
                 )));
-                for pad in 0..PADS {
-                    assert_eq!(drive.app.pads.pitch_gate[pad], ![0, 17, 127].contains(&pad));
+                for (pad, &gate) in drive.app.pads.pitch_gate.iter().enumerate().take(PADS) {
+                    assert_eq!(gate, ![0, 17, 127].contains(&pad));
                 }
                 assert_eq!(drive.app.history.len(), 1);
                 assert_eq!(shown_value(&drive).parameter, "Pitch Gate");
