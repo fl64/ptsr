@@ -1727,7 +1727,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("Save failed · Live set");
             require("Permission denied (os error 13)");
             require("Enter: Retry Save · Esc: Back");
-            require("P7: Back · P8: Retry Save");
+            require("P11: Back · P12: Retry Save");
         }
         Mode::Safety => {
             for label in [

@@ -1190,6 +1190,7 @@ impl App {
             .map_or(Origin::System, |port| Origin::Device(port.into()));
         let owner_input = ev.owner_input();
         let released = ev.release_signal();
+        let raw_key = ev.control_key();
         let blocked_exit_retry = matches!(
             self.ask,
             Some(Ask::ExitRecovery { offered_at, .. })
@@ -1198,7 +1199,11 @@ impl App {
             midi::Event::Action(Action::Confirm) | midi::Event::PanelCell { cell: 8, .. } => true,
             midi::Event::Message {
                 port,
-                msg: input::midi::Msg::NoteOn { note: 63, .. },
+                msg:
+                    input::midi::Msg::NoteOn { note: 63, .. }
+                    | input::midi::Msg::NoteOn {
+                        ch: 10, note: 47, ..
+                    },
                 ..
             } => port.contains("SMC-PAD-Master"),
             _ => false,
@@ -1217,7 +1222,7 @@ impl App {
             && matches!(ev.event, midi::Event::Action(Action::SettingsValue(_)));
         let suppressed = ev
             .origin()
-            .zip(ev.control_key())
+            .zip(raw_key)
             .is_some_and(|(port, key)| self.question_pads.contains(&(port.into(), key)))
             && matches!(
                 ev.event,
@@ -1238,7 +1243,7 @@ impl App {
             }
             self.midi_preview_blocked = !preview_ready;
             self.transport.tap_input_at = received_at;
-            self.midi_event_with_release(ev, released);
+            self.midi_event_with_release(ev, released, raw_key);
             self.transport.tap_input_at = None;
             self.midi_preview_blocked = false;
             self.notice_origin = old;
@@ -1389,13 +1394,14 @@ impl App {
     }
 
     pub(super) fn midi_event(&mut self, ev: midi::Event) {
-        self.midi_event_with_release(ev, None);
+        self.midi_event_with_release(ev, None, None);
     }
 
     fn midi_event_with_release(
         &mut self,
         ev: midi::Event,
         released: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+        raw_key: Option<input::midi::Key>,
     ) {
         let value_before = self.value_before_midi(&ev);
         let knob = matches!(&ev, midi::Event::Step { port, .. } if port.contains("SMC-PAD-Master"));
@@ -1415,7 +1421,7 @@ impl App {
             || (matches!(self.screen, Screen::Pads | Screen::Fx)
                 && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. })))
         .then(|| self.before());
-        self.midi_event_inner(ev, released);
+        self.midi_event_inner(ev, released, raw_key);
         self.sync_panel_target();
         if let Some(b) = before {
             let what = match self.lit_now() {
@@ -1514,6 +1520,7 @@ impl App {
         &mut self,
         ev: midi::Event,
         released: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+        raw_key: Option<input::midi::Key>,
     ) {
         let now = Instant::now();
         // the learn mode takes the controls to bind them; nothing acts (47)
@@ -1570,24 +1577,35 @@ impl App {
             } => {
                 let mut answered_learning = false;
                 if port.contains("SMC-PAD-Master")
-                    && let input::midi::Msg::NoteOn { note: 62 | 63, .. } = msg
+                    && let input::midi::Msg::NoteOn { note, ch, .. } = msg
+                    && (matches!(note, 62 | 63) || (ch == 10 && matches!(note, 46 | 47)))
                 {
-                    let key = msg.key();
+                    // The derived pad event keeps its original MIDI key across PAD BANK routing.
+                    let key = raw_key.unwrap_or_else(|| msg.key());
+                    let second_bank = matches!(note, 62 | 63);
+                    let cancel = matches!(note, 46 | 62);
                     self.question_pads.remove(&(port.clone(), key));
-                    if self.ask.is_some() {
+                    if self.ask.is_some()
+                        && (second_bank
+                            || matches!(
+                                self.ask,
+                                Some(Ask::Exit { .. } | Ask::ExitRecovery { .. })
+                            ))
+                    {
                         self.question_pads.insert((port.clone(), key));
-                        self.apply(if key == input::midi::Key::Note(62) {
+                        self.apply(if cancel {
                             Action::Back
                         } else {
                             Action::Confirm
                         });
-                    } else if self
-                        .screen_learn
-                        .as_ref()
-                        .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+                    } else if second_bank
+                        && self
+                            .screen_learn
+                            .as_ref()
+                            .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
                     {
                         self.question_pads.insert((port.clone(), key));
-                        if key == input::midi::Key::Note(62) {
+                        if cancel {
                             if let Some(learn) = self.screen_learn.as_mut() {
                                 learn.pending = None;
                                 learn.clearing = false;
@@ -1596,13 +1614,14 @@ impl App {
                             self.learn_confirm();
                         }
                         answered_learning = true;
-                    } else if self
-                        .learning
-                        .as_ref()
-                        .is_some_and(|learn| learn.pending.is_some())
+                    } else if second_bank
+                        && self
+                            .learning
+                            .as_ref()
+                            .is_some_and(|learn| learn.pending.is_some())
                     {
                         self.question_pads.insert((port.clone(), key));
-                        if key == input::midi::Key::Note(62) {
+                        if cancel {
                             self.learning = None;
                         } else {
                             self.learned_save();

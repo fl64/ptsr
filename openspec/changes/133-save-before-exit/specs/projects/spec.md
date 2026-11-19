@@ -80,6 +80,17 @@ Existing question confirm and cancel actions SHALL select `Retry Save` and `Back
 - **THEN** the question closes and the owner returns to the same screen
 - **AND** the edits and save status remain
 
+### Requirement: The exit questions use physical SMC-PAD numbers
+
+Both questions SHALL show the pad numbers printed on the device.
+P11 SHALL cancel and P12 SHALL confirm from either pad bank without a PAD BANK hold.
+
+#### Scenario: The printed SMC-PAD numbers answer both exit questions
+
+- **WHEN** Exit or its recovery question is visible and the owner presses P11 or P12 in either SMC-PAD bank
+- **THEN** the question shows the printed pad numbers
+- **AND** P11 cancels or P12 confirms once, even with the PAD BANK shortcut off or unavailable
+
 ### Requirement: Retry Save uses one manual save
 
 `Retry Save` SHALL use the existing manual save path for the current session.

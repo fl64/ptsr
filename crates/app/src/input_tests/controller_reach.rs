@@ -810,7 +810,7 @@ fn request_exit_with_save_failure(drive: &mut Drive, controller: bool) {
             question
                 .answers
                 .iter()
-                .any(|line| line.contains("P7/Back: keep · P8: exit"))
+                .any(|line| line.contains("P11/Back: keep · P12: exit"))
         );
         hold(drive, false);
         cell(drive, 63);
@@ -857,7 +857,7 @@ fn exit_recovery_uses_confirm_and_back_from_both_inputs() {
             question
                 .answers
                 .iter()
-                .any(|line| line.contains("P7: Back") && line.contains("P8: Retry Save"))
+                .any(|line| line.contains("P11: Back") && line.contains("P12: Retry Save"))
         );
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert!(drive.app.notices.history().is_empty());
@@ -932,6 +932,76 @@ fn exit_recovery_uses_confirm_and_back_from_both_inputs() {
         );
         let saved = session::load_existing(&path).unwrap();
         assert_eq!(saved.pads["0"].pitch, 5);
+    }
+}
+
+/// Scenario "The printed SMC-PAD numbers answer both exit questions".
+#[test]
+fn exit_questions_use_the_printed_pads_in_either_bank() {
+    for shortcut_on in [false, true] {
+        for offset in [0, 16] {
+            let files = TransitionFiles::new();
+            let mut drive = project_drive(&files);
+            drive.app.session_read_error = None;
+            drive.midi().set_pad_bank_shortcut(shortcut_on);
+            if shortcut_on {
+                drive.midi().recorded_smc_failure();
+            }
+            drive.app.save_session().unwrap();
+            let path = drive.app.session_file();
+            let before = std::fs::read(&path).unwrap();
+            let blocker = path.with_extension("toml.tmp");
+            std::fs::write(&blocker, b"occupied").unwrap();
+            drive.app.pads.pitch[0] = 5;
+            drive.app.dirty();
+            let exit = |drive: &mut Drive| {
+                drive.app.ask = Some(Ask::Exit {
+                    lines: vec!["Exit ptsr?".into()],
+                });
+                drive.frame();
+                drive.app.question_view(&drive.keymap).unwrap()
+            };
+            let question = exit(&mut drive);
+            for note in [42, 43] {
+                cell(&mut drive, note + offset);
+                assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+            }
+            cell(&mut drive, 46 + offset);
+            assert!(drive.app.ask.is_none(), "P11 in bank offset {offset}");
+            assert!(!drive.app.quit_requested);
+            assert!(
+                question
+                    .answers
+                    .iter()
+                    .any(|line| line.contains("P11/Back: keep · P12: exit"))
+            );
+
+            exit(&mut drive);
+            cell(&mut drive, 47 + offset);
+            assert!(drive.app.quit_requested, "P12 in bank offset {offset}");
+            assert!(!drive.app.try_finish_exit());
+            drive.app.publish_midi(&drive.shared);
+            let question = drive.app.question_view(&drive.keymap).unwrap();
+            assert!(
+                question
+                    .answers
+                    .iter()
+                    .any(|line| line.contains("P11: Back · P12: Retry Save"))
+            );
+            cell(&mut drive, 46 + offset);
+            assert!(drive.app.ask.is_none());
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+
+            exit(&mut drive);
+            cell(&mut drive, 47 + offset);
+            assert!(!drive.app.try_finish_exit());
+            drive.app.publish_midi(&drive.shared);
+            std::fs::remove_file(&blocker).unwrap();
+            cell(&mut drive, 47 + offset);
+            assert!(drive.app.ask.is_none());
+            assert!(!drive.app.quit_requested);
+            assert_eq!(session::load_existing(&path).unwrap().pads["0"].pitch, 5);
+        }
     }
 }
 
