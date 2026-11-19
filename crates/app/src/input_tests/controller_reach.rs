@@ -1480,7 +1480,7 @@ fn a1_knobs_cell_matches_the_keyboard() {
     assert_eq!(controller.app.panel_view(), panel::View::Pattern);
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[3].as_deref(),
-        Some("knobs")
+        Some("params")
     );
     cell(&mut controller, panel_note(4));
     assert_eq!(controller.app.pattern_panel, keyboard.app.pattern_panel);
@@ -4338,7 +4338,7 @@ fn a_screen_hit_opens_that_screen_with_its_actions() {
     assert_eq!(drive.app.screen, Screen::Files);
     let panel = drive.app.panel_snapshot().unwrap();
     assert_eq!((panel.page, panel.view), (1, "FILES"));
-    assert_eq!(panel.labels[0].as_deref(), Some("take"));
+    assert_eq!(panel.labels[0].as_deref(), Some("to pad"));
     // A hit on the current screen also shows its actions.
     list_button(&mut drive, false);
     cell(&mut drive, panel_note(2));

@@ -109,6 +109,21 @@ The FX screen and the project list follow the same rule (`knob 1`, not `E1`).
 A panel action that cannot act gives a notice with the reason. Example: Learn on
 Settings. A placement result names the pads, for example `slices 1–3 → pads 5, 6, 9`.
 
+### D10. Labels with one meaning, 2026-11-19
+
+The owner renamed only the labels that are unclear or have two meanings. A label can
+have seven cells, so that `rec out` fits.
+
+| Screen | Old | New |
+| --- | --- | --- |
+| Pads | take, clear, marks, gate, output | swap, remove, all, p.gate, rec out |
+| Pad edit | clear, gate | reset, p.gate |
+| Files | take, auto | to pad, listen |
+| Chop | start, end, commit | from, to, fill |
+| Chop edit | level | normal |
+| A1 | knobs, undo | params, undoA1 |
+| Settings | clear | unbind |
+
 ## Route table
 
 Counts are presses with `Hold panel`. A hold counts as one press. Pad hits on targets
@@ -142,10 +157,8 @@ The full table of the 40 stories goes into `docs/CONTROLLER-PATHS.md`.
 
 ## Open questions
 
-1. Recording output stays on Pads cell `output`. Default: the label stays. The mode
-   line tells how to stop. A dedicated entry is a separate change.
-2. A1 has `undo` in the action page and the control row. Default: both stay.
-   The action page cell undoes the last A1 pass. A rename needs the owner.
-3. Labels `take` and `load`, `commit` and `assign`. Default: they stay. The mode line
-   and the result notice tell the effect. A rename needs the owner.
+1. Recording output stays on the Pads cell. The owner renamed it to `rec out` (D10).
+2. A1 has `undo` in the action page and the control row. The owner renamed the A1 cell
+   to `undoA1` (D10).
+3. Labels with two meanings. The owner chose the renames in D10.
 4. Pad numbers without an SMC-PAD. Default: keyboard keys, as now.

@@ -142,10 +142,10 @@ impl Config {
                     config.warnings.push(format!("{where_}: no label"));
                     continue;
                 };
-                if label.is_empty() || Line::raw(label).width() > 6 {
+                if label.is_empty() || Line::raw(label).width() > 7 {
                     config
                         .warnings
-                        .push(format!("{where_}: label exceeds six cells"));
+                        .push(format!("{where_}: label exceeds seven cells"));
                     continue;
                 }
                 let Some(name) = item.get("action").and_then(toml::Value::as_str) else {
@@ -520,19 +520,20 @@ mod tests {
     /// Scenario "Shipped labels fit the panel glossary" (command-panel).
     #[test]
     fn shipped_labels_fit_the_panel_glossary() {
+        // One meaning per word (134): the old `take`, `commit`, `knobs`, `output` are gone.
         let allowed = [
-            "A1", "as pad", "assign", "auto", "back", "chop", "clear", "commit", "copy", "cut",
-            "cut -", "edit", "end", "end -", "enter", "erase", "exit", "files", "fx", "gate",
-            "grid", "grid +", "grid -", "help", "hits", "hits -", "knobs", "learn", "level",
-            "listen", "load", "loop", "mark", "marks", "mixer", "mode", "open", "order", "output",
-            "pads", "no", "yes", "parent", "parts", "record", "redo", "row +", "row -", "rows",
-            "save", "setup", "snap", "star", "start", "step", "tab", "take", "tap", "undo",
-            "whole", "pad", "used", "cancel", "apply", "menu", "target", "close", "up", "down",
-            "save",
+            "A1", "all", "apply", "as pad", "assign", "back", "cancel", "chop", "clear", "close",
+            "copy", "cut", "cut -", "down", "edit", "end -", "enter", "erase", "exit", "files",
+            "fill", "from", "fx", "grid", "grid +", "grid -", "help", "hits", "hits -", "learn",
+            "listen", "load", "loop", "mark", "menu", "mixer", "mode", "no", "normal", "open",
+            "order", "p.gate", "pad", "pads", "params", "parent", "parts", "rec out", "record",
+            "redo", "remove", "reset", "row +", "row -", "rows", "save", "setup", "snap", "star",
+            "step", "swap", "tab", "tap", "target", "to", "to pad", "undo", "undoA1", "unbind",
+            "up", "used", "whole", "yes",
         ];
         let check = |label: &str| {
             assert!(
-                Line::raw(label).width() <= 6 && allowed.contains(&label),
+                Line::raw(label).width() <= 7 && allowed.contains(&label),
                 "{label}"
             );
         };
@@ -573,37 +574,39 @@ mod tests {
             (
                 View::Pads,
                 &[
-                    "edit", "copy", "take", "mark", "mode", "clear", "gate", "marks", "grid",
-                    "output",
+                    "edit", "copy", "swap", "mark", "mode", "remove", "p.gate", "all", "grid",
+                    "rec out",
                 ],
             ),
-            (View::PadEdit, &["mode", "clear", "gate", "copy"]),
+            (View::PadEdit, &["mode", "reset", "p.gate", "copy"]),
             (
                 View::Pattern,
                 &[
-                    "step", "grid -", "grid +", "knobs", "record", "erase", "undo", "clear",
+                    "step", "grid -", "grid +", "params", "record", "erase", "undoA1", "clear",
                     "rows", "tap",
                 ],
             ),
             (
                 View::Files,
-                &["take", "load", "parent", "star", "enter", "auto", "chop"],
+                &[
+                    "to pad", "load", "parent", "star", "enter", "listen", "chop",
+                ],
             ),
             (
                 View::Chop,
                 &[
-                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "start",
-                    "end", "edit", "commit",
+                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "from",
+                    "to", "edit", "fill",
                 ],
             ),
             (
                 View::ChopEdit,
-                &["level", "hits -", "cut -", "end -", "whole"],
+                &["normal", "hits -", "cut -", "end -", "whole"],
             ),
             (View::Fx, &[]),
             (
                 View::Settings,
-                &["tab", "learn", "clear", "", "row -", "row +"],
+                &["tab", "learn", "unbind", "", "row -", "row +"],
             ),
         ];
         for (view, labels) in table {

@@ -388,7 +388,7 @@ fn a_screen_switch_shows_the_new_actions() {
     assert_eq!(drive.app.panel.page(), 1);
     assert_eq!(
         drive.app.panel.label(drive.app.panel_view(), 1),
-        Some("take")
+        Some("to pad")
     );
     assert_eq!(drive.app.screen, Screen::Files);
 }

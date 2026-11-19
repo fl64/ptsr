@@ -1,4 +1,4 @@
-# SMC-PAD actions (127): one page of up to 12 cells per view.
+# SMC-PAD actions (127): one page of up to 12 cells per view. Labels: one meaning each (134).
 # Cells 1-12 count from the top left, in physical rows. A second page is rejected.
 # The screens view and the bottom row (back, undo, redo, panic) are fixed in the program.
 
@@ -8,14 +8,14 @@ page = 1
 cells = [
   { cell = 1, label = "edit", action = "pad.edit" },
   { cell = 2, label = "copy", action = "pad.copy" },
-  { cell = 3, label = "take", action = "pad.take" },
+  { cell = 3, label = "swap", action = "pad.take" },
   { cell = 4, label = "mark", action = "pad.mark_toggle" },
   { cell = 5, label = "mode", action = "pad.mode_next" },
-  { cell = 6, label = "clear", action = "pad.clear" },
-  { cell = 7, label = "gate", action = "pad.pitch_gate_toggle" },
-  { cell = 8, label = "marks", action = "pad.mark_bank" },
+  { cell = 6, label = "remove", action = "pad.clear" },
+  { cell = 7, label = "p.gate", action = "pad.pitch_gate_toggle" },
+  { cell = 8, label = "all", action = "pad.mark_bank" },
   { cell = 9, label = "grid", action = "ui.pads_toggle" },
-  { cell = 10, label = "output", action = "record.output" },
+  { cell = 10, label = "rec out", action = "record.output" },
 ]
 
 [[view]]
@@ -23,8 +23,8 @@ name = "pad_edit"
 page = 1
 cells = [
   { cell = 1, label = "mode", action = "pad.mode_next" },
-  { cell = 2, label = "clear", action = "pad.clear" },
-  { cell = 3, label = "gate", action = "pad.pitch_gate_toggle" },
+  { cell = 2, label = "reset", action = "pad.clear" },
+  { cell = 3, label = "p.gate", action = "pad.pitch_gate_toggle" },
   { cell = 4, label = "copy", action = "pad.copy" },
 ]
 
@@ -35,10 +35,10 @@ cells = [
   { cell = 1, label = "step", action = "pattern.step_edit" },
   { cell = 2, label = "grid -", action = "pattern.view_prev", pair = "grid:lower" },
   { cell = 3, label = "grid +", action = "pattern.view_next", pair = "grid:upper" },
-  { cell = 4, label = "knobs", action = "pattern.controls" },
+  { cell = 4, label = "params", action = "pattern.controls" },
   { cell = 5, label = "record", action = "pattern.record" },
   { cell = 6, label = "erase", action = "pattern.erase" },
-  { cell = 7, label = "undo", action = "pattern.undo" },
+  { cell = 7, label = "undoA1", action = "pattern.undo" },
   { cell = 8, label = "clear", action = "pattern.clear" },
   { cell = 9, label = "rows", action = "pattern.overview_empty_toggle" },
   { cell = 10, label = "tap", action = "transport.tap" },
@@ -48,12 +48,12 @@ cells = [
 name = "files"
 page = 1
 cells = [
-  { cell = 1, label = "take", action = "browser.hold" },
+  { cell = 1, label = "to pad", action = "browser.hold" },
   { cell = 2, label = "load", action = "browser.load" },
   { cell = 3, label = "parent", action = "browser.parent" },
   { cell = 4, label = "star", action = "browser.favorite_toggle" },
   { cell = 5, label = "enter", action = "browser.enter" },
-  { cell = 6, label = "auto", action = "browser.preview_toggle" },
+  { cell = 6, label = "listen", action = "browser.preview_toggle" },
   { cell = 7, label = "chop", action = "screen.chop" },
 ]
 
@@ -69,17 +69,17 @@ cells = [
   { cell = 6, label = "listen", action = "chop.play_mode" },
   { cell = 7, label = "snap", action = "chop.snap_toggle" },
   { cell = 8, label = "as pad", action = "chop.as_pad_toggle" },
-  { cell = 9, label = "start", action = "chop.region_start", pair = "region:lower" },
-  { cell = 10, label = "end", action = "chop.region_end", pair = "region:upper" },
+  { cell = 9, label = "from", action = "chop.region_start", pair = "region:lower" },
+  { cell = 10, label = "to", action = "chop.region_end", pair = "region:upper" },
   { cell = 11, label = "edit", action = "chop.edit" },
-  { cell = 12, label = "commit", action = "chop.commit" },
+  { cell = 12, label = "fill", action = "chop.commit" },
 ]
 
 [[view]]
 name = "chop_edit"
 page = 1
 cells = [
-  { cell = 1, label = "level", action = "chop.normalize" },
+  { cell = 1, label = "normal", action = "chop.normalize" },
   { cell = 2, label = "hits -", action = "chop.hits_back" },
   { cell = 3, label = "cut -", action = "marker.delete" },
   { cell = 4, label = "end -", action = "slice.end_delete" },
@@ -92,7 +92,7 @@ page = 1
 cells = [
   { cell = 1, label = "tab", action = "settings.tab_next" },
   { cell = 2, label = "learn", action = "settings.learn" },
-  { cell = 3, label = "clear", action = "settings.clear" },
+  { cell = 3, label = "unbind", action = "settings.clear" },
   { cell = 5, label = "row -", action = "settings.row_prev", pair = "row:lower" },
   { cell = 6, label = "row +", action = "settings.row_next", pair = "row:upper" },
 ]
