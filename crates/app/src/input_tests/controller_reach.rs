@@ -3725,9 +3725,12 @@ fn exit_by_hold(drive: &mut Drive) -> Option<String> {
     label
 }
 
-/// Opens a cell of the screens view during a hold.
+/// Opens a cell of the screens view during a hold. A target mode first opens its menu.
 fn screens_cell(drive: &mut Drive, slot: u8) {
     hold(drive, true);
+    if drive.app.panel_snapshot().is_some_and(|panel| panel.target) && drive.app.ask.is_none() {
+        cell(drive, panel_note(15));
+    }
     list_button(drive, false);
     cell(drive, panel_note(slot));
     hold(drive, false);
@@ -3836,6 +3839,170 @@ fn no_mode_is_a_dead_end_for_the_smc_pad() {
     let mut drive = reach_drive_from(hold_drive(), panel::View::Pattern, sound.clone());
     action_cell(&mut drive, 4);
     check("A1 knobs", &mut drive, |d| d.app.pattern_panel.is_some());
+}
+
+/// A mode the owner can enter from the SMC-PAD: name, entry, and the test that it is open.
+type ModeCase = (&'static str, fn(&mut Drive), fn(&Drive) -> bool);
+
+fn mode_cases() -> Vec<ModeCase> {
+    vec![
+        ("pad edit", |d| action_cell(d, 1), |d| d.app.edit),
+        (
+            "copy",
+            |d| action_cell(d, 2),
+            |d| d.app.copy_in_hand.is_some(),
+        ),
+        (
+            "swap",
+            |d| action_cell(d, 3),
+            |d| d.app.pad_in_hand.is_some(),
+        ),
+        ("marking", |d| action_cell(d, 4), |d| d.app.pads.marking),
+        (
+            "assign",
+            |d| {
+                screens_cell(d, 3);
+                action_cell(d, 4);
+            },
+            |d| d.app.plan.is_some(),
+        ),
+        (
+            "chop edit",
+            |d| {
+                screens_cell(d, 3);
+                action_cell(d, 11);
+            },
+            |d| d.app.edit && d.app.screen == Screen::Chop,
+        ),
+        (
+            "file in hand",
+            |d| {
+                screens_cell(d, 2);
+                action_cell(d, 1);
+            },
+            |d| d.app.browser.in_hand.is_some(),
+        ),
+        (
+            "A1 knobs",
+            |d| {
+                screens_cell(d, 4);
+                action_cell(d, 4);
+            },
+            |d| d.app.pattern_panel.is_some(),
+        ),
+        (
+            "A1 step edit",
+            |d| {
+                screens_cell(d, 4);
+                action_cell(d, 1);
+            },
+            |d| d.app.pattern_view.edit,
+        ),
+        (
+            "screen learn",
+            |d| screens_cell(d, 11),
+            |d| d.app.screen_learn.is_some(),
+        ),
+        ("help", |d| screens_cell(d, 8), |d| d.app.help_open),
+    ]
+}
+
+/// The owner's starting points: empty pads, sounds on bank 2, and marked pads.
+fn state_drive(state: usize, files: &TransitionFiles) -> Drive {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = hold_drive();
+    drive.app.loader = Some(loader::start(48_000));
+    drive.app.browser.dir = files.0.clone();
+    drive.app.browser.reread();
+    drive.app.browser.selected = drive
+        .app
+        .browser
+        .entries
+        .iter()
+        .position(|entry| entry.name == "tone.wav")
+        .unwrap();
+    drive.load_pad(0, sound.clone(), "kick");
+    drive.prepare_chop(sound.clone(), 20);
+    drive.app.screen = Screen::Pads;
+    drive.app.pattern_view.overview = false;
+    if state >= 1 {
+        for pad in 16..32 {
+            drive.load_pad(pad, sound.clone(), "bank two");
+        }
+        drive.app.pads.bank = 1;
+        drive.app.pads.selected = 0;
+    }
+    if state >= 2 {
+        drive.app.pads.marked.insert(16);
+    }
+    drive.app.pads.pattern = Some(session::PatternState {
+        slot: "A1".into(),
+        bars: 1,
+        quantize: "1/16".into(),
+        strength: 100,
+        hits: vec![[0, 16, 100, 0]],
+    });
+    drive.app.session_dirty = Some(Instant::now());
+    drive.app.publish_midi(&drive.shared);
+    drive
+}
+
+/// Scenario "No mode is a dead end for the SMC-PAD" (command-panel): every mode, in each
+/// starting state, with Help and the exit question opened over it. The overlay closes
+/// with device pad 1 and leaves the mode below open; device pad 1 then leaves the mode.
+#[test]
+fn every_mode_and_overlay_has_a_way_back_in_each_state() {
+    let files = TransitionFiles::new();
+    let mut failures = Vec::new();
+    for state in 0..3 {
+        for (name, enter, open) in mode_cases() {
+            for overlay in ["none", "help", "exit question"] {
+                let mut drive = state_drive(state, &files);
+                enter(&mut drive);
+                let case = format!("state {state}, {name}, overlay {overlay}");
+                if !open(&drive) {
+                    failures.push(format!("{case}: the mode does not open"));
+                    continue;
+                }
+                if overlay != "none" && name != "help" && name != "screen learn" {
+                    screens_cell(&mut drive, if overlay == "help" { 8 } else { 12 });
+                    let shown = if overlay == "help" {
+                        drive.app.help_open
+                    } else {
+                        drive.app.ask.is_some()
+                    };
+                    if !shown {
+                        failures.push(format!("{case}: the overlay does not open"));
+                        continue;
+                    }
+                    if exit_by_hold(&mut drive).is_none() {
+                        failures.push(format!("{case}: no label on pad 1 over the mode"));
+                    }
+                    if drive.app.help_open || drive.app.ask.is_some() {
+                        failures.push(format!("{case}: pad 1 does not close the overlay"));
+                        continue;
+                    }
+                    if !open(&drive) {
+                        failures.push(format!("{case}: closing the overlay also left the mode"));
+                        continue;
+                    }
+                }
+                if drive.app.input_sources.last_is_smc()
+                    && let Some(line) = drive.app.mode_line(Instant::now())
+                    && (line.contains("Enter") || line.contains("Esc"))
+                {
+                    failures.push(format!("{case}: keyboard words after SMC input: {line}"));
+                }
+                if exit_by_hold(&mut drive).is_none() {
+                    failures.push(format!("{case}: no label on pad 1"));
+                }
+                if open(&drive) {
+                    failures.push(format!("{case}: pad 1 does not leave the mode"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 /// Scenario "A cell hit lights the cell" (screen-layout).

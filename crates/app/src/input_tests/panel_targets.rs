@@ -269,3 +269,84 @@ fn left_and_right_change_the_assign_bank() {
     );
     list_button(&mut drive, false);
 }
+
+/// Scenario "Assign places slices on the playing layer and applies on a hold" (command-panel),
+/// across chops of one to three banks, empty, half and full target banks, by hand and in
+/// order. Each run moves to bank 2 with RIGHT, places, applies and answers a replace
+/// question with device pad 4. The mode line never names keys after SMC-PAD input.
+#[test]
+fn assign_works_for_any_chop_size_bank_occupancy_and_order() {
+    let mut failures = Vec::new();
+    for slices in [4usize, 20, 40] {
+        for occupied in [0usize, 8, 16] {
+            for in_order in [false, true] {
+                let case = format!("{slices} slices, {occupied} pads taken, in order {in_order}");
+                let sound = Arc::new(Sample::mono(vec![0.2; 48_000]));
+                let mut drive = hold_drive();
+                for pad in 16..16 + occupied {
+                    drive.load_pad(pad, sound.clone(), "taken");
+                }
+                drive.prepare_chop(sound, slices);
+                // Slice pages follow LEFT and RIGHT before Assign.
+                for _ in 0..3 {
+                    list_button(&mut drive, true);
+                }
+                list_button(&mut drive, false);
+                list_button(&mut drive, false);
+                list_button(&mut drive, false);
+                hold(&mut drive, true);
+                cell(&mut drive, panel_note(4));
+                if in_order {
+                    cell(&mut drive, panel_note(4)); // Order.
+                }
+                hold(&mut drive, false);
+                if drive.app.plan.is_none() {
+                    failures.push(format!("{case}: Assign does not open"));
+                    continue;
+                }
+                list_button(&mut drive, true);
+                if drive.app.pads.bank != 1 {
+                    failures.push(format!("{case}: RIGHT does not reach bank 2"));
+                    continue;
+                }
+                let hits: Vec<u8> = if in_order {
+                    vec![13]
+                } else {
+                    [13u8, 14, 15].into_iter().take(slices.min(3)).collect()
+                };
+                for number in &hits {
+                    hit(&mut drive, *number);
+                }
+                if let Some(line) = drive.app.mode_line(Instant::now())
+                    && (line.contains("Enter") || line.contains("Esc"))
+                {
+                    failures.push(format!("{case}: keyboard words: {line}"));
+                }
+                hold(&mut drive, true);
+                cell(&mut drive, panel_note(16));
+                hold(&mut drive, false);
+                if drive.app.ask.is_some() {
+                    hit(&mut drive, 4); // Device pad 4 answers yes.
+                }
+                let expected = if in_order {
+                    slices.min(PADS - (16 + abs(13)))
+                } else {
+                    hits.len()
+                };
+                let linked = (0..PADS)
+                    .filter(|&pad| drive.app.pads.link[pad].is_some())
+                    .count();
+                if drive.app.plan.is_some() || drive.app.ask.is_some() {
+                    failures.push(format!("{case}: Apply did not finish"));
+                } else if linked != expected {
+                    failures.push(format!(
+                        "{case}: {linked} pads hold slices, want {expected}"
+                    ));
+                } else if !drive.last_notice().text.contains('→') {
+                    failures.push(format!("{case}: the result names no pads"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

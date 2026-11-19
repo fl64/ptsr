@@ -1499,7 +1499,10 @@ impl App {
 
     fn panel_back(&mut self) {
         let esc = event::KeyEvent::new(event::KeyCode::Esc, event::KeyModifiers::NONE);
-        if self.pad_naming.is_some() {
+        // Help lies over every mode: Back closes it first and keeps the mode below (134).
+        if self.help_open {
+            self.help_open = false;
+        } else if self.pad_naming.is_some() {
             self.pad_name_key(&esc);
         } else if self.project_picker.is_some() {
             self.project_picker_key(&esc);
