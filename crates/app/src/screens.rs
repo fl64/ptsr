@@ -3478,7 +3478,7 @@ L="none"
                         (1, Screen::Pads) => "edit",
                         (1, Screen::Files) => "take",
                         (1, Screen::Chop) => "cut",
-                        (1, Screen::Settings) => "tab",
+                        (1, Screen::Settings) => "learn",
                         _ => "back",
                     };
                     assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");

@@ -592,9 +592,7 @@ mod tests {
             ),
             (
                 View::Files,
-                &[
-                    "to pad", "load", "parent", "star", "enter", "listen", "chop",
-                ],
+                &["to pad", "load", "", "star", "", "listen", "chop"],
             ),
             (
                 View::Chop,
@@ -608,10 +606,7 @@ mod tests {
                 &["normal", "hits -", "cut -", "end -", "whole"],
             ),
             (View::Fx, &[]),
-            (
-                View::Settings,
-                &["tab", "learn", "unbind", "", "row -", "row +"],
-            ),
+            (View::Settings, &["", "learn", "unbind"]),
         ];
         for (view, labels) in table {
             let shipped: Vec<&str> = (1..=12)
@@ -678,7 +673,7 @@ mod tests {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 2);
+        assert_eq!(checked, 1);
         assert!(adjacent(7, 8), "No and Yes");
         assert!(adjacent(14, 15), "Undo and Redo");
         assert!(!adjacent(4, 5), "split row");

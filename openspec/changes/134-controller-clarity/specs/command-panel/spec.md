@@ -20,10 +20,10 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 | Pads | edit, copy, swap, mark, mode, remove, p.gate, all, grid, rec out |
 | Pad edit | mode, reset, p.gate, copy |
 | A1 | step, grid -, grid +, params, record, erase, undoA1, clear, rows, tap |
-| Files | to pad, load, parent, star, enter, listen, chop |
+| Files | to pad, load, —, star, —, listen, chop |
 | Chop | cut, parts, hits, assign, loop, listen, snap, as pad, whole, —, edit, fill |
 | Chop edit | normal, hits -, cut -, end -, whole |
-| Settings | tab, learn, unbind, —, row -, row + |
+| Settings | —, learn, unbind |
 
 ### Requirement: Shipped panel labels use short words
 

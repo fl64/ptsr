@@ -113,7 +113,9 @@ Settings. A placement result names the pads, for example `slices 1–3 → pads 
 
 The owner renamed only the labels that are unclear or have two meanings. A label can
 have seven cells, so that `rec out` fits. The Chop region cells left the page: knobs 5
-and 6 move the region. `whole` takes their place and restores the whole sound.
+and 6 move the region. `whole` takes their place and restores the whole sound. The owner also removed the
+other duplicates: Files `parent` and `enter` (LEFT and RIGHT do this) and Settings
+`tab`, `row -` and `row +` (LEFT, RIGHT and knob 1 do this).
 
 | Screen | Old | New |
 | --- | --- | --- |

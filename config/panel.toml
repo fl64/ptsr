@@ -50,9 +50,7 @@ page = 1
 cells = [
   { cell = 1, label = "to pad", action = "browser.hold" },
   { cell = 2, label = "load", action = "browser.load" },
-  { cell = 3, label = "parent", action = "browser.parent" },
   { cell = 4, label = "star", action = "browser.favorite_toggle" },
-  { cell = 5, label = "enter", action = "browser.enter" },
   { cell = 6, label = "listen", action = "browser.preview_toggle" },
   { cell = 7, label = "chop", action = "screen.chop" },
 ]
@@ -89,9 +87,6 @@ cells = [
 name = "settings"
 page = 1
 cells = [
-  { cell = 1, label = "tab", action = "settings.tab_next" },
   { cell = 2, label = "learn", action = "settings.learn" },
   { cell = 3, label = "unbind", action = "settings.clear" },
-  { cell = 5, label = "row -", action = "settings.row_prev", pair = "row:lower" },
-  { cell = 6, label = "row +", action = "settings.row_next", pair = "row:upper" },
 ]

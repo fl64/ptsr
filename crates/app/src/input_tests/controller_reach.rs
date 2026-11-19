@@ -212,6 +212,16 @@ fn every_current_keyboard_action_has_a_controller_route() {
                     profile.control_action(screen, false, if end { "e4" } else { "e3" })
                         == Some(if end { "slice.end" } else { "slice.start" })
                 }
+                // LEFT, RIGHT and knob 1 replace the duplicate panel cells (134).
+                Action::BrowserParent | Action::BrowserEnter => {
+                    profile.control_action(screen, false, "right") == Some("smc.list_next")
+                }
+                Action::SettingsTab => {
+                    profile.control_action(screen, false, "right") == Some("smc.list_next")
+                }
+                Action::SettingsRow(_) => {
+                    profile.control_action(screen, false, "e1") == Some("settings.row")
+                }
                 // Knobs 5 and 6 move the Chop region; the panel cells left in 134.
                 Action::ChopRegionStart => {
                     profile.control_action(screen, false, "e5") == Some("chop.region_start_pos")
@@ -2076,7 +2086,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 52);
+    assert_eq!(checked + special, 47);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3243,7 +3253,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 52);
+    assert_eq!(checked, 47);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
