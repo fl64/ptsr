@@ -246,3 +246,26 @@ fn assign_apply_names_the_pads() {
         assert!(text.contains(pad), "{pad}: {text}");
     }
 }
+
+/// Scenario "LEFT and RIGHT change the Assign bank" (command-panel).
+#[test]
+fn left_and_right_change_the_assign_bank() {
+    let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, source);
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(4));
+    hold(&mut drive, false);
+    assert_eq!(drive.app.pads.bank, 0);
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.pads.bank, 1);
+    hit(&mut drive, 1);
+    assert!(drive.app.plan.is_some());
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(16));
+    hold(&mut drive, false);
+    assert!(
+        drive.app.pads.link[16 + abs(1)].is_some(),
+        "the slice lies on bank 2"
+    );
+    list_button(&mut drive, false);
+}

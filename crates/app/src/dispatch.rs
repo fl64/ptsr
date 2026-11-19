@@ -2463,6 +2463,15 @@ impl App {
             self.help_tab(next);
             return;
         }
+        // Assign picks targets in any bank: LEFT and RIGHT change it, as PgUp/PgDn do (134).
+        if self.screen == Screen::Chop && self.plan.is_some() && self.ask.is_none() {
+            self.apply(if next {
+                Action::BankNext
+            } else {
+                Action::BankPrev
+            });
+            return;
+        }
         if self.transport_input_blocked() || self.help_open || self.pattern_panel.is_some() {
             return;
         }
