@@ -4005,6 +4005,24 @@ fn every_mode_and_overlay_has_a_way_back_in_each_state() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Scenario "No mode is a dead end for the SMC-PAD" (command-panel): with PAD BANK `Off`,
+/// text entry opened from the keyboard closes with device pad 1 of the second layer.
+#[test]
+fn text_entry_closes_with_pad_1_when_pad_bank_is_off() {
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive(panel::View::Pads, sound.clone());
+    drive.tap(KeyCode::Char('n'), M::CONTROL);
+    assert!(drive.app.pad_naming.is_some());
+    cell(&mut drive, panel_note(13));
+    assert!(drive.app.pad_naming.is_none(), "pad name closes");
+
+    let mut drive = reach_drive(panel::View::Files, sound);
+    drive.tap(KeyCode::Char('/'), M::NONE);
+    assert!(drive.app.browser.editing);
+    cell(&mut drive, panel_note(13));
+    assert!(!drive.app.browser.editing, "file filter closes");
+}
+
 /// Scenario "A cell hit lights the cell" (screen-layout).
 #[test]
 fn a_cell_hit_lights_the_cell() {

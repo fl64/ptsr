@@ -1745,8 +1745,11 @@ impl App {
                     }
                     return;
                 }
+                // A mode that takes the screen answers device pad 1 even before any reveal:
+                // with PAD BANK `Off`, text entry opened from the keyboard has no owner (134).
+                let may_answer = self.panel.owner().is_none_or(|owner| owner == port);
                 if self.help_open {
-                    if self.panel.owner() != Some(&port) {
+                    if !may_answer {
                         return;
                     }
                     if cell == 13 {
@@ -1762,7 +1765,7 @@ impl App {
                     || self.learning.is_some()
                     || self.midi_run.is_some()
                 {
-                    if cell == 13 && self.panel.owner() == Some(&port) {
+                    if cell == 13 && may_answer {
                         self.panel_back();
                     }
                     return;
