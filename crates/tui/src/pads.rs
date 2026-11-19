@@ -39,6 +39,19 @@ pub fn device_numbers() -> bool {
 }
 
 thread_local! {
+    /// The last input came from the SMC-PAD: texts name its controls, not keys (134).
+    static SMC_WORDS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_smc_words(on: bool) {
+    SMC_WORDS.set(on);
+}
+
+pub fn smc_words() -> bool {
+    SMC_WORDS.get()
+}
+
+thread_local! {
     /// The knobs that turn the rows of a pad edit page, top down; `None` counts 1, 2, 3.
     static ROW_KNOBS: std::cell::Cell<Option<[u8; 4]>> = const { std::cell::Cell::new(None) };
 }

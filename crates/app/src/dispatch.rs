@@ -1491,6 +1491,9 @@ impl App {
         tui::pads::set_device_numbers(smc);
         tui::pads::set_row_knobs(smc.then_some(super::values::PAD_EDIT_KNOBS));
         tui::pads::set_fx_knobs(smc.then_some(super::values::FX_KNOBS));
+        if !smc {
+            tui::pads::set_smc_words(false);
+        }
     }
 
     fn panel_back(&mut self) {

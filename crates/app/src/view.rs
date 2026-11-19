@@ -427,6 +427,10 @@ impl App {
             |key| format!("{key}: {cancel_verb}"),
         );
         let mut answers = vec![format!("KB {confirm} · {cancel}")];
+        // After an SMC-PAD input the answer row names its pads only (134).
+        if self.input_sources.last_is_smc() && !focus.mode.midi_learn {
+            answers.clear();
+        }
         if !keyboard_blocked && !focus.mode.midi_learn {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {

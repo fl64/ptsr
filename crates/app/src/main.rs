@@ -1707,7 +1707,7 @@ fn main() -> std::io::Result<()> {
         );
         let groups = match (&app.project_picker, mods.get()) {
             // the learn mode speaks in its own lines, the columns step aside (52)
-            _ if app.screen_learn.is_some() => Vec::new(),
+            _ if app.screen_learn.is_some() || app.input_sources.last_is_smc() => Vec::new(),
             // the picker takes the keys: the line says its own (35)
             (Some(p), _) => picker_help(p.naming.is_some()),
             (None, Some(m)) => modifier_groups(&keymap, app.screen, m, app.ui.hide_pads),
@@ -1722,7 +1722,7 @@ fn main() -> std::io::Result<()> {
         let panel = app.panel_snapshot();
         let help = tui::Help {
             groups: &groups,
-            hint: hint_for(&app),
+            hint: hint_for(&app).filter(|_| !app.input_sources.last_is_smc()),
             full: full
                 .as_deref()
                 .and_then(|rows| app.full_help_view(rows, &messages)),

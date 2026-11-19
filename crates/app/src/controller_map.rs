@@ -437,6 +437,99 @@ impl App {
         Some(format!("B{bank} K{knob} · {purpose}{state}"))
     }
 
+    /// The mode line (134): the active mode, its item, the next step and the cancel
+    /// control, in the words of the last input device.
+    pub(super) fn mode_line(&self, now: std::time::Instant) -> Option<String> {
+        let smc = self.input_sources.last_is_smc();
+        let (cancel, apply) = if smc {
+            ("PAD BANK + 1 cancel", "PAD BANK + 4 apply")
+        } else {
+            ("Esc cancel", "Enter apply")
+        };
+        if self.ask.is_some() {
+            return Some(if smc {
+                "ASK · pad 4 yes · pad 1 no".into()
+            } else {
+                "ASK · Enter yes · Esc no".into()
+            });
+        }
+        if self.screen_learn.is_some() || self.learning.is_some() {
+            return Some(if smc {
+                "LEARN · touch a control · pad 4 save · pad 1 cancel".into()
+            } else {
+                "LEARN · touch a control · Esc leave".into()
+            });
+        }
+        if let Some((source, at)) = self.recording {
+            let seconds = now.saturating_duration_since(at).as_secs();
+            return Some(if source == super::audio::SOURCE_OUTPUT {
+                let stop = if smc {
+                    "PAD BANK + 6 output"
+                } else {
+                    "the output key"
+                };
+                format!("● REC OUTPUT 0:{seconds:02} · stop: {stop}")
+            } else {
+                let stop = if smc {
+                    "release RECORD"
+                } else {
+                    "release the key"
+                };
+                format!("● REC MIC 0:{seconds:02} · stop: {stop}")
+            });
+        }
+        if self.screen == input::Screen::Chop
+            && let (Some(plan), Some(chop)) = (&self.plan, &self.chop)
+        {
+            let count = chop.slices().len();
+            let placed = plan.targets(count).len();
+            let next = match plan {
+                super::chop::Plan::InOrder(None) => "hit the start pad".to_string(),
+                _ => {
+                    let selected = chop.selected;
+                    let next = if plan
+                        .targets(count)
+                        .iter()
+                        .any(|(slice, _)| *slice == selected)
+                    {
+                        plan.next_unplanned(count, selected)
+                    } else {
+                        Some(selected)
+                    };
+                    next.map_or("all placed".into(), |slice| {
+                        format!("slice {} next · hit a pad", slice + 1)
+                    })
+                }
+            };
+            return Some(format!(
+                "ASSIGN {placed}/{count} · {next} · {apply} · {cancel}"
+            ));
+        }
+        let place = |what: String| Some(format!("{what} · hit a pad · {cancel}"));
+        if let Some(path) = &self.browser.in_hand {
+            return place(format!("IN HAND {}", super::file_name(path)));
+        }
+        if let Some((source, _)) = &self.copy_in_hand {
+            return place(format!("COPY pad {}", tui::pads::pad_tag(*source)));
+        }
+        if let Some(source) = self.pad_in_hand {
+            return place(format!("SWAP pad {}", tui::pads::pad_tag(source)));
+        }
+        if self.edit && self.screen == input::Screen::Pads {
+            let (page, _) = self.pads.page();
+            let (pages, close) = if smc {
+                ("LEFT RIGHT page", "PAD BANK + 1 close")
+            } else {
+                ("Tab page", "Esc close")
+            };
+            return Some(format!(
+                "EDIT pad {} · {page} · {pages} · {close}",
+                tui::pads::pad_tag(self.pads.selected)
+            ));
+        }
+        None
+    }
+
     pub(super) fn smc_knob_strip(&self, now: std::time::Instant) -> Option<tui::KnobStrip> {
         if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
             return None;
@@ -510,7 +603,9 @@ impl App {
                     Some("chop.region_end_pos"),
                 ])
         .then_some("B1 3–4 slice · 5–6 region");
+        tui::pads::set_smc_words(self.input_sources.last_is_smc());
         Some(tui::KnobStrip {
+            mode: self.mode_line(now),
             page,
             list,
             operation,
@@ -647,6 +742,11 @@ impl App {
             }
             None => String::new(),
         };
+        if let Some(name) = &selected
+            && detail.starts_with(name.as_str())
+        {
+            detail = detail.replacen(name.as_str(), &smc_printed(&profile.name, name), 1);
+        }
         if profile.name == "SMC-PAD" {
             let status = match &self.help_overlay.controller.smc_status {
                 Some((true, _)) => "encoders ready",
@@ -679,7 +779,7 @@ impl App {
                                         ),
                                     };
                                 Some(tui::ControlCell {
-                                    name: name.to_string(),
+                                    name: smc_printed(&profile.name, name),
                                     label: format!("{open}{short}{close}"),
                                     free,
                                 })
@@ -718,12 +818,30 @@ impl App {
             body,
             detail,
             note: (profile.name == "SMC-PAD").then_some(
-                "Device Note Repeat uses its own clock. Use ptsr Note Repeat when available.",
+                "Device Note Repeat uses its own clock. Use ptsr Note Repeat when available. PAD BANK hold: actions of this screen, LEFT: screens.",
             ),
             navigation,
             caption,
         }
     }
+}
+
+/// The SMC-PAD pads as printed (134): `p1`, the top-left pad of the profile, is P13;
+/// its PAD BANK layer `c1` is PB13. Other controls keep their profile names.
+fn smc_printed(profile: &str, name: &str) -> String {
+    if profile != "SMC-PAD" {
+        return name.to_string();
+    }
+    let printed = |prefix: &str, rest: &str| {
+        rest.parse::<usize>()
+            .ok()
+            .filter(|n| (1..=16).contains(n))
+            .map(|n| format!("{prefix}{}", tui::device_number(n)))
+    };
+    name.strip_prefix('p')
+        .and_then(|rest| printed("P", rest))
+        .or_else(|| name.strip_prefix('c').and_then(|rest| printed("PB", rest)))
+        .unwrap_or_else(|| name.to_string())
 }
 
 #[cfg(test)]

@@ -576,6 +576,29 @@ fn smc_pad_help_names_the_device_repeat_clock() {
     }
 }
 
+/// Scenario "Help shows pad 1 bottom left" (screen-help).
+#[test]
+fn help_shows_pad_1_bottom_left() {
+    let mut drive = Drive::smc_offline();
+    touch(&mut drive, "SINCO SMC-PAD-Master 28:1");
+    let size = (120, 40);
+    open(&mut drive, size);
+    let rows = screen(&mut drive, size);
+    let text = rows.join("\n");
+    let row_of = |word: &str| {
+        rows.iter()
+            .position(|row| row.split(|c: char| !c.is_alphanumeric()).any(|w| w == word))
+            .unwrap_or_else(|| panic!("{word}: {text}"))
+    };
+    assert_eq!(row_of("P13"), row_of("P16"), "{text}");
+    assert!(row_of("P13") < row_of("P1"), "{text}");
+    assert_eq!(row_of("P1"), row_of("P4"), "{text}");
+    assert!(
+        text.contains("PAD BANK hold: actions of this screen"),
+        "{text}"
+    );
+}
+
 /// Scenario "Chop help identifies the slice and region knobs" (screen-layout).
 #[test]
 fn chop_help_identifies_the_slice_and_region_knobs() {

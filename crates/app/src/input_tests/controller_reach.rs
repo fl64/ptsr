@@ -3578,6 +3578,135 @@ fn learn_on_settings_explains_the_refusal() {
     );
 }
 
+fn file_in_hand_by_smc() -> (Drive, TransitionFiles) {
+    let files = TransitionFiles::new();
+    let mut drive = hold_drive();
+    drive.app.screen = Screen::Files;
+    drive.app.browser.dir = files.0.clone();
+    drive.app.browser.reread();
+    drive.app.browser.selected = drive
+        .app
+        .browser
+        .entries
+        .iter()
+        .position(|entry| entry.name == "tone.wav")
+        .unwrap();
+    drive.app.publish_midi(&drive.shared);
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(1)); // Take.
+    hold(&mut drive, false);
+    assert!(drive.app.browser.in_hand.is_some());
+    (drive, files)
+}
+
+/// Scenario "The mode line shows an item in hand" (screen-layout).
+#[test]
+fn the_mode_line_shows_an_item_in_hand() {
+    let (drive, _files) = file_in_hand_by_smc();
+    let now = Instant::now();
+    let strip = drive.app.smc_knob_strip(now).unwrap();
+    assert_eq!(
+        strip.mode.as_deref(),
+        Some("IN HAND tone.wav · hit a pad · PAD BANK + 1 cancel")
+    );
+    assert!(
+        !drive.app.panel.visible(),
+        "the line stays after the release"
+    );
+}
+
+/// Scenario "The mode line shows a running recording" (screen-layout).
+#[test]
+fn the_mode_line_shows_a_running_recording() {
+    let mut drive = hold_drive();
+    turn(&mut drive, 37, 65); // An SMC-PAD input.
+    let now = Instant::now();
+    drive.app.recording = Some((
+        audio::SOURCE_OUTPUT,
+        now - std::time::Duration::from_secs(4),
+    ));
+    assert_eq!(
+        drive.app.mode_line(now).as_deref(),
+        Some("● REC OUTPUT 0:04 · stop: PAD BANK + 6 output")
+    );
+}
+
+/// Scenario "The mode line shows the next Assign slice" (screen-layout).
+#[test]
+fn the_mode_line_shows_the_next_assign_slice() {
+    let mut drive = hold_drive();
+    drive.prepare_chop(Arc::new(Sample::mono(vec![0.25; 48_000])), 9);
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(4)); // Assign.
+    hold(&mut drive, false);
+    for note in [36, 37] {
+        drive.bytes(SMC, &[0x99, note, 100]);
+        drive.bytes(SMC, &[0x89, note, 0]);
+        drive.frame();
+    }
+    let line = drive.app.mode_line(Instant::now()).unwrap();
+    assert!(line.starts_with("ASSIGN 2/9 · slice 3 next"), "{line}");
+    assert!(
+        line.contains("PAD BANK + 4 apply") && line.contains("PAD BANK + 1 cancel"),
+        "{line}"
+    );
+}
+
+/// Scenario "SMC-PAD input switches hints to controller words" (screen-help).
+#[test]
+fn smc_pad_input_switches_hints_to_controller_words() {
+    let (drive, _files) = file_in_hand_by_smc();
+    assert!(drive.app.input_sources.last_is_smc());
+    let line = drive.app.mode_line(Instant::now()).unwrap();
+    assert!(
+        line.contains("hit a pad") && line.contains("PAD BANK + 1"),
+        "{line}"
+    );
+    assert!(!line.contains("Enter") && !line.contains("Esc"), "{line}");
+    drive.app.smc_knob_strip(Instant::now());
+    assert!(tui::pads::smc_words(), "the Files text names the pads");
+}
+
+/// Scenario "A key switches hints back" (screen-help).
+#[test]
+fn a_key_switches_hints_back() {
+    let (mut drive, _files) = file_in_hand_by_smc();
+    drive.tap(KeyCode::Down, M::NONE);
+    assert!(!drive.app.input_sources.last_is_smc());
+    let line = drive.app.mode_line(Instant::now()).unwrap();
+    assert!(line.ends_with("Esc cancel"), "{line}");
+    drive.app.smc_knob_strip(Instant::now());
+    assert!(!tui::pads::smc_words());
+}
+
+/// Scenario "A question changes answer words with the device" (screen-help).
+#[test]
+fn a_question_changes_answer_words_with_the_device() {
+    let mut drive = hold_drive();
+    drive.tap(KeyCode::Down, M::NONE);
+    drive.app.ask = Some(Ask::ClearPattern {
+        lines: vec!["Clear A1?".into()],
+    });
+    let answers = drive.app.question_view(&drive.keymap).unwrap().answers;
+    assert!(
+        answers.iter().any(|answer| answer.starts_with("KB ")),
+        "{answers:?}"
+    );
+    turn(&mut drive, 37, 65);
+    assert!(drive.app.ask.is_some());
+    let answers = drive.app.question_view(&drive.keymap).unwrap().answers;
+    assert!(
+        answers
+            .iter()
+            .any(|answer| answer.contains("P1: keep · P4:")),
+        "{answers:?}"
+    );
+    assert!(
+        !answers.iter().any(|answer| answer.starts_with("KB ")),
+        "{answers:?}"
+    );
+}
+
 /// Scenario "A cell hit lights the cell" (screen-layout).
 #[test]
 fn a_cell_hit_lights_the_cell() {
