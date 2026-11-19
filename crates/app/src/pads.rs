@@ -1902,7 +1902,13 @@ impl App {
             self.send(cmd);
         }
         self.dirty();
-        self.post_notice(Level::Done, ("copy placed".into(), Instant::now()));
+        self.post_notice(
+            Level::Done,
+            (
+                format!("copy placed on {}", super::pad_place(abs)),
+                Instant::now(),
+            ),
+        );
     }
 
     /// The question and placement use the same pickup base and current occupied names.
@@ -1970,6 +1976,17 @@ impl App {
         }
         self.send(cmd);
         self.dirty();
+        self.post_notice(
+            Level::Done,
+            (
+                format!(
+                    "swapped {} and {}",
+                    super::pad_place(from),
+                    super::pad_place(abs)
+                ),
+                Instant::now(),
+            ),
+        );
     }
 
     /// Puts the file in hand on a pad; a pad that holds something asks first.
@@ -2030,6 +2047,13 @@ impl App {
         if self.browser.in_hand.as_ref() == Some(&path) {
             self.browser.in_hand = None;
         }
+        self.post_notice(
+            Level::Done,
+            (
+                format!("{} → {}", file_name(&path), super::pad_place(abs)),
+                Instant::now(),
+            ),
+        );
         self.load_pad(abs, path, Region::WHOLE);
     }
 

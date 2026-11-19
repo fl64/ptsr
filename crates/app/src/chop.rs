@@ -1945,6 +1945,18 @@ impl App {
             }
         }
         self.ask = None;
+        // "1→1Q": slice number, then bank and pad, so the result names every target.
+        let pads: Vec<String> = targets
+            .iter()
+            .map(|&(slice, abs)| {
+                format!(
+                    "{}→{}{}",
+                    slice + 1,
+                    abs / PADS_PER_BANK + 1,
+                    super::PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()
+                )
+            })
+            .collect();
         for (slice, abs) in targets {
             let region = slices[slice];
             // a load still on its way to this pad would replace the slice
@@ -1966,7 +1978,10 @@ impl App {
         }
         self.post_notice(
             Level::Done,
-            (format!("slices placed on {summary}"), Instant::now()),
+            (
+                format!("slices placed on {summary}: {}", pads.join(" ")),
+                Instant::now(),
+            ),
         );
         // the chop stays open: its cuts can still be moved and the pads follow
         self.plan = None;

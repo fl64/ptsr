@@ -17213,7 +17213,7 @@ Enter = "browser.hold"
             (41..48).all(|a| app.pads.file[a].is_none()),
             "10–16 untouched"
         );
-        assert_eq!(flash(&app), "slices placed on bank 3");
+        assert!(flash(&app).starts_with("slices placed on bank 3: "));
     }
 
     /// Scenario "More slices than pads to the end of the bank" (chopping): 9 slices from
@@ -17230,7 +17230,7 @@ Enter = "browser.hold"
             assert_eq!(app.pads.region[12 + i], *slice);
         }
         assert!(app.pads.file[21].is_none() && app.pads.file[11].is_none());
-        assert_eq!(flash(&app), "slices placed on banks 1–2");
+        assert!(flash(&app).starts_with("slices placed on banks 1–2: "));
     }
 
     /// Slices 1 and 2 planned on pads Q and W of bank 2, which hold "kick" and "amen 3".

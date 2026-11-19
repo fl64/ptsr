@@ -6,7 +6,7 @@ use std::time::Instant;
 use input::Action;
 use ratatui::text::Line;
 
-use crate::{App, PADS_PER_BANK, Screen};
+use crate::{App, Screen};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum View {
@@ -186,10 +186,10 @@ pub(super) enum Target {
 impl Target {
     fn title(self) -> &'static str {
         match self {
-            Self::Copy => "COPY · 13–16 PAD BANK",
-            Self::Swap => "SWAP · 13–16 PAD BANK",
-            Self::File => "FILE · 13–16 PAD BANK",
-            Self::Assign => "ASSIGN · 13–16 PAD BANK",
+            Self::Copy => "COPY · release, hit a pad",
+            Self::Swap => "SWAP · release, hit a pad",
+            Self::File => "FILE · release, hit a pad",
+            Self::Assign => "ASSIGN · release, hit a pad",
         }
     }
 }
@@ -397,14 +397,7 @@ impl App {
     fn target_snapshot(&self, target: Target) -> tui::CommandPanel {
         let labels = std::array::from_fn(|index| {
             let label = match index {
-                0..=11 => {
-                    let abs = self.pads.bank * PADS_PER_BANK + index;
-                    if self.pads.file[abs].is_some() {
-                        "used"
-                    } else {
-                        "pad"
-                    }
-                }
+                3 if target == Target::Assign => "order",
                 12 => "cancel",
                 13 => "undo",
                 14 => "menu",

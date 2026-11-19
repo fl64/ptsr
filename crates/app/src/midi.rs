@@ -189,6 +189,20 @@ impl HoldRoute {
                     velocity,
                 }
             }
+            // Without the shortcut, a question still takes device pads 1 and 4 of the first bank.
+            Msg::NoteOn {
+                ch: 10,
+                note: note @ (36 | 39),
+                velocity,
+            } if question && port.contains("SMC-PAD-Master") => {
+                let target = note + 16;
+                self.notes.insert((port.into(), 10, note), target);
+                Msg::NoteOn {
+                    ch: 10,
+                    note: target,
+                    velocity,
+                }
+            }
             Msg::NoteOff { ch, note } => match self.notes.remove(&(port.into(), ch, note)) {
                 Some(target) => Msg::NoteOff { ch, note: target },
                 None => msg,
@@ -4183,7 +4197,8 @@ mod tests {
             Arc::new(Shared::default()),
         );
         let start = Instant::now();
-        for (step, note) in [64, 63, 66, 63].into_iter().enumerate() {
+        // Note 47 is the first-layer pad 8: the target of the swap since change 134.
+        for (step, note) in [64, 63, 66, 47].into_iter().enumerate() {
             midi.recorded_bytes_at(
                 SMC_MASTER,
                 &[0x99, note, 100],
@@ -4211,8 +4226,7 @@ mod tests {
             app.pads.file[1].as_deref(),
             Some(std::path::Path::new("second.wav"))
         );
-        assert!(app.panel.visible());
-        assert_eq!(app.panel.page(), 1);
+        assert!(!app.panel.visible(), "the target hit hides the panel");
         drop(midi);
         worker.join().unwrap();
     }

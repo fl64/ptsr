@@ -64,7 +64,7 @@ While a question is visible, device pad 1 SHALL cancel and device pad 4 SHALL co
 
 ### Requirement: Placement targets use the playing layer
 
-An item in hand is a file, a recording, a copy or a swap. With an item in hand or an open Assign plan, a first-layer pad hit without a hold SHALL place the item on that pad. The existing placement result and questions SHALL apply. All 16 pads of the current bank SHALL be targets. Ownership by the connection and original held releases SHALL keep priority.
+An item in hand is a file, a recording, a copy or a swap. With an item in hand or an open Assign plan, a first-layer pad hit without a hold SHALL place the item on that pad. The existing placement result and questions SHALL apply. All 16 pads of the current bank SHALL be targets. Panel commands SHALL belong to the connection that owns the panel. Original held releases SHALL keep priority.
 
 #### Scenario: All sixteen pads take an item in hand
 - **WHEN** a file is in hand and the owner hits device pad 1, then takes another file and hits device pad 16
@@ -76,8 +76,9 @@ An item in hand is a file, a recording, a copy or a swap. With an item in hand o
 - **AND** pad 1 during the hold cancels the plan instead in a separate run
 
 #### Scenario: Target pads keep their connection and release
-- **WHEN** another controller sends a pad hit or a held first-layer pad releases during target choice
-- **THEN** only the owner connection places the item and the original held pad releases
+- **WHEN** another SMC-PAD sends a panel cancel or a held first-layer pad releases during target choice
+- **THEN** the item stays in hand and the original held pad releases
+- **AND** a later pad hit places the item as before
 
 ### Requirement: A hold in target mode shows the mode commands
 

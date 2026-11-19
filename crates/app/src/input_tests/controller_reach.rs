@@ -2109,7 +2109,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
     cell(&mut controller, panel_note(4)); // Order replaces assign while Assign is open.
     cell(&mut controller, panel_note(15)); // Back to the target pads.
-    cell(&mut controller, panel_note(1)); // Start the order at pad 1, as Enter does.
+    cell(&mut controller, 48); // A first-layer hit on the top-left pad starts the order, as Enter does.
     assert_eq!(controller.app.plan, keyboard.app.plan);
 
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));

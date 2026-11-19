@@ -1453,15 +1453,10 @@ impl App {
         if menu {
             return false;
         }
+        // Targets are the 16 pads of the playing layer; a hold gives only the commands (134).
         match cell {
-            1..=12 => {
-                self.pad_hit(
-                    usize::from(cell - 1),
-                    1.0,
-                    pads::HitSource::Midi,
-                    midi::PadSound::UiUnattempted { deferred: true },
-                    None,
-                );
+            4 if target == Target::Assign => {
+                self.apply(Action::ChopAssignOrder);
             }
             13 => {
                 self.apply(Action::Back);

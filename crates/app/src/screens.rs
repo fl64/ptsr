@@ -1536,7 +1536,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("redo");
         }
         Mode::PanelTargets => {
-            require("13–16 PAD BANK");
+            require("hit a pad");
             require("cancel");
             require("menu");
             if case.screen == Screen::Chop {
