@@ -896,6 +896,26 @@ impl Recorder {
         }
     }
 
+    pub fn restore_after_exit(&mut self, pass: u64) -> bool {
+        if pass == 0 || pass < self.state.pass {
+            return false;
+        }
+        // The UI already completed the accepted prefix. Discard the rest of the take.
+        self.pending.fill(None);
+        self.targets.fill(None);
+        self.windows.reset();
+        self.unconfirmed = 0;
+        self.state = Snapshot {
+            epoch: self.state.epoch,
+            pass,
+            ..Snapshot::default()
+        };
+        if let Some(recovery) = &self.recovery {
+            recovery.owner.record(self.state);
+        }
+        true
+    }
+
     pub fn onset(&mut self, pad: usize, gain: f32, mode: PadMode, ticks: f64, frame_ticks: f64) {
         if pad >= crate::PADS {
             return;

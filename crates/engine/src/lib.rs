@@ -118,6 +118,10 @@ pub enum Command {
         pass: u64,
         sequence: u64,
     },
+    PatternRestoreAfterExit {
+        pass: u64,
+        pattern: Arc<pattern::Pattern>,
+    },
     PatternErase {
         pass: u64,
         enabled: bool,
@@ -630,7 +634,7 @@ impl Engine {
             }
             Command::PatternPadRelease { .. } => 1,
             Command::PadPress { .. } if self.capture.erasing() => 0,
-            Command::PublishCapturedPattern { .. } => 1,
+            Command::PublishCapturedPattern { .. } | Command::PatternRestoreAfterExit { .. } => 1,
             Command::PublishRecordedPattern { .. } if !self.capture.accepts_publication(None) => 1,
             Command::SwapPatternPads { a, b, pattern } if *a >= PADS || *b >= PADS || a == b => {
                 usize::from(pattern.is_some())
@@ -664,6 +668,7 @@ impl Engine {
                 }
                 | Command::PublishRecordedPattern { .. }
                 | Command::PublishCapturedPattern { .. }
+                | Command::PatternRestoreAfterExit { .. }
                 | Command::PatternPadPress { .. }
                 | Command::PatternPadRelease { .. }
                 | Command::SwapPatternPads {
@@ -757,6 +762,7 @@ impl Engine {
             Command::SetPattern { pattern: Some(p) }
             | Command::PublishRecordedPattern { pattern: p }
             | Command::PublishCapturedPattern { pattern: p, .. }
+            | Command::PatternRestoreAfterExit { pattern: p, .. }
             | Command::SwapPatternPads {
                 pattern: Some(p), ..
             } => retire(&mut self.garbage, p),
@@ -905,6 +911,14 @@ impl Engine {
             }
             Command::PatternRecordAck { pass, sequence } => {
                 self.capture.acknowledge(pass, sequence);
+            }
+            Command::PatternRestoreAfterExit { pass, pattern } => {
+                if self.capture.restore_after_exit(pass) {
+                    self.count_in.stop();
+                    self.replace_pattern(Some(pattern), false);
+                } else {
+                    retire(&mut self.garbage, pattern);
+                }
             }
             Command::PatternErase { pass, enabled } => {
                 if !enabled {

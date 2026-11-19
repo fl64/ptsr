@@ -137,9 +137,14 @@ pub struct Capture {
     erase_requested: Option<bool>,
     last: Option<Snapshot>,
     unavailable: bool,
-    exiting: bool,
+    exit: Option<ExitCapture>,
     dirty: bool,
     generations: Box<[u64]>,
+}
+
+enum ExitCapture {
+    Frozen(Option<u64>),
+    Recovering(u64),
 }
 
 struct Pass {
@@ -212,14 +217,14 @@ impl Capture {
             erase_requested: None,
             last: None,
             unavailable: false,
-            exiting: false,
+            exit: None,
             dirty: false,
             generations: vec![0; MAX_HITS].into_boxed_slice(),
         }
     }
 
     fn closed(&self) -> bool {
-        self.unavailable || self.exiting
+        self.unavailable || self.exit.is_some()
     }
 
     pub fn available(&self) -> bool {
@@ -230,7 +235,7 @@ impl Capture {
         if !self.blocks_autosave() {
             return None;
         }
-        Some(if self.exiting {
+        Some(if self.exit.is_some() {
             "exit pending"
         } else if self.requested.is_some() {
             "start pending"
@@ -302,7 +307,7 @@ impl Capture {
     }
 
     pub fn reset(&mut self) {
-        self.exiting = false;
+        self.exit = None;
         self.pass = None;
         self.requested = None;
         self.undo_requested = false;
@@ -338,8 +343,38 @@ impl Capture {
         {
             self.last = Some(snapshot);
         }
-        self.exiting = true;
-        self.poll(epoch, None, stopped, pads)
+        if self.exit.is_none() {
+            let active = self
+                .last
+                .filter(|s| s.epoch == epoch && s.phase != Phase::Idle)
+                .map(|s| s.pass);
+            let requested = self
+                .requested
+                .as_ref()
+                .filter(|(requested_epoch, _, _)| *requested_epoch == epoch)
+                .map(|(_, pass, _)| *pass);
+            self.exit = Some(ExitCapture::Frozen(active.max(requested)));
+        }
+        self.poll(epoch, snapshot, stopped, pads)
+    }
+
+    pub fn recover_exit(&mut self, pads: &Pads) -> Result<Option<Command>, String> {
+        match self.exit {
+            Some(ExitCapture::Frozen(Some(pass))) if !self.unavailable => {
+                let Command::PublishRecordedPattern { pattern } =
+                    pads.recorded_pattern_command()?
+                else {
+                    unreachable!("recorded pattern command");
+                };
+                self.exit = Some(ExitCapture::Recovering(pass));
+                Ok(Some(Command::PatternRestoreAfterExit { pass, pattern }))
+            }
+            Some(ExitCapture::Frozen(_)) => {
+                self.exit = None;
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
     }
 
     pub fn poll(
@@ -349,6 +384,13 @@ impl Capture {
         stopped: bool,
         pads: &mut Pads,
     ) -> Result<Update, String> {
+        if let Some(ExitCapture::Recovering(pass)) = self.exit
+            && (stopped
+                || snapshot
+                    .is_some_and(|s| s.epoch == epoch && s.phase == Phase::Idle && s.pass >= pass))
+        {
+            self.exit = None;
+        }
         let recovery = self.recovery.clone();
         self.poll_feedback(epoch, snapshot, stopped, pads, recovery.as_ref())
     }
@@ -705,7 +747,7 @@ impl Capture {
                 && !pass.reported_result
                 && pass.losses == (0, 0, 0)
                 && !self.unavailable
-                && !self.exiting
+                && self.exit.is_none()
             {
                 update.finished = Some((pass.captured, pass.replaced));
             }

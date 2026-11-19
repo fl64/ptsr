@@ -1,8 +1,8 @@
 //! Session saving and retry scheduling on the UI thread.
 
 use super::{
-    App, Instant, Level, Notice, NoticeToken, Origin, PADS, PathBuf, SESSION_SAVE, session, tilde,
-    with_stored_paths,
+    App, Ask, Instant, Level, Notice, NoticeToken, Origin, PADS, PathBuf, SESSION_SAVE, session,
+    tilde, with_stored_paths,
 };
 use std::sync::{Arc, atomic::Ordering::Acquire};
 
@@ -13,11 +13,63 @@ pub(super) struct PendingSave {
     progress: NoticeToken,
 }
 
+pub(super) enum SaveNotice {
+    Refused(NoticeToken),
+    RecoveredUntil(Instant),
+}
+
 impl App {
-    pub(super) fn request_quit(&mut self) -> bool {
+    pub(super) fn request_quit(&mut self) {
+        if matches!(self.ask, Some(Ask::ExitRecovery { .. })) {
+            return;
+        }
         self.quit_requested = true;
         self.flush_audio();
-        self.quit_ready()
+    }
+
+    pub(super) fn try_finish_exit(&mut self) -> bool {
+        if !self.quit_ready() || self.pending_manual_save.is_some() {
+            return false;
+        }
+        if self.session_dirty.is_none() {
+            return true;
+        }
+
+        let refusal = self
+            .session_read_error
+            .as_ref()
+            .map(|reason| format!("Session not saved: {reason}"))
+            .or_else(|| self.session_write_error.clone())
+            .or_else(|| self.save_session().err());
+        if let Some(reason) = refusal {
+            self.show_exit_recovery(&reason);
+            return false;
+        }
+        true
+    }
+
+    fn show_exit_recovery(&mut self, reason: &str) {
+        let name = self.project.as_ref().map_or("Scratch", |p| p.name.as_str());
+        let reason = reason.strip_prefix("Session not saved: ").unwrap_or(reason);
+        let file_prefix = format!("{}: ", self.session_file().display());
+        let reason = reason.strip_prefix(&file_prefix).unwrap_or(reason);
+        let reason = if reason.ends_with(" is gone; the session is not saved") {
+            "The project folder is missing."
+        } else {
+            reason.lines().next().unwrap_or(reason)
+        };
+        self.quit_requested = false;
+        self.ask = Some(Ask::ExitRecovery {
+            lines: vec![format!("Save failed · {name}"), reason.into()],
+            offered_at: Instant::now(),
+        });
+        if let Some(audio) = &mut self.audio {
+            match audio.pattern_capture.recover_exit(&self.pads) {
+                Ok(Some(command)) => self.send(command),
+                Ok(None) => {}
+                Err(error) => self.post_notice(Level::Error, (error, Instant::now())),
+            }
+        }
     }
 
     pub(super) fn quit_ready(&self) -> bool {
@@ -109,8 +161,23 @@ impl App {
 
     fn manual_save_now(&mut self, origin: Origin) {
         let previous = std::mem::replace(&mut self.notice_origin, origin.clone());
-        if self.save_session().is_ok() {
-            self.produce_notice(Notice::manual_save_success(origin), Instant::now());
+        let recovering = matches!(self.ask, Some(Ask::ExitRecovery { .. }));
+        match self.save_session() {
+            Ok(()) => {
+                let now = Instant::now();
+                if recovering {
+                    self.ask = None;
+                    if let Some(SaveNotice::Refused(error)) = self.save_notice.take() {
+                        self.notices.cancel_owned(&error, now);
+                    }
+                    self.save_notice = Some(SaveNotice::RecoveredUntil(
+                        now + super::Duration::from_secs(5),
+                    ));
+                }
+                self.produce_notice(Notice::manual_save_success(origin), now);
+            }
+            Err(reason) if recovering => self.show_exit_recovery(&reason),
+            Err(_) => {}
         }
         self.notice_origin = previous;
     }
@@ -127,7 +194,7 @@ impl App {
     }
 
     pub(super) fn save_status(&self) -> tui::SaveStatus {
-        if self.session_write_failed {
+        if self.session_write_error.is_some() {
             tui::SaveStatus::Failed
         } else if self.session_dirty.is_some() {
             tui::SaveStatus::Unsaved
@@ -138,13 +205,13 @@ impl App {
 
     fn automatic_save_allowed(&self) -> bool {
         self.session_read_error.is_none()
-            && !self.session_write_failed
+            && self.session_write_error.is_none()
             && self.session_dirty.is_some()
     }
 
     pub(super) fn autosave(&mut self, now: Instant) {
         self.flush_audio();
-        if self.pending_manual_save.is_some() {
+        if self.quit_requested || self.pending_manual_save.is_some() {
             return;
         }
         if self
@@ -164,7 +231,8 @@ impl App {
     }
 
     pub(super) fn save_on_exit(&mut self) {
-        self.request_quit();
+        self.quit_requested = true;
+        self.flush_audio();
         if self.quit_ready() && self.automatic_save_allowed() {
             let _ = self.save_session();
         }
@@ -179,14 +247,19 @@ impl App {
         match &result {
             Ok(()) => {
                 self.session_dirty = None;
-                self.session_write_failed = false;
+                self.session_write_error = None;
             }
             Err(reason) => {
                 if self.session_read_error.is_none() {
-                    self.session_write_failed = true;
+                    self.session_write_error = Some(reason.clone());
                 }
                 log::error!("{reason}");
-                self.post_notice(super::Level::Error, (reason.clone(), Instant::now()));
+                let now = Instant::now();
+                if let Some(SaveNotice::Refused(error)) = self.save_notice.take() {
+                    self.notices.cancel_owned(&error, now);
+                }
+                let notice = Notice::new(Level::Error, self.notice_origin.clone(), reason.clone());
+                self.save_notice = Some(SaveNotice::Refused(self.notices.push_owned(notice, now)));
             }
         }
         result

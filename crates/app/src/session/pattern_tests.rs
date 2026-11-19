@@ -456,7 +456,7 @@ fn invalid_or_newer_pattern_startup_files_remain_protected() {
             app.save_on_exit();
             assert_eq!(app.session_dirty, pending);
             assert_eq!(app.session_read_error.as_ref(), Some(&reason));
-            assert!(!app.session_write_failed);
+            assert!(app.session_write_error.is_none());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), bytes);
         }
     }
@@ -485,7 +485,7 @@ fn pattern_save_failure_and_manual_retry_keep_raw_pending_work() {
         app.dirty();
         let pending = app.session_dirty;
         app.autosave(pending.unwrap() + crate::SESSION_SAVE + std::time::Duration::from_secs(1));
-        assert!(app.session_write_failed);
+        assert!(app.session_write_error.is_some());
         assert_eq!(app.session_dirty, pending);
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         std::fs::remove_dir(&tmp).unwrap();
@@ -496,7 +496,7 @@ fn pattern_save_failure_and_manual_retry_keep_raw_pending_work() {
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         assert_eq!(app.session_dirty, pending);
         app.save_session().unwrap();
-        assert!(!app.session_write_failed);
+        assert!(app.session_write_error.is_none());
         assert!(app.session_dirty.is_none());
         let recovered = load_existing(&path).unwrap();
         assert_eq!(recovered.patterns[0], *app.pads.pattern.as_ref().unwrap());
@@ -533,7 +533,7 @@ fn missing_project_folder_keeps_pattern_work_until_manual_retry() {
     assert!(app.save_session().unwrap_err().contains("is gone"));
     app.autosave(pending.unwrap() + std::time::Duration::from_secs(60));
     app.save_on_exit();
-    assert!(app.session_write_failed);
+    assert!(app.session_write_error.is_some());
     assert_eq!(app.session_dirty, pending);
     assert_eq!(app.pads.pattern, raw);
     assert!(!app.pads.pitch_gate[127]);
@@ -545,7 +545,7 @@ fn missing_project_folder_keeps_pattern_work_until_manual_retry() {
     let saved = load_existing(&folder.join("project.toml")).unwrap();
     assert_eq!(saved.patterns, raw.into_iter().collect::<Vec<_>>());
     assert!(!saved.pads["127"].pitch_gate);
-    assert!(app.session_dirty.is_none() && !app.session_write_failed);
+    assert!(app.session_dirty.is_none() && app.session_write_error.is_none());
 }
 
 #[test]
