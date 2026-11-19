@@ -14644,8 +14644,8 @@ Enter = "browser.hold"
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let mut app = laid_out_break();
         let sound = app.chop.as_ref().unwrap().sound.clone();
-        for abs in 0..12 {
-            app.pads.sound[abs] = Some(sound.clone());
+        for slot in app.pads.sound.iter_mut().take(12) {
+            *slot = Some(sound.clone());
         }
         app.screen = Screen::Pads;
         app.pads.selected = 6;
@@ -14739,8 +14739,8 @@ Enter = "browser.hold"
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let mut app = laid_out_break();
         let sound = app.chop.as_ref().unwrap().sound.clone();
-        for a in 0..12 {
-            app.pads.sound[a] = Some(sound.clone());
+        for slot in app.pads.sound.iter_mut().take(12) {
+            *slot = Some(sound.clone());
         }
         app.screen = Screen::Pads;
         app.pads.selected = abs;
@@ -14758,9 +14758,9 @@ Enter = "browser.hold"
         let c = app.chop.as_ref().unwrap();
         let mut view = super::chop_view(c, None, None, 48_000, &app.pads).pads;
         super::bank_waves(&mut view, &mut app.pads, 48_000);
-        for i in 0..16 {
+        for (i, pad) in view.pads.iter().enumerate().take(16) {
             let want = app.pads.wave(i, 48_000, super::BIG_COLS);
-            assert_eq!(view.pads[i].wave, want, "pad {i} draws its own wave");
+            assert_eq!(pad.wave, want, "pad {i} draws its own wave");
         }
         assert!(!view.pads[6].dim && view.pads[6].note.as_deref() == Some("slice 3"));
         assert!(view.pads[1].dim, "an empty pad steps back");
