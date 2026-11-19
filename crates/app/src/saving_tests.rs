@@ -1,4 +1,4 @@
-use super::{App, Instant, Notices, Project, SESSION_SAVE, session, tests::test_app};
+use super::{App, Ask, Instant, Notices, Project, SESSION_SAVE, session, tests::test_app};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -59,11 +59,11 @@ fn failed_autosave_retains_pending_work() {
         let now = pending.unwrap();
         app.autosave(now + SESSION_SAVE);
         assert!(
-            !app.session_write_failed,
+            app.session_write_error.is_none(),
             "keep the existing strict time boundary"
         );
         app.autosave(now + SESSION_SAVE + std::time::Duration::from_nanos(1));
-        assert!(app.session_write_failed);
+        assert!(app.session_write_error.is_some());
         assert!(app.session_read_error.is_none());
         assert_eq!(app.session_dirty, pending);
         assert_eq!(std::fs::read(&path).unwrap(), saved);
@@ -141,7 +141,7 @@ fn notice_acknowledgement_and_expiry_do_not_allow_automatic_saves() {
             assert_eq!(app.notices.pending_len(), 0);
             assert_eq!(app.session_dirty, pending);
             assert_eq!(app.session_read_error, protection);
-            assert_eq!(app.session_write_failed, problem == "write");
+            assert_eq!(app.session_write_error.is_some(), problem == "write");
             let status = if problem == "write" {
                 SaveStatus::Failed
             } else {
@@ -186,7 +186,7 @@ fn manual_retry_restores_autosave() {
         app.dirty();
         std::fs::remove_file(tmp).unwrap();
         app.save_session().unwrap();
-        assert!(!app.session_write_failed);
+        assert!(app.session_write_error.is_none());
         assert!(app.session_dirty.is_none());
         let stored = session::load(&app.session_file()).unwrap();
         assert_eq!((stored.pads["0"].pitch, stored.pads["1"].pitch), (3, 7));
@@ -256,7 +256,7 @@ fn damaged_or_newer_session_remains_protected() {
                 assert_eq!(app.session_read_error.as_ref(), Some(&reason));
                 assert_eq!(app.session_dirty, pending);
                 assert!(
-                    !app.session_write_failed,
+                    app.session_write_error.is_none(),
                     "read protection is not a write failure"
                 );
                 assert_eq!(std::fs::read(&path).unwrap(), bytes);
@@ -293,7 +293,7 @@ fn saving_does_not_recreate_a_deleted_project() {
     std::fs::create_dir(&folder).unwrap();
     app.save_session().unwrap();
     assert!(app.session_dirty.is_none());
-    assert!(!app.session_write_failed);
+    assert!(app.session_write_error.is_none());
 }
 
 #[test]
@@ -372,4 +372,66 @@ fn scratch_creates_its_parent_but_project_saving_does_not() {
     assert!(!path.parent().unwrap().exists());
     session::save(&path, &session::Session::default()).unwrap();
     assert!(path.is_file());
+}
+
+/// Scenario "Exit closes a clean session without writing".
+#[test]
+fn exit_closes_a_clean_session_without_writing() {
+    for project in [false, true] {
+        let files = Files::new();
+        let mut app = files.app(project);
+        app.save_session().unwrap();
+        let path = app.session_file();
+        let before = std::fs::read(&path).unwrap();
+        let tmp = block_save(&app);
+
+        app.request_quit();
+        assert!(app.try_finish_exit());
+        assert!(app.session_write_error.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::read(&tmp).unwrap(), b"keep this file");
+    }
+}
+
+/// Scenario "A successful exit saves the pending edit".
+#[test]
+fn a_successful_exit_saves_the_pending_edit() {
+    for project in [false, true] {
+        let files = Files::new();
+        let mut app = files.app(project);
+        app.save_session().unwrap();
+        app.pads.pitch[0] = 5;
+        app.dirty();
+
+        app.request_quit();
+        assert!(app.try_finish_exit());
+        assert!(app.session_dirty.is_none());
+        let saved = session::load_existing(&app.session_file()).unwrap();
+        assert_eq!(saved.pads["0"].pitch, 5);
+    }
+}
+
+/// Scenario "A failed exit save keeps the session open".
+#[test]
+fn a_failed_exit_save_keeps_the_session_open() {
+    for project in [false, true] {
+        let files = Files::new();
+        let mut app = files.app(project);
+        app.save_session().unwrap();
+        let path = app.session_file();
+        let before = std::fs::read(&path).unwrap();
+        let tmp = block_save(&app);
+        app.pads.pitch[0] = 5;
+        app.dirty();
+        let pending = app.session_dirty;
+
+        app.request_quit();
+        assert!(!app.try_finish_exit());
+        assert!(!app.quit_requested);
+        assert_eq!(app.session_dirty, pending);
+        assert_eq!(app.pads.pitch[0], 5);
+        assert!(matches!(app.ask, Some(Ask::ExitRecovery { .. })));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::read(&tmp).unwrap(), b"keep this file");
+    }
 }

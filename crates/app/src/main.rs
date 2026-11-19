@@ -128,6 +128,10 @@ enum Ask {
     Exit {
         lines: Vec<String>,
     },
+    ExitRecovery {
+        lines: Vec<String>,
+        offered_at: Instant,
+    },
     Plan {
         lines: Vec<String>,
     },
@@ -381,22 +385,6 @@ fn folders_of(dir: &Path) -> Vec<PathBuf> {
     folders
 }
 
-impl Ask {
-    fn lines(&self) -> &[String] {
-        match self {
-            Ask::SmcLayout(review) => &review.lines,
-            Ask::Exit { lines }
-            | Ask::Plan { lines }
-            | Ask::PutFile { lines, .. }
-            | Ask::ResetProfile { lines, .. }
-            | Ask::ResetPads { lines, .. }
-            | Ask::ClearPads { lines, .. }
-            | Ask::CopyPad { lines, .. }
-            | Ask::ClearPattern { lines } => lines,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct UiPadHold {
     abs: usize,
@@ -498,7 +486,8 @@ struct App {
     /// A load refusal protects the source file from all save requests.
     session_read_error: Option<String>,
     /// A write refusal pauses automatic saving until a manual save succeeds.
-    session_write_failed: bool,
+    session_write_error: Option<String>,
+    save_notice: Option<saving::SaveNotice>,
     /// Something changed since this moment and is not saved yet.
     session_dirty: Option<Instant>,
     /// The chop screen state; kept after leaving the screen, so coming back to the same pad
@@ -702,7 +691,8 @@ impl App {
         self.restoring_project = true;
         self.finish_project_restore();
         self.session_dirty = None;
-        self.session_write_failed = false;
+        self.session_write_error = None;
+        self.save_notice = None;
     }
 
     fn finish_project_restore(&mut self) {
@@ -1296,7 +1286,8 @@ fn main() -> std::io::Result<()> {
         project: start_project,
         project_cfg: loaded.config.project,
         session_read_error: session_notice.clone(),
-        session_write_failed: false,
+        session_write_error: None,
+        save_notice: None,
         session_dirty: None,
         chop: None,
         chops: Default::default(),
@@ -1443,8 +1434,12 @@ fn main() -> std::io::Result<()> {
     let result = loop {
         app.finish_project_restore();
         app.flush_audio();
-        if app.quit_ready() {
+        let exit_pending = app.quit_requested;
+        if app.try_finish_exit() {
             break Ok(());
+        }
+        if exit_pending && !app.quit_requested {
+            app.publish_midi(&shared);
         }
         let events: Vec<_> = app
             .midi
@@ -1801,7 +1796,9 @@ fn main() -> std::io::Result<()> {
         }
     };
 
-    app.save_on_exit();
+    if result.is_err() {
+        app.save_on_exit();
+    }
     if kitty {
         let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
     }
@@ -4627,7 +4624,8 @@ mod tests {
             project: None,
             project_cfg: config::ProjectConfig::default(),
             session_read_error: Some("test session is protected".into()),
-            session_write_failed: false,
+            session_write_error: None,
+            save_notice: None,
             session_dirty: None,
             chop: None,
             chops: Default::default(),
@@ -6349,7 +6347,7 @@ Enter = "browser.hold"
         assert!(app.pads.missing[0], "the pad inside the folder is missing");
         assert!(!app.pads.missing[1], "the pad outside keeps its file");
         assert_eq!(app.window_title(), "ptsr", "the title drops the name");
-        assert!(app.session_write_failed);
+        assert!(app.session_write_error.is_some());
         assert!(app.session_dirty.is_some());
         std::fs::remove_dir_all(&root).ok();
         std::fs::remove_dir_all(&outside_dir).ok();

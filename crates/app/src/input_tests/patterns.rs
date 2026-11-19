@@ -7182,6 +7182,7 @@ fn pattern_lifecycle_quit_does_not_wait_for_full_command_or_feedback_queues() {
     }
 }
 
+/// Scenario "Exit uses the result of a pending manual save".
 #[test]
 fn pattern_lifecycle_quit_finishes_one_prior_manual_save_with_its_original_source() {
     for source in [Source::Keyboard, Source::Notes, Source::Button] {
@@ -7199,7 +7200,7 @@ fn pattern_lifecycle_quit_finishes_one_prior_manual_save_with_its_original_sourc
             }
             drive.registry_command(source, KeyCode::Char('s'), M::CONTROL, 91);
             assert!(drive.app.pending_manual_save.is_some());
-            assert!(pattern_lifecycle_quit_key(&mut drive));
+            assert_eq!(pattern_lifecycle_quit_key(&mut drive), !failed);
             assert!(drive.app.pending_manual_save.is_none());
             assert_eq!(
                 drive.last_notice().origin,
@@ -7211,10 +7212,11 @@ fn pattern_lifecycle_quit_finishes_one_prior_manual_save_with_its_original_sourc
             );
             assert_eq!(pattern_manual_save_successes(&drive), usize::from(!failed));
             if failed {
+                assert!(matches!(drive.app.ask, Some(Ask::ExitRecovery { .. })));
                 std::fs::remove_file(&tmp).unwrap();
             }
             let history = drive.app.notices.history().clone();
-            drive.app.save_on_exit();
+            assert_eq!(drive.app.try_finish_exit(), !failed);
             assert_eq!(drive.app.notices.history(), &history);
             assert_eq!(drive.app.history.len(), 1);
             if failed {
@@ -7264,8 +7266,8 @@ fn pattern_lifecycle_quit_keeps_existing_file_protection_and_no_retry_policy() {
         app_capture_start(&mut drive, 1);
         drive.pad_press(Source::Notes, 0);
         app_capture_frames(&mut drive, 6000);
-        assert!(pattern_lifecycle_quit_key(&mut drive));
-        drive.app.save_on_exit();
+        assert!(!pattern_lifecycle_quit_key(&mut drive));
+        assert!(matches!(drive.app.ask, Some(Ask::ExitRecovery { .. })));
         assert_eq!(drive.app.history.len(), 1);
         assert!(drive.app.session_dirty.is_some());
         assert_eq!(pattern_manual_save_successes(&drive), 0);
@@ -7279,8 +7281,86 @@ fn pattern_lifecycle_quit_keeps_existing_file_protection_and_no_retry_policy() {
         if problem == "write" {
             assert_eq!(std::fs::read(&tmp).unwrap(), b"occupied");
             std::fs::remove_file(&tmp).unwrap();
-            drive.app.save_on_exit();
+            assert!(!drive.app.try_finish_exit());
             assert_eq!(std::fs::read(&file).unwrap(), valid);
+        }
+    }
+}
+
+/// Scenario "A failed exit keeps the completed A1 take".
+#[test]
+fn pattern_lifecycle_failed_exit_keeps_a1_and_allows_a_new_take() {
+    use engine::capture::Phase;
+    use std::sync::atomic::Ordering::Relaxed;
+    for stopped in [false, true] {
+        let (_files, mut drive) = pattern_autosave_drive(true);
+        app_capture_sound(
+            &mut drive,
+            0,
+            Arc::new(Sample::mono(vec![0.02; 48_000])),
+            true,
+        );
+        app_capture_frames(&mut drive, 0);
+        drive.app.save_session().unwrap();
+        let file = drive.app.session_file();
+        let previous = std::fs::read(&file).unwrap();
+        let blocker = file.with_extension("toml.tmp");
+        std::fs::write(&blocker, b"occupied").unwrap();
+        app_capture_start(&mut drive, 1);
+        drive.pad_press(Source::Notes, 0);
+        app_capture_frames(&mut drive, 6000);
+        let boundary = app_capture_snapshot(&drive);
+        if stopped {
+            drive.audio_rt = None;
+            drive
+                .app
+                .audio
+                .as_ref()
+                .unwrap()
+                .stopped
+                .store(true, Relaxed);
+        } else {
+            // This hit reaches the callback after the UI freezes the accepted prefix.
+            drive.app.send(Command::PadPress {
+                pad: 1,
+                velocity: 1.0,
+            });
+        }
+
+        assert!(!pattern_lifecycle_quit_key(&mut drive));
+        assert_eq!(app_capture_snapshot(&drive), boundary);
+        let take = drive.app.pads.pattern.clone().unwrap();
+        assert_eq!(take.hits, [[960, 18, 70, 0], [0, 0, 127, 240]]);
+        assert_eq!(drive.app.history.len(), 1);
+        assert_eq!(std::fs::read(&file).unwrap(), previous);
+        std::fs::remove_file(&blocker).unwrap();
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.ask.is_none());
+        assert_eq!(pattern_manual_save_successes(&drive), 1);
+        assert_eq!(
+            session::load_existing(&file).unwrap().patterns.as_slice(),
+            std::slice::from_ref(&take)
+        );
+
+        if stopped {
+            let now = Instant::now();
+            let status = drive.app.frame_notice_at(now).unwrap();
+            assert!(status.contains("Session saved") && status.contains("Audio stopped"));
+            let later = drive
+                .app
+                .frame_notice_at(now + Duration::from_secs(6))
+                .unwrap();
+            assert!(!later.contains("Session saved") && later.contains("Audio stopped"));
+        }
+        if !stopped {
+            app_capture_frames(&mut drive, 0);
+            drive.app.flush_audio();
+            assert_eq!(app_capture_snapshot(&drive).phase, Phase::Idle);
+            assert!(drive.app.transport_state().playing);
+            assert_eq!(drive.app.pads.pattern.as_ref(), Some(&take));
+            assert_eq!(drive.app.history.len(), 1);
+            app_capture_start(&mut drive, 2);
+            assert_eq!(app_capture_snapshot(&drive).pass, 2);
         }
     }
 }
@@ -11777,7 +11857,7 @@ fn count_in_and_idle_help_name_hidden_rules() {
 fn a_completed_pass_reports_new_and_replaced_hits() {
     for source in [Source::Keyboard, Source::Notes] {
         let mut drive = app_capture_drive(vec![[0, 0, 64, 0]]);
-        drive.app.session_write_failed = true;
+        drive.app.session_write_error = Some("Save refused.".into());
         app_capture_start(&mut drive, 1);
         // pad 1 on the step of the saved row, then pads 2 and 3 on later steps
         app_capture_frames(&mut drive, 1500);

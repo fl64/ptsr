@@ -799,6 +799,142 @@ fn disconnected_smc_keeps_the_project_picker_for_keyboard() {
     assert_eq!(drive.app.project.as_ref().unwrap().name, "B");
 }
 
+fn request_exit_with_save_failure(drive: &mut Drive, controller: bool) {
+    if controller {
+        hold(drive, true);
+        list_button(drive, false);
+        cell(drive, panel_note(12));
+        assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+        let question = drive.app.question_view(&drive.keymap).unwrap();
+        assert!(
+            question
+                .answers
+                .iter()
+                .any(|line| line.contains("P7/Back: keep · P8: exit"))
+        );
+        hold(drive, false);
+        cell(drive, 63);
+        assert!(!drive.app.try_finish_exit());
+        drive.app.publish_midi(&drive.shared);
+    } else {
+        drive.tap(KeyCode::Char('q'), M::CONTROL);
+    }
+    assert!(!drive.app.quit_requested);
+    assert!(matches!(drive.app.ask, Some(Ask::ExitRecovery { .. })));
+}
+
+/// Scenarios "A prior save refusal stops exit", "Back leaves exit recovery with the edits",
+/// "A refused retry keeps the recovery question" and "A successful retry returns to the saved session".
+/// Scenario "Repeated retry input keeps one save".
+#[test]
+fn exit_recovery_uses_confirm_and_back_from_both_inputs() {
+    for controller in [false, true] {
+        let files = TransitionFiles::new();
+        let mut drive = project_drive(&files);
+        drive.app.session_read_error = None;
+        drive.app.midi_gestures.smc_pad_bank_opens_panel = true;
+        drive.midi().set_pad_bank_shortcut(true);
+        drive.app.goto(Screen::Files);
+        drive.app.save_session().unwrap();
+        let path = drive.app.session_file();
+        let before = std::fs::read(&path).unwrap();
+        let tmp = path.with_extension("toml.tmp");
+        std::fs::write(&tmp, b"occupied").unwrap();
+        drive.app.pads.pitch[0] = 5;
+        drive.app.dirty();
+        let pending = drive.app.session_dirty;
+        let refusal = drive.app.save_session().unwrap_err();
+        drive.app.notices = Notices::new(Instant::now());
+        std::fs::remove_file(&tmp).unwrap();
+
+        request_exit_with_save_failure(&mut drive, controller);
+        let question = drive.app.question_view(&drive.keymap).unwrap();
+        assert_eq!(question.body[0], "Save failed · A");
+        assert!(refusal.ends_with(&question.body[1]));
+        assert!(question.answers[0].contains("Enter: Retry Save"));
+        assert!(question.answers[0].contains("Esc: Back"));
+        assert!(
+            question
+                .answers
+                .iter()
+                .any(|line| line.contains("P7: Back") && line.contains("P8: Retry Save"))
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(drive.app.notices.history().is_empty());
+
+        if controller {
+            cell(&mut drive, 46);
+        } else {
+            drive.tap(KeyCode::Esc, M::NONE);
+        }
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.screen, Screen::Files);
+        assert_eq!(drive.app.session_dirty, pending);
+        assert_eq!(drive.app.pads.pitch[0], 5);
+
+        request_exit_with_save_failure(&mut drive, controller);
+        std::fs::write(&tmp, b"occupied again").unwrap();
+        if controller {
+            for note in [47, 63] {
+                drive.bytes(SMC, &[0x99, note, 100]);
+                drive.bytes(SMC, &[0x89, note, 0]);
+            }
+            drive.frame();
+        } else {
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Press);
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Repeat);
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Release);
+            drive.frame();
+        }
+        assert!(matches!(drive.app.ask, Some(Ask::ExitRecovery { .. })));
+        assert_eq!(drive.app.session_dirty, pending);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::read(&tmp).unwrap(), b"occupied again");
+        assert_eq!(
+            drive
+                .app
+                .notices
+                .history()
+                .iter()
+                .filter(|notice| notice.level == Level::Error)
+                .count(),
+            1
+        );
+
+        std::fs::remove_file(&tmp).unwrap();
+        if controller {
+            for _ in 0..2 {
+                drive.bytes(SMC, &[0x99, 47, 100]);
+                drive.bytes(SMC, &[0x89, 47, 0]);
+            }
+            drive.frame();
+        } else {
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Press);
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Repeat);
+            drive.key(KeyCode::Enter, M::NONE, KeyEventKind::Release);
+            drive.frame();
+        }
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.screen, Screen::Files);
+        assert!(drive.app.session_dirty.is_none());
+        assert!(!drive.app.try_finish_exit());
+        assert_eq!(drive.last_notice().text, "Session saved");
+        assert_eq!(drive.app.frame_notice().as_deref(), Some("Session saved"));
+        assert_eq!(
+            drive
+                .app
+                .notices
+                .history()
+                .iter()
+                .filter(|notice| notice.text == "Session saved")
+                .count(),
+            1
+        );
+        let saved = session::load_existing(&path).unwrap();
+        assert_eq!(saved.pads["0"].pitch, 5);
+    }
+}
+
 fn folder_drive(files: &TransitionFiles) -> Drive {
     let mut drive = smc_drive();
     drive.app.screen = Screen::Settings;

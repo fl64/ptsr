@@ -25,13 +25,37 @@ pub(super) fn pitch_gate(pads: &pads::Pads, abs: usize) -> tui::PitchGate {
     }
 }
 
+impl super::Ask {
+    pub(super) fn lines(&self) -> &[String] {
+        use super::Ask;
+        match self {
+            Ask::SmcLayout(review) => &review.lines,
+            Ask::Exit { lines }
+            | Ask::ExitRecovery { lines, .. }
+            | Ask::Plan { lines }
+            | Ask::PutFile { lines, .. }
+            | Ask::ResetProfile { lines, .. }
+            | Ask::ResetPads { lines, .. }
+            | Ask::ClearPads { lines, .. }
+            | Ask::CopyPad { lines, .. }
+            | Ask::ClearPattern { lines } => lines,
+        }
+    }
+}
+
 fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
     use super::Ask;
     use input::Action;
     match action {
         Action::Back => Some(false),
         Action::Confirm => Some(true),
-        _ if matches!(ask, Ask::Exit { .. } | Ask::SmcLayout(_)) => None,
+        _ if matches!(
+            ask,
+            Ask::Exit { .. } | Ask::ExitRecovery { .. } | Ask::SmcLayout(_)
+        ) =>
+        {
+            None
+        }
         Action::SettingsLearn if matches!(ask, Ask::ResetProfile { .. }) => Some(true),
         Action::BrowserLoad if matches!(ask, Ask::PutFile { .. }) => Some(true),
         Action::ChopCommit | Action::ChopEdit | Action::BrowserHold | Action::PadEdit
@@ -358,11 +382,14 @@ impl App {
         let ask = self.ask.as_ref()?;
         let verb = match ask {
             Ask::Exit { .. } => "exit",
+            Ask::ExitRecovery { .. } => "Retry Save",
             Ask::SmcLayout(_) => "apply",
             Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
             Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
             Ask::ClearPads { .. } | Ask::ClearPattern { .. } => "clear",
         };
+        let recovering = matches!(ask, Ask::ExitRecovery { .. });
+        let cancel_verb = if recovering { "Back" } else { "keep" };
         let focus = self.focus();
         let keyboard_blocked = focus.mode.text || focus.mode.picker || focus.mode.screen_learn;
         let key = |confirm| {
@@ -395,19 +422,21 @@ impl App {
         };
         let confirm =
             key(true).map_or_else(|| "no confirm key".into(), |key| format!("{key}: {verb}"));
-        let cancel =
-            key(false).map_or_else(|| "no cancel key".into(), |key| format!("{key}: keep"));
+        let cancel = key(false).map_or_else(
+            || "no cancel key".into(),
+            |key| format!("{key}: {cancel_verb}"),
+        );
         let mut answers = vec![format!("KB {confirm} · {cancel}")];
         if !keyboard_blocked && !focus.mode.midi_learn {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
                 if port.contains("SMC-PAD-Master") {
-                    let cancel = if matches!(ask, Ask::Exit { .. }) {
-                        "P11/Back"
-                    } else {
-                        "P11"
+                    let (cancel, confirm) = match ask {
+                        Ask::Exit { .. } => ("P7/Back", "P8"),
+                        Ask::ExitRecovery { .. } => ("P7", "P8"),
+                        _ => ("P11", "P12"),
                     };
-                    answers.push(format!("SMC {cancel}: keep · P12: {verb}"));
+                    answers.push(format!("SMC {cancel}: {cancel_verb} · {confirm}: {verb}"));
                     continue;
                 }
                 // Match the worker's port selection. Assignment labels can search another layer.
@@ -447,7 +476,7 @@ impl App {
                                 *slot = Some(format!(
                                     "ch{ch} {}: {}",
                                     msg.key(),
-                                    if confirm { verb } else { "keep" }
+                                    if confirm { verb } else { cancel_verb }
                                 ));
                             }
                             if controls.iter().all(Option::is_some) {
@@ -463,7 +492,12 @@ impl App {
             }
         }
         // Stored lines remain the overwrite guard. Change only this drawing snapshot.
-        let body = ask.lines()[..ask.lines().len().saturating_sub(1)].to_vec();
+        let lines = ask.lines();
+        let body = if recovering {
+            lines.to_vec()
+        } else {
+            lines[..lines.len().saturating_sub(1)].to_vec()
+        };
         Some(tui::Question { body, answers })
     }
 
@@ -1674,7 +1708,12 @@ impl App {
             ));
         }
         if self.audio.as_ref().is_some_and(|a| a.stopped.load(Relaxed)) {
-            return Some("Audio stopped: the sound server or device went away.".into());
+            let status = "Audio stopped: the sound server or device went away.";
+            if matches!(self.save_notice, Some(super::saving::SaveNotice::RecoveredUntil(until)) if now < until)
+            {
+                return Some(format!("Session saved · {status}"));
+            }
+            return Some(status.into());
         }
         if let Some(notice) = self.notices.current_at(now) {
             return Some(notice.text.clone());

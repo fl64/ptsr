@@ -144,7 +144,10 @@ impl App {
             return false;
         }
         match action {
-            Action::Quit => return self.request_quit(),
+            Action::Quit => {
+                self.request_quit();
+                return self.try_finish_exit();
+            }
             // a question waits for Enter (the key of the step itself) or Esc only
             a if self.ask.is_some() => match a {
                 // the settings Enter answers the reset question (59)
@@ -164,6 +167,9 @@ impl App {
                         self.apply_smc_layout(review);
                     }
                 }
+                Action::Confirm if matches!(self.ask, Some(Ask::ExitRecovery { .. })) => {
+                    self.request_manual_save();
+                }
                 Action::Confirm
                 | Action::ChopCommit
                 | Action::ChopEdit
@@ -175,7 +181,9 @@ impl App {
                             self.request_quit();
                         }
                         Some(Ask::Plan { .. }) => self.apply_plan(),
-                        Some(Ask::ResetProfile { .. } | Ask::SmcLayout(_)) => {}
+                        Some(
+                            Ask::ResetProfile { .. } | Ask::SmcLayout(_) | Ask::ExitRecovery { .. },
+                        ) => {}
                         Some(Ask::ResetPads { pads, .. }) => {
                             let pads = pads.clone();
                             self.ask = None;
@@ -1182,6 +1190,19 @@ impl App {
             .map_or(Origin::System, |port| Origin::Device(port.into()));
         let owner_input = ev.owner_input();
         let released = ev.release_signal();
+        let blocked_exit_retry = matches!(
+            self.ask,
+            Some(Ask::ExitRecovery { offered_at, .. })
+                if received_at.is_some_and(|at| at <= offered_at)
+        ) && match &ev.event {
+            midi::Event::Action(Action::Confirm) | midi::Event::PanelCell { cell: 8, .. } => true,
+            midi::Event::Message {
+                port,
+                msg: input::midi::Msg::NoteOn { note: 63, .. },
+                ..
+            } => port.contains("SMC-PAD-Master"),
+            _ => false,
+        };
         let blocked_transport_answer = self.ask.is_some()
             && ev
                 .origin()
@@ -1204,7 +1225,12 @@ impl App {
             );
         if let Some(ev) = ev
             .current(self.audio.as_ref().map(|audio| audio.project.as_ref()))
-            .filter(|_| !suppressed && !blocked_transport_answer && !blocked_picker_value)
+            .filter(|_| {
+                !suppressed
+                    && !blocked_transport_answer
+                    && !blocked_picker_value
+                    && !blocked_exit_retry
+            })
         {
             let old = std::mem::replace(&mut self.notice_origin, origin);
             if owner_input {
@@ -1650,7 +1676,11 @@ impl App {
                         7 => {
                             self.apply(Action::Back);
                         }
-                        13 if matches!(self.ask, Some(Ask::Exit { .. })) => {
+                        13 if matches!(
+                            self.ask,
+                            Some(Ask::Exit { .. } | Ask::ExitRecovery { .. })
+                        ) =>
+                        {
                             self.apply(Action::Back);
                         }
                         8 => {
