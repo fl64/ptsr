@@ -88,6 +88,22 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - From 87, each new mode needs its visible badge, pad state and hints. From 92, each new action states its keyboard and controller paths, or its text-only exception. Change 93 checks reach from screens and modes; 93a adds comfort before transport. Pad lights (94) are optional.
 - Each proposal gives separate owner checks for keyboard and controller, plus the renders to hear. Keep current capabilities, planned work and unverified hardware facts separate in documents and reports.
 
+## Controller usability goal
+
+This is the main product goal. It has priority over a short implementation.
+
+- The owner does every action from the SMC-PAD without a memo. Examples: select a pad, edit it, add FX, record from the microphone or the output, chop, assign, use A1, settings, save and exit. Recording is one example, not the full scope.
+- For each user scenario, check each step:
+  1. What does the owner press?
+  2. What does the screen show immediately after the press?
+  3. Does the screen show the next step?
+  4. Does the screen show how to cancel or go back?
+- A step fails if the screen shows nothing, shows wrong data, or needs a memorized pad number.
+- The screen shows the current state at all times, also after the owner releases PAD BANK. The state is the active mode, the item in hand, the running operation, the next step and the cancel control.
+- The same action uses the same control on all screens, layers and modes. This applies to yes, cancel or back, undo, place on a pad and move through a list.
+- Count the presses of each route. Make each route as short as possible.
+- If a spec, the code or a plan contradicts this goal, stop. Tell the owner in Russian, in plain words, without code names. Give two or three options. For each option, tell what the owner presses and sees, what becomes better and what becomes worse. Put your recommendation first.
+
 ## Real time — you must not break it
 
 - In the audio callback: no memory allocation, no mutexes, no I/O, no logging, no panics.
