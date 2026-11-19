@@ -20,10 +20,96 @@ pub fn device_number(cell: usize) -> usize {
     (3 - row) * 4 + column + 1
 }
 
+/// The pad keys in grid order, top left first, as the program maps them.
+const KEYS: [char; 16] = [
+    '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
+];
+
+thread_local! {
+    /// With an SMC-PAD connection, pads read by the numbers printed on the device (134).
+    static DEVICE_NUMBERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_device_numbers(on: bool) {
+    DEVICE_NUMBERS.set(on);
+}
+
+pub fn device_numbers() -> bool {
+    DEVICE_NUMBERS.get()
+}
+
+thread_local! {
+    /// The last input came from the SMC-PAD: texts name its controls, not keys (134).
+    static SMC_WORDS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_smc_words(on: bool) {
+    SMC_WORDS.set(on);
+}
+
+pub fn smc_words() -> bool {
+    SMC_WORDS.get()
+}
+
+thread_local! {
+    /// The knobs that turn the rows of a pad edit page, top down; `None` counts 1, 2, 3.
+    static ROW_KNOBS: std::cell::Cell<Option<[u8; 4]>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_row_knobs(knobs: Option<[u8; 4]>) {
+    ROW_KNOBS.set(knobs);
+}
+
+thread_local! {
+    /// The knobs that turn the rows of the selected FX slot; `None` counts 1, 2, 3.
+    static FX_KNOBS: std::cell::Cell<Option<[u8; 3]>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_fx_knobs(knobs: Option<[u8; 3]>) {
+    FX_KNOBS.set(knobs);
+}
+
+/// The number on FX row `index`: with SMC-PAD knobs only the selected slot has one.
+pub(super) fn fx_row_knob(index: usize, selected: bool) -> Option<usize> {
+    match FX_KNOBS.get() {
+        Some(knobs) => selected
+            .then(|| knobs.get(index).copied().map(usize::from))
+            .flatten(),
+        None => Some(index + 1),
+    }
+}
+
+/// The knob number shown on page row `index`.
+fn row_knob(index: usize) -> usize {
+    ROW_KNOBS
+        .get()
+        .and_then(|knobs| knobs.get(index).copied())
+        .map_or(index + 1, usize::from)
+}
+
+/// The name of the pad at grid `index` (0 is top left): its device number with an
+/// SMC-PAD connection, otherwise its key.
+pub fn pad_tag(index: usize) -> String {
+    let index = index % 16;
+    if device_numbers() {
+        device_number(index + 1).to_string()
+    } else {
+        KEYS[index].to_ascii_uppercase().to_string()
+    }
+}
+
+/// [`pad_tag`] for a pad known by its key.
+pub fn key_tag(key: char) -> String {
+    match KEYS.iter().position(|k| *k == key.to_ascii_lowercase()) {
+        Some(index) => pad_tag(index),
+        None => key.to_uppercase().to_string(),
+    }
+}
+
 /// The header: the shown view in the middle, its neighbors on the left and right.
 fn panel_header(panel: &CommandPanel) -> String {
     if panel.target {
-        return format!(" PANEL · SMC │ {}", panel.view);
+        return format!(" PANEL │ {}", panel.view);
     }
     if panel.page == 0 {
         " · │ SCREENS │ actions ›".to_string()
@@ -49,13 +135,7 @@ pub fn command_panel_in(
 ) {
     let [_, body, _, _] = frame_areas(content);
     let pad = pad_frame(body, false);
-    frame.render_widget(
-        Line::from(" PANEL · SMC ").fg(BG).bg(CYAN),
-        Rect {
-            width: pad.title.width.min(13),
-            ..pad.title
-        },
-    );
+    // The screen title and its badges stay; the header below names the panel (134).
     // The bank strip under the header is wider than the header text.
     frame.render_widget(Clear, pad.bank);
     let accent = if panel.page == 0 && !panel.target {
@@ -73,8 +153,7 @@ pub fn command_panel_in(
         for (column, area) in cells.iter().enumerate() {
             let index = row * 4 + column;
             let label = panel.labels[index].as_deref().unwrap_or("");
-            let active =
-                panel.labels[index].is_some() && !matches!(label, "mixer" | "redo" | "panic");
+            let active = panel.labels[index].is_some() && !matches!(label, "mixer" | "redo");
             // Three zones: screens, the actions of the current view, the fixed bottom row.
             let zone = if row == 3 {
                 TEXT
@@ -200,10 +279,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
         let lines = vec![
             Line::from(vec![
                 "pad ".fg(DIM),
-                Span::styled(
-                    sel.key.to_uppercase().to_string(),
-                    Style::new().fg(CYAN).bold(),
-                ),
+                Span::styled(key_tag(sel.key), Style::new().fg(CYAN).bold()),
                 format!("  bank {}", p.bank + 1).fg(DIM),
                 // the closed panel says how to open the edit; the edit has its frame (70)
                 if p.edit.is_none() && !p.edit_key.is_empty() {
@@ -562,7 +638,7 @@ fn release_line(p: &Pads, sel: &PadView) -> Line<'static> {
 
 fn param_line(p: &Pads, which: PadParam, label: &'static str, value: String) -> Line<'static> {
     let knob = match p.knobs.iter().position(|&k| k == which) {
-        Some(i) => Span::styled(format!("{} ", i + 1), Style::new().fg(MAGENTA).bold()),
+        Some(i) => Span::styled(format!("{} ", row_knob(i)), Style::new().fg(MAGENTA).bold()),
         None => "  ".into(),
     };
     let style = if p.lit == Some(which) {

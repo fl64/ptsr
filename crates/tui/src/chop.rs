@@ -2,6 +2,22 @@
 
 use super::*;
 
+/// After an SMC-PAD input, the key lines of the Chop side list name SMC-PAD controls
+/// instead (134); `None` drops a line that has no SMC-PAD route.
+fn smc_side(line: &str) -> Option<String> {
+    if !pads::smc_words() {
+        return Some(line.to_string());
+    }
+    Some(match line {
+        "J L pick the slice, a pad hit places it" => "a pad hit places the next slice".into(),
+        "Tab: all in order" | "Tab: back to by hand" => "PAD BANK + 16: order".into(),
+        "Enter: apply · Esc: back" => "PAD BANK + 4 apply · PAD BANK + 1 cancel".into(),
+        "P: put them on pads" => "PAD BANK + 16: assign".into(),
+        "Ctrl+1…8: more slices" => return None,
+        line => line.to_string(),
+    })
+}
+
 // Paragraph can put a wide grapheme in its last single cell. Pre-wrap only wide side text.
 pub(super) fn side_rows(text: &str, width: u16) -> Vec<String> {
     let width = usize::from(width);
@@ -362,9 +378,16 @@ pub(super) fn draw(
             Style::new().fg(BG).bg(MAGENTA).bold(),
         ));
     }
-    let lines: Vec<Line> = slice_rows(slice_line, &c.info, pf.side.width)
+    let info = if pads::smc_words() {
+        c.info
+            .replace("   (Y cuts into equal parts, Space and M cut by ear)", "")
+    } else {
+        c.info.clone()
+    };
+    let side: Vec<String> = c.side.iter().filter_map(|line| smc_side(line)).collect();
+    let lines: Vec<Line> = slice_rows(slice_line, &info, pf.side.width)
         .into_iter()
-        .chain(c.side.iter().enumerate().flat_map(|(i, line)| {
+        .chain(side.iter().enumerate().flat_map(|(i, line)| {
             side_rows(line, pf.side.width)
                 .into_iter()
                 .map(move |line| Line::from(line).fg(if i == 0 { CYAN } else { DIM }))
@@ -451,4 +474,39 @@ fn slice_rows(first: Vec<Span<'static>>, info: &str, width: u16) -> Vec<Line<'st
     }
     rows.push(Line::from(row));
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::smc_side;
+
+    /// After an SMC-PAD input the Assign lines name SMC-PAD controls, not keys (134).
+    #[test]
+    fn chop_side_lines_name_smc_pad_controls_after_smc_input() {
+        crate::pads::set_smc_words(true);
+        let lines: Vec<_> = [
+            "J L pick the slice, a pad hit places it",
+            "Tab: all in order",
+            "Enter: apply · Esc: back",
+            "Ctrl+1…8: more slices",
+            "3 slices → bank 1",
+        ]
+        .iter()
+        .filter_map(|line| smc_side(line))
+        .collect();
+        crate::pads::set_smc_words(false);
+        assert_eq!(
+            lines,
+            [
+                "a pad hit places the next slice",
+                "PAD BANK + 16: order",
+                "PAD BANK + 4 apply · PAD BANK + 1 cancel",
+                "3 slices → bank 1",
+            ]
+        );
+        assert_eq!(
+            smc_side("Tab: all in order").as_deref(),
+            Some("Tab: all in order")
+        );
+    }
 }

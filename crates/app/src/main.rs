@@ -1635,7 +1635,8 @@ fn main() -> std::io::Result<()> {
                     let mut view = pads_view(
                         &mut app.pads,
                         pickup,
-                        app.pad_in_hand,
+                        app.pad_in_hand
+                            .or(app.copy_in_hand.as_ref().map(|copy| copy.0)),
                         out,
                         splash,
                         app.rate,
@@ -1707,7 +1708,7 @@ fn main() -> std::io::Result<()> {
         );
         let groups = match (&app.project_picker, mods.get()) {
             // the learn mode speaks in its own lines, the columns step aside (52)
-            _ if app.screen_learn.is_some() => Vec::new(),
+            _ if app.screen_learn.is_some() || app.input_sources.last_is_smc() => Vec::new(),
             // the picker takes the keys: the line says its own (35)
             (Some(p), _) => picker_help(p.naming.is_some()),
             (None, Some(m)) => modifier_groups(&keymap, app.screen, m, app.ui.hide_pads),
@@ -1722,7 +1723,7 @@ fn main() -> std::io::Result<()> {
         let panel = app.panel_snapshot();
         let help = tui::Help {
             groups: &groups,
-            hint: hint_for(&app),
+            hint: hint_for(&app).filter(|_| !app.input_sources.last_is_smc()),
             full: full
                 .as_deref()
                 .and_then(|rows| app.full_help_view(rows, &messages)),
@@ -2478,22 +2479,18 @@ fn pad_place(abs: usize) -> String {
     format!(
         "bank {}, pad {}",
         abs / PADS_PER_BANK + 1,
-        PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()
+        tui::pads::pad_tag(abs)
     )
 }
 
 /// "pad Q kick": the pad key and what lies on it.
 fn pad_label(p: &pads::Pads, abs: usize) -> String {
-    format!(
-        "pad {} {}",
-        PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase(),
-        pad_name(p, abs)
-    )
+    format!("pad {} {}", tui::pads::pad_tag(abs), pad_name(p, abs))
 }
 
 /// A pad as bank and key, `2-W`, as the chop screen labels it (27, the dash of 36).
 fn bank_key(abs: usize) -> String {
-    let key = PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase();
+    let key = tui::pads::pad_tag(abs);
     format!("{}-{key}", abs / PADS_PER_BANK + 1)
 }
 
@@ -3095,10 +3092,7 @@ fn in_hand_line(p: &pads::Pads, abs: usize) -> String {
     } else {
         "empty".into()
     };
-    format!(
-        "in hand: pad {} · {name}",
-        PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()
-    )
+    format!("in hand: pad {} · {name}", tui::pads::pad_tag(abs))
 }
 
 /// Without kitty a held modifier is not seen, so the hold hints of the help line read as
@@ -17213,7 +17207,7 @@ Enter = "browser.hold"
             (41..48).all(|a| app.pads.file[a].is_none()),
             "10–16 untouched"
         );
-        assert_eq!(flash(&app), "slices placed on bank 3");
+        assert!(flash(&app).starts_with("slices placed on bank 3: "));
     }
 
     /// Scenario "More slices than pads to the end of the bank" (chopping): 9 slices from
@@ -17230,7 +17224,7 @@ Enter = "browser.hold"
             assert_eq!(app.pads.region[12 + i], *slice);
         }
         assert!(app.pads.file[21].is_none() && app.pads.file[11].is_none());
-        assert_eq!(flash(&app), "slices placed on banks 1–2");
+        assert!(flash(&app).starts_with("slices placed on banks 1–2: "));
     }
 
     /// Slices 1 and 2 planned on pads Q and W of bank 2, which hold "kick" and "amen 3".

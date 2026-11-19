@@ -12,6 +12,8 @@ pub struct KnobStrip {
     pub last_knob: Option<usize>,
     /// The knob, value name, target and amount while its value pop-up shows.
     pub value: Option<String>,
+    /// The active mode, its next step and its cancel control (134).
+    pub mode: Option<String>,
 }
 
 const STRIP_WIDTH: u16 = 40;
@@ -123,7 +125,14 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
     if let Some(operation) = strip.operation {
         help.push(Line::from(operation).fg(TEXT));
     }
-    help.push(Line::from("PAD BANK hold · PLAY play · STOP stop").fg(DIM));
+    match &strip.mode {
+        Some(mode) => help.push(
+            Line::from(clip_label(mode, usize::from(right.width)))
+                .fg(MAGENTA)
+                .bold(),
+        ),
+        None => help.push(Line::from("PAD BANK hold · PLAY play · STOP stop").fg(DIM)),
+    }
     let remaining = usize::from(HELP_ROWS + 1).saturating_sub(help.len());
     help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);
@@ -147,6 +156,7 @@ mod tests {
             last_bank: Some(0),
             last_knob: Some(6),
             value: Some("B1 7 volume · pad 1 · +1 dB".into()),
+            mode: None,
         };
         for width in [80, 120] {
             let mut term = Terminal::new(TestBackend::new(width, HELP_ROWS + 1)).unwrap();

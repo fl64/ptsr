@@ -478,8 +478,7 @@ impl super::App {
                             format!(
                                 "A1: bank {} pad {} step {}: added one hit. Undo removes it.",
                                 self.pads.bank + 1,
-                                super::pads::PAD_KEYS[abs % super::PADS_PER_BANK]
-                                    .to_ascii_uppercase(),
+                                tui::pads::pad_tag(abs),
                                 self.pattern_view.cursor_cell + 1,
                             ),
                             std::time::Instant::now(),
@@ -519,7 +518,7 @@ impl super::App {
                     format!(
                         "A1: bank {} pad {} step {}: removed one hit. Undo restores it.",
                         self.pads.bank + 1,
-                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase(),
+                        tui::pads::pad_tag(abs),
                         self.pattern_view.cursor_cell + 1,
                     ),
                     std::time::Instant::now(),
@@ -572,9 +571,13 @@ impl super::App {
             event_velocity: None,
         };
         let Some(raw) = &self.pads.pattern else {
-            let keys = self
-                .help_bindings(keymap, input::Action::PatternRecord)
-                .join("/");
+            // After an SMC-PAD input the device RECORD button names the route (134).
+            let keys = if self.input_sources.last_is_smc() {
+                "RECORD".to_string()
+            } else {
+                self.help_bindings(keymap, input::Action::PatternRecord)
+                    .join("/")
+            };
             view.header = format!(
                 "pattern A1 is empty · {} record A1",
                 if keys.is_empty() { "none" } else { &keys }
@@ -750,9 +753,13 @@ impl super::App {
             playhead: None,
         };
         let Some(raw) = &self.pads.pattern else {
-            let keys = self
-                .help_bindings(keymap, input::Action::PatternRecord)
-                .join("/");
+            // After an SMC-PAD input the device RECORD button names the route (134).
+            let keys = if self.input_sources.last_is_smc() {
+                "RECORD".to_string()
+            } else {
+                self.help_bindings(keymap, input::Action::PatternRecord)
+                    .join("/")
+            };
             strip.header = format!(
                 "No A1 · {} record A1",
                 if keys.is_empty() { "none" } else { &keys }
@@ -804,10 +811,7 @@ impl super::App {
             model.division.label(),
             self.pads.bank + 1,
         );
-        strip.label = format!(
-            "pad {}",
-            super::PAD_KEYS[self.pads.selected].to_ascii_uppercase()
-        );
+        strip.label = format!("pad {}", tui::pads::pad_tag(self.pads.selected));
         strip.beat_cells = (960 / spacing) as usize;
         strip.playhead = tick.map(|tick| (tick / spacing) as usize);
         strip.cells = cells

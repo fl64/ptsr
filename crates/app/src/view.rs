@@ -427,16 +427,15 @@ impl App {
             |key| format!("{key}: {cancel_verb}"),
         );
         let mut answers = vec![format!("KB {confirm} · {cancel}")];
+        // After an SMC-PAD input the answer row names its pads only (134).
+        if self.input_sources.last_is_smc() && !focus.mode.midi_learn {
+            answers.clear();
+        }
         if !keyboard_blocked && !focus.mode.midi_learn {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
                 if port.contains("SMC-PAD-Master") {
-                    let cancel = if matches!(ask, Ask::Exit { .. }) {
-                        "P11/Back"
-                    } else {
-                        "P11"
-                    };
-                    answers.push(format!("SMC {cancel}: {cancel_verb} · P12: {verb}"));
+                    answers.push(format!("SMC P1: {cancel_verb} · P4: {verb}"));
                     continue;
                 }
                 // Match the worker's port selection. Assignment labels can search another layer.

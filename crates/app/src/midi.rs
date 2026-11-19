@@ -166,8 +166,8 @@ struct HoldRoute {
 
 impl HoldRoute {
     /// With the hold shortcut, both note ranges of a physical pad mean that pad: a hold
-    /// makes the hit a panel cell, otherwise it plays. The question pads P7 and P8 (notes
-    /// 62 and 63) answer without a hold. A release follows its press.
+    /// makes the hit a panel cell, otherwise it plays. The question pads, device pads 1 and 4
+    /// (notes 52 and 55), answer without a hold (134). A release follows its press.
     fn route(&mut self, port: &str, msg: Msg, active: bool, question: bool) -> Msg {
         match msg {
             Msg::NoteOn {
@@ -177,11 +177,25 @@ impl HoldRoute {
             } if active && port.contains("SMC-PAD-Master") => {
                 let position = (note - 36) % 16;
                 let cell = 52 + position;
-                let target = if self.held.contains(port) || (question && matches!(cell, 62 | 63)) {
+                let target = if self.held.contains(port) || (question && matches!(cell, 52 | 55)) {
                     cell
                 } else {
                     36 + position
                 };
+                self.notes.insert((port.into(), 10, note), target);
+                Msg::NoteOn {
+                    ch: 10,
+                    note: target,
+                    velocity,
+                }
+            }
+            // Without the shortcut, a question still takes device pads 1 and 4 of the first bank.
+            Msg::NoteOn {
+                ch: 10,
+                note: note @ (36 | 39),
+                velocity,
+            } if question && port.contains("SMC-PAD-Master") => {
+                let target = note + 16;
                 self.notes.insert((port.into(), 10, note), target);
                 Msg::NoteOn {
                     ch: 10,
@@ -1443,7 +1457,7 @@ fn dispatch(
                 if waiting
                     || route == PadRoute::Ui
                     || (port.contains("SMC-PAD-Master")
-                        && matches!(msg, Msg::NoteOn { note: 62 | 63, .. })) =>
+                        && matches!(msg, Msg::NoteOn { note: 52 | 55, .. })) =>
             {
                 let abs = focus.bank * PADS_PER_BANK + pad;
                 let ui_press = stamp.ready.then(|| {
@@ -3953,10 +3967,11 @@ mod tests {
         ));
     }
 
-    /// 92 command-panel: "P7 and P8 answer a visible question on the first hit".
+    /// 134 command-panel: "Pad 1 and pad 4 answer a visible question on the first hit".
+    /// Notes 52 and 55 are the second-bank notes of device pads 1 and 4.
     #[test]
-    fn p7_and_p8_answer_a_visible_question_on_the_first_hit() {
-        for (note, binding) in [(62, "pad.1"), (63, "ui.confirm")] {
+    fn pad_1_and_pad_4_answer_a_visible_question_on_the_first_hit() {
+        for (note, binding) in [(52, "pad.1"), (55, "ui.confirm")] {
             let mut profile = smc_profiles()
                 .into_iter()
                 .find(|profile| profile.name == "SMC-PAD")
@@ -4003,9 +4018,9 @@ mod tests {
         }
     }
 
-    /// Scenario "PLAY and STOP do not answer a question" (command-panel).
+    /// Scenario "PLAY and STOP do not answer a pad 1 and pad 4 question" (command-panel).
     #[test]
-    fn play_and_stop_do_not_answer_a_question() {
+    fn play_and_stop_do_not_answer_a_pad_1_and_pad_4_question() {
         for (cc, command) in [
             (27, Command::TransportPlayContext),
             (28, Command::TransportStopContext),
@@ -4085,7 +4100,7 @@ mod tests {
                 question
                     .answers
                     .iter()
-                    .any(|answer| answer.contains("P11: keep · P12: clear"))
+                    .any(|answer| answer.contains("P1: keep · P4: clear"))
             );
             assert!(question.answers.iter().any(|answer| answer.contains("KB ")));
             assert!(
@@ -4178,7 +4193,8 @@ mod tests {
             Arc::new(Shared::default()),
         );
         let start = Instant::now();
-        for (step, note) in [64, 63, 66, 63].into_iter().enumerate() {
+        // Note 47 is the first-layer pad 8: the target of the swap since change 134.
+        for (step, note) in [64, 63, 66, 47].into_iter().enumerate() {
             midi.recorded_bytes_at(
                 SMC_MASTER,
                 &[0x99, note, 100],
@@ -4206,8 +4222,7 @@ mod tests {
             app.pads.file[1].as_deref(),
             Some(std::path::Path::new("second.wav"))
         );
-        assert!(app.panel.visible());
-        assert_eq!(app.panel.page(), 1);
+        assert!(!app.panel.visible(), "the target hit hides the panel");
         drop(midi);
         worker.join().unwrap();
     }

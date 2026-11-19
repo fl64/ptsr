@@ -119,7 +119,8 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Fx, s: &Status) {
                 });
             }
             spans.push(Span::styled(
-                format!("{} ", param + 1),
+                pads::fx_row_knob(param, is_selected)
+                    .map_or("  ".into(), |knob| format!("{knob} ")),
                 Style::new().fg(color),
             ));
             spans.push(Span::styled(
@@ -134,4 +135,38 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Fx, s: &Status) {
         }
     }
     frame.render_widget(Paragraph::new(lines), text_area);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::{draw_rows, shared_fx};
+
+    fn text(rows: &[Vec<(String, ratatui::style::Color, ratatui::style::Color)>]) -> Vec<String> {
+        rows.iter()
+            .map(|row| row.iter().map(|(symbol, _, _)| symbol.as_str()).collect())
+            .collect()
+    }
+
+    /// Scenario "FX rows show their knobs" (screen-layout): knobs 2–4 turn the selected slot.
+    #[test]
+    fn fx_rows_show_their_knobs() {
+        crate::pads::set_fx_knobs(Some([2, 3, 4]));
+        let rows = text(&draw_rows(&crate::Screen::Fx(shared_fx()), 120, 40));
+        crate::pads::set_fx_knobs(None);
+        let joined = rows.join("\n");
+        let slot = |n: usize| {
+            let start = rows
+                .iter()
+                .position(|row| row.contains(&format!("FX {n} ·")))
+                .unwrap();
+            rows[start + 1..start + 4].to_vec()
+        };
+        for (row, knob) in slot(1).iter().zip(["2 ", "3 ", "4 "]) {
+            assert!(row.trim_start_matches('│').starts_with(knob), "{joined}");
+        }
+        for row in slot(2) {
+            let body = row.trim_start_matches('│');
+            assert!(!body.starts_with(char::is_numeric), "{joined}");
+        }
+    }
 }

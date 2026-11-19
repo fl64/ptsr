@@ -26,11 +26,11 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
     match &p.naming {
         Some(name) => {
             lines.push(format!("name: {name}").into());
-            lines.push(" Enter/P12 create · Esc/P11 back to list".fg(DIM).into());
+            lines.push(" Enter/P4 create · Esc/P1 back to list".fg(DIM).into());
         }
         None => {
             lines.push(
-                " E1/↑↓ select · Enter/P12 open · type a name · Esc/P11 close"
+                " knob 1/↑↓ select · Enter/P4 open · type a name · Esc/P1 close"
                     .fg(DIM)
                     .into(),
             );
@@ -43,6 +43,10 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     let pf = pad_frame(area, f.pads.hidden);
     // the title carries what the screen says: the file in hand or the error (31)
     let note = match (f.in_hand, f.error) {
+        (Some(name), _) if pads::smc_words() => {
+            format!("   In hand: {name}. Hit a pad. PAD BANK + 1 puts it back.")
+                .fg(MAGENTA)
+        }
         (Some(name), _) => format!(
             "   In hand: {name}. Arrows choose a pad, Enter puts it there (or hit a pad). Esc puts it back."
         )

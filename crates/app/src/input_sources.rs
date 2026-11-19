@@ -96,6 +96,21 @@ impl State {
             })
     }
 
+    /// The last press or movement came from a connected SMC-PAD Master (134).
+    pub(super) fn last_is_smc(&self) -> bool {
+        self.latest
+            .as_ref()
+            .is_some_and(|(source, _)| match source {
+                Source::Device { port, connection } => {
+                    port.contains("SMC-PAD-Master")
+                        && self
+                            .connected()
+                            .any(|(name, id)| name == port && id == *connection)
+                }
+                Source::Keyboard => false,
+            })
+    }
+
     pub(super) fn keyboard_at(&self, now: Instant) -> bool {
         self.latest.as_ref().is_some_and(|(source, at)| {
             *source == Source::Keyboard

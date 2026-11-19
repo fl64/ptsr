@@ -533,7 +533,7 @@ impl App {
         let page = (self.edit && self.screen == Screen::Pads).then(|| self.pads.page().0);
         let found: Option<(&'static str, String)> = match action {
             Action::PadPress { pad, .. } => {
-                let key = PAD_KEYS[pad].to_ascii_uppercase();
+                let key = tui::pads::pad_tag(pad);
                 Some((
                     action_info(&format!("pad.{}", pad + 1)).name,
                     format!("pad {key}"),
@@ -638,7 +638,7 @@ impl App {
             .and_then(|n| n.parse::<usize>().ok())
         {
             return (n < PADS_PER_BANK).then(|| {
-                let key = PAD_KEYS[n].to_ascii_uppercase();
+                let key = tui::pads::pad_tag(n);
                 (
                     action_info(&format!("pad.{}", n + 1)).name,
                     format!("pad {key}"),
@@ -848,7 +848,7 @@ impl App {
         }
         match keymap.resolve_in(self.screen, self.edit_keys(), k) {
             Some(Action::PadPress { pad, .. }) => {
-                let key = PAD_KEYS[pad].to_ascii_uppercase();
+                let key = tui::pads::pad_tag(pad);
                 self.learn_pick(
                     action_info(&format!("pad.{}", pad + 1)).name,
                     format!("pad {key}"),
@@ -1609,7 +1609,10 @@ impl App {
                     .unwrap_or_default();
                 format!(
                     " {} for \"{}\" ({}){replaced} · Enter: assign and save · Esc: keep all · another control takes its place",
-                    control_name(&self.live_profiles(), profile, *key),
+                    super::controller_map::smc_printed(
+                        profile,
+                        &control_name(&self.live_profiles(), profile, *key)
+                    ),
                     l.info.label,
                     l.slot.name(),
                 )

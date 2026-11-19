@@ -440,7 +440,7 @@ them. The keys in use are in `config/keymap.toml`; the table below is historical
 
 **Controller:** PLAY starts or continues the transport on Pads and Pattern. On Chop it starts the selection preview. On Files it starts the selected preview. PLAY hold toggles the metronome. The first STOP tap pauses the transport at its position or stops a preview. A second STOP tap while transport is paused returns to the start. Space keeps its existing stop-and-reset path. STOP controls playback. RECORD tap records the pattern where available. RECORD hold records the microphone. LEFT and RIGHT select the previous or next item and repeat while held.
 
-Holding PAD BANK shows the command panel (change 131). A pad hit during the hold runs its cell, and a hit without the hold plays, on either device layer. The panel shows up to 12 actions of the current screen or mode on one page. LEFT shows the screens view with the screens and the global actions. RIGHT returns to the actions. An action that does not fit goes to its own screen or mode. Every view keeps Back, Undo, Redo and Panic on the bottom row. Redo and Panic remain unavailable until 93a. PAD BANK sends no unsolicited MIDI message. On the supported USB SMC-PAD, F12 MIDI uses a read-only status query to see the hold. With the hold off, the first layer 2 hit with a shipped panel binding only shows a panel that is still hidden. Later hits run cells. An explicit owner binding can replace a cell outside a question. P11 cancels and P12 confirms a visible question on the first hit, without a hold. PLAY and STOP never answer it. With the hold off, a layer 1 hit hides the panel. The status line shows PANEL when the menu opens. Entering or leaving the panel never stops the music. Knob bank 1 controls the screen. Bank 2 has only master on knob 8. Both banks work while the panel shows.
+Holding PAD BANK shows the command panel (change 131). A pad hit during the hold runs its cell, and a hit without the hold plays, on either device layer. The panel shows up to 12 actions of the current screen or mode on one page. LEFT shows the screens view with the screens and the global actions. RIGHT returns to the actions. An action that does not fit goes to its own screen or mode. Every view keeps the control row on the bottom row: P1 No or Back, P2 Undo, P3 Redo and P4 Yes or Apply (change 134). Redo remains unavailable until 93a. Panic leaves the panel. Change 93a decides its route. PAD BANK sends no unsolicited MIDI message. On the supported USB SMC-PAD, F12 MIDI uses a read-only status query to see the hold. With the hold off, the first layer 2 hit with a shipped panel binding only shows a panel that is still hidden. Later hits run cells. An explicit owner binding can replace a cell outside a question. P1 cancels and P4 confirms a visible question on the first hit, without a hold, from either device layer. PLAY and STOP never answer it. With the hold off, a layer 1 hit hides the panel. The screen title stays when the menu opens. The header above the cells names the panel view. Entering or leaving the panel never stops the music. Knob bank 1 controls the screen. Bank 2 has only master on knob 8. Both banks work while the panel shows.
 
 **SMC-PAD layout (change 124).** LEFT and RIGHT move the main list of each screen or mode.
 Knob 1 moves position. Bank 1 knobs 2–7 change values on the current page.
@@ -450,8 +450,11 @@ Knob 8 changes master volume in both banks. Each knob detent is one step.
 The knob strip shows both banks in physical order and marks the last knob input.
 Tempo has a knob on the Pattern transport page. The A1 actions have Tap Tempo.
 Change 127 puts Help in the screens view. The P numbers are the numbers printed
-on the device. The target panel uses its 12 upper cells for placements.
-P1 cancels, P4 applies Assign, and P3 switches to the commands.
+on the device. Change 134 places items with pad hits on the playing layer, on all 16 pads.
+During a hold, P1 cancels, P4 applies Assign, and P3 opens the menu.
+With an SMC-PAD connection, the screen names pads by the device numbers and page rows by
+their knobs. After an SMC-PAD input, hints name SMC-PAD controls, and a mode line shows the
+next step and the cancel control.
 See [the layout plan](plans/SMC-PAD-INTEGRATION.md#2-the-layout) for the roles.
 
 SHIFT has no assigned ptsr shortcut without a measured host message. Its printed pad shortcuts can change the SMC-PAD preset or octave. Use PAD BANK to open the panel. Destructive cells ask a question through every panel path.

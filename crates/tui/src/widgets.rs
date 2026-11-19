@@ -220,7 +220,7 @@ pub(super) fn pad_line(p: &Pads, mut spans: Vec<Span<'static>>, with_bank: bool)
             Style::new().fg(CYAN)
         };
         spans.push(Span::styled(
-            format!("pad {} {}", sel.key.to_uppercase(), sel.name),
+            format!("pad {} {}", pads::key_tag(sel.key), sel.name),
             style,
         ));
     }
@@ -316,7 +316,7 @@ pub(super) fn pad_cell(
     let keep = selected && !pad.in_hand;
     let border = if keep { CYAN } else { border };
     let key = Span::styled(
-        pad.key.to_uppercase().to_string(),
+        pads::key_tag(pad.key),
         Style::new().fg(if keep {
             border
         } else if pad.flash {
@@ -332,8 +332,14 @@ pub(super) fn pad_cell(
     } else {
         Style::new().fg(border)
     };
+    // With device numbers the keyboard key stays in the frame corner, dim (134).
+    let title = if pads::device_numbers() {
+        Line::from(vec![key, format!(" {}", pad.key.to_uppercase()).fg(DIM)])
+    } else {
+        Line::from(key)
+    };
     let mut block = Block::bordered()
-        .title(key)
+        .title(title)
         .border_style(frame_style)
         .style(Style::new().bg(bg).fg(fg));
     if let Some(corner) = corner {

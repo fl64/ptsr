@@ -264,13 +264,13 @@ impl App {
                 }
             }
             a if self.screen == Screen::Chop && self.plan.is_some() && assign_deaf(&a) => {
-                self.post_notice(
-                    Level::Info,
-                    (
-                        "assigning: Enter applies, Esc leaves".into(),
-                        Instant::now(),
-                    ),
-                );
+                // The refusal names the controls of the last input device (134).
+                let text = if self.input_sources.last_is_smc() {
+                    "assigning: PAD BANK + 4 applies, PAD BANK + 1 leaves"
+                } else {
+                    "assigning: Enter applies, Esc leaves"
+                };
+                self.post_notice(Level::Info, (text.into(), Instant::now()));
             }
             Action::PatternControls
             | Action::PatternParamPrev
@@ -328,7 +328,17 @@ impl App {
                     None => Some(self.learn_open()),
                 };
             }
-            Action::LearnToggle => {}
+            Action::LearnToggle => {
+                // A refused action says why and where it works (134).
+                self.post_notice(
+                    Level::Info,
+                    (
+                        "Learn works on the work screens. On Settings, the MIDI tab learns controls."
+                            .into(),
+                        Instant::now(),
+                    ),
+                );
+            }
             Action::PadRename if self.screen == Screen::Pads => {
                 let abs = self.pads.selected_abs();
                 if self.pads.file[abs].is_some() {
@@ -768,8 +778,9 @@ impl App {
                 self.pattern_view.edit = false;
                 self.pattern_view.selected_event = None;
             }
-            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
+            // The A1 settings lie over the A1 view: Back closes the top one first (134).
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
+            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
             Action::Back if self.erase_pads => self.erase_pads = false,
             Action::Back if self.pattern_erasing() => self.toggle_pattern_erase(),
@@ -1196,13 +1207,14 @@ impl App {
             Some(Ask::ExitRecovery { offered_at, .. })
                 if received_at.is_some_and(|at| at <= offered_at)
         ) && match &ev.event {
-            midi::Event::Action(Action::Confirm) | midi::Event::PanelCell { cell: 8, .. } => true,
+            // Device pad 4 answers Yes since change 134.
+            midi::Event::Action(Action::Confirm) | midi::Event::PanelCell { cell: 16, .. } => true,
             midi::Event::Message {
                 port,
                 msg:
-                    input::midi::Msg::NoteOn { note: 63, .. }
+                    input::midi::Msg::NoteOn { note: 55, .. }
                     | input::midi::Msg::NoteOn {
-                        ch: 10, note: 47, ..
+                        ch: 10, note: 39, ..
                     },
                 ..
             } => port.contains("SMC-PAD-Master"),
@@ -1453,15 +1465,10 @@ impl App {
         if menu {
             return false;
         }
+        // Targets are the 16 pads of the playing layer; a hold gives only the commands (134).
         match cell {
-            1..=12 => {
-                self.pad_hit(
-                    usize::from(cell - 1),
-                    1.0,
-                    pads::HitSource::Midi,
-                    midi::PadSound::UiUnattempted { deferred: true },
-                    None,
-                );
+            4 if target == Target::Assign => {
+                self.apply(Action::ChopAssignOrder);
             }
             13 => {
                 self.apply(Action::Back);
@@ -1477,9 +1484,26 @@ impl App {
         true
     }
 
+    /// Pads read by the device numbers while an SMC-PAD Master is connected (134).
+    pub(super) fn sync_device_numbers(&self) {
+        let smc = self
+            .midi_devices
+            .iter()
+            .any(|(port, _)| port.contains("SMC-PAD-Master"));
+        tui::pads::set_device_numbers(smc);
+        tui::pads::set_row_knobs(smc.then_some(super::values::PAD_EDIT_KNOBS));
+        tui::pads::set_fx_knobs(smc.then_some(super::values::FX_KNOBS));
+        if !smc {
+            tui::pads::set_smc_words(false);
+        }
+    }
+
     fn panel_back(&mut self) {
         let esc = event::KeyEvent::new(event::KeyCode::Esc, event::KeyModifiers::NONE);
-        if self.pad_naming.is_some() {
+        // Help lies over every mode: Back closes it first and keeps the mode below (134).
+        if self.help_open {
+            self.help_open = false;
+        } else if self.pad_naming.is_some() {
             self.pad_name_key(&esc);
         } else if self.project_picker.is_some() {
             self.project_picker_key(&esc);
@@ -1550,6 +1574,7 @@ impl App {
                 );
                 self.seed_device(&port, &profile, false);
                 self.midi_devices.push((port, profile));
+                self.sync_device_numbers();
             }
             midi::Event::Disconnected { port } => {
                 self.panel.disconnect(&port);
@@ -1568,6 +1593,7 @@ impl App {
                 }
                 self.post_system_notice(Level::Warn, (format!("MIDI disconnected: {port}"), now));
                 self.midi_devices.retain(|(p, _)| *p != port);
+                self.sync_device_numbers();
             }
             midi::Event::Message {
                 port,
@@ -1578,12 +1604,12 @@ impl App {
                 let mut answered_learning = false;
                 if port.contains("SMC-PAD-Master")
                     && let input::midi::Msg::NoteOn { note, ch, .. } = msg
-                    && (matches!(note, 62 | 63) || (ch == 10 && matches!(note, 46 | 47)))
+                    && (matches!(note, 52 | 55) || (ch == 10 && matches!(note, 36 | 39)))
                 {
                     // The derived pad event keeps its original MIDI key across PAD BANK routing.
                     let key = raw_key.unwrap_or_else(|| msg.key());
-                    let second_bank = matches!(note, 62 | 63);
-                    let cancel = matches!(note, 46 | 62);
+                    let second_bank = matches!(note, 52 | 55);
+                    let cancel = matches!(note, 36 | 52);
                     self.question_pads.remove(&(port.clone(), key));
                     if self.ask.is_some()
                         && (second_bank
@@ -1626,6 +1652,14 @@ impl App {
                         } else {
                             self.learned_save();
                         }
+                        answered_learning = true;
+                    } else if key == input::midi::Key::Note(52)
+                        && (self.screen_learn.is_some() || self.learning.is_some())
+                    {
+                        // Device pad 1 is Back: with no choice pending it leaves learning (134).
+                        self.question_pads.insert((port.clone(), key));
+                        self.screen_learn = None;
+                        self.learning = None;
                         answered_learning = true;
                     }
                 }
@@ -1692,17 +1726,10 @@ impl App {
                 }
                 if self.ask.is_some() {
                     match cell {
-                        7 => {
+                        13 => {
                             self.apply(Action::Back);
                         }
-                        13 if matches!(
-                            self.ask,
-                            Some(Ask::Exit { .. } | Ask::ExitRecovery { .. })
-                        ) =>
-                        {
-                            self.apply(Action::Back);
-                        }
-                        8 => {
+                        16 => {
                             self.apply(Action::Confirm);
                         }
                         _ => {}
@@ -1711,16 +1738,19 @@ impl App {
                 }
                 if self.project_picker.is_some() || self.path_picker.is_some() {
                     match cell {
-                        7 | 13 => self.panel_back(),
-                        8 => {
+                        13 => self.panel_back(),
+                        16 => {
                             self.apply(Action::Confirm);
                         }
                         _ => {}
                     }
                     return;
                 }
+                // A mode that takes the screen answers device pad 1 even before any reveal:
+                // with PAD BANK `Off`, text entry opened from the keyboard has no owner (134).
+                let may_answer = self.panel.owner().is_none_or(|owner| owner == port);
                 if self.help_open {
-                    if self.panel.owner() != Some(&port) {
+                    if !may_answer {
                         return;
                     }
                     if cell == 13 {
@@ -1736,7 +1766,7 @@ impl App {
                     || self.learning.is_some()
                     || self.midi_run.is_some()
                 {
-                    if cell == 13 && self.panel.owner() == Some(&port) {
+                    if cell == 13 && may_answer {
                         self.panel_back();
                     }
                     return;
@@ -1775,16 +1805,21 @@ impl App {
                         }
                         super::panel::Choice::Exit => {
                             self.ask = Some(Ask::Exit {
-                                lines: vec![
-                                    "Exit ptsr?".into(),
-                                    "P12 exit · P11 or Back stay".into(),
-                                ],
+                                lines: vec!["Exit ptsr?".into(), "P4 exit · P1 stay".into()],
                             });
                         }
                         super::panel::Choice::Back => {
                             self.panel_back();
                         }
-                        super::panel::Choice::Dim => {}
+                        super::panel::Choice::Dim => {
+                            // A visible label that cannot act says so (134).
+                            if let Some(label) = self.panel.label(view, cell) {
+                                self.post_notice(
+                                    Level::Info,
+                                    (format!("{label}: not available yet"), Instant::now()),
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -2437,6 +2472,19 @@ impl App {
             let view = self.panel_view();
             self.panel.sync_view(view);
             self.panel.move_view(if next { 1 } else { -1 });
+            return;
+        }
+        if self.help_open && self.ask.is_none() {
+            self.help_tab(next);
+            return;
+        }
+        // Assign picks targets in any bank: LEFT and RIGHT change it, as PgUp/PgDn do (134).
+        if self.screen == Screen::Chop && self.plan.is_some() && self.ask.is_none() {
+            self.apply(if next {
+                Action::BankNext
+            } else {
+                Action::BankPrev
+            });
             return;
         }
         if self.transport_input_blocked() || self.help_open || self.pattern_panel.is_some() {

@@ -44,7 +44,7 @@ On the panel, the P numbers are the numbers printed on the device. Each cell sho
    Check that the selected pad stays the same.
 2. Open Chop. Turn knob 2 slowly in both directions. Turn knobs 3–4 for the
    selected slice. Turn knobs 5–6 for the whole Chop region.
-3. On the visible panel, press LEFT for the screens view, then P12 Help. Check that F1 shows the
+3. On the visible panel, press LEFT for the screens view, then P12 Help. LEFT and RIGHT select the Help tabs. Check that F1 shows the
    controller. Select knobs 3–6 on the diagram to read their full actions.
 4. Return to Pads. Turn bank 1 knobs 2–7 and bank 2 knobs 1–7. Check that no pad
    value changes. Open pad edit. Release PAD BANK, then press RIGHT to change the page. On TONE, turn
@@ -53,11 +53,11 @@ On the panel, the P numbers are the numbers printed on the device. Each cell sho
 5. Start playback. Turn knob 8 in each bank. Listen for smooth
    changes in volume. Press STOP. Check that playback pauses and the panel stays as it was.
 6. In the screens view, press P16 A1. Hit P6 Tap in time. Check the BPM.
-7. Start Copy from Pads. Select an empty target in the 12 upper cells on the same layer.
-   Copy to an occupied target. Use P11 to cancel, then try again and use P12.
+7. Start Copy from Pads. Release PAD BANK and hit an empty pad.
+   Copy to an occupied pad. Use P1 to cancel, then try again and use P4.
    Play the source and target. Check the two sounds.
-8. Start Assign in Chop. Choose a target on the same layer. Press P4 Apply.
-   Repeat with a target on P13–P16 of the playing layer. Return to Apply.
+8. Start Assign in Chop. Release PAD BANK and hit pads 1 and 16.
+   Hold PAD BANK and press P4 Apply. Read the pads that the result names.
 9. Hold PAD BANK and release it with Hold panel. Check that the playing grid returns
    before a pad hit. Repeat a screen change with Hold panel, then with Off. Count PAD BANK,
    reveal hits and action presses. Check that a hit cell lights for a short time. Use the [target counts](CONTROLLER-PATHS.md#target-routes)

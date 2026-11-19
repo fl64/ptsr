@@ -16,7 +16,7 @@ mod help;
 mod kitty;
 mod knob_strip;
 pub use knob_strip::KnobStrip;
-mod pads;
+pub mod pads;
 mod pattern;
 mod settings;
 mod status;
@@ -991,8 +991,8 @@ pub fn pattern_controls_in(
     let pages = ["PATTERN", "CLEAR"];
     let pages_len: usize = pages.iter().map(|n| n.chars().count() + 1).sum::<usize>() + 1;
     let mut title = Vec::new();
-    if pages_len + 7 <= usize::from(area.width.saturating_sub(2)) {
-        title.push(Span::styled(" EDIT ·", Style::new().fg(MAGENTA).bold()));
+    if pages_len + 10 <= usize::from(area.width.saturating_sub(2)) {
+        title.push(" A1 PARAMS ·".fg(MAGENTA).bold());
     }
     for name in pages {
         title.push(" ".into());
@@ -2678,7 +2678,7 @@ mod tests {
     }
 
     /// A screen drawn at `w`×`h` as text rows and as (symbol, fg, bg) cells.
-    fn draw_rows(screen: &Screen, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
+    pub(crate) fn draw_rows(screen: &Screen, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
         draw_badge_rows(screen, w, h, Vec::new())
     }
 
@@ -2704,7 +2704,7 @@ mod tests {
             .collect()
     }
 
-    fn shared_fx() -> Fx {
+    pub(crate) fn shared_fx() -> Fx {
         Fx {
             blocks: [
                 FxBlock {
@@ -6069,7 +6069,7 @@ mod tests {
                 let positions = (
                     at("HELP", 1),
                     at("MESSAGES", 1),
-                    at("Tab/Shift+Tab", h - 5),
+                    at("Tab/LEFT/RIGHT", h - 5),
                     at("F1/Esc", h - 5),
                 );
                 assert_eq!(positions, *expected.get_or_insert(positions));
@@ -7988,7 +7988,7 @@ mod tests {
         assert!(text.contains("PICK THE PROJECTS ROOT"), "{text}");
         assert!(text.contains("beats"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter/P12 pick · Esc/P11 cancel"), "{text}");
+        assert!(text.contains("Enter/P4 pick · Esc/P1 cancel"), "{text}");
         assert!(!text.contains("Projects root"), "{text}");
     }
 
@@ -8004,7 +8004,7 @@ mod tests {
         assert!(text.contains(" PROJECTS "), "{text}");
         assert!(text.contains("MyBeat"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter/P12 open"), "{text}");
+        assert!(text.contains("Enter/P4 open"), "{text}");
         assert!(!text.contains("name:"), "{text}");
     }
 
@@ -8019,7 +8019,7 @@ mod tests {
         });
         assert!(text.contains("no projects yet"), "{text}");
         assert!(text.contains("name: NewB"), "{text}");
-        assert!(text.contains("Enter/P12 create"), "{text}");
+        assert!(text.contains("Enter/P4 create"), "{text}");
         assert!(!text.contains("Enter open"), "{text}");
     }
 

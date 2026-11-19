@@ -169,7 +169,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     }
     let selected = pads.bank * 16 + pads.selected;
     if let (Some(name), Some(pad)) = (view.names.get(selected), pads.pads.get(pads.selected)) {
-        let detail = format!(" · {} {name}", pad.key.to_ascii_uppercase());
+        let detail = format!(" · {} {name}", pads::key_tag(pad.key));
         if name != "empty" && Span::raw(format!("{title}{detail}")).width() <= width {
             title.push_str(&detail);
         }
@@ -343,7 +343,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
             let key = pads
                 .pads
                 .get(row)
-                .map_or('?', |pad| pad.key.to_ascii_uppercase());
+                .map_or("?".to_string(), |pad| pads::key_tag(pad.key));
             let name = view.names.get(abs).map_or("empty", String::as_str);
             let selected = current && row == pads.selected;
             let prefix = format!(" {key} ");

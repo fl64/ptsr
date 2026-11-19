@@ -559,7 +559,7 @@ impl Pads {
     /// What the panel says about the scope: `pad Q` or `3 marked`.
     pub fn scope_name(&self) -> String {
         if self.marked.is_empty() {
-            format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase())
+            format!("pad {}", tui::pads::pad_tag(self.selected))
         } else {
             format!("{} marked", self.marked.len())
         }
@@ -1902,7 +1902,13 @@ impl App {
             self.send(cmd);
         }
         self.dirty();
-        self.post_notice(Level::Done, ("copy placed".into(), Instant::now()));
+        self.post_notice(
+            Level::Done,
+            (
+                format!("copy placed on {}", super::pad_place(abs)),
+                Instant::now(),
+            ),
+        );
     }
 
     /// The question and placement use the same pickup base and current occupied names.
@@ -1970,6 +1976,17 @@ impl App {
         }
         self.send(cmd);
         self.dirty();
+        self.post_notice(
+            Level::Done,
+            (
+                format!(
+                    "swapped {} and {}",
+                    super::pad_place(from),
+                    super::pad_place(abs)
+                ),
+                Instant::now(),
+            ),
+        );
     }
 
     /// Puts the file in hand on a pad; a pad that holds something asks first.
@@ -2030,6 +2047,13 @@ impl App {
         if self.browser.in_hand.as_ref() == Some(&path) {
             self.browser.in_hand = None;
         }
+        self.post_notice(
+            Level::Done,
+            (
+                format!("{} → {}", file_name(&path), super::pad_place(abs)),
+                Instant::now(),
+            ),
+        );
         self.load_pad(abs, path, Region::WHOLE);
     }
 
@@ -2243,7 +2267,7 @@ impl App {
             .collect();
         let what = match pads.as_slice() {
             [] => return,
-            [abs] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
+            [abs] => format!("pad {}", tui::pads::pad_tag(*abs)),
             many => format!("{} pads", many.len()),
         };
         self.ask = Some(Ask::ResetPads {
@@ -2472,7 +2496,7 @@ impl App {
         self.dirty();
         let on = match step.pads.as_slice() {
             [] => "the shared slot".to_string(),
-            [(abs, _)] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
+            [(abs, _)] => format!("pad {}", tui::pads::pad_tag(*abs)),
             many => format!("{} pads", many.len()),
         };
         self.post_notice(
@@ -2557,7 +2581,7 @@ impl App {
             pads::Param::Start
         };
         self.lit = Some((Lit::Pad(what), Instant::now()));
-        let key = PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase();
+        let key = tui::pads::pad_tag(abs);
         let secs = |f: usize| f as f32 / self.rate.max(1) as f32;
         self.post_notice(
             Level::Info,

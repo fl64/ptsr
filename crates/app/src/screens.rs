@@ -1487,7 +1487,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PanelTargets
         | Mode::PanelUnavailable
         | Mode::PanelImageOn
-        | Mode::PanelImageOff => require("PANEL · SMC"),
+        | Mode::PanelImageOff => require(" │ "),
         Mode::PatternOverviewAbsent
         | Mode::PatternOverviewEmpty
         | Mode::PatternOverviewStraight
@@ -1527,7 +1527,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require(" actions │ ·");
             require("‹ screens");
             require("back");
-            require("panic");
+            require("redo");
         }
         Mode::PanelContext => {
             require("SCREENS");
@@ -1536,7 +1536,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("redo");
         }
         Mode::PanelTargets => {
-            require("13–16 PAD BANK");
+            require("hit a pad");
             require("cancel");
             require("menu");
             if case.screen == Screen::Chop {
@@ -1546,13 +1546,13 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::PanelQuestion => {
             require("ASK");
             require("KB");
-            require("PANEL · SMC");
+            require("PANEL │ QUESTION");
+            require("yes");
         }
         Mode::PanelUnavailable => {
             require("redo");
-            require("panic");
         }
-        Mode::PanelDisconnected => assert!(!text.contains("PANEL · SMC"), "{text}"),
+        Mode::PanelDisconnected => assert!(!text.contains("‹ screens"), "{text}"),
         Mode::QuietEmpty => require("—"),
         Mode::ClipEvent => require("CLIP +01:02:03"),
         Mode::LongLabels => {
@@ -1727,7 +1727,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("Save failed · Live set");
             require("Permission denied (os error 13)");
             require("Enter: Retry Save · Esc: Back");
-            require("P11: Back · P12: Retry Save");
+            require("P1: Back · P4: Retry Save");
         }
         Mode::Safety => {
             for label in [
@@ -1864,12 +1864,12 @@ mod tests {
                 (
                     Screen::Pads,
                     Mode::Picker,
-                    ["E1/↑↓", "Enter/P12", "Esc/P11"],
+                    ["knob 1/↑↓", "Enter/P4", "Esc/P1"],
                 ),
                 (
                     Screen::Settings,
                     Mode::FolderPicker,
-                    ["E1/↑↓", "Enter/P12", "Esc/P11"],
+                    ["knob 1/↑↓", "Enter/P4", "Esc/P1"],
                 ),
             ] {
                 let case = Case { screen, mode, size };
@@ -3456,7 +3456,7 @@ L="none"
                         .map(|row| row.iter().map(|cell| cell.symbol()).collect())
                         .collect();
                     let text = rows.join("\n");
-                    assert!(text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
+                    assert!(!text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
                     let shown = if page == 0 {
                         "SCREENS".to_string()
                     } else {
@@ -3470,7 +3470,7 @@ L="none"
                         format!("{name} actions")
                     };
                     assert!(text.contains(&shown), "{screen:?} {size:?} {page}: {shown}");
-                    for label in ["back", "undo", "redo", "panic"] {
+                    for label in ["back", "undo", "redo"] {
                         assert!(text.contains(label), "{screen:?} {size:?} {page}: {label}");
                     }
                     let first = match (page, screen) {
@@ -3478,7 +3478,7 @@ L="none"
                         (1, Screen::Pads) => "edit",
                         (1, Screen::Files) => "take",
                         (1, Screen::Chop) => "cut",
-                        (1, Screen::Settings) => "tab",
+                        (1, Screen::Settings) => "learn",
                         _ => "back",
                     };
                     assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");
@@ -3488,6 +3488,36 @@ L="none"
     }
 
     /// Scenario "The strip identifies page, list and roles at both sizes" (screen-layout).
+    /// Scenario "The panel title names the screen without overlap" (command-panel).
+    #[test]
+    fn the_panel_title_names_the_screen_without_overlap() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for (screen, mode, name) in [
+                (Screen::Chop, Mode::PanelMain, "CHOP"),
+                (Screen::Files, Mode::PanelTargets, "FILES"),
+            ] {
+                let case = Case { screen, mode, size };
+                let now = Instant::now();
+                let app = fixture(case, now);
+                let (_, buffer) = render_app(case, &keymap, app, now);
+                let rows: Vec<String> = buffer
+                    .content()
+                    .chunks(usize::from(size.0))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                let text = rows.join("\n");
+                assert!(rows[1].contains(name), "{text}");
+                assert!(!text.contains("PANEL · SMC"), "{text}");
+                if mode == Mode::PanelMain {
+                    assert!(text.contains("◀ ▶ View · PANEL"), "{text}");
+                } else {
+                    assert!(rows[1].contains("· hit a pad ·"), "{text}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_strip_identifies_page_list_and_roles_at_both_sizes() {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
@@ -3508,7 +3538,7 @@ L="none"
             let top = rows.iter().position(|row| row.contains("B1 7")).unwrap();
             let rows_text = rows.join("\n");
             assert!(
-                rows[top].contains("B2 8 master") && rows[top].contains("◀ ▶ Bank · Chop"),
+                rows[top].contains("B2 8 master") && rows[top].contains("◀ ▶ View · PANEL"),
                 "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);
@@ -3519,7 +3549,7 @@ L="none"
                 rows.iter().any(|row| row.contains("PAD BANK hold")),
                 "{rows_text}"
             );
-            assert!(rows[..top].iter().any(|row| row.contains("panic")));
+            assert!(rows[..top].iter().any(|row| row.contains("redo")));
         }
     }
 

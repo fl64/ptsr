@@ -6,7 +6,7 @@ use std::time::Instant;
 use input::Action;
 use ratatui::text::Line;
 
-use crate::{App, PADS_PER_BANK, Screen};
+use crate::{App, Screen};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum View {
@@ -142,10 +142,10 @@ impl Config {
                     config.warnings.push(format!("{where_}: no label"));
                     continue;
                 };
-                if label.is_empty() || Line::raw(label).width() > 6 {
+                if label.is_empty() || Line::raw(label).width() > 7 {
                     config
                         .warnings
-                        .push(format!("{where_}: label exceeds six cells"));
+                        .push(format!("{where_}: label exceeds seven cells"));
                     continue;
                 }
                 let Some(name) = item.get("action").and_then(toml::Value::as_str) else {
@@ -186,10 +186,10 @@ pub(super) enum Target {
 impl Target {
     fn title(self) -> &'static str {
         match self {
-            Self::Copy => "COPY · 13–16 PAD BANK",
-            Self::Swap => "SWAP · 13–16 PAD BANK",
-            Self::File => "FILE · 13–16 PAD BANK",
-            Self::Assign => "ASSIGN · 13–16 PAD BANK",
+            Self::Copy => "COPY · release, hit a pad",
+            Self::Swap => "SWAP · release, hit a pad",
+            Self::File => "FILE · release, hit a pad",
+            Self::Assign => "ASSIGN · release, hit a pad",
         }
     }
 }
@@ -300,7 +300,6 @@ impl State {
             (_, 13) => Some("back"),
             (_, 14) => Some("undo"),
             (_, 15) => Some("redo"),
-            (_, 16) => Some("panic"),
             (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0),
             _ => self.config.cell(view, cell).map(|cell| cell.label.as_str()),
         }
@@ -398,14 +397,7 @@ impl App {
     fn target_snapshot(&self, target: Target) -> tui::CommandPanel {
         let labels = std::array::from_fn(|index| {
             let label = match index {
-                0..=11 => {
-                    let abs = self.pads.bank * PADS_PER_BANK + index;
-                    if self.pads.file[abs].is_some() {
-                        "used"
-                    } else {
-                        "pad"
-                    }
-                }
+                3 if target == Target::Assign => "order",
                 12 => "cancel",
                 13 => "undo",
                 14 => "menu",
@@ -423,8 +415,65 @@ impl App {
         }
     }
 
+    /// The panel of a mode that takes the screen (134): only the cells that act there.
+    fn modal_snapshot(&self) -> Option<tui::CommandPanel> {
+        let pending = self
+            .screen_learn
+            .as_ref()
+            .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+            || self
+                .learning
+                .as_ref()
+                .is_some_and(|learn| learn.pending.is_some());
+        let (view, cells): (&'static str, &[(usize, &str)]) = if self.help_open {
+            (
+                "HELP · LEFT RIGHT tabs",
+                &[(8, "up"), (9, "down"), (12, "close")],
+            )
+        } else if self.project_picker.is_some() || self.path_picker.is_some() {
+            ("LIST · knob 1 moves", &[(12, "close"), (15, "open")])
+        } else if self.screen_learn.is_some() || self.learning.is_some() {
+            if pending {
+                ("LEARN", &[(12, "cancel"), (15, "save")])
+            } else {
+                ("LEARN · touch a control", &[(12, "back")])
+            }
+        } else {
+            ("TEXT · type on the keyboard", &[(12, "back")])
+        };
+        Some(tui::CommandPanel {
+            labels: std::array::from_fn(|index| {
+                cells
+                    .iter()
+                    .find(|(cell, _)| *cell == index)
+                    .map(|(_, label)| (*label).to_string())
+            }),
+            page: self.panel.page(),
+            view,
+            target: true,
+            flash: self.panel_flash(),
+        })
+    }
+
     pub(super) fn panel_snapshot(&self) -> Option<tui::CommandPanel> {
+        if self.panel.visible() && !self.panel_input_available() {
+            return self.modal_snapshot();
+        }
         (self.panel.visible() && self.panel_input_available()).then(|| {
+            // Behind a question only its two answers show (134).
+            if self.ask.is_some() {
+                return tui::CommandPanel {
+                    labels: std::array::from_fn(|index| match index {
+                        12 => Some("no".into()),
+                        15 => Some("yes".into()),
+                        _ => None,
+                    }),
+                    page: self.panel.page(),
+                    view: "QUESTION",
+                    target: true,
+                    flash: self.panel_flash(),
+                };
+            }
             let target = self.panel_target();
             if let Some(target) = target
                 && self.ask.is_none()
@@ -433,7 +482,11 @@ impl App {
                 return self.target_snapshot(target);
             }
             let view = self.panel_view();
+            let overrides = self.smc_cell_overrides();
             let labels = std::array::from_fn(|index| {
+                if let Some(owner) = &overrides[index] {
+                    return Some(owner.clone());
+                }
                 if index == 14 && target.is_some() {
                     return Some("target".into());
                 }
@@ -471,18 +524,20 @@ mod tests {
     /// Scenario "Shipped labels fit the panel glossary" (command-panel).
     #[test]
     fn shipped_labels_fit_the_panel_glossary() {
+        // One meaning per word (134): the old `take`, `commit`, `knobs`, `output` are gone.
         let allowed = [
-            "A1", "as pad", "assign", "auto", "back", "chop", "clear", "commit", "copy", "cut",
-            "cut -", "edit", "end", "end -", "enter", "erase", "exit", "files", "fx", "gate",
-            "grid", "grid +", "grid -", "help", "hits", "hits -", "knobs", "learn", "level",
-            "listen", "load", "loop", "mark", "marks", "mixer", "mode", "open", "order", "output",
-            "pads", "panic", "parent", "parts", "record", "redo", "row +", "row -", "rows", "save",
-            "setup", "snap", "star", "start", "step", "tab", "take", "tap", "undo", "whole", "pad",
-            "used", "cancel", "apply", "menu", "target",
+            "A1", "all", "apply", "as pad", "assign", "back", "cancel", "chop", "clear", "close",
+            "copy", "cut", "cut -", "down", "edit", "end -", "enter", "erase", "exit", "files",
+            "fill", "fx", "grid", "grid +", "grid -", "help", "hits", "hits -", "learn", "listen",
+            "load", "loop", "mark", "menu", "mixer", "mode", "no", "normal", "open", "order",
+            "p.gate", "pad", "pads", "params", "parent", "parts", "rec out", "record", "redo",
+            "remove", "reset", "row +", "row -", "rows", "save", "setup", "snap", "star", "step",
+            "swap", "tab", "tap", "target", "to pad", "undo", "undoA1", "unbind", "up", "used",
+            "whole", "yes",
         ];
         let check = |label: &str| {
             assert!(
-                Line::raw(label).width() <= 6 && allowed.contains(&label),
+                Line::raw(label).width() <= 7 && allowed.contains(&label),
                 "{label}"
             );
         };
@@ -523,38 +578,35 @@ mod tests {
             (
                 View::Pads,
                 &[
-                    "edit", "copy", "take", "mark", "mode", "clear", "gate", "marks", "grid",
-                    "output",
+                    "edit", "copy", "swap", "mark", "mode", "remove", "p.gate", "all", "grid",
+                    "rec out",
                 ],
             ),
-            (View::PadEdit, &["mode", "clear", "gate", "copy"]),
+            (View::PadEdit, &["mode", "reset", "p.gate", "copy"]),
             (
                 View::Pattern,
                 &[
-                    "step", "grid -", "grid +", "knobs", "record", "erase", "undo", "clear",
+                    "step", "grid -", "grid +", "params", "record", "erase", "undoA1", "clear",
                     "rows", "tap",
                 ],
             ),
             (
                 View::Files,
-                &["take", "load", "parent", "star", "enter", "auto", "chop"],
+                &["to pad", "load", "", "star", "", "listen", "chop"],
             ),
             (
                 View::Chop,
                 &[
-                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "start",
-                    "end", "edit", "commit",
+                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "whole",
+                    "", "edit", "fill",
                 ],
             ),
             (
                 View::ChopEdit,
-                &["level", "hits -", "cut -", "end -", "whole"],
+                &["normal", "hits -", "cut -", "end -", "whole"],
             ),
             (View::Fx, &[]),
-            (
-                View::Settings,
-                &["tab", "learn", "clear", "", "row -", "row +"],
-            ),
+            (View::Settings, &["", "learn", "unbind"]),
         ];
         for (view, labels) in table {
             let shipped: Vec<&str> = (1..=12)
@@ -621,7 +673,7 @@ mod tests {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 3);
+        assert_eq!(checked, 1);
         assert!(adjacent(7, 8), "No and Yes");
         assert!(adjacent(14, 15), "Undo and Redo");
         assert!(!adjacent(4, 5), "split row");
@@ -640,9 +692,10 @@ mod tests {
         assert_eq!(panel.label(View::Pads, 1), Some("pads"));
         for view in [View::Pads, View::Files] {
             panel.sync_view(view);
-            for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo"), (16, "panic")] {
+            for (cell, label) in [(13, "back"), (14, "undo"), (15, "redo")] {
                 assert_eq!(panel.label(view, cell), Some(label));
             }
+            assert_eq!(panel.label(view, 16), None, "no cell shows Panic");
             assert_eq!(panel.choice(view, 15), Choice::Dim);
             assert_eq!(panel.choice(view, 16), Choice::Dim);
         }

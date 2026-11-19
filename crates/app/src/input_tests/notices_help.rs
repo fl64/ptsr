@@ -121,7 +121,12 @@ fn device_notices_retain_the_actual_event_source() {
     drive.frame();
     assert_eq!(drive.app.pads.bank, 1);
     assert!(drive.app.pads.file[17].is_some());
-    assert_eq!(drive.last_notice().text, "copy placed");
+    assert!(
+        drive
+            .last_notice()
+            .text
+            .starts_with("copy placed on bank 2, pad")
+    );
     assert_eq!(drive.last_notice().level, Level::Done);
     assert_eq!(drive.last_notice().origin, Origin::Device(XS_PORT.into()));
     drive.bytes(XS_PORT, &[0x80, 60, 0]);
