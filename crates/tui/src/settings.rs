@@ -111,7 +111,7 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                         " J/L: change hold time by 50 ms. Saves at once."
                     }
                     Some(MidiRow::Action { label, .. }) if label == "SMC-PAD PAD BANK" => {
-                        " J/L: select Off or Open panel. Saves at once."
+                        " J/L: select Off or Hold panel. Saves at once."
                     }
                     Some(MidiRow::Action { label, .. }) if label == "knob response" => {
                         " J/L: change knob response. Saves at once."

@@ -586,9 +586,10 @@ fn chop_help_identifies_the_slice_and_region_knobs() {
         drive.frame();
         drive.prepare_chop(Arc::new(Sample::mono(vec![0.25; 48_000])), 4);
         drive.app.resize_help(size.0, size.1);
-        // Reveal, LEFT to the screens view, Help (cell 8).
-        drive.bytes(SMC, &[0x99, 64, 100]);
-        drive.bytes(SMC, &[0x89, 64, 0]);
+        // Hold PAD BANK, LEFT to the screens view, Help (cell 8).
+        drive
+            .midi()
+            .recorded_pad_bank(SMC, std::time::Instant::now(), true);
         drive.frame();
         drive.bytes(SMC, &[0xB0, 25, 127]);
         drive.bytes(SMC, &[0xB0, 25, 0]);

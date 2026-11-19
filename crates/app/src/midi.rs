@@ -77,9 +77,11 @@ pub enum Event {
         port: String,
         cell: u8,
     },
+    /// The PAD BANK hold of a Master connection began or ended (131).
     SmcPadBank {
         port: String,
         setting: u64,
+        held: bool,
     },
     Action(Action),
     Param {
@@ -155,6 +157,85 @@ impl Shared {
     }
 }
 
+/// PAD BANK holds and the note each held pad press was routed to (131).
+#[derive(Default)]
+struct HoldRoute {
+    held: HashSet<String>,
+    notes: HashMap<(String, u8, u8), u8>,
+}
+
+impl HoldRoute {
+    /// With the hold shortcut, both note ranges of a physical pad mean that pad: a hold
+    /// makes the hit a panel cell, otherwise it plays. The question pads P7 and P8 (notes
+    /// 62 and 63) answer without a hold. A release follows its press.
+    fn route(&mut self, port: &str, msg: Msg, active: bool, question: bool) -> Msg {
+        match msg {
+            Msg::NoteOn {
+                ch: 10,
+                note: note @ 36..=67,
+                velocity,
+            } if active && port.contains("SMC-PAD-Master") => {
+                let position = (note - 36) % 16;
+                let cell = 52 + position;
+                let target = if self.held.contains(port) || (question && matches!(cell, 62 | 63)) {
+                    cell
+                } else {
+                    36 + position
+                };
+                self.notes.insert((port.into(), 10, note), target);
+                Msg::NoteOn {
+                    ch: 10,
+                    note: target,
+                    velocity,
+                }
+            }
+            Msg::NoteOff { ch, note } => match self.notes.remove(&(port.into(), ch, note)) {
+                Some(target) => Msg::NoteOff { ch, note: target },
+                None => msg,
+            },
+            msg => msg,
+        }
+    }
+
+    /// For LEFT (CC 25) or RIGHT (CC 26) of a held Master: whether this is the press.
+    fn list_button(&self, port: &str, msg: Msg) -> Option<bool> {
+        match msg {
+            Msg::Cc {
+                ch: 1,
+                cc: 25 | 26,
+                value,
+            } if self.held.contains(port) => Some(value > 0),
+            _ => None,
+        }
+    }
+
+    fn end(&mut self, port: &str, setting: u64, ui: &mut UiSender) {
+        if self.held.remove(port) {
+            ui.send(
+                Event::SmcPadBank {
+                    port: port.into(),
+                    setting,
+                    held: false,
+                },
+                None,
+            );
+        }
+    }
+
+    fn end_all(&mut self, ui: &mut UiSender) {
+        for port in std::mem::take(&mut self.held) {
+            ui.send(
+                Event::SmcPadBank {
+                    port,
+                    setting: 0,
+                    held: false,
+                },
+                None,
+            );
+        }
+    }
+}
+
 enum Raw {
     SmcSetup(Result<(), String>),
     SmcLost,
@@ -162,6 +243,7 @@ enum Raw {
         port: String,
         requested_at: Instant,
         setting: u64,
+        held: bool,
     },
     Connected(String, Option<Connection>),
     Disconnected(String, Option<Connection>),
@@ -605,6 +687,13 @@ impl Midi {
     }
 
     #[cfg(test)]
+    pub fn recorded_smc_failure(&self) {
+        self.updates
+            .send(Raw::SmcSetup(Err("status read failed".into())))
+            .unwrap();
+    }
+
+    #[cfg(test)]
     pub fn recorded_connection(&self, port: &str) -> Option<Connection> {
         self.recorded_connections
             .borrow()
@@ -687,12 +776,13 @@ impl Midi {
     }
 
     #[cfg(test)]
-    pub(super) fn recorded_pad_bank(&self, port: &str, requested_at: Instant) {
+    pub(super) fn recorded_pad_bank(&self, port: &str, requested_at: Instant, held: bool) {
         self.updates
             .send(Raw::SmcPadBank {
                 port: port.into(),
                 requested_at,
                 setting: self.shared.pad_bank_shortcut().unwrap_or_default(),
+                held,
             })
             .unwrap();
     }
@@ -920,6 +1010,7 @@ fn dispatch(
     let mut smc_ready = false;
     let mut smc_status: Option<String> = None;
     let mut pad_bank_after = HashMap::<String, Instant>::new();
+    let mut hold = HoldRoute::default();
     let dev_virtual = virtual_mode();
     loop {
         while let Some(command) = pending.pop_front() {
@@ -1005,26 +1096,48 @@ fn dispatch(
                 }
                 smc_ready = ready;
                 smc_status = Some(message);
+                if !ready {
+                    hold.end_all(&mut ui);
+                }
                 continue;
             }
             Raw::SmcLost => {
                 smc_ready = false;
                 smc_status = None;
+                hold.end_all(&mut ui);
                 continue;
             }
             Raw::SmcPadBank {
                 port,
                 requested_at,
                 setting,
+                held,
             } => {
-                if smc_ready
+                crate::diag::input(|| {
+                    format!(
+                        "PAD BANK {} after {} ms",
+                        if held { "held" } else { "released" },
+                        requested_at.elapsed().as_millis()
+                    )
+                });
+                if !held {
+                    hold.end(&port, setting, &mut ui);
+                } else if smc_ready
                     && shared.focus().is_ok()
                     && shared.pad_bank_shortcut() == Some(setting)
                     && pad_bank_after
                         .get(&port)
                         .is_some_and(|&cutoff| requested_at >= cutoff)
+                    && hold.held.insert(port.clone())
                 {
-                    ui.send(Event::SmcPadBank { port, setting }, None);
+                    ui.send(
+                        Event::SmcPadBank {
+                            port,
+                            setting,
+                            held,
+                        },
+                        None,
+                    );
                 }
                 continue;
             }
@@ -1041,6 +1154,7 @@ fn dispatch(
             }
             Raw::Disconnected(port, _) => {
                 pad_bank_after.remove(&port);
+                hold.held.remove(&port);
                 if port.contains("SMC-PAD-Master") {
                     smc_ready = false;
                     smc_status = None;
@@ -1126,6 +1240,9 @@ fn dispatch(
             }
             Raw::Msg(port, msg, stamp) => (port, msg, stamp),
         };
+        let hold_routes = smc_ready && shared.pad_bank_shortcut().is_some();
+        let question = shared.focus().is_ok_and(|focus| focus.mode.question);
+        let msg = hold.route(&port, msg, hold_routes, question);
         let (acknowledged, snapshot) = shared.input();
         let focus = match snapshot {
             Ok(focus) => {
@@ -1195,11 +1312,17 @@ fn dispatch(
         let guarded_encoder = !(smc_ready || (dev_virtual && port.contains("(virtual)")))
             && port.contains("SMC-PAD-Master")
             && matches!(msg, Msg::Cc { cc: 30..=45, .. });
-        let (resolved, activity) = if guarded_encoder {
+        let (mut resolved, activity) = if guarded_encoder {
             (None, Activity::None)
         } else {
             profile.resolve_input_mode(focus.screen, focus.mode, modal, msg)
         };
+        // During a PAD BANK hold, LEFT and RIGHT move the panel views over saved roles (131).
+        if let Some(next) = hold.list_button(&port, msg) {
+            resolved = next.then_some(Resolved::Action(Action::SmcList {
+                next: matches!(msg, Msg::Cc { cc: 26, .. }),
+            }));
+        }
         if let Some(origin) = &mut ui.origin {
             origin.activity = activity;
         }
@@ -1309,16 +1432,6 @@ fn dispatch(
             continue;
         }
 
-        if matches!(
-            (&resolved, msg),
-            (
-                Some(Resolved::Action(Action::PadPress { .. })),
-                Msg::NoteOn { note: 36..=51, .. }
-            ) | (Some(Resolved::PanelCell(_)), Msg::NoteOn { .. })
-        ) && let Some(cutoff) = pad_bank_after.get_mut(&port)
-        {
-            *cutoff = (*cutoff).max(at);
-        }
         match resolved {
             Some(Resolved::PanelCell(cell)) => {
                 ui.send(Event::PanelCell { port, cell }, Some(stamp));
@@ -4008,7 +4121,7 @@ mod tests {
         assert!(
             before
                 .iter()
-                .any(|(_, text)| text.contains("PAD BANK shows the panel"))
+                .any(|(_, text)| text.contains("Hold PAD BANK to show the panel"))
         );
         assert!(before.iter().any(|(_, text)| text.contains("P13 edit")));
         app.panel.press(SMC_MASTER, 1);

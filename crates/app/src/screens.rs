@@ -1813,7 +1813,7 @@ mod tests {
             };
             let (_, frame) = render(case, &keymap);
             let text: String = frame.content().iter().map(|cell| cell.symbol()).collect();
-            for label in ["SMC-PAD PAD BANK", "Open panel", "select Off or Open panel"] {
+            for label in ["SMC-PAD PAD BANK", "Hold panel", "select Off or Hold panel"] {
                 assert!(text.contains(label), "{}: {label}\n{text}", case.name());
             }
             check_frame(case, &frame);
@@ -3480,7 +3480,7 @@ L="none"
             assert!(rows[top + 2].contains("3 start"));
             assert!(rows[top + 3].contains("1 cursor"));
             assert!(
-                rows.iter().any(|row| row.contains("PAD BANK panel")),
+                rows.iter().any(|row| row.contains("PAD BANK hold")),
                 "{rows_text}"
             );
             assert!(rows[..top].iter().any(|row| row.contains("panic")));

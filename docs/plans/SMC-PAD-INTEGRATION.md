@@ -20,7 +20,7 @@ Sources retained in the change 91 design:
 | Control | Sends | Note |
 |---|---|---|
 | 16 pads, layer 1 | notes 36–51, channel 10, velocity, real note-off | note 36 is the bottom-left pad |
-| 16 pads, layer 2 (PAD BANK) | notes 52–67 | PAD BANK itself sends nothing |
+| 16 pads, layer 2 (PAD BANK) | notes 52–67 | PAD BANK itself sends nothing. On Note banks the layer acts only during the hold. |
 | 8 encoders, bank 1 | CC 30–37, channel 1 | factory: absolute 0–127 counter kept in the device, it stops at the ends |
 | 8 encoders, bank 2 (KNOB BANK) | CC 38–45 | KNOB BANK itself sends nothing |
 | LEFT, RIGHT, PLAY, STOP, RECORD | CC 25–29, channel 1, 127 on press, 0 on release | |
@@ -34,6 +34,9 @@ Consequences:
 - Reports say SHIFT sends no MIDI message. Its physical Linux check is still open.
   Only a measured SHIFT message can enable the optional quick panel view.
 - PAD BANK and KNOB BANK are useful: ptsr knows the layer from the note or CC number.
+- On 2026-11-18 a read of all 8 presets showed Note pads in banks 3 and 8 of each preset
+  except preset 2 (DAW, MCP pads). On a Note bank, PAD BANK acts only during the hold.
+  The USB status shows the hold. Change 131 uses it for the panel.
 - The active preset has 16 absolute encoder records. Change 91 tries a guarded USB setup:
   save the records, change only those records to relative mode, and read them back. A failed
   check leaves encoder actions off and reports the failure. The write and restore path
@@ -85,10 +88,10 @@ Change 124 replaces the panel steps for values, parameters and edit pages with
 direct controls. Change 125 uses the main menu and target routes below.
 
 Enable `SMC-PAD PAD BANK` by default on the supported USB unit after its status-read
-check passes. F12 MIDI offers `Open panel` and `Off`. A detected press opens or
-closes the panel before the next pad hit. The device retains its selected layer
-after release. If the panel stays hidden, its first command-layer hit only shows it.
-A playing-layer hit closes the panel. The status line shows PANEL while it is open.
+check passes. F12 MIDI offers `Hold panel` and `Off`. From change 131, the panel
+shows while PAD BANK is held, and the hold, not the device layer, decides if a pad
+hit runs a cell or plays. With `Off`, the first command-layer hit only shows a hidden
+panel, and a playing-layer hit closes it. The status line shows PANEL while it is open.
 
 Change 127 replaces the main page and the context pages with two views.
 A reveal shows up to 12 actions of the current screen or mode. LEFT shows the

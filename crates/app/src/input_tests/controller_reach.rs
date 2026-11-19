@@ -7,11 +7,27 @@ mod panel_targets;
 
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
+/// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
 fn smc_drive() -> Drive {
+    let mut drive = Drive::smc_offline();
+    drive.app.midi_gestures.smc_pad_bank_opens_panel = false;
+    drive.midi().set_pad_bank_shortcut(false);
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    drive
+}
+
+/// A verified SMC-PAD with the default PAD BANK hold (131).
+fn hold_drive() -> Drive {
     let mut drive = Drive::smc_offline();
     drive.midi().recorded_smc_setup();
     drive.frame();
     drive
+}
+
+fn hold(drive: &mut Drive, held: bool) -> Frame {
+    drive.midi().recorded_pad_bank(SMC, Instant::now(), held);
+    drive.frame()
 }
 
 fn turn(drive: &mut Drive, cc: u8, value: u8) {
@@ -1712,7 +1728,10 @@ fn key_chord(name: &str) -> (KeyCode, M) {
 }
 
 fn reach_drive(view: panel::View, sound: Arc<Sample>) -> Drive {
-    let mut drive = smc_drive();
+    reach_drive_from(smc_drive(), view, sound)
+}
+
+fn reach_drive_from(mut drive: Drive, view: panel::View, sound: Arc<Sample>) -> Drive {
     drive.load_pad(0, sound.clone(), "source");
     match view {
         panel::View::Pads | panel::View::PadEdit | panel::View::Pattern => {
@@ -2915,7 +2934,7 @@ fn master_knob_does_not_act_behind_a_question_or_picker() {
 }
 
 fn pad_bank_request(drive: &mut Drive, port: &str) -> Frame {
-    drive.midi().recorded_pad_bank(port, Instant::now());
+    drive.midi().recorded_pad_bank(port, Instant::now(), true);
     drive.frame()
 }
 
@@ -2927,10 +2946,10 @@ fn pad_bank_row(drive: &Drive) -> Option<usize> {
         .position(|row| matches!(row, MidiListRow::SmcPadBank))
 }
 
-/// Scenario "PAD BANK starts open and preserves a saved Off choice" (controller-reach).
+/// Scenario "PAD BANK starts on hold and preserves a saved Off choice" (controller-reach).
 /// Scenario "PAD BANK setting saves and defaults to off" (controller-reach).
 #[test]
-fn pad_bank_starts_open_and_preserves_a_saved_off_choice() {
+fn pad_bank_starts_on_hold_and_preserves_a_saved_off_choice() {
     let files = TransitionFiles::new();
     let path = files.0.join("pad-bank-config.toml");
     std::fs::write(&path, "[midi_gestures]\nhold_time_ms = 400\n").unwrap();
@@ -2948,7 +2967,8 @@ fn pad_bank_starts_open_and_preserves_a_saved_off_choice() {
     assert!(!unverified.app.panel.visible());
 
     let mut keyboard = saved_layout_drive(&path);
-    let mut controller = smc_drive();
+    let mut controller = hold_drive();
+    assert!(controller.app.midi_gestures.smc_pad_bank_opens_panel);
     for drive in [&mut keyboard, &mut controller] {
         drive.app.screen = Screen::Settings;
         drive.app.settings_tab = 2;
@@ -2968,61 +2988,107 @@ fn pad_bank_starts_open_and_preserves_a_saved_off_choice() {
     assert!(!restart.app.panel.visible());
 }
 
-/// Scenario "PAD BANK opens the panel once before a pad hit" (controller-reach).
+/// Scenario "The panel shows only while PAD BANK is held" (controller-reach).
 #[test]
-fn pad_bank_opens_the_panel_once_before_a_pad_hit() {
-    let mut drive = smc_drive();
-    drive.app.set_smc_pad_bank(true);
-    let reveal = pad_bank_request(&mut drive, SMC);
+fn the_panel_shows_only_while_pad_bank_is_held() {
+    let mut drive = hold_drive();
+    let shown = hold(&mut drive, true);
+    assert!(shown.commands().is_empty());
     assert_eq!(drive.app.panel.owner(), Some(SMC));
-    assert_eq!(drive.app.panel.page(), 1);
-    assert!(reveal.commands().is_empty());
-    assert_eq!(drive.app.screen, Screen::Pads);
-    list_button(&mut drive, false);
-    cell(&mut drive, panel_note(2));
-    assert_eq!(drive.app.screen, Screen::Files);
     assert_eq!(drive.app.panel.page(), 1);
     list_button(&mut drive, false);
     assert_eq!(drive.app.panel.page(), 0);
+    cell(&mut drive, panel_note(2));
+    assert_eq!(drive.app.screen, Screen::Files);
+    assert_eq!(drive.app.panel.page(), 1);
     const SECOND: &str = "SINCO SMC-PAD-Master 32:1";
     drive.midi().recorded_connect(SECOND);
     drive.frame();
     assert!(pad_bank_request(&mut drive, SECOND).commands().is_empty());
     assert_eq!(drive.app.panel.owner(), Some(SMC));
-    assert_eq!(drive.app.panel.page(), 0);
-
-    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
+    let hidden = hold(&mut drive, false);
+    assert!(hidden.commands().is_empty());
     assert!(!drive.app.panel.visible());
     assert_eq!(drive.app.screen, Screen::Files);
-
-    assert!(pad_bank_request(&mut drive, SMC).commands().is_empty());
-    assert_eq!(drive.app.panel.owner(), Some(SMC));
+    // The next hold starts on the actions again.
+    hold(&mut drive, true);
     assert_eq!(drive.app.panel.page(), 1);
-    assert_eq!(drive.app.screen, Screen::Files);
+}
+
+/// Every shipped action cell gives the same result through a PAD BANK hold (131)
+/// as through the second-bank route. The matrix drives 53 cells, so it is slow.
+#[test]
+fn shipped_panel_cells_act_the_same_during_a_hold() {
+    let config = panel::Config::parse(
+        "config/panel.toml",
+        include_str!("../../../../config/panel.toml"),
+    );
+    let mut checked = 0;
+    for view in ALL_VIEWS {
+        for slot in 1..=12 {
+            if config.cell(view, slot).is_none() {
+                continue;
+            }
+            let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+            let mut layer = reach_drive(view, sound.clone());
+            cell(&mut layer, 64);
+            let layer_frame = cell(&mut layer, panel_note(slot));
+            let mut held = reach_drive_from(hold_drive(), view, sound);
+            hold(&mut held, true);
+            // The first-layer note of the same physical pad.
+            let held_frame = cell(&mut held, panel_note(slot) - 16);
+            assert_eq!(
+                reach_result(&held, &held_frame),
+                reach_result(&layer, &layer_frame),
+                "{view:?} cell {slot}"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 53);
+}
+
+/// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
+#[test]
+fn a_hold_takes_left_and_right_over_saved_roles() {
+    let files = TransitionFiles::new();
+    let path = files.0.join("owner-chop-roles.toml");
+    std::fs::write(
+        &path,
+        "[devices]\nseeded = [\"SMC-PAD\"]\n\n[midi.\"SMC-PAD\".chop]\n\"cc 25\" = \"marker.prev\"\n\"cc 26\" = \"marker.next\"\n",
+    )
+    .unwrap();
+    let mut drive = saved_layout_drive(&path);
+    drive.prepare_chop(Arc::new(Sample::mono(vec![0.2; 48_000])), 4);
+    drive.app.publish_midi(&drive.shared);
+    let selected = drive.app.chop.as_ref().unwrap().selected;
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    assert_eq!(drive.app.panel.page(), 0);
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.panel.page(), 1);
+    assert_eq!(drive.app.chop.as_ref().unwrap().selected, selected);
+    hold(&mut drive, false);
+    list_button(&mut drive, true);
+    assert_ne!(drive.app.chop.as_ref().unwrap().selected, selected);
 }
 
 /// Scenario "PAD BANK respects input overlays" (controller-reach).
 #[test]
 fn pad_bank_respects_input_overlays() {
-    let mut drive = smc_drive();
-    drive.app.set_smc_pad_bank(true);
-    drive.app.ask = Some(Ask::ResetPads {
-        pads: vec![1],
-        lines: vec!["Reset pad 2?".into()],
-    });
-    pad_bank_request(&mut drive, SMC);
-    assert!(drive.app.ask.is_some());
-    assert!(!drive.app.panel.visible());
-    drive.app.ask = None;
-
+    let mut drive = hold_drive();
     drive.app.help_open = true;
-    pad_bank_request(&mut drive, SMC);
-    assert!(!drive.app.panel.visible());
+    hold(&mut drive, true);
+    assert!(drive.app.panel_snapshot().is_none());
     drive.app.help_open = false;
+    // The panel shows again while the hold continues.
+    assert!(drive.app.panel_snapshot().is_some());
+    hold(&mut drive, false);
 
     drive.app.pad_naming = Some((0, "Name".into()));
-    pad_bank_request(&mut drive, SMC);
-    assert!(!drive.app.panel.visible());
+    hold(&mut drive, true);
+    assert!(drive.app.panel_snapshot().is_none());
+    hold(&mut drive, false);
     drive.app.pad_naming = None;
 
     drive.app.project_picker = Some(ProjectPicker {
@@ -3030,49 +3096,86 @@ fn pad_bank_respects_input_overlays() {
         selected: 0,
         naming: None,
     });
-    pad_bank_request(&mut drive, SMC);
-    assert!(!drive.app.panel.visible());
+    hold(&mut drive, true);
+    assert!(drive.app.panel_snapshot().is_none());
+    hold(&mut drive, false);
     assert_eq!(drive.app.project_picker.take().unwrap().selected, 0);
 
     drive.app.learning = Some(learn::Learning::new(action_info("transport.toggle")));
-    pad_bank_request(&mut drive, SMC);
-    assert!(!drive.app.panel.visible());
+    hold(&mut drive, true);
+    assert!(drive.app.panel_snapshot().is_none());
     assert!(drive.app.learning.as_ref().unwrap().pending.is_none());
 }
 
-/// Scenario "Late PAD BANK status keeps both pad routes" (controller-reach).
+/// Scenario "A pad hit follows the hold, not the device layer" (controller-reach).
 #[test]
-fn late_pad_bank_status_keeps_both_pad_routes() {
-    let mut drive = smc_drive();
-    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "gate");
-    drive.app.set_smc_pad_bank(true);
-    let requested_at = Instant::now();
-    cell(&mut drive, panel_note(2));
-    assert!(drive.app.panel.visible());
-    assert_eq!(drive.app.screen, Screen::Pads);
-    cell(&mut drive, panel_note(8));
-    assert_eq!(drive.app.panel.page(), 1);
-    drive.midi().recorded_pad_bank(SMC, requested_at);
-    drive.frame();
-    assert_eq!(drive.app.panel.page(), 1);
-    assert_eq!(drive.app.panel.owner(), Some(SMC));
+fn a_pad_hit_follows_the_hold_not_the_device_layer() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "top left");
+    // Top-left pad on the device's second layer, no hold: it plays.
+    cell(&mut drive, 64);
+    assert!(drive.app.pads.hit_at[0].is_some());
+    assert!(!drive.app.panel.visible());
+    assert!(!drive.app.edit);
+    // Top-left pad on the first layer during a hold: it runs cell 1, edit.
+    drive.app.pads.hit_at[0] = None;
+    hold(&mut drive, true);
+    cell(&mut drive, 48);
+    assert!(drive.app.edit);
+    assert!(drive.app.pads.hit_at[0].is_none());
+}
 
-    let requested_at = Instant::now();
+/// Scenario "A pad release keeps the target of its press" (controller-reach).
+#[test]
+fn a_pad_release_keeps_the_target_of_its_press() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "gate");
+    hold(&mut drive, true);
     drive.bytes(SMC, &[0x99, 48, 100]);
-    drive.midi().recorded_pad_bank(SMC, requested_at);
+    drive.frame();
+    hold(&mut drive, false);
+    assert!(!drive.app.panel.visible());
+    drive.bytes(SMC, &[0x89, 48, 0]);
+    let frame = drive.frame();
+    assert!(frame.commands().is_empty());
+    assert!(drive.app.pads.held.iter().all(|held| !held));
+    assert!(drive.app.pads.hit_at.iter().all(Option::is_none));
+}
+
+/// Scenario "A hit before the hold reply plays the pad" (controller-reach).
+#[test]
+fn a_hit_before_the_hold_reply_plays_the_pad() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "top left");
+    // PAD BANK moved the device to its second layer; the reply is still on its way.
+    cell(&mut drive, 64);
+    assert!(drive.app.pads.hit_at[0].is_some());
+    assert!(!drive.app.edit);
+    hold(&mut drive, true);
+    cell(&mut drive, 64);
+    assert!(drive.app.edit);
+}
+
+/// Scenario "A failed status read hides the panel" (controller-reach).
+#[test]
+fn a_failed_status_read_hides_the_panel() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "top left");
+    hold(&mut drive, true);
+    assert!(drive.app.panel.visible());
+    drive.midi().recorded_smc_failure();
     drive.frame();
     assert!(!drive.app.panel.visible());
-    assert!(drive.app.pads.held[0]);
-    drive.bytes(SMC, &[0x89, 48, 0]);
-    drive.frame();
-    assert!(!drive.app.pads.held[0]);
+    // The unit is not verified now: a first-layer hit plays.
+    cell(&mut drive, 48);
+    assert!(drive.app.pads.hit_at[0].is_some());
+    assert!(!drive.app.edit);
 }
 
 /// Scenario "PAD BANK ignores invalid or disconnected sources" (controller-reach).
 #[test]
 fn pad_bank_ignores_invalid_or_disconnected_sources() {
-    let mut drive = smc_drive();
-    drive.app.set_smc_pad_bank(true);
+    let mut drive = hold_drive();
     pad_bank_request(&mut drive, XS_PORT);
     assert!(!drive.app.panel.visible());
     let old_request = Instant::now();
@@ -3083,23 +3186,20 @@ fn pad_bank_ignores_invalid_or_disconnected_sources() {
     drive.midi().recorded_connect(SMC);
     drive.midi().recorded_smc_setup();
     drive.frame();
-    drive.midi().recorded_pad_bank(SMC, old_request);
+    drive.midi().recorded_pad_bank(SMC, old_request, true);
     drive.frame();
     assert!(!drive.app.panel.visible());
     pad_bank_request(&mut drive, SMC);
     assert!(drive.app.panel.visible());
 }
 
-/// Scenario "First-hit reveal survives a missing PAD BANK pulse" (controller-reach).
+/// Scenario "First-hit reveal works without the hold shortcut" (controller-reach).
 #[test]
-fn first_hit_reveal_survives_a_missing_pad_bank_pulse() {
-    for enabled in [false, true] {
-        let mut drive = smc_drive();
-        drive.app.set_smc_pad_bank(enabled);
-        if !enabled {
-            pad_bank_request(&mut drive, SMC);
-            assert!(!drive.app.panel.visible());
-        }
+fn first_hit_reveal_works_without_the_hold_shortcut() {
+    // Shortcut off on a verified unit, then shortcut on with an unverified unit.
+    for mut drive in [smc_drive(), Drive::smc_offline()] {
+        pad_bank_request(&mut drive, SMC);
+        assert!(!drive.app.panel.visible());
         cell(&mut drive, panel_note(2));
         assert!(drive.app.panel.visible());
         assert_eq!(drive.app.screen, Screen::Pads);
@@ -3107,6 +3207,55 @@ fn first_hit_reveal_survives_a_missing_pad_bank_pulse() {
         cell(&mut drive, panel_note(2));
         assert_eq!(drive.app.screen, Screen::Files);
     }
+}
+
+/// Scenario "A question takes its two pads without a hold" (command-panel).
+#[test]
+fn a_question_takes_its_two_pads_without_a_hold() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 256])), "top left");
+    drive.app.session_dirty = Some(Instant::now());
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    cell(&mut drive, panel_note(12));
+    hold(&mut drive, false);
+    assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+    // Another pad stays silent and the question stays.
+    cell(&mut drive, 48);
+    assert!(drive.app.pads.hit_at[0].is_none());
+    assert!(matches!(drive.app.ask, Some(Ask::Exit { .. })));
+    // P7 from the first layer cancels without a hold.
+    cell(&mut drive, 46);
+    assert!(drive.app.ask.is_none());
+    assert!(!drive.app.quit_requested);
+
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    cell(&mut drive, panel_note(12));
+    hold(&mut drive, false);
+    // P8 from the second layer confirms.
+    cell(&mut drive, 63);
+    assert!(drive.app.quit_requested);
+}
+
+/// Scenario "A cell hit lights the cell" (screen-layout).
+#[test]
+fn a_cell_hit_lights_the_cell() {
+    let mut drive = hold_drive();
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(5));
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert_eq!(panel.flash, Some(4));
+    assert_eq!(panel.labels[4].as_deref(), Some("mode"));
+    list_button(&mut drive, false);
+    let before = drive.seen();
+    cell(&mut drive, panel_note(6));
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert_eq!(panel.labels[5].as_deref(), Some("mixer"));
+    assert_eq!(panel.flash, Some(5));
+    assert_eq!(drive.seen(), before, "the dim mixer cell runs no action");
+    drive.app.panel.flash = Some((6, Instant::now() - std::time::Duration::from_millis(121)));
+    assert_eq!(drive.app.panel_snapshot().unwrap().flash, None);
 }
 
 fn old_layout_file(files: &TransitionFiles) -> PathBuf {

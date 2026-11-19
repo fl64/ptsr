@@ -1623,15 +1623,22 @@ impl App {
                 self.input_log
                     .push(format!("{port}   {msg}   -> {meaning}"));
             }
-            midi::Event::SmcPadBank { port, setting } => {
-                if self.ask.is_none()
-                    && self.panel_input_available()
-                    && self
-                        .midi
-                        .as_ref()
-                        .is_some_and(|midi| midi.pad_bank_shortcut_is_current(setting))
+            // The panel shows while PAD BANK is held (131); overlays hide it in the snapshot.
+            midi::Event::SmcPadBank {
+                port,
+                setting,
+                held,
+            } => {
+                if !held {
+                    self.panel.disconnect(&port);
+                } else if self
+                    .midi
+                    .as_ref()
+                    .is_some_and(|midi| midi.pad_bank_shortcut_is_current(setting))
+                    && self.panel.owner().is_none_or(|owner| owner == port)
                 {
-                    self.panel.toggle(&port);
+                    self.panel.hide();
+                    self.panel.reveal(&port);
                 }
             }
             midi::Event::PanelCell { port, cell } => {
@@ -1686,6 +1693,7 @@ impl App {
                     return;
                 }
                 if self.panel.press(&port, cell) == super::panel::Press::Cell(cell) {
+                    self.panel.flash = Some((cell, Instant::now()));
                     let view = self.panel_view();
                     self.panel.sync_view(view);
                     if self.panel_target_cell(cell) {

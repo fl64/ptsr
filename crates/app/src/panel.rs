@@ -1,6 +1,7 @@
 //! The command panel belongs to the SMC-PAD connection that opened it.
 
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use input::Action;
 use ratatui::text::Line;
@@ -195,6 +196,8 @@ impl Target {
 
 pub(super) struct State {
     owner: Option<String>,
+    /// The last cell hit and its time, lit for one pad hit flash (131).
+    pub flash: Option<(u8, Instant)>,
     page: usize,
     view: Option<View>,
     pub target_menu: Option<Target>,
@@ -220,6 +223,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             owner: None,
+            flash: None,
             page: 1,
             view: None,
             target_menu: None,
@@ -250,14 +254,6 @@ impl State {
             self.owner = Some(port.into());
             self.page = 1;
             self.view = None;
-        }
-    }
-
-    pub(super) fn toggle(&mut self, port: &str) {
-        if self.owner() == Some(port) {
-            self.hide();
-        } else {
-            self.reveal(port);
         }
     }
 
@@ -330,6 +326,7 @@ impl State {
 
     pub(super) fn hide(&mut self) {
         self.owner = None;
+        self.flash = None;
         self.target_menu = None;
         self.page = 1;
         self.view = None;
@@ -392,6 +389,12 @@ impl App {
         }
     }
 
+    /// The cell index to light, while the last hit is within a pad hit flash.
+    fn panel_flash(&self) -> Option<usize> {
+        let (cell, at) = self.panel.flash?;
+        (at.elapsed() < super::HIT_FLASH).then(|| usize::from(cell - 1))
+    }
+
     fn target_snapshot(&self, target: Target) -> tui::CommandPanel {
         let labels = std::array::from_fn(|index| {
             let label = match index {
@@ -416,6 +419,7 @@ impl App {
             page: 0,
             view: target.title(),
             target: true,
+            flash: self.panel_flash(),
         }
     }
 
@@ -454,6 +458,7 @@ impl App {
                 page: self.panel.page(),
                 view: name,
                 target: false,
+                flash: self.panel_flash(),
             }
         })
     }

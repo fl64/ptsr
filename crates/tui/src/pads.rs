@@ -10,6 +10,8 @@ pub struct CommandPanel {
     pub view: &'static str,
     /// A target view (Copy, Assign and others) instead of the screens or action pages.
     pub target: bool,
+    /// The cell index that a pad hit lights now (131).
+    pub flash: Option<usize>,
 }
 
 /// The number that the device prints on the pad of top-down `cell` 1–16.
@@ -81,11 +83,26 @@ pub fn command_panel_in(
             } else {
                 CYAN
             };
-            let color = if active { zone } else { DIM };
+            let lit = panel.flash == Some(index);
+            let color = match (lit, active) {
+                (true, _) => BG,
+                (false, true) => zone,
+                (false, false) => DIM,
+            };
+            // A hit lights the cell: its own color when active, grey when dim.
+            let fill = match (lit, active) {
+                (true, true) => zone,
+                (true, false) => DIM,
+                (false, _) => PANEL,
+            };
             let cell = Block::bordered()
-                .title(Line::from(device_number(index + 1).to_string()).fg(DIM))
+                .title(Line::from(device_number(index + 1).to_string()).fg(if lit {
+                    BG
+                } else {
+                    DIM
+                }))
                 .border_style(Style::new().fg(if active { zone } else { BORDER }))
-                .style(Style::new().bg(PANEL));
+                .style(Style::new().bg(fill));
             let inner = cell.inner(*area);
             frame.render_widget(Clear, *area);
             frame.render_widget(cell, *area);
@@ -813,6 +830,7 @@ mod tests {
             page,
             view: "CHOP",
             target: false,
+            flash: None,
         }
     }
 
@@ -836,6 +854,27 @@ mod tests {
             let corner = (frame.grid.x, frame.grid.y);
             assert_eq!(actions.backend().buffer()[corner].fg, CYAN);
             assert_eq!(screens.backend().buffer()[corner].fg, MAGENTA);
+        }
+    }
+
+    /// Scenario "A cell hit lights the cell" (screen-layout).
+    #[test]
+    fn a_cell_hit_lights_the_cell() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let [_, body, _, _] = frame_areas(Rect::new(0, 0, width, height));
+            let grid = pad_frame(body, false).grid;
+            // Inside the first cell (active "cut") and the second cell (empty, dim).
+            let first = (grid.x + 2, grid.y + 1);
+            let second = (grid.x + grid.width / 4 + 2, grid.y + 1);
+            let mut lit = panel(1);
+            lit.flash = Some(0);
+            let (_, term) = render(&lit, width, height);
+            assert_eq!(term.backend().buffer()[first].bg, CYAN, "{width}x{height}");
+            assert_eq!(term.backend().buffer()[second].bg, PANEL);
+            lit.flash = Some(1);
+            let (_, term) = render(&lit, width, height);
+            assert_eq!(term.backend().buffer()[first].bg, PANEL);
+            assert_eq!(term.backend().buffer()[second].bg, DIM, "{width}x{height}");
         }
     }
 

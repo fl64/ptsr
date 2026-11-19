@@ -793,7 +793,7 @@ impl App {
             let view = self.panel_view();
             rows.push((
                 "SMC-PAD".into(),
-                format!("PAD BANK shows the panel; LEFT and RIGHT move its views. View: {}. PLAY starts or continues. STOP pauses; press again to reset.", if self.panel.page() == 0 { "screens" } else { "actions" }),
+                format!("{} LEFT and RIGHT move its views. View: {}. PLAY starts or continues. STOP pauses; press again to reset.", if self.midi_gestures.smc_pad_bank_opens_panel { "Hold PAD BANK to show the panel; a pad hit during the hold runs its cell." } else { "PAD BANK shows the panel on the first second-bank hit." }, if self.panel.page() == 0 { "screens" } else { "actions" }),
             ));
             for first in [1, 5, 9, 13] {
                 let cells = (first..first + 4)
