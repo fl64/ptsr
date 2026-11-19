@@ -104,6 +104,19 @@ This is the main product goal. It has priority over a short implementation.
 - Count the presses of each route. Make each route as short as possible.
 - If a spec, the code or a plan contradicts this goal, stop. Tell the owner in Russian, in plain words, without code names. Give two or three options. For each option, tell what the owner presses and sees, what becomes better and what becomes worse. Put your recommendation first.
 
+### Usability checks
+
+Use three levels of checks. Select the level by the scope of the change.
+
+1. Automatic tests run on each commit. They check the SMC-PAD exit of each mode and the words of the hints after each input device. They also check that hints fit at 80×26 and that panel labels come from the glossary.
+2. A targeted walk checks only the scenarios and actions that the change touches. It takes 10–15 minutes.
+3. A full walk checks all user stories and all SMC-PAD actions. It takes about one hour.
+
+- Before the owner check of a change, estimate its scope. Tell the owner which level you recommend, why, and how long it takes. Do not start a full walk without the owner's agreement.
+- A change of sound, documents or internal code only needs level 1.
+- When a walk finds a problem, add an automatic test for it if possible, so that level 1 finds it next time.
+- Give the owner manual checks as short arrow chains. Write `[P1]` for a pad or a button, `` `CHOP` `` for a screen or a mode and «text» for text on the screen.
+
 ## Real time — you must not break it
 
 - In the audio callback: no memory allocation, no mutexes, no I/O, no logging, no panics.
