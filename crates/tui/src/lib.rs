@@ -991,8 +991,8 @@ pub fn pattern_controls_in(
     let pages = ["PATTERN", "CLEAR"];
     let pages_len: usize = pages.iter().map(|n| n.chars().count() + 1).sum::<usize>() + 1;
     let mut title = Vec::new();
-    if pages_len + 7 <= usize::from(area.width.saturating_sub(2)) {
-        title.push(Span::styled(" EDIT ·", Style::new().fg(MAGENTA).bold()));
+    if pages_len + 10 <= usize::from(area.width.saturating_sub(2)) {
+        title.push(" A1 PARAMS ·".fg(MAGENTA).bold());
     }
     for name in pages {
         title.push(" ".into());

@@ -212,6 +212,13 @@ fn every_current_keyboard_action_has_a_controller_route() {
                     profile.control_action(screen, false, if end { "e4" } else { "e3" })
                         == Some(if end { "slice.end" } else { "slice.start" })
                 }
+                // Knobs 5 and 6 move the Chop region; the panel cells left in 134.
+                Action::ChopRegionStart => {
+                    profile.control_action(screen, false, "e5") == Some("chop.region_start_pos")
+                }
+                Action::ChopRegionEnd => {
+                    profile.control_action(screen, false, "e6") == Some("chop.region_end_pos")
+                }
                 _ => false,
             };
             let bank_ok = bank_select
@@ -2069,7 +2076,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 53);
+    assert_eq!(checked + special, 52);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3236,7 +3243,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 53);
+    assert_eq!(checked, 52);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
@@ -4023,6 +4030,37 @@ fn text_entry_closes_with_pad_1_when_pad_bank_is_off() {
     assert!(!drive.app.browser.editing, "file filter closes");
 }
 
+/// Scenario "A cell bound by learning shows the learned action" (command-panel).
+#[test]
+fn a_cell_bound_by_learning_shows_the_learned_action() {
+    let mut drive = hold_drive();
+    // Device pad 6 of the second layer is note 57, panel cell 10: open in the screens view.
+    learn::assign(
+        &mut drive.app.learned,
+        "SMC-PAD",
+        input::Group::Global,
+        input::midi::Key::Note(57),
+        "pad.mode_next",
+    );
+    drive.app.sync_learned("SMC-PAD", input::Group::Global);
+    drive.app.publish_midi(&drive.shared);
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    let label = drive.app.panel_snapshot().unwrap().labels[9].clone();
+    hold(&mut drive, false);
+    assert_eq!(label.as_deref(), Some(input::short_label("pad.mode_next")));
+    assert_eq!(crate::controller_map::smc_printed("SMC-PAD", "c10"), "PB6");
+}
+
+/// Scenario "Learn on Settings explains the refusal" (controller-reach): a dim cell with a
+/// label, such as mixer, says that it is not available instead of doing nothing.
+#[test]
+fn a_dim_labelled_cell_says_it_is_not_available() {
+    let mut drive = hold_drive();
+    screens_cell(&mut drive, 6);
+    assert_eq!(drive.last_notice().text, "mixer: not available yet");
+}
+
 /// Scenario "A cell hit lights the cell" (screen-layout).
 #[test]
 fn a_cell_hit_lights_the_cell() {
@@ -4038,7 +4076,11 @@ fn a_cell_hit_lights_the_cell() {
     let panel = drive.app.panel_snapshot().unwrap();
     assert_eq!(panel.labels[5].as_deref(), Some("mixer"));
     assert_eq!(panel.flash, Some(5));
-    assert_eq!(drive.seen(), before, "the dim mixer cell runs no action");
+    // The dim mixer cell only says that it is not available (134).
+    let mut after = drive.seen();
+    assert_eq!(after.notice.as_deref(), Some("mixer: not available yet"));
+    after.notice = before.notice.clone();
+    assert_eq!(after, before, "the dim mixer cell runs no action");
     drive.app.panel.flash = Some((6, Instant::now() - std::time::Duration::from_millis(121)));
     assert_eq!(drive.app.panel_snapshot().unwrap().flash, None);
 }

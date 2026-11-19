@@ -69,8 +69,7 @@ cells = [
   { cell = 6, label = "listen", action = "chop.play_mode" },
   { cell = 7, label = "snap", action = "chop.snap_toggle" },
   { cell = 8, label = "as pad", action = "chop.as_pad_toggle" },
-  { cell = 9, label = "from", action = "chop.region_start", pair = "region:lower" },
-  { cell = 10, label = "to", action = "chop.region_end", pair = "region:upper" },
+  { cell = 9, label = "whole", action = "chop.region_clear" },
   { cell = 11, label = "edit", action = "chop.edit" },
   { cell = 12, label = "fill", action = "chop.commit" },
 ]

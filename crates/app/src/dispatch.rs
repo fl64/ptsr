@@ -264,13 +264,13 @@ impl App {
                 }
             }
             a if self.screen == Screen::Chop && self.plan.is_some() && assign_deaf(&a) => {
-                self.post_notice(
-                    Level::Info,
-                    (
-                        "assigning: Enter applies, Esc leaves".into(),
-                        Instant::now(),
-                    ),
-                );
+                // The refusal names the controls of the last input device (134).
+                let text = if self.input_sources.last_is_smc() {
+                    "assigning: PAD BANK + 4 applies, PAD BANK + 1 leaves"
+                } else {
+                    "assigning: Enter applies, Esc leaves"
+                };
+                self.post_notice(Level::Info, (text.into(), Instant::now()));
             }
             Action::PatternControls
             | Action::PatternParamPrev
@@ -1810,7 +1810,15 @@ impl App {
                         super::panel::Choice::Back => {
                             self.panel_back();
                         }
-                        super::panel::Choice::Dim => {}
+                        super::panel::Choice::Dim => {
+                            // A visible label that cannot act says so (134).
+                            if let Some(label) = self.panel.label(view, cell) {
+                                self.post_notice(
+                                    Level::Info,
+                                    (format!("{label}: not available yet"), Instant::now()),
+                                );
+                            }
+                        }
                     }
                 }
             }

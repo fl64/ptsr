@@ -21,7 +21,7 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 | Pad edit | mode, reset, p.gate, copy |
 | A1 | step, grid -, grid +, params, record, erase, undoA1, clear, rows, tap |
 | Files | to pad, load, parent, star, enter, listen, chop |
-| Chop | cut, parts, hits, assign, loop, listen, snap, as pad, from, to, edit, fill |
+| Chop | cut, parts, hits, assign, loop, listen, snap, as pad, whole, —, edit, fill |
 | Chop edit | normal, hits -, cut -, end -, whole |
 | Settings | tab, learn, unbind, —, row -, row + |
 
@@ -158,4 +158,12 @@ A PAD BANK hold SHALL show a panel in every mode, also in Help, the project list
 - **WHEN** the owner enters each current mode in separate runs and holds PAD BANK
 - **THEN** the panel shows a label on device pad 1
 - **AND** device pad 1 during the hold leaves that mode or closes its question
+
+### Requirement: A learned panel cell shows its new action
+
+When the owner binds an action to a SMC-PAD panel cell, the panel SHALL show that action on the cell instead of the shipped label. The learning prompt SHALL name the cell by the number printed on the device.
+
+#### Scenario: A cell bound by learning shows the learned action
+- **WHEN** the owner binds pad mode to the panel cell of device pad 6 and shows the screens view
+- **THEN** the cell shows the pad mode label and no longer shows open
 

@@ -112,6 +112,25 @@ fn step(rows: &[input::midi::LayoutRow], (r, c): (usize, usize), dr: i8, dc: i8)
 impl App {
     /// Connected devices in the order of connection, with the learned bindings over the
     /// profile, as the MIDI dispatch has them.
+    /// The owner's own bindings on SMC-PAD panel cells (134): a learned action replaces
+    /// the shipped cell, so the panel names that action instead of the old label.
+    pub(super) fn smc_cell_overrides(&self) -> [Option<String>; 16] {
+        let device = self
+            .controller_devices()
+            .into_iter()
+            .find(|device| device.profile.name == "SMC-PAD");
+        std::array::from_fn(|index| {
+            let profile = &device.as_ref()?.profile;
+            let action = profile.control_action_context(
+                self.screen,
+                self.edit_keys(),
+                self.pattern_panel.is_some(),
+                &format!("c{}", index + 1),
+            )?;
+            (action != "panel.cell").then(|| input::short_label(action).to_string())
+        })
+    }
+
     pub(super) fn controller_devices(&self) -> Vec<Device> {
         let maps = super::midi::parse_learned(&self.learned);
         let mut out: Vec<Device> = Vec::new();
@@ -506,6 +525,10 @@ impl App {
             ));
         }
         let place = |what: String| Some(format!("{what} · hit a pad · {cancel}"));
+        if self.erase_pads {
+            let stop = if smc { "PAD BANK + 1 stop" } else { "Esc stop" };
+            return Some(format!("ERASE A1 · hit a pad to erase its hits · {stop}"));
+        }
         if let Some(path) = &self.browser.in_hand {
             return place(format!("IN HAND {}", super::file_name(path)));
         }
@@ -841,7 +864,7 @@ fn pad_label(action: Option<&str>) -> Option<String> {
 
 /// The SMC-PAD pads as printed (134): `p1`, the top-left pad of the profile, is P13;
 /// its PAD BANK layer `c1` is PB13. Other controls keep their profile names.
-fn smc_printed(profile: &str, name: &str) -> String {
+pub(super) fn smc_printed(profile: &str, name: &str) -> String {
     if profile != "SMC-PAD" {
         return name.to_string();
     }

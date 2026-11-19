@@ -1609,7 +1609,10 @@ impl App {
                     .unwrap_or_default();
                 format!(
                     " {} for \"{}\" ({}){replaced} · Enter: assign and save · Esc: keep all · another control takes its place",
-                    control_name(&self.live_profiles(), profile, *key),
+                    super::controller_map::smc_printed(
+                        profile,
+                        &control_name(&self.live_profiles(), profile, *key)
+                    ),
                     l.info.label,
                     l.slot.name(),
                 )

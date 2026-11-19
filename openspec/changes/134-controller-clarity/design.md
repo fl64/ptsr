@@ -112,14 +112,15 @@ Settings. A placement result names the pads, for example `slices 1–3 → pads 
 ### D10. Labels with one meaning, 2026-11-19
 
 The owner renamed only the labels that are unclear or have two meanings. A label can
-have seven cells, so that `rec out` fits.
+have seven cells, so that `rec out` fits. The Chop region cells left the page: knobs 5
+and 6 move the region. `whole` takes their place and restores the whole sound.
 
 | Screen | Old | New |
 | --- | --- | --- |
 | Pads | take, clear, marks, gate, output | swap, remove, all, p.gate, rec out |
 | Pad edit | clear, gate | reset, p.gate |
 | Files | take, auto | to pad, listen |
-| Chop | start, end, commit | from, to, fill |
+| Chop | start, end, commit | removed, removed, fill |
 | Chop edit | level | normal |
 | A1 | knobs, undo | params, undoA1 |
 | Settings | clear | unbind |

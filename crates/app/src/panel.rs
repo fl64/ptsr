@@ -482,7 +482,11 @@ impl App {
                 return self.target_snapshot(target);
             }
             let view = self.panel_view();
+            let overrides = self.smc_cell_overrides();
             let labels = std::array::from_fn(|index| {
+                if let Some(owner) = &overrides[index] {
+                    return Some(owner.clone());
+                }
                 if index == 14 && target.is_some() {
                     return Some("target".into());
                 }
@@ -524,12 +528,12 @@ mod tests {
         let allowed = [
             "A1", "all", "apply", "as pad", "assign", "back", "cancel", "chop", "clear", "close",
             "copy", "cut", "cut -", "down", "edit", "end -", "enter", "erase", "exit", "files",
-            "fill", "from", "fx", "grid", "grid +", "grid -", "help", "hits", "hits -", "learn",
-            "listen", "load", "loop", "mark", "menu", "mixer", "mode", "no", "normal", "open",
-            "order", "p.gate", "pad", "pads", "params", "parent", "parts", "rec out", "record",
-            "redo", "remove", "reset", "row +", "row -", "rows", "save", "setup", "snap", "star",
-            "step", "swap", "tab", "tap", "target", "to", "to pad", "undo", "undoA1", "unbind",
-            "up", "used", "whole", "yes",
+            "fill", "fx", "grid", "grid +", "grid -", "help", "hits", "hits -", "learn", "listen",
+            "load", "loop", "mark", "menu", "mixer", "mode", "no", "normal", "open", "order",
+            "p.gate", "pad", "pads", "params", "parent", "parts", "rec out", "record", "redo",
+            "remove", "reset", "row +", "row -", "rows", "save", "setup", "snap", "star", "step",
+            "swap", "tab", "tap", "target", "to pad", "undo", "undoA1", "unbind", "up", "used",
+            "whole", "yes",
         ];
         let check = |label: &str| {
             assert!(
@@ -595,8 +599,8 @@ mod tests {
             (
                 View::Chop,
                 &[
-                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "from",
-                    "to", "edit", "fill",
+                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "whole",
+                    "", "edit", "fill",
                 ],
             ),
             (
@@ -674,7 +678,7 @@ mod tests {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 3);
+        assert_eq!(checked, 2);
         assert!(adjacent(7, 8), "No and Yes");
         assert!(adjacent(14, 15), "Undo and Redo");
         assert!(!adjacent(4, 5), "split row");
