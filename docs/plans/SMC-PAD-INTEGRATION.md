@@ -101,15 +101,15 @@ to bottom and the cells from left to right.
 1. Pads · Files · Chop · A1.
 2. FX · Mixer · Setup · Help.
 3. Save · Open · Learn · Exit.
-4. Back · Undo · Redo · Panic.
+4. Back or No · Undo · Redo · Yes or Apply (change 134).
 
 A1 opens Pattern. Setup opens Settings. Mixer stays dim until `mixer-view`.
 Help opens Controller Help. F1 still opens Help. While the panel shows, LEFT and
 RIGHT move the views. With the panel hidden, they keep their screen roles.
-Panic uses only the double press from 93a. Its cell stays in the bottom-right corner.
+Panic uses only the double press from 93a. It has no panel cell after change 134.
 
 Keep related actions side by side in a physical row. Put the earlier, lower or
-negative action on the left. For questions, P11 is No and P12 is Yes.
+negative action on the left. For questions, P1 is No and P4 is Yes (change 134).
 Keep Undo to the left of Redo. Apply the same order to minus and plus, and to Previous
 and Next when both are on a panel page. Back closes the current mode first.
 Use the normal question route for an action that removes or replaces a target.
@@ -122,10 +122,9 @@ Use `grid -` and `grid +` for grid size. Keep product names such as A1 and FX.
 Remove the panel steps for values, parameters and edit pages when a direct route replaces them.
 Keep their keyboard and MIDI learn actions. Knobs change values. LEFT and RIGHT change edit pages.
 
-Use P1–P12 on the target panel for Take, Copy, Swap, file placement and Assign.
-Use the playing layer for P13–P16. P13 cancels on the target panel.
-P14 applies an Assign plan. P15 switches between targets and commands.
-A playing-layer hit closes the panel and retains the current target route.
+Change 134: use the playing layer for Take, Copy, Swap, file placement and Assign.
+All 16 pads are targets. During a hold, P1 cancels, P2 undoes, P3 opens the menu
+and P4 applies an Assign plan. A playing-layer hit closes the panel and places the item.
 
 The [route table](../CONTROLLER-PATHS.md#target-routes) compares the software
 press counts before and after the change. Record actual counts on the device
