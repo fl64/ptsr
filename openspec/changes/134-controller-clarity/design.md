@@ -93,7 +93,7 @@ The line stays after the owner releases PAD BANK. It does not replace notices.
 
 ### D7. Honest panel and title
 
-- The title keeps the screen name, for example `PADS · PANEL`.
+- The title keeps the screen name. The header above the cells names the panel view.
 - Badges and the BPM keep their columns. Text that does not fit is cut at the end.
 - During a question, the panel shows only `no` on pad 1 and `yes` on pad 4.
 - While the panel shows, the hint for LEFT and RIGHT names the panel views.

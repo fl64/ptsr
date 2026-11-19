@@ -455,6 +455,16 @@ impl App {
             profile.control_action_context(self.screen, edit, self.pattern_panel.is_some(), name)
         };
         let (page, list, _) = self.smc_context();
+        // A visible panel takes LEFT and RIGHT for its views (127); the hint says so (134).
+        let (page, list) = if self.panel.visible()
+            && self.panel_input_available()
+            && self.ask.is_none()
+            && self.panel_snapshot().is_some_and(|panel| !panel.target)
+        {
+            ("PANEL", "View")
+        } else {
+            (page, list)
+        };
         let ready = self
             .help_overlay
             .controller

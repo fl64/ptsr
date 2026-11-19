@@ -1487,7 +1487,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PanelTargets
         | Mode::PanelUnavailable
         | Mode::PanelImageOn
-        | Mode::PanelImageOff => require("PANEL · SMC"),
+        | Mode::PanelImageOff => require(" │ "),
         Mode::PatternOverviewAbsent
         | Mode::PatternOverviewEmpty
         | Mode::PatternOverviewStraight
@@ -1546,13 +1546,13 @@ fn check_frame(case: Case, buffer: &Buffer) {
         Mode::PanelQuestion => {
             require("ASK");
             require("KB");
-            require("PANEL · SMC");
+            require("PANEL │ QUESTION");
             require("yes");
         }
         Mode::PanelUnavailable => {
             require("redo");
         }
-        Mode::PanelDisconnected => assert!(!text.contains("PANEL · SMC"), "{text}"),
+        Mode::PanelDisconnected => assert!(!text.contains("‹ screens"), "{text}"),
         Mode::QuietEmpty => require("—"),
         Mode::ClipEvent => require("CLIP +01:02:03"),
         Mode::LongLabels => {
@@ -3456,7 +3456,7 @@ L="none"
                         .map(|row| row.iter().map(|cell| cell.symbol()).collect())
                         .collect();
                     let text = rows.join("\n");
-                    assert!(text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
+                    assert!(!text.contains("PANEL · SMC"), "{screen:?} {size:?} {page}");
                     let shown = if page == 0 {
                         "SCREENS".to_string()
                     } else {
@@ -3488,6 +3488,36 @@ L="none"
     }
 
     /// Scenario "The strip identifies page, list and roles at both sizes" (screen-layout).
+    /// Scenario "The panel title names the screen without overlap" (command-panel).
+    #[test]
+    fn the_panel_title_names_the_screen_without_overlap() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for (screen, mode, name) in [
+                (Screen::Chop, Mode::PanelMain, "CHOP"),
+                (Screen::Files, Mode::PanelTargets, "FILES"),
+            ] {
+                let case = Case { screen, mode, size };
+                let now = Instant::now();
+                let app = fixture(case, now);
+                let (_, buffer) = render_app(case, &keymap, app, now);
+                let rows: Vec<String> = buffer
+                    .content()
+                    .chunks(usize::from(size.0))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                let text = rows.join("\n");
+                assert!(rows[1].contains(name), "{text}");
+                assert!(!text.contains("PANEL · SMC"), "{text}");
+                if mode == Mode::PanelMain {
+                    assert!(text.contains("◀ ▶ View · PANEL"), "{text}");
+                } else {
+                    assert!(rows[1].contains("· hit a pad ·"), "{text}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_strip_identifies_page_list_and_roles_at_both_sizes() {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
@@ -3508,7 +3538,7 @@ L="none"
             let top = rows.iter().position(|row| row.contains("B1 7")).unwrap();
             let rows_text = rows.join("\n");
             assert!(
-                rows[top].contains("B2 8 master") && rows[top].contains("◀ ▶ Bank · Chop"),
+                rows[top].contains("B2 8 master") && rows[top].contains("◀ ▶ View · PANEL"),
                 "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);

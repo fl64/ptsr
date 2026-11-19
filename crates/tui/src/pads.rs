@@ -96,7 +96,7 @@ pub fn key_tag(key: char) -> String {
 /// The header: the shown view in the middle, its neighbors on the left and right.
 fn panel_header(panel: &CommandPanel) -> String {
     if panel.target {
-        return format!(" PANEL · SMC │ {}", panel.view);
+        return format!(" PANEL │ {}", panel.view);
     }
     if panel.page == 0 {
         " · │ SCREENS │ actions ›".to_string()
@@ -122,13 +122,7 @@ pub fn command_panel_in(
 ) {
     let [_, body, _, _] = frame_areas(content);
     let pad = pad_frame(body, false);
-    frame.render_widget(
-        Line::from(" PANEL · SMC ").fg(BG).bg(CYAN),
-        Rect {
-            width: pad.title.width.min(13),
-            ..pad.title
-        },
-    );
+    // The screen title and its badges stay; the header below names the panel (134).
     // The bank strip under the header is wider than the header text.
     frame.render_widget(Clear, pad.bank);
     let accent = if panel.page == 0 && !panel.target {

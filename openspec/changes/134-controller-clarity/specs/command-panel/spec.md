@@ -91,7 +91,7 @@ During a PAD BANK hold with an item in hand or an open Assign plan, the panel SH
 
 ### Requirement: The panel title keeps the screen name
 
-While the panel shows, the title SHALL name the current screen and the panel. An example is `PADS · PANEL`. Badges, the BPM and the mode line SHALL keep their own columns. Text that does not fit SHALL be cut at its end and SHALL NOT overwrite other text. While the panel shows, the LEFT and RIGHT hint SHALL name the panel views.
+While the panel shows, the title SHALL keep the current screen name, and the header above the cells SHALL name the panel view. Badges, the BPM and the mode line SHALL keep their own columns. Text that does not fit SHALL be cut at its end and SHALL NOT overwrite other text. While the panel shows, the LEFT and RIGHT hint SHALL name the panel views.
 
 #### Scenario: The panel title names the screen without overlap
 - **WHEN** the panel shows on Chop with LISTEN on, and on Files with a file in hand, at both supported sizes
