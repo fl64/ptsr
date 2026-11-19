@@ -90,11 +90,13 @@ impl Shown {
 type KnobRole = (&'static str, Option<Param>);
 
 /// Pad edit values follow the screen column from the top knob down.
-const PAD_EDIT_KNOBS: [u8; 4] = [7, 5, 3, 1];
+pub(super) const PAD_EDIT_KNOBS: [u8; 4] = [7, 5, 3, 1];
+/// SMC-PAD knobs 2–4 turn the three rows of the selected FX slot.
+pub(super) const FX_KNOBS: [u8; 3] = [2, 3, 4];
 
 fn pad_knob_label(param: pads::Param) -> &'static str {
     match param {
-        pads::Param::Group => "group",
+        pads::Param::Group => "mute",
         param => pads::name_of(param),
     }
 }

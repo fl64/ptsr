@@ -524,7 +524,7 @@ impl App {
         let text = match param {
             Some(Param::PadSource) => "source",
             Some(Param::PadEffect(0)) => "drive",
-            Some(Param::PadEffect(9)) => "group",
+            Some(Param::PadEffect(9)) => "mute",
             Some(Param::PadEffect(index @ 3..=8)) => {
                 self.pads.name(super::EFFECT_PARAMS[usize::from(index)])
             }

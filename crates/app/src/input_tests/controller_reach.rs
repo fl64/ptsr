@@ -3534,6 +3534,29 @@ fn keyboard_numbers_return_without_an_smc_pad() {
     assert_eq!(drive.app.pads.selected, 12);
 }
 
+/// Scenario "Pad edit rows show knobs 7, 5 and 3" (screen-layout).
+#[test]
+fn pad_edit_rows_show_knobs_7_5_and_3() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 4_800])), "tone");
+    drive.app.edit = true;
+    while drive.app.pads.page().0 != "TONE" {
+        drive.app.apply(Action::PageNext);
+    }
+    let rows = shared_feedback_rows(&mut drive, 120, 40, Instant::now());
+    let text = rows.join("\n");
+    for row in ["7 volume", "5 pitch", "3 mute"] {
+        assert!(text.contains(row), "{row}: {text}");
+    }
+    for (knob, word) in [(7, "volume"), (5, "pitch"), (3, "mute")] {
+        assert_eq!(
+            drive.app.smc_page_role(knob).unwrap().0,
+            word,
+            "knob {knob}"
+        );
+    }
+}
+
 /// Scenario "A cell hit lights the cell" (screen-layout).
 #[test]
 fn a_cell_hit_lights_the_cell() {

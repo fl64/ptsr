@@ -2678,7 +2678,7 @@ mod tests {
     }
 
     /// A screen drawn at `w`×`h` as text rows and as (symbol, fg, bg) cells.
-    fn draw_rows(screen: &Screen, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
+    pub(crate) fn draw_rows(screen: &Screen, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
         draw_badge_rows(screen, w, h, Vec::new())
     }
 
@@ -2704,7 +2704,7 @@ mod tests {
             .collect()
     }
 
-    fn shared_fx() -> Fx {
+    pub(crate) fn shared_fx() -> Fx {
         Fx {
             blocks: [
                 FxBlock {

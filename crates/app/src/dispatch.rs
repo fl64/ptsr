@@ -1474,11 +1474,13 @@ impl App {
 
     /// Pads read by the device numbers while an SMC-PAD Master is connected (134).
     pub(super) fn sync_device_numbers(&self) {
-        tui::pads::set_device_numbers(
-            self.midi_devices
-                .iter()
-                .any(|(port, _)| port.contains("SMC-PAD-Master")),
-        );
+        let smc = self
+            .midi_devices
+            .iter()
+            .any(|(port, _)| port.contains("SMC-PAD-Master"));
+        tui::pads::set_device_numbers(smc);
+        tui::pads::set_row_knobs(smc.then_some(super::values::PAD_EDIT_KNOBS));
+        tui::pads::set_fx_knobs(smc.then_some(super::values::FX_KNOBS));
     }
 
     fn panel_back(&mut self) {

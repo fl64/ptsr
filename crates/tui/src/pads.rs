@@ -38,6 +38,42 @@ pub fn device_numbers() -> bool {
     DEVICE_NUMBERS.get()
 }
 
+thread_local! {
+    /// The knobs that turn the rows of a pad edit page, top down; `None` counts 1, 2, 3.
+    static ROW_KNOBS: std::cell::Cell<Option<[u8; 4]>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_row_knobs(knobs: Option<[u8; 4]>) {
+    ROW_KNOBS.set(knobs);
+}
+
+thread_local! {
+    /// The knobs that turn the rows of the selected FX slot; `None` counts 1, 2, 3.
+    static FX_KNOBS: std::cell::Cell<Option<[u8; 3]>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_fx_knobs(knobs: Option<[u8; 3]>) {
+    FX_KNOBS.set(knobs);
+}
+
+/// The number on FX row `index`: with SMC-PAD knobs only the selected slot has one.
+pub(super) fn fx_row_knob(index: usize, selected: bool) -> Option<usize> {
+    match FX_KNOBS.get() {
+        Some(knobs) => selected
+            .then(|| knobs.get(index).copied().map(usize::from))
+            .flatten(),
+        None => Some(index + 1),
+    }
+}
+
+/// The knob number shown on page row `index`.
+fn row_knob(index: usize) -> usize {
+    ROW_KNOBS
+        .get()
+        .and_then(|knobs| knobs.get(index).copied())
+        .map_or(index + 1, usize::from)
+}
+
 /// The name of the pad at grid `index` (0 is top left): its device number with an
 /// SMC-PAD connection, otherwise its key.
 pub fn pad_tag(index: usize) -> String {
@@ -595,7 +631,7 @@ fn release_line(p: &Pads, sel: &PadView) -> Line<'static> {
 
 fn param_line(p: &Pads, which: PadParam, label: &'static str, value: String) -> Line<'static> {
     let knob = match p.knobs.iter().position(|&k| k == which) {
-        Some(i) => Span::styled(format!("{} ", i + 1), Style::new().fg(MAGENTA).bold()),
+        Some(i) => Span::styled(format!("{} ", row_knob(i)), Style::new().fg(MAGENTA).bold()),
         None => "  ".into(),
     };
     let style = if p.lit == Some(which) {

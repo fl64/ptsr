@@ -19,7 +19,7 @@ A row can belong to a pad edit page, the FX screen or a picker. If an SMC-PAD kn
 
 #### Scenario: Pad edit rows show knobs 7, 5 and 3
 - **WHEN** the owner opens pad edit TONE with an SMC-PAD connection
-- **THEN** the rows read 7 volume, 5 pitch and 3 group, and the knob strip uses the same three words
+- **THEN** the rows read 7 volume, 5 pitch and 3 mute, and the knob strip uses the same three words
 
 #### Scenario: FX rows show their knobs
 - **WHEN** the owner opens the FX screen with an SMC-PAD connection

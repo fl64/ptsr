@@ -101,7 +101,7 @@ The line stays after the owner releases PAD BANK. It does not replace notices.
 ### D8. Knob numbers on rows
 
 A row that a knob turns shows that knob number. In pad edit TONE the rows read
-`7 volume`, `5 pitch`, `3 group`. The knob strip and the row use the same word.
+`7 volume`, `5 pitch`, `3 mute`. The knob strip and the row use the same word.
 The FX screen and the project list follow the same rule (`knob 1`, not `E1`).
 
 ### D9. Refusals and results
