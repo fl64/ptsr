@@ -559,7 +559,7 @@ impl Pads {
     /// What the panel says about the scope: `pad Q` or `3 marked`.
     pub fn scope_name(&self) -> String {
         if self.marked.is_empty() {
-            format!("pad {}", PAD_KEYS[self.selected].to_ascii_uppercase())
+            format!("pad {}", tui::pads::pad_tag(self.selected))
         } else {
             format!("{} marked", self.marked.len())
         }
@@ -2267,7 +2267,7 @@ impl App {
             .collect();
         let what = match pads.as_slice() {
             [] => return,
-            [abs] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
+            [abs] => format!("pad {}", tui::pads::pad_tag(*abs)),
             many => format!("{} pads", many.len()),
         };
         self.ask = Some(Ask::ResetPads {
@@ -2496,7 +2496,7 @@ impl App {
         self.dirty();
         let on = match step.pads.as_slice() {
             [] => "the shared slot".to_string(),
-            [(abs, _)] => format!("pad {}", PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()),
+            [(abs, _)] => format!("pad {}", tui::pads::pad_tag(*abs)),
             many => format!("{} pads", many.len()),
         };
         self.post_notice(
@@ -2581,7 +2581,7 @@ impl App {
             pads::Param::Start
         };
         self.lit = Some((Lit::Pad(what), Instant::now()));
-        let key = PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase();
+        let key = tui::pads::pad_tag(abs);
         let secs = |f: usize| f as f32 / self.rate.max(1) as f32;
         self.post_notice(
             Level::Info,

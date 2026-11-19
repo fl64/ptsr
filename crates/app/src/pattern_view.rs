@@ -478,8 +478,7 @@ impl super::App {
                             format!(
                                 "A1: bank {} pad {} step {}: added one hit. Undo removes it.",
                                 self.pads.bank + 1,
-                                super::pads::PAD_KEYS[abs % super::PADS_PER_BANK]
-                                    .to_ascii_uppercase(),
+                                tui::pads::pad_tag(abs),
                                 self.pattern_view.cursor_cell + 1,
                             ),
                             std::time::Instant::now(),
@@ -519,7 +518,7 @@ impl super::App {
                     format!(
                         "A1: bank {} pad {} step {}: removed one hit. Undo restores it.",
                         self.pads.bank + 1,
-                        super::pads::PAD_KEYS[abs % super::PADS_PER_BANK].to_ascii_uppercase(),
+                        tui::pads::pad_tag(abs),
                         self.pattern_view.cursor_cell + 1,
                     ),
                     std::time::Instant::now(),
@@ -804,10 +803,7 @@ impl super::App {
             model.division.label(),
             self.pads.bank + 1,
         );
-        strip.label = format!(
-            "pad {}",
-            super::PAD_KEYS[self.pads.selected].to_ascii_uppercase()
-        );
+        strip.label = format!("pad {}", tui::pads::pad_tag(self.pads.selected));
         strip.beat_cells = (960 / spacing) as usize;
         strip.playhead = tick.map(|tick| (tick / spacing) as usize);
         strip.cells = cells

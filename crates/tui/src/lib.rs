@@ -16,7 +16,7 @@ mod help;
 mod kitty;
 mod knob_strip;
 pub use knob_strip::KnobStrip;
-mod pads;
+pub mod pads;
 mod pattern;
 mod settings;
 mod status;
@@ -6069,7 +6069,7 @@ mod tests {
                 let positions = (
                     at("HELP", 1),
                     at("MESSAGES", 1),
-                    at("Tab/Shift+Tab", h - 5),
+                    at("Tab/LEFT/RIGHT", h - 5),
                     at("F1/Esc", h - 5),
                 );
                 assert_eq!(positions, *expected.get_or_insert(positions));
@@ -8004,7 +8004,7 @@ mod tests {
         assert!(text.contains(" PROJECTS "), "{text}");
         assert!(text.contains("MyBeat"), "{text}");
         assert!(text.contains("Field"), "{text}");
-        assert!(text.contains("Enter/P12 open"), "{text}");
+        assert!(text.contains("Enter/P4 open"), "{text}");
         assert!(!text.contains("name:"), "{text}");
     }
 
@@ -8019,7 +8019,7 @@ mod tests {
         });
         assert!(text.contains("no projects yet"), "{text}");
         assert!(text.contains("name: NewB"), "{text}");
-        assert!(text.contains("Enter/P12 create"), "{text}");
+        assert!(text.contains("Enter/P4 create"), "{text}");
         assert!(!text.contains("Enter open"), "{text}");
     }
 

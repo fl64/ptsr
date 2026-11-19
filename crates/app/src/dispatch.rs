@@ -1472,6 +1472,15 @@ impl App {
         true
     }
 
+    /// Pads read by the device numbers while an SMC-PAD Master is connected (134).
+    pub(super) fn sync_device_numbers(&self) {
+        tui::pads::set_device_numbers(
+            self.midi_devices
+                .iter()
+                .any(|(port, _)| port.contains("SMC-PAD-Master")),
+        );
+    }
+
     fn panel_back(&mut self) {
         let esc = event::KeyEvent::new(event::KeyCode::Esc, event::KeyModifiers::NONE);
         if self.pad_naming.is_some() {
@@ -1545,6 +1554,7 @@ impl App {
                 );
                 self.seed_device(&port, &profile, false);
                 self.midi_devices.push((port, profile));
+                self.sync_device_numbers();
             }
             midi::Event::Disconnected { port } => {
                 self.panel.disconnect(&port);
@@ -1563,6 +1573,7 @@ impl App {
                 }
                 self.post_system_notice(Level::Warn, (format!("MIDI disconnected: {port}"), now));
                 self.midi_devices.retain(|(p, _)| *p != port);
+                self.sync_device_numbers();
             }
             midi::Event::Message {
                 port,

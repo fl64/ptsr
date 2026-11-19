@@ -20,6 +20,43 @@ pub fn device_number(cell: usize) -> usize {
     (3 - row) * 4 + column + 1
 }
 
+/// The pad keys in grid order, top left first, as the program maps them.
+const KEYS: [char; 16] = [
+    '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
+];
+
+thread_local! {
+    /// With an SMC-PAD connection, pads read by the numbers printed on the device (134).
+    static DEVICE_NUMBERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_device_numbers(on: bool) {
+    DEVICE_NUMBERS.set(on);
+}
+
+pub fn device_numbers() -> bool {
+    DEVICE_NUMBERS.get()
+}
+
+/// The name of the pad at grid `index` (0 is top left): its device number with an
+/// SMC-PAD connection, otherwise its key.
+pub fn pad_tag(index: usize) -> String {
+    let index = index % 16;
+    if device_numbers() {
+        device_number(index + 1).to_string()
+    } else {
+        KEYS[index].to_ascii_uppercase().to_string()
+    }
+}
+
+/// [`pad_tag`] for a pad known by its key.
+pub fn key_tag(key: char) -> String {
+    match KEYS.iter().position(|k| *k == key.to_ascii_lowercase()) {
+        Some(index) => pad_tag(index),
+        None => key.to_uppercase().to_string(),
+    }
+}
+
 /// The header: the shown view in the middle, its neighbors on the left and right.
 fn panel_header(panel: &CommandPanel) -> String {
     if panel.target {
@@ -199,10 +236,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
         let lines = vec![
             Line::from(vec![
                 "pad ".fg(DIM),
-                Span::styled(
-                    sel.key.to_uppercase().to_string(),
-                    Style::new().fg(CYAN).bold(),
-                ),
+                Span::styled(key_tag(sel.key), Style::new().fg(CYAN).bold()),
                 format!("  bank {}", p.bank + 1).fg(DIM),
                 // the closed panel says how to open the edit; the edit has its frame (70)
                 if p.edit.is_none() && !p.edit_key.is_empty() {

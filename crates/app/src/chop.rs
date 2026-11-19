@@ -1945,15 +1945,15 @@ impl App {
             }
         }
         self.ask = None;
-        // "1→1Q": slice number, then bank and pad, so the result names every target.
+        // "1→1-Q": slice number, then bank and pad, so the result names every target.
         let pads: Vec<String> = targets
             .iter()
             .map(|&(slice, abs)| {
                 format!(
-                    "{}→{}{}",
+                    "{}→{}-{}",
                     slice + 1,
                     abs / PADS_PER_BANK + 1,
-                    super::PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()
+                    tui::pads::pad_tag(abs)
                 )
             })
             .collect();

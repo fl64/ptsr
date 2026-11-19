@@ -1295,10 +1295,7 @@ impl crate::App {
             return;
         }
         let name = crate::pad_label(&self.pads, abs);
-        let step = format!(
-            "erase pad {}",
-            crate::pads::PAD_KEYS[abs % crate::PADS_PER_BANK].to_ascii_uppercase()
-        );
+        let step = format!("erase pad {}", tui::pads::pad_tag(abs));
         let result = self.tidy_pattern(&step, |pattern, rows| {
             let mut removed = [false; MAX_HITS];
             for (hit, row) in pattern.hits.iter().zip(rows) {

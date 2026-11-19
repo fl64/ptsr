@@ -2478,22 +2478,18 @@ fn pad_place(abs: usize) -> String {
     format!(
         "bank {}, pad {}",
         abs / PADS_PER_BANK + 1,
-        PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()
+        tui::pads::pad_tag(abs)
     )
 }
 
 /// "pad Q kick": the pad key and what lies on it.
 fn pad_label(p: &pads::Pads, abs: usize) -> String {
-    format!(
-        "pad {} {}",
-        PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase(),
-        pad_name(p, abs)
-    )
+    format!("pad {} {}", tui::pads::pad_tag(abs), pad_name(p, abs))
 }
 
 /// A pad as bank and key, `2-W`, as the chop screen labels it (27, the dash of 36).
 fn bank_key(abs: usize) -> String {
-    let key = PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase();
+    let key = tui::pads::pad_tag(abs);
     format!("{}-{key}", abs / PADS_PER_BANK + 1)
 }
 
@@ -3095,10 +3091,7 @@ fn in_hand_line(p: &pads::Pads, abs: usize) -> String {
     } else {
         "empty".into()
     };
-    format!(
-        "in hand: pad {} · {name}",
-        PAD_KEYS[abs % PADS_PER_BANK].to_ascii_uppercase()
-    )
+    format!("in hand: pad {} · {name}", tui::pads::pad_tag(abs))
 }
 
 /// Without kitty a held modifier is not seen, so the hold hints of the help line read as

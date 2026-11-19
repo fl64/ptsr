@@ -3503,6 +3503,37 @@ fn the_panel_behind_a_question_shows_no_and_yes() {
     }
 }
 
+/// Scenario "The printed pad 1 reads as pad 1" (screen-layout).
+#[test]
+fn the_printed_pad_1_reads_as_pad_1() {
+    let mut drive = hold_drive();
+    assert!(tui::pads::device_numbers());
+    drive.bytes(SMC, &[0x99, 36, 100]);
+    drive.bytes(SMC, &[0x89, 36, 0]);
+    drive.frame();
+    assert_eq!(drive.app.pads.selected, 12, "the bottom-left pad");
+    let rows = shared_feedback_rows(&mut drive, 120, 40, Instant::now());
+    let text = rows.join("\n");
+    assert!(rows.iter().any(|row| row.contains("┌1 Z")), "{text}");
+    assert!(rows.iter().any(|row| row.contains("┌13 1")), "{text}");
+    assert!(text.contains("pad 1  bank 1"), "{text}");
+}
+
+/// Scenario "Keyboard numbers return without an SMC-PAD" (screen-layout).
+#[test]
+fn keyboard_numbers_return_without_an_smc_pad() {
+    let mut drive = hold_drive();
+    drive.app.pads.selected = 12;
+    drive.midi().recorded_disconnect(SMC);
+    drive.frame();
+    assert!(!tui::pads::device_numbers());
+    let rows = shared_feedback_rows(&mut drive, 120, 40, Instant::now());
+    let text = rows.join("\n");
+    assert!(rows.iter().any(|row| row.contains("┌Z─")), "{text}");
+    assert!(text.contains("pad Z  bank 1"), "{text}");
+    assert_eq!(drive.app.pads.selected, 12);
+}
+
 /// Scenario "A cell hit lights the cell" (screen-layout).
 #[test]
 fn a_cell_hit_lights_the_cell() {
