@@ -226,3 +226,23 @@ fn target_pads_keep_their_connection_and_release() {
     hit(&mut drive, 14);
     assert!(drive.app.pads.sound[1].is_some());
 }
+
+/// Scenario "Assign apply names the pads" (controller-reach).
+#[test]
+fn assign_apply_names_the_pads() {
+    let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, source);
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(4));
+    hold(&mut drive, false);
+    for number in [5, 6, 9] {
+        hit(&mut drive, number);
+    }
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(16));
+    hold(&mut drive, false);
+    let text = drive.last_notice().text.clone();
+    for pad in ["1→1-5", "2→1-6", "3→1-9"] {
+        assert!(text.contains(pad), "{pad}: {text}");
+    }
+}

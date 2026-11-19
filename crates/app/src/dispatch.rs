@@ -328,7 +328,17 @@ impl App {
                     None => Some(self.learn_open()),
                 };
             }
-            Action::LearnToggle => {}
+            Action::LearnToggle => {
+                // A refused action says why and where it works (134).
+                self.post_notice(
+                    Level::Info,
+                    (
+                        "Learn works on the work screens. On Settings, the MIDI tab learns controls."
+                            .into(),
+                        Instant::now(),
+                    ),
+                );
+            }
             Action::PadRename if self.screen == Screen::Pads => {
                 let abs = self.pads.selected_abs();
                 if self.pads.file[abs].is_some() {

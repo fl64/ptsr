@@ -3557,6 +3557,27 @@ fn pad_edit_rows_show_knobs_7_5_and_3() {
     }
 }
 
+/// Scenario "Learn on Settings explains the refusal" (controller-reach).
+#[test]
+fn learn_on_settings_explains_the_refusal() {
+    let mut drive = hold_drive();
+    drive.app.screen = Screen::Settings;
+    drive.app.publish_midi(&drive.shared);
+    let tab = drive.app.settings_tab;
+    hold(&mut drive, true);
+    list_button(&mut drive, false);
+    cell(&mut drive, panel_note(11)); // Learn in the screens view.
+    hold(&mut drive, false);
+    assert!(drive.app.screen_learn.is_none());
+    assert_eq!(drive.app.screen, Screen::Settings);
+    assert_eq!(drive.app.settings_tab, tab);
+    assert!(
+        drive.last_notice().text.contains("MIDI tab"),
+        "{}",
+        drive.last_notice().text
+    );
+}
+
 /// Scenario "A cell hit lights the cell" (screen-layout).
 #[test]
 fn a_cell_hit_lights_the_cell() {
