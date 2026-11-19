@@ -47,6 +47,7 @@ enum Mode {
     Messages,
     Unsaved,
     SaveFailed,
+    ExitRecovery,
     Safety,
     Device,
     Hidden,
@@ -148,6 +149,7 @@ impl Mode {
         Self::Messages,
         Self::Unsaved,
         Self::SaveFailed,
+        Self::ExitRecovery,
         Self::Safety,
         Self::Device,
         Self::Hidden,
@@ -249,6 +251,7 @@ impl Mode {
             Self::Messages => "messages",
             Self::Unsaved => "unsaved",
             Self::SaveFailed => "save-failed",
+            Self::ExitRecovery => "exit-recovery",
             Self::Safety => "safety",
             Self::Device => "input-device",
             Self::Hidden => "hidden-grid",
@@ -350,6 +353,7 @@ impl Mode {
             | Self::PitchGatePitch
             | Self::QuietEmpty
             | Self::ClipEvent
+            | Self::ExitRecovery
             | Self::LongLabels => screen == Screen::Pads,
             Self::Bounds
             | Self::Assign
@@ -472,6 +476,7 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                     [
                         "quiet-empty",
                         "clip-event",
+                        "exit-recovery",
                         "long-labels",
                         "pattern-view-fine",
                         "pattern-view-triplet",
@@ -836,7 +841,32 @@ fn fixture(case: Case, now: Instant) -> App {
             }
         }
         Mode::Unsaved => app.session_dirty = Some(now),
-        Mode::SaveFailed => app.session_write_failed = true,
+        Mode::SaveFailed => app.session_write_error = Some("Save refused.".into()),
+        Mode::ExitRecovery => {
+            let port = "SMC-PAD-Master offline";
+            let (producer, _consumer) = rtrb::RingBuffer::new(1);
+            let (midi, worker) = midi::Midi::recorded(
+                Vec::new(),
+                producer,
+                Arc::new(engine::rt::ProjectState::default()),
+                Arc::new(midi::Shared::default()),
+            );
+            midi.recorded_connect(port);
+            midi.recorded_fence();
+            for event in midi.events.try_iter() {
+                app.input_sources.observe(&event, now);
+            }
+            drop(midi);
+            worker.join().unwrap();
+            app.project = Some(Project {
+                name: "Live set".into(),
+                folder: "/offline/project".into(),
+            });
+            app.session_write_error = Some("Permission denied (os error 13)".into());
+            app.session_dirty = Some(now);
+            app.request_quit();
+            assert!(!app.try_finish_exit());
+        }
         Mode::Hidden => app.ui.hide_pads = true,
         Mode::Text if case.screen == Screen::Pads => {
             app.pad_naming = Some((0, "fixture name".into()))
@@ -888,7 +918,7 @@ fn fixture(case: Case, now: Instant) -> App {
                 name: "warm dusty project collection".into(),
                 folder: "/offline/project".into(),
             });
-            app.session_write_failed = true;
+            app.session_write_error = Some("Save refused.".into());
         }
         Mode::Normal | Mode::Value | Mode::Device => {}
         Mode::PatternCountIn
@@ -897,7 +927,7 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternFinishing => add_recording(&mut app, case.mode),
         Mode::PatternSafety => {
             add_recording(&mut app, Mode::PatternRecording);
-            app.session_write_failed = true;
+            app.session_write_error = Some("Save refused.".into());
         }
         Mode::PatternControls => {
             app.apply(Action::PatternControls);
@@ -946,7 +976,7 @@ fn fixture(case: Case, now: Instant) -> App {
         }
     }
     if case.mode == Mode::Safety {
-        app.session_write_failed = true;
+        app.session_write_error = Some("Save refused.".into());
     }
     app
 }
@@ -1028,7 +1058,7 @@ fn add_pattern_view(app: &mut App, mode: Mode) {
         app.pattern_view.division.change(true);
     }
     app.ui.hide_pads = mode == Mode::PatternViewHidden;
-    app.session_write_failed = mode == Mode::PatternViewSafety;
+    app.session_write_error = (mode == Mode::PatternViewSafety).then(|| "Save refused.".into());
     if matches!(mode, Mode::PatternViewFine | Mode::PatternViewTriplet) {
         app.send(Command::TransportPlay);
         rt.process(&mut vec![0.0; 48_001], &mut vec![0.0; 48_001]);
@@ -1693,6 +1723,12 @@ fn check_frame(case: Case, buffer: &Buffer) {
             assert!(!text.contains("Unsaved"));
         }
         Mode::SaveFailed => require("Save failed"),
+        Mode::ExitRecovery => {
+            require("Save failed · Live set");
+            require("Permission denied (os error 13)");
+            require("Enter: Retry Save · Esc: Back");
+            require("P7: Back · P8: Retry Save");
+        }
         Mode::Safety => {
             for label in [
                 "Save failed",
@@ -3488,6 +3524,7 @@ L="none"
     }
 
     /// Scenario "Catalogue covers panel pages and safety" (screen-layout).
+    /// Scenario "Exit recovery shows the reason and controls".
     #[test]
     fn catalogue_covers_screens_and_existing_modes() {
         let cases = matrix();

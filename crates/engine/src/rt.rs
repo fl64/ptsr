@@ -453,6 +453,7 @@ impl Realtime {
                                 | Command::PatternRecordStart { .. }
                                 | Command::PatternRecordEnd { .. }
                                 | Command::PatternRecordAck { .. }
+                                | Command::PatternRestoreAfterExit { .. }
                                 | Command::PatternErase { .. }
                                 | Command::PatternEraseTarget { .. }
                                 | Command::PatternEraseConsumed { .. }
@@ -500,6 +501,7 @@ impl Realtime {
                                 | Command::PatternRecordStart { .. }
                                 | Command::PatternRecordEnd { .. }
                                 | Command::PatternRecordAck { .. }
+                                | Command::PatternRestoreAfterExit { .. }
                                 | Command::PatternErase { .. }
                                 | Command::PatternEraseTarget { .. }
                                 | Command::PatternEraseConsumed { .. }

@@ -13,6 +13,7 @@ The owner needs to keep the work and see how to save it.
 - Show `Retry Save` and `Back` with the controls for each action.
 - Use one manual save for each retry. After success, show `Session saved` and return to the session.
 - Keep the completed A1 take and its Undo step if Exit cannot save it.
+- Let the owner start a new A1 take after recovery.
 
 ## Capabilities
 
@@ -51,6 +52,7 @@ The owner approved the specification step on 2026-11-19.
 6. Press the shown Retry Save pad. Verify `Session saved`.
 7. Exit again. Open the project and verify the saved value.
 
-Verify the recovery question and both actions at 80x26 and 120x40.
+Compare `renders/screens/pads-exit-recovery-80x26.ansi` and
+`renders/screens/pads-exit-recovery-120x40.ansi`.
 Use an A1 take with a held Gate note in the automated exit test.
 Renders: none. The change governs saving and exit.

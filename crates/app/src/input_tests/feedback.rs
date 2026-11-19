@@ -1292,7 +1292,7 @@ fn learning_keeps_safety_and_next_steps_visible() {
             }
             let mut drive = Drive::registry_screen_checks();
             drive.registry_command(source, key, M::NONE, number);
-            drive.app.session_write_failed = true;
+            drive.app.session_write_error = Some("Cannot write the session file.".into());
             drive
                 .app
                 .audio

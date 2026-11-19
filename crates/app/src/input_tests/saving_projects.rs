@@ -81,7 +81,7 @@ fn keyboard_and_controller_save_feedback_agree() {
                         drive.app.session_dirty,
                         if problem == "none" { None } else { pending }
                     );
-                    assert_eq!(drive.app.session_write_failed, problem == "write");
+                    assert_eq!(drive.app.session_write_error.is_some(), problem == "write");
                     assert_eq!(
                         drive.app.save_status(),
                         match problem {
@@ -300,7 +300,9 @@ fn save_refusals_keep_priority_and_state_until_a_real_retry_succeeds() {
                 drive
                     .app
                     .autosave(pending.unwrap() + SESSION_SAVE + Duration::from_secs(1));
-                drive.app.save_on_exit();
+                drive.tap(KeyCode::Char('q'), M::CONTROL);
+                assert!(matches!(drive.app.ask, Some(Ask::ExitRecovery { .. })));
+                drive.tap(KeyCode::Esc, M::NONE);
                 assert_eq!(drive.app.notices.history(), &history);
                 assert_eq!(drive.app.session_dirty, pending);
                 assert_eq!(
@@ -315,7 +317,7 @@ fn save_refusals_keep_priority_and_state_until_a_real_retry_succeeds() {
                     assert_eq!(drive.last_notice().level, Level::Done);
                     assert_eq!(drive.app.save_status(), SaveStatus::Clean);
                     assert!(drive.app.session_dirty.is_none());
-                    assert!(!drive.app.session_write_failed);
+                    assert!(drive.app.session_write_error.is_none());
                     assert_eq!(
                         session::load_existing(&path).unwrap().master_db,
                         drive.app.master_db
@@ -671,7 +673,7 @@ fn a_save_refusal_keeps_the_selected_target() {
                         assert_eq!(drive.app.load_gen, generations);
                         assert_eq!(drive.app.session_dirty, pending);
                         assert_eq!(drive.app.session_read_error, reason);
-                        assert_eq!(drive.app.session_write_failed, !protected);
+                        assert_eq!(drive.app.session_write_error.is_some(), !protected);
                         assert_eq!(
                             drive.app.project.as_ref().map(|p| p.name.as_str()),
                             project.then_some("A")
@@ -788,7 +790,7 @@ fn a_target_read_refusal_preserves_the_source() {
                     assert_eq!(drive.app.load_gen, generations);
                     assert_eq!(drive.app.session_dirty, pending);
                     assert_eq!(drive.app.session_read_error, reason);
-                    assert!(!drive.app.session_write_failed);
+                    assert!(drive.app.session_write_error.is_none());
                     assert_eq!(
                         drive.app.project_cfg.last.as_deref(),
                         project.then_some("A")
@@ -825,7 +827,7 @@ fn selecting_the_current_project_keeps_pending_work() {
             let path = drive.app.session_file();
             std::fs::create_dir(path.with_extension("toml.tmp")).unwrap();
             drive.tap(KeyCode::Char('s'), M::CONTROL);
-            assert!(drive.app.session_write_failed);
+            assert!(drive.app.session_write_error.is_some());
             std::fs::write(&path, "version = [\n").unwrap();
             let (audio, _rt) = audio::offline(48_000);
             let epoch = audio.project.epoch.load(Acquire);
@@ -848,7 +850,7 @@ fn selecting_the_current_project_keeps_pending_work() {
             assert!(drive.app.project_picker.is_none());
             assert_eq!(TransitionFiles::state(&drive), before);
             assert_eq!(drive.app.session_dirty, pending);
-            assert!(drive.app.session_write_failed);
+            assert!(drive.app.session_write_error.is_some());
             assert_eq!(drive.app.load_gen, generations);
             assert_eq!(drive.app.chop.as_ref().unwrap().saved(), cuts);
             assert!(Arc::ptr_eq(
@@ -895,7 +897,7 @@ fn a_target_creation_refusal_retains_saved_source_work() {
             assert_eq!(TransitionFiles::state(&drive), before);
             assert_eq!(TransitionFiles::picker(&drive), picker);
             assert!(drive.app.session_dirty.is_none());
-            assert!(!drive.app.session_write_failed);
+            assert!(drive.app.session_write_error.is_none());
             assert_eq!(
                 drive.app.project_cfg.last.as_deref(),
                 project.then_some("A")
@@ -942,7 +944,7 @@ fn a_missing_source_folder_blocks_switching_until_restored() {
                 assert_eq!(TransitionFiles::state(&drive), before);
                 assert_eq!(TransitionFiles::picker(&drive), picker);
                 assert_eq!(drive.app.session_dirty, pending);
-                assert!(drive.app.session_write_failed);
+                assert!(drive.app.session_write_error.is_some());
                 assert!(!folder.exists());
                 assert!(!files.0.join("C").exists());
                 assert_eq!(std::fs::read(moved.join("project.toml")).unwrap(), saved);
@@ -952,7 +954,7 @@ fn a_missing_source_folder_blocks_switching_until_restored() {
             assert!(drive.app.project_picker.is_none());
             assert_eq!(drive.app.project.as_ref().unwrap().name, target);
             assert!(drive.app.session_dirty.is_none());
-            assert!(!drive.app.session_write_failed);
+            assert!(drive.app.session_write_error.is_none());
         }
     }
 }
