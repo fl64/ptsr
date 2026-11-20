@@ -1026,6 +1026,7 @@ impl App {
                             lines: vec![
                                 format!("Reset {name} to its profile?"),
                                 "Every binding of yours for it is dropped.".into(),
+                                "This cannot be undone.".into(),
                                 "Enter: reset    Esc: keep".into(),
                             ],
                             name: name.clone(),

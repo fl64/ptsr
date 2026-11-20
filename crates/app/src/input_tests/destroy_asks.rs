@@ -385,3 +385,32 @@ fn forget_asks_and_says_that_it_has_no_undo() {
     assert!(drive.app.ask.is_none());
     assert_eq!(drive.app.learned, learned, "Esc keeps the binding");
 }
+
+/// Scenario "The reset question says that it has no undo" (midi-learn).
+#[test]
+fn the_reset_question_says_that_it_has_no_undo() {
+    let mut drive = midi_tab_drive(|row| matches!(row, learn::MidiListRow::Reset { .. }));
+    drive.tap(KeyCode::Enter, M::NONE);
+    let lines = drive.app.ask.as_ref().expect("a question").lines().to_vec();
+    assert!(
+        lines.iter().any(|l| l == "This cannot be undone."),
+        "{lines:?}"
+    );
+}
+
+/// Scenario "The layout update question says that it has no undo" (input-devices).
+#[test]
+fn the_layout_update_question_says_that_it_has_no_undo() {
+    let files = TransitionFiles::new();
+    let path = old_layout_file(&files);
+    let mut drive = saved_layout_drive(&path);
+    let before = drive.app.learned.clone();
+    open_layout_review(&mut drive);
+    select_layout_master(&mut drive);
+    let lines = drive.app.ask.as_ref().expect("a question").lines().to_vec();
+    assert!(
+        lines.iter().any(|l| l == "This cannot be undone."),
+        "{lines:?}"
+    );
+    assert_eq!(drive.app.learned, before, "no role changed before yes");
+}

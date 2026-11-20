@@ -1043,7 +1043,8 @@ impl App {
                 let shown = self.learn_shown(&profiles, name).unwrap_or_default();
                 vec![
                     format!(" LEARN · {label} · {place} · {shown} · Enter clear · Esc keep"),
-                    " Backspace removes the control of the picked element".into(),
+                    " Backspace removes the control of the picked element · This cannot be undone."
+                        .into(),
                 ]
             }
             (Some((name, label)), None, false) if l.refused && action_info(name).knob => vec![

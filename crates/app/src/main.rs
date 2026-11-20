@@ -9035,6 +9035,7 @@ Enter = "browser.hold"
             Some("cc 28 → none")
         );
         assert!(app.learn_lines().unwrap()[0].contains("Enter clear"));
+        assert!(app.learn_lines().unwrap()[1].ends_with("This cannot be undone."));
         assert!(
             app.learn_label(&app.live_profiles(), "pad.cutoff")
                 .is_some(),
