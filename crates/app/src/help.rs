@@ -142,7 +142,7 @@ pub(super) fn describe(a: Action) -> String {
         Action::HelpPageNext => "F1: next key-table page".into(),
         Action::LearnToggle => "bind controller knobs and buttons to what the screen shows".into(),
         Action::ProjectPick => "open the project picker".into(),
-        Action::PadsToggle => "hide / show the pads".into(),
+        Action::PadsToggle => "hide the pad grid, the wave takes its place".into(),
         Action::Confirm => "confirm the open question or picker".into(),
         Action::Back => "back".into(),
         Action::Quit => "quit".into(),

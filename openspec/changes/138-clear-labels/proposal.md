@@ -31,6 +31,7 @@ None.
 - `command-panel`: the shipped action table.
 - `chopping`: the result of `whole sample`.
 - `screen-layout`: the Chop knob labels.
+- `controller-reach`: the Learn warning quotes the new label.
 
 ## Impact
 

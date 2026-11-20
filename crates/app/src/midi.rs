@@ -4174,7 +4174,7 @@ mod tests {
         let tui::ControllerBody::Drawing { rows, .. } = view.body else {
             panic!("SMC-PAD drawing missing");
         };
-        assert_eq!(rows[4][4].as_ref().unwrap().label, "[edit]");
+        assert_eq!(rows[4][4].as_ref().unwrap().label, "[edit pad]");
         assert_eq!(rows[7][6].as_ref().unwrap().label, "[redo]");
         assert!(rows[7][6].as_ref().unwrap().free);
         assert!(rows[7][7].as_ref().unwrap().free);

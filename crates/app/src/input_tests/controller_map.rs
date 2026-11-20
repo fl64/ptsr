@@ -627,8 +627,8 @@ fn chop_help_identifies_the_slice_and_region_knobs() {
             Some("B1 3–4 slice · 5–6 region"),
         );
         for (key, detail) in [
-            (KeyCode::Down, "B1 K5 · Chop region start"),
-            (KeyCode::Right, "B1 K6 · Chop region end"),
+            (KeyCode::Down, "B1 K5 · region start"),
+            (KeyCode::Right, "B1 K6 · region end"),
             (KeyCode::Down, "B1 K4 · slice end"),
             (KeyCode::Left, "B1 K3 · slice start"),
         ] {

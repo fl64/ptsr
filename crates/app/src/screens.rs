@@ -3542,7 +3542,7 @@ L="none"
                 "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);
-            assert!(rows[top + 1].contains("5 reg[") && !rows[top + 1].contains("B2"));
+            assert!(rows[top + 1].contains("5 r.from") && !rows[top + 1].contains("B2"));
             assert!(rows[top + 2].contains("3 start"));
             assert!(rows[top + 3].contains("1 cursor"));
             assert!(

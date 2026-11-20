@@ -16868,8 +16868,8 @@ Enter = "browser.hold"
             }
             let full = super::full_help(&keymap, screen, true);
             assert!(
-                full.iter()
-                    .any(|(k, d)| k.contains("Ctrl+O") && d == "hide / show the pads"),
+                full.iter().any(|(k, d)| k.contains("Ctrl+O")
+                    && d == "hide the pad grid, the wave takes its place"),
                 "{screen:?}: F1 lists the switch"
             );
         }

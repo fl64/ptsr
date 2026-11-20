@@ -189,9 +189,9 @@ pub fn command_panel_in(
             let inner = cell.inner(*area);
             frame.render_widget(Clear, *area);
             frame.render_widget(cell, *area);
-            // a label longer than seven cells breaks at its first space (135)
+            // a label longer than eight cells breaks at its first space (135, 138)
             let lines: Vec<&str> = match label.split_once(' ') {
-                Some((first, second)) if Line::raw(label).width() > 7 && inner.height > 1 => {
+                Some((first, second)) if Line::raw(label).width() > 8 && inner.height > 1 => {
                     vec![first, second]
                 }
                 _ => vec![label],

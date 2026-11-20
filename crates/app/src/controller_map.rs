@@ -436,7 +436,7 @@ impl App {
         }
     }
 
-    fn smc_knob_detail(&self, name: &str, action: Option<&str>) -> Option<String> {
+    pub(super) fn smc_knob_detail(&self, name: &str, action: Option<&str>) -> Option<String> {
         use input::midi::{PARAMS, Param, param_of};
         let bank = if name.starts_with('e') { 1 } else { 2 };
         let knob = name.get(1..)?.parse::<u8>().ok()?;
@@ -450,8 +450,9 @@ impl App {
                 "param" => "select a parameter",
                 position => position,
             },
-            Some("chop.region_start_pos") => "Chop region start",
-            Some("chop.region_end_pos") => "Chop region end",
+            Some("chop.region_start_pos") => "region start",
+            Some("chop.region_end_pos") => "region end",
+            Some("chop.threshold") => "hit level",
             Some("pad.send_1") => "send to FX 1",
             Some("pad.send_2") => "send to FX 2",
             Some(action) => {

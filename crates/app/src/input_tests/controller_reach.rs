@@ -1274,7 +1274,7 @@ fn a1_grid_cell_matches_the_keyboard() {
     cell(&mut controller, panel_note(4));
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[2].as_deref(),
-        Some("grid +")
+        Some("steps finer")
     );
     cell(&mut controller, panel_note(3));
     assert_ne!(controller.app.pattern_view.division.grid(), before);
@@ -1509,7 +1509,7 @@ fn a1_knobs_cell_matches_the_keyboard() {
     assert_eq!(controller.app.panel_view(), panel::View::Pattern);
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[3].as_deref(),
-        Some("params")
+        Some("A1 setup")
     );
     cell(&mut controller, panel_note(4));
     assert_eq!(controller.app.pattern_panel, keyboard.app.pattern_panel);
@@ -4091,7 +4091,7 @@ fn a_cell_hit_lights_the_cell() {
     cell(&mut drive, panel_note(5));
     let panel = drive.app.panel_snapshot().unwrap();
     assert_eq!(panel.flash, Some(4));
-    assert_eq!(panel.labels[4].as_deref(), Some("mode"));
+    assert_eq!(panel.labels[4].as_deref(), Some("play mode"));
     list_button(&mut drive, false);
     let before = drive.seen();
     cell(&mut drive, panel_note(6));
@@ -4387,8 +4387,8 @@ fn the_panel_opens_on_the_screen_actions() {
     let panel = drive.app.panel_snapshot().unwrap();
     assert_eq!((panel.page, panel.view), (1, "CHOP"));
     assert!(!panel.target);
-    assert_eq!(panel.labels[0].as_deref(), Some("cut"));
-    assert_eq!(panel.labels[3].as_deref(), Some("assign"));
+    assert_eq!(panel.labels[0].as_deref(), Some("cut here"));
+    assert_eq!(panel.labels[3].as_deref(), Some("put on pads"));
 }
 
 /// Scenario "A screen hit opens that screen with its actions" (command-panel).
@@ -4402,7 +4402,7 @@ fn a_screen_hit_opens_that_screen_with_its_actions() {
     assert_eq!(drive.app.screen, Screen::Files);
     let panel = drive.app.panel_snapshot().unwrap();
     assert_eq!((panel.page, panel.view), (1, "FILES"));
-    assert_eq!(panel.labels[0].as_deref(), Some("to pad"));
+    assert_eq!(panel.labels[0].as_deref(), Some("take file"));
     // A hit on the current screen also shows its actions.
     list_button(&mut drive, false);
     cell(&mut drive, panel_note(2));
@@ -4458,7 +4458,7 @@ fn assign_shows_order_in_the_chop_actions() {
     cell(&mut controller, 64);
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[3].as_deref(),
-        Some("assign")
+        Some("put on pads")
     );
     cell(&mut controller, panel_note(4)); // Assign opens the target view.
     cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
@@ -4500,7 +4500,7 @@ fn pattern_taps_use_the_beat_interval() {
     cell(&mut controller, panel_note(1));
     assert_eq!(
         controller.app.panel.label(panel::View::Pattern, 10),
-        Some("tap")
+        Some("tap tempo")
     );
     let note = panel_note(10);
     let start = Instant::now();
@@ -4640,11 +4640,32 @@ fn learn_names_the_replaced_panel_cell() {
     let mut drive = smc_drive();
     drive.tap(KeyCode::F(10), M::NONE);
     drive.tap(KeyCode::Char('h'), M::NONE);
-    // device pad 6 on the PAD BANK layer is panel cell 10, "rec out" on Pads
+    // device pad 6 on the PAD BANK layer is panel cell 10, "record output" on Pads
     drive.bytes(SMC, &[0x99, panel_note(10), 100]);
     drive.bytes(SMC, &[0x89, panel_note(10), 0]);
     drive.frame();
     let view = drive.app.learning_view(&drive.keymap).unwrap();
     let text = format!("{} | {} | {}", view.context, view.detail, view.controls);
-    assert!(text.contains("replaces panel cell P6 rec out"), "{text}");
+    assert!(
+        text.contains("replaces panel cell P6 record output"),
+        "{text}"
+    );
+}
+
+/// Scenario "The region knob names its edge" (screen-layout).
+#[test]
+fn the_region_knob_names_its_edge() {
+    let mut drive = reach_drive(panel::View::Chop, Arc::new(Sample::mono(vec![0.2; 48_000])));
+    turn(&mut drive, 34, 65);
+    let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
+    let labels: Vec<&str> = strip.roles[0].iter().map(|(label, _)| *label).collect();
+    assert!(
+        labels.contains(&"r.from") && labels.contains(&"r.to"),
+        "{labels:?}"
+    );
+    assert!(labels.contains(&"hits"), "{labels:?}");
+    let detail = drive
+        .app
+        .smc_knob_detail("e5", Some("chop.region_start_pos"));
+    assert_eq!(detail.as_deref(), Some("B1 K5 · region start"));
 }

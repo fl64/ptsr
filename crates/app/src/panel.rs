@@ -145,7 +145,7 @@ impl Config {
                 if label.is_empty() || !label_fits(label) {
                     config
                         .warnings
-                        .push(format!("{where_}: label exceeds seven cells"));
+                        .push(format!("{where_}: label exceeds eight cells"));
                     continue;
                 }
                 let Some(name) = item.get("action").and_then(toml::Value::as_str) else {
@@ -504,7 +504,11 @@ impl App {
                 if self.assign_order_cell(cell) {
                     return Some("order".into());
                 }
-                self.panel.label(view, cell).map(str::to_owned)
+                // the pads toggle names what the press does now (138)
+                match self.panel.label(view, cell) {
+                    Some("hide pads") if self.ui.hide_pads => Some("show pads".into()),
+                    label => label.map(str::to_owned),
+                }
             });
             let name = match view {
                 View::Pads => "PADS",
@@ -542,14 +546,14 @@ impl App {
     }
 }
 
-/// A label longer than seven cells breaks at its first space into two lines (135); each
-/// line keeps at most seven cells.
+/// A label longer than eight cells breaks at its first space into two lines (135, 138);
+/// each line keeps at most eight cells.
 fn label_fits(label: &str) -> bool {
     match label.split_once(' ') {
-        Some((first, second)) if Line::raw(label).width() > 7 => {
-            Line::raw(first).width() <= 7 && Line::raw(second).width() <= 7
+        Some((first, second)) if Line::raw(label).width() > 8 => {
+            Line::raw(first).width() <= 8 && Line::raw(second).width() <= 8
         }
-        _ => Line::raw(label).width() <= 7,
+        _ => Line::raw(label).width() <= 8,
     }
 }
 
@@ -560,78 +564,85 @@ mod tests {
     /// Scenario "Shipped labels fit the panel glossary" (command-panel).
     #[test]
     fn shipped_labels_fit_the_panel_glossary() {
-        // One meaning per word (134): the old `take`, `commit`, `knobs`, `output` are gone.
+        // One meaning per label (134); plain two-word action labels (138).
         let allowed = [
             "A1",
-            "all",
+            "A1 setup",
             "apply",
-            "as pad",
-            "assign",
             "back",
             "cancel",
             "chop",
+            "chop file",
+            "chop pad",
             "clear",
+            "clear A1",
+            "clear pad",
             "close",
-            "copy",
-            "cut",
+            "copy pad",
+            "cursor step",
+            "cut by hits",
+            "cut here",
             "down",
-            "edit",
+            "edit pad",
+            "edit slice",
+            "edit steps",
             "enter",
-            "erase",
+            "equal parts",
+            "erase hits",
             "exit",
+            "fewer hits",
             "files",
-            "fill",
+            "fill pads",
+            "forget control",
             "fx",
-            "grid",
-            "grid +",
-            "grid -",
+            "hear as pad",
             "help",
-            "hits",
-            "hits -",
+            "hide empty",
+            "hide pads",
             "join left",
             "join right",
             "learn",
-            "listen",
-            "load",
-            "loop",
-            "mark",
+            "learn control",
+            "level to peak",
+            "listen file",
+            "load to pad",
+            "loop play",
+            "mark bank",
+            "mark pad",
             "menu",
             "mixer",
-            "mode",
             "no",
-            "normal",
             "open",
             "order",
-            "p.gate",
             "pad",
             "pads",
-            "params",
             "parent",
-            "parts",
-            "rec out",
-            "record",
+            "pitch gate",
+            "play mode",
+            "play range",
+            "put on pads",
+            "record A1",
+            "record output",
             "redo",
-            "remove",
-            "reset",
+            "reset pad",
             "row +",
             "row -",
-            "rows",
             "save",
             "setup",
-            "snap",
-            "star",
-            "step",
-            "swap",
+            "show pads",
+            "star file",
+            "steps finer",
+            "steps wider",
+            "swap pads",
             "tab",
-            "tap",
+            "take file",
+            "tap tempo",
             "target",
-            "to pad",
             "undo",
-            "undoA1",
-            "unbind",
+            "undo A1 pass",
             "up",
             "used",
-            "whole",
+            "whole sample",
             "yes",
         ];
         let check = |label: &str| {
@@ -674,35 +685,79 @@ mod tests {
             (
                 View::Pads,
                 &[
-                    "edit", "copy", "swap", "mark", "mode", "remove", "p.gate", "all", "grid",
-                    "rec out", "chop",
+                    "edit pad",
+                    "copy pad",
+                    "swap pads",
+                    "mark pad",
+                    "play mode",
+                    "clear pad",
+                    "pitch gate",
+                    "mark bank",
+                    "hide pads",
+                    "record output",
+                    "chop pad",
                 ],
             ),
-            (View::PadEdit, &["mode", "reset", "p.gate", "copy"]),
+            (
+                View::PadEdit,
+                &["play mode", "reset pad", "pitch gate", "copy pad"],
+            ),
             (
                 View::Pattern,
                 &[
-                    "step", "grid -", "grid +", "params", "record", "erase", "undoA1", "clear",
-                    "rows", "tap",
+                    "edit steps",
+                    "steps wider",
+                    "steps finer",
+                    "A1 setup",
+                    "record A1",
+                    "erase hits",
+                    "undo A1 pass",
+                    "clear A1",
+                    "hide empty",
+                    "tap tempo",
                 ],
             ),
             (
                 View::Files,
-                &["to pad", "load", "", "star", "", "listen", "chop"],
+                &[
+                    "take file",
+                    "load to pad",
+                    "",
+                    "star file",
+                    "",
+                    "listen file",
+                    "chop file",
+                ],
             ),
             (
                 View::Chop,
                 &[
-                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "whole",
-                    "", "edit", "fill",
+                    "cut here",
+                    "equal parts",
+                    "cut by hits",
+                    "put on pads",
+                    "loop play",
+                    "play range",
+                    "cursor step",
+                    "hear as pad",
+                    "whole sample",
+                    "",
+                    "edit slice",
+                    "fill pads",
                 ],
             ),
             (
                 View::ChopEdit,
-                &["normal", "hits -", "join left", "join right", "whole"],
+                &[
+                    "level to peak",
+                    "fewer hits",
+                    "join left",
+                    "join right",
+                    "whole sample",
+                ],
             ),
             (View::Fx, &[]),
-            (View::Settings, &["", "learn", "unbind"]),
+            (View::Settings, &["", "learn control", "forget control"]),
         ];
         for (view, labels) in table {
             let shipped: Vec<&str> = (1..=12)
@@ -782,7 +837,7 @@ mod tests {
         let mut panel = State::default();
         panel.press("SMC-PAD-Master A", 8);
         assert_eq!(panel.page(), 1);
-        assert_eq!(panel.label(View::Pads, 1), Some("edit"));
+        assert_eq!(panel.label(View::Pads, 1), Some("edit pad"));
         panel.move_view(-1);
         assert_eq!(panel.page(), 0);
         assert_eq!(panel.label(View::Pads, 1), Some("pads"));
@@ -807,7 +862,7 @@ mod tests {
             panel.move_view(steps);
             assert_eq!(panel.page(), page, "after {steps}");
         }
-        assert_eq!(panel.label(View::Pads, 1), Some("edit"));
+        assert_eq!(panel.label(View::Pads, 1), Some("edit pad"));
         panel.move_view(-1);
         assert_eq!(panel.label(View::Pads, 12), Some("exit"));
         assert_eq!(panel.choice(View::Pads, 12), Choice::Exit);
