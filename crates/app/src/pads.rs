@@ -1875,7 +1875,7 @@ impl App {
                 pad_name(&self.pads, abs),
                 self.copy_name(&snap)
             ));
-            lines.extend(overwrite_footer());
+            lines.extend(overwrite_footer(self.undo_words()));
             // a changed target asks again: only the same question, still open, places
             if !matches!(&self.ask,
                 Some(Ask::CopyPad { source: s, lines: old })
@@ -2037,7 +2037,7 @@ impl App {
                     file_name(&path)
                 ),
             ];
-            lines.extend(overwrite_footer());
+            lines.extend(overwrite_footer(self.undo_words()));
             let asked = matches!(
                 &self.ask,
                 Some(Ask::PutFile {
@@ -2466,7 +2466,8 @@ impl App {
                     }
                     self.dirty();
                     // the step names itself: a pass, an erased pad or a clear (98i)
-                    self.post_notice(Level::Done, (format!("undo: {what} on A1"), Instant::now()));
+                    let said = crate::destroy::a1_undo_text(&what);
+                    self.post_notice(Level::Done, (said, Instant::now()));
                 }
                 Err(error) => self.post_notice(Level::Error, (error, Instant::now())),
             }

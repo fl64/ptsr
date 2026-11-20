@@ -73,6 +73,17 @@ impl App {
                 c.cut_refusal(self.playhead().unwrap_or(c.cursor))
                     .map(|text| Grey::Why(text.into()))
             }
+            (View::Chop, Action::ChopCutsClear) => self
+                .chop
+                .as_ref()?
+                .markers
+                .is_empty()
+                .then(|| Grey::Why("no cuts to remove".into())),
+            (View::Chop, Action::ChopTrimSilence) => self
+                .chop
+                .as_ref()?
+                .trim_silence_refusal()
+                .map(|text| Grey::Why(text.into())),
             (View::Chop, Action::ChopHitsBack) => {
                 self.chop.as_ref()?.hits_back_refusal().map(Grey::Why)
             }
@@ -164,6 +175,8 @@ impl App {
                         | Action::ChopEqualParts
                         | Action::ChopHits
                         | Action::ChopHitsBack
+                        | Action::ChopCutsClear
+                        | Action::ChopTrimSilence
                 )
         )
     }

@@ -3,6 +3,7 @@ mod browser;
 mod chop;
 mod config;
 mod controller_map;
+mod destroy;
 mod diag;
 mod dispatch;
 mod graphics;
@@ -160,6 +161,11 @@ enum Ask {
     /// A copy in hand replaces a pad that holds something (83a).
     CopyPad {
         source: usize,
+        lines: Vec<String>,
+    },
+    /// An action that removes or replaces the owner's work waits for yes (138).
+    Destroy {
+        act: destroy::Act,
         lines: Vec<String>,
     },
     /// Clear A1 from pattern controls: every hit goes, the settings stay (98b).
@@ -2415,11 +2421,11 @@ fn stamp(t: std::time::SystemTime) -> String {
     format!("{y:04}{mo:02}{day:02}-{h:02}{m:02}{s:02}")
 }
 
-/// The end of every overwrite question.
-fn overwrite_footer() -> [String; 3] {
+/// The end of every overwrite question: one undo brings the old sounds back (138).
+fn overwrite_footer(undo: &str) -> [String; 3] {
     [
         "The old sounds leave these pads; their files on disk stay.".into(),
-        "This cannot be undone.".into(),
+        format!("{undo} brings them back."),
         "Enter: replace · Esc: keep".into(),
     ]
 }
@@ -3710,6 +3716,8 @@ fn ctrl_text(a: Action) -> String {
         Action::MarkerNudge { fine: true, .. } => "nudge fine".into(),
         Action::MarkerNudge { fine: false, .. } => "slice start".into(),
         Action::ChopRegionClear => "region all".into(),
+        Action::ChopCutsClear => "no cuts".into(),
+        Action::ChopTrimSilence => "trim silence".into(),
         Action::SliceBound { end: false, .. } => "left bound".into(),
         Action::SliceBound { end: true, .. } => "right bound".into(),
         Action::MarkerDelete => "delete left".into(),
@@ -3726,35 +3734,6 @@ fn ctrl_text(a: Action) -> String {
     }
 }
 
-/// Chop-screen actions the assign mode swallows (21): a cut, a zoom or a cursor move
-/// while the owner lays slices onto pads would ruin the wave under the plan. The pads,
-/// Tab, Enter, Esc, the slice pick and the undo stay live.
-fn assign_deaf(a: &Action) -> bool {
-    matches!(
-        a,
-        Action::ChopPlay
-            | Action::ChopPlayMode
-            | Action::ChopCut
-            | Action::ChopEqualParts
-            | Action::ChopHits
-            | Action::ChopHitsBack
-            | Action::ThresholdStep(_)
-            | Action::ChopAssign
-            | Action::ChopZoom { .. }
-            | Action::ChopRegionStart
-            | Action::ChopRegionEnd
-            | Action::ChopRegionClear
-            | Action::ChopSnapToggle
-            | Action::CursorMove { .. }
-            | Action::CursorJump { .. }
-            | Action::MarkerNudge { .. }
-            | Action::EditValue { .. }
-            | Action::SliceBound { .. }
-            | Action::ParamPrev
-            | Action::MarkerDelete
-            | Action::SliceEndDelete
-    )
-}
 fn help_section(a: Action) -> usize {
     match a {
         Action::PadPress { .. }
@@ -3811,6 +3790,8 @@ fn help_section(a: Action) -> usize {
         | Action::ChopRegionStart
         | Action::ChopRegionEnd
         | Action::ChopRegionClear
+        | Action::ChopCutsClear
+        | Action::ChopTrimSilence
         | Action::ChopSnapToggle
         | Action::ChopNormalize
         | Action::CursorMove { .. }
@@ -4459,7 +4440,7 @@ mod tests {
         assert_eq!(pads_row_who(&app), "16 of 16 learned");
         assert_eq!(app.learning_line(), None, "the run ended after the last");
         // Backspace on the row clears them all
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         assert_eq!(pads_row_who(&app), "0 of 16 learned");
         assert_eq!(learned_control(&app, "pad.1"), None);
         // the banks row is its own run and untouched
@@ -8494,6 +8475,7 @@ Enter = "browser.hold"
         assert_eq!(
             items,
             [
+                (".".to_string(), "trim silence".to_string()),
                 ("Bksp".to_string(), "delete right".to_string()),
                 ("E".to_string(), "pattern erase".to_string()),
                 ("I".to_string(), "zoom in".to_string()),
@@ -9176,7 +9158,7 @@ Enter = "browser.hold"
             _ => panic!("an action row"),
         }
         app.midi_row = at;
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         assert!(
             !super::learn::group_map(&app.learned, "default", input::Group::PadsEdit)
                 .contains_key(&k5),
@@ -9831,7 +9813,10 @@ Enter = "browser.hold"
             Some("2 pads changed; Ctrl+Z returns")
         );
         app.apply(input::Action::Undo);
-        assert_eq!(status(&app).as_deref(), Some("2 pads changed back"));
+        assert_eq!(
+            status(&app).as_deref(),
+            Some("undo: the cuts are back · 2 pads changed back")
+        );
         // an edit that no pad hears says nothing
         app.notices = Notices::new(Instant::now());
         app.apply(input::Action::ChopZoom { zoom_in: true });
@@ -9899,6 +9884,7 @@ Enter = "browser.hold"
         assert_eq!(c.slices().len(), 16);
         app.chop = Some(c);
         chop_key(&mut app, KeyCode::Char('h'), M::NONE);
+        chop_key(&mut app, KeyCode::Enter, M::NONE);
         assert_eq!(
             last_notice(&app),
             Some("by hits at -6 dB: 3 slices (were 16) · Ctrl+Z brings them back")
@@ -13530,7 +13516,7 @@ Enter = "browser.hold"
         }
         learn_row(&mut app, input::Group::Global, "bank.next");
         app.apply(Action::Back);
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         for (screen, edit) in states {
             app.screen = screen;
             app.edit = edit;
@@ -13556,7 +13542,7 @@ Enter = "browser.hold"
         }
         learn_row(&mut app, input::Group::Global, "screen.files");
         app.apply(Action::Back);
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         for (screen, edit) in states {
             app.screen = screen;
             app.edit = edit;
@@ -14503,7 +14489,7 @@ Enter = "browser.hold"
         // a new chop of the file: the pads keep their bounds and are their own now
         let region = app.pads.region[6];
         let cuts = app.chop.as_ref().unwrap().markers.clone();
-        app.apply(Action::ChopParts);
+        crate::destroy::yes(&mut app, Action::ChopParts);
         assert_eq!(app.pads.source(6), Source::Own);
         assert_eq!(app.pads.region[6], region, "it plays what it played");
         assert_eq!(panel_line(&mut app, 6), "break.wav · pad");
@@ -16441,7 +16427,10 @@ Enter = "browser.hold"
         assert_eq!(app.pads.region[11], before[7]);
         assert_eq!(flash(&app), "7 pads changed; Ctrl+Z returns");
         app.apply(Action::Undo);
-        assert_eq!(flash(&app), "7 pads changed back");
+        assert_eq!(
+            flash(&app),
+            "undo: 8 slices back (were 1) · 7 pads changed back"
+        );
         for (i, a) in (4..12).enumerate() {
             assert!(app.pads.link[a].is_some(), "pad {a} follows again");
             assert_eq!(app.pads.slice[a], Some(i as u16 + 1));
@@ -17866,7 +17855,7 @@ Enter = "browser.hold"
         assert_eq!(xs_on(&mut app, Screen::Pads, B7), Some(Action::PadEditOnly));
         learn_row(&mut app, input::Group::Pads, "pad.edit_only");
         app.apply(Action::Back);
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         assert_eq!(xs_on(&mut app, Screen::Pads, B7), None, "no control left");
     }
 

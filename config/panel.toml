@@ -66,12 +66,14 @@ cells = [
 name = "chop"
 page = 1
 cells = [
+  { cell = 1, label = "remove all cuts", action = "chop.cuts_clear" },
   { cell = 2, label = "loop play", action = "chop.loop_toggle" },
   { cell = 3, label = "play range", action = "chop.play_mode" },
   { cell = 4, label = "cursor step", action = "chop.snap_toggle" },
   { cell = 5, label = "put on pads", action = "chop.assign" },
   { cell = 6, label = "fill pads", action = "chop.commit" },
   { cell = 7, label = "edit slice", action = "chop.edit" },
+  { cell = 8, label = "trim silence", action = "chop.trim_silence" },
   { cell = 9, label = "cut here", action = "chop.cut" },
   { cell = 10, label = "cut by hits", action = "chop.hits" },
   { cell = 11, label = "fewer hits", action = "chop.hits_back" },

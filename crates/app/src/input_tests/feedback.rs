@@ -325,7 +325,7 @@ fn resize_and_questions_keep_overlays_readable() {
                         shown
                             .rows
                             .iter()
-                            .any(|row| row.contains("This cannot be undone."))
+                            .any(|row| row.contains("brings them back."))
                     );
                 } else {
                     assert!(shown.rows.iter().any(|row| row.contains("HELP")));

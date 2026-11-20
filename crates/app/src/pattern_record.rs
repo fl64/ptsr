@@ -1311,9 +1311,15 @@ impl crate::App {
             Ok(removed)
         });
         let count = *result.as_ref().unwrap_or(&0);
+        // the undo of the device that erased (138)
+        let undo = if self.input_sources.last_is_smc() {
+            "PAD BANK + 2 undo"
+        } else {
+            "Ctrl+Z"
+        };
         self.tidy_notice(
             result,
-            format!("A1: {name} erased, {}. Ctrl+Z restores.", hits(count)),
+            format!("A1: {name} erased, {}. {undo} restores.", hits(count)),
             &format!("A1: {name} has no hits."),
         );
     }

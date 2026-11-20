@@ -1292,6 +1292,8 @@ fn pattern_panel_all_commands_confirm_clear_restart_and_execute_on_every_screen(
                     }
                 }
                 drive.tap(KeyCode::Backspace, M::NONE);
+                // forgetting asks first (138)
+                drive.tap(KeyCode::Enter, M::NONE);
                 let key = if matches!(source, Source::Notes) {
                     input::midi::Key::Note(number)
                 } else {
@@ -12824,14 +12826,46 @@ fn counts_and_undo_name_what_they_mean() {
         drive.last_notice().text
     );
     drive.tap(KeyCode::Char('z'), M::CONTROL);
-    assert_eq!(drive.last_notice().text, "undo: erase pad W on A1");
+    assert_eq!(drive.last_notice().text, "undo: pad W hits back on A1");
     drive.tap(KeyCode::Esc, M::NONE);
     tidy_clear(&mut drive, Source::Keyboard);
     drive.tap(KeyCode::Enter, M::NONE);
     assert_eq!(drive.last_notice().text, "A1 cleared: 3 hits.");
     drive.app.pattern_panel = None;
     drive.tap(KeyCode::Char('z'), M::CONTROL);
-    assert_eq!(drive.last_notice().text, "undo: clear on A1");
+    assert_eq!(drive.last_notice().text, "undo: A1 hits back");
+}
+
+/// Scenario "The erase notice names the SMC-PAD undo" (screen-help, 138).
+#[test]
+fn the_erase_notice_names_the_smc_pad_undo() {
+    let mut drive = Drive::smc_offline();
+    drive.midi().recorded_smc_setup();
+    drive.app.apply_session(session::Session {
+        pattern: Some("A1".into()),
+        patterns: vec![session::PatternState {
+            slot: "A1".into(),
+            bars: 1,
+            quantize: "1/16".into(),
+            strength: 100,
+            hits: vec![[0, 5, 90, 0]],
+        }],
+        ..Default::default()
+    });
+    settle_pattern(&mut drive);
+    drive.app.goto(Screen::Pads);
+    drive.tap(KeyCode::Char('e'), M::ALT);
+    assert!(drive.app.erase_pads, "erase mode is on");
+    // pad W is device pad P10 on the playing layer
+    drive.bytes("SINCO SMC-PAD-Master 28:1", &[0x99, 61, 100]);
+    drive.bytes("SINCO SMC-PAD-Master 28:1", &[0x89, 61, 0]);
+    drive.frame();
+    let text = &drive.last_notice().text;
+    assert!(
+        text.contains("erased") && text.contains("PAD BANK + 2 undo"),
+        "{text}"
+    );
+    assert!(!text.contains("Ctrl+Z"), "{text}");
 }
 
 /// Scenario "Pattern keys follow the effective binding".

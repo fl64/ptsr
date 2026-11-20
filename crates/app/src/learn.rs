@@ -2421,7 +2421,7 @@ mod tests {
         assert!(
             matches!(&app.midi_screen()[row], tui::MidiRow::Action { who, .. } if who.contains("none"))
         );
-        app.apply(input::Action::SettingsClear);
+        crate::destroy::yes(&mut app, input::Action::SettingsClear);
         assert!(!app.learned["SMC-PAD"]["global"].contains_key("note 64"));
         assert_eq!(
             app.profiles[0].resolve(input::Screen::Pads, press(64)),

@@ -450,8 +450,8 @@ impl App {
                 "param" => "select a parameter",
                 position => position,
             },
-            Some("chop.region_start_pos") => "region start",
-            Some("chop.region_end_pos") => "region end",
+            Some("chop.region_start_pos") => "trim start",
+            Some("chop.region_end_pos") => "trim end",
             Some("chop.threshold") => "hit level",
             Some("pad.send_1") => "send to FX 1",
             Some("pad.send_2") => "send to FX 2",
@@ -656,7 +656,7 @@ impl App {
                     Some("chop.region_start_pos"),
                     Some("chop.region_end_pos"),
                 ])
-        .then_some("B1 3–4 slice · 5–6 region");
+        .then_some("B1 3–4 slice · 5–6 trim");
         tui::pads::set_smc_words(self.input_sources.last_is_smc());
         Some(tui::KnobStrip {
             mode: self.mode_line(now),

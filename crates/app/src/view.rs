@@ -38,7 +38,8 @@ impl super::Ask {
             | Ask::ResetPads { lines, .. }
             | Ask::ClearPads { lines, .. }
             | Ask::CopyPad { lines, .. }
-            | Ask::ClearPattern { lines } => lines,
+            | Ask::ClearPattern { lines }
+            | Ask::Destroy { lines, .. } => lines,
         }
     }
 }
@@ -392,6 +393,12 @@ impl App {
             Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
             Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
             Ask::ClearPads { .. } | Ask::ClearPattern { .. } => "clear",
+            Ask::Destroy { act, .. } => match act {
+                crate::destroy::Act::Forget => "forget",
+                crate::destroy::Act::ClearCuts => "remove",
+                crate::destroy::Act::TrimSilence => "trim",
+                _ => "replace",
+            },
         };
         let recovering = matches!(ask, Ask::ExitRecovery { .. });
         let cancel_verb = if recovering { "Back" } else { "keep" };

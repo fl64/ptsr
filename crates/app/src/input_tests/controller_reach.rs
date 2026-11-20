@@ -17,6 +17,9 @@ mod chop_join;
 #[path = "cell_looks.rs"]
 mod cell_looks;
 
+#[path = "destroy_asks.rs"]
+mod destroy_asks;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
@@ -1981,6 +1984,7 @@ fn key_chord(name: &str) -> (KeyCode, M) {
         "Tab" if modifiers.contains(M::SHIFT) => KeyCode::BackTab,
         "Tab" => KeyCode::Tab,
         "Bksp" => KeyCode::Backspace,
+        "Del" => KeyCode::Delete,
         "Space" => KeyCode::Char(' '),
         other if other.starts_with('F') && other[1..].parse::<u8>().is_ok() => {
             KeyCode::F(other[1..].parse().unwrap())
@@ -2151,6 +2155,8 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                         "{view:?} cell {slot}: a grey press acts"
                     );
                 } else {
+                    // notices name the undo of the device that pressed (138)
+                    result.0.notice = result.0.notice.map(|n| n.replace("P2 undo", "Ctrl+Z"));
                     assert_eq!(
                         result,
                         reach_result(&keyboard, &keyboard_frame),
@@ -2162,7 +2168,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 49);
+    assert_eq!(checked + special, 51);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3379,7 +3385,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 49);
+    assert_eq!(checked, 51);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
@@ -4870,20 +4876,20 @@ fn learn_names_the_replaced_panel_cell() {
     assert!(text.contains("replaces panel cell P6 copy pad"), "{text}");
 }
 
-/// Scenario "The region knob names its edge" (screen-layout).
+/// Scenario "The trim knob names its edge" (screen-layout).
 #[test]
-fn the_region_knob_names_its_edge() {
+fn the_trim_knob_names_its_edge() {
     let mut drive = reach_drive(panel::View::Chop, Arc::new(Sample::mono(vec![0.2; 48_000])));
     turn(&mut drive, 34, 65);
     let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
     let labels: Vec<&str> = strip.roles[0].iter().map(|(label, _)| *label).collect();
     assert!(
-        labels.contains(&"r.from") && labels.contains(&"r.to"),
+        labels.contains(&"trim<") && labels.contains(&"trim>"),
         "{labels:?}"
     );
     assert!(labels.contains(&"hits"), "{labels:?}");
     let detail = drive
         .app
         .smc_knob_detail("e5", Some("chop.region_start_pos"));
-    assert_eq!(detail.as_deref(), Some("B1 K5 · region start"));
+    assert_eq!(detail.as_deref(), Some("B1 K5 · trim start"));
 }

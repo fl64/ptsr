@@ -3572,7 +3572,7 @@ L="none"
                 "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);
-            assert!(rows[top + 1].contains("5 r.from") && !rows[top + 1].contains("B2"));
+            assert!(rows[top + 1].contains("5 trim<") && !rows[top + 1].contains("B2"));
             assert!(rows[top + 2].contains("3 start"));
             assert!(rows[top + 3].contains("1 cursor"));
             assert!(
@@ -3731,7 +3731,7 @@ L="none"
                 };
                 let now = Instant::now();
                 let mut app = fixture(case, now);
-                app.apply(Action::ChopHits);
+                crate::destroy::yes(&mut app, Action::ChopHits);
                 let (_, buffer) = render_app(case, &keymap, app, now);
                 let rows: Vec<String> = buffer
                     .content()

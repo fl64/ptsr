@@ -200,6 +200,9 @@ pub struct Chop {
     undo: Vec<UndoStep>,
     /// The boundary a knob is turning: the whole turn is one undo step.
     turning: Option<usize>,
+    /// The owner cut, moved or joined by hand since the last cut by parts or hits (138):
+    /// replacing those cuts asks first.
+    pub hand: bool,
     /// The bound the owner moved last and the cursor at that time (136): the zoom keeps
     /// it in place until the cursor moves; `None` zooms around the cursor.
     anchor: Option<(Anchor, usize)>,
@@ -278,6 +281,8 @@ impl Chop {
             undo: Vec::new(),
             turning: None,
             anchor: None,
+            // saved cuts may be the owner's: the first replacement asks
+            hand: !cuts.is_empty(),
         }
     }
 
@@ -321,6 +326,7 @@ impl Chop {
             undo: Vec::new(),
             turning: None,
             anchor: None,
+            hand: false,
         }
     }
 
@@ -458,6 +464,7 @@ impl Chop {
             }
         };
         self.anchor = Some((anchor, self.cursor));
+        self.hand = true;
     }
 
     /// Where the zoom holds the picture (136): the bound moved last while the cursor
@@ -483,14 +490,19 @@ impl Chop {
 
     /// Replaces the cuts with the next equal-parts count over the range; returns the count.
     /// This starts a new epoch: pads linked to the old cuts let go of them.
-    pub fn next_parts(&mut self) -> usize {
+    /// The count the next equal-parts press cuts into.
+    pub fn parts_next(&self) -> usize {
         // a chop from the session does not know its last count: the slices tell it
         let now = self.markers.len() + 1;
         let last = Some(now).filter(|n| PARTS.contains(n)).or(self.parts);
-        let n = match last {
+        match last {
             Some(p) => PARTS[(PARTS.iter().position(|&x| x == p).unwrap_or(0) + 1) % PARTS.len()],
             None => PARTS[0],
-        };
+        }
+    }
+
+    pub fn next_parts(&mut self) -> usize {
+        let n = self.parts_next();
         self.save_undo();
         self.turning = None;
         self.epoch = self.next_epoch;
@@ -506,7 +518,27 @@ impl Chop {
         }
         self.parts = Some(n);
         self.selected = 0;
+        self.hand = false;
         n
+    }
+
+    /// All cuts go (138): one slice over the region. A new epoch, so linked pads keep their
+    /// sound, as after equal parts; undo brings the cuts and the links back.
+    pub fn clear_cuts(&mut self) -> usize {
+        let count = self.markers.len();
+        if count == 0 {
+            return 0;
+        }
+        self.save_undo();
+        self.turning = None;
+        self.epoch = self.next_epoch;
+        self.next_epoch += 1;
+        self.markers.clear();
+        self.ids.clear();
+        self.parts = None;
+        self.selected = 0;
+        self.hand = false;
+        count
     }
 
     /// Replaces the cuts with the starts of the hits within the threshold below the
@@ -514,6 +546,7 @@ impl Chop {
     fn cut_by_hits(&mut self) -> usize {
         // the marks of the hits mode are these cuts (51)
         let cuts = self.strong_hits();
+        self.hand = false;
         self.markers.clear();
         self.ids.clear();
         for (i, pos) in cuts.into_iter().enumerate() {
@@ -643,9 +676,8 @@ impl Chop {
 
     /// Why `fewer hits` changes nothing now (138), as `chop_by_hits_back` decides.
     pub fn hits_back_refusal(&self) -> Option<String> {
-        if !self.threshold_set {
-            Some("cut by hits first".into())
-        } else if self.threshold_db + 0.01 >= -6.0 {
+        // without a cut by hits the first press cuts at −6 dB, as the first Shift+H (138)
+        if self.threshold_set && self.threshold_db + 0.01 >= -6.0 {
             Some(format!("by hits stays at {:.0} dB", self.threshold_db))
         } else {
             None
@@ -672,6 +704,7 @@ impl Chop {
         self.turning = None;
         let i = self.markers.partition_point(|&m| m < at);
         self.insert(i, at);
+        self.hand = true;
         // the new slice starts at the cut
         self.selected = i + 1;
         if at == pos { Cut::Placed } else { Cut::Snapped }
@@ -818,6 +851,42 @@ impl Chop {
     /// The region is the whole sample again.
     pub fn clear_region(&mut self) {
         self.set_range(0, self.sound.len());
+    }
+
+    /// The edges of the sound (138): the first and the last frame louder than
+    /// `SILENCE_DB` below the peak of the file; `None` for a silent file.
+    pub fn sound_edges(&self) -> Option<Region> {
+        let level = |i: usize| {
+            let l = self.sound.left[i].abs();
+            self.sound.right.as_ref().map_or(l, |r| l.max(r[i].abs()))
+        };
+        let len = self.sound.len();
+        let peak = (0..len).map(level).fold(0.0_f32, f32::max);
+        if peak <= 0.0 {
+            return None;
+        }
+        let floor = peak * 10f32.powf(SILENCE_DB / 20.0);
+        let start = (0..len).find(|&i| level(i) > floor)?;
+        let end = (0..len).rev().find(|&i| level(i) > floor)? + 1;
+        Some(Region { start, end })
+    }
+
+    /// Why `trim silence` changes nothing now (138).
+    pub fn trim_silence_refusal(&self) -> Option<&'static str> {
+        match self.sound_edges() {
+            None => Some("the sample is silent"),
+            Some(edges) if edges == self.range => Some("no silence to trim"),
+            Some(_) => None,
+        }
+    }
+
+    /// Trims the region to the sound (138): cuts in the trimmed parts go, one undo step
+    /// brings back the trim and the cuts. Returns the trimmed time in frames.
+    pub fn trim_silence(&mut self) -> Option<usize> {
+        let edges = self.sound_edges().filter(|e| *e != self.range)?;
+        let before = self.range.end - self.range.start;
+        self.set_range(edges.start, edges.end);
+        Some(before.saturating_sub(self.range.end - self.range.start))
     }
 
     /// A new region with the same guarantees as a loaded one: inside the file,
@@ -992,6 +1061,7 @@ impl Chop {
         self.markers.remove(self.selected - 1);
         self.ids.remove(self.selected - 1);
         self.selected -= 1;
+        self.hand = true;
     }
 
     /// Deletes the cut at the end of the selected slice; the last slice ends at the region's
@@ -1004,6 +1074,7 @@ impl Chop {
         self.turning = None;
         self.markers.remove(self.selected);
         self.ids.remove(self.selected);
+        self.hand = true;
     }
 
     /// Knob position 0..1 of the start (`end` false) or end of the selected slice in its zone.
@@ -1094,6 +1165,10 @@ impl Chop {
         true
     }
 }
+
+/// The level of silence for `trim silence` (138): below the peak of the file. A default
+/// that the owner checks by ear.
+pub const SILENCE_DB: f32 = -50.0;
 
 /// Frames per block of the band levels (38).
 pub const BAND_BLOCK: usize = 256;
@@ -2064,7 +2139,7 @@ impl App {
                 if lost.len() == 1 { "" } else { "s" }
             )];
             lines.extend(lost);
-            lines.extend(overwrite_footer());
+            lines.extend(overwrite_footer(self.undo_words()));
             // what lies there is read now: a changed list is asked about again
             if !matches!(&self.ask, Some(Ask::Plan { lines: old }) if *old == lines) {
                 self.ask = Some(Ask::Plan { lines });
@@ -2203,6 +2278,38 @@ impl App {
             .collect();
         Some((slices, ids, saved.epoch))
     }
+}
+
+/// Chop-screen actions the assign mode swallows (21): a cut, a zoom or a cursor move
+/// while the owner lays slices onto pads would ruin the wave under the plan. The pads,
+/// Tab, Enter, Esc, the slice pick and the undo stay live.
+pub(super) fn assign_deaf(a: &Action) -> bool {
+    matches!(
+        a,
+        Action::ChopPlay
+            | Action::ChopPlayMode
+            | Action::ChopCut
+            | Action::ChopEqualParts
+            | Action::ChopHits
+            | Action::ChopHitsBack
+            | Action::ThresholdStep(_)
+            | Action::ChopAssign
+            | Action::ChopZoom { .. }
+            | Action::ChopRegionStart
+            | Action::ChopRegionEnd
+            | Action::ChopRegionClear
+            | Action::ChopCutsClear
+            | Action::ChopTrimSilence
+            | Action::ChopSnapToggle
+            | Action::CursorMove { .. }
+            | Action::CursorJump { .. }
+            | Action::MarkerNudge { .. }
+            | Action::EditValue { .. }
+            | Action::SliceBound { .. }
+            | Action::ParamPrev
+            | Action::MarkerDelete
+            | Action::SliceEndDelete
+    )
 }
 
 #[cfg(test)]

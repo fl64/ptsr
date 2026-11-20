@@ -85,6 +85,8 @@ pub(super) fn describe(a: Action) -> String {
         Action::ChopRegionStart => "chop: the region starts at the cursor".into(),
         Action::ChopRegionEnd => "chop: the region ends at the cursor".into(),
         Action::ChopRegionClear => "chop: the region is the whole sample".into(),
+        Action::ChopCutsClear => "chop: remove all cuts; hand cuts ask first".into(),
+        Action::ChopTrimSilence => "chop: trim the silence at the start and the end".into(),
         Action::ChopSnapToggle => "chop: cursor in even steps / hit to hit / cut to cut".into(),
         Action::ChopNormalize => "chop: the pad volume puts its peak at −1 dB".into(),
         Action::ChopCut => "chop: cut at the cursor".into(),

@@ -20,16 +20,16 @@
 
 ## 4. Destructive actions and undo
 
-- [ ] Track hand cuts in the chop. Ask before hand cuts go: equal parts, cut by hits, fewer hits, remove all cuts, the threshold knob.
+- [x] Track hand cuts in the chop. Ask before hand cuts go: equal parts, cut by hits, fewer hits, remove all cuts, the threshold knob.
 - [ ] Ask before `clear pad` on a pad with a sound. Remove false «This cannot be undone.» texts.
-- [ ] Name the result and the undo after each destructive action.
-- [ ] Make undo and redo notices say what came back on Chop, Pads and A1.
+- [x] Name the result and the undo after each destructive action.
+- [x] Make undo and redo notices say what came back on Chop, Pads and A1.
 
 ## 5. Chop
 
-- [ ] Add `remove all cuts` with the P13 cell and the Delete key.
-- [ ] Add `trim silence`. Ask when the chop has cuts.
-- [ ] Move `fewer hits` to Chop and `hear as pad` to the slice edit.
+- [x] Add `remove all cuts` with the P13 cell and the Delete key.
+- [x] Add `trim silence`. Ask when the chop has cuts.
+- [x] Move `fewer hits` to Chop and `hear as pad` to the slice edit.
 
 ## 6. Normalize
 
