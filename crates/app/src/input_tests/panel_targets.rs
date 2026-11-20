@@ -71,7 +71,7 @@ fn all_sixteen_pads_take_an_item_in_hand() {
         .unwrap();
     for number in [1u8, 16] {
         reveal(&mut file);
-        press(&mut file, 1);
+        press(&mut file, slot_of(panel::View::Files, "take file"));
         target(&file, "FILE");
         check_silent(&hit(&mut file, number));
         wait_loads(&mut file);
@@ -86,7 +86,7 @@ fn all_sixteen_pads_take_an_item_in_hand() {
     let mut drive = reach_drive(panel::View::Pads, source.clone());
     drive.load_pad(abs(1), existing.clone(), "existing");
     reveal(&mut drive);
-    press(&mut drive, 2);
+    press(&mut drive, slot_of(panel::View::Pads, "copy pad"));
     target(&drive, "COPY");
     check_silent(&hit(&mut drive, 16));
     assert!(Arc::ptr_eq(
@@ -96,7 +96,7 @@ fn all_sixteen_pads_take_an_item_in_hand() {
     // An occupied target asks; pad 1 keeps, pad 4 replaces.
     drive.app.pads.selected = 0;
     reveal(&mut drive);
-    press(&mut drive, 2);
+    press(&mut drive, slot_of(panel::View::Pads, "copy pad"));
     hit(&mut drive, 1);
     assert!(matches!(drive.app.ask, Some(Ask::CopyPad { .. })));
     hit(&mut drive, 1);
@@ -115,7 +115,7 @@ fn all_sixteen_pads_take_an_item_in_hand() {
     drive.app.pads.selected = 0;
     drive.load_pad(abs(1), existing.clone(), "existing");
     reveal(&mut drive);
-    press(&mut drive, 3);
+    press(&mut drive, slot_of(panel::View::Pads, "swap pads"));
     target(&drive, "SWAP");
     check_silent(&hit(&mut drive, 1));
     assert!(Arc::ptr_eq(
@@ -132,7 +132,10 @@ fn assign_places_slices_on_the_playing_layer_and_applies_on_a_hold() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, source.clone());
     hold(&mut drive, true);
-    cell(&mut drive, panel_note(4));
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Chop, "put on pads")),
+    );
     target(&drive, "ASSIGN");
     assert_eq!(
         drive.app.panel_snapshot().unwrap().labels[15].as_deref(),
@@ -153,7 +156,10 @@ fn assign_places_slices_on_the_playing_layer_and_applies_on_a_hold() {
 
     let mut cancel = reach_drive_from(hold_drive(), panel::View::Chop, source);
     hold(&mut cancel, true);
-    cell(&mut cancel, panel_note(4));
+    cell(
+        &mut cancel,
+        panel_note(slot_of(panel::View::Chop, "put on pads")),
+    );
     hold(&mut cancel, false);
     hit(&mut cancel, 1);
     hold(&mut cancel, true);
@@ -169,7 +175,10 @@ fn a_hold_in_target_mode_shows_only_the_mode_commands() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut drive = reach_drive_from(hold_drive(), panel::View::Pads, source);
     hold(&mut drive, true);
-    cell(&mut drive, panel_note(2));
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Pads, "copy pad")),
+    );
     let panel = drive.app.panel_snapshot().unwrap();
     for (index, label) in panel.labels.iter().enumerate() {
         let want = match index {
@@ -202,7 +211,7 @@ fn target_pads_keep_their_connection_and_release() {
     drive.frame();
     assert!(drive.app.pads.held[0]);
     reveal(&mut drive);
-    press(&mut drive, 2);
+    press(&mut drive, slot_of(panel::View::Pads, "copy pad"));
     drive.midi().recorded_connect(SECOND);
     drive.frame();
     drive.bytes(SECOND, &[0x99, panel_note(13), 100]);
@@ -227,7 +236,10 @@ fn assign_apply_names_the_pads() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, source);
     hold(&mut drive, true);
-    cell(&mut drive, panel_note(4));
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Chop, "put on pads")),
+    );
     hold(&mut drive, false);
     for number in [5, 6, 9] {
         hit(&mut drive, number);
@@ -247,7 +259,10 @@ fn left_and_right_change_the_assign_bank() {
     let source = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut drive = reach_drive_from(hold_drive(), panel::View::Chop, source);
     hold(&mut drive, true);
-    cell(&mut drive, panel_note(4));
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Chop, "put on pads")),
+    );
     hold(&mut drive, false);
     assert_eq!(drive.app.pads.bank, 0);
     list_button(&mut drive, true);
@@ -289,7 +304,10 @@ fn assign_works_for_any_chop_size_bank_occupancy_and_order() {
                 list_button(&mut drive, false);
                 list_button(&mut drive, false);
                 hold(&mut drive, true);
-                cell(&mut drive, panel_note(4));
+                cell(
+                    &mut drive,
+                    panel_note(slot_of(panel::View::Chop, "put on pads")),
+                );
                 if in_order {
                     cell(&mut drive, panel_note(4)); // Order.
                 }

@@ -9,7 +9,7 @@
 - [x] Show `show pads` while the pads are hidden. Name the hidden grid in F1 Help.
 - [x] Rename the Chop knob labels and their full names on the line of the last knob.
 - [ ] Apply the D3 layouts. Remove `whole`, `undo A1 pass`, `learn`, `learn control` and `forget control` from the panels.
-- [ ] Allow eight cells a label line in the loader, the glossary and the drawing.
+- [x] Allow eight cells a label line in the loader, the glossary and the drawing.
 
 ## 3. Cell looks
 

@@ -3475,10 +3475,10 @@ L="none"
                     }
                     let first = match (page, screen) {
                         (0, _) => "files",
-                        (1, Screen::Pads) => "edit",
+                        (1, Screen::Pads) => "pitch",
                         (1, Screen::Files) => "take",
                         (1, Screen::Chop) => "cut",
-                        (1, Screen::Settings) => "learn",
+                        (1, Screen::Settings) => "choose",
                         _ => "back",
                     };
                     assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");
@@ -3515,6 +3515,36 @@ L="none"
                     assert!(rows[1].contains("· hit a pad ·"), "{text}");
                 }
             }
+        }
+    }
+
+    /// Scenario "The MIDI tab names the keyboard path" (midi-learn).
+    #[test]
+    fn the_midi_tab_names_the_keyboard_path() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::MidiTab,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.midi_row = app
+                .midi_list()
+                .iter()
+                .position(|row| matches!(row, crate::learn::MidiListRow::Group { .. }))
+                .unwrap();
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let text: String = buffer
+                .content()
+                .chunks(usize::from(size.0))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>() + "\n")
+                .collect();
+            assert!(
+                text.contains("Bindings: keyboard only (F10, Enter)"),
+                "{size:?}\n{text}"
+            );
         }
     }
 

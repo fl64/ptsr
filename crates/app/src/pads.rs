@@ -1561,6 +1561,12 @@ impl Pads {
                 self.param = PAGES[(at + step) % PAGES.len()].1[0];
                 Vec::new()
             }
+            Action::PadPage(page) => {
+                if let Some((_, params)) = PAGES.get(usize::from(page)) {
+                    self.param = params[0];
+                }
+                Vec::new()
+            }
             Action::PadMarkBank => {
                 self.mark_bank();
                 Vec::new()

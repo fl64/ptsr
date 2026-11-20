@@ -509,7 +509,7 @@ impl App {
             let seconds = now.saturating_duration_since(at).as_secs();
             return Some(if source == super::audio::SOURCE_OUTPUT {
                 let stop = if smc {
-                    "PAD BANK + 6 output"
+                    "PAD BANK + 14 output"
                 } else {
                     "the output key"
                 };

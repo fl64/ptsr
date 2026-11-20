@@ -106,6 +106,10 @@ pub(super) fn describe(a: Action) -> String {
         Action::ParamPrev => "the previous parameter".into(),
         Action::PageNext => "the next page of the edit".into(),
         Action::PagePrev => "the previous page of the edit".into(),
+        Action::PadPage(page) => format!(
+            "pad edit: the {} page",
+            ["TONE", "ENV", "FILTER", "SOURCE", "FX"][usize::from(page).min(4)]
+        ),
         Action::EditValue { up, fine } => format!(
             "the picked value {}{}",
             if up { "up" } else { "down" },

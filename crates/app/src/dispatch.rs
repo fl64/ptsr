@@ -6,6 +6,9 @@ use super::{
     pad_name, pads,
 };
 
+/// Bindings change from the keyboard only (138): what the SMC-PAD hears instead.
+pub(super) const BINDINGS_BY_KEYS: &str = "Bindings: keyboard only (F10, Enter)";
+
 pub(super) fn smc_live_pad_param(
     port: &str,
     control: &str,
@@ -898,6 +901,23 @@ impl App {
             {
                 self.learned_save()
             }
+            // Bindings change from the keyboard only (138): `choose` refuses binding rows.
+            Action::SettingsLearn
+                if self.settings_tab == 2
+                    && self.input_sources.last_is_smc()
+                    && matches!(
+                        self.midi_list().get(self.midi_row),
+                        Some(
+                            MidiListRow::Action { .. }
+                                | MidiListRow::Set { .. }
+                                | MidiListRow::Reset { .. }
+                                | MidiListRow::SmcLayoutApply
+                                | MidiListRow::SmcLayoutSlot(_)
+                        )
+                    ) =>
+            {
+                self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
+            }
             Action::SettingsLearn if self.settings_tab == 2 => {
                 match self.midi_list().get(self.midi_row) {
                     Some(MidiListRow::Group { .. }) => self.midi_fold(true),
@@ -1153,6 +1173,7 @@ impl App {
             | Action::PadTake
             | Action::PageNext
             | Action::PagePrev
+            | Action::PadPage(_)
             | Action::BrowserHold
             | Action::BrowserLoad
             | Action::BrowserTakeOnly
@@ -3032,6 +3053,19 @@ impl App {
 mod relative_tests {
     use super::*;
     use input::midi::{ListTarget, StepTarget};
+
+    /// 54 editing: "One page" — the slice edit has BOUNDS only, the page keys keep it.
+    #[test]
+    fn one_page() {
+        let mut app = crate::tests::test_app();
+        app.screen = input::Screen::Chop;
+        app.edit = true;
+        app.slice_end = true;
+        app.apply(input::Action::PageNext);
+        assert!(app.slice_end, "the slice end stays picked");
+        app.apply(input::Action::PagePrev);
+        assert!(app.slice_end);
+    }
 
     #[test]
     fn panel_back_closes_the_top_open_mode() {

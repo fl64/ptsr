@@ -676,6 +676,8 @@ pub enum Action {
     /// The next or previous page of the edit (54): `Tab`, `Shift+Tab`.
     PageNext,
     PagePrev,
+    /// Pad edit: one page by its index, TONE to FX (138): the page cells of the panel.
+    PadPage(u8),
     /// The picked value of the selected object a step up or down; `fine` is the small step.
     EditValue {
         up: bool,
@@ -882,6 +884,11 @@ impl Action {
             "edit.param_prev" => Self::ParamPrev,
             "edit.page_next" => Self::PageNext,
             "edit.page_prev" => Self::PagePrev,
+            "edit.page_tone" => Self::PadPage(0),
+            "edit.page_env" => Self::PadPage(1),
+            "edit.page_filter" => Self::PadPage(2),
+            "edit.page_source" => Self::PadPage(3),
+            "edit.page_fx" => Self::PadPage(4),
             "edit.value_dec" => Self::EditValue {
                 up: false,
                 fine: false,

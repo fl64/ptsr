@@ -3800,6 +3800,7 @@ fn help_section(a: Action) -> usize {
         | Action::ParamPrev
         | Action::PageNext
         | Action::PagePrev
+        | Action::PadPage(_)
         | Action::EditValue { .. }
         | Action::ChopCommit
         | Action::ChopEdit
@@ -12432,19 +12433,6 @@ Enter = "browser.hold"
         app.edit = true;
         app.slice_end = true;
         page(&mut app, 0.0);
-        assert!(app.slice_end);
-    }
-
-    /// 54 editing: "One page" — the slice edit has BOUNDS only, the page keys keep it.
-    #[test]
-    fn one_page() {
-        let mut app = test_app();
-        app.screen = input::Screen::Chop;
-        app.edit = true;
-        app.slice_end = true;
-        app.apply(input::Action::PageNext);
-        assert!(app.slice_end, "the slice end stays picked");
-        app.apply(input::Action::PagePrev);
         assert!(app.slice_end);
     }
 

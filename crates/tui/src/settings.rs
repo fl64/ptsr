@@ -117,7 +117,8 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                         " J/L: change knob response. Saves at once."
                     }
                     _ => {
-                        " Enter: learn a control for the action. Backspace: clear the learned one."
+                        // Bindings change from the keyboard only (138).
+                        " Bindings: keyboard only (F10, Enter) · Bksp clears"
                     }
                 };
                 hint.fg(DIM).into()

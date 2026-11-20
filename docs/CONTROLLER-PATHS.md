@@ -68,7 +68,7 @@ step and its cancel control. It stays after the PAD BANK release.
 | Select what plays | Chop Listen, Loop, or As pad (`1/3` each). PLAY and STOP control preview (`1/1`). | The playback bar is an observation. |
 | Move the bounds of a slice | Turn knobs 3 and 4 for slice start and end (`0/0`). | Steps follow the wave view. |
 | Bounds in edit mode | Chop Edit (`1/3`). Turn knobs 3 and 4 for the slice. Turn knobs 5 and 6 for the region (`0/0`). | Read the bound indicator. |
-| Assign the slices to the pads | Chop Assign (`1/3`). Select targets. Press P4 Apply. P3 Menu, then P16 Order switches the order (`2/4`). One Undo on Pads restores all targets (`1/3`). | Count layer switches, target hits, and replacement answers separately. |
+| Assign the slices to the pads | Chop Assign (`1/3`). Select targets. Press P4 Apply. P3 Menu, then P9 Order switches the order (`2/4`). One Undo on Pads restores all targets (`1/3`). | Count layer switches, target hits, and replacement answers separately. |
 | Assign mode ignores the rest | Chop Assign (`1/3`). Press P3 Menu. Try Cut from the Chop actions. | The refusal leaves the plan in place. |
 | Swap pads | Pads Take (`1/3`). From another screen, Screens Pads, then Take (`3/5`). Release PAD BANK and hit any of the 16 pads. | Count the target separately. |
 | Select file, copy and swap targets without a hit sound | Files Take or Pads Copy or Take (`1/3`). Release PAD BANK and hit any of the 16 pads. P1/P4 answer (`1/2`). | The target hit stays silent. |
@@ -81,11 +81,11 @@ step and its cancel control. It stays after the PAD BANK release.
 ## Set or delete a Chop bound with a pad cell
 
 1. Turn bank 1 knob 1 to the required point.
-2. In the Chop actions, press P13 Cut to add a slice start.
-3. For the Chop region, turn knobs 5 and 6. Press P5 Whole to restore the whole sound.
-4. Press P7 Edit to open Chop edit. Press P9 Whole to clear the region.
-5. To join the selected slice with the slice on its left, press P15 `join left` in Chop edit.
-   To join it with the slice on its right, press P16 `join right`. A dim cell has no neighbour.
+2. In the Chop actions, press P5 `cut here` to add a slice start.
+3. To trim the sound, turn knobs 5 and 6. To remove the trim, turn them to the ends.
+4. Press P11 `edit slice` to open Chop edit.
+5. To join the selected slice with the slice on its left, press P6 `join left` in Chop edit.
+   To join it with the slice on its right, press P7 `join right`. A dim cell has no neighbour.
 
 Press P4 to accept a visible question. Press P1 to cancel.
 

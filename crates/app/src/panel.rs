@@ -32,7 +32,8 @@ const SCREENS: [(&str, Option<Action>); 12] = [
     ("help", Some(Action::HelpToggle)),
     ("save", Some(Action::SessionSave)),
     ("open", Some(Action::ProjectPick)),
-    ("learn", Some(Action::LearnToggle)),
+    // Bindings change from the keyboard only (138): no learn cell.
+    ("", None),
     ("exit", Some(Action::Quit)),
 ];
 
@@ -307,7 +308,7 @@ impl State {
             (_, 13) => Some("back"),
             (_, 14) => Some("undo"),
             (_, 15) => Some("redo"),
-            (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0),
+            (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0).filter(|l| !l.is_empty()),
             _ => self.config.cell(view, cell).map(|cell| cell.label.as_str()),
         }
     }
@@ -381,9 +382,10 @@ impl App {
         }
     }
 
-    /// During Assign, cell 4 of the Chop actions gives `order`: `assign` is already active.
+    /// During Assign, the `put on pads` cell of the Chop actions gives `order`: `assign` is
+    /// already active.
     pub(super) fn assign_order_cell(&self, cell: u8) -> bool {
-        cell == 4
+        self.panel.action(View::Chop, cell) == Some(Action::ChopAssign)
             && self.panel.page() == 1
             && self.panel_view() == View::Chop
             && self.panel_target() == Some(Target::Assign)
@@ -574,6 +576,7 @@ mod tests {
             "chop",
             "chop file",
             "chop pad",
+            "choose",
             "clear",
             "clear A1",
             "clear pad",
@@ -587,23 +590,22 @@ mod tests {
             "edit slice",
             "edit steps",
             "enter",
+            "env page",
             "equal parts",
             "erase hits",
             "exit",
             "fewer hits",
             "files",
+            "filter page",
             "fill pads",
-            "forget control",
             "fx",
+            "fx page",
             "hear as pad",
             "help",
             "hide empty",
             "hide pads",
             "join left",
             "join right",
-            "learn",
-            "learn control",
-            "level to peak",
             "listen file",
             "load to pad",
             "loop play",
@@ -612,6 +614,7 @@ mod tests {
             "menu",
             "mixer",
             "no",
+            "level to peak",
             "open",
             "order",
             "pad",
@@ -630,6 +633,7 @@ mod tests {
             "save",
             "setup",
             "show pads",
+            "source page",
             "star file",
             "steps finer",
             "steps wider",
@@ -638,11 +642,10 @@ mod tests {
             "take file",
             "tap tempo",
             "target",
+            "tone page",
             "undo",
-            "undo A1 pass",
             "up",
             "used",
-            "whole sample",
             "yes",
         ];
         let check = |label: &str| {
@@ -681,50 +684,72 @@ mod tests {
             include_str!("../../../config/panel.toml"),
         );
         assert!(config.warnings.is_empty(), "{:?}", config.warnings);
+        // Cells 1-12 top-down: device pads 13-16, 9-12, 5-8 (138).
         let table: [(View, &[&str]); 8] = [
             (
                 View::Pads,
                 &[
-                    "edit pad",
-                    "copy pad",
+                    "pitch gate",
+                    "record output",
+                    "hide pads",
+                    "",
                     "swap pads",
                     "mark pad",
-                    "play mode",
-                    "clear pad",
-                    "pitch gate",
                     "mark bank",
-                    "hide pads",
-                    "record output",
+                    "play mode",
+                    "edit pad",
+                    "copy pad",
                     "chop pad",
+                    "clear pad",
                 ],
             ),
             (
                 View::PadEdit,
-                &["play mode", "reset pad", "pitch gate", "copy pad"],
+                &[
+                    "fx page",
+                    "",
+                    "",
+                    "",
+                    "tone page",
+                    "env page",
+                    "filter page",
+                    "source page",
+                    "play mode",
+                    "copy pad",
+                    "pitch gate",
+                    "reset pad",
+                ],
             ),
             (
                 View::Pattern,
                 &[
-                    "edit steps",
+                    "hide empty",
+                    "",
+                    "",
+                    "",
                     "steps wider",
                     "steps finer",
                     "A1 setup",
-                    "record A1",
-                    "erase hits",
-                    "undo A1 pass",
                     "clear A1",
-                    "hide empty",
+                    "record A1",
+                    "edit steps",
+                    "erase hits",
                     "tap tempo",
                 ],
             ),
             (
                 View::Files,
                 &[
-                    "take file",
-                    "load to pad",
+                    "",
+                    "",
+                    "",
                     "",
                     "star file",
                     "",
+                    "",
+                    "",
+                    "load to pad",
+                    "take file",
                     "listen file",
                     "chop file",
                 ],
@@ -732,32 +757,39 @@ mod tests {
             (
                 View::Chop,
                 &[
-                    "cut here",
-                    "equal parts",
-                    "cut by hits",
-                    "put on pads",
+                    "",
                     "loop play",
                     "play range",
                     "cursor step",
-                    "hear as pad",
-                    "whole sample",
-                    "",
-                    "edit slice",
+                    "put on pads",
                     "fill pads",
+                    "edit slice",
+                    "",
+                    "cut here",
+                    "cut by hits",
+                    "fewer hits",
+                    "equal parts",
                 ],
             ),
             (
                 View::ChopEdit,
                 &[
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
                     "level to peak",
-                    "fewer hits",
                     "join left",
                     "join right",
-                    "whole sample",
+                    "hear as pad",
                 ],
             ),
             (View::Fx, &[]),
-            (View::Settings, &["", "learn control", "forget control"]),
+            (View::Settings, &["", "", "", "", "", "", "", "", "choose"]),
         ];
         for (view, labels) in table {
             let shipped: Vec<&str> = (1..=12)
@@ -837,7 +869,7 @@ mod tests {
         let mut panel = State::default();
         panel.press("SMC-PAD-Master A", 8);
         assert_eq!(panel.page(), 1);
-        assert_eq!(panel.label(View::Pads, 1), Some("edit pad"));
+        assert_eq!(panel.label(View::Pads, 9), Some("edit pad"));
         panel.move_view(-1);
         assert_eq!(panel.page(), 0);
         assert_eq!(panel.label(View::Pads, 1), Some("pads"));
@@ -862,7 +894,7 @@ mod tests {
             panel.move_view(steps);
             assert_eq!(panel.page(), page, "after {steps}");
         }
-        assert_eq!(panel.label(View::Pads, 1), Some("edit pad"));
+        assert_eq!(panel.label(View::Pads, 9), Some("edit pad"));
         panel.move_view(-1);
         assert_eq!(panel.label(View::Pads, 12), Some("exit"));
         assert_eq!(panel.choice(View::Pads, 12), Choice::Exit);

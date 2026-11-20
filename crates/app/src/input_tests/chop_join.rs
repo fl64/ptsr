@@ -12,7 +12,7 @@ fn join_drive(slices: usize, selected: usize) -> Drive {
 }
 
 /// Join with the keyboard (Backspace, Alt+Backspace) or with the panel: PAD BANK held,
-/// edit on P7, then P15 join left or P16 join right.
+/// `edit slice`, then `join left` or `join right`.
 fn join(drive: &mut Drive, source: Source, right: bool) {
     match source {
         Source::Keyboard => {
@@ -22,12 +22,19 @@ fn join(drive: &mut Drive, source: Source, right: bool) {
         _ => {
             hold(drive, true);
             if !drive.app.edit {
-                cell(drive, panel_note(11));
+                cell(drive, panel_note(slot_of(panel::View::Chop, "edit slice")));
             }
+            let (left, right_slot) = (
+                slot_of(panel::View::ChopEdit, "join left"),
+                slot_of(panel::View::ChopEdit, "join right"),
+            );
             let labels = drive.app.panel_snapshot().unwrap().labels;
-            assert_eq!(labels[2].as_deref(), Some("join left"));
-            assert_eq!(labels[3].as_deref(), Some("join right"));
-            cell(drive, panel_note(if right { 4 } else { 3 }));
+            assert_eq!(labels[usize::from(left - 1)].as_deref(), Some("join left"));
+            assert_eq!(
+                labels[usize::from(right_slot - 1)].as_deref(),
+                Some("join right")
+            );
+            cell(drive, panel_note(if right { right_slot } else { left }));
             hold(drive, false);
         }
     }
@@ -66,9 +73,12 @@ fn the_first_slice_has_no_left_neighbour() {
         let mut drive = join_drive(4, 0);
         if matches!(source, Source::Button) {
             hold(&mut drive, true);
-            cell(&mut drive, panel_note(11));
+            cell(
+                &mut drive,
+                panel_note(slot_of(panel::View::Chop, "edit slice")),
+            );
             let dim = drive.app.panel_snapshot().unwrap().dim;
-            assert!(dim[2] && !dim[3], "join left dim, join right lit");
+            assert!(dim[9] && !dim[10], "join left dim, join right lit");
             hold(&mut drive, false);
         }
         join(&mut drive, source, false);
@@ -95,9 +105,12 @@ fn one_slice_has_nothing_to_join() {
         let mut drive = join_drive(1, 0);
         if matches!(source, Source::Button) {
             hold(&mut drive, true);
-            cell(&mut drive, panel_note(11));
+            cell(
+                &mut drive,
+                panel_note(slot_of(panel::View::Chop, "edit slice")),
+            );
             let dim = drive.app.panel_snapshot().unwrap().dim;
-            assert!(dim[2] && dim[3], "both join cells dim");
+            assert!(dim[9] && dim[10], "both join cells dim");
             hold(&mut drive, false);
         }
         join(&mut drive, source, true);

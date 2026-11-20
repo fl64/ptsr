@@ -4138,7 +4138,7 @@ mod tests {
                 .iter()
                 .any(|(_, text)| text.contains("Hold PAD BANK to show the panel"))
         );
-        assert!(before.iter().any(|(_, text)| text.contains("P13 edit")));
+        assert!(before.iter().any(|(_, text)| text.contains("P5 edit")));
         app.panel.press(SMC_MASTER, 1);
         app.panel.move_view(-1);
         let after = app.full_help_recording_keys(&keymap, true, None);
@@ -4174,7 +4174,7 @@ mod tests {
         let tui::ControllerBody::Drawing { rows, .. } = view.body else {
             panic!("SMC-PAD drawing missing");
         };
-        assert_eq!(rows[4][4].as_ref().unwrap().label, "[edit pad]");
+        assert_eq!(rows[4][4].as_ref().unwrap().label, "[pitch gate]");
         assert_eq!(rows[7][6].as_ref().unwrap().label, "[redo]");
         assert!(rows[7][6].as_ref().unwrap().free);
         assert!(rows[7][7].as_ref().unwrap().free);
@@ -4193,8 +4193,9 @@ mod tests {
             Arc::new(Shared::default()),
         );
         let start = Instant::now();
-        // Note 47 is the first-layer pad 8: the target of the swap since change 134.
-        for (step, note) in [64, 63, 66, 47].into_iter().enumerate() {
+        // Reveal, mark bank (note 62, cell 7) and swap pads (note 60, cell 5) since 138;
+        // note 47 is the first-layer pad 8: the target of the swap since change 134.
+        for (step, note) in [64, 62, 60, 47].into_iter().enumerate() {
             midi.recorded_bytes_at(
                 SMC_MASTER,
                 &[0x99, note, 100],
