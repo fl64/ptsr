@@ -56,5 +56,5 @@
 - [x] Update `docs/CONTROLLER-PATHS.md`, `docs/plans/` and `docs/VISION.md` for the layouts and the binding exception.
 - [x] Add every new mode to the mode walker test. Test hints after SMC-PAD and key input at 80×26 and 120×40.
 - [x] Check every panel view in the screen catalogue.
-- [ ] Run format, Clippy, the slow tests and the fast checks.
+- [x] Run format, Clippy, the slow tests and the fast checks.
 - [ ] Recommend the full walk to the owner.
