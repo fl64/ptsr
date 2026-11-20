@@ -4541,3 +4541,40 @@ fn pattern_taps_use_the_beat_interval() {
     assert!(keyboard.app.transport.taps.is_empty());
     assert_eq!(keyboard.app.transport.bpm, initial);
 }
+
+const SMC_PRIVATE: &str = "SINCO SMC-PAD-Private 28:0";
+
+/// Scenario "A mirrored hit keeps controller words" (screen-help).
+#[test]
+fn a_mirrored_hit_keeps_controller_words() {
+    for ports in [[SMC, SMC_PRIVATE], [SMC_PRIVATE, SMC]] {
+        let mut drive = hold_drive();
+        drive.midi().recorded_connect(SMC_PRIVATE);
+        drive.frame();
+        drive.tap(KeyCode::Down, M::NONE);
+        for status in [0x99, 0x89] {
+            for port in ports {
+                drive.bytes(port, &[status, 48, 100]);
+            }
+            drive.frame();
+            assert!(drive.app.input_sources.last_is_smc(), "{ports:?}");
+        }
+        drive.app.smc_knob_strip(Instant::now());
+        assert!(tui::pads::smc_words(), "{ports:?}");
+    }
+}
+
+/// Scenario "A mirrored message after a key keeps keyboard words" (screen-help).
+#[test]
+fn a_mirrored_message_after_a_key_keeps_keyboard_words() {
+    let mut drive = hold_drive();
+    drive.midi().recorded_connect(SMC_PRIVATE);
+    drive.frame();
+    drive.tap(KeyCode::Down, M::NONE);
+    drive.bytes(SMC_PRIVATE, &[0x99, 48, 100]);
+    drive.bytes(SMC_PRIVATE, &[0x89, 48, 0]);
+    drive.frame();
+    assert!(!drive.app.input_sources.last_is_smc());
+    drive.app.smc_knob_strip(Instant::now());
+    assert!(!tui::pads::smc_words());
+}

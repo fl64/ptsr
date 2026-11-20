@@ -227,11 +227,14 @@ impl State {
                     if let Some(port) = event.origin()
                         && self.transition(port, stamp.connection, Phase::Pending)
                     {
-                        let activity = match event.activity() {
-                            Activity::Press => true,
-                            Activity::Movement => self.movement(port, *msg, stamp.at),
-                            _ => false,
-                        };
+                        // the SMC-PAD Private port repeats Master and runs no action: a
+                        // copy that lands last must not take the hints from the device (137)
+                        let activity = !port.contains("SMC-PAD-Private")
+                            && match event.activity() {
+                                Activity::Press => true,
+                                Activity::Movement => self.movement(port, *msg, stamp.at),
+                                _ => false,
+                            };
                         if activity {
                             self.input(
                                 Source::Device {
