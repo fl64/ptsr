@@ -121,6 +121,36 @@ impl App {
         (!hits && phase != Some(Phase::Recording)).then_some("A1 has no hits yet")
     }
 
+    /// The current state that a state cell shows under its label (138).
+    pub(super) fn cell_state(&self, action: Action) -> Option<&'static str> {
+        let on = |on: bool| Some(if on { "on" } else { "off" });
+        let abs = self.pads.selected_abs();
+        match action {
+            Action::ChopPlayMode => self.chop.as_ref().map(|c| c.play.name()),
+            Action::ChopLoopToggle => self.chop.as_ref().and_then(|c| on(c.looping)),
+            Action::ChopSnapToggle => self.chop.as_ref().map(|c| match c.snap {
+                chop::Snap::Off => "even",
+                snap => snap.name(),
+            }),
+            Action::ChopAsPadToggle => self.chop.as_ref().and_then(|c| on(c.as_pad)),
+            Action::PadModeNext => Some(if self.pads.gate[abs] {
+                "gate"
+            } else {
+                "1 shot"
+            }),
+            Action::PadPitchGateToggle => on(self.pads.pitch_gate[abs]),
+            Action::PadMarkToggle => on(self.pads.marking),
+            Action::PatternOverviewEmptyToggle => Some(if self.pattern_view.hide_empty_banks {
+                "hidden"
+            } else {
+                "shown"
+            }),
+            Action::BrowserPreviewToggle => on(self.preview_on),
+            Action::BrowserFavorite => on(self.browser.favorite_now()),
+            _ => None,
+        }
+    }
+
     /// The action of a panel cell replaces or removes the owner's work (138).
     pub(super) fn warns(view: View, action: Action) -> bool {
         matches!(

@@ -189,16 +189,26 @@ impl Browser {
         }
     }
 
-    /// Ctrl+B: the selected folder, or the folder being shown when a file is selected, becomes
-    /// a favorite or stops being one. Returns the folder name and whether it is a favorite now.
-    pub fn toggle_favorite(&mut self) -> (String, bool) {
-        let (path, keep) = match self.current() {
+    /// The folder Ctrl+B acts on and the entry to keep selected.
+    fn favorite_target(&self) -> (PathBuf, Option<String>) {
+        match self.current() {
             Some(e) if e.is_dir => (
                 e.favorite.clone().unwrap_or_else(|| self.dir.join(&e.name)),
                 (!self.is_shortcut(e)).then(|| e.name.clone()),
             ),
             e => (self.dir.clone(), e.map(|e| e.name.clone())),
-        };
+        }
+    }
+
+    /// The folder Ctrl+B acts on is a favorite now: the star cell shows it (138).
+    pub fn favorite_now(&self) -> bool {
+        self.favorites.contains(&self.favorite_target().0)
+    }
+
+    /// Ctrl+B: the selected folder, or the folder being shown when a file is selected, becomes
+    /// a favorite or stops being one. Returns the folder name and whether it is a favorite now.
+    pub fn toggle_favorite(&mut self) -> (String, bool) {
+        let (path, keep) = self.favorite_target();
         let added = match self.favorites.iter().position(|p| *p == path) {
             Some(i) => {
                 self.favorites.remove(i);

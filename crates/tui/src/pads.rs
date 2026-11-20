@@ -18,6 +18,8 @@ pub struct CommandPanel {
     pub warn: [bool; 16],
     /// The cell of the current choice among its kind, drawn brighter: the pad edit page (138).
     pub current: [bool; 16],
+    /// The current state of a state cell, shown under its label (138).
+    pub states: [Option<&'static str>; 16],
 }
 
 /// The orange of a cell that replaces or removes work (138): apart from the amber bound
@@ -202,22 +204,26 @@ pub fn command_panel_in(
             let inner = cell.inner(*area);
             frame.render_widget(Clear, *area);
             frame.render_widget(cell, *area);
-            // a label longer than eight cells breaks at its first space (135, 138)
-            let lines: Vec<&str> = match label.split_once(' ') {
-                Some((first, second)) if Line::raw(label).width() > 8 && inner.height > 1 => {
-                    vec![first, second]
-                }
-                _ => vec![label],
-            };
+            let lines = cell_lines(label, panel.states[index], inner.height);
             let top = inner.y + inner.height.saturating_sub(lines.len() as u16) / 2;
-            for (i, line) in lines.into_iter().enumerate() {
+            for (i, (line, state)) in lines.into_iter().enumerate() {
                 let at = Rect {
                     y: top + i as u16,
                     height: 1,
                     ..inner
                 };
+                // the state reads apart from the label: its own colour, not bold (138)
+                let line = if state {
+                    Line::from(line).fg(match (lit, active) {
+                        (true, _) => BG,
+                        (false, true) => METER,
+                        (false, false) => DIM,
+                    })
+                } else {
+                    Line::from(line).fg(color).bold()
+                };
                 if at.y < inner.y + inner.height {
-                    frame.render_widget(Line::from(line).fg(color).bold().centered(), at);
+                    frame.render_widget(line.centered(), at);
                 }
             }
         }
@@ -225,6 +231,24 @@ pub fn command_panel_in(
     if let Some(question_view) = question_view {
         question(frame, body, question_view);
     }
+}
+
+/// The lines of a panel cell in `height` rows, each with `true` for the state line (138).
+/// Two words take two lines; a state takes the line under them, or under the whole label
+/// when only two rows fit.
+fn cell_lines<'a>(label: &'a str, state: Option<&'a str>, height: u16) -> Vec<(&'a str, bool)> {
+    let words = label.split_once(' ');
+    let mut lines = match (words, state) {
+        (Some((first, second)), None) if height > 1 => vec![first, second],
+        (Some((first, second)), Some(_)) if height > 2 => vec![first, second],
+        _ => vec![label],
+    };
+    let count = lines.len();
+    let mut out: Vec<(&str, bool)> = lines.drain(..).map(|line| (line, false)).collect();
+    if let Some(state) = state.filter(|_| usize::from(height) > count) {
+        out.push((state, true));
+    }
+    out
 }
 
 pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
@@ -923,6 +947,30 @@ mod tests {
         (rows, term)
     }
 
+    /// Two words take two lines; a state goes under them, or under the whole label when
+    /// only two rows fit; one row keeps the label (138).
+    #[test]
+    fn cell_lines_put_the_state_under_the_label() {
+        assert_eq!(
+            cell_lines("copy pad", None, 2),
+            [("copy", false), ("pad", false)]
+        );
+        assert_eq!(cell_lines("copy pad", None, 1), [("copy pad", false)]);
+        assert_eq!(
+            cell_lines("loop play", Some("on"), 3),
+            [("loop", false), ("play", false), ("on", true)]
+        );
+        assert_eq!(
+            cell_lines("loop play", Some("on"), 2),
+            [("loop play", false), ("on", true)]
+        );
+        assert_eq!(
+            cell_lines("loop play", Some("on"), 1),
+            [("loop play", false)]
+        );
+        assert_eq!(cell_lines("undo", None, 2), [("undo", false)]);
+    }
+
     fn panel(page: usize) -> CommandPanel {
         let mut labels: [Option<String>; 16] = std::array::from_fn(|_| None);
         labels[0] = Some("cut".into());
@@ -936,6 +984,7 @@ mod tests {
             dim: [false; 16],
             warn: [false; 16],
             current: [false; 16],
+            states: [None; 16],
         }
     }
 

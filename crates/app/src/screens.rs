@@ -3583,6 +3583,70 @@ L="none"
         }
     }
 
+    /// The text rows of an app drawn at `case`.
+    fn drawn_rows(case: Case, app: App, now: Instant) -> Vec<String> {
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        let (_, buffer) = render_app(case, &keymap, app, now);
+        buffer
+            .content()
+            .chunks(usize::from(case.size.0))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect()
+    }
+
+    /// `lines` stand right under each other in one cell of `rows`.
+    fn stacked(rows: &[String], lines: &[&str]) -> bool {
+        rows.windows(lines.len()).any(|window| {
+            window[0].match_indices(lines[0]).any(|(at, _)| {
+                let column = window[0][..at].chars().count();
+                window[1..].iter().zip(&lines[1..]).all(|(row, line)| {
+                    let near: String = row
+                        .chars()
+                        .skip(column.saturating_sub(4))
+                        .take(13)
+                        .collect();
+                    near.contains(line)
+                })
+            })
+        })
+    }
+
+    /// Scenario "A short two-word label also uses two lines" (command-panel).
+    /// Scenario "Play range shows its state" (command-panel): three lines at 120×40.
+    /// Scenario "Loop play shows its state at 80×26" (command-panel): two lines.
+    #[test]
+    fn a_short_two_word_label_also_uses_two_lines() {
+        let now = Instant::now();
+        for size in [(80, 26), (120, 40)] {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PanelMain,
+                size,
+            };
+            let rows = drawn_rows(case, fixture(case, now), now);
+            let all = rows.join("\n");
+            assert!(
+                stacked(&rows, &["copy", "pad"]),
+                "copy over pad at {size:?}\n{all}"
+            );
+            assert!(!all.contains("copy pad"), "{all}");
+            let case = Case {
+                screen: Screen::Chop,
+                mode: Mode::PanelMain,
+                size,
+            };
+            let rows = drawn_rows(case, fixture(case, now), now);
+            let all = rows.join("\n");
+            if size == (120, 40) {
+                assert!(stacked(&rows, &["play", "range", "to end"]), "{all}");
+                assert!(stacked(&rows, &["loop", "play", "off"]), "{all}");
+            } else {
+                assert!(stacked(&rows, &["play range", "to end"]), "{all}");
+                assert!(stacked(&rows, &["loop play", "off"]), "{all}");
+            }
+        }
+    }
+
     /// Scenario "The slice edit marks the bounds to join" (chopping).
     /// Scenario "A two-word label uses two lines" (command-panel).
     #[test]

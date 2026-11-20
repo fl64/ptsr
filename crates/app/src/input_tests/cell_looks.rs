@@ -178,3 +178,81 @@ fn grey_orange_and_empty_cells_look_different() {
         assert!(!panel.warn[at(Chop, label)], "{label} keeps its colour");
     }
 }
+
+/// Scenario "Play range shows its state" (command-panel): the state follows a cell press
+/// from the SMC-PAD and a key at once; the three lines are drawn in the screen tests.
+#[test]
+fn play_range_shows_its_state() {
+    use panel::View::Chop;
+    let mut drive = reach_drive_from(hold_drive(), Chop, tone());
+    hold(&mut drive, true);
+    let range = at(Chop, "play range");
+    assert_eq!(looks(&drive).states[range], Some("to end"));
+    cell(&mut drive, panel_note(slot_of(Chop, "play range")));
+    assert_eq!(looks(&drive).states[range], Some("to cut"));
+    hold(&mut drive, false);
+    drive.tap(KeyCode::Char('o'), M::NONE);
+    hold(&mut drive, true);
+    assert_eq!(looks(&drive).states[range], Some("slice"));
+}
+
+/// Scenario "Loop play shows its state at 80×26" (command-panel): the state of each state
+/// cell follows its action; the two lines at 80×26 are drawn in the screen tests.
+#[test]
+fn loop_play_shows_its_state_at_80x26() {
+    use panel::View::{Chop, ChopEdit, Files, Pads, Pattern};
+    let mut drive = reach_drive_from(hold_drive(), Chop, tone());
+    hold(&mut drive, true);
+    for (label, before, after) in [("loop play", "off", "on"), ("cursor step", "even", "hits")] {
+        assert_eq!(
+            looks(&drive).states[at(Chop, label)],
+            Some(before),
+            "{label}"
+        );
+        cell(&mut drive, panel_note(slot_of(Chop, label)));
+        assert_eq!(
+            looks(&drive).states[at(Chop, label)],
+            Some(after),
+            "{label}"
+        );
+    }
+    assert_eq!(
+        looks(&drive).states[at(Chop, "cut here")],
+        None,
+        "an action has no state"
+    );
+    let mut drive = reach_drive_from(hold_drive(), ChopEdit, tone());
+    hold(&mut drive, true);
+    let as_pad = at(ChopEdit, "hear as pad");
+    assert_eq!(looks(&drive).states[as_pad], Some("off"));
+    cell(&mut drive, panel_note(slot_of(ChopEdit, "hear as pad")));
+    assert_eq!(looks(&drive).states[as_pad], Some("on"));
+    let mut drive = reach_drive_from(hold_drive(), Pads, tone());
+    hold(&mut drive, true);
+    for (label, states) in [
+        ("play mode", ["1 shot", "gate"]),
+        ("pitch gate", ["on", "off"]),
+        ("mark pad", ["off", "on"]),
+    ] {
+        let before = looks(&drive).states[at(Pads, label)].expect(label);
+        cell(&mut drive, panel_note(slot_of(Pads, label)));
+        let after = looks(&drive).states[at(Pads, label)].expect(label);
+        assert!(
+            before != after && states.contains(&before) && states.contains(&after),
+            "{label}: {before} -> {after}"
+        );
+    }
+    let mut drive = reach_drive_from(hold_drive(), Pattern, tone());
+    hold(&mut drive, true);
+    let empty = at(Pattern, "hide empty");
+    assert_eq!(looks(&drive).states[empty], Some("hidden"));
+    cell(&mut drive, panel_note(slot_of(Pattern, "hide empty")));
+    assert_eq!(looks(&drive).states[empty], Some("shown"));
+    let mut drive = reach_drive_from(hold_drive(), Files, tone());
+    hold(&mut drive, true);
+    let listen = at(Files, "listen file");
+    let on = looks(&drive).states[listen];
+    cell(&mut drive, panel_note(slot_of(Files, "listen file")));
+    assert_ne!(looks(&drive).states[listen], on, "listen file turns");
+    assert!(looks(&drive).states[at(Files, "star file")].is_some());
+}

@@ -82,7 +82,7 @@ cells = [
 name = "chop_edit"
 page = 1
 cells = [
-  { cell = 9, label = "level to peak", action = "chop.normalize" },
+  { cell = 9, label = "norm", action = "chop.normalize" },
   { cell = 10, label = "join left", action = "marker.delete" },
   { cell = 11, label = "join right", action = "slice.end_delete" },
   { cell = 12, label = "hear as pad", action = "chop.as_pad_toggle" },

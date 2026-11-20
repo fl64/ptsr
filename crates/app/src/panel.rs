@@ -425,6 +425,7 @@ impl App {
             // the method cell drops placed slices (138)
             warn: std::array::from_fn(|index| index == 3 && target == Target::Assign),
             current: [false; 16],
+            states: [None; 16],
         }
     }
 
@@ -468,6 +469,7 @@ impl App {
             dim: [false; 16],
             warn: [false; 16],
             current: [false; 16],
+            states: [None; 16],
         })
     }
 
@@ -491,6 +493,7 @@ impl App {
                     dim: [false; 16],
                     warn: [false; 16],
                     current: [false; 16],
+                    states: [None; 16],
                 };
             }
             let target = self.panel_target();
@@ -558,6 +561,15 @@ impl App {
                                 .ok()
                                 .map(Action::PadPage)
                 }),
+                // a learned cell keeps no shipped state (138)
+                states: std::array::from_fn(|index| {
+                    let cell = u8::try_from(index + 1).unwrap();
+                    overrides[index]
+                        .is_none()
+                        .then(|| self.panel.action(view, cell))
+                        .flatten()
+                        .and_then(|action| self.cell_state(action))
+                }),
             }
         })
     }
@@ -575,14 +587,12 @@ impl App {
     }
 }
 
-/// A label longer than eight cells breaks at its first space into two lines (135, 138);
-/// each line keeps at most eight cells.
+/// A label of two words shows each word on its own line (135, 138); each line keeps at
+/// most eight cells.
 fn label_fits(label: &str) -> bool {
     match label.split_once(' ') {
-        Some((first, second)) if Line::raw(label).width() > 8 => {
-            Line::raw(first).width() <= 8 && Line::raw(second).width() <= 8
-        }
-        _ => Line::raw(label).width() <= 8,
+        Some((first, second)) => Line::raw(first).width() <= 8 && Line::raw(second).width() <= 8,
+        None => Line::raw(label).width() <= 8,
     }
 }
 
@@ -641,7 +651,7 @@ mod tests {
             "menu",
             "mixer",
             "no",
-            "level to peak",
+            "norm",
             "open",
             "order",
             "pad",
@@ -809,7 +819,7 @@ mod tests {
                     "",
                     "",
                     "",
-                    "level to peak",
+                    "norm",
                     "join left",
                     "join right",
                     "hear as pad",
