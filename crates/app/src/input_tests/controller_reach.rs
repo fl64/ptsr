@@ -32,6 +32,12 @@ mod assign_method;
 #[path = "new_project.rs"]
 mod new_project;
 
+#[path = "trim_routes.rs"]
+mod trim_routes;
+
+#[path = "binding_changes.rs"]
+mod binding_changes;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.

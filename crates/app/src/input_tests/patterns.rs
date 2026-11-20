@@ -4881,7 +4881,7 @@ fn app_capture_drive_raw(hits: Vec<[u32; 4]>) -> Drive {
     drive
 }
 
-fn app_capture_snapshot(drive: &Drive) -> engine::capture::Snapshot {
+pub(super) fn app_capture_snapshot(drive: &Drive) -> engine::capture::Snapshot {
     let epoch = drive
         .project
         .epoch
@@ -4896,7 +4896,7 @@ fn app_capture_snapshot(drive: &Drive) -> engine::capture::Snapshot {
         .unwrap()
 }
 
-fn app_capture_frames(drive: &mut Drive, frames: usize) -> Stereo {
+pub(super) fn app_capture_frames(drive: &mut Drive, frames: usize) -> Stereo {
     let (mut left, mut right) = (vec![0.0; frames], vec![0.0; frames]);
     for start in (0..frames).step_by(128) {
         let end = (start + 128).min(frames);
@@ -4913,7 +4913,7 @@ fn app_capture_frames(drive: &mut Drive, frames: usize) -> Stereo {
     (left, right)
 }
 
-fn app_capture_start(drive: &mut Drive, pass: u64) {
+pub(super) fn app_capture_start(drive: &mut Drive, pass: u64) {
     drive.app.send(Command::TransportPlay);
     assert!(drive.app.try_send(Command::PatternRecordStart { pass }));
     app_capture_frames(drive, 0);
@@ -4923,7 +4923,7 @@ fn app_capture_start(drive: &mut Drive, pass: u64) {
     );
 }
 
-fn app_capture_finish(drive: &mut Drive, pass: u64) {
+pub(super) fn app_capture_finish(drive: &mut Drive, pass: u64) {
     drive.app.send(Command::PatternRecordEnd { pass });
     app_capture_frames(drive, 0);
     assert_eq!(
@@ -9349,7 +9349,7 @@ fn app_capture_render_retains_rhythm_without_fresh_or_delayed_double_hits() {
     }
 }
 
-fn settle_pattern(drive: &mut Drive) {
+pub(super) fn settle_pattern(drive: &mut Drive) {
     use std::sync::atomic::Ordering::Acquire;
     for _ in 0..512 {
         drive.app.flush_audio();
