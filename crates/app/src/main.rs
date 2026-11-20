@@ -13866,17 +13866,16 @@ Enter = "browser.hold"
         assert_eq!(after, before, "every pad has its own settings back");
     }
 
-    /// 76 pad-playback "Backspace outside the edit": only the selected pad is cleared,
-    /// nothing asks.
+    /// pad-playback "Backspace outside the edit": the selected pad is cleared after a yes.
     #[test]
     fn backspace_outside_the_edit() {
         let mut app = undo_app();
         app.pads.file[0] = Some("/m/kick.wav".into());
         app.pads.file[1] = Some("/m/snare.wav".into());
         app.apply(Action::PadClear);
-        assert!(app.ask.is_none());
-        assert!(app.pads.file[0].is_none());
-        assert!(app.pads.file[1].is_some());
+        assert!(app.pads.file[0].is_some(), "the question comes first (138)");
+        app.apply(Action::PadEdit); // Enter
+        assert!(app.pads.file[0].is_none() && app.pads.file[1].is_some());
     }
 
     /// 76 pad-playback "Clear the marked pads": a question first, then Q W E are empty;
@@ -14337,6 +14336,7 @@ Enter = "browser.hold"
         assert!(said.contains("swap"), "{said}");
         app.pads.selected = q;
         app.apply(Action::PadClear);
+        app.apply(Action::PadEdit); // Enter: a pad with a sound asks first (138)
         assert!(app.pads.file[q].is_none());
         undo(&mut app);
         assert_eq!(app.pads.snapshot(q), sq, "the file is back");

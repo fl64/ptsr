@@ -212,6 +212,7 @@ impl App {
                             let pads = pads.clone();
                             self.ask = None;
                             self.clear_pads(&pads);
+                            self.say_cleared(pads.len());
                         }
                         Some(Ask::ClearPattern { .. }) => {
                             self.ask = None;
@@ -1173,7 +1174,8 @@ impl App {
             Action::PadClear if self.edit && self.screen == Screen::Pads => self.ask_reset(),
             // with marks the clear asks first: one key must not wipe a bank unasked (76)
             Action::PadClear if !self.pads.marked.is_empty() => self.ask_clear(),
-            Action::PadClear => self.clear_pads(&[self.pads.selected_abs()]),
+            // a pad with a sound asks first too; an empty pad has nothing to clear (138)
+            Action::PadClear => self.ask_clear_one(),
             pad_action => {
                 for cmd in self.pads.apply(pad_action) {
                     self.send(cmd);

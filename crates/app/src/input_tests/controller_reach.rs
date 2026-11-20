@@ -2157,6 +2157,9 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                 } else {
                     // notices name the undo of the device that pressed (138)
                     result.0.notice = result.0.notice.map(|n| n.replace("P2 undo", "Ctrl+Z"));
+                    for line in &mut result.0.question {
+                        *line = line.replace("P2 undo", "Ctrl+Z");
+                    }
                     assert_eq!(
                         result,
                         reach_result(&keyboard, &keyboard_frame),

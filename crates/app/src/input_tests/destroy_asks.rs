@@ -337,7 +337,12 @@ fn the_undo_notice_replaces_the_action_notice() {
     let mut drive = Drive::new();
     drive.load_pad(0, tone(), "kick");
     drive.tap(KeyCode::Backspace, M::NONE);
+    drive.tap(KeyCode::Enter, M::NONE);
     assert!(drive.app.pads.file[0].is_none());
+    assert_eq!(
+        drive.last_notice().text,
+        "pad cleared · Ctrl+Z brings it back"
+    );
     drive.tap(KeyCode::Char('z'), M::CONTROL);
     assert_eq!(drive.last_notice().text, "undo: clear on pad 1");
     assert!(drive.app.pads.file[0].is_some());
@@ -413,4 +418,41 @@ fn the_layout_update_question_says_that_it_has_no_undo() {
         "{lines:?}"
     );
     assert_eq!(drive.app.learned, before, "no role changed before yes");
+}
+
+/// Scenario "Clear pad asks for a pad with a sound" (command-panel): the SMC-PAD cell asks,
+/// names the pad and, after yes, names the P2 undo.
+#[test]
+fn clear_pad_asks_for_a_pad_with_a_sound() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, tone(), "kick");
+    press(&mut drive, panel::View::Pads, "clear pad");
+    assert!(
+        question(&drive).starts_with("Clear pad 1"),
+        "{}",
+        question(&drive)
+    );
+    assert!(drive.app.pads.file[0].is_some(), "nothing goes before yes");
+    answer(&mut drive, true);
+    assert!(drive.app.pads.file[0].is_none());
+    assert_eq!(
+        drive.last_notice().text,
+        "pad cleared · P2 undo brings it back"
+    );
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(14));
+    assert!(
+        drive.app.pads.file[0].is_some(),
+        "P2 undo brings the sound back"
+    );
+}
+
+/// Scenario "Backspace on an empty pad" (pad-playback): nothing asks, nothing changes.
+#[test]
+fn backspace_on_an_empty_pad() {
+    let mut drive = Drive::new();
+    drive.load_pad(1, tone(), "snare");
+    drive.tap(KeyCode::Backspace, M::NONE);
+    assert!(drive.app.ask.is_none());
+    assert!(drive.app.pads.file[1].is_some());
 }

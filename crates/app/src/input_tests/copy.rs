@@ -192,6 +192,7 @@ fn copy_numbers_reuse_the_smallest_gap() {
         drive.numbered_copy_start(source, 0);
         drive.numbered_copy_target(source, 18);
         drive.copy_command(source, KeyCode::Backspace, M::NONE, 88);
+        drive.tap(KeyCode::Enter, M::NONE); // a pad with a sound asks first (138)
         assert!(drive.app.pads.sound[18].is_none());
         drive.numbered_copy_start(source, 0);
         drive.numbered_copy_target(source, 18);

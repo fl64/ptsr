@@ -2313,10 +2313,37 @@ impl App {
             lines: vec![
                 format!("Clear {what}?"),
                 "  The sounds leave the pads; their files on disk stay.".into(),
-                "  Ctrl+Z brings them back.".into(),
+                format!("  {} brings them back.", self.undo_words()),
                 "Enter: clear · Esc: keep".into(),
             ],
         });
+    }
+
+    /// `Backspace` or `clear pad` without marks (138): a pad with a sound asks first.
+    pub(super) fn ask_clear_one(&mut self) {
+        let abs = self.pads.selected_abs();
+        if self.pads.file[abs].is_none() {
+            return;
+        }
+        self.ask = Some(Ask::ClearPads {
+            pads: vec![abs],
+            lines: vec![
+                format!("Clear {}?", super::pad_label(&self.pads, abs)),
+                "  The sound leaves the pad; its file on disk stays.".into(),
+                format!("  {} brings it back.", self.undo_words()),
+                "Enter: clear · Esc: keep".into(),
+            ],
+        });
+    }
+
+    /// The result of a confirmed clear, with the undo in the words of the last device (138).
+    pub(super) fn say_cleared(&mut self, count: usize) {
+        let undo = self.undo_words();
+        let text = match count {
+            1 => format!("pad cleared · {undo} brings it back"),
+            n => format!("{n} pads cleared · {undo} brings them back"),
+        };
+        self.post_notice(Level::Done, (text, Instant::now()));
     }
 
     pub(super) fn clear_pads(&mut self, pads: &[usize]) {
@@ -2362,7 +2389,11 @@ impl App {
             Action::PadPitchGateToggle => "Pitch Gate".into(),
             Action::PadClear => "clear".into(),
             Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
-            Action::PadEdit if matches!(self.ask, Some(Ask::ClearPads { .. })) => "clear".into(),
+            Action::PadEdit | Action::Confirm
+                if matches!(self.ask, Some(Ask::ClearPads { .. })) =>
+            {
+                "clear".into()
+            }
             Action::PadEdit if matches!(self.ask, Some(Ask::ClearPattern { .. })) => "clear".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),

@@ -10158,6 +10158,7 @@ fn pattern_addresses_stay_during_copy_clear_and_file_replacement() {
         drive.pad_release(source, 1);
         assert_eq!(drive.app.pads.selected, 1);
         drive.registry_command(source, KeyCode::Backspace, M::NONE, 102);
+        drive.tap(KeyCode::Enter, M::NONE); // a pad with a sound asks first (138)
         assert!(drive.app.pads.file[1].is_none());
         pattern_tone(&mut drive, &raw, 0.0, 0);
         drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 103);
@@ -11456,6 +11457,7 @@ fn pitch_gate_scope_reset_copy_and_undo_preserve_pad_state() {
         assert_eq!(drive.app.pads.snapshot(0), copied);
         drive.app.edit = false;
         drive.registry_command(source, KeyCode::Backspace, M::NONE, 102);
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 103);
         assert!(drive.app.pads.file[0].is_none());
         assert!(!drive.app.pads.pitch_gate[0]);
         drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 104);

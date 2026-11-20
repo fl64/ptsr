@@ -21,7 +21,7 @@
 ## 4. Destructive actions and undo
 
 - [x] Track hand cuts in the chop. Ask before hand cuts go: equal parts, cut by hits, fewer hits, remove all cuts, the threshold knob.
-- [ ] Ask before `clear pad` on a pad with a sound. Remove false «This cannot be undone.» texts.
+- [x] Ask before `clear pad` on a pad with a sound. Remove false «This cannot be undone.» texts.
 - [x] Name the result and the undo after each destructive action.
 - [x] Make undo and redo notices say what came back on Chop, Pads and A1.
 
