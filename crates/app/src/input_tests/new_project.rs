@@ -30,8 +30,7 @@ fn open_picker(drive: &mut Drive) {
 }
 
 fn today() -> String {
-    let stamp = crate::stamp(std::time::SystemTime::now());
-    format!("{}-{}-{}", &stamp[..4], &stamp[4..6], &stamp[6..8])
+    crate::browser::local_date(std::time::SystemTime::now())
 }
 
 /// Scenario "New project with no projects" (projects).
@@ -57,7 +56,8 @@ fn new_project_with_no_projects() {
 /// Scenario "The date name takes the next number" (projects).
 #[test]
 fn the_date_name_takes_the_next_number() {
-    let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_795_132_800 + 3_600);
+    // noon UTC: the same calendar day in every time zone from UTC-12 to UTC+11
+    let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_795_132_800 + 43_200);
     let (mut drive, root) = empty_root();
     assert_eq!(crate::browser::date_project_name(&root, at), "2026-11-20-1");
     std::fs::create_dir_all(root.join("2026-11-20-1")).unwrap();
