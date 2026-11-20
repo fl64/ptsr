@@ -131,6 +131,31 @@ impl App {
         })
     }
 
+    /// The SMC-PAD panel cell that `key` runs now, by its printed number and its label (135):
+    /// Learn names it before a binding takes the cell off the panel.
+    pub(super) fn panel_cell_of(&self, profile: &str, key: input::midi::Key) -> Option<String> {
+        let device = self
+            .controller_devices()
+            .into_iter()
+            .find(|device| device.profile.name == profile && profile == "SMC-PAD")?;
+        let name = device.profile.name_of(key)?.to_string();
+        let cell: u8 = name.strip_prefix('c')?.parse().ok()?;
+        let action = device.profile.control_action_context(
+            self.screen,
+            self.edit_keys(),
+            self.pattern_panel.is_some(),
+            &name,
+        )?;
+        if action != "panel.cell" {
+            return None;
+        }
+        let label = self.panel.label(self.panel_view(), cell).unwrap_or("empty");
+        Some(format!(
+            "panel cell P{} {label}",
+            tui::pads::device_number(usize::from(cell))
+        ))
+    }
+
     pub(super) fn controller_devices(&self) -> Vec<Device> {
         let maps = super::midi::parse_learned(&self.learned);
         let mut out: Vec<Device> = Vec::new();
@@ -549,6 +574,11 @@ impl App {
                 "EDIT pad {} · {page} · {pages} · {close}",
                 tui::pads::pad_tag(self.pads.selected)
             ));
+        }
+        if self.pads.marking {
+            let drop = if smc { "PAD BANK + 1 drop" } else { "Esc drop" };
+            let marked = self.pads.marked.len();
+            return Some(format!("MARK · hit pads · {marked} marked · {drop}"));
         }
         None
     }

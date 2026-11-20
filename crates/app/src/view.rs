@@ -153,6 +153,8 @@ struct BadgeKey {
     mode: input::Mode,
     assignment: Option<(usize, usize)>,
     marked: usize,
+    /// The last input came from the SMC-PAD: drops name its control, not Esc (135).
+    smc: bool,
     page: &'static str,
     seconds: Option<u64>,
     looping: bool,
@@ -212,7 +214,10 @@ impl BadgeKey {
         } else if count > 0 {
             pad_modes.push(Badge::new(
                 PadMode,
-                format!("{count} MARKED · Esc drops"),
+                format!(
+                    "{count} MARKED · {} drops",
+                    if self.smc { "PAD BANK + 1" } else { "Esc" }
+                ),
                 format!("{count} MARKED"),
             ));
         }
@@ -1072,6 +1077,7 @@ impl App {
             mode: self.focus().mode,
             assignment,
             marked: self.pads.marked.len(),
+            smc: self.input_sources.last_is_smc(),
             page: self.help_state().page,
             seconds: self
                 .recording

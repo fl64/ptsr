@@ -11,6 +11,8 @@ cells and the Assign bank. This change takes the rest that is not about Chop flo
 - D1. A Chop notice goes to the notice row, not over the wave labels.
 - D2. At 80×26 the mode line has priority over the hint columns. Apply and cancel come first.
 - D3. A pending Learn binding on an SMC-PAD panel cell names the cell by its printed number and its current label.
+  This applies when the PAD BANK hold is off: the PAD BANK layer then sends its own notes. With the
+  hold on, a cell is a hold of the playing note, and Learn already says that the panel layer keeps it.
 - D4. The marking hint uses the words of the last input device, as other hints do since 134.
 - D5. In the slice edit, the panel cells `cut -` (P15) and `end -` (P16) become `join left` and
   `join right`. The labels name the result, not a cut. The owner chose this on 2026-11-20 after

@@ -10,8 +10,8 @@
 
 ## 3. Words
 
-- [ ] Name the replaced panel cell in the Learn prompt. Test with raw MIDI.
-- [ ] Use SMC-PAD words in the marking hint. Test after SMC-PAD input and after a key.
+- [x] Name the replaced panel cell in the Learn prompt. Test with raw MIDI.
+- [x] Use SMC-PAD words in the marking hint. Test after SMC-PAD input and after a key.
 
 ## 4. Checks
 

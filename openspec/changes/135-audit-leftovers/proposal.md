@@ -39,7 +39,7 @@ Owner checks, controller:
 
 1. `CHOP` → `[PAD BANK]+[P15]` (hits) → the time and threshold stay readable.
 2. 80×26 → `CHOP` → `[PAD BANK]+[P16]` → the line shows apply and cancel.
-3. `LEARN` → touch `[PAD BANK]+[P6]` → «replaces panel cell P6 open» before the save.
+3. F12 MIDI: PAD BANK hold off → `PADS` → `LEARN` → pick pad mode → touch `[PAD BANK]+[P6]` → «replaces panel cell P6 rec out» before the save.
 
 4. `CHOP` → hit the pad of slice 3 → `[PAD BANK]+[P7]` (edit) → «join left», «join right» and two marked bounds → `[PAD BANK]+[P15]` → «slices 2 and 3 joined».
 5. `CHOP` → hit the pad of slice 1 → `[PAD BANK]+[P7]` → «join left» is dim → `[PAD BANK]+[P15]` → «slice 1 has no slice on the left».
