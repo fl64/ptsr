@@ -1218,6 +1218,10 @@ impl crate::App {
         self.flush_audio();
         if self.erase_pads {
             self.erase_pads = false;
+            self.post_notice(
+                crate::Level::Done,
+                ("erase off".into(), std::time::Instant::now()),
+            );
             return;
         }
         let phase = self.pattern_record_state().map(|s| s.phase);

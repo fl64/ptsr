@@ -40,7 +40,7 @@
 ## 7. Modes and recording
 
 - [ ] Keep the exit part of the mode line at 80×26. Add the D10 mode lines.
-- [ ] Make PAD BANK + P1 leave the active mode first.
+- [x] Make PAD BANK + P1 leave the active mode first.
 - [x] Make STOP end the output recording on all screens.
 - [ ] Fix the device words of the notices that the walk found. Record the other key texts in `docs/BACKLOG.md`.
 

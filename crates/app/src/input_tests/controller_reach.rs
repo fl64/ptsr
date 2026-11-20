@@ -4082,6 +4082,14 @@ fn mode_cases() -> Vec<ModeCase> {
             |d| d.app.pattern_view.edit,
         ),
         (
+            "A1 erase",
+            |d| {
+                screens_cell(d, 4);
+                labelled_cell(d, panel::View::Pattern, "erase hits");
+            },
+            |d| d.app.erase_pads,
+        ),
+        (
             "screen learn",
             // Learn opens from the keyboard only (138).
             |d| {

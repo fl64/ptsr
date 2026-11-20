@@ -893,10 +893,10 @@ impl App {
             }
             // The A1 settings lie over the A1 view: Back closes the top one first (134).
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
-            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
-            // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
-            Action::Back if self.erase_pads => self.erase_pads = false,
+            // the mode goes first and the screen stays: A1 keeps its view (98b, 138)
+            Action::Back if self.erase_pads => self.toggle_pattern_erase(),
             Action::Back if self.pattern_erasing() => self.toggle_pattern_erase(),
+            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             // the edit mode is the innermost layer of the screen: Esc closes it, the screen stays
             Action::Back if self.edit => self.edit = false,
             // Esc drops the marks first, then goes back as now

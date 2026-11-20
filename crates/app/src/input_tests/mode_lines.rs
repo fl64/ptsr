@@ -270,6 +270,111 @@ fn pad_edit_keeps_its_close_control_at_80_by_26() {
     }
 }
 
+/// Scenario "P1 stops the A1 erase and stays on A1" (command-panel).
+#[test]
+fn p1_stops_the_a1_erase_and_stays_on_a1() {
+    let mut drive = a1_drive();
+    hold(&mut drive, true);
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Pattern, "erase hits")),
+    );
+    hold(&mut drive, false);
+    assert!(drive.app.erase_pads);
+    assert!(line(&drive).starts_with("ERASE A1"), "{}", line(&drive));
+    assert!(line(&drive).ends_with("PAD BANK + 1 off"));
+    hold(&mut drive, true);
+    cell(&mut drive, 52); // device pad 1: back
+    hold(&mut drive, false);
+    assert!(!drive.app.erase_pads, "erase is off");
+    assert!(drive.app.pattern_view.overview, "A1 stays on the screen");
+    assert_eq!(drive.last_notice().text, "erase off");
+}
+
+/// Scenario "One P1 ends erasure and keeps the screen" (patterns).
+#[test]
+fn one_p1_ends_erasure_and_keeps_the_screen() {
+    let mut drive = a1_drive();
+    drive.tap(KeyCode::Char('e'), M::ALT);
+    assert!(drive.app.erase_pads);
+    hold(&mut drive, true);
+    cell(&mut drive, 52);
+    hold(&mut drive, false);
+    assert!(!drive.app.erase_pads);
+    assert_eq!(drive.app.screen, Screen::Pads);
+    assert!(drive.app.pattern_view.overview);
+    assert_eq!(drive.last_notice().text, "erase off");
+    let hits = drive.app.pads.pattern.as_ref().unwrap().hits.len();
+    drive.bytes(SMC, &[0x99, 36, 100]);
+    drive.bytes(SMC, &[0x89, 36, 0]);
+    drive.frame();
+    assert_eq!(
+        drive.app.pads.pattern.as_ref().unwrap().hits.len(),
+        hits,
+        "the next press erases no row"
+    );
+}
+
+/// Scenario "Erasure in a pass shows its state" (patterns).
+#[test]
+fn erasure_in_a_pass_shows_its_state() {
+    use engine::capture::Phase;
+    let mut drive = a1_drive();
+    hold(&mut drive, true);
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Pattern, "record A1")),
+    );
+    hold(&mut drive, false);
+    for _ in 0..4096 {
+        drive.app.flush_audio();
+        drive.render_blocks(8);
+        drive.frame();
+        if drive
+            .app
+            .pattern_record_state()
+            .is_some_and(|s| s.phase == Phase::Recording)
+        {
+            break;
+        }
+    }
+    let erase = panel_note(slot_of(panel::View::Pattern, "erase hits"));
+    hold(&mut drive, true);
+    cell(&mut drive, erase);
+    hold(&mut drive, false);
+    settle(&mut drive);
+    assert!(drive.app.pattern_erasing());
+    let shown = line(&drive);
+    assert!(shown.starts_with("ERASE A1"), "{shown}");
+    assert!(shown.ends_with("PAD BANK + 1 off"), "{shown}");
+    hold(&mut drive, true);
+    cell(&mut drive, erase);
+    hold(&mut drive, false);
+    settle(&mut drive);
+    assert!(!drive.app.pattern_erasing());
+    assert!(!line(&drive).starts_with("ERASE"), "{}", line(&drive));
+}
+
+/// Scenario "P1 cancels a copy and stays on Pads" (command-panel).
+#[test]
+fn p1_cancels_a_copy_and_stays_on_pads() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, tone(), "kick");
+    drive.frame();
+    hold(&mut drive, true);
+    cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Pads, "copy pad")),
+    );
+    hold(&mut drive, false);
+    assert!(drive.app.copy_in_hand.is_some());
+    hold(&mut drive, true);
+    cell(&mut drive, 52);
+    hold(&mut drive, false);
+    assert!(drive.app.copy_in_hand.is_none(), "the copy is cancelled");
+    assert_eq!(drive.app.screen, Screen::Pads);
+}
+
 /// Scenario "STOP on A1 pauses A1 and keeps the recording" (recording).
 #[test]
 fn stop_on_a1_pauses_a1_and_keeps_the_recording() {
