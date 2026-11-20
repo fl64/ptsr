@@ -80,6 +80,39 @@ PAD BANK with device pad 1 SHALL first leave the active mode: erase, copy, swap,
 - **WHEN** a copy is in hand on Pads and the owner presses PAD BANK with device pad 1
 - **THEN** the copy is cancelled and Pads stays on the screen
 
+### Requirement: State cells show the current state
+
+A cell whose action changes a state SHALL show the current state below its label, in a colour that differs from the label. At 120×40 the cell SHALL show the two label words on two lines and the state on the third line. At 80×26 the cell SHALL show the label on one line and the state on the second line. The state SHALL follow the current state at once. The state cells SHALL be the cells of the table in "State cells and their states".
+
+#### Scenario: Play range shows its state
+- **WHEN** the owner holds PAD BANK on Chop at 120×40 and presses `play range`
+- **THEN** the cell shows «play», «range» and «to end» before the press and «to cut» after it
+
+#### Scenario: Loop play shows its state at 80×26
+- **WHEN** the owner holds PAD BANK on Chop at 80×26 with the loop off and presses `loop play`
+- **THEN** the cell shows «loop play» on its first line and «off» before the press and «on» after it on its second line
+
+### Requirement: State cells and their states
+
+The panel SHALL show a state for exactly these cells, with these states.
+
+| Cell | States |
+| --- | --- |
+| play range | to end, to cut, slice |
+| loop play | on, off |
+| cursor step | even, hits, cuts |
+| hear as pad | on, off |
+| play mode | 1 shot, gate |
+| pitch gate | on, off |
+| mark pad | on, off |
+| hide empty | shown, hidden |
+| listen file | on, off |
+| star file | on, off |
+
+#### Scenario: Every state cell shows one of its states
+- **WHEN** the owner holds PAD BANK on each view with a state cell
+- **THEN** each cell of the table shows one of its listed states, and no other cell shows a state
+
 ## MODIFIED Requirements
 
 ### Requirement: The screens view opens screens and global actions
@@ -140,31 +173,6 @@ The label check SHALL include fixed cells and the shipped panel file.
 #### Scenario: A short two-word label also uses two lines
 - **WHEN** the panel shows `copy pad` at 80×26 and at 120×40
 - **THEN** the cell shows «copy» on its first line and «pad» on its second line
-
-### Requirement: State cells show the current state
-
-A cell whose action changes a state SHALL show the current state below its label, in a colour that differs from the label. At 120×40 the cell SHALL show the two label words on two lines and the state on the third line. At 80×26 the cell SHALL show the label on one line and the state on the second line. The state SHALL follow the current state at once. These cells and states SHALL be shown:
-
-| Cell | States |
-| --- | --- |
-| play range | to end, to cut, slice |
-| loop play | on, off |
-| cursor step | even, hits, cuts |
-| hear as pad | on, off |
-| play mode | 1 shot, gate |
-| pitch gate | on, off |
-| mark pad | on, off |
-| hide empty | shown, hidden |
-| listen file | on, off |
-| star file | on, off |
-
-#### Scenario: Play range shows its state
-- **WHEN** the owner holds PAD BANK on Chop at 120×40 and presses `play range`
-- **THEN** the cell shows «play», «range» and «to end» before the press and «to cut» after it
-
-#### Scenario: Loop play shows its state at 80×26
-- **WHEN** the owner holds PAD BANK on Chop at 80×26 with the loop off and presses `loop play`
-- **THEN** the cell shows «loop play» on its first line and «off» before the press and «on» after it on its second line
 
 ### Requirement: Panel configuration names logical actions
 

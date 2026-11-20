@@ -256,3 +256,37 @@ fn loop_play_shows_its_state_at_80x26() {
     assert_ne!(looks(&drive).states[listen], on, "listen file turns");
     assert!(looks(&drive).states[at(Files, "star file")].is_some());
 }
+
+/// Scenario "Every state cell shows one of its states" (command-panel): each cell of the
+/// table shows a listed state, and the other cells of the view show none.
+#[test]
+fn every_state_cell_shows_one_of_its_states() {
+    use panel::View::{Chop, ChopEdit, Files, Pads, Pattern};
+    let table: [(panel::View, &str, &[&str]); 10] = [
+        (Chop, "play range", &["to end", "to cut", "slice"]),
+        (Chop, "loop play", &["on", "off"]),
+        (Chop, "cursor step", &["even", "hits", "cuts"]),
+        (ChopEdit, "hear as pad", &["on", "off"]),
+        (Pads, "play mode", &["1 shot", "gate"]),
+        (Pads, "pitch gate", &["on", "off"]),
+        (Pads, "mark pad", &["on", "off"]),
+        (Pattern, "hide empty", &["shown", "hidden"]),
+        (Files, "listen file", &["on", "off"]),
+        (Files, "star file", &["on", "off"]),
+    ];
+    for view in [Chop, ChopEdit, Pads, Pattern, Files] {
+        let mut drive = reach_drive_from(hold_drive(), view, tone());
+        hold(&mut drive, true);
+        let states = looks(&drive).states;
+        let mut expected = [None; 16];
+        for (_, label, listed) in table.iter().filter(|(v, ..)| *v == view) {
+            let state = states[at(view, label)].unwrap_or_else(|| panic!("{label} has a state"));
+            assert!(listed.contains(&state), "{label}: {state}");
+            expected[at(view, label)] = Some(state);
+        }
+        assert_eq!(
+            states, expected,
+            "{view:?}: only the table cells show a state"
+        );
+    }
+}
