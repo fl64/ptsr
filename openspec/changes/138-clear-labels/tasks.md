@@ -16,6 +16,7 @@
 - [x] Draw orange cells and grey cells, and the current pad edit page brighter.
 - [ ] Grey each cell of the D5 table while it cannot act. The cells of steps 5, 6 and 8 follow with their actions.
 - [x] Explain a press on a grey cell with a notice.
+- [ ] Show each two-word label on two lines. Show the current state in the state cells. Rename `level to peak` to `norm`.
 
 ## 4. Destructive actions and undo
 
