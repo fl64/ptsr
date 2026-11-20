@@ -31,31 +31,15 @@ Chop SHALL have `remove all cuts` on device pad P13 and on the Delete key. It SH
 
 ### Requirement: Fewer hits acts on Chop
 
-`fewer hits` SHALL be a Chop cell on device pad P7, not a slice edit cell. It SHALL act as Shift+H. It SHALL be grey while the threshold is −6 dB or while the chop has no cut by hits. Shift+H on a chop without a cut by hits SHALL change no cut and SHALL say «cut by hits first».
+`fewer hits` SHALL be a Chop cell on device pad P7, not a slice edit cell. It SHALL act as Shift+H. It SHALL be grey only while the chop is cut by hits at −6 dB. On a chop without a cut by hits it SHALL act as the first Shift+H and cut by hits at −6 dB.
 
 #### Scenario: Fewer hits from Chop
 - **WHEN** the chop is cut by hits at −20 dB and the owner presses `fewer hits` on Chop
 - **THEN** the chop is cut by hits at a higher threshold with fewer slices
 
-#### Scenario: Fewer hits before cut by hits is grey
-- **WHEN** the chop has no cut by hits and the owner holds PAD BANK on Chop
-- **THEN** `fewer hits` is grey and a press says «cut by hits first»
-
-#### Scenario: Shift+H before cut by hits changes nothing
-- **WHEN** the chop has no cut by hits and the owner presses Shift+H on Chop
-- **THEN** no cut changes and a notice says «cut by hits first»
-
-### Requirement: In order waits for the start pad
-
-In the assign mode "all in order", apply SHALL wait until the owner hits the start pad. Before that hit, `Enter` and device pad 4 SHALL place no slice, and a notice SHALL say «hit the start pad first». After the hit, the plan SHALL lay slice 1 on that pad and the rest after it. The next apply SHALL apply it as any plan, with the overwrite question for full pads.
-
-#### Scenario: Enter with no pad hit
-- **WHEN** the owner opens the assign mode, switches to "in order" with `Tab` and presses `Enter`
-- **THEN** no slice is placed and a notice says «hit the start pad first»
-
-#### Scenario: The start pad sets the order
-- **WHEN** in order, the owner hits pad Q of bank 2 and presses `Enter`
-- **THEN** the plan with slice 1 on pad Q of bank 2 is applied
+#### Scenario: Fewer hits at −6 dB is grey
+- **WHEN** the chop is cut by hits at −6 dB and the owner holds PAD BANK on Chop
+- **THEN** `fewer hits` is grey and a press says «by hits stays at -6 dB»
 
 ## MODIFIED Requirements
 

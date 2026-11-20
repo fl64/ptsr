@@ -89,7 +89,7 @@ A code check of every cell gave these conditions. A grey cell keeps its place an
 | take file, load to pad, chop file | the cursor is not on a file | «select a file» or «RIGHT opens the folder» |
 | load to pad | the selected pad already plays this whole file | that it plays it |
 | cut here | the cursor is in a trimmed part or 10 ms from a cut | why |
-| fewer hits | the threshold is −6 dB, or the chop has no cut by hits | «cut by hits first» or the limit |
+| fewer hits | the chop is cut by hits at −6 dB | «by hits stays at -6 dB» |
 | remove all cuts | the chop has no cut | «no cuts to remove» |
 | trim silence | the trim edges already sit on the first and last sound | «no silence to trim» |
 | join left / join right | the slice has no neighbour (change 135) | the side |
@@ -224,5 +224,6 @@ named by the date and a number: `2026-11-20-1`. The owner can rename it from the
 - `reset pad` sets the sound gain to 0 dB, as it resets the other pad parameters.
 - While learning, the SMC-PAD pad 4 no longer saves a choice, because a touched control can be
   pad 4. Enter saves and Esc keeps, from the keyboard.
-- Shift+H without a cut by hits gives the same answer as the grey `fewer hits` cell: «cut by
-  hits first». One action has one result on both inputs.
+- `fewer hits` follows Shift+H. The main spec («Reverse hit threshold») says that the first
+  Shift+H without a cut by hits cuts by hits at −6 dB. So the cell acts there too, and it is
+  grey only at −6 dB. One action has one result on both inputs.
