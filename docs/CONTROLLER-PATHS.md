@@ -42,7 +42,7 @@ step and its cancel control. It stays after the PAD BANK release.
 | Terms | Read the screen and pad labels (`0/0`). | Observation. |
 | Two hands | Playing pads trigger sound. LEFT and RIGHT select banks (`1/1`). Knob 8 controls master in both banks (`0/0`). | Pad hits are separate. |
 | SMC-PAD command panel | Enter with PAD BANK. Use an action of the current view (`1/3`). LEFT and a screens view cell (`2/4`). RIGHT returns to the actions. | The USB shortcut can omit the reveal hit. |
-| Chop the sound of a pad | Select a pad. Screens Chop (`2/4`). Knob 1 moves the cursor (`0/0`). Chop Cut, Parts, Hits, Assign or Commit (`1/3`). PLAY previews (`1/1`). | Count target pads and answers separately. |
+| Chop the sound of a pad | Select a pad. Pads Chop on P7 (`1/3`). Knob 1 moves the cursor (`0/0`). Chop Cut, Parts, Hits, Assign or Commit (`1/3`). PLAY previews (`1/1`). | Count target pads and answers separately. |
 | Edit a pad | Select a pad. Pads Edit (`1/3`). With the panel hidden, LEFT or RIGHT changes the edit page (`1/1`). Turn knobs 7, 5, 3 and 1 for the page values, from top to bottom (`0/0`). | Back closes the edit. |
 | Read modes and operation results | Pads Copy or Back (`1/3`). Screens Help (`2/4`). In Help, LEFT and RIGHT select tabs and P5/P6 move (`1/1`). | Badges, results, and current knob roles are observations. |
 | Read pad playback | Hit a playing pad. Read PLAY (`0/0`). | Pad hits and releases are separate. |
@@ -64,11 +64,11 @@ step and its cancel control. It stays after the PAD BANK release.
 | Hide the pads | Pads Grid (`1/3`). From another screen, Screens Pads, then Grid (`3/5`). | The hint shows the grid state. |
 | Set up a pad with the X-Session Pro | Use the X-Session profile and its controls. | Other-device story. |
 | Chop a break | Screens Chop (`2/4`). Knobs 1 and 2 move cursor and zoom. Knobs 3–6 move bounds. Knob 7 sets threshold (`0/0`). Chop Cut, Parts, Hits, or Assign (`1/3`). Chop Edit, then Hits -, Cut - or End - (`2/4`). | Select a slice before removing a bound. |
-| Keyboard and controller pads on Chop | Hit playing pads to select or assign. With the panel hidden, LEFT and RIGHT select a pad bank (`1/1`). | Pad hits and releases are separate. |
+| Keyboard and controller pads on Chop | Hit playing pads to select or assign. With the panel hidden, LEFT and RIGHT turn the slice page until a slice lies on a pad (`1/1`). Then they select a pad bank (`1/1`). | Pad hits and releases are separate. |
 | Select what plays | Chop Listen, Loop, or As pad (`1/3` each). PLAY and STOP control preview (`1/1`). | The playback bar is an observation. |
 | Move the bounds of a slice | Turn knobs 3 and 4 for slice start and end (`0/0`). | Steps follow the wave view. |
 | Bounds in edit mode | Chop Edit (`1/3`). Turn knobs 3 and 4 for the slice. Turn knobs 5 and 6 for the region (`0/0`). | Read the bound indicator. |
-| Assign the slices to the pads | Chop Assign (`1/3`). Select targets. Press P4 Apply. P3 Menu, then P16 Order switches the order (`2/4`). | Count layer switches, target hits, and replacement answers separately. |
+| Assign the slices to the pads | Chop Assign (`1/3`). Select targets. Press P4 Apply. P3 Menu, then P16 Order switches the order (`2/4`). One Undo on Pads restores all targets (`1/3`). | Count layer switches, target hits, and replacement answers separately. |
 | Assign mode ignores the rest | Chop Assign (`1/3`). Press P3 Menu. Try Cut from the Chop actions. | The refusal leaves the plan in place. |
 | Swap pads | Pads Take (`1/3`). From another screen, Screens Pads, then Take (`3/5`). Release PAD BANK and hit any of the 16 pads. | Count the target separately. |
 | Select file, copy and swap targets without a hit sound | Files Take or Pads Copy or Take (`1/3`). Release PAD BANK and hit any of the 16 pads. P1/P4 answer (`1/2`). | The target hit stays silent. |
