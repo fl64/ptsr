@@ -5,6 +5,9 @@ use super::*;
 #[path = "panel_targets.rs"]
 mod panel_targets;
 
+#[path = "chop_from_pad.rs"]
+mod chop_from_pad;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.

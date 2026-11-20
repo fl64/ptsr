@@ -1181,11 +1181,14 @@ impl App {
         let (Some(sound), Some(file)) = (self.pads.sound[abs].clone(), self.pads.file[abs].clone())
         else {
             let why = if self.pads.loading[abs].is_some() {
-                "pad is still loading"
+                "pad is still loading".to_string()
             } else {
-                "pad is empty: put a sample on it first (F6)"
+                format!(
+                    "pad is empty: put a sample on {} first (F6)",
+                    pad_place(abs)
+                )
             };
-            self.post_notice(Level::Warn, (why.into(), Instant::now()));
+            self.post_notice(Level::Warn, (why, Instant::now()));
             return;
         };
         let (region, link) = (self.pads.region[abs], self.pads.link[abs]);
