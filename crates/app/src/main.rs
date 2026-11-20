@@ -14047,32 +14047,6 @@ Enter = "browser.hold"
         last_notice(app).unwrap_or_default().to_owned()
     }
 
-    /// 67 "Enter with no pad hit": in order, Enter takes the selected pad of bank 2 as the
-    /// start and shows the plan; the second Enter lays the slices from there.
-    #[test]
-    fn enter_with_no_pad_hit() {
-        let mut app = test_app();
-        app.screen = Screen::Chop;
-        app.chop = Some(chop_with_parts(1));
-        let n = app.chop.as_ref().unwrap().slices().len();
-        assert!(n >= 2);
-        app.pads.bank = 1;
-        app.pads.selected = 4; // pad Q
-        app.apply(Action::ChopAssign);
-        app.apply(Action::ChopParts); // in order, no start yet
-        assert!(matches!(app.plan, Some(super::chop::Plan::InOrder(None))));
-        app.apply(Action::ChopEdit);
-        let q: usize = engine::PADS_PER_BANK + 4;
-        assert!(matches!(app.plan, Some(super::chop::Plan::InOrder(Some(s))) if s == q));
-        assert!(app.pads.file[q].is_none(), "shown, not applied yet");
-        app.apply(Action::ChopEdit);
-        assert!(app.plan.is_none(), "applied");
-        assert!(
-            (q..q + n).all(|a| app.pads.file[a].is_some()),
-            "every slice from pad Q"
-        );
-    }
-
     /// 66 "A new file appears": a file saved in the folder while the program runs shows on
     /// the next visit to F6, the selection stays.
     #[test]

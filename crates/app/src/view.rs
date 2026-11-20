@@ -397,6 +397,7 @@ impl App {
                 crate::destroy::Act::Forget => "forget",
                 crate::destroy::Act::ClearCuts => "remove",
                 crate::destroy::Act::TrimSilence => "trim",
+                crate::destroy::Act::AssignOrder => "switch",
                 _ => "replace",
             },
         };

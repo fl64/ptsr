@@ -382,8 +382,21 @@ impl App {
         }
     }
 
-    /// During Assign, the `put on pads` cell of the Chop actions gives `order`: `assign` is
-    /// already active.
+    /// The Assign method that the method cell shows (138).
+    pub(super) fn assign_method(&self) -> &'static str {
+        match self.plan {
+            Some(super::chop::Plan::InOrder(_)) => "in order",
+            _ => "by hand",
+        }
+    }
+
+    /// In order, apply waits for the start pad (138).
+    pub(super) fn apply_waits(&self) -> bool {
+        matches!(self.plan, Some(super::chop::Plan::InOrder(None)))
+    }
+
+    /// During Assign, the `put on pads` cell of the Chop actions gives the method: `assign`
+    /// is already active.
     pub(super) fn assign_order_cell(&self, cell: u8) -> bool {
         self.panel.action(View::Chop, cell) == Some(Action::ChopAssign)
             && self.panel.page() == 1
@@ -406,7 +419,7 @@ impl App {
     fn target_snapshot(&self, target: Target) -> tui::CommandPanel {
         let labels = std::array::from_fn(|index| {
             let label = match index {
-                3 if target == Target::Assign => "order",
+                3 if target == Target::Assign => self.assign_method(),
                 12 => "cancel",
                 13 => "undo",
                 14 => "menu",
@@ -421,7 +434,9 @@ impl App {
             view: target.title(),
             target: true,
             flash: self.panel_flash(),
-            dim: [false; 16],
+            dim: std::array::from_fn(|index| {
+                index == 15 && target == Target::Assign && self.apply_waits()
+            }),
             // the method cell drops placed slices (138)
             warn: std::array::from_fn(|index| index == 3 && target == Target::Assign),
             current: [false; 16],
@@ -520,7 +535,7 @@ impl App {
                 }
                 let cell = u8::try_from(index + 1).unwrap();
                 if self.assign_order_cell(cell) {
-                    return Some("order".into());
+                    return Some(self.assign_method().into());
                 }
                 // the pads toggle names what the press does now (138)
                 match self.panel.label(view, cell) {
@@ -615,6 +630,7 @@ mod tests {
             "A1 setup",
             "apply",
             "back",
+            "by hand",
             "cancel",
             "chop",
             "chop file",
@@ -647,6 +663,7 @@ mod tests {
             "help",
             "hide empty",
             "hide pads",
+            "in order",
             "join left",
             "join right",
             "listen file",
@@ -659,7 +676,6 @@ mod tests {
             "no",
             "norm",
             "open",
-            "order",
             "pad",
             "pads",
             "parent",

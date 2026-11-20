@@ -26,6 +26,9 @@ mod normalize;
 #[path = "mode_lines.rs"]
 mod mode_lines;
 
+#[path = "assign_method.rs"]
+mod assign_method;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
@@ -2211,14 +2214,15 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     let mut controller = reach_drive(View::Chop, sound);
     keyboard.tap(KeyCode::Char('p'), M::NONE);
     keyboard.tap(KeyCode::Tab, M::NONE);
-    keyboard.tap(KeyCode::Enter, M::NONE);
+    // In order waits for the start pad on both inputs (138): the top-left pad.
+    keyboard.tap(KeyCode::Char('1'), M::NONE);
     let assign = panel_note(slot_of(View::Chop, "put on pads"));
     cell(&mut controller, 64);
     cell(&mut controller, assign); // Assign opens the target view.
     cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
     cell(&mut controller, assign); // Order replaces assign while Assign is open.
     cell(&mut controller, panel_note(15)); // Back to the target pads.
-    cell(&mut controller, 48); // A first-layer hit on the top-left pad starts the order, as Enter does.
+    cell(&mut controller, 48); // A first-layer hit on the top-left pad starts the order.
     assert_eq!(controller.app.plan, keyboard.app.plan);
 
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -4650,7 +4654,7 @@ fn assign_shows_order_in_the_chop_actions() {
     cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
     assert_eq!(
         controller.app.panel_snapshot().unwrap().labels[index].as_deref(),
-        Some("order")
+        Some("by hand")
     );
     cell(&mut controller, panel_note(assign));
     assert!(matches!(

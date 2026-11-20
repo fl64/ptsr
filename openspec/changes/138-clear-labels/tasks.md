@@ -47,7 +47,7 @@
 ## 8. Other screens
 
 - [ ] Add the pad edit page cells. Make LEFT and RIGHT go around the pages.
-- [ ] Show the Assign method. Ask before a method change drops placed slices. Grey `apply` until the start pad.
+- [x] Show the Assign method. Ask before a method change drops placed slices. Grey `apply` until the start pad.
 - [ ] Make `new project` work with no projects and name the project by date.
 - [x] Show «Bindings: keyboard only (F10, Enter)» on F12 MIDI. Make forget, reset and the layout update ask.
 

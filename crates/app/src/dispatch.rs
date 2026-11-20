@@ -636,18 +636,21 @@ impl App {
             Action::ChopParts | Action::ParamNext | Action::ChopAssignOrder
                 if self.screen == Screen::Chop && self.plan.is_some() =>
             {
-                let selected = self.chop.as_ref().map_or(0, |c| c.selected);
-                let next = match &self.plan {
-                    Some(chop::Plan::InOrder(_)) => {
-                        if let Some(c) = self.chop.as_mut() {
-                            c.selected = 0;
-                        }
-                        chop::Plan::ByHand(Vec::new())
+                // placed slices go with the old method: ask first (138)
+                match self.placed_slices() {
+                    0 => self.switch_assign_order(),
+                    placed => {
+                        let next = match self.plan {
+                            Some(chop::Plan::InOrder(_)) => "by hand",
+                            _ => "in order",
+                        };
+                        self.ask_destroy(
+                            crate::destroy::Act::AssignOrder,
+                            format!("Switch to {next}? {placed} placed slices go."),
+                            "them",
+                        );
                     }
-                    // the owner hits the start pad next
-                    _ => chop::Plan::InOrder(None),
-                };
-                self.change_plan(next, selected);
+                }
             }
             Action::ParamNext | Action::ParamPrev if self.screen == Screen::Chop => {
                 // BOUNDS has two parameters: next and previous both swap them
@@ -694,6 +697,11 @@ impl App {
                         if let Some(c) = self.chop.as_mut() {
                             c.select_slice(selected);
                         }
+                        let (method, placed) = (self.assign_method(), self.placed_slices());
+                        self.post_notice(
+                            Level::Done,
+                            (format!("undo: {method} · {placed} placed"), Instant::now()),
+                        );
                     }
                     None => {
                         self.post_notice(Level::Info, ("nothing to undo".into(), Instant::now()))

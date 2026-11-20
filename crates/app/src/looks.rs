@@ -68,6 +68,9 @@ impl App {
                     }
                 }
             }
+            (View::Chop, Action::ChopCommit) if self.apply_waits() => {
+                why("hit the start pad first")
+            }
             (View::Chop, Action::ChopCut) => {
                 let c = self.chop.as_ref()?;
                 c.cut_refusal(self.playhead().unwrap_or(c.cursor))

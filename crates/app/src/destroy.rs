@@ -13,6 +13,8 @@ pub(super) enum Act {
     ThresholdAt(f32),
     ClearCuts,
     TrimSilence,
+    /// An Assign method change that drops placed slices.
+    AssignOrder,
     Forget,
 }
 
@@ -105,6 +107,18 @@ impl App {
                 self.run(Action::ChopCutsClear);
             }
             Act::TrimSilence => self.trim_silence(),
+            Act::AssignOrder => {
+                let placed = self.placed_slices();
+                self.switch_assign_order();
+                let method = self.assign_method();
+                self.post_notice(
+                    Level::Done,
+                    (
+                        format!("{method} · {undo} brings {placed} back"),
+                        Instant::now(),
+                    ),
+                );
+            }
             Act::Forget => {
                 let control = self.forgettable().unwrap_or_default();
                 self.forget_midi_row();

@@ -2111,20 +2111,37 @@ impl App {
         self.plan_undo.clear();
     }
 
+    /// The slices that the open Assign plan places now.
+    pub(super) fn placed_slices(&self) -> usize {
+        match (&self.plan, &self.chop) {
+            (Some(plan), Some(c)) => plan.targets(c.slices().len()).len(),
+            _ => 0,
+        }
+    }
+
+    /// The Assign method changes: by hand starts from slice 1, in order waits for the start
+    /// pad. One undo step brings the old plan back.
+    pub(super) fn switch_assign_order(&mut self) {
+        let selected = self.chop.as_ref().map_or(0, |c| c.selected);
+        let next = match &self.plan {
+            Some(chop::Plan::InOrder(_)) => {
+                if let Some(c) = self.chop.as_mut() {
+                    c.selected = 0;
+                }
+                chop::Plan::ByHand(Vec::new())
+            }
+            _ => chop::Plan::InOrder(None),
+        };
+        self.change_plan(next, selected);
+    }
+
     /// Enter in the assign mode: the planned slices go onto their pads.
     pub(super) fn apply_plan(&mut self) {
-        // in order with no pad hit: the selected pad is the start, the plan is shown and the
-        // next Enter applies it, as the controller's commit does (67)
-        if matches!(self.plan, Some(chop::Plan::InOrder(None))) {
-            let start = self.pads.selected_abs();
-            let slice = self.chop.as_ref().map_or(0, |c| c.selected);
-            self.change_plan(chop::Plan::InOrder(Some(start)), slice);
+        // in order, the owner hits the start pad first (138)
+        if self.apply_waits() {
             self.post_notice(
                 Level::Info,
-                (
-                    format!("from {}: Enter applies", pad_place(start)),
-                    Instant::now(),
-                ),
+                ("hit the start pad first".into(), Instant::now()),
             );
             return;
         }
