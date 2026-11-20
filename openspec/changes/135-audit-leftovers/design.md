@@ -16,14 +16,15 @@ cells and the Assign bank. This change takes the rest that is not about Chop flo
   `join right`. The labels name the result, not a cut. The owner chose this on 2026-11-20 after
   `del left` did not say that a bound goes away. Keyboard keys stay unchanged.
 - D6. While the Chop edit actions show on the panel, the wave marks the left and the right bound
-  of the selected slice. The owner sees which bound goes away before the press.
+  of the selected slice. The wave already draws these two bounds in magenta and the other cuts in
+  cyan. This change keeps that and adds a test for it.
 - D7. `join left` on slice 1 and `join right` on the last slice are dim. A press shows
   «slice 1 has no slice on the left» or «slice 8 has no slice on the right». With one slice, both
   are dim and a press shows «nothing to join: one slice». Before this change the press did nothing.
 - D8. After a join, a notice names the joined slices, for example «slices 2 and 3 joined».
 - D9. A panel cell has two text lines of 11 cells at 80×26. The label rule of seven cells stays
-  for each line. The first space of a label starts the second line, so `join left` shows «join»
-  over «left». Change 138 uses this rule for the other labels.
+  for each line. A label longer than seven cells breaks at its first space, so `join left` shows
+  «join» over «left». A short label such as `rec out` stays on one line. Change 138 uses this rule for the other labels.
 
 ## Open questions
 

@@ -28,7 +28,7 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 ### Requirement: Shipped panel labels use short words
 
 Every shipped panel label SHALL use approved words in one or two lines.
-The first space of a label SHALL start the second line.
+A label longer than seven cells SHALL break at its first space into two lines.
 Each line SHALL use at most seven cells.
 A label SHALL have one meaning on every screen.
 The label check SHALL include fixed cells and the shipped panel file.

@@ -20,7 +20,7 @@
 
 ## 5. Join slices
 
-- [ ] Draw a panel label in two lines at its first space. Check each line against the glossary and the seven-cell limit.
+- [ ] Draw a panel label longer than seven cells in two lines at its first space. Check each line against the glossary and the seven-cell limit.
 - [ ] Rename the Chop edit cells to `join left` and `join right`. Add both to the label glossary.
 - [ ] Mark both bounds of the selected slice while the panel shows the Chop edit actions.
 - [ ] Dim a cell without a neighbour and explain a press. Name the joined slices after a join.

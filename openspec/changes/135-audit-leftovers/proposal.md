@@ -14,7 +14,7 @@ a key after SMC-PAD input.
 - Learn names a panel cell that a new binding replaces, before the save.
 - The marking hint names SMC-PAD controls after SMC-PAD input.
 - In the slice edit, the panel cells `cut -` and `end -` become `join left` and `join right`. While the panel shows them, the wave marks the two bounds of the selected slice. A cell with no neighbour is dim and explains why. After a join, a notice names the joined slices.
-- A panel label can use two lines: the first space starts the second line. Each line keeps at most seven cells.
+- A panel label longer than seven cells breaks at its first space into two lines. Each line keeps at most seven cells.
 
 ## Capabilities
 
