@@ -5,7 +5,7 @@
 ## 2. Labels
 
 - [ ] Rename the shipped panel labels. Update the label glossary and the shipped table test.
-- [ ] Show `show pads` while the pads are hidden.
+- [ ] Show `show pads` while the pads are hidden. Name the hidden grid in F1 Help.
 - [ ] Rename the Chop knob labels and their full names on the line of the last knob.
 
 ## 3. Checks

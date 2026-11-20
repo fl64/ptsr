@@ -16,6 +16,8 @@ Two labels changed from the first draft to fit seven cells: `A1 setup` and `star
 ### D2. One label with two states
 
 The pads toggle shows `hide pads` while the pads show, and `show pads` while they are hidden.
+F1 Help names it «hide the pad grid, the wave takes its place». The owner did not understand
+`grid` on 2026-11-20 until the hidden part was named.
 
 ### D3. The Chop knob labels
 
