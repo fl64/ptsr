@@ -200,6 +200,18 @@ pub struct Chop {
     undo: Vec<UndoStep>,
     /// The boundary a knob is turning: the whole turn is one undo step.
     turning: Option<usize>,
+    /// The bound the owner moved last and the cursor at that time (136): the zoom keeps
+    /// it in place until the cursor moves; `None` zooms around the cursor.
+    anchor: Option<(Anchor, usize)>,
+}
+
+/// A bound that the zoom can keep in place (136); a cut goes by its id, so an undo
+/// that moves it back moves the anchor too.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Anchor {
+    Cut(u32),
+    RegionStart,
+    RegionEnd,
 }
 
 impl Chop {
@@ -265,6 +277,7 @@ impl Chop {
             rate: rate.max(1) as usize,
             undo: Vec::new(),
             turning: None,
+            anchor: None,
         }
     }
 
@@ -307,6 +320,7 @@ impl Chop {
             rate: self.rate,
             undo: Vec::new(),
             turning: None,
+            anchor: None,
         }
     }
 
@@ -428,13 +442,38 @@ impl Chop {
         let (low, high) = self.zone(k);
         let pos = pos.clamp(low, high);
         let last = self.markers.len() + 1;
-        match k {
-            0 => self.range.start = pos,
-            k if k == last => self.range.end = pos,
+        let anchor = match k {
+            0 => {
+                self.range.start = pos;
+                Anchor::RegionStart
+            }
+            k if k == last => {
+                self.range.end = pos;
+                Anchor::RegionEnd
+            }
             k => {
                 self.markers[k - 1] = pos;
                 self.known.insert(self.ids[k - 1], pos);
+                Anchor::Cut(self.ids[k - 1])
             }
+        };
+        self.anchor = Some((anchor, self.cursor));
+    }
+
+    /// Where the zoom holds the picture (136): the bound moved last while the cursor
+    /// stays, else the cursor; a cut that is gone gives the place back to the cursor.
+    fn anchor_pos(&self) -> usize {
+        match self.anchor {
+            Some((anchor, cursor)) if cursor == self.cursor => match anchor {
+                Anchor::RegionStart => self.range.start,
+                Anchor::RegionEnd => self.range.end,
+                Anchor::Cut(id) => self
+                    .ids
+                    .iter()
+                    .position(|&i| i == id)
+                    .map_or(self.cursor, |k| self.markers[k]),
+            },
+            _ => self.cursor,
         }
     }
 
@@ -626,6 +665,7 @@ impl Chop {
         if ok {
             self.selected = i;
             self.cursor = self.boundary(i);
+            self.anchor = None;
         }
         ok
     }
@@ -735,11 +775,13 @@ impl Chop {
     /// The region starts at `pos`: equal parts and playback cover from here.
     pub fn set_region_start(&mut self, pos: usize) {
         self.set_range(pos, self.range.end);
+        self.anchor = Some((Anchor::RegionStart, self.cursor));
     }
 
     /// The region ends at `pos`.
     pub fn set_region_end(&mut self, pos: usize) {
         self.set_range(self.range.start, pos);
+        self.anchor = Some((Anchor::RegionEnd, self.cursor));
     }
 
     /// The region is the whole sample again.
@@ -778,8 +820,8 @@ impl Chop {
         self.selected = self.slice_at(self.cursor);
     }
 
-    /// Zooms the view ×2 in or out around the cursor, with limits; the view keeps
-    /// the cursor at the same place of the picture.
+    /// Zooms the view ×2 in or out around the anchor (136), with limits; the view keeps
+    /// the anchor at the same place of the picture.
     pub fn zoom(&mut self, zoom_in: bool) {
         let whole = self.sound.len();
         let len = self.view.end.saturating_sub(self.view.start);
@@ -814,7 +856,7 @@ impl Chop {
     }
 
     /// Sets the zoom from a knob position 0..1 on a log scale (0 is the whole file,
-    /// 1 the closest view), the cursor keeping its place of the picture, like `zoom` does.
+    /// 1 the closest view), the anchor keeping its place of the picture, like `zoom` does.
     pub fn set_zoom(&mut self, pos: f32) {
         let whole = self.sound.len();
         let len = if whole <= MIN_VIEW {
@@ -833,11 +875,15 @@ impl Chop {
         if len == now {
             return;
         }
-        let at = (self.cursor.saturating_sub(self.view.start)) as f32 / now.max(1) as f32;
-        let start = (self.cursor as f32 - at * len as f32) as usize;
+        let anchor = self.anchor_pos();
+        let at = (anchor.saturating_sub(self.view.start)) as f32 / now.max(1) as f32;
+        let start = (anchor as f32 - at * len as f32) as usize;
         self.view.start = start.min(whole.saturating_sub(len));
         self.view.end = self.view.start + len;
-        self.follow();
+        // around a bound the cursor may leave the view; its next move brings it back
+        if anchor == self.cursor {
+            self.follow();
+        }
     }
 
     /// The view on slice `i` with half of it on each side (37): the slice the owner came for
@@ -980,6 +1026,12 @@ impl Chop {
             self.turning = Some(REGION_TURN);
         }
         self.apply_range(start, end_at);
+        let edge = if end {
+            Anchor::RegionEnd
+        } else {
+            Anchor::RegionStart
+        };
+        self.anchor = Some((edge, self.cursor));
     }
 
     /// Brings back the cuts, range and threshold before the last change; `false` when
