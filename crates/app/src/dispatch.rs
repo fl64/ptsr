@@ -799,6 +799,11 @@ impl App {
                     self.midi_row = to;
                 }
             }
+            Action::BankNext | Action::BankPrev | Action::BankSelect(_)
+                if self.slice_keys_shown() =>
+            {
+                self.turn_slice_page(action)
+            }
             Action::SettingsRow(step) if self.settings_tab == 2 => {
                 self.midi_row = (self.midi_row as isize + step as isize)
                     .clamp(0, self.midi_list().len() as isize - 1)

@@ -349,9 +349,12 @@ pub(super) fn draw(
         frame.render_widget(Line::from(spans), pf.bank);
     }
     if let Some((a, b)) = c.slice_keys {
+        // the page among all slices (132): the bounds are the range edges and the cuts
+        let pages = c.bounds.len().saturating_sub(2) / 16 + 1;
+        let label = format!(" slices {a}–{b} · page {}/{pages} ", (a - 1) / 16 + 1);
         frame.render_widget(
             Line::from(vec![
-                Span::styled(format!(" slices {a}–{b} "), Style::new().fg(BG).bg(CYAN)),
+                Span::styled(label, Style::new().fg(BG).bg(CYAN)),
                 "  the keys play the slices; once one lies on a pad, the grid shows the pads"
                     .fg(DIM),
             ]),

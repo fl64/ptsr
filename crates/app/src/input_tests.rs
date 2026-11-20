@@ -1088,8 +1088,8 @@ fn chop_parity_while_a_question_is_open() {
     paired_baseline(|drive, source| {
         drive.prepare_chop(sound.clone(), 4);
         drive.load_pad(18, sound.clone(), "occupied");
-        drive.tap(KeyCode::PageDown, M::NONE);
         drive.tap(KeyCode::Char('p'), M::NONE);
+        drive.tap(KeyCode::PageDown, M::NONE);
         drive.pad_press(Source::Keyboard, 2);
         drive.pad_release(Source::Keyboard, 2);
         drive.tap(KeyCode::Enter, M::NONE);
@@ -4193,10 +4193,17 @@ fn render_late_direct_notification(
         }
     }
     if change_bank {
+        let bank = drive.app.pads.bank;
         for kind in [KeyEventKind::Press, KeyEventKind::Release] {
             drive.key(KeyCode::Char('3'), M::CONTROL, kind);
         }
-        assert_eq!(drive.app.pads.bank, 2);
+        // before a slice lies on a pad the bank keys turn the slice page, the bank stays (132)
+        let bank = if drive.app.slice_keys_shown() {
+            bank
+        } else {
+            2
+        };
+        assert_eq!(drive.app.pads.bank, bank);
     }
     drive.app.chop.as_mut().unwrap().select_slice(1);
     let (slice, cursor, plan) = (
@@ -4630,6 +4637,7 @@ fn offline_preview_assignment_and_guards_match_through_all_inputs() {
                 "question" => {
                     drive.load_pad(18, sound.clone(), "occupied");
                     drive.tap(KeyCode::Char('p'), M::NONE);
+                    drive.tap(KeyCode::PageDown, M::NONE);
                     drive.pad_press(Source::Keyboard, 2);
                     drive.pad_release(Source::Keyboard, 2);
                     drive.tap(KeyCode::Enter, M::NONE);

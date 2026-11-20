@@ -16,6 +16,7 @@ cells = [
   { cell = 8, label = "all", action = "pad.mark_bank" },
   { cell = 9, label = "grid", action = "ui.pads_toggle" },
   { cell = 10, label = "rec out", action = "record.output" },
+  { cell = 11, label = "chop", action = "screen.chop" },
 ]
 
 [[view]]

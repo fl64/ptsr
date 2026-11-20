@@ -49,8 +49,8 @@ pub(super) fn shared_feedback_rows(
         .collect()
 }
 
-struct ImageFrame {
-    rows: Vec<String>,
+pub(super) struct ImageFrame {
+    pub(super) rows: Vec<String>,
     before: Vec<String>,
     after: Vec<String>,
     blockers: Vec<ratatui::layout::Rect>,
@@ -58,7 +58,7 @@ struct ImageFrame {
     visible_images: Vec<ratatui::layout::Rect>,
 }
 
-fn image_frame_at(
+pub(super) fn image_frame_at(
     drive: &mut Drive,
     state: &mut graphics::State,
     enabled: bool,
@@ -401,8 +401,8 @@ fn working_question_drive(kind: &str) -> Drive {
         "plan" => {
             drive.prepare_chop(sound.clone(), 4);
             drive.load_pad(18, sound, "old target");
-            drive.tap(KeyCode::PageDown, M::NONE);
             drive.tap(KeyCode::Char('p'), M::NONE);
+            drive.tap(KeyCode::PageDown, M::NONE);
             drive.pad_press(Source::Keyboard, 2);
             drive.pad_release(Source::Keyboard, 2);
             drive.tap(KeyCode::Enter, M::NONE);

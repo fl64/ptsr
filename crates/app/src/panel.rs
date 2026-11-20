@@ -579,7 +579,7 @@ mod tests {
                 View::Pads,
                 &[
                     "edit", "copy", "swap", "mark", "mode", "remove", "p.gate", "all", "grid",
-                    "rec out",
+                    "rec out", "chop",
                 ],
             ),
             (View::PadEdit, &["mode", "reset", "p.gate", "copy"]),
