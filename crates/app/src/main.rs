@@ -7,6 +7,7 @@ mod diag;
 mod dispatch;
 mod graphics;
 mod help;
+mod looks;
 use help::describe;
 mod input_sources;
 mod learn;

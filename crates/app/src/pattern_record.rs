@@ -266,6 +266,13 @@ impl Capture {
         }
     }
 
+    /// An A1 pass has a step to undo now (138), as `request_undo` decides.
+    pub fn undo_possible(&self) -> bool {
+        self.requested.is_some()
+            || self.undo_pending.is_some()
+            || self.pass.as_ref().is_some_and(|pass| pass.before.is_some())
+    }
+
     pub fn request_undo(&mut self) -> bool {
         if self.requested.is_some()
             || self.undo_pending.is_some()

@@ -621,6 +621,37 @@ impl Chop {
             .collect()
     }
 
+    /// Why a cut at `pos` cannot land (138), as `cut` decides: the cut cell is grey then.
+    pub fn cut_refusal(&self, pos: usize) -> Option<&'static str> {
+        let at = if self.snap == Snap::Hits {
+            self.nearest_hit(pos).unwrap_or(pos)
+        } else {
+            pos
+        };
+        if at <= self.range.start || at >= self.range.end {
+            Some("the cursor is in a trimmed part")
+        } else if self
+            .boundaries()
+            .iter()
+            .any(|&m| m.abs_diff(at) < self.ms(10))
+        {
+            Some("too close to another cut")
+        } else {
+            None
+        }
+    }
+
+    /// Why `fewer hits` changes nothing now (138), as `chop_by_hits_back` decides.
+    pub fn hits_back_refusal(&self) -> Option<String> {
+        if !self.threshold_set {
+            Some("cut by hits first".into())
+        } else if self.threshold_db + 0.01 >= -6.0 {
+            Some(format!("by hits stays at {:.0} dB", self.threshold_db))
+        } else {
+            None
+        }
+    }
+
     /// A cut at `pos` (a playing cursor): where pressed, or moved to the nearest hit
     /// within 90 ms while the hits mode is on. `Refused` when it is outside the range
     /// or closer than 10 ms to another cut, which would make a slice too short to hear.
@@ -1032,6 +1063,11 @@ impl Chop {
             Anchor::RegionStart
         };
         self.anchor = Some((edge, self.cursor));
+    }
+
+    /// An undo step waits (138): without one the undo cell is grey.
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
     }
 
     /// Brings back the cuts, range and threshold before the last change; `false` when

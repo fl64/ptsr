@@ -1271,6 +1271,12 @@ impl Pads {
     }
 
     /// The page of the picked parameter and its parameters in knob order.
+    /// The place of the current page in the order of the pad edit pages (138).
+    pub fn page_index(&self) -> usize {
+        let name = self.page().0;
+        PAGES.iter().position(|(n, _)| *n == name).unwrap_or(0)
+    }
+
     pub fn page(&self) -> (&'static str, &'static [Param]) {
         PAGES
             .into_iter()

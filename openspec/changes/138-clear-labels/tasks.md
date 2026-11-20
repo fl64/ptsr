@@ -13,8 +13,9 @@
 
 ## 3. Cell looks
 
-- [ ] Draw orange cells and grey cells. Grey each cell of the D5 table while it cannot act.
-- [ ] Explain a press on a grey cell with a notice.
+- [x] Draw orange cells and grey cells, and the current pad edit page brighter.
+- [ ] Grey each cell of the D5 table while it cannot act. The cells of steps 5, 6 and 8 follow with their actions.
+- [x] Explain a press on a grey cell with a notice.
 
 ## 4. Destructive actions and undo
 

@@ -422,6 +422,9 @@ impl App {
             target: true,
             flash: self.panel_flash(),
             dim: [false; 16],
+            // the method cell drops placed slices (138)
+            warn: std::array::from_fn(|index| index == 3 && target == Target::Assign),
+            current: [false; 16],
         }
     }
 
@@ -463,6 +466,8 @@ impl App {
             target: true,
             flash: self.panel_flash(),
             dim: [false; 16],
+            warn: [false; 16],
+            current: [false; 16],
         })
     }
 
@@ -484,6 +489,8 @@ impl App {
                     target: true,
                     flash: self.panel_flash(),
                     dim: [false; 16],
+                    warn: [false; 16],
+                    current: [false; 16],
                 };
             }
             let target = self.panel_target();
@@ -529,7 +536,27 @@ impl App {
                 target: false,
                 flash: self.panel_flash(),
                 dim: std::array::from_fn(|index| {
-                    self.join_blocked(self.panel.action(view, u8::try_from(index + 1).unwrap()))
+                    let action = match index {
+                        13 => Some(Action::Undo),
+                        _ => self.panel.action(view, u8::try_from(index + 1).unwrap()),
+                    };
+                    action.is_some_and(|action| self.grey(view, action).is_some())
+                }),
+                warn: std::array::from_fn(|index| {
+                    let cell = u8::try_from(index + 1).unwrap();
+                    self.assign_order_cell(cell)
+                        || self
+                            .panel
+                            .action(view, cell)
+                            .is_some_and(|action| Self::warns(view, action))
+                }),
+                current: std::array::from_fn(|index| {
+                    let cell = u8::try_from(index + 1).unwrap();
+                    view == View::PadEdit
+                        && self.panel.action(view, cell)
+                            == u8::try_from(self.pads.page_index())
+                                .ok()
+                                .map(Action::PadPage)
                 }),
             }
         })

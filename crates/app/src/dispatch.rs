@@ -1828,6 +1828,14 @@ impl App {
                     } else {
                         self.panel.choice(view, cell)
                     };
+                    // a grey cell says why and changes nothing (138)
+                    if let super::panel::Choice::Action(action) = choice
+                        && (self.panel.page() != 0 || cell == 14)
+                        && let Some(super::looks::Grey::Why(why)) = self.grey(view, action)
+                    {
+                        self.post_notice(Level::Info, (why, Instant::now()));
+                        return;
+                    }
                     match choice {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);

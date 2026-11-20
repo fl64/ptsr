@@ -14,6 +14,9 @@ mod chop_zoom;
 #[path = "chop_join.rs"]
 mod chop_join;
 
+#[path = "cell_looks.rs"]
+mod cell_looks;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
@@ -2131,13 +2134,30 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
                     keyboard.tap(KeyCode::Tab, M::NONE);
                     keyboard.tap(KeyCode::Tab, M::NONE);
                 }
+                // A grey cell only says why (138); its key keeps the keyboard result.
+                let grey = controller.app.panel_snapshot().unwrap().dim[usize::from(slot - 1)];
+                let still = controller.frame();
+                let before = reach_result(&controller, &still);
                 let controller_frame = cell(&mut controller, panel_note(slot));
-                assert_eq!(
-                    reach_result(&controller, &controller_frame),
-                    reach_result(&keyboard, &keyboard_frame),
-                    "{view:?} cell {slot} {action:?} key {}",
-                    key.0
-                );
+                let mut result = reach_result(&controller, &controller_frame);
+                if grey {
+                    assert!(
+                        result.0.notice.is_some(),
+                        "{view:?} cell {slot}: a grey press says why"
+                    );
+                    result.0.notice = before.0.notice.clone();
+                    assert_eq!(
+                        result.0, before.0,
+                        "{view:?} cell {slot}: a grey press acts"
+                    );
+                } else {
+                    assert_eq!(
+                        result,
+                        reach_result(&keyboard, &keyboard_frame),
+                        "{view:?} cell {slot} {action:?} key {}",
+                        key.0
+                    );
+                }
                 checked += 1;
             }
         }
@@ -2718,6 +2738,14 @@ fn the_fx_page_cell_opens_fx_in_one_press() {
     );
     assert_eq!(drive.app.pads.page().0, "FX");
     assert!(drive.app.edit, "the edit stays open");
+    let current = drive.app.panel_snapshot().unwrap().current;
+    let fx = usize::from(slot_of(panel::View::PadEdit, "fx page") - 1);
+    assert!(current[fx], "the fx page cell is brighter");
+    assert_eq!(
+        current.iter().filter(|&&on| on).count(),
+        1,
+        "one current page"
+    );
     for (label, page) in [
         ("tone page", "TONE"),
         ("env page", "ENV"),
@@ -4223,6 +4251,21 @@ fn a_cell_hit_lights_the_cell() {
     assert_eq!(after, before, "the dim mixer cell runs no action");
     drive.app.panel.flash = Some((6, Instant::now() - std::time::Duration::from_millis(121)));
     assert_eq!(drive.app.panel_snapshot().unwrap().flash, None);
+    // A grey action cell lights grey, runs no action and says why (138).
+    list_button(&mut drive, true);
+    let copy = slot_of(panel::View::Pads, "copy pad");
+    let before = drive.seen();
+    cell(&mut drive, panel_note(copy));
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert!(panel.dim[usize::from(copy - 1)]);
+    assert_eq!(panel.flash, Some(usize::from(copy - 1)));
+    let mut after = drive.seen();
+    assert_eq!(
+        after.notice.as_deref(),
+        Some("Copy what? This pad holds nothing.")
+    );
+    after.notice = before.notice.clone();
+    assert_eq!(after, before, "the grey cell runs no action");
 }
 
 fn old_layout_file(files: &TransitionFiles) -> PathBuf {
