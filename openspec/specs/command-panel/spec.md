@@ -139,7 +139,7 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 
 | View | Actions in cell order |
 | --- | --- |
-| Pads | edit, copy, swap, mark, mode, remove, p.gate, all, grid, rec out |
+| Pads | edit, copy, swap, mark, mode, remove, p.gate, all, grid, rec out, chop |
 | Pad edit | mode, reset, p.gate, copy |
 | A1 | step, grid -, grid +, params, record, erase, undoA1, clear, rows, tap |
 | Files | to pad, load, —, star, —, listen, chop |
