@@ -324,7 +324,7 @@ The system SHALL step equal parts on from the current number of slices when it i
 - **THEN** the sample is cut into 16 parts
 
 ### Requirement: Zoom around the cursor
-The system SHALL let the owner zoom the wave view twice in or out around the cursor; the view follows the cursor, the view keeps at least 256 frames and never wider than the sample; the wave, numbers and dimming draw from the view.
+The system SHALL let the owner zoom the wave view twice in or out around the zoom anchor. The view SHALL follow the cursor when the cursor moves. The view SHALL keep at least 256 frames and SHALL NOT be wider than the sample. The wave, numbers and dimming SHALL draw from the view.
 
 #### Scenario: Zoom in and out
 - **WHEN** the owner presses zoom-in twice and then zoom-out
@@ -571,7 +571,7 @@ The system SHALL name on the slice line of the chop screen the pads that hold th
 ### Requirement: Chop knobs
 Learned Chop knobs SHALL use the configured response for absolute values:
 - `chop.cursor_pos`: cursor within the region.
-- `chop.zoom`: visible span from region to whole file, logarithmically around the cursor.
+- `chop.zoom`: visible span from region to whole file, logarithmically around the zoom anchor.
 - `chop.region_start_pos` / `chop.region_end_pos`: region edges, at least 10 ms apart.
 MIDI learn SHALL list these under CHOP.
 The X-Session Pro profile SHALL bind `chop.zoom` to k12.
@@ -683,7 +683,7 @@ the status line says which pads changed, as after a slice edit.
 
 ### Requirement: The cursor and the zoom on the right hand
 The system SHALL, on the chop screen outside the edit mode, move the cursor with `J` `L`
-(and `←` `→`) and zoom the wave around the cursor with `I` (in) and `K` (out), also
+(and `←` `→`) and zoom the wave around the zoom anchor with `I` (in) and `K` (out), also
 `↑` `↓`. The cursor step follows the view, so zooming in is its fine step; holding a key
 repeats it. The slice under the
 cursor is the selected one, as before; the slices are not walked with up and down.
@@ -1094,7 +1094,7 @@ Pad sound settings and restored slice sound SHALL remain unchanged for keyboard 
 ### Requirement: Zoom without releasing the bound modifier
 
 On Chop, the owner SHALL be able to move a slice bound and zoom without releasing Ctrl or Alt.
-Ctrl/Alt+I SHALL zoom in and Ctrl/Alt+K SHALL zoom out around the cursor.
+Ctrl/Alt+I SHALL zoom in and Ctrl/Alt+K SHALL zoom out around the zoom anchor.
 Zoom SHALL preserve slice boundaries, the cursor and the selected slice.
 It SHALL NOT change which bound Ctrl or Alt addresses.
 Existing assignment and higher-priority input modes SHALL continue to block underlying zoom actions.
@@ -1163,3 +1163,39 @@ An Assign apply SHALL write one history step with every pad that it changes, as 
 #### Scenario: Undo brings back the replaced pads
 - **WHEN** the owner applies four slices on two used and two empty pads of two banks and then presses Undo once
 - **THEN** the two used pads play their old sounds, the two others are empty, and the chop keeps its cuts
+
+### Requirement: The zoom anchor is the point touched last
+
+Each chop SHALL keep a zoom anchor. The anchor SHALL be the cursor, the slice start, the slice end, the region start or the region end. A move of a slice bound or a region edge SHALL make that point the anchor. A cursor move, a pad hit, a slice selection and a new chop SHALL make the cursor the anchor. The anchor SHALL follow its point when an undo moves it. When the anchor point stops to exist, the cursor SHALL become the anchor.
+
+#### Scenario: Zoom around the slice start
+- **WHEN** the owner moves the start of the selected slice and then zooms in
+- **THEN** the slice start stays at its place of the picture
+
+#### Scenario: Zoom around the slice end with the knob
+- **WHEN** the owner turns the slice end knob and then turns the zoom knob
+- **THEN** the slice end stays at its place of the picture
+
+#### Scenario: Zoom around the region start
+- **WHEN** the owner moves the region start and then zooms in
+- **THEN** the region start stays at its place of the picture
+
+#### Scenario: A cursor move takes the anchor back
+- **WHEN** the owner moves the slice end, then moves the cursor and then zooms in
+- **THEN** the cursor stays at its place of the picture
+
+#### Scenario: A pad hit takes the anchor back
+- **WHEN** the owner moves the slice start, then selects another slice with a pad hit and then zooms in
+- **THEN** the cursor stays at its place of the picture
+
+#### Scenario: The anchor follows an undo
+- **WHEN** the owner moves the slice end, undoes the move and then zooms in
+- **THEN** the slice end at its old position stays at its place of the picture
+
+#### Scenario: A deleted anchor gives the anchor to the cursor
+- **WHEN** the owner moves the slice start, deletes that cut and then zooms in
+- **THEN** the cursor stays at its place of the picture
+
+#### Scenario: The cursor comes back after a zoom around a bound
+- **WHEN** a zoom around the slice end puts the cursor out of the view and the owner moves the cursor
+- **THEN** the view shifts so the cursor is visible again
