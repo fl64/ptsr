@@ -13,6 +13,9 @@ panel label say plainly what the press does. Many labels are short codes: `p.gat
 - `hide pads` shows `show pads` while the pads are hidden.
 - `whole sample` is dim while the region is the whole sample, and a press says what happened.
 - The Chop knob strip names the region knobs `r.from` and `r.to`, and the threshold knob `hits`. The line of the last knob names them in full.
+- A cell that cannot act now is dim, and a press says why.
+- Cells that remove or replace work use the warning colour. Before hand cuts, a pad sound or a learned control goes, the program asks. After it, a notice names the undo.
+- `level to peak` gets an undo step.
 - The screens view and the control row stay unchanged.
 
 ## Capabilities

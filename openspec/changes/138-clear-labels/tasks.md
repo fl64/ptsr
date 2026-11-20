@@ -9,7 +9,15 @@
 - [ ] Dim `whole sample` on a whole region. Show a notice for each press. Test both scenarios with keys and raw MIDI.
 - [ ] Rename the Chop knob labels and their full names on the line of the last knob.
 
-## 3. Checks
+## 3. Dim and destructive cells
+
+- [ ] Dim each cell of the design table while it cannot act. Explain a press on a dim cell.
+- [ ] Draw destructive cells in the warning colour.
+- [ ] Ask before hand cuts, a pad sound or a learned control goes. Track hand cuts in the chop.
+- [ ] Name the change and the undo after each destructive action. Add an undo step to `level to peak`.
+- [ ] Test every new scenario with keys and raw MIDI.
+
+## 4. Checks
 
 - [ ] Check every panel view at 80×26 and 120×40 in the screen catalogue.
 - [ ] Run format, Clippy, changed tests and the fast checks.
