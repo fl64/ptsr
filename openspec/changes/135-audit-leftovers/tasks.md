@@ -1,7 +1,7 @@
 ## 1. Specification
 
 - [x] Record the remaining audit findings.
-- [ ] Get the owner review of this specification before code.
+- [x] Get the owner review of this specification before code.
 
 ## 2. Screen
 
@@ -20,8 +20,8 @@
 
 ## 5. Join slices
 
-- [ ] Draw a panel label longer than seven cells in two lines at its first space. Check each line against the glossary and the seven-cell limit.
-- [ ] Rename the Chop edit cells to `join left` and `join right`. Add both to the label glossary.
-- [ ] Mark both bounds of the selected slice while the panel shows the Chop edit actions.
-- [ ] Dim a cell without a neighbour and explain a press. Name the joined slices after a join.
-- [ ] Test the four scenarios with keys and raw MIDI, at 80×26 and 120×40.
+- [x] Draw a panel label longer than seven cells in two lines at its first space. Check each line against the glossary and the seven-cell limit.
+- [x] Rename the Chop edit cells to `join left` and `join right`. Add both to the label glossary.
+- [x] Mark both bounds of the selected slice while the panel shows the Chop edit actions.
+- [x] Dim a cell without a neighbour and explain a press. Name the joined slices after a join.
+- [x] Test the four scenarios with keys and raw MIDI, at 80×26 and 120×40.

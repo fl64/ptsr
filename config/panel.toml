@@ -79,8 +79,8 @@ page = 1
 cells = [
   { cell = 1, label = "normal", action = "chop.normalize" },
   { cell = 2, label = "hits -", action = "chop.hits_back" },
-  { cell = 3, label = "cut -", action = "marker.delete" },
-  { cell = 4, label = "end -", action = "slice.end_delete" },
+  { cell = 3, label = "join left", action = "marker.delete" },
+  { cell = 4, label = "join right", action = "slice.end_delete" },
   { cell = 5, label = "whole", action = "chop.region_clear" },
 ]
 

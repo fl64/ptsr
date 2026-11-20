@@ -11,6 +11,9 @@ mod chop_from_pad;
 #[path = "chop_zoom.rs"]
 mod chop_zoom;
 
+#[path = "chop_join.rs"]
+mod chop_join;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.

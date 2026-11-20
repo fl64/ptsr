@@ -142,7 +142,7 @@ impl Config {
                     config.warnings.push(format!("{where_}: no label"));
                     continue;
                 };
-                if label.is_empty() || Line::raw(label).width() > 7 {
+                if label.is_empty() || !label_fits(label) {
                     config
                         .warnings
                         .push(format!("{where_}: label exceeds seven cells"));
@@ -295,6 +295,13 @@ impl State {
         }
     }
 
+    /// The action of an action cell; the screens view and the fixed row have none.
+    pub(super) fn action(&self, view: View, cell: u8) -> Option<Action> {
+        (self.page != 0 && cell <= 12)
+            .then(|| self.config.cell(view, cell).map(|cell| cell.action))
+            .flatten()
+    }
+
     pub(super) fn label(&self, view: View, cell: u8) -> Option<&str> {
         match (self.page, cell) {
             (_, 13) => Some("back"),
@@ -412,6 +419,7 @@ impl App {
             view: target.title(),
             target: true,
             flash: self.panel_flash(),
+            dim: [false; 16],
         }
     }
 
@@ -452,6 +460,7 @@ impl App {
             view,
             target: true,
             flash: self.panel_flash(),
+            dim: [false; 16],
         })
     }
 
@@ -472,6 +481,7 @@ impl App {
                     view: "QUESTION",
                     target: true,
                     flash: self.panel_flash(),
+                    dim: [false; 16],
                 };
             }
             let target = self.panel_target();
@@ -512,8 +522,34 @@ impl App {
                 view: name,
                 target: false,
                 flash: self.panel_flash(),
+                dim: std::array::from_fn(|index| {
+                    self.join_blocked(self.panel.action(view, u8::try_from(index + 1).unwrap()))
+                }),
             }
         })
+    }
+
+    /// A join without a neighbour slice cannot run: its cell is dim (135).
+    pub(super) fn join_blocked(&self, action: Option<Action>) -> bool {
+        let Some(c) = self.chop.as_ref() else {
+            return false;
+        };
+        match action {
+            Some(Action::MarkerDelete) => c.selected == 0,
+            Some(Action::SliceEndDelete) => c.selected + 1 >= c.slices().len(),
+            _ => false,
+        }
+    }
+}
+
+/// A label longer than seven cells breaks at its first space into two lines (135); each
+/// line keeps at most seven cells.
+fn label_fits(label: &str) -> bool {
+    match label.split_once(' ') {
+        Some((first, second)) if Line::raw(label).width() > 7 => {
+            Line::raw(first).width() <= 7 && Line::raw(second).width() <= 7
+        }
+        _ => Line::raw(label).width() <= 7,
     }
 }
 
@@ -526,20 +562,80 @@ mod tests {
     fn shipped_labels_fit_the_panel_glossary() {
         // One meaning per word (134): the old `take`, `commit`, `knobs`, `output` are gone.
         let allowed = [
-            "A1", "all", "apply", "as pad", "assign", "back", "cancel", "chop", "clear", "close",
-            "copy", "cut", "cut -", "down", "edit", "end -", "enter", "erase", "exit", "files",
-            "fill", "fx", "grid", "grid +", "grid -", "help", "hits", "hits -", "learn", "listen",
-            "load", "loop", "mark", "menu", "mixer", "mode", "no", "normal", "open", "order",
-            "p.gate", "pad", "pads", "params", "parent", "parts", "rec out", "record", "redo",
-            "remove", "reset", "row +", "row -", "rows", "save", "setup", "snap", "star", "step",
-            "swap", "tab", "tap", "target", "to pad", "undo", "undoA1", "unbind", "up", "used",
-            "whole", "yes",
+            "A1",
+            "all",
+            "apply",
+            "as pad",
+            "assign",
+            "back",
+            "cancel",
+            "chop",
+            "clear",
+            "close",
+            "copy",
+            "cut",
+            "down",
+            "edit",
+            "enter",
+            "erase",
+            "exit",
+            "files",
+            "fill",
+            "fx",
+            "grid",
+            "grid +",
+            "grid -",
+            "help",
+            "hits",
+            "hits -",
+            "join left",
+            "join right",
+            "learn",
+            "listen",
+            "load",
+            "loop",
+            "mark",
+            "menu",
+            "mixer",
+            "mode",
+            "no",
+            "normal",
+            "open",
+            "order",
+            "p.gate",
+            "pad",
+            "pads",
+            "params",
+            "parent",
+            "parts",
+            "rec out",
+            "record",
+            "redo",
+            "remove",
+            "reset",
+            "row +",
+            "row -",
+            "rows",
+            "save",
+            "setup",
+            "snap",
+            "star",
+            "step",
+            "swap",
+            "tab",
+            "tap",
+            "target",
+            "to pad",
+            "undo",
+            "undoA1",
+            "unbind",
+            "up",
+            "used",
+            "whole",
+            "yes",
         ];
         let check = |label: &str| {
-            assert!(
-                Line::raw(label).width() <= 7 && allowed.contains(&label),
-                "{label}"
-            );
+            assert!(label_fits(label) && allowed.contains(&label), "{label}");
         };
         let mut panel = State::default();
         assert!(
@@ -603,7 +699,7 @@ mod tests {
             ),
             (
                 View::ChopEdit,
-                &["normal", "hits -", "cut -", "end -", "whole"],
+                &["normal", "hits -", "join left", "join right", "whole"],
             ),
             (View::Fx, &[]),
             (View::Settings, &["", "learn", "unbind"]),
