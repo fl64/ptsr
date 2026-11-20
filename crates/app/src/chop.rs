@@ -1591,7 +1591,7 @@ impl App {
             self.send(self.pads.sound_gain_command(abs));
         }
         self.note_step(before, "normalize".into());
-        let mark = Some(self.history.len()).filter(|_| self.newest_is_norm());
+        let mark = self.newest_is_norm().then_some(self.history.len());
         if let Some(c) = self.chop.as_mut() {
             c.norm_step = mark.map(|pads| (c.depth(), pads));
         }
