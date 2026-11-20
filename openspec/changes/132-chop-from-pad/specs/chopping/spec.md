@@ -9,8 +9,8 @@ The Pads actions SHALL have `chop`. It SHALL open Chop for the sound of the sele
 - **THEN** Chop opens on that sound and the bank of that pad with slice 20 selected
 
 #### Scenario: A whole file opens on the first slice page
-- **WHEN** the selected pad on bank 3 plays a whole file with 40 slices on no pad
-- **AND** the owner presses the chop cell
+- **WHEN** the selected pad on bank 3 plays a whole file and the owner presses the chop cell
+- **AND** the owner cuts the file into 40 slices
 - **THEN** the row over the grid says `slices 1–16 · page 1/3`
 
 #### Scenario: The chop cell on an empty pad

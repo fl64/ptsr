@@ -63,3 +63,143 @@ fn the_chop_cell_on_an_empty_pad() {
         );
     }
 }
+
+/// The row over the Chop grid at 100×30, as the owner reads it.
+fn chop_rows(drive: &mut Drive) -> String {
+    let mut state = graphics::State::default();
+    let frame =
+        super::super::feedback::image_frame_at(drive, &mut state, false, (100, 30), Instant::now());
+    frame.rows.join("\n")
+}
+
+/// The whole break on bank 3, pad 5 (keyboard pad D), selected on Pads.
+fn whole_file_on_bank_3() -> Drive {
+    let mut drive = hold_drive();
+    drive.load_pad(36, break_sound(), "break");
+    drive.app.pads.bank = 2;
+    drive.app.pads.selected = 4;
+    drive.app.goto(Screen::Pads);
+    drive.frame();
+    drive
+}
+
+fn cut_into(drive: &mut Drive, slices: usize) {
+    let c = drive.app.chop.as_mut().unwrap();
+    let step = c.sound.len() / slices;
+    for n in 1..slices {
+        c.cut(n * step);
+    }
+    assert_eq!(c.slices().len(), slices);
+    drive.frame();
+}
+
+/// Scenario "A whole file opens on the first slice page" (chopping).
+#[test]
+fn a_whole_file_opens_on_the_first_slice_page() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = whole_file_on_bank_3();
+        chop_from(&mut drive, source);
+        assert_eq!(drive.app.screen, Screen::Chop, "{source:?}");
+        cut_into(&mut drive, 40);
+        let rows = chop_rows(&mut drive);
+        assert!(
+            rows.contains("slices 1–16 · page 1/3"),
+            "{source:?}\n{rows}"
+        );
+    }
+}
+
+/// Scenario "A turned slice page keeps the pad bank" (chopping).
+#[test]
+fn a_turned_slice_page_keeps_the_pad_bank() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = whole_file_on_bank_3();
+        chop_from(&mut drive, source);
+        cut_into(&mut drive, 40);
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::PageDown, M::NONE);
+            }
+            _ => {
+                // RIGHT on the device
+                drive.bytes(SMC, &[0xB0, 26, 127]);
+                drive.bytes(SMC, &[0xB0, 26, 0]);
+                drive.frame();
+            }
+        }
+        let rows = chop_rows(&mut drive);
+        assert!(
+            rows.contains("slices 17–32 · page 2/3"),
+            "{source:?}\n{rows}"
+        );
+        hit_key(&mut drive, source);
+        assert_eq!(drive.app.chop.as_ref().unwrap().selected, 16, "{source:?}");
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::Esc, M::NONE);
+            }
+            _ => {
+                // PAD BANK held: LEFT shows the screens view, cell 1 is Pads
+                hold(&mut drive, true);
+                drive.bytes(SMC, &[0xB0, 25, 127]);
+                drive.bytes(SMC, &[0xB0, 25, 0]);
+                cell(&mut drive, panel_note(1));
+                hold(&mut drive, false);
+            }
+        }
+        assert_eq!(drive.app.screen, Screen::Pads, "{source:?}");
+        assert_eq!(drive.app.pads.bank, 2, "Pads keeps bank 3, {source:?}");
+    }
+}
+
+/// The first pad of the grid: keyboard key 1 or the device pad printed 13.
+fn hit_key(drive: &mut Drive, source: Source) {
+    match source {
+        Source::Keyboard => {
+            drive.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Press);
+            drive.key(KeyCode::Char('1'), M::NONE, KeyEventKind::Release);
+            drive.frame();
+        }
+        _ => {
+            drive.bytes(SMC, &[0x99, 35 + 13, 100]);
+            drive.bytes(SMC, &[0x89, 35 + 13, 0]);
+            drive.frame();
+        }
+    }
+}
+
+/// Scenario "Files opens the page of the selected slice" (chopping).
+#[test]
+fn files_opens_the_page_of_the_selected_slice() {
+    let mut drive = hold_drive();
+    let sound = break_sound();
+    drive.prepare_chop(sound.clone(), 40);
+    drive.app.chop.as_mut().unwrap().select_slice(34);
+    drive.app.goto(Screen::Files);
+    drive.app.show_file_chop("break.wav".into(), sound);
+    drive.frame();
+    assert_eq!(drive.app.screen, Screen::Chop);
+    let rows = chop_rows(&mut drive);
+    assert!(rows.contains("slices 33–40 · page 3/3"), "{rows}");
+}
+
+/// Scenario "Fewer slices show the last page" (chopping).
+#[test]
+fn fewer_slices_show_the_last_page() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = hold_drive();
+        drive.prepare_chop(break_sound(), 40);
+        let c = drive.app.chop.as_mut().unwrap();
+        c.page = 2;
+        c.select_slice(39);
+        for _ in 0..30 {
+            c.delete();
+        }
+        assert_eq!(c.slices().len(), 10);
+        drive.frame();
+        let rows = chop_rows(&mut drive);
+        assert!(rows.contains("slices 1–10 · page 1/1"), "{rows}");
+        hit_key(&mut drive, source);
+        assert_eq!(drive.app.chop.as_ref().unwrap().selected, 0, "{source:?}");
+    }
+}

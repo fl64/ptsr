@@ -193,6 +193,9 @@ pub struct Chop {
     threshold_set: bool,
     /// The last equal-parts count, so Tab goes on from it.
     pub parts: Option<usize>,
+    /// The page of the slice keys before a slice lies on a pad (132), apart from the pad
+    /// bank; not saved.
+    pub page: usize,
     rate: usize,
     undo: Vec<UndoStep>,
     /// The boundary a knob is turning: the whole turn is one undo step.
@@ -258,6 +261,7 @@ impl Chop {
             bands,
             band_mean,
             parts: None,
+            page: 0,
             rate: rate.max(1) as usize,
             undo: Vec::new(),
             turning: None,
@@ -299,6 +303,7 @@ impl Chop {
             threshold_db: 0.0,
             threshold_set: false,
             parts: None,
+            page: 0,
             rate: self.rate,
             undo: Vec::new(),
             turning: None,
@@ -1172,6 +1177,12 @@ pub fn overwrites(targets: &[(usize, usize)], taken: impl Fn(usize) -> Option<St
         .join("; ")
 }
 
+/// A slice of this chop lies on a pad: Chop shows the real pads, not the slice keys (36).
+pub(super) fn laid(c: &Chop, p: &pads::Pads) -> bool {
+    (0..PADS)
+        .any(|a| p.file[a].as_ref() == Some(&c.file) && p.link[a].is_some_and(|l| l.1 == c.epoch))
+}
+
 use crate::*;
 
 impl App {
@@ -1244,6 +1255,7 @@ impl App {
             }
         };
         c.select_slice(selected);
+        c.page = selected / PADS_PER_BANK;
         self.chop_from = Some(abs);
         self.show_bank_of_chop();
         self.goto(Screen::Chop);
@@ -1269,6 +1281,30 @@ impl App {
         if let Some(a) = (0..PADS).find(|&a| ours(a)) {
             self.pads.bank = a / PADS_PER_BANK;
         }
+    }
+
+    /// The grid of Chop is the keyboard of slices (36): no slice of the chop lies on a pad,
+    /// no plan is open and no pattern work routes the pads.
+    pub(super) fn slice_keys_shown(&self) -> bool {
+        self.screen == Screen::Chop
+            && self.plan.is_none()
+            && !self.pattern_routes_pads_for(self.pattern_record_state())
+            && self.chop.as_ref().is_some_and(|c| !laid(c, &self.pads))
+    }
+
+    /// The bank keys turn the slice page of the chop and leave the pad bank to Pads (132).
+    pub(super) fn turn_slice_page(&mut self, action: Action) {
+        let Some(c) = self.chop.as_mut() else {
+            return;
+        };
+        let slices = c.slices().len();
+        let (page, last) = (slice_page(c.page, slices), slice_page(usize::MAX, slices));
+        c.page = match action {
+            Action::BankNext => (page + 1).min(last),
+            Action::BankPrev => page.saturating_sub(1),
+            Action::BankSelect(bank) => bank.min(last),
+            _ => page,
+        };
     }
 
     /// F3 on the files screen: the selected file goes to the chop screen without a pad.
@@ -1311,6 +1347,9 @@ impl App {
             self.stop_preview();
         }
         self.focus_chop(path, sound);
+        if let Some(c) = self.chop.as_mut() {
+            c.page = c.selected / PADS_PER_BANK;
+        }
         self.plan = None;
         self.chop_from = None;
         self.show_bank_of_chop();
@@ -1817,12 +1856,9 @@ impl App {
         let Some(mut plan) = self.plan.clone() else {
             // no slice on a pad yet: the keys play the slices, 16 a bank page (36)
             if let Some(c) = self.chop.as_mut()
-                && !(0..PADS).any(|a| {
-                    self.pads.file[a].as_ref() == Some(&c.file)
-                        && self.pads.link[a].is_some_and(|l| l.1 == c.epoch)
-                })
+                && !laid(c, &self.pads)
             {
-                let slice = slice_page(self.pads.bank, c.slices().len()) * PADS_PER_BANK + pad;
+                let slice = slice_page(c.page, c.slices().len()) * PADS_PER_BANK + pad;
                 if c.select_slice(slice) {
                     self.play_slice(slice);
                 }

@@ -2519,7 +2519,7 @@ fn pad_name(p: &pads::Pads, abs: usize) -> String {
 }
 
 /// The chop screen snapshot: positions as fractions of what was opened.
-/// The page of the keyboard of slices (36): the bank picked, but never past the last page
+/// The page of the keyboard of slices (36): the page picked, but never past the last page
 /// that has slices — bank 2 of a 4-slice chop shows slices 1–4, not an empty 17–32.
 fn slice_page(bank: usize, slices: usize) -> usize {
     bank.min(slices.saturating_sub(1) / PADS_PER_BANK)
@@ -2579,12 +2579,10 @@ fn chop_view_routed<'a>(
         .and_then(|n| n.to_str())
         .unwrap_or_default();
     // before any slice lies on a pad the grid is the keyboard of slices, 16 a bank page (36)
-    let laid = (0..PADS)
-        .any(|a| p.file[a].as_ref() == Some(&c.file) && p.link[a].is_some_and(|l| l.1 == c.epoch));
     let mut slice_keys = None;
     let (mode, side, banks, pads) = match plan {
-        None if !laid && !pattern_pads => {
-            let page = slice_page(p.bank, slices.len());
+        None if !chop::laid(c, p) && !pattern_pads => {
+            let page = slice_page(c.page, slices.len());
             let pads = (0..PADS_PER_BANK)
                 .map(|i| {
                     let n = page * PADS_PER_BANK + i;
@@ -8236,14 +8234,16 @@ Enter = "browser.hold"
         app.apply(action);
     }
 
-    /// Recorded: PgDn, PgUp on the chop screen in the listen mode. 43 "The next bank while
-    /// chopping".
+    /// Recorded: PgDn, PgUp on Chop with a slice on a pad. 43 "The next bank while chopping".
     #[test]
     fn the_next_bank_while_chopping() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
         let mut app = test_app();
         app.screen = Screen::Chop;
         app.chop = Some(chop_with_parts(1)); // a cut at 48_000
+        let c = app.chop.as_ref().unwrap();
+        (app.pads.file[0], app.pads.sound[0]) = (Some(c.file.clone()), Some(c.sound.clone()));
+        (app.pads.link[0], app.pads.region[0]) = (Some((c.start_id(0), c.epoch)), c.slices()[0]);
         app.chop.as_mut().unwrap().set_cursor(10_000);
         screen_key(&mut app, Screen::Chop, KeyCode::PageDown, M::NONE);
         assert_eq!(app.pads.bank, 1, "bank 2");
