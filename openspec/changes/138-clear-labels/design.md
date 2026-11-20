@@ -227,3 +227,6 @@ named by the date and a number: `2026-11-20-1`. The owner can rename it from the
 - `fewer hits` follows Shift+H. The main spec («Reverse hit threshold») says that the first
   Shift+H without a cut by hits cuts by hits at −6 dB. So the cell acts there too, and it is
   grey only at −6 dB. One action has one result on both inputs.
+- `clear pad` asks on the panel and on Backspace alike. The main spec said that Backspace outside
+  the edit clears without a question. Decision F07 and the rule «one action, one result on both
+  inputs» replace that.

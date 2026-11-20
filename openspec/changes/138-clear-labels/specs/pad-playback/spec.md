@@ -87,3 +87,40 @@ Edit help SHALL name `Bksp reset`.
   the owner opens the edit, presses `Backspace` and `Enter`
 - **THEN** pad Q plays slice 3 with the pitch 0, the filter off, the volume 0 dB, the sound gain 0 dB, one-shot,
   and its top frame carries only `◻`
+
+### Requirement: Pad reset confirmation
+
+Reset SHALL ask in the question box, naming `Reset pad Q to clean?` or `Reset 17 pads to clean?`, then what stays and `Enter: reset · Esc: keep`.
+`Enter` SHALL reset, `Esc` SHALL keep, and other keys SHALL do nothing while it asks.
+
+#### Scenario: The question names the pads
+- **WHEN** 17 pads are marked, the owner opens the edit and presses `Backspace`
+- **THEN** the question box says `Reset 17 pads to clean?` and `Enter: reset · Esc: keep`,
+  and no pad has changed yet
+
+#### Scenario: Esc keeps
+- **WHEN** the reset question is open and the owner presses `Esc`
+- **THEN** the question is gone, every pad keeps its settings and the edit stays open
+
+#### Scenario: Undo a reset
+- **WHEN** 16 marked pads with different settings are reset and the owner presses
+  `Ctrl+Z`
+- **THEN** every one of the 16 pads has its own settings back and the status says
+  `undo: reset on 16 pads`
+
+#### Scenario: The edit names the reset key
+- **WHEN** the pad edit is open
+- **THEN** the help line names `Bksp reset`
+
+#### Scenario: A sounding pad resets without a click
+- **WHEN** pad Q sounds with the volume −12 dB and the filter low-pass, and the owner
+  resets it
+- **THEN** the sound goes on and comes to 0 dB and an open filter without a click
+
+#### Scenario: Backspace outside the edit
+- **WHEN** no pad is marked, the edit is closed and the selected pad holds a sound, and the owner presses `Backspace` on the pads screen
+- **THEN** a question names the pad, and after yes only the selected pad is cleared and a notice names the undo
+
+#### Scenario: Backspace on an empty pad
+- **WHEN** no pad is marked, the edit is closed and the selected pad is empty, and the owner presses `Backspace` on the pads screen
+- **THEN** nothing asks and nothing changes
