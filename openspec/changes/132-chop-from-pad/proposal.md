@@ -35,9 +35,9 @@ No new dependency.
 
 Owner checks, controller:
 
-1. `PADS` → bank 3 → `[P1]` with a whole break → `[PAD BANK]+[P7]` «chop» → `CHOP` → cut into 40 slices → `[PAD BANK]+[P1]` → `[PAD BANK]+[P7]` → «slices 1–16 · page 1/3».
-2. `CHOP` → `RIGHT` → «slices 17–32 · page 2/3» → `[PAD BANK]+[P1]` → `PADS` shows bank 3.
-3. `CHOP` → `[PAD BANK]+[P16]` «assign» → hit 2 used and 2 empty pads → `[PAD BANK]+[P4]` → `[P4]` → `PADS` → `[PAD BANK]+[P2]` «undo» → the old sounds come back, the 2 other pads are empty.
+1. `PADS` → bank 3 → `[P1]` with a whole break → `[PAD BANK]+[P7]` «chop» → `CHOP` → `[PAD BANK]+[P14]` «parts» five times → 32 slices → «slices 1–16 · page 1/2».
+2. `CHOP` → `RIGHT` → «slices 17–32 · page 2/2» → `[PAD BANK]+LEFT` → `[P13]` «pads» → `PADS` shows bank 3.
+3. `CHOP` → `[PAD BANK]+[P16]` «assign» → release PAD BANK → hit 2 used and 2 empty pads → `[PAD BANK]+[P4]` «apply» → `[P4]` «yes» → `PADS` → `[PAD BANK]+[P2]` «undo» → the old sounds come back, the 2 other pads are empty.
 
 Owner checks, keyboard: F3 on a pad keeps its result. PgDn on the slice keys turns the page.
 Ctrl+Z after an apply restores all pads.
