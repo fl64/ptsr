@@ -29,6 +29,9 @@ mod mode_lines;
 #[path = "assign_method.rs"]
 mod assign_method;
 
+#[path = "new_project.rs"]
+mod new_project;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.

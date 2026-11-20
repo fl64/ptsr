@@ -459,6 +459,16 @@ impl App {
                 "HELP · LEFT RIGHT tabs",
                 &[(8, "up"), (9, "down"), (12, "close")],
             )
+        } else if self
+            .project_picker
+            .as_ref()
+            .is_some_and(|p| p.entries.is_empty() && p.naming.is_none())
+        {
+            // no project yet: pad 4 makes one with a date name (138)
+            (
+                "LIST · no projects yet",
+                &[(12, "close"), (15, "new project")],
+            )
         } else if self.project_picker.is_some() || self.path_picker.is_some() {
             ("LIST · knob 1 moves", &[(12, "close"), (15, "open")])
         } else if self.screen_learn.is_some() || self.learning.is_some() {
@@ -673,6 +683,7 @@ mod tests {
             "mark pad",
             "menu",
             "mixer",
+            "new project",
             "no",
             "norm",
             "open",

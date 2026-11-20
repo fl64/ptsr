@@ -14,6 +14,7 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
     if p.entries.is_empty() {
         lines.push("no projects yet — type a name".fg(DIM).into());
     }
+    let empty = p.entries.is_empty();
     for (i, name) in p.entries.iter().enumerate() {
         let row = format!("   {}", clip_name(name, width.saturating_sub(3) as usize));
         lines.push(Line::from(if i == p.selected {
@@ -29,9 +30,24 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
             lines.push(" Enter/P4 create · Esc/P1 back to list".fg(DIM).into());
         }
         // after SMC-PAD input the hint names the held button with the pads (F32)
+        // with no project, pad 4 makes one with a date name (138)
+        None if crate::pads::smc_words() && empty => {
+            lines.push(
+                " PAD BANK + 4 new project (date name) · PAD BANK + 1 close"
+                    .fg(DIM)
+                    .into(),
+            );
+        }
         None if crate::pads::smc_words() => {
             lines.push(
                 " knob 1 select · PAD BANK + 4 open · PAD BANK + 1 close"
+                    .fg(DIM)
+                    .into(),
+            );
+        }
+        None if empty => {
+            lines.push(
+                " type a name · Enter/P4 date name · Esc/P1 close"
                     .fg(DIM)
                     .into(),
             );
@@ -219,9 +235,10 @@ mod tests {
             .collect()
     }
 
-    /// After SMC-PAD input the picker names PAD BANK with pads 4 and 1 (138, F32).
+    /// Scenario "The picker hint names PAD BANK" (controller-reach): after SMC-PAD input the
+    /// picker names PAD BANK with pads 4 and 1 (F32); with no project, pad 4 makes one (F03).
     #[test]
-    fn the_project_picker_names_pad_bank_after_smc_input() {
+    fn the_picker_hint_names_pad_bank() {
         let view = ProjectPickerView {
             entries: vec!["MyBeat".to_string()],
             selected: 0,
@@ -236,5 +253,15 @@ mod tests {
             "{smc}"
         );
         assert!(keys.contains("Enter/P4 open"), "{keys}");
+        let empty = ProjectPickerView {
+            entries: Vec::new(),
+            selected: 0,
+            naming: None,
+        };
+        crate::pads::set_smc_words(true);
+        let smc = picker_text(&empty);
+        crate::pads::set_smc_words(false);
+        assert!(smc.contains("PAD BANK + 4 new project"), "{smc}");
+        assert!(smc.contains("PAD BANK + 1 close"), "{smc}");
     }
 }

@@ -459,6 +459,11 @@ impl App {
         };
         let accepted = match &picker.naming {
             Some(name) => self.create_project(name.clone()),
+            // no project yet: a date name needs no typed text (138)
+            None if picker.entries.is_empty() => {
+                let name = date_project_name(&self.paths.projects, std::time::SystemTime::now());
+                self.create_project(name)
+            }
             None => picker
                 .entries
                 .get(picker.selected)
@@ -520,6 +525,17 @@ impl App {
             });
         }
     }
+}
+
+/// `2026-11-20-1`: the date of `now` and the first number with no folder in `root` (138).
+pub(super) fn date_project_name(root: &Path, now: std::time::SystemTime) -> String {
+    let stamp = super::stamp(now);
+    let date = format!("{}-{}-{}", &stamp[..4], &stamp[4..6], &stamp[6..8]);
+    let mut n = 1;
+    while root.join(format!("{date}-{n}")).exists() {
+        n += 1;
+    }
+    format!("{date}-{n}")
 }
 
 #[cfg(test)]
