@@ -17,3 +17,7 @@
 
 - [ ] Add each case to the mode walker test where it applies.
 - [ ] Run format, Clippy, changed tests, the screen catalogue and the fast checks.
+
+## 5. Cut removal
+
+- [ ] Name the bound of each removal control in the slice edit hint. Name the joined slices after a removal. Test both scenarios with keys and raw MIDI.
