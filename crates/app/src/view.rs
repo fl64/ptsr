@@ -227,7 +227,7 @@ impl BadgeKey {
             "{} {:.1}{}{}",
             if playing { "▶" } else { "■" },
             tempo as f64 / 10.0,
-            if metro { " M" } else { "" },
+            if metro { " click" } else { "" },
             if playing {
                 format!(" {bar}:{beat}")
             } else {
@@ -237,7 +237,7 @@ impl BadgeKey {
         if let Some((bar, beat)) = self.pattern {
             clock.push_str(&format!(" · A1 {bar}:{beat}"));
         }
-        let compact_clock = clock.replace(' ', "");
+        let compact_clock = clock.replace(' ', "").replace("click", "·click");
         let mut badges = Vec::new();
         let mut pad_modes = pad_modes.into_iter();
         let clock_badge = if let Some(mut mode) = pad_modes.next() {

@@ -375,6 +375,30 @@ fn p1_cancels_a_copy_and_stays_on_pads() {
     assert_eq!(drive.app.screen, Screen::Pads);
 }
 
+/// Scenario "Holding PLAY names the metronome" (transport).
+#[test]
+fn holding_play_names_the_metronome() {
+    let mut drive = hold_drive();
+    settle(&mut drive);
+    // PLAY held past the hold time: the hold result, not the tap (input-devices)
+    let start = Instant::now();
+    for (millis, value) in [(0, 127), (400, 0)] {
+        drive.midi().recorded_bytes_at(
+            SMC,
+            &[0xB0, PLAY, value],
+            &drive.project,
+            start + std::time::Duration::from_millis(millis),
+        );
+    }
+    drive.frame();
+    assert!(drive.app.transport.metronome);
+    assert_eq!(drive.last_notice().text, "metronome on");
+    settle(&mut drive);
+    let rows = shared_feedback_rows(&mut drive, 120, 40, Instant::now());
+    assert!(rows[1].contains("120.0 click"), "{}", rows[1]);
+    assert!(!rows[1].contains(" M"), "{}", rows[1]);
+}
+
 /// Scenario "STOP on A1 pauses A1 and keeps the recording" (recording).
 #[test]
 fn stop_on_a1_pauses_a1_and_keeps_the_recording() {

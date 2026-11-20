@@ -988,7 +988,11 @@ fn transport_feedback_follows_accepted_audio_state() {
         drive.app.screen = screen;
         for (width, height) in [(80, 26), (120, 40)] {
             let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
-            assert!(rows[1].contains("121.0 M 1:1"), "{screen:?}: {}", rows[1]);
+            assert!(
+                rows[1].contains("121.0 click 1:1"),
+                "{screen:?}: {}",
+                rows[1]
+            );
             drive.app.ask = Some(Ask::ClearPads {
                 pads: vec![0],
                 lines: vec!["Clear?".into()],
@@ -996,7 +1000,7 @@ fn transport_feedback_follows_accepted_audio_state() {
             drive.app.session_write_error = Some("Cannot write the session file.".into());
             let rows = shared_feedback_rows(&mut drive, width, height, Instant::now());
             assert!(
-                rows[1].contains("121.0 M 1:1") && rows[1].contains("ASK"),
+                rows[1].contains("121.0 click 1:1") && rows[1].contains("ASK"),
                 "{screen:?}: {}",
                 rows[1]
             );

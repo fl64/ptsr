@@ -340,6 +340,12 @@ impl App {
                 self.send(Command::SetMetronome {
                     enabled: self.transport.metronome,
                 });
+                let state = if self.transport.metronome {
+                    "on"
+                } else {
+                    "off"
+                };
+                self.post_notice(Level::Done, (format!("metronome {state}"), Instant::now()));
                 self.dirty();
             }
             Action::Click => self.send(Command::Click {
