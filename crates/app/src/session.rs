@@ -176,6 +176,9 @@ pub struct PadState {
     pub gate: bool,
     pub pitch_gate: bool,
     pub volume_db: i8,
+    /// The gain of the sound itself in dB (138); absent in older sessions, which reads as 0.
+    #[serde(skip_serializing_if = "no_gain")]
+    pub sound_gain_db: f32,
     /// Pad pitch in semitones; absent in older sessions, which reads as 0.
     pub pitch: i8,
     /// Pad envelope times in ms; absent in older sessions, which reads as zeros:
@@ -225,6 +228,7 @@ impl Default for PadState {
             gate: false,
             pitch_gate: true,
             volume_db: 0,
+            sound_gain_db: 0.0,
             pitch: 0,
             attack_ms: 0,
             decay_ms: 0,
@@ -246,6 +250,10 @@ impl Default for PadState {
 
 fn is_zero(n: &u8) -> bool {
     *n == 0
+}
+
+fn no_gain(db: &f32) -> bool {
+    *db == 0.0
 }
 
 fn no_sends(s: &[u8; 2]) -> bool {
@@ -448,6 +456,7 @@ mod tests {
                 gate: true,
                 pitch_gate: true,
                 volume_db: -6,
+                sound_gain_db: 5.5,
                 pitch: 0,
                 attack_ms: 0,
                 decay_ms: 0,

@@ -32,7 +32,8 @@ const SCREENS: [(&str, Option<Action>); 12] = [
     ("help", Some(Action::HelpToggle)),
     ("save", Some(Action::SessionSave)),
     ("open", Some(Action::ProjectPick)),
-    ("learn", Some(Action::LearnToggle)),
+    // Bindings change from the keyboard only (138): no learn cell.
+    ("", None),
     ("exit", Some(Action::Quit)),
 ];
 
@@ -145,7 +146,7 @@ impl Config {
                 if label.is_empty() || !label_fits(label) {
                     config
                         .warnings
-                        .push(format!("{where_}: label exceeds seven cells"));
+                        .push(format!("{where_}: label exceeds eight cells"));
                     continue;
                 }
                 let Some(name) = item.get("action").and_then(toml::Value::as_str) else {
@@ -307,7 +308,7 @@ impl State {
             (_, 13) => Some("back"),
             (_, 14) => Some("undo"),
             (_, 15) => Some("redo"),
-            (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0),
+            (0, 1..=12) => Some(SCREENS[usize::from(cell - 1)].0).filter(|l| !l.is_empty()),
             _ => self.config.cell(view, cell).map(|cell| cell.label.as_str()),
         }
     }
@@ -381,9 +382,23 @@ impl App {
         }
     }
 
-    /// During Assign, cell 4 of the Chop actions gives `order`: `assign` is already active.
+    /// The Assign method that the method cell shows (138).
+    pub(super) fn assign_method(&self) -> &'static str {
+        match self.plan {
+            Some(super::chop::Plan::InOrder(_)) => "in order",
+            _ => "by hand",
+        }
+    }
+
+    /// In order, apply waits for the start pad (138).
+    pub(super) fn apply_waits(&self) -> bool {
+        matches!(self.plan, Some(super::chop::Plan::InOrder(None)))
+    }
+
+    /// During Assign, the `put on pads` cell of the Chop actions gives the method: `assign`
+    /// is already active.
     pub(super) fn assign_order_cell(&self, cell: u8) -> bool {
-        cell == 4
+        self.panel.action(View::Chop, cell) == Some(Action::ChopAssign)
             && self.panel.page() == 1
             && self.panel_view() == View::Chop
             && self.panel_target() == Some(Target::Assign)
@@ -404,7 +419,7 @@ impl App {
     fn target_snapshot(&self, target: Target) -> tui::CommandPanel {
         let labels = std::array::from_fn(|index| {
             let label = match index {
-                3 if target == Target::Assign => "order",
+                3 if target == Target::Assign => self.assign_method(),
                 12 => "cancel",
                 13 => "undo",
                 14 => "menu",
@@ -419,7 +434,13 @@ impl App {
             view: target.title(),
             target: true,
             flash: self.panel_flash(),
-            dim: [false; 16],
+            dim: std::array::from_fn(|index| {
+                index == 15 && target == Target::Assign && self.apply_waits()
+            }),
+            // the method cell drops placed slices (138)
+            warn: std::array::from_fn(|index| index == 3 && target == Target::Assign),
+            current: [false; 16],
+            states: [None; 16],
         }
     }
 
@@ -437,6 +458,16 @@ impl App {
             (
                 "HELP · LEFT RIGHT tabs",
                 &[(8, "up"), (9, "down"), (12, "close")],
+            )
+        } else if self
+            .project_picker
+            .as_ref()
+            .is_some_and(|p| p.entries.is_empty() && p.naming.is_none())
+        {
+            // no project yet: pad 4 makes one with a date name (138)
+            (
+                "LIST · no projects yet",
+                &[(12, "close"), (15, "new project")],
             )
         } else if self.project_picker.is_some() || self.path_picker.is_some() {
             ("LIST · knob 1 moves", &[(12, "close"), (15, "open")])
@@ -461,6 +492,9 @@ impl App {
             target: true,
             flash: self.panel_flash(),
             dim: [false; 16],
+            warn: [false; 16],
+            current: [false; 16],
+            states: [None; 16],
         })
     }
 
@@ -472,16 +506,25 @@ impl App {
             // Behind a question only its two answers show (134).
             if self.ask.is_some() {
                 return tui::CommandPanel {
-                    labels: std::array::from_fn(|index| match index {
-                        12 => Some("no".into()),
-                        15 => Some("yes".into()),
-                        _ => None,
+                    labels: std::array::from_fn(|index| {
+                        // the save failure answers keep the words of its question (F33)
+                        let recovery = matches!(self.ask, Some(super::Ask::ExitRecovery { .. }));
+                        match (index, recovery) {
+                            (12, true) => Some("back".into()),
+                            (15, true) => Some("retry save".into()),
+                            (12, false) => Some("no".into()),
+                            (15, false) => Some("yes".into()),
+                            _ => None,
+                        }
                     }),
                     page: self.panel.page(),
                     view: "QUESTION",
                     target: true,
                     flash: self.panel_flash(),
                     dim: [false; 16],
+                    warn: [false; 16],
+                    current: [false; 16],
+                    states: [None; 16],
                 };
             }
             let target = self.panel_target();
@@ -502,9 +545,13 @@ impl App {
                 }
                 let cell = u8::try_from(index + 1).unwrap();
                 if self.assign_order_cell(cell) {
-                    return Some("order".into());
+                    return Some(self.assign_method().into());
                 }
-                self.panel.label(view, cell).map(str::to_owned)
+                // the pads toggle names what the press does now (138)
+                match self.panel.label(view, cell) {
+                    Some("hide pads") if self.ui.hide_pads => Some("show pads".into()),
+                    label => label.map(str::to_owned),
+                }
             });
             let name = match view {
                 View::Pads => "PADS",
@@ -523,7 +570,36 @@ impl App {
                 target: false,
                 flash: self.panel_flash(),
                 dim: std::array::from_fn(|index| {
-                    self.join_blocked(self.panel.action(view, u8::try_from(index + 1).unwrap()))
+                    let action = match index {
+                        13 => Some(Action::Undo),
+                        _ => self.panel.action(view, u8::try_from(index + 1).unwrap()),
+                    };
+                    action.is_some_and(|action| self.grey(view, action).is_some())
+                }),
+                warn: std::array::from_fn(|index| {
+                    let cell = u8::try_from(index + 1).unwrap();
+                    self.assign_order_cell(cell)
+                        || self
+                            .panel
+                            .action(view, cell)
+                            .is_some_and(|action| Self::warns(view, action))
+                }),
+                current: std::array::from_fn(|index| {
+                    let cell = u8::try_from(index + 1).unwrap();
+                    view == View::PadEdit
+                        && self.panel.action(view, cell)
+                            == u8::try_from(self.pads.page_index())
+                                .ok()
+                                .map(Action::PadPage)
+                }),
+                // a learned cell keeps no shipped state (138)
+                states: std::array::from_fn(|index| {
+                    let cell = u8::try_from(index + 1).unwrap();
+                    overrides[index]
+                        .is_none()
+                        .then(|| self.panel.action(view, cell))
+                        .flatten()
+                        .and_then(|action| self.cell_state(action))
                 }),
             }
         })
@@ -542,14 +618,12 @@ impl App {
     }
 }
 
-/// A label longer than seven cells breaks at its first space into two lines (135); each
-/// line keeps at most seven cells.
+/// A label of two words shows each word on its own line (135, 138); each line keeps at
+/// most eight cells.
 fn label_fits(label: &str) -> bool {
     match label.split_once(' ') {
-        Some((first, second)) if Line::raw(label).width() > 7 => {
-            Line::raw(first).width() <= 7 && Line::raw(second).width() <= 7
-        }
-        _ => Line::raw(label).width() <= 7,
+        Some((first, second)) => Line::raw(first).width() <= 8 && Line::raw(second).width() <= 8,
+        None => Line::raw(label).width() <= 8,
     }
 }
 
@@ -560,78 +634,91 @@ mod tests {
     /// Scenario "Shipped labels fit the panel glossary" (command-panel).
     #[test]
     fn shipped_labels_fit_the_panel_glossary() {
-        // One meaning per word (134): the old `take`, `commit`, `knobs`, `output` are gone.
+        // One meaning per label (134); plain two-word action labels (138).
         let allowed = [
             "A1",
-            "all",
+            "A1 setup",
             "apply",
-            "as pad",
-            "assign",
             "back",
+            "by hand",
             "cancel",
             "chop",
+            "chop file",
+            "chop pad",
+            "choose",
             "clear",
+            "clear A1",
+            "clear pad",
             "close",
-            "copy",
-            "cut",
+            "copy pad",
+            "cursor step",
+            "cut by hits",
+            "cut here",
             "down",
-            "edit",
+            "edit pad",
+            "edit slice",
+            "edit steps",
             "enter",
-            "erase",
+            "env page",
+            "equal parts",
+            "erase hits",
             "exit",
+            "fewer hits",
             "files",
-            "fill",
+            "filter page",
+            "fill pads",
             "fx",
-            "grid",
-            "grid +",
-            "grid -",
+            "fx page",
+            "hear as pad",
             "help",
-            "hits",
-            "hits -",
+            "hide empty",
+            "hide pads",
+            "in order",
             "join left",
             "join right",
-            "learn",
-            "listen",
-            "load",
-            "loop",
-            "mark",
+            "listen file",
+            "load to pad",
+            "loop play",
+            "mark bank",
+            "mark pad",
             "menu",
             "mixer",
-            "mode",
+            "new project",
             "no",
-            "normal",
+            "norm",
             "open",
-            "order",
-            "p.gate",
             "pad",
             "pads",
-            "params",
             "parent",
-            "parts",
-            "rec out",
-            "record",
+            "pitch gate",
+            "play mode",
+            "play range",
+            "put on pads",
+            "record A1",
+            "record output",
             "redo",
-            "remove",
-            "reset",
+            "remove all cuts",
+            "reset pad",
+            "retry save",
             "row +",
             "row -",
-            "rows",
             "save",
             "setup",
-            "snap",
-            "star",
-            "step",
-            "swap",
+            "show pads",
+            "source page",
+            "star file",
+            "steps finer",
+            "steps wider",
+            "swap pads",
             "tab",
-            "tap",
+            "take file",
+            "tap tempo",
             "target",
-            "to pad",
+            "tone page",
+            "trim silence",
             "undo",
-            "undoA1",
-            "unbind",
             "up",
             "used",
-            "whole",
             "yes",
         ];
         let check = |label: &str| {
@@ -670,39 +757,112 @@ mod tests {
             include_str!("../../../config/panel.toml"),
         );
         assert!(config.warnings.is_empty(), "{:?}", config.warnings);
+        // Cells 1-12 top-down: device pads 13-16, 9-12, 5-8 (138).
         let table: [(View, &[&str]); 8] = [
             (
                 View::Pads,
                 &[
-                    "edit", "copy", "swap", "mark", "mode", "remove", "p.gate", "all", "grid",
-                    "rec out", "chop",
+                    "pitch gate",
+                    "record output",
+                    "hide pads",
+                    "",
+                    "swap pads",
+                    "mark pad",
+                    "mark bank",
+                    "play mode",
+                    "edit pad",
+                    "copy pad",
+                    "chop pad",
+                    "clear pad",
                 ],
             ),
-            (View::PadEdit, &["mode", "reset", "p.gate", "copy"]),
+            (
+                View::PadEdit,
+                &[
+                    "fx page",
+                    "",
+                    "",
+                    "",
+                    "tone page",
+                    "env page",
+                    "filter page",
+                    "source page",
+                    "play mode",
+                    "copy pad",
+                    "pitch gate",
+                    "reset pad",
+                ],
+            ),
             (
                 View::Pattern,
                 &[
-                    "step", "grid -", "grid +", "params", "record", "erase", "undoA1", "clear",
-                    "rows", "tap",
+                    "hide empty",
+                    "",
+                    "",
+                    "",
+                    "steps wider",
+                    "steps finer",
+                    "A1 setup",
+                    "clear A1",
+                    "record A1",
+                    "edit steps",
+                    "erase hits",
+                    "tap tempo",
                 ],
             ),
             (
                 View::Files,
-                &["to pad", "load", "", "star", "", "listen", "chop"],
+                &[
+                    "",
+                    "",
+                    "",
+                    "",
+                    "star file",
+                    "",
+                    "",
+                    "",
+                    "load to pad",
+                    "take file",
+                    "listen file",
+                    "chop file",
+                ],
             ),
             (
                 View::Chop,
                 &[
-                    "cut", "parts", "hits", "assign", "loop", "listen", "snap", "as pad", "whole",
-                    "", "edit", "fill",
+                    "remove all cuts",
+                    "loop play",
+                    "play range",
+                    "cursor step",
+                    "put on pads",
+                    "fill pads",
+                    "edit slice",
+                    "trim silence",
+                    "cut here",
+                    "cut by hits",
+                    "fewer hits",
+                    "equal parts",
                 ],
             ),
             (
                 View::ChopEdit,
-                &["normal", "hits -", "join left", "join right", "whole"],
+                &[
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "norm",
+                    "join left",
+                    "join right",
+                    "hear as pad",
+                ],
             ),
             (View::Fx, &[]),
-            (View::Settings, &["", "learn", "unbind"]),
+            (View::Settings, &["", "", "", "", "", "", "", "", "choose"]),
         ];
         for (view, labels) in table {
             let shipped: Vec<&str> = (1..=12)
@@ -782,7 +942,7 @@ mod tests {
         let mut panel = State::default();
         panel.press("SMC-PAD-Master A", 8);
         assert_eq!(panel.page(), 1);
-        assert_eq!(panel.label(View::Pads, 1), Some("edit"));
+        assert_eq!(panel.label(View::Pads, 9), Some("edit pad"));
         panel.move_view(-1);
         assert_eq!(panel.page(), 0);
         assert_eq!(panel.label(View::Pads, 1), Some("pads"));
@@ -807,7 +967,7 @@ mod tests {
             panel.move_view(steps);
             assert_eq!(panel.page(), page, "after {steps}");
         }
-        assert_eq!(panel.label(View::Pads, 1), Some("edit"));
+        assert_eq!(panel.label(View::Pads, 9), Some("edit pad"));
         panel.move_view(-1);
         assert_eq!(panel.label(View::Pads, 12), Some("exit"));
         assert_eq!(panel.choice(View::Pads, 12), Choice::Exit);

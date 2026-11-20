@@ -85,8 +85,12 @@ pub(super) fn describe(a: Action) -> String {
         Action::ChopRegionStart => "chop: the region starts at the cursor".into(),
         Action::ChopRegionEnd => "chop: the region ends at the cursor".into(),
         Action::ChopRegionClear => "chop: the region is the whole sample".into(),
+        Action::ChopCutsClear => "chop: remove all cuts; hand cuts ask first".into(),
+        Action::ChopTrimSilence => "chop: trim the silence at the start and the end".into(),
         Action::ChopSnapToggle => "chop: cursor in even steps / hit to hit / cut to cut".into(),
-        Action::ChopNormalize => "chop: the pad volume puts its peak at −1 dB".into(),
+        Action::ChopNormalize => {
+            "chop: the sound gain of the slice's pads puts the peak at −1 dB".into()
+        }
         Action::ChopCut => "chop: cut at the cursor".into(),
         Action::ChopParts => {
             "chop: equal parts 2, 4, 8, 16, 32; assigning: in order / by hand".into()
@@ -106,6 +110,10 @@ pub(super) fn describe(a: Action) -> String {
         Action::ParamPrev => "the previous parameter".into(),
         Action::PageNext => "the next page of the edit".into(),
         Action::PagePrev => "the previous page of the edit".into(),
+        Action::PadPage(page) => format!(
+            "pad edit: the {} page",
+            ["TONE", "ENV", "FILTER", "SOURCE", "FX"][usize::from(page).min(4)]
+        ),
         Action::EditValue { up, fine } => format!(
             "the picked value {}{}",
             if up { "up" } else { "down" },
@@ -142,7 +150,7 @@ pub(super) fn describe(a: Action) -> String {
         Action::HelpPageNext => "F1: next key-table page".into(),
         Action::LearnToggle => "bind controller knobs and buttons to what the screen shows".into(),
         Action::ProjectPick => "open the project picker".into(),
-        Action::PadsToggle => "hide / show the pads".into(),
+        Action::PadsToggle => "hide the pad grid, the wave takes its place".into(),
         Action::Confirm => "confirm the open question or picker".into(),
         Action::Back => "back".into(),
         Action::Quit => "quit".into(),

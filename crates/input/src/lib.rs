@@ -676,6 +676,8 @@ pub enum Action {
     /// The next or previous page of the edit (54): `Tab`, `Shift+Tab`.
     PageNext,
     PagePrev,
+    /// Pad edit: one page by its index, TONE to FX (138): the page cells of the panel.
+    PadPage(u8),
     /// The picked value of the selected object a step up or down; `fine` is the small step.
     EditValue {
         up: bool,
@@ -699,6 +701,10 @@ pub enum Action {
     ChopRegionEnd,
     /// Chop screen: the region is the whole sample again.
     ChopRegionClear,
+    /// Chop screen: all cuts go after a question, the chop is one slice (138).
+    ChopCutsClear,
+    /// Chop screen: the trim edges move to the first and the last sound (138).
+    ChopTrimSilence,
     /// Chop screen: the volume of the pad it was opened from puts its peak at −1 dB.
     ChopNormalize,
     /// Select the previous (-1) or next (1) marker.
@@ -882,6 +888,11 @@ impl Action {
             "edit.param_prev" => Self::ParamPrev,
             "edit.page_next" => Self::PageNext,
             "edit.page_prev" => Self::PagePrev,
+            "edit.page_tone" => Self::PadPage(0),
+            "edit.page_env" => Self::PadPage(1),
+            "edit.page_filter" => Self::PadPage(2),
+            "edit.page_source" => Self::PadPage(3),
+            "edit.page_fx" => Self::PadPage(4),
             "edit.value_dec" => Self::EditValue {
                 up: false,
                 fine: false,
@@ -907,6 +918,8 @@ impl Action {
             "chop.region_start" => Self::ChopRegionStart,
             "chop.region_end" => Self::ChopRegionEnd,
             "chop.region_clear" => Self::ChopRegionClear,
+            "chop.cuts_clear" => Self::ChopCutsClear,
+            "chop.trim_silence" => Self::ChopTrimSilence,
             "chop.normalize" => Self::ChopNormalize,
             "marker.prev" => Self::MarkerSelect(-1),
             "marker.next" => Self::MarkerSelect(1),
@@ -1264,9 +1277,11 @@ pub fn short_label(action: &str) -> &'static str {
         "slice.end_left" => "end<",
         "slice.end_right" => "end>",
         "marker.prev" => "slice<",
-        "chop.region_start" => "reg[",
-        "chop.region_end" => "reg]",
+        "chop.region_start" => "trim<",
+        "chop.region_end" => "trim>",
         "chop.region_clear" => "regclr",
+        "chop.cuts_clear" => "nocuts",
+        "chop.trim_silence" => "trim",
         "chop.cursor_left" => "cur<",
         "chop.cursor_right" => "cur>",
         "chop.cursor_left_fine" => "cur<.",
@@ -1281,9 +1296,9 @@ pub fn short_label(action: &str) -> &'static str {
         "slice.end" => "end",
         "chop.zoom" => "zoom",
         "chop.cursor_pos" => "cursor",
-        "chop.region_start_pos" => "reg[",
-        "chop.region_end_pos" => "reg]",
-        "chop.threshold" => "thresh",
+        "chop.region_start_pos" => "trim<",
+        "chop.region_end_pos" => "trim>",
+        "chop.threshold" => "hits",
         "chop.threshold_up" => "th+1",
         "chop.threshold_down" => "th-1",
         "marker.delete" => "delcut",
@@ -2298,6 +2313,18 @@ pub const ACTIONS: &[ActionInfo] = &[
         knob: false,
     },
     ActionInfo {
+        name: "chop.cuts_clear",
+        label: "remove all cuts",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
+        name: "chop.trim_silence",
+        label: "trim silence",
+        group: Group::Chop,
+        knob: false,
+    },
+    ActionInfo {
         name: "chop.cursor_left",
         label: "cursor left",
         group: Group::Chop,
@@ -3194,6 +3221,7 @@ fn parse_chord(key: &str) -> Result<Chord, String> {
         "Tab" => KeyCode::Tab,
         "Shift+Tab" => KeyCode::BackTab,
         "Backspace" => KeyCode::Backspace,
+        "Delete" => KeyCode::Delete,
         "Space" => KeyCode::Char(' '),
         "Minus" => KeyCode::Char('-'),
         "Equal" => KeyCode::Char('='),
@@ -3248,6 +3276,7 @@ fn chord_name(c: &Chord) -> String {
         KeyCode::Tab => "Tab".into(),
         KeyCode::BackTab => "Shift+Tab".into(),
         KeyCode::Backspace => "Bksp".into(),
+        KeyCode::Delete => "Del".into(),
         KeyCode::Char(' ') => "Space".into(),
         KeyCode::Char(ch) => ch.to_uppercase().to_string(),
         KeyCode::F(n) => format!("F{n}"),

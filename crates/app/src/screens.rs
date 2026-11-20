@@ -3475,10 +3475,10 @@ L="none"
                     }
                     let first = match (page, screen) {
                         (0, _) => "files",
-                        (1, Screen::Pads) => "edit",
+                        (1, Screen::Pads) => "pitch",
                         (1, Screen::Files) => "take",
                         (1, Screen::Chop) => "cut",
-                        (1, Screen::Settings) => "learn",
+                        (1, Screen::Settings) => "choose",
                         _ => "back",
                     };
                     assert!(text.contains(first), "{screen:?} {size:?} {page}: {first}");
@@ -3518,6 +3518,36 @@ L="none"
         }
     }
 
+    /// Scenario "The MIDI tab names the keyboard path" (midi-learn).
+    #[test]
+    fn the_midi_tab_names_the_keyboard_path() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::MidiTab,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.midi_row = app
+                .midi_list()
+                .iter()
+                .position(|row| matches!(row, crate::learn::MidiListRow::Group { .. }))
+                .unwrap();
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let text: String = buffer
+                .content()
+                .chunks(usize::from(size.0))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>() + "\n")
+                .collect();
+            assert!(
+                text.contains("Bindings: keyboard only (F10, Enter)"),
+                "{size:?}\n{text}"
+            );
+        }
+    }
+
     #[test]
     fn the_strip_identifies_page_list_and_roles_at_both_sizes() {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
@@ -3542,7 +3572,7 @@ L="none"
                 "{rows_text}"
             );
             assert!(rows[top].matches("8 master").count() == 2);
-            assert!(rows[top + 1].contains("5 reg[") && !rows[top + 1].contains("B2"));
+            assert!(rows[top + 1].contains("5 trim<") && !rows[top + 1].contains("B2"));
             assert!(rows[top + 2].contains("3 start"));
             assert!(rows[top + 3].contains("1 cursor"));
             assert!(
@@ -3550,6 +3580,70 @@ L="none"
                 "{rows_text}"
             );
             assert!(rows[..top].iter().any(|row| row.contains("redo")));
+        }
+    }
+
+    /// The text rows of an app drawn at `case`.
+    fn drawn_rows(case: Case, app: App, now: Instant) -> Vec<String> {
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        let (_, buffer) = render_app(case, &keymap, app, now);
+        buffer
+            .content()
+            .chunks(usize::from(case.size.0))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect()
+    }
+
+    /// `lines` stand right under each other in one cell of `rows`.
+    fn stacked(rows: &[String], lines: &[&str]) -> bool {
+        rows.windows(lines.len()).any(|window| {
+            window[0].match_indices(lines[0]).any(|(at, _)| {
+                let column = window[0][..at].chars().count();
+                window[1..].iter().zip(&lines[1..]).all(|(row, line)| {
+                    let near: String = row
+                        .chars()
+                        .skip(column.saturating_sub(4))
+                        .take(13)
+                        .collect();
+                    near.contains(line)
+                })
+            })
+        })
+    }
+
+    /// Scenario "A short two-word label also uses two lines" (command-panel).
+    /// Scenario "Play range shows its state" (command-panel): three lines at 120×40.
+    /// Scenario "Loop play shows its state at 80×26" (command-panel): two lines.
+    #[test]
+    fn a_short_two_word_label_also_uses_two_lines() {
+        let now = Instant::now();
+        for size in [(80, 26), (120, 40)] {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PanelMain,
+                size,
+            };
+            let rows = drawn_rows(case, fixture(case, now), now);
+            let all = rows.join("\n");
+            assert!(
+                stacked(&rows, &["copy", "pad"]),
+                "copy over pad at {size:?}\n{all}"
+            );
+            assert!(!all.contains("copy pad"), "{all}");
+            let case = Case {
+                screen: Screen::Chop,
+                mode: Mode::PanelMain,
+                size,
+            };
+            let rows = drawn_rows(case, fixture(case, now), now);
+            let all = rows.join("\n");
+            if size == (120, 40) {
+                assert!(stacked(&rows, &["play", "range", "to end"]), "{all}");
+                assert!(stacked(&rows, &["loop", "play", "off"]), "{all}");
+            } else {
+                assert!(stacked(&rows, &["play range", "to end"]), "{all}");
+                assert!(stacked(&rows, &["loop play", "off"]), "{all}");
+            }
         }
     }
 
@@ -3637,7 +3731,7 @@ L="none"
                 };
                 let now = Instant::now();
                 let mut app = fixture(case, now);
-                app.apply(Action::ChopHits);
+                crate::destroy::yes(&mut app, Action::ChopHits);
                 let (_, buffer) = render_app(case, &keymap, app, now);
                 let rows: Vec<String> = buffer
                     .content()

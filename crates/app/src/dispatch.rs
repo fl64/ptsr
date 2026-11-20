@@ -1,10 +1,12 @@
 use super::{
     Action, App, Ask, CLICK_VELOCITY, Command, EFFECT_PARAMS, HeldPads, INPUT_LOG, Instant, Keymap,
     Level, Lit, MidiListRow, Move, NUDGE_FINE_MS, NUDGE_MS, Origin, PADS, PADS_PER_BANK, Param,
-    PathPicker, ProjectPicker, SETTINGS_ROWS, Screen, UiPadHold, action_info, assign_deaf,
-    bank_key, chop, config, event, group_jump, held_repeats, learn, midi, pad_env, pad_filter,
-    pad_name, pads,
+    PathPicker, ProjectPicker, SETTINGS_ROWS, Screen, UiPadHold, action_info, bank_key, chop,
+    config, event, group_jump, held_repeats, learn, midi, pad_env, pad_filter, pad_name, pads,
 };
+
+/// Bindings change from the keyboard only (138): what the SMC-PAD hears instead.
+pub(super) const BINDINGS_BY_KEYS: &str = "Bindings: keyboard only (F10, Enter)";
 
 pub(super) fn smc_live_pad_param(
     port: &str,
@@ -58,20 +60,40 @@ impl App {
             && !(action == Action::Confirm && self.project_picker.is_some());
         let what = self.step_name(action);
         let before = undoable.then(|| self.before());
+        // an undo of `norm` on Chop takes no cut back, so nothing relinks (138)
+        let norm_undo =
+            action == Action::Undo && self.screen == Screen::Chop && self.norm_is_next();
         let quit = self.run(action);
         if let Some(b) = before {
             self.note_step(b, what);
         }
         self.follow_loop();
         let mut relinked = 0;
-        if action == Action::Undo && self.screen == Screen::Chop && cuts.is_some() {
+        // an undo of the cuts says what came back (138)
+        let mut undone = None;
+        if action == Action::Undo && self.screen == Screen::Chop && cuts.is_some() && !norm_undo {
             relinked = self.relink_after_undo();
+            let now = self.chop.as_ref().map(|c| c.saved());
+            if let (Some(before), Some(now)) = (&cuts, &now)
+                && before != now
+                && self.plan.is_none()
+            {
+                undone = Some(crate::destroy::chop_undo_text(before, now));
+            }
         }
         self.cuts_changed(cuts);
         if matches!(self.screen, Screen::Chop) || was == Screen::Chop {
             // pads linked back by the undo changed too, even when their bounds did not move
             let changed = self.sync_links() + relinked;
-            self.say_changed(changed, action == Action::Undo);
+            match undone {
+                Some(text) if changed > 0 => {
+                    let pads = if changed == 1 { "pad" } else { "pads" };
+                    let text = format!("{text} · {changed} {pads} changed back");
+                    self.post_notice(Level::Done, (text, Instant::now()));
+                }
+                Some(text) => self.post_notice(Level::Done, (text, Instant::now())),
+                None => self.say_changed(changed, action == Action::Undo),
+            }
         }
         // the preview plays only while the files or the chop screen is open
         if was != self.screen && matches!(was, Screen::Files | Screen::Chop) {
@@ -101,7 +123,7 @@ impl App {
         quit
     }
 
-    fn run(&mut self, action: Action) -> bool {
+    pub(super) fn run(&mut self, action: Action) -> bool {
         // the folder picker is open: the keys go to it before the screen (11)
         if self.ask.is_none() && self.path_picker.is_some() {
             let action = match action {
@@ -193,10 +215,16 @@ impl App {
                             let pads = pads.clone();
                             self.ask = None;
                             self.clear_pads(&pads);
+                            self.say_cleared(pads.len());
                         }
                         Some(Ask::ClearPattern { .. }) => {
                             self.ask = None;
                             self.clear_pattern_confirmed();
+                        }
+                        Some(Ask::Destroy { act, .. }) => {
+                            let act = *act;
+                            self.ask = None;
+                            self.destroy_confirmed(act);
                         }
                         Some(Ask::PutFile { abs, path, .. }) => {
                             let (abs, path) = (*abs, path.clone());
@@ -263,7 +291,10 @@ impl App {
                     self.play_slice(slice);
                 }
             }
-            a if self.screen == Screen::Chop && self.plan.is_some() && assign_deaf(&a) => {
+            a if self.screen == Screen::Chop
+                && self.plan.is_some()
+                && crate::chop::assign_deaf(&a) =>
+            {
                 // The refusal names the controls of the last input device (134).
                 let text = if self.input_sources.last_is_smc() {
                     "assigning: PAD BANK + 4 applies, PAD BANK + 1 leaves"
@@ -312,6 +343,12 @@ impl App {
                 self.send(Command::SetMetronome {
                     enabled: self.transport.metronome,
                 });
+                let state = if self.transport.metronome {
+                    "on"
+                } else {
+                    "off"
+                };
+                self.post_notice(Level::Done, (format!("metronome {state}"), Instant::now()));
                 self.dirty();
             }
             Action::Click => self.send(Command::Click {
@@ -533,6 +570,51 @@ impl App {
                     c.snap = c.snap.next();
                 }
             }
+            Action::ChopCutsClear if self.screen == Screen::Chop => {
+                // only hand cuts ask: cuts by the program go at once (138)
+                match self.chop.as_ref().map_or(0, |c| c.markers.len()) {
+                    0 => {
+                        self.post_notice(Level::Info, ("no cuts to remove".into(), Instant::now()))
+                    }
+                    count if self.hand_cuts().is_some() => self.ask_destroy(
+                        crate::destroy::Act::ClearCuts,
+                        format!("Remove {count} cuts?"),
+                        "them",
+                    ),
+                    _ => {
+                        let count = self.chop.as_mut().map_or(0, chop::Chop::clear_cuts);
+                        self.sync_links();
+                        let undo = self.undo_words();
+                        self.post_notice(
+                            Level::Done,
+                            (
+                                format!("{count} cuts removed · {undo} brings them back"),
+                                Instant::now(),
+                            ),
+                        );
+                    }
+                }
+            }
+            Action::ChopTrimSilence if self.screen == Screen::Chop => {
+                let Some(c) = self.chop.as_ref() else {
+                    return false;
+                };
+                if let Some(why) = c.trim_silence_refusal() {
+                    self.post_notice(Level::Info, (why.into(), Instant::now()));
+                } else if c.markers.is_empty() {
+                    self.trim_silence();
+                } else {
+                    // cuts in the trimmed parts go and linked pads change: ask (138)
+                    let count = c.markers.len();
+                    self.ask_destroy(
+                        crate::destroy::Act::TrimSilence,
+                        format!(
+                            "Trim the silence? Cuts in the trimmed parts go ({count} cuts now)."
+                        ),
+                        "them",
+                    );
+                }
+            }
             Action::ChopRegionClear if self.screen == Screen::Chop => {
                 if let Some(c) = self.chop.as_mut() {
                     c.clear_region();
@@ -557,18 +639,21 @@ impl App {
             Action::ChopParts | Action::ParamNext | Action::ChopAssignOrder
                 if self.screen == Screen::Chop && self.plan.is_some() =>
             {
-                let selected = self.chop.as_ref().map_or(0, |c| c.selected);
-                let next = match &self.plan {
-                    Some(chop::Plan::InOrder(_)) => {
-                        if let Some(c) = self.chop.as_mut() {
-                            c.selected = 0;
-                        }
-                        chop::Plan::ByHand(Vec::new())
+                // placed slices go with the old method: ask first (138)
+                match self.placed_slices() {
+                    0 => self.switch_assign_order(),
+                    placed => {
+                        let next = match self.plan {
+                            Some(chop::Plan::InOrder(_)) => "by hand",
+                            _ => "in order",
+                        };
+                        self.ask_destroy(
+                            crate::destroy::Act::AssignOrder,
+                            format!("Switch to {next}? {placed} placed slices go."),
+                            "them",
+                        );
                     }
-                    // the owner hits the start pad next
-                    _ => chop::Plan::InOrder(None),
-                };
-                self.change_plan(next, selected);
+                }
             }
             Action::ParamNext | Action::ParamPrev if self.screen == Screen::Chop => {
                 // BOUNDS has two parameters: next and previous both swap them
@@ -608,6 +693,7 @@ impl App {
             | Action::PagePrev
             | Action::EditValue { .. }
                 if !matches!(self.screen, Screen::Pads | Screen::Chop) => {}
+            Action::Undo if self.screen == Screen::Chop && self.norm_is_next() => self.undo_norm(),
             Action::Undo if self.screen == Screen::Chop && self.plan.is_some() => {
                 match self.plan_undo.pop() {
                     Some((prev, selected)) => {
@@ -615,6 +701,11 @@ impl App {
                         if let Some(c) = self.chop.as_mut() {
                             c.select_slice(selected);
                         }
+                        let (method, placed) = (self.assign_method(), self.placed_slices());
+                        self.post_notice(
+                            Level::Done,
+                            (format!("undo: {method} · {placed} placed"), Instant::now()),
+                        );
                     }
                     None => {
                         self.post_notice(Level::Info, ("nothing to undo".into(), Instant::now()))
@@ -640,8 +731,29 @@ impl App {
             | Action::Undo
                 if self.screen == Screen::Chop =>
             {
+                // replacing hand cuts asks first (138)
+                if let Some(count) = self.hand_cuts()
+                    && let Some(with) = self.chop.as_ref().and_then(|c| match action {
+                        Action::ChopParts | Action::ChopEqualParts => {
+                            Some(format!("{} equal parts", c.parts_next()))
+                        }
+                        Action::ChopHits => Some("cuts by hits".into()),
+                        Action::ChopHitsBack if c.hits_back_refusal().is_none() => {
+                            Some("cuts by hits".into())
+                        }
+                        _ => None,
+                    })
+                {
+                    self.ask_destroy(
+                        crate::destroy::Act::Recut(action),
+                        format!("Replace {count} hand cuts with {with}?"),
+                        "them",
+                    );
+                    return false;
+                }
                 let linked = self.linked_pads();
                 let end = self.slice_end;
+                let undo = self.undo_words();
                 if let Some(c) = self.chop.as_mut() {
                     match action {
                         Action::ChopParts | Action::ChopEqualParts => {
@@ -649,7 +761,7 @@ impl App {
                             if linked > 0 {
                                 self.post_notice(Level::Warn, (
                                     format!(
-                                        "{linked} pads keep their old slices and no longer follow the cuts; Ctrl+Z links them again"
+                                        "{linked} pads keep their old slices and no longer follow the cuts; {undo} links them again"
                                     ),
                                     Instant::now(),
                                 ));
@@ -662,11 +774,11 @@ impl App {
                             let now = c.slices().len();
                             let mut text = format!("by hits at {db:.0} dB: {now} slices");
                             if were > 1 {
-                                text.push_str(&format!(" (were {were}) · Ctrl+Z brings them back"));
+                                text.push_str(&format!(" (were {were}) · {undo} brings them back"));
                             }
                             if linked > 0 {
                                 text.push_str(&format!(
-                                    "; {linked} pads keep their old slices, Ctrl+Z links them again"
+                                    "; {linked} pads keep their old slices, {undo} links them again"
                                 ));
                             }
                             self.post_notice(
@@ -684,12 +796,12 @@ impl App {
                                     let mut text = format!("by hits at {db:.0} dB: {now} slices");
                                     if were > 1 {
                                         text.push_str(&format!(
-                                            " (were {were}) · Ctrl+Z brings them back"
+                                            " (were {were}) · {undo} brings them back"
                                         ));
                                     }
                                     if linked > 0 {
                                         text.push_str(&format!(
-                                            "; {linked} pads keep their old slices, Ctrl+Z links them again"
+                                            "; {linked} pads keep their old slices, {undo} links them again"
                                         ));
                                     }
                                     self.post_notice(
@@ -799,10 +911,10 @@ impl App {
             }
             // The A1 settings lie over the A1 view: Back closes the top one first (134).
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
-            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
-            // Esc leaves erasure before it finishes a pass or leaves the screen (98b)
-            Action::Back if self.erase_pads => self.erase_pads = false,
+            // the mode goes first and the screen stays: A1 keeps its view (98b, 138)
+            Action::Back if self.erase_pads => self.toggle_pattern_erase(),
             Action::Back if self.pattern_erasing() => self.toggle_pattern_erase(),
+            Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             // the edit mode is the innermost layer of the screen: Esc closes it, the screen stays
             Action::Back if self.edit => self.edit = false,
             // Esc drops the marks first, then goes back as now
@@ -898,6 +1010,23 @@ impl App {
             {
                 self.learned_save()
             }
+            // Bindings change from the keyboard only (138): `choose` refuses binding rows.
+            Action::SettingsLearn
+                if self.settings_tab == 2
+                    && self.input_sources.last_is_smc()
+                    && matches!(
+                        self.midi_list().get(self.midi_row),
+                        Some(
+                            MidiListRow::Action { .. }
+                                | MidiListRow::Set { .. }
+                                | MidiListRow::Reset { .. }
+                                | MidiListRow::SmcLayoutApply
+                                | MidiListRow::SmcLayoutSlot(_)
+                        )
+                    ) =>
+            {
+                self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
+            }
             Action::SettingsLearn if self.settings_tab == 2 => {
                 match self.midi_list().get(self.midi_row) {
                     Some(MidiListRow::Group { .. }) => self.midi_fold(true),
@@ -916,6 +1045,7 @@ impl App {
                             lines: vec![
                                 format!("Reset {name} to its profile?"),
                                 "Every binding of yours for it is dropped.".into(),
+                                "This cannot be undone.".into(),
                                 "Enter: reset    Esc: keep".into(),
                             ],
                             name: name.clone(),
@@ -931,54 +1061,18 @@ impl App {
                     None => {}
                 }
             }
-            Action::SettingsClear if self.settings_tab == 2 => {
-                match self.midi_list().get(self.midi_row) {
-                    // the run rows clear all together (28)
-                    Some(MidiListRow::Set { infos: run, .. }) => {
-                        let infos: &'static [input::ActionInfo] = run;
-                        let mut profiles: Vec<String> = Vec::new();
-                        for info in infos {
-                            for p in learn::clear(&mut self.learned, info.group, info.name) {
-                                if !profiles.contains(&p) {
-                                    profiles.push(p);
-                                }
-                            }
-                        }
-                        for p in profiles {
-                            self.sync_learned(&p, infos[0].group);
-                        }
-                        self.save_midi();
-                    }
-                    Some(MidiListRow::Action { info }) => {
-                        for profile in learn::clear(&mut self.learned, info.group, info.name) {
-                            self.sync_learned(&profile, info.group);
-                        }
-                        self.save_midi();
-                    }
-                    Some(MidiListRow::Disabled {
-                        profile,
-                        group,
-                        key,
-                    }) => {
-                        let (profile, group, key) = (profile.clone(), group.clone(), key.clone());
-                        if let Some(bindings) = self
-                            .learned
-                            .get_mut(&profile)
-                            .and_then(|m| m.get_mut(&group))
-                        {
-                            bindings.remove(&key);
-                        }
-                        if let Some(group) = input::Group::ALL
-                            .into_iter()
-                            .find(|candidate| candidate.key() == group)
-                        {
-                            self.sync_learned(&profile, group);
-                        }
-                        self.save_midi();
-                    }
-                    _ => {}
-                }
-            }
+            Action::SettingsClear if self.settings_tab == 2 => match self.forgettable() {
+                // forgetting has no undo: it asks first (138)
+                Some(control) => self.ask_destroy(
+                    crate::destroy::Act::Forget,
+                    format!("Forget {control}?"),
+                    "it",
+                ),
+                None => self.post_notice(
+                    Level::Info,
+                    ("the row has no learned control".into(), Instant::now()),
+                ),
+            },
             Action::Confirm | Action::SettingsLearn | Action::SettingsClear => {}
             Action::SmcList { next } => self.smc_list(next),
             Action::SettingsValue(step) => self.change(self.settings_row, step as isize),
@@ -1098,7 +1192,8 @@ impl App {
             Action::PadClear if self.edit && self.screen == Screen::Pads => self.ask_reset(),
             // with marks the clear asks first: one key must not wipe a bank unasked (76)
             Action::PadClear if !self.pads.marked.is_empty() => self.ask_clear(),
-            Action::PadClear => self.clear_pads(&[self.pads.selected_abs()]),
+            // a pad with a sound asks first too; an empty pad has nothing to clear (138)
+            Action::PadClear => self.ask_clear_one(),
             pad_action => {
                 for cmd in self.pads.apply(pad_action) {
                     self.send(cmd);
@@ -1153,6 +1248,7 @@ impl App {
             | Action::PadTake
             | Action::PageNext
             | Action::PagePrev
+            | Action::PadPage(_)
             | Action::BrowserHold
             | Action::BrowserLoad
             | Action::BrowserTakeOnly
@@ -1170,6 +1266,8 @@ impl App {
             | Action::ChopParts
             | Action::ChopPlayMode
             | Action::ChopRegionClear
+            | Action::ChopCutsClear
+            | Action::ChopTrimSilence
             | Action::ChopRegionEnd
             | Action::ChopRegionStart
             | Action::ChopSnapToggle
@@ -1807,6 +1905,14 @@ impl App {
                     } else {
                         self.panel.choice(view, cell)
                     };
+                    // a grey cell says why and changes nothing (138)
+                    if let super::panel::Choice::Action(action) = choice
+                        && (self.panel.page() != 0 || cell == 14)
+                        && let Some(super::looks::Grey::Why(why)) = self.grey(view, action)
+                    {
+                        self.post_notice(Level::Info, (why, Instant::now()));
+                        return;
+                    }
                     match choice {
                         super::panel::Choice::Action(action) => {
                             self.apply(action);
@@ -2198,6 +2304,20 @@ impl App {
                 };
                 match value {
                     Ok(v) => {
+                        // the knob recuts by hits: hand cuts go only after a yes (138)
+                        if let Some(count) = self.hand_cuts()
+                            && self.ask.is_none()
+                            && self.chop.as_ref().is_some_and(|c| {
+                                (-40.0 * v.clamp(0.0, 1.0) - c.threshold_db).abs() >= 0.01
+                            })
+                        {
+                            self.ask_destroy(
+                                crate::destroy::Act::ThresholdAt(v),
+                                format!("Replace {count} hand cuts with cuts by hits?"),
+                                "them",
+                            );
+                            return;
+                        }
                         let mut said = None;
                         if let Some(c) = self.chop.as_mut()
                             && c.set_threshold(v)
@@ -2473,8 +2593,19 @@ impl App {
         }
     }
 
-    fn step_threshold(&mut self, step_db: i32) {
+    pub(super) fn step_threshold(&mut self, step_db: i32) {
         if self.plan.is_some() || self.help_open || self.screen_learn.is_some() {
+            return;
+        }
+        // the knob recuts by hits: hand cuts go only after a yes (138)
+        if let Some(count) = self.hand_cuts()
+            && self.ask.is_none()
+        {
+            self.ask_destroy(
+                crate::destroy::Act::Threshold(step_db),
+                format!("Replace {count} hand cuts with cuts by hits?"),
+                "them",
+            );
             return;
         }
         if let Some(chop) = self.chop.as_mut() {
@@ -3032,6 +3163,19 @@ impl App {
 mod relative_tests {
     use super::*;
     use input::midi::{ListTarget, StepTarget};
+
+    /// 54 editing: "One page" — the slice edit has BOUNDS only, the page keys keep it.
+    #[test]
+    fn one_page() {
+        let mut app = crate::tests::test_app();
+        app.screen = input::Screen::Chop;
+        app.edit = true;
+        app.slice_end = true;
+        app.apply(input::Action::PageNext);
+        assert!(app.slice_end, "the slice end stays picked");
+        app.apply(input::Action::PagePrev);
+        assert!(app.slice_end);
+    }
 
     #[test]
     fn panel_back_closes_the_top_open_mode() {

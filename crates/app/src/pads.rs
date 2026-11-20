@@ -21,6 +21,7 @@ pub struct PadSnap {
     gate: bool,
     pitch_gate: bool,
     volume_db: i8,
+    sound_gain_db: f32,
     pitch: i8,
     env: [u16; 3],
     filter: (FilterKind, f32, u8),
@@ -45,6 +46,7 @@ impl PartialEq for PadSnap {
             && self.name == o.name
             && self.group == o.group
             && self.pitch_gate == o.pitch_gate
+            && self.sound_gain_db == o.sound_gain_db
             && (
                 &self.file,
                 self.missing,
@@ -164,6 +166,8 @@ const BANKS: usize = PADS / PADS_PER_BANK;
 /// Volume range of pads and the master, in dB.
 pub const MIN_DB: i8 = -40;
 pub const MAX_DB: i8 = 6;
+/// The sound gain range in dB (138): normalize reaches past the volume range, within this.
+pub const SOUND_GAIN_DB: f32 = 30.0;
 
 /// Keyboard keys of the 16 pads of a bank, shown in the grid and the panel.
 pub const PAD_KEYS: [char; PADS_PER_BANK] = [
@@ -383,6 +387,8 @@ pub struct Pads {
     pub pattern: Option<PatternState>,
     pub(crate) pattern_rows: Option<Vec<engine::pattern::PlaybackRow>>,
     pub volume_db: [i8; PADS],
+    /// The gain of the pad's sound itself in dB (138), before the volume: normalize sets it.
+    pub sound_gain_db: [f32; PADS],
     /// Pad pitch in semitones, −`PITCH_LIMIT`…+`PITCH_LIMIT`.
     pub pitch: [i8; PADS],
     /// Pad envelope times in ms: fade-in at the piece start, fade-to-silence at
@@ -450,6 +456,7 @@ impl Default for Pads {
             pattern: None,
             pattern_rows: None,
             volume_db: [0; PADS],
+            sound_gain_db: [0.0; PADS],
             pitch: [0; PADS],
             attack_ms: [0; PADS],
             decay_ms: [0; PADS],
@@ -614,6 +621,8 @@ impl Pads {
         self.link[abs] = None;
         self.region[abs] = Region::WHOLE;
         self.sound[abs] = None;
+        // the gain belonged to the sound that leaves (138)
+        self.sound_gain_db[abs] = 0.0;
         Command::SetPadSound {
             pad: abs,
             sound: None,
@@ -701,6 +710,7 @@ impl Pads {
         self.gate.swap(a, b);
         self.pitch_gate.swap(a, b);
         self.volume_db.swap(a, b);
+        self.sound_gain_db.swap(a, b);
         self.pitch.swap(a, b);
         self.attack_ms.swap(a, b);
         self.decay_ms.swap(a, b);
@@ -728,6 +738,14 @@ impl Pads {
         })
     }
 
+    /// The engine command for the sound gain of a pad (138).
+    pub fn sound_gain_command(&self, abs: usize) -> Command {
+        Command::SetSoundGain {
+            pad: abs,
+            gain: 10f32.powf(self.sound_gain_db[abs] / 20.0),
+        }
+    }
+
     /// Everything a pad has, for the undo (61).
     pub fn snapshot(&self, abs: usize) -> PadSnap {
         PadSnap {
@@ -737,6 +755,7 @@ impl Pads {
             gate: self.gate[abs],
             pitch_gate: self.pitch_gate[abs],
             volume_db: self.volume_db[abs],
+            sound_gain_db: self.sound_gain_db[abs],
             pitch: self.pitch[abs],
             env: [
                 self.attack_ms[abs],
@@ -790,6 +809,7 @@ impl Pads {
         self.gate[abs] = s.gate;
         self.pitch_gate[abs] = s.pitch_gate;
         self.volume_db[abs] = s.volume_db;
+        self.sound_gain_db[abs] = s.sound_gain_db;
         self.pitch[abs] = s.pitch;
         [
             self.attack_ms[abs],
@@ -819,6 +839,7 @@ impl Pads {
                 pad: abs,
                 gain: 10f32.powf(s.volume_db as f32 / 20.0),
             },
+            self.sound_gain_command(abs),
             Command::SetPadPitch {
                 pad: abs,
                 semitones: s.pitch,
@@ -871,6 +892,7 @@ impl Pads {
                 gate: self.gate[abs],
                 pitch_gate: self.pitch_gate[abs],
                 volume_db: self.volume_db[abs],
+                sound_gain_db: self.sound_gain_db[abs],
                 pitch: self.pitch[abs],
                 attack_ms: self.attack_ms[abs],
                 decay_ms: self.decay_ms[abs],
@@ -913,6 +935,11 @@ impl Pads {
             self.gate[abs] = state.gate;
             self.pitch_gate[abs] = state.pitch_gate;
             self.volume_db[abs] = state.volume_db.clamp(MIN_DB, MAX_DB);
+            self.sound_gain_db[abs] = if state.sound_gain_db.is_finite() {
+                state.sound_gain_db.clamp(-SOUND_GAIN_DB, SOUND_GAIN_DB)
+            } else {
+                0.0
+            };
             self.pitch[abs] = state.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
             self.attack_ms[abs] = state.attack_ms;
             self.decay_ms[abs] = state.decay_ms;
@@ -953,6 +980,7 @@ impl Pads {
                 pad: abs,
                 gain: 10f32.powf(self.volume_db[abs] as f32 / 20.0),
             });
+            cmds.push(self.sound_gain_command(abs));
             cmds.push(Command::SetPadPitch {
                 pad: abs,
                 semitones: self.pitch[abs],
@@ -1271,6 +1299,12 @@ impl Pads {
     }
 
     /// The page of the picked parameter and its parameters in knob order.
+    /// The place of the current page in the order of the pad edit pages (138).
+    pub fn page_index(&self) -> usize {
+        let name = self.page().0;
+        PAGES.iter().position(|(n, _)| *n == name).unwrap_or(0)
+    }
+
     pub fn page(&self) -> (&'static str, &'static [Param]) {
         PAGES
             .into_iter()
@@ -1559,6 +1593,12 @@ impl Pads {
                     1
                 };
                 self.param = PAGES[(at + step) % PAGES.len()].1[0];
+                Vec::new()
+            }
+            Action::PadPage(page) => {
+                if let Some((_, params)) = PAGES.get(usize::from(page)) {
+                    self.param = params[0];
+                }
                 Vec::new()
             }
             Action::PadMarkBank => {
@@ -1863,7 +1903,7 @@ impl App {
                 pad_name(&self.pads, abs),
                 self.copy_name(&snap)
             ));
-            lines.extend(overwrite_footer());
+            lines.extend(overwrite_footer(self.undo_words()));
             // a changed target asks again: only the same question, still open, places
             if !matches!(&self.ask,
                 Some(Ask::CopyPad { source: s, lines: old })
@@ -2025,7 +2065,7 @@ impl App {
                     file_name(&path)
                 ),
             ];
-            lines.extend(overwrite_footer());
+            lines.extend(overwrite_footer(self.undo_words()));
             let asked = matches!(
                 &self.ask,
                 Some(Ask::PutFile {
@@ -2179,6 +2219,11 @@ impl App {
                     || self.pads.region[pad] != self.load_region[pad]
                 {
                     self.pads.custom_name[pad] = None;
+                    // a new sound starts at 0 dB: the old gain was measured on the old one (138)
+                    if !self.restoring_project {
+                        self.pads.sound_gain_db[pad] = 0.0;
+                        self.send(self.pads.sound_gain_command(pad));
+                    }
                 }
                 self.pads.file[pad] = Some(path);
                 self.pads.set_sound(pad, sound.clone());
@@ -2301,10 +2346,37 @@ impl App {
             lines: vec![
                 format!("Clear {what}?"),
                 "  The sounds leave the pads; their files on disk stay.".into(),
-                "  Ctrl+Z brings them back.".into(),
+                format!("  {} brings them back.", self.undo_words()),
                 "Enter: clear · Esc: keep".into(),
             ],
         });
+    }
+
+    /// `Backspace` or `clear pad` without marks (138): a pad with a sound asks first.
+    pub(super) fn ask_clear_one(&mut self) {
+        let abs = self.pads.selected_abs();
+        if self.pads.file[abs].is_none() {
+            return;
+        }
+        self.ask = Some(Ask::ClearPads {
+            pads: vec![abs],
+            lines: vec![
+                format!("Clear {}?", super::pad_label(&self.pads, abs)),
+                "  The sound leaves the pad; its file on disk stays.".into(),
+                format!("  {} brings it back.", self.undo_words()),
+                "Enter: clear · Esc: keep".into(),
+            ],
+        });
+    }
+
+    /// The result of a confirmed clear, with the undo in the words of the last device (138).
+    pub(super) fn say_cleared(&mut self, count: usize) {
+        let undo = self.undo_words();
+        let text = match count {
+            1 => format!("pad cleared · {undo} brings it back"),
+            n => format!("{n} pads cleared · {undo} brings them back"),
+        };
+        self.post_notice(Level::Done, (text, Instant::now()));
     }
 
     pub(super) fn clear_pads(&mut self, pads: &[usize]) {
@@ -2314,6 +2386,7 @@ impl App {
             let cmd = self.pads.clear(abs);
             self.send(cmd);
             self.send(self.pads.pitch_gate_command(abs));
+            self.send(self.pads.sound_gain_command(abs));
         }
         self.dirty();
     }
@@ -2350,7 +2423,11 @@ impl App {
             Action::PadPitchGateToggle => "Pitch Gate".into(),
             Action::PadClear => "clear".into(),
             Action::PadEdit if matches!(self.ask, Some(Ask::ResetPads { .. })) => "reset".into(),
-            Action::PadEdit if matches!(self.ask, Some(Ask::ClearPads { .. })) => "clear".into(),
+            Action::PadEdit | Action::Confirm
+                if matches!(self.ask, Some(Ask::ClearPads { .. })) =>
+            {
+                "clear".into()
+            }
             Action::PadEdit if matches!(self.ask, Some(Ask::ClearPattern { .. })) => "clear".into(),
             _ if self.pad_in_hand.is_some() => "swap".into(),
             _ if self.browser.in_hand.is_some() => "file".into(),
@@ -2454,7 +2531,8 @@ impl App {
                     }
                     self.dirty();
                     // the step names itself: a pass, an erased pad or a clear (98i)
-                    self.post_notice(Level::Done, (format!("undo: {what} on A1"), Instant::now()));
+                    let said = crate::destroy::a1_undo_text(&what);
+                    self.post_notice(Level::Done, (said, Instant::now()));
                 }
                 Err(error) => self.post_notice(Level::Error, (error, Instant::now())),
             }

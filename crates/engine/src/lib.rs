@@ -206,6 +206,12 @@ pub enum Command {
         pad: usize,
         gain: f32,
     },
+    /// The gain of the pad's sound itself (138), linear: it acts before the drive and the
+    /// volume, so normalize does not take the volume range. A change glides.
+    SetSoundGain {
+        pad: usize,
+        gain: f32,
+    },
     /// Pad pitch in semitones, −`PITCH_LIMIT`…+`PITCH_LIMIT`; the next hit plays at it
     /// and a sounding voice glides to it.
     SetPadPitch {
@@ -297,6 +303,9 @@ struct Pad {
     gain: f32,
     /// Volume at the start of the block: ramps to `gain` within the block.
     gain_from: f32,
+    /// The gain of the sound before the drive (138) and its value at the start of the block.
+    sound_gain: f32,
+    sound_gain_from: f32,
     /// How many sample frames a voice reads per output frame: `2^(pitch/12)`.
     rate: f32,
     /// Envelope windows in sample frames of the piece: fade-in at the start,
@@ -496,6 +505,8 @@ impl Engine {
                 mode: PadMode::OneShot,
                 gain: 1.0,
                 gain_from: 1.0,
+                sound_gain: 1.0,
+                sound_gain_from: 1.0,
                 rate: 1.0,
                 attack: 0.0,
                 decay: 0.0,
@@ -740,6 +751,8 @@ impl Engine {
         p.mode = PadMode::OneShot;
         p.gain = 1.0;
         p.gain_from = 1.0;
+        p.sound_gain = 1.0;
+        p.sound_gain_from = 1.0;
         p.rate = 1.0;
         p.attack = 0.0;
         p.decay = 0.0;
@@ -1054,6 +1067,9 @@ impl Engine {
             }
             Command::SetPadMode { pad, mode } if pad < PADS => self.pads[pad].mode = mode,
             Command::SetPadGain { pad, gain } if pad < PADS => self.pads[pad].gain = gain.max(0.0),
+            Command::SetSoundGain { pad, gain } if pad < PADS && gain.is_finite() => {
+                self.pads[pad].sound_gain = gain.max(0.0);
+            }
             Command::SetPadPitch { pad, semitones } if pad < PADS => {
                 let semitones = semitones.clamp(-PITCH_LIMIT, PITCH_LIMIT);
                 let rate = 2f32.powf(semitones as f32 / 12.0);
@@ -1388,6 +1404,9 @@ impl Engine {
             // a preview playing as a pad takes its volume and filter (50)
             let src = v.pad.or(v.as_pad);
             let (g0, g1) = src.map_or((1.0, 1.0), |p| (self.pads[p].gain_from, self.pads[p].gain));
+            let (k0, k1) = src.map_or((1.0, 1.0), |p| {
+                (self.pads[p].sound_gain_from, self.pads[p].sound_gain)
+            });
             // the drive and the sends of the pad (56), ramping within the block
             let (d0, d1) = src.map_or((0.0, 0.0), |p| {
                 (self.pads[p].drive_from, self.pads[p].drive)
@@ -1462,6 +1481,9 @@ impl Engine {
                     v.filter
                         .tick(&target, [s0 + (s1 - s0) * f, t0 + (t1 - t0) * f], glide, sr);
                 let t = i as f32 / n as f32;
+                // the sound gain comes before the drive, as if the file were louder (138)
+                let k = k0 + (k1 - k0) * t;
+                (sl, sr_) = (sl * k, sr_ * k);
                 if d0 > 0.0 || d1 > 0.0 {
                     let d = d0 + (d1 - d0) * t;
                     let drive = fixed_drive.unwrap_or_else(|| fx::Drive::new(d));
@@ -1563,6 +1585,7 @@ impl Engine {
         self.capture.expire_targets(self.transport.state.ticks);
         for p in &mut self.pads {
             p.gain_from = p.gain;
+            p.sound_gain_from = p.sound_gain;
             p.drive_from = p.drive;
             p.sends_from = p.sends;
         }

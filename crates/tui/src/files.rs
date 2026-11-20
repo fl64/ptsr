@@ -14,6 +14,7 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
     if p.entries.is_empty() {
         lines.push("no projects yet — type a name".fg(DIM).into());
     }
+    let empty = p.entries.is_empty();
     for (i, name) in p.entries.iter().enumerate() {
         let row = format!("   {}", clip_name(name, width.saturating_sub(3) as usize));
         lines.push(Line::from(if i == p.selected {
@@ -27,6 +28,29 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
         Some(name) => {
             lines.push(format!("name: {name}").into());
             lines.push(" Enter/P4 create · Esc/P1 back to list".fg(DIM).into());
+        }
+        // after SMC-PAD input the hint names the held button with the pads (F32)
+        // with no project, pad 4 makes one with a date name (138)
+        None if crate::pads::smc_words() && empty => {
+            lines.push(
+                " PAD BANK + 4 new project (date name) · PAD BANK + 1 close"
+                    .fg(DIM)
+                    .into(),
+            );
+        }
+        None if crate::pads::smc_words() => {
+            lines.push(
+                " knob 1 select · PAD BANK + 4 open · PAD BANK + 1 close"
+                    .fg(DIM)
+                    .into(),
+            );
+        }
+        None if empty => {
+            lines.push(
+                " type a name · Enter/P4 date name · Esc/P1 close"
+                    .fg(DIM)
+                    .into(),
+            );
         }
         None => {
             lines.push(
@@ -175,4 +199,69 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     // keep the selection on screen
     let offset = (f.selected as u16 + 1).saturating_sub(list.height);
     frame.render_widget(Paragraph::new(lines).scroll((offset, 0)), list);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn picker_text(p: &ProjectPickerView) -> String {
+        let status = Status {
+            badges: Vec::new(),
+            save: SaveStatus::Clean,
+            backend: None,
+            recording: false,
+            buffer_size: 0,
+            sample_rate: 48_000,
+            load_peak: 0.0,
+            xruns: 0,
+            master_db: 0,
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            no_releases: false,
+            notice: None,
+            project: None,
+        };
+        let mut term = Terminal::new(TestBackend::new(80, 10)).unwrap();
+        term.draw(|frame| {
+            frame.render_widget(project_picker(p, &status, 80), frame.area());
+        })
+        .unwrap();
+        term.backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    /// Scenario "The picker hint names PAD BANK" (controller-reach): after SMC-PAD input the
+    /// picker names PAD BANK with pads 4 and 1 (F32); with no project, pad 4 makes one (F03).
+    #[test]
+    fn the_picker_hint_names_pad_bank() {
+        let view = ProjectPickerView {
+            entries: vec!["MyBeat".to_string()],
+            selected: 0,
+            naming: None,
+        };
+        crate::pads::set_smc_words(true);
+        let smc = picker_text(&view);
+        crate::pads::set_smc_words(false);
+        let keys = picker_text(&view);
+        assert!(
+            smc.contains("PAD BANK + 4 open · PAD BANK + 1 close"),
+            "{smc}"
+        );
+        assert!(keys.contains("Enter/P4 open"), "{keys}");
+        let empty = ProjectPickerView {
+            entries: Vec::new(),
+            selected: 0,
+            naming: None,
+        };
+        crate::pads::set_smc_words(true);
+        let smc = picker_text(&empty);
+        crate::pads::set_smc_words(false);
+        assert!(smc.contains("PAD BANK + 4 new project"), "{smc}");
+        assert!(smc.contains("PAD BANK + 1 close"), "{smc}");
+    }
 }

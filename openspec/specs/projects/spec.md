@@ -6,7 +6,7 @@ Keep each project in its own folder with saved pads, chops and sample paths. Sup
 ## Requirements
 
 ### Requirement: Project is a folder
-The system SHALL keep a project as one folder: `project.toml` holds the session of that project (pad samples, modes, volumes of all banks, chops, the browser folder), `samples/` holds material born in the program — a recording goes there while the project is open, to the samples root (settings) without a project; sample paths inside the folder are stored relative to the project folder, paths outside stay absolute; no file is copied into the project behind the owner's back.
+The system SHALL keep a project as one folder. `project.toml` holds the session: pad samples, modes, volumes and sound gains of all banks, chops and the browser folder. `samples/` holds material born in the program. A recording goes there while the project is open, or to the samples root without a project. Paths inside the folder are relative to it, and paths outside stay absolute. No file is copied into the project unasked. A session without a sound gain SHALL load with 0 dB.
 
 #### Scenario: A recording lands in the project
 - **WHEN** the project "beat1" is open and the owner stops a recording
@@ -521,3 +521,15 @@ The owner SHALL request Exit again to close ptsr.
 - **WHEN** the owner repeats Retry Save before its save attempt completes
 - **THEN** the app keeps one save attempt for the same session
 - **AND** the result appears once and ptsr stays open
+
+### Requirement: A new project from the controller
+
+When the projects root has no project, the project picker SHALL show `new project` on device pad P4. A press SHALL make and open a project named by the date and the first free number, for example `2026-11-20-1`. The owner can rename it later from the keyboard. With projects in the list, P4 SHALL open the selected project, as before.
+
+#### Scenario: New project with no projects
+- **WHEN** the projects root has no project on 2026-11-20 and the owner presses PAD BANK with device pad P4 in the project picker
+- **THEN** the project `2026-11-20-1` is made and opens
+
+#### Scenario: The date name takes the next number
+- **WHEN** the projects root has no project but has a folder `2026-11-20-1`, and the owner makes a new project from the controller on that date
+- **THEN** the new project is `2026-11-20-2`

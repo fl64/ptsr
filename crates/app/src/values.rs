@@ -167,14 +167,6 @@ impl App {
             Action::ChopRegionStart if self.screen == Screen::Chop => chop(C::RegionStart),
             Action::ChopRegionEnd if self.screen == Screen::Chop => chop(C::RegionEnd),
             Action::ChopRegionClear if self.screen == Screen::Chop => chop(C::Region),
-            Action::ChopNormalize if self.screen == Screen::Chop => {
-                let abs = self.chop_from?;
-                Target::Pad {
-                    abs,
-                    param: pads::Param::Volume,
-                    scope: vec![abs],
-                }
-            }
             Action::PadParam(_) => self.pad_value_target(self.pads.param),
             Action::ChopHits | Action::ChopHitsBack if self.screen == Screen::Chop => {
                 chop(C::Threshold)

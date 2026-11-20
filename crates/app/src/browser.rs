@@ -189,16 +189,26 @@ impl Browser {
         }
     }
 
-    /// Ctrl+B: the selected folder, or the folder being shown when a file is selected, becomes
-    /// a favorite or stops being one. Returns the folder name and whether it is a favorite now.
-    pub fn toggle_favorite(&mut self) -> (String, bool) {
-        let (path, keep) = match self.current() {
+    /// The folder Ctrl+B acts on and the entry to keep selected.
+    fn favorite_target(&self) -> (PathBuf, Option<String>) {
+        match self.current() {
             Some(e) if e.is_dir => (
                 e.favorite.clone().unwrap_or_else(|| self.dir.join(&e.name)),
                 (!self.is_shortcut(e)).then(|| e.name.clone()),
             ),
             e => (self.dir.clone(), e.map(|e| e.name.clone())),
-        };
+        }
+    }
+
+    /// The folder Ctrl+B acts on is a favorite now: the star cell shows it (138).
+    pub fn favorite_now(&self) -> bool {
+        self.favorites.contains(&self.favorite_target().0)
+    }
+
+    /// Ctrl+B: the selected folder, or the folder being shown when a file is selected, becomes
+    /// a favorite or stops being one. Returns the folder name and whether it is a favorite now.
+    pub fn toggle_favorite(&mut self) -> (String, bool) {
+        let (path, keep) = self.favorite_target();
         let added = match self.favorites.iter().position(|p| *p == path) {
             Some(i) => {
                 self.favorites.remove(i);
@@ -449,6 +459,11 @@ impl App {
         };
         let accepted = match &picker.naming {
             Some(name) => self.create_project(name.clone()),
+            // no project yet: a date name needs no typed text (138)
+            None if picker.entries.is_empty() => {
+                let name = date_project_name(&self.paths.projects, std::time::SystemTime::now());
+                self.create_project(name)
+            }
             None => picker
                 .entries
                 .get(picker.selected)
@@ -510,6 +525,51 @@ impl App {
             });
         }
     }
+}
+
+/// `2026-11-20-1`: the date of `now` and the first number with no folder in `root` (138).
+pub(super) fn date_project_name(root: &Path, now: std::time::SystemTime) -> String {
+    let date = local_date(now);
+    let mut n = 1;
+    while root.join(format!("{date}-{n}")).exists() {
+        n += 1;
+    }
+    format!("{date}-{n}")
+}
+
+/// The date of `now` in the local time zone, as `2026-11-20`: the owner's calendar day,
+/// not the UTC day.
+pub(super) fn local_date(now: std::time::SystemTime) -> String {
+    date_at(now, local_offset(now))
+}
+
+/// The date of `now` shifted by `offset` seconds east of UTC.
+fn date_at(now: std::time::SystemTime, offset: i64) -> String {
+    let shifted = if offset >= 0 {
+        now + std::time::Duration::from_secs(offset.unsigned_abs())
+    } else {
+        now - std::time::Duration::from_secs(offset.unsigned_abs())
+    };
+    let stamp = super::stamp(shifted);
+    format!("{}-{}-{}", &stamp[..4], &stamp[4..6], &stamp[6..8])
+}
+
+/// Seconds east of UTC at `now` in the local time zone; 0 when the C library cannot tell.
+fn local_offset(now: std::time::SystemTime) -> i64 {
+    let Ok(since) = now.duration_since(std::time::UNIX_EPOCH) else {
+        return 0;
+    };
+    let Ok(secs) = libc::time_t::try_from(since.as_secs()) else {
+        return 0;
+    };
+    let mut tm = std::mem::MaybeUninit::<libc::tm>::zeroed();
+    // SAFETY: both pointers are valid for the call; localtime_r is the thread-safe form.
+    let local = unsafe { libc::localtime_r(&secs, tm.as_mut_ptr()) };
+    if local.is_null() {
+        return 0;
+    }
+    // SAFETY: localtime_r returned non-null, so it filled `tm`.
+    unsafe { tm.assume_init() }.tm_gmtoff
 }
 
 #[cfg(test)]
@@ -643,5 +703,24 @@ mod tests {
             "falls back to ~/Music or home"
         );
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The date name follows the local calendar day, not the UTC day.
+    #[test]
+    fn the_date_name_uses_the_local_day() {
+        // 2026-11-20 22:00 UTC
+        let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_795_132_800 + 79_200);
+        assert_eq!(date_at(at, 0), "2026-11-20");
+        assert_eq!(
+            date_at(at, 3 * 3_600),
+            "2026-11-21",
+            "Moscow is past midnight"
+        );
+        let early = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_795_132_800 + 3_600);
+        assert_eq!(
+            date_at(early, -5 * 3_600),
+            "2026-11-19",
+            "New York is the day before"
+        );
     }
 }

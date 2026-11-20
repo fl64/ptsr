@@ -84,10 +84,15 @@ The goal is **every action that does not need typed text** from the M-VAVE SMC-P
 This includes loading, chopping, assignment, pad shaping, effects, projects and settings. Later, it includes pattern recording and playback.
 These operations must be fast, clear and need few presses.
 Typed text stays on the keyboard: pad names, new project names and the file filter.
+Changes to control bindings also stay on the keyboard (change 138). These are F10 Learn,
+learn and forget in F12 MIDI, reset to profile and the SMC-PAD layout update. On 2026-11-20 the owner said that
+bindings with pads only are painful. The controller only gives the control to bind.
+This is the only exception to the goal for actions without text.
 
 Measurable form of the goal:
 
-- Every action in the program that does not need text has a controller path.
+- Every action in the program that does not need text has a controller path,
+  except the binding changes above.
 - A frequent action takes 1 press. Any other action takes not more than 2 presses
   from a visible panel, plus knob turns for values. The first panel entry needs
   PAD BANK and two layer 2 hits because the first hit only shows the panel.

@@ -1043,7 +1043,8 @@ impl App {
                 let shown = self.learn_shown(&profiles, name).unwrap_or_default();
                 vec![
                     format!(" LEARN · {label} · {place} · {shown} · Enter clear · Esc keep"),
-                    " Backspace removes the control of the picked element".into(),
+                    " Backspace removes the control of the picked element · This cannot be undone."
+                        .into(),
                 ]
             }
             (Some((name, label)), None, false) if l.refused && action_info(name).knob => vec![
@@ -2421,7 +2422,7 @@ mod tests {
         assert!(
             matches!(&app.midi_screen()[row], tui::MidiRow::Action { who, .. } if who.contains("none"))
         );
-        app.apply(input::Action::SettingsClear);
+        crate::destroy::yes(&mut app, input::Action::SettingsClear);
         assert!(!app.learned["SMC-PAD"]["global"].contains_key("note 64"));
         assert_eq!(
             app.profiles[0].resolve(input::Screen::Pads, press(64)),

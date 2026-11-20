@@ -182,6 +182,7 @@ impl App {
                 slots.len()
             ));
         }
+        lines.push("This cannot be undone.".into());
         lines.push("Enter: apply    Esc: keep".into());
         self.ask = Some(Ask::SmcLayout(Review { lines, slots }));
     }

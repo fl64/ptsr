@@ -12,9 +12,19 @@ pub struct CommandPanel {
     pub target: bool,
     /// The cell index that a pad hit lights now (131).
     pub flash: Option<usize>,
-    /// Cells whose action cannot run now, drawn dim; a press explains why (135).
+    /// Cells whose action cannot run now, drawn grey; a press explains why (135, 138).
     pub dim: [bool; 16],
+    /// Cells whose action replaces or removes the owner's work, drawn orange (138).
+    pub warn: [bool; 16],
+    /// The cell of the current choice among its kind, drawn brighter: the pad edit page (138).
+    pub current: [bool; 16],
+    /// The current state of a state cell, shown under its label (138).
+    pub states: [Option<&'static str>; 16],
 }
+
+/// The orange of a cell that replaces or removes work (138): apart from the amber bound
+/// and the yellow marks.
+const ORANGE: Color = Color::Rgb(0xFF, 0x8A, 0x3D);
 
 /// The number that the device prints on the pad of top-down `cell` 1–16.
 pub fn device_number(cell: usize) -> usize {
@@ -159,8 +169,13 @@ pub fn command_panel_in(
                 && !panel.dim[index]
                 && !matches!(label, "mixer" | "redo");
             // Three zones: screens, the actions of the current view, the fixed bottom row.
+            // An action that removes work is orange, the current page brighter (138).
             let zone = if row == 3 {
                 TEXT
+            } else if panel.warn[index] {
+                ORANGE
+            } else if panel.current[index] {
+                WHITE
             } else if panel.page == 0 && !panel.target {
                 MAGENTA
             } else {
@@ -189,22 +204,26 @@ pub fn command_panel_in(
             let inner = cell.inner(*area);
             frame.render_widget(Clear, *area);
             frame.render_widget(cell, *area);
-            // a label longer than seven cells breaks at its first space (135)
-            let lines: Vec<&str> = match label.split_once(' ') {
-                Some((first, second)) if Line::raw(label).width() > 7 && inner.height > 1 => {
-                    vec![first, second]
-                }
-                _ => vec![label],
-            };
+            let lines = cell_lines(label, panel.states[index], inner.height);
             let top = inner.y + inner.height.saturating_sub(lines.len() as u16) / 2;
-            for (i, line) in lines.into_iter().enumerate() {
+            for (i, (line, state)) in lines.into_iter().enumerate() {
                 let at = Rect {
                     y: top + i as u16,
                     height: 1,
                     ..inner
                 };
+                // the state reads apart from the label: its own colour, not bold (138)
+                let line = if state {
+                    Line::from(line).fg(match (lit, active) {
+                        (true, _) => BG,
+                        (false, true) => METER,
+                        (false, false) => DIM,
+                    })
+                } else {
+                    Line::from(line).fg(color).bold()
+                };
                 if at.y < inner.y + inner.height {
-                    frame.render_widget(Line::from(line).fg(color).bold().centered(), at);
+                    frame.render_widget(line.centered(), at);
                 }
             }
         }
@@ -212,6 +231,24 @@ pub fn command_panel_in(
     if let Some(question_view) = question_view {
         question(frame, body, question_view);
     }
+}
+
+/// The lines of a panel cell in `height` rows, each with `true` for the state line (138).
+/// Two words take two lines; a state takes the line under them, or under the whole label
+/// when only two rows fit.
+fn cell_lines<'a>(label: &'a str, state: Option<&'a str>, height: u16) -> Vec<(&'a str, bool)> {
+    let words = label.split_once(' ');
+    let mut lines = match (words, state) {
+        (Some((first, second)), None) if height > 1 => vec![first, second],
+        (Some((first, second)), Some(_)) if height > 2 => vec![first, second],
+        _ => vec![label],
+    };
+    let count = lines.len();
+    let mut out: Vec<(&str, bool)> = lines.drain(..).map(|line| (line, false)).collect();
+    if let Some(state) = state.filter(|_| usize::from(height) > count) {
+        out.push((state, true));
+    }
+    out
 }
 
 pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
@@ -910,6 +947,30 @@ mod tests {
         (rows, term)
     }
 
+    /// Two words take two lines; a state goes under them, or under the whole label when
+    /// only two rows fit; one row keeps the label (138).
+    #[test]
+    fn cell_lines_put_the_state_under_the_label() {
+        assert_eq!(
+            cell_lines("copy pad", None, 2),
+            [("copy", false), ("pad", false)]
+        );
+        assert_eq!(cell_lines("copy pad", None, 1), [("copy pad", false)]);
+        assert_eq!(
+            cell_lines("loop play", Some("on"), 3),
+            [("loop", false), ("play", false), ("on", true)]
+        );
+        assert_eq!(
+            cell_lines("loop play", Some("on"), 2),
+            [("loop play", false), ("on", true)]
+        );
+        assert_eq!(
+            cell_lines("loop play", Some("on"), 1),
+            [("loop play", false)]
+        );
+        assert_eq!(cell_lines("undo", None, 2), [("undo", false)]);
+    }
+
     fn panel(page: usize) -> CommandPanel {
         let mut labels: [Option<String>; 16] = std::array::from_fn(|_| None);
         labels[0] = Some("cut".into());
@@ -921,6 +982,9 @@ mod tests {
             target: false,
             flash: None,
             dim: [false; 16],
+            warn: [false; 16],
+            current: [false; 16],
+            states: [None; 16],
         }
     }
 
@@ -966,6 +1030,63 @@ mod tests {
             assert_eq!(term.backend().buffer()[first].bg, PANEL);
             assert_eq!(term.backend().buffer()[second].bg, DIM, "{width}x{height}");
         }
+    }
+
+    /// Scenario "Grey, orange and empty cells look different" (screen-layout).
+    #[test]
+    fn grey_orange_and_empty_cells_look_different() {
+        for (width, height) in [(80, 26), (120, 40)] {
+            let [_, body, _, _] = frame_areas(Rect::new(0, 0, width, height));
+            let grid = pad_frame(body, false).grid;
+            let corner = |cell: u16| (grid.x + cell * (grid.width / 4), grid.y);
+            let mut looks = panel(1);
+            looks.labels[1] = Some("copy pad".into());
+            looks.dim[1] = true;
+            looks.labels[2] = Some("clear pad".into());
+            looks.warn[2] = true;
+            let (rows, term) = render(&looks, width, height);
+            let buffer = term.backend().buffer();
+            assert_eq!(buffer[corner(0)].fg, CYAN, "a bright cell");
+            assert_eq!(buffer[corner(1)].fg, BORDER, "a grey cell");
+            assert_eq!(buffer[corner(2)].fg, ORANGE, "an orange cell");
+            assert_eq!(buffer[corner(3)].fg, BORDER, "an empty cell");
+            let top: String = rows
+                .iter()
+                .skip(usize::from(grid.y))
+                .take(usize::from(grid.height / 4))
+                .cloned()
+                .collect();
+            assert!(top.contains("copy") && top.contains("clear"), "{top}");
+            let row = rows
+                .iter()
+                .skip(usize::from(grid.y))
+                .take(usize::from(grid.height / 4))
+                .map(|row| {
+                    row.chars()
+                        .skip(usize::from(corner(3).0))
+                        .take(usize::from(grid.width / 4))
+                        .collect::<String>()
+                })
+                .collect::<String>();
+            assert!(
+                !row.chars().any(char::is_alphabetic),
+                "an empty cell shows no label: {row}"
+            );
+        }
+    }
+
+    /// The current page of the pad edit is brighter than the other page cells (138).
+    #[test]
+    fn the_current_page_cell_is_brighter() {
+        let [_, body, _, _] = frame_areas(Rect::new(0, 0, 80, 26));
+        let grid = pad_frame(body, false).grid;
+        let mut looks = panel(1);
+        looks.labels[1] = Some("fx page".into());
+        looks.current[1] = true;
+        let (_, term) = render(&looks, 80, 26);
+        let buffer = term.backend().buffer();
+        assert_eq!(buffer[(grid.x + grid.width / 4, grid.y)].fg, WHITE);
+        assert_eq!(buffer[(grid.x, grid.y)].fg, CYAN);
     }
 
     /// Scenario "Cells show the device numbers" (command-panel).

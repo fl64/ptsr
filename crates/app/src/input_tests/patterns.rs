@@ -1292,6 +1292,8 @@ fn pattern_panel_all_commands_confirm_clear_restart_and_execute_on_every_screen(
                     }
                 }
                 drive.tap(KeyCode::Backspace, M::NONE);
+                // forgetting asks first (138)
+                drive.tap(KeyCode::Enter, M::NONE);
                 let key = if matches!(source, Source::Notes) {
                     input::midi::Key::Note(number)
                 } else {
@@ -4879,7 +4881,7 @@ fn app_capture_drive_raw(hits: Vec<[u32; 4]>) -> Drive {
     drive
 }
 
-fn app_capture_snapshot(drive: &Drive) -> engine::capture::Snapshot {
+pub(super) fn app_capture_snapshot(drive: &Drive) -> engine::capture::Snapshot {
     let epoch = drive
         .project
         .epoch
@@ -4894,7 +4896,7 @@ fn app_capture_snapshot(drive: &Drive) -> engine::capture::Snapshot {
         .unwrap()
 }
 
-fn app_capture_frames(drive: &mut Drive, frames: usize) -> Stereo {
+pub(super) fn app_capture_frames(drive: &mut Drive, frames: usize) -> Stereo {
     let (mut left, mut right) = (vec![0.0; frames], vec![0.0; frames]);
     for start in (0..frames).step_by(128) {
         let end = (start + 128).min(frames);
@@ -4911,7 +4913,7 @@ fn app_capture_frames(drive: &mut Drive, frames: usize) -> Stereo {
     (left, right)
 }
 
-fn app_capture_start(drive: &mut Drive, pass: u64) {
+pub(super) fn app_capture_start(drive: &mut Drive, pass: u64) {
     drive.app.send(Command::TransportPlay);
     assert!(drive.app.try_send(Command::PatternRecordStart { pass }));
     app_capture_frames(drive, 0);
@@ -4921,7 +4923,7 @@ fn app_capture_start(drive: &mut Drive, pass: u64) {
     );
 }
 
-fn app_capture_finish(drive: &mut Drive, pass: u64) {
+pub(super) fn app_capture_finish(drive: &mut Drive, pass: u64) {
     drive.app.send(Command::PatternRecordEnd { pass });
     app_capture_frames(drive, 0);
     assert_eq!(
@@ -9347,7 +9349,7 @@ fn app_capture_render_retains_rhythm_without_fresh_or_delayed_double_hits() {
     }
 }
 
-fn settle_pattern(drive: &mut Drive) {
+pub(super) fn settle_pattern(drive: &mut Drive) {
     use std::sync::atomic::Ordering::Acquire;
     for _ in 0..512 {
         drive.app.flush_audio();
@@ -10156,6 +10158,7 @@ fn pattern_addresses_stay_during_copy_clear_and_file_replacement() {
         drive.pad_release(source, 1);
         assert_eq!(drive.app.pads.selected, 1);
         drive.registry_command(source, KeyCode::Backspace, M::NONE, 102);
+        drive.tap(KeyCode::Enter, M::NONE); // a pad with a sound asks first (138)
         assert!(drive.app.pads.file[1].is_none());
         pattern_tone(&mut drive, &raw, 0.0, 0);
         drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 103);
@@ -11454,6 +11457,7 @@ fn pitch_gate_scope_reset_copy_and_undo_preserve_pad_state() {
         assert_eq!(drive.app.pads.snapshot(0), copied);
         drive.app.edit = false;
         drive.registry_command(source, KeyCode::Backspace, M::NONE, 102);
+        drive.registry_command(source, KeyCode::Enter, M::NONE, 103);
         assert!(drive.app.pads.file[0].is_none());
         assert!(!drive.app.pads.pitch_gate[0]);
         drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 104);
@@ -12824,14 +12828,46 @@ fn counts_and_undo_name_what_they_mean() {
         drive.last_notice().text
     );
     drive.tap(KeyCode::Char('z'), M::CONTROL);
-    assert_eq!(drive.last_notice().text, "undo: erase pad W on A1");
+    assert_eq!(drive.last_notice().text, "undo: pad W hits back on A1");
     drive.tap(KeyCode::Esc, M::NONE);
     tidy_clear(&mut drive, Source::Keyboard);
     drive.tap(KeyCode::Enter, M::NONE);
     assert_eq!(drive.last_notice().text, "A1 cleared: 3 hits.");
     drive.app.pattern_panel = None;
     drive.tap(KeyCode::Char('z'), M::CONTROL);
-    assert_eq!(drive.last_notice().text, "undo: clear on A1");
+    assert_eq!(drive.last_notice().text, "undo: A1 hits back");
+}
+
+/// Scenario "The erase notice names the SMC-PAD undo" (screen-help, 138).
+#[test]
+fn the_erase_notice_names_the_smc_pad_undo() {
+    let mut drive = Drive::smc_offline();
+    drive.midi().recorded_smc_setup();
+    drive.app.apply_session(session::Session {
+        pattern: Some("A1".into()),
+        patterns: vec![session::PatternState {
+            slot: "A1".into(),
+            bars: 1,
+            quantize: "1/16".into(),
+            strength: 100,
+            hits: vec![[0, 5, 90, 0]],
+        }],
+        ..Default::default()
+    });
+    settle_pattern(&mut drive);
+    drive.app.goto(Screen::Pads);
+    drive.tap(KeyCode::Char('e'), M::ALT);
+    assert!(drive.app.erase_pads, "erase mode is on");
+    // pad W is device pad P10 on the playing layer
+    drive.bytes("SINCO SMC-PAD-Master 28:1", &[0x99, 61, 100]);
+    drive.bytes("SINCO SMC-PAD-Master 28:1", &[0x89, 61, 0]);
+    drive.frame();
+    let text = &drive.last_notice().text;
+    assert!(
+        text.contains("erased") && text.contains("PAD BANK + 2 undo"),
+        "{text}"
+    );
+    assert!(!text.contains("Ctrl+Z"), "{text}");
 }
 
 /// Scenario "Pattern keys follow the effective binding".

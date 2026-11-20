@@ -240,13 +240,34 @@ fn full_help_block(
         " ".into(),
         label("CONTROLLER", Tab::Controller),
     ];
+    let footer = vec![Span::raw(help_footer(tab, navigation, width))];
+    if let Some(count) = message_count {
+        title.push(format!(" · {count} / 50 ").into());
+    }
+    Block::bordered()
+        .title(Line::from(title))
+        .title_bottom(Line::from(footer))
+        .border_style(Style::new().fg(CYAN))
+        .bg(PANEL)
+}
+
+/// The bottom line of the full help: how to move, close and scroll.
+fn help_footer(tab: Tab, navigation: &str, width: u16) -> String {
     let purpose = if tab == Tab::Controller {
         "select"
     } else {
         "scroll"
     };
-    let base = format!(" Tab/LEFT/RIGHT · F1/Esc/P1 · P5/P6 {purpose} ");
-    let footer = if tab == Tab::Messages {
+    // after SMC-PAD input the hint names the held button with the pads (F44)
+    let smc = crate::pads::smc_words();
+    let base = if smc {
+        format!(" LEFT/RIGHT · PAD BANK + 1 close · PAD BANK + 5/6 {purpose} ")
+    } else {
+        format!(" Tab/LEFT/RIGHT · F1/Esc/P1 · P5/P6 {purpose} ")
+    };
+    if tab == Tab::Messages && smc {
+        " LEFT/RIGHT · PAD BANK + 1 close · PAD BANK + 5/6 scroll ".to_owned()
+    } else if tab == Tab::Messages {
         " Tab/LEFT/RIGHT · F1/Esc close/P1 · P5/P6/↑↓ scroll · PgUp/PgDn page ".to_owned()
     } else if navigation.is_empty() {
         base
@@ -256,16 +277,7 @@ fn full_help_block(
         format!("{base}· {navigation}")
     } else {
         base
-    };
-    let footer = vec![Span::raw(footer)];
-    if let Some(count) = message_count {
-        title.push(format!(" · {count} / 50 ").into());
     }
-    Block::bordered()
-        .title(Line::from(title))
-        .title_bottom(Line::from(footer))
-        .border_style(Style::new().fg(CYAN))
-        .bg(PANEL)
 }
 
 fn wrap_help_text(text: &str, width: usize) -> Vec<String> {
@@ -611,4 +623,21 @@ pub(super) fn message_history_caption(
         Paragraph::new(lines.into_iter().skip(start).collect::<Vec<_>>()),
         inner,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// After SMC-PAD input the full help names PAD BANK with the pads (138, F44).
+    #[test]
+    fn the_help_footer_names_pad_bank_after_smc_input() {
+        crate::pads::set_smc_words(true);
+        let smc = help_footer(Tab::Controller, "", 120);
+        crate::pads::set_smc_words(false);
+        let keys = help_footer(Tab::Controller, "", 120);
+        assert!(smc.contains("PAD BANK + 5/6 select"), "{smc}");
+        assert!(smc.contains("PAD BANK + 1 close"), "{smc}");
+        assert!(keys.contains("P5/P6 select"), "{keys}");
+    }
 }

@@ -50,6 +50,17 @@ impl App {
         {
             return;
         }
+        // STOP first stops what plays and the recording keeps the tail; then it ends (138)
+        if action == Action::StopContext
+            && self
+                .recording
+                .is_some_and(|(source, _)| source == super::audio::SOURCE_OUTPUT)
+            && self.preview_frame().is_none()
+            && !self.transport_state().playing
+        {
+            self.audio_record_action(Action::RecordOutputToggle);
+            return;
+        }
         match (self.screen, action) {
             (Screen::Files, Action::PlayContext) if self.preview_frame().is_none() => {
                 self.preview_selected_once();

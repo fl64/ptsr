@@ -55,6 +55,63 @@ fn scenarios(directory: &Path) -> Vec<(String, String)> {
     out
 }
 
+/// The requirement names a delta removes: the headings in its `## REMOVED Requirements` part.
+fn removed_requirements(delta: &str) -> Vec<String> {
+    let mut removed = false;
+    let mut out = Vec::new();
+    for l in delta.lines() {
+        if l.starts_with("## ") {
+            removed = l.trim() == "## REMOVED Requirements";
+        } else if removed && let Some(name) = l.strip_prefix("### Requirement: ") {
+            out.push(name.trim().to_string());
+        }
+    }
+    out
+}
+
+/// The scenario names below the given requirements of one specification text.
+fn scenarios_under(spec: &str, requirements: &[String]) -> Vec<String> {
+    let mut inside = false;
+    let mut out = Vec::new();
+    for l in spec.lines() {
+        if let Some(name) = l.strip_prefix("### Requirement: ") {
+            inside = requirements.iter().any(|r| r == name.trim());
+        } else if inside && let Some(name) = l.strip_prefix("#### Scenario: ") {
+            out.push(name.trim().to_string());
+        }
+    }
+    out
+}
+
+/// Main scenarios whose requirement an active change removes: the archive drops them,
+/// so until then they need no test of their own.
+fn removed_by_active_changes() -> BTreeSet<(String, String)> {
+    let mut out = BTreeSet::new();
+    for change in fs::read_dir(root().join("openspec/changes"))
+        .unwrap()
+        .map(Result::unwrap)
+    {
+        let directory = change.path().join("specs");
+        if change.file_name() == "archive" || !directory.is_dir() {
+            continue;
+        }
+        let mut deltas = Vec::new();
+        files(&directory, "md", &mut deltas);
+        for delta in deltas {
+            let spec = delta.parent().unwrap().file_name().unwrap().to_owned();
+            let gone = removed_requirements(&fs::read_to_string(&delta).unwrap());
+            let main = root().join("openspec/specs").join(&spec).join("spec.md");
+            if gone.is_empty() || !main.is_file() {
+                continue;
+            }
+            for scenario in scenarios_under(&fs::read_to_string(main).unwrap(), &gone) {
+                out.insert((spec.to_string_lossy().to_string(), scenario));
+            }
+        }
+    }
+    out
+}
+
 /// The names in `openspec/untested.md`: the text in the first backticks of each list line.
 fn untested() -> BTreeSet<String> {
     fs::read_to_string(root().join("openspec/untested.md"))
@@ -162,12 +219,15 @@ fn test_name_audit_requires_a_real_test_header() {
 #[test]
 fn every_scenario_names_its_test() {
     let skip = untested();
+    let removed = removed_by_active_changes();
     let all = scenarios(&root().join("openspec/specs"));
     assert!(all.len() > 400, "the specs were read: {}", all.len());
 
     let missing: Vec<String> = all
         .iter()
-        .filter(|(_, s)| !named_test(s) && !skip.contains(s))
+        .filter(|(spec, s)| {
+            !named_test(s) && !skip.contains(s) && !removed.contains(&(spec.clone(), s.clone()))
+        })
         .map(|(spec, s)| format!("{s} ({spec})"))
         .collect();
     assert!(
@@ -186,4 +246,26 @@ fn every_scenario_names_its_test() {
         stale.is_empty(),
         "openspec/untested.md lists scenarios that are gone or have a test now: {stale:?}"
     );
+}
+
+#[test]
+fn a_scenario_of_a_removed_requirement_needs_no_test() {
+    let delta = concat!(
+        "## MODIFIED Requirements\n",
+        "### Requirement: Kept\n",
+        "## REMOVED Requirements\n",
+        "### Requirement: Gone\n",
+        "**Reason**: replaced\n",
+    );
+    let gone = removed_requirements(delta);
+    assert_eq!(gone, vec!["Gone".to_string()]);
+    let spec = concat!(
+        "### Requirement: Kept\n",
+        "#### Scenario: Still here\n",
+        "### Requirement: Gone\n",
+        "#### Scenario: Old way\n",
+        "### Requirement: Other\n",
+        "#### Scenario: Also here\n",
+    );
+    assert_eq!(scenarios_under(spec, &gone), vec!["Old way".to_string()]);
 }

@@ -1,93 +1,98 @@
 # SMC-PAD actions (127): one page of up to 12 cells per view. Labels: one meaning each (134).
-# Cells 1-12 count from the top left, in physical rows. A second page is rejected.
+# Cells 1-12 count from the top left, in physical rows: cells 1-4 are device pads 13-16,
+# 5-8 are pads 9-12, 9-12 are pads 5-8. A second page is rejected.
+# The order follows how often the owner uses each action (138).
 # The screens view and the bottom row (back, undo, redo, panic) are fixed in the program.
 
 [[view]]
 name = "pads"
 page = 1
 cells = [
-  { cell = 1, label = "edit", action = "pad.edit" },
-  { cell = 2, label = "copy", action = "pad.copy" },
-  { cell = 3, label = "swap", action = "pad.take" },
-  { cell = 4, label = "mark", action = "pad.mark_toggle" },
-  { cell = 5, label = "mode", action = "pad.mode_next" },
-  { cell = 6, label = "remove", action = "pad.clear" },
-  { cell = 7, label = "p.gate", action = "pad.pitch_gate_toggle" },
-  { cell = 8, label = "all", action = "pad.mark_bank" },
-  { cell = 9, label = "grid", action = "ui.pads_toggle" },
-  { cell = 10, label = "rec out", action = "record.output" },
-  { cell = 11, label = "chop", action = "screen.chop" },
+  { cell = 1, label = "pitch gate", action = "pad.pitch_gate_toggle" },
+  { cell = 2, label = "record output", action = "record.output" },
+  { cell = 3, label = "hide pads", action = "ui.pads_toggle" },
+  { cell = 5, label = "swap pads", action = "pad.take" },
+  { cell = 6, label = "mark pad", action = "pad.mark_toggle" },
+  { cell = 7, label = "mark bank", action = "pad.mark_bank" },
+  { cell = 8, label = "play mode", action = "pad.mode_next" },
+  { cell = 9, label = "edit pad", action = "pad.edit" },
+  { cell = 10, label = "copy pad", action = "pad.copy" },
+  { cell = 11, label = "chop pad", action = "screen.chop" },
+  { cell = 12, label = "clear pad", action = "pad.clear" },
 ]
 
 [[view]]
 name = "pad_edit"
 page = 1
 cells = [
-  { cell = 1, label = "mode", action = "pad.mode_next" },
-  { cell = 2, label = "reset", action = "pad.clear" },
-  { cell = 3, label = "p.gate", action = "pad.pitch_gate_toggle" },
-  { cell = 4, label = "copy", action = "pad.copy" },
+  { cell = 1, label = "fx page", action = "edit.page_fx" },
+  { cell = 5, label = "tone page", action = "edit.page_tone" },
+  { cell = 6, label = "env page", action = "edit.page_env" },
+  { cell = 7, label = "filter page", action = "edit.page_filter" },
+  { cell = 8, label = "source page", action = "edit.page_source" },
+  { cell = 9, label = "play mode", action = "pad.mode_next" },
+  { cell = 10, label = "copy pad", action = "pad.copy" },
+  { cell = 11, label = "pitch gate", action = "pad.pitch_gate_toggle" },
+  { cell = 12, label = "reset pad", action = "pad.clear" },
 ]
 
 [[view]]
 name = "pattern"
 page = 1
 cells = [
-  { cell = 1, label = "step", action = "pattern.step_edit" },
-  { cell = 2, label = "grid -", action = "pattern.view_prev", pair = "grid:lower" },
-  { cell = 3, label = "grid +", action = "pattern.view_next", pair = "grid:upper" },
-  { cell = 4, label = "params", action = "pattern.controls" },
-  { cell = 5, label = "record", action = "pattern.record" },
-  { cell = 6, label = "erase", action = "pattern.erase" },
-  { cell = 7, label = "undoA1", action = "pattern.undo" },
-  { cell = 8, label = "clear", action = "pattern.clear" },
-  { cell = 9, label = "rows", action = "pattern.overview_empty_toggle" },
-  { cell = 10, label = "tap", action = "transport.tap" },
+  { cell = 1, label = "hide empty", action = "pattern.overview_empty_toggle" },
+  { cell = 5, label = "steps wider", action = "pattern.view_prev", pair = "grid:lower" },
+  { cell = 6, label = "steps finer", action = "pattern.view_next", pair = "grid:upper" },
+  { cell = 7, label = "A1 setup", action = "pattern.controls" },
+  { cell = 8, label = "clear A1", action = "pattern.clear" },
+  { cell = 9, label = "record A1", action = "pattern.record" },
+  { cell = 10, label = "edit steps", action = "pattern.step_edit" },
+  { cell = 11, label = "erase hits", action = "pattern.erase" },
+  { cell = 12, label = "tap tempo", action = "transport.tap" },
 ]
 
 [[view]]
 name = "files"
 page = 1
 cells = [
-  { cell = 1, label = "to pad", action = "browser.hold" },
-  { cell = 2, label = "load", action = "browser.load" },
-  { cell = 4, label = "star", action = "browser.favorite_toggle" },
-  { cell = 6, label = "listen", action = "browser.preview_toggle" },
-  { cell = 7, label = "chop", action = "screen.chop" },
+  { cell = 5, label = "star file", action = "browser.favorite_toggle" },
+  { cell = 9, label = "load to pad", action = "browser.load" },
+  { cell = 10, label = "take file", action = "browser.hold" },
+  { cell = 11, label = "listen file", action = "browser.preview_toggle" },
+  { cell = 12, label = "chop file", action = "screen.chop" },
 ]
 
 [[view]]
 name = "chop"
 page = 1
 cells = [
-  { cell = 1, label = "cut", action = "chop.cut" },
-  { cell = 2, label = "parts", action = "chop.parts" },
-  { cell = 3, label = "hits", action = "chop.hits" },
-  { cell = 4, label = "assign", action = "chop.assign" },
-  { cell = 5, label = "loop", action = "chop.loop_toggle" },
-  { cell = 6, label = "listen", action = "chop.play_mode" },
-  { cell = 7, label = "snap", action = "chop.snap_toggle" },
-  { cell = 8, label = "as pad", action = "chop.as_pad_toggle" },
-  { cell = 9, label = "whole", action = "chop.region_clear" },
-  { cell = 11, label = "edit", action = "chop.edit" },
-  { cell = 12, label = "fill", action = "chop.commit" },
+  { cell = 1, label = "remove all cuts", action = "chop.cuts_clear" },
+  { cell = 2, label = "loop play", action = "chop.loop_toggle" },
+  { cell = 3, label = "play range", action = "chop.play_mode" },
+  { cell = 4, label = "cursor step", action = "chop.snap_toggle" },
+  { cell = 5, label = "put on pads", action = "chop.assign" },
+  { cell = 6, label = "fill pads", action = "chop.commit" },
+  { cell = 7, label = "edit slice", action = "chop.edit" },
+  { cell = 8, label = "trim silence", action = "chop.trim_silence" },
+  { cell = 9, label = "cut here", action = "chop.cut" },
+  { cell = 10, label = "cut by hits", action = "chop.hits" },
+  { cell = 11, label = "fewer hits", action = "chop.hits_back" },
+  { cell = 12, label = "equal parts", action = "chop.parts" },
 ]
 
 [[view]]
 name = "chop_edit"
 page = 1
 cells = [
-  { cell = 1, label = "normal", action = "chop.normalize" },
-  { cell = 2, label = "hits -", action = "chop.hits_back" },
-  { cell = 3, label = "join left", action = "marker.delete" },
-  { cell = 4, label = "join right", action = "slice.end_delete" },
-  { cell = 5, label = "whole", action = "chop.region_clear" },
+  { cell = 9, label = "norm", action = "chop.normalize" },
+  { cell = 10, label = "join left", action = "marker.delete" },
+  { cell = 11, label = "join right", action = "slice.end_delete" },
+  { cell = 12, label = "hear as pad", action = "chop.as_pad_toggle" },
 ]
 
 [[view]]
 name = "settings"
 page = 1
 cells = [
-  { cell = 2, label = "learn", action = "settings.learn" },
-  { cell = 3, label = "unbind", action = "settings.clear" },
+  { cell = 9, label = "choose", action = "settings.learn" },
 ]

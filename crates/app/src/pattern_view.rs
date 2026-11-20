@@ -45,6 +45,15 @@ impl Division {
         }
     }
 
+    /// The view cannot step wider (`next` false) or finer (138): its panel cell is grey.
+    pub(super) fn at_limit(self, next: bool) -> bool {
+        if next {
+            self.0 + 1 >= GRIDS.len()
+        } else {
+            self.0 == 0
+        }
+    }
+
     pub(super) fn change(&mut self, next: bool) {
         self.0 = if next {
             (self.0 + 1).min(GRIDS.len() - 1)

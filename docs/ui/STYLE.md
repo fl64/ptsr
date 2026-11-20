@@ -14,10 +14,12 @@ Cyberpunk: an almost black background, three state accents, everything else mute
 | Muted | `#8A929E` | labels, help |
 | Cyan | `#33E1FF` | playing, selected, on |
 | Magenta | `#FF5FAE` | cut markers, waiting, recording, warnings |
-| White | `#F2F4F7` | hit flash, playhead |
+| White | `#F2F4F7` | hit flash, playhead, the current pad edit page cell |
+| Orange | `#FF8A3D` | panel cells that replace or remove work |
 | Yellow | `#FFE03A`, dark fill `#3D3305` | PadMode badges, mode frames, corner marks, marked pads and bank marks |
 
 Use only these state accents. Bank tints and meters keep their separate meanings.
+A panel cell that cannot act now uses the frame and muted colours. An empty panel cell shows no label.
 Yellow identifies modes where pads do more than ordinary playback: placement, copying, swapping, assignment, marking and learning.
 Marking still sounds. A title badge uses dark text on its accent background. Marked pads retain their dark yellow fill.
 

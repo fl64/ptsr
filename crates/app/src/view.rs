@@ -38,7 +38,8 @@ impl super::Ask {
             | Ask::ResetPads { lines, .. }
             | Ask::ClearPads { lines, .. }
             | Ask::CopyPad { lines, .. }
-            | Ask::ClearPattern { lines } => lines,
+            | Ask::ClearPattern { lines }
+            | Ask::Destroy { lines, .. } => lines,
         }
     }
 }
@@ -226,7 +227,7 @@ impl BadgeKey {
             "{} {:.1}{}{}",
             if playing { "▶" } else { "■" },
             tempo as f64 / 10.0,
-            if metro { " M" } else { "" },
+            if metro { " click" } else { "" },
             if playing {
                 format!(" {bar}:{beat}")
             } else {
@@ -236,7 +237,7 @@ impl BadgeKey {
         if let Some((bar, beat)) = self.pattern {
             clock.push_str(&format!(" · A1 {bar}:{beat}"));
         }
-        let compact_clock = clock.replace(' ', "");
+        let compact_clock = clock.replace(' ', "").replace("click", "·click");
         let mut badges = Vec::new();
         let mut pad_modes = pad_modes.into_iter();
         let clock_badge = if let Some(mut mode) = pad_modes.next() {
@@ -392,6 +393,13 @@ impl App {
             Ask::Plan { .. } | Ask::PutFile { .. } | Ask::CopyPad { .. } => "replace",
             Ask::ResetProfile { .. } | Ask::ResetPads { .. } => "reset",
             Ask::ClearPads { .. } | Ask::ClearPattern { .. } => "clear",
+            Ask::Destroy { act, .. } => match act {
+                crate::destroy::Act::Forget => "forget",
+                crate::destroy::Act::ClearCuts => "remove",
+                crate::destroy::Act::TrimSilence => "trim",
+                crate::destroy::Act::AssignOrder => "switch",
+                _ => "replace",
+            },
         };
         let recovering = matches!(ask, Ask::ExitRecovery { .. });
         let cancel_verb = if recovering { "Back" } else { "keep" };
@@ -1705,10 +1713,14 @@ impl App {
                 },
                 elapsed.as_secs(),
                 elapsed.subsec_millis() / 100,
-                if *source == audio::SOURCE_MIC {
-                    "release Alt+R to stop"
-                } else {
-                    "Ctrl+T to stop"
+                match (
+                    *source == audio::SOURCE_MIC,
+                    self.input_sources.last_is_smc()
+                ) {
+                    // one stop control, the one the mode line names (F35)
+                    (true, true) => "release RECORD to stop",
+                    (true, false) => "release Alt+R to stop",
+                    (false, smc) => self.output_stop_words(smc),
                 }
             ));
         }

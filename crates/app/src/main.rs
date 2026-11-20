@@ -3,16 +3,19 @@ mod browser;
 mod chop;
 mod config;
 mod controller_map;
+mod destroy;
 mod diag;
 mod dispatch;
 mod graphics;
 mod help;
+mod looks;
 use help::describe;
 mod input_sources;
 mod learn;
 mod loader;
 mod meters;
 mod midi;
+mod mode_line;
 mod notices;
 mod pads;
 mod panel;
@@ -159,6 +162,11 @@ enum Ask {
     /// A copy in hand replaces a pad that holds something (83a).
     CopyPad {
         source: usize,
+        lines: Vec<String>,
+    },
+    /// An action that removes or replaces the owner's work waits for yes (138).
+    Destroy {
+        act: destroy::Act,
         lines: Vec<String>,
     },
     /// Clear A1 from pattern controls: every hit goes, the settings stay (98b).
@@ -2414,11 +2422,11 @@ fn stamp(t: std::time::SystemTime) -> String {
     format!("{y:04}{mo:02}{day:02}-{h:02}{m:02}{s:02}")
 }
 
-/// The end of every overwrite question.
-fn overwrite_footer() -> [String; 3] {
+/// The end of every overwrite question: one undo brings the old sounds back (138).
+fn overwrite_footer(undo: &str) -> [String; 3] {
     [
         "The old sounds leave these pads; their files on disk stay.".into(),
-        "This cannot be undone.".into(),
+        format!("{undo} brings them back."),
         "Enter: replace · Esc: keep".into(),
     ]
 }
@@ -2629,8 +2637,8 @@ fn chop_view_routed<'a>(
                 "LISTEN".to_string(),
                 vec![
                     "no slice lies on a pad yet".into(),
-                    "Ctrl+1…8: more slices".into(),
-                    "P: put them on pads".into(),
+                    chop::hint_more_slices().into(),
+                    chop::hint_put_on_pads().into(),
                 ],
                 None,
                 tui::Pads {
@@ -2747,11 +2755,11 @@ fn chop_view_routed<'a>(
                     } else {
                         first
                     },
-                    "Ctrl+1…8: banks".into(),
+                    chop::hint_banks().into(),
                     if pattern_pads {
                         "end pattern work to assign".into()
                     } else {
-                        "P: put them on pads".into()
+                        chop::hint_put_on_pads().into()
                     },
                 ],
                 Some(marks),
@@ -3709,6 +3717,8 @@ fn ctrl_text(a: Action) -> String {
         Action::MarkerNudge { fine: true, .. } => "nudge fine".into(),
         Action::MarkerNudge { fine: false, .. } => "slice start".into(),
         Action::ChopRegionClear => "region all".into(),
+        Action::ChopCutsClear => "no cuts".into(),
+        Action::ChopTrimSilence => "trim silence".into(),
         Action::SliceBound { end: false, .. } => "left bound".into(),
         Action::SliceBound { end: true, .. } => "right bound".into(),
         Action::MarkerDelete => "delete left".into(),
@@ -3725,35 +3735,6 @@ fn ctrl_text(a: Action) -> String {
     }
 }
 
-/// Chop-screen actions the assign mode swallows (21): a cut, a zoom or a cursor move
-/// while the owner lays slices onto pads would ruin the wave under the plan. The pads,
-/// Tab, Enter, Esc, the slice pick and the undo stay live.
-fn assign_deaf(a: &Action) -> bool {
-    matches!(
-        a,
-        Action::ChopPlay
-            | Action::ChopPlayMode
-            | Action::ChopCut
-            | Action::ChopEqualParts
-            | Action::ChopHits
-            | Action::ChopHitsBack
-            | Action::ThresholdStep(_)
-            | Action::ChopAssign
-            | Action::ChopZoom { .. }
-            | Action::ChopRegionStart
-            | Action::ChopRegionEnd
-            | Action::ChopRegionClear
-            | Action::ChopSnapToggle
-            | Action::CursorMove { .. }
-            | Action::CursorJump { .. }
-            | Action::MarkerNudge { .. }
-            | Action::EditValue { .. }
-            | Action::SliceBound { .. }
-            | Action::ParamPrev
-            | Action::MarkerDelete
-            | Action::SliceEndDelete
-    )
-}
 fn help_section(a: Action) -> usize {
     match a {
         Action::PadPress { .. }
@@ -3800,6 +3781,7 @@ fn help_section(a: Action) -> usize {
         | Action::ParamPrev
         | Action::PageNext
         | Action::PagePrev
+        | Action::PadPage(_)
         | Action::EditValue { .. }
         | Action::ChopCommit
         | Action::ChopEdit
@@ -3809,6 +3791,8 @@ fn help_section(a: Action) -> usize {
         | Action::ChopRegionStart
         | Action::ChopRegionEnd
         | Action::ChopRegionClear
+        | Action::ChopCutsClear
+        | Action::ChopTrimSilence
         | Action::ChopSnapToggle
         | Action::ChopNormalize
         | Action::CursorMove { .. }
@@ -4457,7 +4441,7 @@ mod tests {
         assert_eq!(pads_row_who(&app), "16 of 16 learned");
         assert_eq!(app.learning_line(), None, "the run ended after the last");
         // Backspace on the row clears them all
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         assert_eq!(pads_row_who(&app), "0 of 16 learned");
         assert_eq!(learned_control(&app, "pad.1"), None);
         // the banks row is its own run and untouched
@@ -8492,6 +8476,7 @@ Enter = "browser.hold"
         assert_eq!(
             items,
             [
+                (".".to_string(), "trim silence".to_string()),
                 ("Bksp".to_string(), "delete right".to_string()),
                 ("E".to_string(), "pattern erase".to_string()),
                 ("I".to_string(), "zoom in".to_string()),
@@ -9051,6 +9036,7 @@ Enter = "browser.hold"
             Some("cc 28 → none")
         );
         assert!(app.learn_lines().unwrap()[0].contains("Enter clear"));
+        assert!(app.learn_lines().unwrap()[1].ends_with("This cannot be undone."));
         assert!(
             app.learn_label(&app.live_profiles(), "pad.cutoff")
                 .is_some(),
@@ -9174,7 +9160,7 @@ Enter = "browser.hold"
             _ => panic!("an action row"),
         }
         app.midi_row = at;
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         assert!(
             !super::learn::group_map(&app.learned, "default", input::Group::PadsEdit)
                 .contains_key(&k5),
@@ -9829,7 +9815,10 @@ Enter = "browser.hold"
             Some("2 pads changed; Ctrl+Z returns")
         );
         app.apply(input::Action::Undo);
-        assert_eq!(status(&app).as_deref(), Some("2 pads changed back"));
+        assert_eq!(
+            status(&app).as_deref(),
+            Some("undo: the cuts are back · 2 pads changed back")
+        );
         // an edit that no pad hears says nothing
         app.notices = Notices::new(Instant::now());
         app.apply(input::Action::ChopZoom { zoom_in: true });
@@ -9897,6 +9886,7 @@ Enter = "browser.hold"
         assert_eq!(c.slices().len(), 16);
         app.chop = Some(c);
         chop_key(&mut app, KeyCode::Char('h'), M::NONE);
+        chop_key(&mut app, KeyCode::Enter, M::NONE);
         assert_eq!(
             last_notice(&app),
             Some("by hits at -6 dB: 3 slices (were 16) · Ctrl+Z brings them back")
@@ -12435,19 +12425,6 @@ Enter = "browser.hold"
         assert!(app.slice_end);
     }
 
-    /// 54 editing: "One page" — the slice edit has BOUNDS only, the page keys keep it.
-    #[test]
-    fn one_page() {
-        let mut app = test_app();
-        app.screen = input::Screen::Chop;
-        app.edit = true;
-        app.slice_end = true;
-        app.apply(input::Action::PageNext);
-        assert!(app.slice_end, "the slice end stays picked");
-        app.apply(input::Action::PagePrev);
-        assert!(app.slice_end);
-    }
-
     /// 21 input-devices: "The ENV page on the knobs".
     #[test]
     fn the_env_page_on_the_knobs() {
@@ -12678,158 +12655,6 @@ Enter = "browser.hold"
             ratatui::crossterm::event::KeyModifiers::empty(),
         );
         app.apply(keymap.resolve(input::Screen::Pads, &f3).unwrap());
-    }
-
-    /// 17 "Quiet break": the pad plays its quiet region 6 dB below full scale while the
-    /// file behind is louder; `Ctrl+N` reads the peak of what the pad plays and puts the
-    /// volume at +5 dB, the status shows it. The sound itself is the engine render
-    /// (`render_the_normalized_pad`).
-    #[test]
-    fn quiet_break() {
-        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
-        let mut app = test_app();
-        quiet_pad(&mut app, 0.5);
-        // the pad plays the quiet first quarter of a louder file
-        app.pads.region[0] = Region {
-            start: 0,
-            end: 24_000,
-        };
-        open_chop_from_pads(&mut app);
-        assert_eq!(app.chop_from, Some(0));
-        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
-        assert_eq!(app.pads.volume_db[0], 5, "0.5 is −6 dB, so +5 dB");
-        assert!(flash(&app).contains("+5 dB"), "{}", flash(&app));
-        let gain = app
-            .sent
-            .iter()
-            .find_map(|c| match c {
-                Command::SetPadGain { pad: 0, gain } => Some(*gain),
-                _ => None,
-            })
-            .expect("the engine hears the new gain");
-        assert!((gain - 10f32.powf(0.25)).abs() < 1e-4, "{gain}");
-    }
-
-    /// 17 "Very quiet break": peaks 20 dB below full scale want more than the pad
-    /// volume has; the +6 dB limit stops it and the status says so.
-    #[test]
-    fn very_quiet_break() {
-        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
-        let mut app = test_app();
-        quiet_pad(&mut app, 0.1);
-        open_chop_from_pads(&mut app);
-        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
-        assert_eq!(app.pads.volume_db[0], super::pads::MAX_DB, "the limit");
-        assert_eq!(
-            flash(&app),
-            "normalized: +6 dB, the pad volume limit stopped it"
-        );
-    }
-
-    /// 17 "Twice in a row": the gain is measured from the sound again, so the level
-    /// does not climb twice.
-    #[test]
-    fn twice_in_a_row() {
-        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
-        let mut app = test_app();
-        quiet_pad(&mut app, 0.5);
-        open_chop_from_pads(&mut app);
-        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
-        let gains = |app: &super::App| {
-            app.sent
-                .iter()
-                .filter(|c| matches!(c, Command::SetPadGain { .. }))
-                .count()
-        };
-        let after_first = gains(&app);
-        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
-        assert_eq!(app.pads.volume_db[0], 5, "the level did not climb");
-        assert_eq!(
-            gains(&app),
-            after_first,
-            "the same gain does not go to the engine twice"
-        );
-        assert!(flash(&app).contains("+5 dB"), "{}", flash(&app));
-    }
-
-    /// 17 "Chop without a pad": the chop screen opened from the files screen has no pad
-    /// to set the volume on.
-    #[test]
-    fn chop_without_a_pad() {
-        use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
-        let mut app = test_app();
-        quiet_pad(&mut app, 0.5);
-        open_chop_from_pads(&mut app);
-        assert_eq!(app.chop_from, Some(0));
-        // the owner takes the same file to the chop screen from the files screen
-        let sound = app.pads.sound[0].clone().unwrap();
-        app.show_file_chop(std::path::PathBuf::from("break.wav"), sound);
-        assert_eq!(app.chop_from, None);
-        chop_key(&mut app, KeyCode::Char('g'), M::CONTROL);
-        assert_eq!(flash(&app), "no pad to set the volume on");
-        assert_eq!(app.pads.volume_db[0], 0, "nothing changed");
-    }
-
-    /// 17 "Quiet break", the sound side: the pad normalized by `Ctrl+N` renders with its
-    /// peak at −1 dB and without clipping → `renders/17-normalize.wav`.
-    #[test]
-    fn render_the_normalized_pad() {
-        use engine::Engine;
-        use engine::checks::{first_non_finite, peak};
-        use engine::offline::{Event, Scenario, render, write_wav};
-        use std::path::Path;
-
-        let sr = 48_000;
-        let ms = |n: usize| sr as usize / 1000 * n;
-        // the app side decides the gain: the quiet pad, Ctrl+G (83a)
-        let mut app = test_app();
-        quiet_pad(&mut app, 0.5);
-        open_chop_from_pads(&mut app);
-        chop_key(
-            &mut app,
-            ratatui::crossterm::event::KeyCode::Char('g'),
-            ratatui::crossterm::event::KeyModifiers::CONTROL,
-        );
-        let db = app.pads.volume_db[0];
-        let gain = 10f32.powf(db as f32 / 20.0);
-        // the engine side: the same quiet pad with that gain, one hit at the full velocity
-        let sound = std::sync::Arc::new(Sample::mono(
-            (0..sr as usize * 2)
-                .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / sr as f32).sin() * 0.5)
-                .collect(),
-        ));
-        let sc = Scenario {
-            sample_rate: sr,
-            frames: ms(600),
-            events: vec![
-                Event {
-                    frame: 0,
-                    cmd: Command::SetPadSound {
-                        pad: 0,
-                        sound: Some(sound),
-                    },
-                },
-                Event {
-                    frame: 0,
-                    cmd: Command::SetPadGain { pad: 0, gain },
-                },
-                Event {
-                    frame: ms(100),
-                    cmd: Command::PadPress {
-                        pad: 0,
-                        velocity: 1.0,
-                    },
-                },
-            ],
-        };
-        let (l, r) = render(&mut Engine::new(sr), &sc, 128);
-        assert_eq!(first_non_finite(&l), None, "no NaN or infinities");
-        let p = peak(&l[ms(150)..]);
-        assert!(p < 1.0, "no clipping: peak {p}");
-        // the sample peak (≈0.4998) times the gain lands at −1 dB
-        assert!((p - 0.5 * gain).abs() < 0.01, "peak {p} vs {}", 0.5 * gain);
-        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/17-normalize.wav");
-        write_wav(&out, sr, &l, &r).unwrap();
     }
 
     /// 17 "Cursor knob" with soft takeover: one learned control drives the volume of pad
@@ -13541,7 +13366,7 @@ Enter = "browser.hold"
         }
         learn_row(&mut app, input::Group::Global, "bank.next");
         app.apply(Action::Back);
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         for (screen, edit) in states {
             app.screen = screen;
             app.edit = edit;
@@ -13567,7 +13392,7 @@ Enter = "browser.hold"
         }
         learn_row(&mut app, input::Group::Global, "screen.files");
         app.apply(Action::Back);
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         for (screen, edit) in states {
             app.screen = screen;
             app.edit = edit;
@@ -13890,17 +13715,16 @@ Enter = "browser.hold"
         assert_eq!(after, before, "every pad has its own settings back");
     }
 
-    /// 76 pad-playback "Backspace outside the edit": only the selected pad is cleared,
-    /// nothing asks.
+    /// pad-playback "Backspace outside the edit": the selected pad is cleared after a yes.
     #[test]
     fn backspace_outside_the_edit() {
         let mut app = undo_app();
         app.pads.file[0] = Some("/m/kick.wav".into());
         app.pads.file[1] = Some("/m/snare.wav".into());
         app.apply(Action::PadClear);
-        assert!(app.ask.is_none());
-        assert!(app.pads.file[0].is_none());
-        assert!(app.pads.file[1].is_some());
+        assert!(app.pads.file[0].is_some(), "the question comes first (138)");
+        app.apply(Action::PadEdit); // Enter
+        assert!(app.pads.file[0].is_none() && app.pads.file[1].is_some());
     }
 
     /// 76 pad-playback "Clear the marked pads": a question first, then Q W E are empty;
@@ -14223,32 +14047,6 @@ Enter = "browser.hold"
         last_notice(app).unwrap_or_default().to_owned()
     }
 
-    /// 67 "Enter with no pad hit": in order, Enter takes the selected pad of bank 2 as the
-    /// start and shows the plan; the second Enter lays the slices from there.
-    #[test]
-    fn enter_with_no_pad_hit() {
-        let mut app = test_app();
-        app.screen = Screen::Chop;
-        app.chop = Some(chop_with_parts(1));
-        let n = app.chop.as_ref().unwrap().slices().len();
-        assert!(n >= 2);
-        app.pads.bank = 1;
-        app.pads.selected = 4; // pad Q
-        app.apply(Action::ChopAssign);
-        app.apply(Action::ChopParts); // in order, no start yet
-        assert!(matches!(app.plan, Some(super::chop::Plan::InOrder(None))));
-        app.apply(Action::ChopEdit);
-        let q: usize = engine::PADS_PER_BANK + 4;
-        assert!(matches!(app.plan, Some(super::chop::Plan::InOrder(Some(s))) if s == q));
-        assert!(app.pads.file[q].is_none(), "shown, not applied yet");
-        app.apply(Action::ChopEdit);
-        assert!(app.plan.is_none(), "applied");
-        assert!(
-            (q..q + n).all(|a| app.pads.file[a].is_some()),
-            "every slice from pad Q"
-        );
-    }
-
     /// 66 "A new file appears": a file saved in the folder while the program runs shows on
     /// the next visit to F6, the selection stays.
     #[test]
@@ -14361,6 +14159,7 @@ Enter = "browser.hold"
         assert!(said.contains("swap"), "{said}");
         app.pads.selected = q;
         app.apply(Action::PadClear);
+        app.apply(Action::PadEdit); // Enter: a pad with a sound asks first (138)
         assert!(app.pads.file[q].is_none());
         undo(&mut app);
         assert_eq!(app.pads.snapshot(q), sq, "the file is back");
@@ -14514,7 +14313,7 @@ Enter = "browser.hold"
         // a new chop of the file: the pads keep their bounds and are their own now
         let region = app.pads.region[6];
         let cuts = app.chop.as_ref().unwrap().markers.clone();
-        app.apply(Action::ChopParts);
+        crate::destroy::yes(&mut app, Action::ChopParts);
         assert_eq!(app.pads.source(6), Source::Own);
         assert_eq!(app.pads.region[6], region, "it plays what it played");
         assert_eq!(panel_line(&mut app, 6), "break.wav · pad");
@@ -16452,7 +16251,10 @@ Enter = "browser.hold"
         assert_eq!(app.pads.region[11], before[7]);
         assert_eq!(flash(&app), "7 pads changed; Ctrl+Z returns");
         app.apply(Action::Undo);
-        assert_eq!(flash(&app), "7 pads changed back");
+        assert_eq!(
+            flash(&app),
+            "undo: 8 slices back (were 1) · 7 pads changed back"
+        );
         for (i, a) in (4..12).enumerate() {
             assert!(app.pads.link[a].is_some(), "pad {a} follows again");
             assert_eq!(app.pads.slice[a], Some(i as u16 + 1));
@@ -16868,8 +16670,8 @@ Enter = "browser.hold"
             }
             let full = super::full_help(&keymap, screen, true);
             assert!(
-                full.iter()
-                    .any(|(k, d)| k.contains("Ctrl+O") && d == "hide / show the pads"),
+                full.iter().any(|(k, d)| k.contains("Ctrl+O")
+                    && d == "hide the pad grid, the wave takes its place"),
                 "{screen:?}: F1 lists the switch"
             );
         }
@@ -17877,7 +17679,7 @@ Enter = "browser.hold"
         assert_eq!(xs_on(&mut app, Screen::Pads, B7), Some(Action::PadEditOnly));
         learn_row(&mut app, input::Group::Pads, "pad.edit_only");
         app.apply(Action::Back);
-        app.apply(Action::SettingsClear);
+        crate::destroy::yes(&mut app, Action::SettingsClear);
         assert_eq!(xs_on(&mut app, Screen::Pads, B7), None, "no control left");
     }
 

@@ -449,6 +449,10 @@ impl Drive {
                 next_id: slices as u32,
             },
         ));
+        // equal cuts made by the program: replacing them asks nothing (138)
+        if let Some(c) = self.app.chop.as_mut() {
+            c.hand = false;
+        }
         self.app.screen = Screen::Chop;
         self.frame();
     }

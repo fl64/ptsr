@@ -100,7 +100,7 @@ to bottom and the cells from left to right.
 
 1. Pads · Files · Chop · A1.
 2. FX · Mixer · Setup · Help.
-3. Save · Open · Learn · Exit.
+3. Save · Open · — · Exit. Learn left the screens view in change 138: binding changes use the keyboard.
 4. Back or No · Undo · Redo · Yes or Apply (change 134).
 
 A1 opens Pattern. Setup opens Settings. Mixer stays dim until `mixer-view`.

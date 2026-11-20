@@ -198,8 +198,16 @@ pub struct Chop {
     pub page: usize,
     rate: usize,
     undo: Vec<UndoStep>,
+    /// Steps saved minus steps undone: unlike the stack length, it moves at the step limit.
+    depth: usize,
+    /// `norm` was the newest step (138): the chop depth and the pads history length at that
+    /// time. While both stay, undo on Chop takes the level back instead of a cut.
+    pub norm_step: Option<(usize, usize)>,
     /// The boundary a knob is turning: the whole turn is one undo step.
     turning: Option<usize>,
+    /// The owner cut, moved or joined by hand since the last cut by parts or hits (138):
+    /// replacing those cuts asks first.
+    pub hand: bool,
     /// The bound the owner moved last and the cursor at that time (136): the zoom keeps
     /// it in place until the cursor moves; `None` zooms around the cursor.
     anchor: Option<(Anchor, usize)>,
@@ -276,8 +284,12 @@ impl Chop {
             page: 0,
             rate: rate.max(1) as usize,
             undo: Vec::new(),
+            depth: 0,
+            norm_step: None,
             turning: None,
             anchor: None,
+            // saved cuts may be the owner's: the first replacement asks
+            hand: !cuts.is_empty(),
         }
     }
 
@@ -319,8 +331,11 @@ impl Chop {
             page: 0,
             rate: self.rate,
             undo: Vec::new(),
+            depth: 0,
+            norm_step: None,
             turning: None,
             anchor: None,
+            hand: false,
         }
     }
 
@@ -354,6 +369,7 @@ impl Chop {
     }
 
     fn save_undo(&mut self) {
+        self.depth += 1;
         if self.undo.len() == UNDO {
             self.undo.remove(0);
         }
@@ -458,6 +474,7 @@ impl Chop {
             }
         };
         self.anchor = Some((anchor, self.cursor));
+        self.hand = true;
     }
 
     /// Where the zoom holds the picture (136): the bound moved last while the cursor
@@ -483,14 +500,19 @@ impl Chop {
 
     /// Replaces the cuts with the next equal-parts count over the range; returns the count.
     /// This starts a new epoch: pads linked to the old cuts let go of them.
-    pub fn next_parts(&mut self) -> usize {
+    /// The count the next equal-parts press cuts into.
+    pub fn parts_next(&self) -> usize {
         // a chop from the session does not know its last count: the slices tell it
         let now = self.markers.len() + 1;
         let last = Some(now).filter(|n| PARTS.contains(n)).or(self.parts);
-        let n = match last {
+        match last {
             Some(p) => PARTS[(PARTS.iter().position(|&x| x == p).unwrap_or(0) + 1) % PARTS.len()],
             None => PARTS[0],
-        };
+        }
+    }
+
+    pub fn next_parts(&mut self) -> usize {
+        let n = self.parts_next();
         self.save_undo();
         self.turning = None;
         self.epoch = self.next_epoch;
@@ -506,7 +528,27 @@ impl Chop {
         }
         self.parts = Some(n);
         self.selected = 0;
+        self.hand = false;
         n
+    }
+
+    /// All cuts go (138): one slice over the region. A new epoch, so linked pads keep their
+    /// sound, as after equal parts; undo brings the cuts and the links back.
+    pub fn clear_cuts(&mut self) -> usize {
+        let count = self.markers.len();
+        if count == 0 {
+            return 0;
+        }
+        self.save_undo();
+        self.turning = None;
+        self.epoch = self.next_epoch;
+        self.next_epoch += 1;
+        self.markers.clear();
+        self.ids.clear();
+        self.parts = None;
+        self.selected = 0;
+        self.hand = false;
+        count
     }
 
     /// Replaces the cuts with the starts of the hits within the threshold below the
@@ -514,6 +556,7 @@ impl Chop {
     fn cut_by_hits(&mut self) -> usize {
         // the marks of the hits mode are these cuts (51)
         let cuts = self.strong_hits();
+        self.hand = false;
         self.markers.clear();
         self.ids.clear();
         for (i, pos) in cuts.into_iter().enumerate() {
@@ -621,6 +664,36 @@ impl Chop {
             .collect()
     }
 
+    /// Why a cut at `pos` cannot land (138), as `cut` decides: the cut cell is grey then.
+    pub fn cut_refusal(&self, pos: usize) -> Option<&'static str> {
+        let at = if self.snap == Snap::Hits {
+            self.nearest_hit(pos).unwrap_or(pos)
+        } else {
+            pos
+        };
+        if at <= self.range.start || at >= self.range.end {
+            Some("the cursor is in a trimmed part")
+        } else if self
+            .boundaries()
+            .iter()
+            .any(|&m| m.abs_diff(at) < self.ms(10))
+        {
+            Some("too close to another cut")
+        } else {
+            None
+        }
+    }
+
+    /// Why `fewer hits` changes nothing now (138), as `chop_by_hits_back` decides.
+    pub fn hits_back_refusal(&self) -> Option<String> {
+        // without a cut by hits the first press cuts at −6 dB, as the first Shift+H (138)
+        if self.threshold_set && self.threshold_db + 0.01 >= -6.0 {
+            Some(format!("by hits stays at {:.0} dB", self.threshold_db))
+        } else {
+            None
+        }
+    }
+
     /// A cut at `pos` (a playing cursor): where pressed, or moved to the nearest hit
     /// within 90 ms while the hits mode is on. `Refused` when it is outside the range
     /// or closer than 10 ms to another cut, which would make a slice too short to hear.
@@ -641,6 +714,7 @@ impl Chop {
         self.turning = None;
         let i = self.markers.partition_point(|&m| m < at);
         self.insert(i, at);
+        self.hand = true;
         // the new slice starts at the cut
         self.selected = i + 1;
         if at == pos { Cut::Placed } else { Cut::Snapped }
@@ -787,6 +861,42 @@ impl Chop {
     /// The region is the whole sample again.
     pub fn clear_region(&mut self) {
         self.set_range(0, self.sound.len());
+    }
+
+    /// The edges of the sound (138): the first and the last frame louder than
+    /// `SILENCE_DB` below the peak of the file; `None` for a silent file.
+    pub fn sound_edges(&self) -> Option<Region> {
+        let level = |i: usize| {
+            let l = self.sound.left[i].abs();
+            self.sound.right.as_ref().map_or(l, |r| l.max(r[i].abs()))
+        };
+        let len = self.sound.len();
+        let peak = (0..len).map(level).fold(0.0_f32, f32::max);
+        if peak <= 0.0 {
+            return None;
+        }
+        let floor = peak * 10f32.powf(SILENCE_DB / 20.0);
+        let start = (0..len).find(|&i| level(i) > floor)?;
+        let end = (0..len).rev().find(|&i| level(i) > floor)? + 1;
+        Some(Region { start, end })
+    }
+
+    /// Why `trim silence` changes nothing now (138).
+    pub fn trim_silence_refusal(&self) -> Option<&'static str> {
+        match self.sound_edges() {
+            None => Some("the sample is silent"),
+            Some(edges) if edges == self.range => Some("no silence to trim"),
+            Some(_) => None,
+        }
+    }
+
+    /// Trims the region to the sound (138): cuts in the trimmed parts go, one undo step
+    /// brings back the trim and the cuts. Returns the trimmed time in frames.
+    pub fn trim_silence(&mut self) -> Option<usize> {
+        let edges = self.sound_edges().filter(|e| *e != self.range)?;
+        let before = self.range.end - self.range.start;
+        self.set_range(edges.start, edges.end);
+        Some(before.saturating_sub(self.range.end - self.range.start))
     }
 
     /// A new region with the same guarantees as a loaded one: inside the file,
@@ -961,6 +1071,7 @@ impl Chop {
         self.markers.remove(self.selected - 1);
         self.ids.remove(self.selected - 1);
         self.selected -= 1;
+        self.hand = true;
     }
 
     /// Deletes the cut at the end of the selected slice; the last slice ends at the region's
@@ -973,6 +1084,7 @@ impl Chop {
         self.turning = None;
         self.markers.remove(self.selected);
         self.ids.remove(self.selected);
+        self.hand = true;
     }
 
     /// Knob position 0..1 of the start (`end` false) or end of the selected slice in its zone.
@@ -1034,12 +1146,22 @@ impl Chop {
         self.anchor = Some((edge, self.cursor));
     }
 
+    pub fn depth(&self) -> usize {
+        self.depth
+    }
+
+    /// An undo step waits (138): without one the undo cell is grey.
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
     /// Brings back the cuts, range and threshold before the last change; `false` when
     /// there is nothing.
     pub fn undo(&mut self) -> bool {
         let Some((markers, ids, range, epoch, threshold_db)) = self.undo.pop() else {
             return false;
         };
+        self.depth -= 1;
         for (&id, &pos) in ids.iter().zip(&markers) {
             self.known.insert(id, pos);
         }
@@ -1058,6 +1180,10 @@ impl Chop {
         true
     }
 }
+
+/// The level of silence for `trim silence` (138): below the peak of the file. A default
+/// that the owner checks by ear.
+pub const SILENCE_DB: f32 = -50.0;
 
 /// Frames per block of the band levels (38).
 pub const BAND_BLOCK: usize = 256;
@@ -1408,52 +1534,119 @@ impl App {
         self.goto(Screen::Chop);
     }
 
-    /// Ctrl+N: the volume of the pad this chop was opened from puts the peak it plays
-    /// (the pad's region) at −1 dB, rounded down. The peak comes from the sample, not
-    /// the current gain, so repeating Ctrl+N lands on the same value.
+    /// The pads that play the selected slice of the open chop (138): linked to it, or
+    /// playing the same file over the same bounds.
+    pub(super) fn slice_pads(&self) -> Vec<usize> {
+        let Some(c) = &self.chop else {
+            return Vec::new();
+        };
+        let slices = c.slices();
+        let Some(&selected) = slices.get(c.selected) else {
+            return Vec::new();
+        };
+        (0..PADS)
+            .filter(|&a| {
+                self.pads.file[a].as_ref() == Some(&c.file) && self.pads.sound[a].is_some()
+            })
+            .filter(|&a| match self.pads.link[a] {
+                Some((id, epoch)) if epoch == c.epoch => c.slice_of(id) == c.selected,
+                _ => self.pads.region[a] == selected,
+            })
+            .collect()
+    }
+
+    /// `norm` and Ctrl+G (138): the sound gain of each pad of the selected slice puts the
+    /// peak of what the pad plays at −1 dB. The pad volume stays; one undo step on Pads.
     pub(super) fn normalize_pad(&mut self) {
-        let no_pad = "no pad to set the volume on".to_string();
-        let Some(abs) = self.chop_from else {
-            self.post_notice(Level::Warn, (no_pad, Instant::now()));
+        let pads = self.slice_pads();
+        if pads.is_empty() {
+            self.post_notice(
+                Level::Warn,
+                ("put the slice on a pad first".into(), Instant::now()),
+            );
             return;
-        };
-        let Some(sound) = self.pads.sound[abs].clone() else {
-            self.post_notice(Level::Warn, (no_pad, Instant::now()));
-            return;
-        };
-        let (start, end) = (
-            self.pads.region[abs].start.min(sound.len()),
-            self.pads.region[abs].end.min(sound.len()),
-        );
-        let mut peak = 0.0f32;
-        for ch in std::iter::once(&sound.left).chain(sound.right.as_ref()) {
-            for x in &ch[start..end.max(start)] {
-                peak = peak.max(x.abs());
+        }
+        let before = self.before();
+        let (mut stopped, mut last) = (false, 0.0f32);
+        for &abs in &pads {
+            let Some(sound) = self.pads.sound[abs].clone() else {
+                continue;
+            };
+            let (start, end) = (
+                self.pads.region[abs].start.min(sound.len()),
+                self.pads.region[abs].end.min(sound.len()),
+            );
+            let mut peak = 0.0f32;
+            for ch in std::iter::once(&sound.left).chain(sound.right.as_ref()) {
+                for x in &ch[start..end.max(start)] {
+                    peak = peak.max(x.abs());
+                }
             }
+            // measured from the sound each time, so a second press keeps the level
+            let raw = -1.0 - 20.0 * peak.max(f32::MIN_POSITIVE).log10();
+            let db = (raw.clamp(-pads::SOUND_GAIN_DB, pads::SOUND_GAIN_DB) * 10.0).round() / 10.0;
+            stopped |= raw > pads::SOUND_GAIN_DB;
+            last = db;
+            self.pads.sound_gain_db[abs] = db;
+            self.send(self.pads.sound_gain_command(abs));
         }
-        // silence: the smallest float rounds the gain up to the +6 dB pad limit
-        let raw = (-1.0 - 20.0 * peak.max(f32::EPSILON).log10()).floor();
-        let db = raw
-            .clamp(f32::from(pads::MIN_DB), f32::from(pads::MAX_DB))
-            .round() as i8;
-        if db != self.pads.volume_db[abs] {
-            self.pads.volume_db[abs] = db;
-            let gain = 10f32.powf(db as f32 / 20.0);
-            self.send(Command::SetPadGain { pad: abs, gain });
-            self.dirty();
+        self.note_step(before, "normalize".into());
+        let mark = self.newest_is_norm().then_some(self.history.len());
+        if let Some(c) = self.chop.as_mut() {
+            c.norm_step = mark.map(|pads| (c.depth(), pads));
         }
-        let text = if raw > f32::from(pads::MAX_DB) {
-            format!("normalized: {db:+} dB, the pad volume limit stopped it")
+        self.dirty();
+        let count = match pads.len() {
+            1 => String::new(),
+            n => format!(" on {n} pads"),
+        };
+        let undo = self.undo_words();
+        let text = if stopped {
+            format!("normalized{count}: {last:+} dB, the gain limit stopped it")
         } else {
-            format!("normalized: {db:+} dB")
+            format!("normalized{count}: {last:+} dB · {undo} brings it back")
+        };
+        let level = if stopped { Level::Warn } else { Level::Done };
+        self.post_notice(level, (text, Instant::now()));
+    }
+
+    fn newest_is_norm(&self) -> bool {
+        self.history
+            .last()
+            .is_some_and(|step| step.what == "normalize")
+    }
+
+    /// `norm` is still the newest step of both histories (138): undo on Chop takes it back.
+    pub(super) fn norm_is_next(&self) -> bool {
+        self.newest_is_norm()
+            && self
+                .chop
+                .as_ref()
+                .and_then(|c| {
+                    c.norm_step
+                        .map(|mark| mark == (c.depth(), self.history.len()))
+                })
+                .unwrap_or(false)
+    }
+
+    /// Undo on Chop right after `norm` (138): the pads step goes, so Pads cannot undo it again.
+    pub(super) fn undo_norm(&mut self) {
+        let pads: Vec<usize> = self
+            .history
+            .last()
+            .map(|step| step.pads.iter().map(|(abs, _)| *abs).collect())
+            .unwrap_or_default();
+        if let Some(c) = self.chop.as_mut() {
+            c.norm_step = None;
+        }
+        self.undo_pads();
+        let on = match pads.as_slice() {
+            [abs] => format!("pad {}", tui::pads::pad_tag(*abs)),
+            many => format!("{} pads", many.len()),
         };
         self.post_notice(
-            if raw > f32::from(pads::MAX_DB) {
-                Level::Warn
-            } else {
-                Level::Done
-            },
-            (text, Instant::now()),
+            Level::Done,
+            (format!("undo: level of {on} back"), Instant::now()),
         );
     }
 
@@ -1977,20 +2170,37 @@ impl App {
         self.plan_undo.clear();
     }
 
+    /// The slices that the open Assign plan places now.
+    pub(super) fn placed_slices(&self) -> usize {
+        match (&self.plan, &self.chop) {
+            (Some(plan), Some(c)) => plan.targets(c.slices().len()).len(),
+            _ => 0,
+        }
+    }
+
+    /// The Assign method changes: by hand starts from slice 1, in order waits for the start
+    /// pad. One undo step brings the old plan back.
+    pub(super) fn switch_assign_order(&mut self) {
+        let selected = self.chop.as_ref().map_or(0, |c| c.selected);
+        let next = match &self.plan {
+            Some(chop::Plan::InOrder(_)) => {
+                if let Some(c) = self.chop.as_mut() {
+                    c.selected = 0;
+                }
+                chop::Plan::ByHand(Vec::new())
+            }
+            _ => chop::Plan::InOrder(None),
+        };
+        self.change_plan(next, selected);
+    }
+
     /// Enter in the assign mode: the planned slices go onto their pads.
     pub(super) fn apply_plan(&mut self) {
-        // in order with no pad hit: the selected pad is the start, the plan is shown and the
-        // next Enter applies it, as the controller's commit does (67)
-        if matches!(self.plan, Some(chop::Plan::InOrder(None))) {
-            let start = self.pads.selected_abs();
-            let slice = self.chop.as_ref().map_or(0, |c| c.selected);
-            self.change_plan(chop::Plan::InOrder(Some(start)), slice);
+        // in order, the owner hits the start pad first (138)
+        if self.apply_waits() {
             self.post_notice(
                 Level::Info,
-                (
-                    format!("from {}: Enter applies", pad_place(start)),
-                    Instant::now(),
-                ),
+                ("hit the start pad first".into(), Instant::now()),
             );
             return;
         }
@@ -2028,7 +2238,7 @@ impl App {
                 if lost.len() == 1 { "" } else { "s" }
             )];
             lines.extend(lost);
-            lines.extend(overwrite_footer());
+            lines.extend(overwrite_footer(self.undo_words()));
             // what lies there is read now: a changed list is asked about again
             if !matches!(&self.ask, Some(Ask::Plan { lines: old }) if *old == lines) {
                 self.ask = Some(Ask::Plan { lines });
@@ -2057,6 +2267,8 @@ impl App {
             self.pads.loading[abs] = None;
             self.pads.missing[abs] = false;
             self.pads.custom_name[abs] = None;
+            self.pads.sound_gain_db[abs] = 0.0;
+            self.send(self.pads.sound_gain_command(abs));
             self.pads.file[abs] = Some(file.clone());
             self.pads.set_sound(abs, sound.clone());
             self.pads.region[abs] = region;
@@ -2166,6 +2378,63 @@ impl App {
             .chain(saved.cuts.iter().map(|&(id, _)| id))
             .collect();
         Some((slices, ids, saved.epoch))
+    }
+}
+
+/// Chop-screen actions the assign mode swallows (21): a cut, a zoom or a cursor move
+/// while the owner lays slices onto pads would ruin the wave under the plan. The pads,
+/// Tab, Enter, Esc, the slice pick and the undo stay live.
+pub(super) fn assign_deaf(a: &Action) -> bool {
+    matches!(
+        a,
+        Action::ChopPlay
+            | Action::ChopPlayMode
+            | Action::ChopCut
+            | Action::ChopEqualParts
+            | Action::ChopHits
+            | Action::ChopHitsBack
+            | Action::ThresholdStep(_)
+            | Action::ChopAssign
+            | Action::ChopZoom { .. }
+            | Action::ChopRegionStart
+            | Action::ChopRegionEnd
+            | Action::ChopRegionClear
+            | Action::ChopCutsClear
+            | Action::ChopTrimSilence
+            | Action::ChopSnapToggle
+            | Action::CursorMove { .. }
+            | Action::CursorJump { .. }
+            | Action::MarkerNudge { .. }
+            | Action::EditValue { .. }
+            | Action::SliceBound { .. }
+            | Action::ParamPrev
+            | Action::MarkerDelete
+            | Action::SliceEndDelete
+    )
+}
+
+/// The right column of Chop names the controls of the last input device (F19).
+pub(super) fn hint_more_slices() -> &'static str {
+    if tui::pads::smc_words() {
+        "LEFT RIGHT: more slices"
+    } else {
+        "Ctrl+1…8: more slices"
+    }
+}
+
+pub(super) fn hint_banks() -> &'static str {
+    if tui::pads::smc_words() {
+        "LEFT RIGHT: banks"
+    } else {
+        "Ctrl+1…8: banks"
+    }
+}
+
+pub(super) fn hint_put_on_pads() -> &'static str {
+    if tui::pads::smc_words() {
+        "PAD BANK + 9: put on pads"
+    } else {
+        "P: put them on pads"
     }
 }
 

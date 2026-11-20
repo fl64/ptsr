@@ -336,6 +336,7 @@ fn assignment_numbers_appear_on_target_pads() {
         drive.bind_action(103, "chop.assign_order");
         drive.bind_action(104, "bank.next");
         drive.bind_action(105, "ui.back");
+        drive.bind_action(106, "ui.confirm");
         let controls = if matches!(source, Source::Keyboard) {
             source
         } else {
@@ -357,6 +358,10 @@ fn assignment_numbers_appear_on_target_pads() {
         drive.registry_command(controls, KeyCode::PageDown, M::NONE, 104);
         assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
         drive.registry_command(controls, KeyCode::Tab, M::NONE, 103);
+        // two placed slices go with the method change: it asks first (138)
+        assert!(drive.app.ask.is_some(), "the method change asks");
+        drive.registry_command(controls, KeyCode::Enter, M::NONE, 106);
+        assert!(drive.app.ask.is_none());
         assert_slice_preview(&drive.pad_press(source, 14), &sound, slices[0]);
         drive.pad_release(source, 14);
         assert_eq!(
