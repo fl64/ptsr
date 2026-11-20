@@ -85,12 +85,16 @@ The beat clock and automatic metronome SHALL NOT allocate, free memory, wait for
 
 ### Requirement: Visible transport state
 
-Every screen SHALL show tempo and play state. Playing transport SHALL show its current bar and beat. Enabled metronome SHALL have a visible indicator. The screen SHALL use audio-thread position rather than estimate time itself. Transport feedback SHALL NOT hide a question, pad mode or save failure.
+Every screen SHALL show tempo and play state. Playing transport SHALL show its current bar and beat. Enabled metronome SHALL have a visible indicator that says `click`. A metronome toggle SHALL show a notice «metronome on» or «metronome off». The screen SHALL use audio-thread position rather than estimate time itself. Transport feedback SHALL NOT hide a question, pad mode or save failure.
 
 #### Scenario: Transport feedback follows accepted audio state
 - **WHEN** transport plays and tempo changes while the owner switches screens
 - **THEN** each screen shows the accepted tempo, play state and current bar and beat
 - **AND** metronome state and existing safety feedback remain visible at supported terminal sizes
+
+#### Scenario: Holding PLAY names the metronome
+- **WHEN** the transport is stopped and the owner holds PLAY on the SMC-PAD
+- **THEN** a notice says «metronome on» and the status shows `click`, not `M`
 
 ### Requirement: Context PLAY and STOP keep a paused position
 
@@ -111,9 +115,18 @@ The `play.context` action SHALL start a stopped transport at bar 1 or continue a
 - **THEN** the stopped position is bar 1, beat 1 and the restart begins at the first beat
 - **AND** the new SMC-PAD pause state does not change the keyboard toggle path
 
+### Requirement: Context STOP saves the output recording
+
+While the output recording runs, a `stop.context` tap with nothing playing SHALL save the recording. It SHALL NOT reset the position.
+
+#### Scenario: Second STOP during the output recording saves it
+- **WHEN** the output recording runs, A1 plays beyond bar 1, and the owner taps STOP twice
+- **THEN** the first tap pauses A1 and the second tap saves the recording
+- **AND** the paused position stays at the accepted beat
+
 ### Requirement: Context buttons keep previews separate from transport
 
-On Files and Chop, `play.context` SHALL start the selected preview only when no preview plays. It SHALL not stop or restart an active preview. `stop.context` SHALL stop that preview without starting it. On Files, STOP SHALL also cancel a pending preview load. With no preview, STOP MAY reset a paused transport but SHALL not start one. These actions SHALL not answer a visible question.
+On Files and Chop, `play.context` SHALL start the selected preview only when no preview plays. It SHALL not stop or restart an active preview. `stop.context` SHALL stop that preview without starting it. On Files, STOP SHALL also cancel a pending preview load. With no preview, STOP MAY reset a paused transport but SHALL not start one. While the output recording runs and no preview or transport plays, STOP SHALL save the recording. These actions SHALL not answer a visible question.
 
 #### Scenario: PLAY does not toggle an active preview
 - **WHEN** a selected Files or Chop preview plays and the owner taps PLAY twice
@@ -130,6 +143,10 @@ On Files and Chop, `play.context` SHALL start the selected preview only when no 
 - **THEN** that load cannot start a preview after STOP
 - **AND** a later PLAY can request the selected file again
 
+#### Scenario: STOP on Chop stops the preview before the recording
+- **WHEN** the output recording runs and a Chop preview plays, and the owner taps STOP twice
+- **THEN** the first tap stops the preview and the second tap saves the recording
+
 ### Requirement: Context pause safely closes recording
 
 If `stop.context` pauses during A1 CountIn, it SHALL cancel CountIn with transport stopped at the accepted position. If it pauses during A1 Recording, it SHALL finish and retain the accepted pass as one Undo step before the pause takes effect. A pause SHALL not leave a hidden recording state or replay a delayed command after a project switch. A second STOP SHALL reset only after the completion is accepted.
@@ -141,10 +158,10 @@ If `stop.context` pauses during A1 CountIn, it SHALL cancel CountIn with transpo
 
 ### Requirement: Pattern accepts taps for tempo
 
-Pattern SHALL offer Tap Tempo on its first context page, P6. Alt+B SHALL use
+Pattern SHALL offer Tap Tempo on its action page, P8. Alt+B SHALL use
 the same action. Tempo SHALL use the mean interval of up to four taps.
 A gap longer than two seconds SHALL start a new sequence.
-The first tap SHALL leave tempo as it was. Intervals under 200 ms SHALL be ignored.
+The first tap SHALL leave tempo as it was, and the mode line SHALL say «TAP · 1 hit · tap again». Intervals under 200 ms SHALL be ignored.
 The program SHALL use MIDI receipt times. Tap Tempo SHALL act only in Pattern
 or its controls.
 

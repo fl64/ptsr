@@ -1005,6 +1005,14 @@ Other devices and USB preset records SHALL keep their state.
 - **THEN** bank 2 knobs 1–6 have no role after restart
 - **AND** bank 2 knob 8 still changes master volume
 
+### Requirement: The SMC-PAD layout update says that it has no undo
+
+The question before an SMC-PAD layout update SHALL say «This cannot be undone.».
+
+#### Scenario: The layout update question says that it has no undo
+- **WHEN** the owner asks for the SMC-PAD layout update
+- **THEN** the question says «This cannot be undone.» before any role changes
+
 ### Requirement: SMC-PAD warns about shifted notes and a wrong preset
 
 An unassigned out-of-range pad press on the Master port SHALL warn once per
