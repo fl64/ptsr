@@ -1996,6 +1996,8 @@ impl App {
                 )
             })
             .collect();
+        // the whole apply is one undo step: one Undo brings back every target (132)
+        let before = self.before();
         for (slice, abs) in targets {
             let region = slices[slice];
             // a load still on its way to this pad would replace the slice
@@ -2015,6 +2017,7 @@ impl App {
             self.send(Command::SetPadRegion { pad: abs, region });
             self.send(self.pads.pitch_gate_command(abs));
         }
+        self.note_step(before, "slices".into());
         self.post_notice(
             Level::Done,
             (

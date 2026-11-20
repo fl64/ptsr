@@ -203,3 +203,63 @@ fn fewer_slices_show_the_last_page() {
         assert_eq!(drive.app.chop.as_ref().unwrap().selected, 0, "{source:?}");
     }
 }
+
+/// Scenario "Undo brings back the replaced pads" (chopping).
+#[test]
+fn undo_brings_back_the_replaced_pads() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = hold_drive();
+        drive.prepare_chop(break_sound(), 8);
+        let kick = Arc::new(Sample::mono(vec![0.5; 4_800]));
+        let snare = Arc::new(Sample::mono(vec![0.3; 4_800]));
+        drive.load_pad(0, kick.clone(), "kick");
+        drive.load_pad(16, snare.clone(), "snare");
+        let before = [0, 1, 16, 17].map(|abs| drive.app.pads.snapshot(abs));
+        drive.app.plan = Some(chop::Plan::ByHand(vec![(0, 0), (1, 1), (2, 16), (3, 17)]));
+        drive.frame();
+        // Apply, then yes to the question about the two used pads
+        for _ in 0..2 {
+            match source {
+                Source::Keyboard => {
+                    drive.tap(KeyCode::Enter, M::NONE);
+                }
+                _ => {
+                    press_cell(&mut drive, 16);
+                }
+            }
+        }
+        assert_eq!(drive.app.screen, Screen::Pads, "{source:?}");
+        assert_eq!(drive.app.pads.slice[17], Some(4), "applied, {source:?}");
+        match source {
+            Source::Keyboard => {
+                drive.tap(KeyCode::Char('z'), M::CONTROL);
+            }
+            _ => {
+                press_cell(&mut drive, 14);
+            }
+        }
+        let after = [0, 1, 16, 17].map(|abs| drive.app.pads.snapshot(abs));
+        assert!(
+            before == after,
+            "one Undo restores all four pads, {source:?}"
+        );
+        assert!(Arc::ptr_eq(
+            drive.app.pads.sound[0].as_ref().unwrap(),
+            &kick
+        ));
+        assert!(Arc::ptr_eq(
+            drive.app.pads.sound[16].as_ref().unwrap(),
+            &snare
+        ));
+        assert!(drive.app.pads.file[1].is_none() && drive.app.pads.file[17].is_none());
+        assert_eq!(
+            drive.app.chop.as_ref().unwrap().slices().len(),
+            8,
+            "the cuts stay"
+        );
+        // E2: Redo stays dim after the Undo
+        press_cell(&mut drive, 15);
+        assert_eq!(drive.last_notice().text, "redo: not available yet");
+        assert!(before == [0, 1, 16, 17].map(|abs| drive.app.pads.snapshot(abs)));
+    }
+}
