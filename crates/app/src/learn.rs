@@ -1028,9 +1028,13 @@ impl App {
                     Some((_, other)) => format!(
                         " ✗ {key} is taken on this layer: \"{other}\" is marked and loses it"
                     ),
-                    None => match self.bound_elsewhere(profile, *key) {
-                        Some(note) => format!(" {note} · that layer keeps it"),
-                        None => " another control takes its place".to_string(),
+                    None => match (
+                        self.panel_cell_of(profile, *key),
+                        self.bound_elsewhere(profile, *key),
+                    ) {
+                        (Some(cell), _) => format!(" replaces {cell} · Esc keeps the panel cell"),
+                        (None, Some(note)) => format!(" {note} · that layer keeps it"),
+                        (None, None) => " another control takes its place".to_string(),
                     },
                 };
                 vec![first, second]
@@ -1605,7 +1609,9 @@ impl App {
             Some((profile, key)) => {
                 let replaced = self
                     .taken_in_slot(profile, l.info.group, *key, l.info.name, l.slot)
-                    .map(|(_, label)| format!(" · replaces {label}"))
+                    .map(|(_, label)| label)
+                    .or_else(|| self.panel_cell_of(profile, *key))
+                    .map(|label| format!(" · replaces {label}"))
                     .unwrap_or_default();
                 format!(
                     " {} for \"{}\" ({}){replaced} · Enter: assign and save · Esc: keep all · another control takes its place",

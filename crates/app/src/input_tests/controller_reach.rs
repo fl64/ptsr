@@ -11,6 +11,9 @@ mod chop_from_pad;
 #[path = "chop_zoom.rs"]
 mod chop_zoom;
 
+#[path = "chop_join.rs"]
+mod chop_join;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
@@ -4580,4 +4583,68 @@ fn a_mirrored_message_after_a_key_keeps_keyboard_words() {
     assert!(!drive.app.input_sources.last_is_smc());
     drive.app.smc_knob_strip(Instant::now());
     assert!(!tui::pads::smc_words());
+}
+
+/// Scenario "Marking after SMC-PAD input names PAD BANK and pad 1" (screen-help).
+#[test]
+fn marking_after_smc_pad_input_names_pad_bank_and_pad_1() {
+    let mut drive = hold_drive();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 4_800])), "kick");
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(4));
+    hold(&mut drive, false);
+    assert!(drive.app.pads.marking, "the mark cell turns marking on");
+    let line = drive.app.mode_line(Instant::now()).unwrap();
+    assert!(
+        line.contains("PAD BANK + 1 drop") && !line.contains("Esc"),
+        "{line}"
+    );
+    // a mark, marking off: the badge names the same drop control
+    drive.bytes(SMC, &[0x99, 48, 100]);
+    drive.bytes(SMC, &[0x89, 48, 0]);
+    drive.frame();
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(4));
+    hold(&mut drive, false);
+    let badges: Vec<String> = drive
+        .app
+        .title_badges()
+        .into_iter()
+        .map(|badge| badge.normal)
+        .collect();
+    assert!(
+        badges
+            .iter()
+            .any(|b| b.contains("MARKED · PAD BANK + 1 drops")),
+        "{badges:?}"
+    );
+    // after a key the words are the keys again
+    drive.tap(KeyCode::Down, M::NONE);
+    let badges: Vec<String> = drive
+        .app
+        .title_badges()
+        .into_iter()
+        .map(|badge| badge.normal)
+        .collect();
+    assert!(
+        badges.iter().any(|b| b.contains("MARKED · Esc drops")),
+        "{badges:?}"
+    );
+}
+
+/// Scenario "Learn names the replaced panel cell" (controller-reach).
+#[test]
+fn learn_names_the_replaced_panel_cell() {
+    // With the PAD BANK hold, a cell is a hold of the playing note and learning keeps it;
+    // with the hold off, the PAD BANK layer sends its own notes and a binding takes them.
+    let mut drive = smc_drive();
+    drive.tap(KeyCode::F(10), M::NONE);
+    drive.tap(KeyCode::Char('h'), M::NONE);
+    // device pad 6 on the PAD BANK layer is panel cell 10, "rec out" on Pads
+    drive.bytes(SMC, &[0x99, panel_note(10), 100]);
+    drive.bytes(SMC, &[0x89, panel_note(10), 0]);
+    drive.frame();
+    let view = drive.app.learning_view(&drive.keymap).unwrap();
+    let text = format!("{} | {} | {}", view.context, view.detail, view.controls);
+    assert!(text.contains("replaces panel cell P6 rec out"), "{text}");
 }

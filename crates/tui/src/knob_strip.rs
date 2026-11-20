@@ -127,7 +127,7 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
     }
     match &strip.mode {
         Some(mode) => help.push(
-            Line::from(clip_label(mode, usize::from(right.width)))
+            Line::from(fit_mode(mode, usize::from(right.width)))
                 .fg(MAGENTA)
                 .bold(),
         ),
@@ -138,9 +138,48 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
     frame.render_widget(Paragraph::new(help), right);
 }
 
+/// The mode line in `width` cells (135): the middle steps give way first, so the mode name
+/// and its last two controls (apply and cancel) stay readable at 80×26.
+fn fit_mode(mode: &str, width: usize) -> String {
+    let fits = |text: &str| Span::raw(text).width() <= width;
+    let parts: Vec<&str> = mode.split(" · ").collect();
+    if fits(mode) || parts.len() < 3 {
+        return clip_label(mode, width);
+    }
+    let (head, tail) = (parts[0], &parts[parts.len() - 2..]);
+    let name = head.split(' ').next().unwrap_or(head);
+    // "PAD BANK + 4 apply · PAD BANK + 1 cancel" says the held button once
+    let held: Option<Vec<&str>> = tail
+        .iter()
+        .map(|part| part.strip_prefix("PAD BANK + "))
+        .collect();
+    let short = held.map(|held| format!("PAD BANK: {}", held.join(" · ")));
+    let mut candidates = vec![format!("{head} · {}", tail.join(" · "))];
+    if let Some(short) = &short {
+        candidates.push(format!("{head} · {short}"));
+        candidates.push(format!("{name} · {short}"));
+    }
+    candidates.push(format!("{name} · {}", tail.join(" · ")));
+    candidates
+        .into_iter()
+        .find(|candidate| fits(candidate))
+        .unwrap_or_else(|| clip_label(mode, width))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Assign mode line keeps its apply and cancel controls in 40 cells (135).
+    #[test]
+    fn the_mode_line_keeps_apply_and_cancel() {
+        let smc =
+            "ASSIGN 1/4 · slice 1 next · hit a pad · PAD BANK + 4 apply · PAD BANK + 1 cancel";
+        assert_eq!(fit_mode(smc, 40), "ASSIGN · PAD BANK: 4 apply · 1 cancel");
+        let keys = "ASSIGN 1/4 · slice 1 next · hit a pad · Enter apply · Esc cancel";
+        assert_eq!(fit_mode(keys, 40), "ASSIGN 1/4 · Enter apply · Esc cancel");
+        assert_eq!(fit_mode(keys, 80), keys, "a wide line stays whole");
+    }
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]

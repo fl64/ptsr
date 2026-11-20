@@ -3553,6 +3553,150 @@ L="none"
         }
     }
 
+    /// Scenario "The slice edit marks the bounds to join" (chopping).
+    /// Scenario "A two-word label uses two lines" (command-panel).
+    #[test]
+    fn the_slice_edit_marks_the_bounds_to_join() {
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        let magenta = ratatui::style::Color::Rgb(0xFF, 0x5F, 0xAE);
+        for size in [(80, 26), (120, 40)] {
+            let case = Case {
+                screen: Screen::Chop,
+                mode: Mode::PanelMain,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.edit = true;
+            assert!(app.chop.as_mut().unwrap().select_slice(2));
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let width = usize::from(size.0);
+            let rows: Vec<Vec<&ratatui::buffer::Cell>> = buffer
+                .content()
+                .chunks(width)
+                .map(|row| row.iter().collect())
+                .collect();
+            let text: Vec<String> = rows
+                .iter()
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                .collect();
+            let all = text.join("\n");
+            assert!(all.contains("CHOP EDIT"), "{all}");
+            // each two-word label: the first word, and the second word right under it
+            for (first, second) in [("join", "left"), ("join", "right")] {
+                let found = text.windows(2).any(|pair| {
+                    pair[0].match_indices(first).any(|(at, _)| {
+                        let column = pair[0][..at].chars().count();
+                        let below: String = pair[1]
+                            .chars()
+                            .skip(column.saturating_sub(2))
+                            .take(9)
+                            .collect();
+                        below.contains(second)
+                    })
+                });
+                assert!(found, "{first} over {second} at {size:?}\n{all}");
+            }
+            // the two bounds of slice 3 are the magenta lines on the wave
+            // the bounds are the magenta lines (or the cursor on one) in the rows of the wave
+            let wave_rows = rows.iter().filter(|row| {
+                row.iter().any(|cell| {
+                    cell.symbol()
+                        .chars()
+                        .any(|c| ('\u{2801}'..='\u{28FF}').contains(&c))
+                })
+            });
+            let columns: std::collections::BTreeSet<usize> = wave_rows
+                .flat_map(|row| {
+                    row.iter().enumerate().filter_map(|(column, cell)| {
+                        // the cursor stands on the start of a selected slice, over its bound
+                        (cell.symbol() == "│" && cell.fg == magenta || cell.symbol() == "┃")
+                            .then_some(column)
+                    })
+                })
+                .collect();
+            // at 80×26 the open panel leaves no room for the wave: the slice row marks it
+            if size == (120, 40) {
+                assert_eq!(columns.len(), 2, "{columns:?}\n{all}");
+            } else {
+                assert!(text.iter().any(|row| row.contains("!○")), "{all}");
+            }
+        }
+    }
+
+    /// Scenario "A hits notice leaves the fields readable" (screen-layout).
+    #[test]
+    fn a_hits_notice_leaves_the_fields_readable() {
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        for mode in [Mode::Normal, Mode::PanelMain] {
+            for size in [(80, 26), (120, 40)] {
+                let case = Case {
+                    screen: Screen::Chop,
+                    mode,
+                    size,
+                };
+                let now = Instant::now();
+                let mut app = fixture(case, now);
+                app.apply(Action::ChopHits);
+                let (_, buffer) = render_app(case, &keymap, app, now);
+                let rows: Vec<String> = buffer
+                    .content()
+                    .chunks(usize::from(size.0))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                let all = rows.join("\n");
+                let row_of = |text: &str| rows.iter().position(|row| row.contains(text));
+                let notice = row_of("by hits at -6 dB").expect(&all);
+                for field in ["start 0.000 s", "length 1000 ms", "cursor 0.000 s"] {
+                    let at = row_of(field).unwrap_or_else(|| panic!("{field} {size:?}\n{all}"));
+                    assert_ne!(at, notice, "{field} {size:?}\n{all}");
+                }
+                // the notice row sits under the work area, over the help rows
+                assert!(
+                    notice > row_of("cursor 0.000 s").unwrap(),
+                    "{size:?}\n{all}"
+                );
+            }
+        }
+    }
+
+    /// Scenario "Assign keeps apply and cancel at 80 by 26" (screen-layout).
+    #[test]
+    fn assign_keeps_apply_and_cancel_at_80_by_26() {
+        // the mode line belongs to the SMC-PAD knob strip; the words come from `fit_mode`
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        let case = Case {
+            screen: Screen::Chop,
+            mode: Mode::PanelMain,
+            size: (80, 26),
+        };
+        let now = Instant::now();
+        let mut app = fixture(case, now);
+        app.apply(Action::ChopAssign);
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        let line = app.mode_line(now).expect("Assign has a mode line");
+        let (_, buffer) = render_app(case, &keymap, app, now);
+        let rows: Vec<String> = buffer
+            .content()
+            .chunks(80)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect();
+        let all = rows.join("\n");
+        let (apply, cancel) = if line.contains("PAD BANK") {
+            ("4 apply", "1 cancel")
+        } else {
+            ("Enter apply", "Esc cancel")
+        };
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("ASSIGN") && row.contains(apply) && row.contains(cancel)),
+            "{line}\n{all}"
+        );
+    }
+
     /// Scenario "Catalogue covers panel pages and safety" (screen-layout).
     /// Scenario "Exit recovery shows the reason and controls".
     #[test]

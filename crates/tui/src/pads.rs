@@ -12,6 +12,8 @@ pub struct CommandPanel {
     pub target: bool,
     /// The cell index that a pad hit lights now (131).
     pub flash: Option<usize>,
+    /// Cells whose action cannot run now, drawn dim; a press explains why (135).
+    pub dim: [bool; 16],
 }
 
 /// The number that the device prints on the pad of top-down `cell` 1–16.
@@ -153,7 +155,9 @@ pub fn command_panel_in(
         for (column, area) in cells.iter().enumerate() {
             let index = row * 4 + column;
             let label = panel.labels[index].as_deref().unwrap_or("");
-            let active = panel.labels[index].is_some() && !matches!(label, "mixer" | "redo");
+            let active = panel.labels[index].is_some()
+                && !panel.dim[index]
+                && !matches!(label, "mixer" | "redo");
             // Three zones: screens, the actions of the current view, the fixed bottom row.
             let zone = if row == 3 {
                 TEXT
@@ -185,14 +189,23 @@ pub fn command_panel_in(
             let inner = cell.inner(*area);
             frame.render_widget(Clear, *area);
             frame.render_widget(cell, *area);
-            if inner.height > 0 {
-                let middle = Rect {
-                    y: inner.y + inner.height.saturating_sub(1) / 2,
+            // a label longer than seven cells breaks at its first space (135)
+            let lines: Vec<&str> = match label.split_once(' ') {
+                Some((first, second)) if Line::raw(label).width() > 7 && inner.height > 1 => {
+                    vec![first, second]
+                }
+                _ => vec![label],
+            };
+            let top = inner.y + inner.height.saturating_sub(lines.len() as u16) / 2;
+            for (i, line) in lines.into_iter().enumerate() {
+                let at = Rect {
+                    y: top + i as u16,
                     height: 1,
                     ..inner
                 };
-                let text = Line::from(label).fg(color).bold().centered();
-                frame.render_widget(text, middle);
+                if at.y < inner.y + inner.height {
+                    frame.render_widget(Line::from(line).fg(color).bold().centered(), at);
+                }
             }
         }
     }
@@ -907,6 +920,7 @@ mod tests {
             view: "CHOP",
             target: false,
             flash: None,
+            dim: [false; 16],
         }
     }
 

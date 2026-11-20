@@ -84,8 +84,8 @@ step and its cancel control. It stays after the PAD BANK release.
 2. In the Chop actions, press P13 Cut to add a slice start.
 3. For the Chop region, turn knobs 5 and 6. Press P5 Whole to restore the whole sound.
 4. Press P7 Edit to open Chop edit. Press P9 Whole to clear the region.
-5. To delete the selected slice start in Chop edit, press P15 `cut -`.
-   To delete a manual slice end, press P16 `end -`.
+5. To join the selected slice with the slice on its left, press P15 `join left` in Chop edit.
+   To join it with the slice on its right, press P16 `join right`. A dim cell has no neighbour.
 
 Press P4 to accept a visible question. Press P1 to cancel.
 

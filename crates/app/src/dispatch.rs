@@ -723,8 +723,27 @@ impl App {
                             self.slice_end = end;
                             self.lit = Some((Lit::Bound(end), Instant::now()));
                         }
-                        Action::MarkerDelete => c.delete(),
-                        Action::SliceEndDelete => c.delete_end(),
+                        Action::MarkerDelete | Action::SliceEndDelete => {
+                            // a join names its result, and a join with no neighbour says why (135)
+                            let right = action == Action::SliceEndDelete;
+                            let (count, i) = (c.slices().len(), c.selected);
+                            let text = if count == 1 {
+                                "nothing to join: one slice".to_string()
+                            } else if !right && i == 0 {
+                                "slice 1 has no slice on the left".to_string()
+                            } else if right && i + 1 == count {
+                                format!("slice {count} has no slice on the right")
+                            } else {
+                                if right {
+                                    c.delete_end()
+                                } else {
+                                    c.delete()
+                                }
+                                let first = if right { i + 1 } else { i };
+                                format!("slices {first} and {} joined", first + 1)
+                            };
+                            self.post_notice(Level::Info, (text, Instant::now()));
+                        }
                         _ => {
                             if !c.undo() && !self.undo_fresh() {
                                 self.post_notice(

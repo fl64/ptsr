@@ -934,3 +934,11 @@ Controller Help SHALL draw the SMC-PAD pads with the printed numbers, 1 bottom l
 #### Scenario: Help shows pad 1 bottom left
 - **WHEN** the owner opens Controller Help with an SMC-PAD connection
 - **THEN** the bottom-left pad reads 1, the top-right pad reads 16, and Help names the second layer as the actions of the current screen
+
+### Requirement: The marking hint follows the last input device
+
+After an SMC-PAD input, the marking hint SHALL name the SMC-PAD control that drops the marks. After a key, it SHALL name the key.
+
+#### Scenario: Marking after SMC-PAD input names PAD BANK and pad 1
+- **WHEN** the owner turns marking on from the SMC-PAD panel
+- **THEN** the hint names PAD BANK and pad 1 to drop the marks, and names no Esc
