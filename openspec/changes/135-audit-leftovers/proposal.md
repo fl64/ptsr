@@ -14,6 +14,7 @@ a key after SMC-PAD input.
 - Learn names a panel cell that a new binding replaces, before the save.
 - The marking hint names SMC-PAD controls after SMC-PAD input.
 - In the slice edit, the panel cells `cut -` and `end -` become `join left` and `join right`. While the panel shows them, the wave marks the two bounds of the selected slice. A cell with no neighbour is dim and explains why. After a join, a notice names the joined slices.
+- A panel label can use two lines: the first space starts the second line. Each line keeps at most seven cells.
 
 ## Capabilities
 
@@ -27,7 +28,7 @@ None.
 - `controller-reach`: the Learn conflict warning.
 - `screen-help`: the marking hint after SMC-PAD input.
 - `chopping`: join the selected slice with its left or right neighbour.
-- `command-panel`: the Chop edit actions table.
+- `command-panel`: the Chop edit actions table and labels in two lines.
 
 ## Impact
 

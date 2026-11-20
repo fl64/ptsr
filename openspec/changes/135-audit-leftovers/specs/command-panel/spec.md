@@ -25,3 +25,18 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 | Chop edit | normal, hits -, join left, join right, whole |
 | Settings | —, learn, unbind |
 
+### Requirement: Shipped panel labels use short words
+
+Every shipped panel label SHALL use approved words in one or two lines.
+The first space of a label SHALL start the second line.
+Each line SHALL use at most seven cells.
+A label SHALL have one meaning on every screen.
+The label check SHALL include fixed cells and the shipped panel file.
+
+#### Scenario: Shipped labels fit the panel glossary
+- **WHEN** a shipped panel label line exceeds seven cells or uses an unknown word
+- **THEN** the label check fails
+
+#### Scenario: A two-word label uses two lines
+- **WHEN** the panel shows `join left` at 80×26 and at 120×40
+- **THEN** the cell shows «join» on its first line and «left» on its second line

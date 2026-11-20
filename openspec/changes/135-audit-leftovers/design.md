@@ -21,6 +21,9 @@ cells and the Assign bank. This change takes the rest that is not about Chop flo
   «slice 1 has no slice on the left» or «slice 8 has no slice on the right». With one slice, both
   are dim and a press shows «nothing to join: one slice». Before this change the press did nothing.
 - D8. After a join, a notice names the joined slices, for example «slices 2 and 3 joined».
+- D9. A panel cell has two text lines of 11 cells at 80×26. The label rule of seven cells stays
+  for each line. The first space of a label starts the second line, so `join left` shows «join»
+  over «left». Change 138 uses this rule for the other labels.
 
 ## Open questions
 
