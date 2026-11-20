@@ -31,7 +31,7 @@ Chop SHALL have `remove all cuts` on device pad P13 and on the Delete key. It SH
 
 ### Requirement: Fewer hits acts on Chop
 
-`fewer hits` SHALL be a Chop cell on device pad P7, not a slice edit cell. It SHALL act as Shift+H. It SHALL be grey while the threshold is −6 dB or while the chop has no cut by hits.
+`fewer hits` SHALL be a Chop cell on device pad P7, not a slice edit cell. It SHALL act as Shift+H. It SHALL be grey while the threshold is −6 dB or while the chop has no cut by hits. Shift+H on a chop without a cut by hits SHALL change no cut and SHALL say «cut by hits first».
 
 #### Scenario: Fewer hits from Chop
 - **WHEN** the chop is cut by hits at −20 dB and the owner presses `fewer hits` on Chop
@@ -40,6 +40,10 @@ Chop SHALL have `remove all cuts` on device pad P13 and on the Delete key. It SH
 #### Scenario: Fewer hits before cut by hits is grey
 - **WHEN** the chop has no cut by hits and the owner holds PAD BANK on Chop
 - **THEN** `fewer hits` is grey and a press says «cut by hits first»
+
+#### Scenario: Shift+H before cut by hits changes nothing
+- **WHEN** the chop has no cut by hits and the owner presses Shift+H on Chop
+- **THEN** no cut changes and a notice says «cut by hits first»
 
 ### Requirement: In order waits for the start pad
 
@@ -57,18 +61,18 @@ In the assign mode "all in order", apply SHALL wait until the owner hits the sta
 
 ### Requirement: Normalize
 
-The system SHALL, on Ctrl+G on Chop or on `normalize` in the slice edit, set the sound gain of each pad that plays the selected slice. The loudest peak of what that pad plays SHALL sit at -1 dB. The sound gain SHALL be separate from the pad volume and SHALL NOT be limited by the pad volume range. The gain SHALL be at most +30 dB. The status SHALL show the gain and say when the limit stopped it. The file on disk SHALL NOT change. The gain SHALL be saved per pad in the project. Undo on Pads SHALL bring back the old gain. When no pad plays the selected slice, `normalize` SHALL be grey and a press SHALL say «put the slice on a pad first».
+The system SHALL, on Ctrl+G on Chop or on `norm` in the slice edit, set the sound gain of each pad that plays the selected slice. The loudest peak of what that pad plays SHALL sit at -1 dB. The sound gain SHALL be separate from the pad volume and SHALL NOT be limited by the pad volume range. The gain SHALL be at most +30 dB. The status SHALL show the gain and say when the limit stopped it. The file on disk SHALL NOT change. The gain SHALL be saved per pad in the project. Undo on Pads SHALL bring back the old gain. When no pad plays the selected slice, `norm` SHALL be grey and a press SHALL say «put the slice on a pad first».
 
 #### Scenario: Quiet break
-- **WHEN** the owner selects a slice whose pad peaks 6 dB below full scale and presses `normalize`
+- **WHEN** the owner selects a slice whose pad peaks 6 dB below full scale and presses `norm`
 - **THEN** the pad sound gain is +5 dB, the pad volume stays, the status shows "+5 dB", and the pad plays without clipping
 
 #### Scenario: Very quiet break
-- **WHEN** the pad peaks are 20 dB below full scale and the owner presses `normalize`
+- **WHEN** the pad peaks are 20 dB below full scale and the owner presses `norm`
 - **THEN** the pad sound gain is +19 dB, beyond the +6 dB pad volume limit
 
 #### Scenario: Twice in a row
-- **WHEN** the owner presses `normalize` a second time
+- **WHEN** the owner presses `norm` a second time
 - **THEN** gain is measured again from the sound, so the level does not climb twice
 
 #### Scenario: Chop without a pad
@@ -76,12 +80,12 @@ The system SHALL, on Ctrl+G on Chop or on `normalize` in the slice edit, set the
 - **THEN** the status says there is no pad to normalize
 
 #### Scenario: Normalize can be undone
-- **WHEN** the owner presses `normalize` and then undo
+- **WHEN** the owner presses `norm` and then undo
 - **THEN** the pad sound gain returns to its value before the press
 
 #### Scenario: Normalize without a pad is grey
 - **WHEN** no pad plays the selected slice and the owner holds PAD BANK in the slice edit
-- **THEN** `normalize` is grey and a press says «put the slice on a pad first»
+- **THEN** `norm` is grey and a press says «put the slice on a pad first»
 
 #### Scenario: The sound gain is saved
 - **WHEN** a pad has a sound gain of +5 dB and the owner saves and opens the project again

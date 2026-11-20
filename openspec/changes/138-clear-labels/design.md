@@ -23,9 +23,20 @@ state at once. The conditions are in the D5 table.
 
 ### D2. Labels (Q5)
 
-Labels are English and use up to two plain words. A label longer than eight cells breaks at its
-first space. Each line uses at most eight cells, because `all cuts` needs eight. One label has
-one meaning on all screens. The command panel delta has the full table.
+Labels are English and use up to two plain words. A label of two words always shows each word
+on its own line. On 2026-11-20 the owner saw `copy pad` on one line and `pitch gate` on two
+lines and asked if it was a bug (Q31). Each line uses at most eight cells, because `all cuts`
+needs eight. One label has one meaning on all screens. The command panel delta has the full table.
+
+The slice edit cell for normalize is `norm`: `normalize` has nine letters and no space (Q29).
+
+### D2a. State cells (Q30, Q31)
+
+On 2026-11-20 the owner could not see which play range was on. A cell that changes a state shows
+the current state under its label, in another colour. The owner asked to keep the agreed
+two-word labels. At 120×40 a cell has three lines: the two words and the state. At 80×26 a cell
+has two lines of 11 cells. All state labels fit 11 cells, so the label takes one line and the
+state takes the second. The command panel delta lists the cells and their states.
 
 `hide pads` shows `show pads` while the pads are hidden. F1 Help names it «hide the pad grid,
 the wave takes its place».
@@ -37,7 +48,7 @@ P1–P4 stay back, undo, redo and done on all screens. The other cells use print
 | View | P5–P8 | P9–P12 | P13–P16 |
 | --- | --- | --- | --- |
 | Chop | cut here, cut by hits, fewer hits, equal parts | put on pads, fill pads, edit slice, trim silence | remove all cuts, loop play, play range, cursor step |
-| Slice edit | normalize, join left, join right, hear as pad | — | — |
+| Slice edit | norm, join left, join right, hear as pad | — | — |
 | Pads | edit pad, copy pad, chop pad, clear pad | swap pads, mark pad, mark bank, play mode | pitch gate, record output, hide pads, — |
 | Pad edit | play mode, copy pad, pitch gate, reset pad | tone page, env page, filter page, source page | fx page, —, —, — |
 | Files | load to pad, take file, listen file, chop file | star file, —, —, — | — |
@@ -82,7 +93,7 @@ A code check of every cell gave these conditions. A grey cell keeps its place an
 | remove all cuts | the chop has no cut | «no cuts to remove» |
 | trim silence | the trim edges already sit on the first and last sound | «no silence to trim» |
 | join left / join right | the slice has no neighbour (change 135) | the side |
-| normalize | no pad plays the selected slice | «put the slice on a pad first» |
+| norm | no pad plays the selected slice | «put the slice on a pad first» |
 | apply (Assign) | in order, and the start pad is not hit | «hit the start pad first» |
 | undo | nothing to undo | «nothing to undo» |
 
@@ -116,7 +127,7 @@ working redo. The agent found this after the summary and told the owner.
 On 2026-11-20 the owner asked for a level button that does not use the pad volume. The pad
 volume (−40…+6 dB, `crates/app/src/pads.rs`) stays a mixing control.
 
-- `normalize` sets the sound gain of each pad that plays the selected slice. The peak of what
+- `norm` (normalize) sets the sound gain of each pad that plays the selected slice. The peak of what
   the pad plays goes to −1 dB. The gain can be negative.
 - The gain is saved per pad in the project as an optional field. A project without the field
   loads with 0 dB. The format needs no migration.
@@ -213,3 +224,5 @@ named by the date and a number: `2026-11-20-1`. The owner can rename it from the
 - `reset pad` sets the sound gain to 0 dB, as it resets the other pad parameters.
 - While learning, the SMC-PAD pad 4 no longer saves a choice, because a touched control can be
   pad 4. Enter saves and Esc keeps, from the keyboard.
+- Shift+H without a cut by hits gives the same answer as the grey `fewer hits` cell: «cut by
+  hits first». One action has one result on both inputs.

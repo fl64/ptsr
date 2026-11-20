@@ -117,14 +117,15 @@ The shipped actions SHALL match the table. A dash is an empty cell.
 | A1 | record A1, edit steps, erase hits, tap tempo | steps wider, steps finer, A1 setup, clear A1 | hide empty, —, —, — |
 | Files | load to pad, take file, listen file, chop file | star file, —, —, — | —, —, —, — |
 | Chop | cut here, cut by hits, fewer hits, equal parts | put on pads, fill pads, edit slice, trim silence | remove all cuts, loop play, play range, cursor step |
-| Chop edit | normalize, join left, join right, hear as pad | —, —, —, — | —, —, —, — |
+| Chop edit | norm, join left, join right, hear as pad | —, —, —, — | —, —, —, — |
 | Settings | choose, —, —, — | —, —, —, — | —, —, —, — |
 
 ### Requirement: Shipped panel labels use short words
 
 Every shipped panel label SHALL use approved words in one or two lines.
-A label longer than eight cells SHALL break at its first space into two lines.
+A label of two words SHALL show each word on its own line.
 Each line SHALL use at most eight cells.
+A one-line cell, at a small size, SHALL show the label on its one line.
 A label SHALL have one meaning on every screen.
 The label check SHALL include fixed cells and the shipped panel file.
 
@@ -135,6 +136,35 @@ The label check SHALL include fixed cells and the shipped panel file.
 #### Scenario: A two-word label uses two lines
 - **WHEN** the panel shows `join left` at 80×26 and at 120×40
 - **THEN** the cell shows «join» on its first line and «left» on its second line
+
+#### Scenario: A short two-word label also uses two lines
+- **WHEN** the panel shows `copy pad` at 80×26 and at 120×40
+- **THEN** the cell shows «copy» on its first line and «pad» on its second line
+
+### Requirement: State cells show the current state
+
+A cell whose action changes a state SHALL show the current state below its label, in a colour that differs from the label. At 120×40 the cell SHALL show the two label words on two lines and the state on the third line. At 80×26 the cell SHALL show the label on one line and the state on the second line. The state SHALL follow the current state at once. These cells and states SHALL be shown:
+
+| Cell | States |
+| --- | --- |
+| play range | to end, to cut, slice |
+| loop play | on, off |
+| cursor step | even, hits, cuts |
+| hear as pad | on, off |
+| play mode | 1 shot, gate |
+| pitch gate | on, off |
+| mark pad | on, off |
+| hide empty | shown, hidden |
+| listen file | on, off |
+| star file | on, off |
+
+#### Scenario: Play range shows its state
+- **WHEN** the owner holds PAD BANK on Chop at 120×40 and presses `play range`
+- **THEN** the cell shows «play», «range» and «to end» before the press and «to cut» after it
+
+#### Scenario: Loop play shows its state at 80×26
+- **WHEN** the owner holds PAD BANK on Chop at 80×26 with the loop off and presses `loop play`
+- **THEN** the cell shows «loop play» on its first line and «off» before the press and «on» after it on its second line
 
 ### Requirement: Panel configuration names logical actions
 
