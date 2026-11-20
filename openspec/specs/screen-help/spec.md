@@ -915,6 +915,18 @@ The hint lines, the mode line, question answer rows and mode texts SHALL use the
 - **WHEN** a question shows after a keyboard input and the owner then turns an SMC-PAD knob
 - **THEN** the answer row names pad 1 and pad 4, and the question and its target stay
 
+### Requirement: The SMC-PAD Private port does not change the input device
+
+The SMC-PAD Private port repeats the Master port and runs no action. A message on the Private port SHALL NOT change the last input device.
+
+#### Scenario: A mirrored hit keeps controller words
+- **WHEN** the owner hits a pad and the Private port repeats the hit before or after the Master port
+- **THEN** the hints keep SMC-PAD words
+
+#### Scenario: A mirrored message after a key keeps keyboard words
+- **WHEN** the owner presses a key and then only the Private port sends a message
+- **THEN** the hints keep keyboard words
+
 ### Requirement: Controller Help draws the device as printed
 
 Controller Help SHALL draw the SMC-PAD pads with the printed numbers, 1 bottom left and 16 top right. It SHALL show that a PAD BANK hold shows the actions of the current screen, and that the screens view is one LEFT press away.
