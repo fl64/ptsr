@@ -1,30 +1,58 @@
 ## 1. Specification
 
-- [x] Record the owner decisions and the label table.
+- [x] Record the owner decisions Q1–Q28 and the walk findings that they close.
+- [ ] Write the spec deltas for each modified capability.
 
-## 2. Labels
+## 2. Labels and layouts
 
 - [x] Rename the shipped panel labels. Update the label glossary and the shipped table test.
 - [x] Show `show pads` while the pads are hidden. Name the hidden grid in F1 Help.
-- [ ] Dim `reset trim` on a whole region. Show a notice for each press. Test both scenarios with keys and raw MIDI.
 - [x] Rename the Chop knob labels and their full names on the line of the last knob.
-
-## 3. Dim and destructive cells
-
-- [ ] Dim each cell of the design table while it cannot act. Explain a press on a dim cell.
-- [ ] Draw destructive cells in the warning colour.
-- [ ] Ask before hand cuts, a pad sound or a learned control goes. Track hand cuts in the chop.
-- [ ] Name the change and the undo after each destructive action. Add an undo step to `level to peak`.
-- [ ] Test every new scenario with keys and raw MIDI.
-
-## 4. Remove all cuts
-
-- [ ] Add `chop.cuts_clear` with the P6 cell and the Delete key. Dim it without cuts. Ask, then name the undo.
+- [ ] Apply the D3 layouts. Remove `whole`, `undo A1 pass`, `learn`, `learn control` and `forget control` from the panels.
 - [ ] Allow eight cells a label line in the loader, the glossary and the drawing.
-- [ ] Add the route to the route table. Test both scenarios with keys and raw MIDI.
 
-## 5. Checks
+## 3. Cell looks
 
-- [ ] Check every panel view at 80×26 and 120×40 in the screen catalogue.
-- [ ] Run format, Clippy, changed tests and the fast checks.
-- [ ] Recommend the walk level to the owner.
+- [ ] Draw orange cells and grey cells. Grey each cell of the D5 table while it cannot act.
+- [ ] Explain a press on a grey cell with a notice.
+
+## 4. Destructive actions and undo
+
+- [ ] Track hand cuts in the chop. Ask before hand cuts go: equal parts, cut by hits, fewer hits, remove all cuts, the threshold knob.
+- [ ] Ask before `clear pad` on a pad with a sound. Remove false «This cannot be undone.» texts.
+- [ ] Name the result and the undo after each destructive action.
+- [ ] Make undo and redo notices say what came back on Chop, Pads and A1.
+
+## 5. Chop
+
+- [ ] Add `remove all cuts` with the P13 cell and the Delete key.
+- [ ] Add `trim silence`. Ask when the chop has cuts.
+- [ ] Move `fewer hits` to Chop and `hear as pad` to the slice edit.
+
+## 6. Normalize
+
+- [ ] Add a saved sound gain per pad, applied before the pad volume in the engine.
+- [ ] Make `normalize` set the gain of the pads that play the selected slice, with undo.
+- [ ] Render before and after to `renders/`. Check level, clipping and clicks. Run the callback benchmark.
+
+## 7. Modes and recording
+
+- [ ] Keep the exit part of the mode line at 80×26. Add the D10 mode lines.
+- [ ] Make PAD BANK + P1 leave the active mode first.
+- [ ] Make STOP end the output recording on all screens.
+- [ ] Fix the device words of the notices that the walk found. Record the other key texts in `docs/BACKLOG.md`.
+
+## 8. Other screens
+
+- [ ] Add the pad edit page cells. Make LEFT and RIGHT go around the pages.
+- [ ] Show the Assign method. Ask before a method change drops placed slices. Grey `apply` until the start pad.
+- [ ] Make `new project` work with no projects and name the project by date.
+- [ ] Show «Bindings: keyboard only (F10, Enter)» on F12 MIDI. Make forget, reset and the layout update ask.
+
+## 9. Documents and checks
+
+- [ ] Update `docs/CONTROLLER-PATHS.md`, `docs/plans/` and `docs/VISION.md` for the layouts and the binding exception.
+- [ ] Add every new mode to the mode walker test. Test hints after SMC-PAD and key input at 80×26 and 120×40.
+- [ ] Check every panel view in the screen catalogue.
+- [ ] Run format, Clippy, the slow tests and the fast checks.
+- [ ] Recommend the full walk to the owner.
