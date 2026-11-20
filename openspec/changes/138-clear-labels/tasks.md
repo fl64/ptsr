@@ -6,7 +6,7 @@
 
 - [x] Rename the shipped panel labels. Update the label glossary and the shipped table test.
 - [x] Show `show pads` while the pads are hidden. Name the hidden grid in F1 Help.
-- [ ] Dim `whole sample` on a whole region. Show a notice for each press. Test both scenarios with keys and raw MIDI.
+- [ ] Dim `reset trim` on a whole region. Show a notice for each press. Test both scenarios with keys and raw MIDI.
 - [x] Rename the Chop knob labels and their full names on the line of the last knob.
 
 ## 3. Dim and destructive cells

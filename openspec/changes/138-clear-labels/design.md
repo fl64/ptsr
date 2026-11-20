@@ -19,15 +19,17 @@ The pads toggle shows `hide pads` while the pads show, and `show pads` while the
 F1 Help names it «hide the pad grid, the wave takes its place». The owner did not understand
 `grid` on 2026-11-20 until the agent named the hidden part.
 
-### D3. The Chop knob labels
+### D3. One word: trim
 
-The knob strip keeps short names of at most six cells: `r.from`, `r.to` and `hits`. The line of
-the last turned knob names them in full: «region start», «region end», «hit level».
+The owner did not understand `whole` or the region. Samplers call it a trim: the sound loses its
+start or its end before the cuts. The screen uses only the word trim: knob 5 `trim<`, knob 6
+`trim>`, the cell `reset trim`. The line of the last knob says «trim start», «trim end» and
+«hit level». The words region and whole leave the panel, the knob strip and the notices.
 
-### D4. Whole sample
+### D4. Reset trim
 
 On 2026-11-20 the owner pressed `whole` and saw nothing: the region already covered the whole
-sample. The owner did not know what «whole file» meant, so the label is `whole sample`. The cell is
+sample. The owner did not know what «whole file» meant either (D3), so the label is `reset trim`. The cell is
 dim while nothing can change, and each press shows a notice, as `join left` does (change 135).
 
 ### D5. Dim cells
@@ -44,8 +46,8 @@ A code check of every cell gave these conditions. A dim cell keeps its place and
 | undo A1 pass | the newest undo step is not an A1 step |
 | take file, load to pad, chop file | the list has no file under the cursor |
 | load to pad | the selected pad already plays this whole file |
-| cut here | the cursor is outside the region or 10 ms from a cut |
-| whole sample | the region is the whole sample |
+| cut here | the cursor is in a trimmed part or 10 ms from a cut |
+| reset trim | nothing is trimmed |
 | fewer hits | the threshold is −6 dB, or the chop has no cut by hits |
 | join left / join right | the selected slice has no neighbour (change 135) |
 | level to peak | Chop opened from a file, or the pad has no sound |

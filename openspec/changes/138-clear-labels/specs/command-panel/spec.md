@@ -64,8 +64,8 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 | Pad edit | play mode, reset pad, pitch gate, copy pad |
 | A1 | edit steps, steps wider, steps finer, A1 setup, record A1, erase hits, undo A1 pass, clear A1, hide empty, tap tempo |
 | Files | take file, load to pad, —, star file, —, listen file, chop file |
-| Chop | cut here, equal parts, cut by hits, put on pads, loop play, play range, cursor step, hear as pad, whole sample, remove all cuts, edit slice, fill pads |
-| Chop edit | level to peak, fewer hits, join left, join right, whole sample |
+| Chop | cut here, equal parts, cut by hits, put on pads, loop play, play range, cursor step, hear as pad, reset trim, remove all cuts, edit slice, fill pads |
+| Chop edit | level to peak, fewer hits, join left, join right, reset trim |
 | Settings | —, learn control, forget control |
 
 ### Requirement: Shipped panel labels use short words
