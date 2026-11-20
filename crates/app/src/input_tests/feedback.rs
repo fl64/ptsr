@@ -2141,9 +2141,10 @@ fn value_popup_covers_chop_controls_without_changing_their_results() {
     drive.tap(KeyCode::Char(','), M::CONTROL);
     assert_eq!(shown_value(&drive).parameter, "region");
     assert_eq!(shown_value(&drive).formatted, "0.000..1.000 s");
+    // normalize sets the sound gain, not the volume (138): no volume popup
     drive.tap(KeyCode::Char('g'), M::CONTROL);
-    assert_eq!(shown_value(&drive).object, "pad 1-1");
-    assert_eq!(shown_value(&drive).parameter, "volume");
+    assert_ne!(shown_value(&drive).parameter, "volume");
+    assert_eq!(drive.app.pads.volume_db[0], 0);
 }
 
 /// Scenario "Refused and limited values remain truthful".

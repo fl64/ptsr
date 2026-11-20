@@ -20,6 +20,9 @@ mod cell_looks;
 #[path = "destroy_asks.rs"]
 mod destroy_asks;
 
+#[path = "normalize.rs"]
+mod normalize;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.

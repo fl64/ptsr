@@ -87,6 +87,10 @@ impl App {
             (View::Chop, Action::ChopHitsBack) => {
                 self.chop.as_ref()?.hits_back_refusal().map(Grey::Why)
             }
+            (View::ChopEdit, Action::ChopNormalize) => self
+                .slice_pads()
+                .is_empty()
+                .then(|| Grey::Why("put the slice on a pad first".into())),
             (View::ChopEdit, Action::MarkerDelete | Action::SliceEndDelete) => {
                 self.join_blocked(Some(action)).then_some(Grey::Itself)
             }

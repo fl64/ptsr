@@ -1519,53 +1519,76 @@ impl App {
         self.goto(Screen::Chop);
     }
 
-    /// Ctrl+N: the volume of the pad this chop was opened from puts the peak it plays
-    /// (the pad's region) at −1 dB, rounded down. The peak comes from the sample, not
-    /// the current gain, so repeating Ctrl+N lands on the same value.
+    /// The pads that play the selected slice of the open chop (138): linked to it, or
+    /// playing the same file over the same bounds.
+    pub(super) fn slice_pads(&self) -> Vec<usize> {
+        let Some(c) = &self.chop else {
+            return Vec::new();
+        };
+        let slices = c.slices();
+        let Some(&selected) = slices.get(c.selected) else {
+            return Vec::new();
+        };
+        (0..PADS)
+            .filter(|&a| {
+                self.pads.file[a].as_ref() == Some(&c.file) && self.pads.sound[a].is_some()
+            })
+            .filter(|&a| match self.pads.link[a] {
+                Some((id, epoch)) if epoch == c.epoch => c.slice_of(id) == c.selected,
+                _ => self.pads.region[a] == selected,
+            })
+            .collect()
+    }
+
+    /// `norm` and Ctrl+G (138): the sound gain of each pad of the selected slice puts the
+    /// peak of what the pad plays at −1 dB. The pad volume stays; one undo step on Pads.
     pub(super) fn normalize_pad(&mut self) {
-        let no_pad = "no pad to set the volume on".to_string();
-        let Some(abs) = self.chop_from else {
-            self.post_notice(Level::Warn, (no_pad, Instant::now()));
+        let pads = self.slice_pads();
+        if pads.is_empty() {
+            self.post_notice(
+                Level::Warn,
+                ("put the slice on a pad first".into(), Instant::now()),
+            );
             return;
-        };
-        let Some(sound) = self.pads.sound[abs].clone() else {
-            self.post_notice(Level::Warn, (no_pad, Instant::now()));
-            return;
-        };
-        let (start, end) = (
-            self.pads.region[abs].start.min(sound.len()),
-            self.pads.region[abs].end.min(sound.len()),
-        );
-        let mut peak = 0.0f32;
-        for ch in std::iter::once(&sound.left).chain(sound.right.as_ref()) {
-            for x in &ch[start..end.max(start)] {
-                peak = peak.max(x.abs());
+        }
+        let before = self.before();
+        let (mut stopped, mut last) = (false, 0.0f32);
+        for &abs in &pads {
+            let Some(sound) = self.pads.sound[abs].clone() else {
+                continue;
+            };
+            let (start, end) = (
+                self.pads.region[abs].start.min(sound.len()),
+                self.pads.region[abs].end.min(sound.len()),
+            );
+            let mut peak = 0.0f32;
+            for ch in std::iter::once(&sound.left).chain(sound.right.as_ref()) {
+                for x in &ch[start..end.max(start)] {
+                    peak = peak.max(x.abs());
+                }
             }
+            // measured from the sound each time, so a second press keeps the level
+            let raw = -1.0 - 20.0 * peak.max(f32::MIN_POSITIVE).log10();
+            let db = (raw.clamp(-pads::SOUND_GAIN_DB, pads::SOUND_GAIN_DB) * 10.0).round() / 10.0;
+            stopped |= raw > pads::SOUND_GAIN_DB;
+            last = db;
+            self.pads.sound_gain_db[abs] = db;
+            self.send(self.pads.sound_gain_command(abs));
         }
-        // silence: the smallest float rounds the gain up to the +6 dB pad limit
-        let raw = (-1.0 - 20.0 * peak.max(f32::EPSILON).log10()).floor();
-        let db = raw
-            .clamp(f32::from(pads::MIN_DB), f32::from(pads::MAX_DB))
-            .round() as i8;
-        if db != self.pads.volume_db[abs] {
-            self.pads.volume_db[abs] = db;
-            let gain = 10f32.powf(db as f32 / 20.0);
-            self.send(Command::SetPadGain { pad: abs, gain });
-            self.dirty();
-        }
-        let text = if raw > f32::from(pads::MAX_DB) {
-            format!("normalized: {db:+} dB, the pad volume limit stopped it")
-        } else {
-            format!("normalized: {db:+} dB")
+        self.note_step(before, "normalize".into());
+        self.dirty();
+        let count = match pads.len() {
+            1 => String::new(),
+            n => format!(" on {n} pads"),
         };
-        self.post_notice(
-            if raw > f32::from(pads::MAX_DB) {
-                Level::Warn
-            } else {
-                Level::Done
-            },
-            (text, Instant::now()),
-        );
+        let undo = self.undo_words();
+        let text = if stopped {
+            format!("normalized{count}: {last:+} dB, the gain limit stopped it")
+        } else {
+            format!("normalized{count}: {last:+} dB · {undo} on Pads brings it back")
+        };
+        let level = if stopped { Level::Warn } else { Level::Done };
+        self.post_notice(level, (text, Instant::now()));
     }
 
     /// Makes the chop of `file` the open one; `true` when it had to be made new.
@@ -2168,6 +2191,8 @@ impl App {
             self.pads.loading[abs] = None;
             self.pads.missing[abs] = false;
             self.pads.custom_name[abs] = None;
+            self.pads.sound_gain_db[abs] = 0.0;
+            self.send(self.pads.sound_gain_command(abs));
             self.pads.file[abs] = Some(file.clone());
             self.pads.set_sound(abs, sound.clone());
             self.pads.region[abs] = region;

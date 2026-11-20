@@ -14,11 +14,15 @@ The pad edit panel SHALL have five page cells: `tone page`, `env page`, `filter 
 
 ### Requirement: Pads keep a sound gain
 
-Each pad SHALL have a sound gain in dB, 0 dB by default, from −30 to +30 dB. The engine SHALL apply it before the pad volume, with the same smoothing as the volume, so a change makes no click. The audio thread SHALL get the gain through the existing pad parameter path, with no allocation and no lock. The pad volume range SHALL stay −40 to +6 dB.
+Each pad SHALL have a sound gain in dB, 0 dB by default, from −30 to +30 dB. The engine SHALL apply it before the pad volume, with the same smoothing as the volume, so a change makes no click. The audio thread SHALL get the gain through the existing pad parameter path, with no allocation and no lock. The pad volume range SHALL stay −40 to +6 dB. A clear, a new file or a new slice on the pad SHALL set the sound gain to 0 dB, because the gain was measured on the old sound.
 
 #### Scenario: The sound gain raises the level before the volume
 - **WHEN** a pad has a sound gain of +12 dB and a volume of 0 dB and the offline render plays it
 - **THEN** the render peak is 12 dB higher than with 0 dB gain, within 0.1 dB, with no clipping and no click
+
+#### Scenario: A new sound starts without the old gain
+- **WHEN** a pad has a sound gain of +5 dB and the owner clears it
+- **THEN** the pad sound gain is 0 dB
 
 ## MODIFIED Requirements
 

@@ -88,7 +88,9 @@ pub(super) fn describe(a: Action) -> String {
         Action::ChopCutsClear => "chop: remove all cuts; hand cuts ask first".into(),
         Action::ChopTrimSilence => "chop: trim the silence at the start and the end".into(),
         Action::ChopSnapToggle => "chop: cursor in even steps / hit to hit / cut to cut".into(),
-        Action::ChopNormalize => "chop: the pad volume puts its peak at −1 dB".into(),
+        Action::ChopNormalize => {
+            "chop: the sound gain of the slice's pads puts the peak at −1 dB".into()
+        }
         Action::ChopCut => "chop: cut at the cursor".into(),
         Action::ChopParts => {
             "chop: equal parts 2, 4, 8, 16, 32; assigning: in order / by hand".into()
