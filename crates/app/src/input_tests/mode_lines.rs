@@ -508,3 +508,23 @@ fn pad_bank_off_names_the_first_hit() {
     let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
     assert_eq!(strip.idle, "PAD BANK hold · PLAY play · STOP stop");
 }
+
+/// The save failure answers keep the words of its question in the line and the cells (F33).
+#[test]
+fn the_save_failure_answers_use_back_and_retry_save() {
+    let mut drive = hold_drive();
+    turn(&mut drive, 37, 65); // An SMC-PAD input.
+    drive.app.ask = Some(Ask::ExitRecovery {
+        lines: vec!["Save failed".into()],
+        offered_at: Instant::now(),
+    });
+    drive.frame();
+    assert_eq!(
+        line(&drive),
+        "ASK · PAD BANK + 4 retry save · PAD BANK + 1 back"
+    );
+    hold(&mut drive, true);
+    let panel = drive.app.panel_snapshot().unwrap();
+    assert_eq!(panel.labels[12].as_deref(), Some("back"));
+    assert_eq!(panel.labels[15].as_deref(), Some("retry save"));
+}

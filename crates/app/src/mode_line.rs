@@ -21,6 +21,14 @@ impl App {
         } else {
             ("Esc cancel", "Enter apply", "Esc close")
         };
+        if matches!(self.ask, Some(super::Ask::ExitRecovery { .. })) {
+            // the save failure answers keep the words of its question (F33)
+            return Some(if smc {
+                "ASK · PAD BANK + 4 retry save · PAD BANK + 1 back".into()
+            } else {
+                "ASK · Enter retry save · Esc back".into()
+            });
+        }
         if self.ask.is_some() {
             return Some(if smc {
                 "ASK · pad 4 yes · pad 1 no".into()

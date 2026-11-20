@@ -28,6 +28,14 @@ pub(super) fn project_picker(p: &ProjectPickerView, s: &Status, width: u16) -> P
             lines.push(format!("name: {name}").into());
             lines.push(" Enter/P4 create · Esc/P1 back to list".fg(DIM).into());
         }
+        // after SMC-PAD input the hint names the held button with the pads (F32)
+        None if crate::pads::smc_words() => {
+            lines.push(
+                " knob 1 select · PAD BANK + 4 open · PAD BANK + 1 close"
+                    .fg(DIM)
+                    .into(),
+            );
+        }
         None => {
             lines.push(
                 " knob 1/↑↓ select · Enter/P4 open · type a name · Esc/P1 close"
@@ -175,4 +183,58 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     // keep the selection on screen
     let offset = (f.selected as u16 + 1).saturating_sub(list.height);
     frame.render_widget(Paragraph::new(lines).scroll((offset, 0)), list);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn picker_text(p: &ProjectPickerView) -> String {
+        let status = Status {
+            badges: Vec::new(),
+            save: SaveStatus::Clean,
+            backend: None,
+            recording: false,
+            buffer_size: 0,
+            sample_rate: 48_000,
+            load_peak: 0.0,
+            xruns: 0,
+            master_db: 0,
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            no_releases: false,
+            notice: None,
+            project: None,
+        };
+        let mut term = Terminal::new(TestBackend::new(80, 10)).unwrap();
+        term.draw(|frame| {
+            frame.render_widget(project_picker(p, &status, 80), frame.area());
+        })
+        .unwrap();
+        term.backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    /// After SMC-PAD input the picker names PAD BANK with pads 4 and 1 (138, F32).
+    #[test]
+    fn the_project_picker_names_pad_bank_after_smc_input() {
+        let view = ProjectPickerView {
+            entries: vec!["MyBeat".to_string()],
+            selected: 0,
+            naming: None,
+        };
+        crate::pads::set_smc_words(true);
+        let smc = picker_text(&view);
+        crate::pads::set_smc_words(false);
+        let keys = picker_text(&view);
+        assert!(
+            smc.contains("PAD BANK + 4 open · PAD BANK + 1 close"),
+            "{smc}"
+        );
+        assert!(keys.contains("Enter/P4 open"), "{keys}");
+    }
 }

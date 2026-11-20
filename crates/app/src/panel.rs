@@ -481,10 +481,16 @@ impl App {
             // Behind a question only its two answers show (134).
             if self.ask.is_some() {
                 return tui::CommandPanel {
-                    labels: std::array::from_fn(|index| match index {
-                        12 => Some("no".into()),
-                        15 => Some("yes".into()),
-                        _ => None,
+                    labels: std::array::from_fn(|index| {
+                        // the save failure answers keep the words of its question (F33)
+                        let recovery = matches!(self.ask, Some(super::Ask::ExitRecovery { .. }));
+                        match (index, recovery) {
+                            (12, true) => Some("back".into()),
+                            (15, true) => Some("retry save".into()),
+                            (12, false) => Some("no".into()),
+                            (15, false) => Some("yes".into()),
+                            _ => None,
+                        }
                     }),
                     page: self.panel.page(),
                     view: "QUESTION",
@@ -666,6 +672,7 @@ mod tests {
             "redo",
             "remove all cuts",
             "reset pad",
+            "retry save",
             "row +",
             "row -",
             "save",
