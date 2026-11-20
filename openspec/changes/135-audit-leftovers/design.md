@@ -8,8 +8,13 @@ cells and the Assign bank. This change takes the rest that is not about Chop flo
 
 ## Decisions
 
-- D1. A Chop notice goes to the notice row, not over the wave labels.
+- D1. A Chop notice goes to the notice row, not over the wave labels. On 2026-11-20 the notice
+  already used the notice row at both sizes, with and without the panel. The audit case did not
+  reproduce, so this change adds a test that keeps the current layout.
 - D2. At 80×26 the mode line has priority over the hint columns. Apply and cancel come first.
+  The SMC-PAD mode line has about 40 cells there. When the line does not fit, the middle steps go
+  first, then `PAD BANK + 4 apply · PAD BANK + 1 cancel` becomes `PAD BANK: 4 apply · 1 cancel`:
+  «ASSIGN · PAD BANK: 4 apply · 1 cancel». Without an SMC-PAD the hint columns show Enter and Esc.
 - D3. A pending Learn binding on an SMC-PAD panel cell names the cell by its printed number and its current label.
   This applies when the PAD BANK hold is off: the PAD BANK layer then sends its own notes. With the
   hold on, a cell is a hold of the playing note, and Learn already says that the panel layer keeps it.

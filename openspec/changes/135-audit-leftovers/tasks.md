@@ -5,8 +5,8 @@
 
 ## 2. Screen
 
-- [ ] Move Chop notices to the notice row. Test both sizes.
-- [ ] Give the mode line priority at 80×26. Test Assign.
+- [x] Move Chop notices to the notice row. Test both sizes.
+- [x] Give the mode line priority at 80×26. Test Assign.
 
 ## 3. Words
 
@@ -15,7 +15,7 @@
 
 ## 4. Checks
 
-- [ ] Add each case to the mode walker test where it applies.
+- [x] Add each case to the mode walker test where it applies. The change adds no mode, so the walker needs no new entry.
 - [ ] Run format, Clippy, changed tests, the screen catalogue and the fast checks.
 
 ## 5. Join slices

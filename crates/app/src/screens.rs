@@ -3624,6 +3624,79 @@ L="none"
         }
     }
 
+    /// Scenario "A hits notice leaves the fields readable" (screen-layout).
+    #[test]
+    fn a_hits_notice_leaves_the_fields_readable() {
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        for mode in [Mode::Normal, Mode::PanelMain] {
+            for size in [(80, 26), (120, 40)] {
+                let case = Case {
+                    screen: Screen::Chop,
+                    mode,
+                    size,
+                };
+                let now = Instant::now();
+                let mut app = fixture(case, now);
+                app.apply(Action::ChopHits);
+                let (_, buffer) = render_app(case, &keymap, app, now);
+                let rows: Vec<String> = buffer
+                    .content()
+                    .chunks(usize::from(size.0))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                let all = rows.join("\n");
+                let row_of = |text: &str| rows.iter().position(|row| row.contains(text));
+                let notice = row_of("by hits at -6 dB").expect(&all);
+                for field in ["start 0.000 s", "length 1000 ms", "cursor 0.000 s"] {
+                    let at = row_of(field).unwrap_or_else(|| panic!("{field} {size:?}\n{all}"));
+                    assert_ne!(at, notice, "{field} {size:?}\n{all}");
+                }
+                // the notice row sits under the work area, over the help rows
+                assert!(
+                    notice > row_of("cursor 0.000 s").unwrap(),
+                    "{size:?}\n{all}"
+                );
+            }
+        }
+    }
+
+    /// Scenario "Assign keeps apply and cancel at 80 by 26" (screen-layout).
+    #[test]
+    fn assign_keeps_apply_and_cancel_at_80_by_26() {
+        // the mode line belongs to the SMC-PAD knob strip; the words come from `fit_mode`
+        let keymap = Keymap::from_toml(DEFAULT_KEYMAP).unwrap().0;
+        let case = Case {
+            screen: Screen::Chop,
+            mode: Mode::PanelMain,
+            size: (80, 26),
+        };
+        let now = Instant::now();
+        let mut app = fixture(case, now);
+        app.apply(Action::ChopAssign);
+        app.apply(Action::PadPress {
+            pad: 0,
+            velocity: 1.0,
+        });
+        let line = app.mode_line(now).expect("Assign has a mode line");
+        let (_, buffer) = render_app(case, &keymap, app, now);
+        let rows: Vec<String> = buffer
+            .content()
+            .chunks(80)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect();
+        let all = rows.join("\n");
+        let (apply, cancel) = if line.contains("PAD BANK") {
+            ("4 apply", "1 cancel")
+        } else {
+            ("Enter apply", "Esc cancel")
+        };
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("ASSIGN") && row.contains(apply) && row.contains(cancel)),
+            "{line}\n{all}"
+        );
+    }
+
     /// Scenario "Catalogue covers panel pages and safety" (screen-layout).
     /// Scenario "Exit recovery shows the reason and controls".
     #[test]
