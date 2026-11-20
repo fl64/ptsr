@@ -1,20 +1,20 @@
 ## 1. Specification
 
 - [x] Record the owner decisions Q1–Q28 and the walk findings that they close.
-- [ ] Write the spec deltas for each modified capability.
+- [x] Write the spec deltas for each modified capability.
 
 ## 2. Labels and layouts
 
 - [x] Rename the shipped panel labels. Update the label glossary and the shipped table test.
 - [x] Show `show pads` while the pads are hidden. Name the hidden grid in F1 Help.
 - [x] Rename the Chop knob labels and their full names on the line of the last knob.
-- [ ] Apply the D3 layouts. Remove `whole`, `undo A1 pass`, `learn`, `learn control` and `forget control` from the panels.
+- [x] Apply the D3 layouts. Remove `whole`, `undo A1 pass`, `learn`, `learn control` and `forget control` from the panels.
 - [x] Allow eight cells a label line in the loader, the glossary and the drawing.
 
 ## 3. Cell looks
 
 - [x] Draw orange cells and grey cells, and the current pad edit page brighter.
-- [ ] Grey each cell of the D5 table while it cannot act. The cells of steps 5, 6 and 8 follow with their actions.
+- [x] Grey each cell of the D5 table while it cannot act. The cells of steps 5, 6 and 8 follow with their actions.
 - [x] Explain a press on a grey cell with a notice.
 - [x] Show each two-word label on two lines. Show the current state in the state cells. Rename `level to peak` to `norm`.
 
@@ -46,7 +46,7 @@
 
 ## 8. Other screens
 
-- [ ] Add the pad edit page cells. Make LEFT and RIGHT go around the pages.
+- [x] Add the pad edit page cells. Make LEFT and RIGHT go around the pages.
 - [x] Show the Assign method. Ask before a method change drops placed slices. Grey `apply` until the start pad.
 - [x] Make `new project` work with no projects and name the project by date.
 - [x] Show «Bindings: keyboard only (F10, Enter)» on F12 MIDI. Make forget, reset and the layout update ask.
