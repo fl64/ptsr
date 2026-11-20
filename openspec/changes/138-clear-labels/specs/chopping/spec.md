@@ -57,7 +57,7 @@ In an in-order Assign plan, `Enter` and device pad 4 SHALL place no slice until 
 
 ### Requirement: Normalize
 
-The system SHALL, on Ctrl+G on Chop or on `norm` in the slice edit, set the sound gain of each pad that plays the selected slice. The loudest peak of what that pad plays SHALL sit at -1 dB. The sound gain SHALL be separate from the pad volume and SHALL NOT be limited by the pad volume range. The gain SHALL be at most +30 dB. The status SHALL show the gain and say when the limit stopped it. The file on disk SHALL NOT change. The gain SHALL be saved per pad in the project. Undo on Pads SHALL bring back the old gain. When no pad plays the selected slice, `norm` SHALL be grey and a press SHALL say «put the slice on a pad first».
+The system SHALL, on Ctrl+G on Chop or on `norm` in the slice edit, set the sound gain of each pad that plays the selected slice. The loudest peak of what that pad plays SHALL sit at -1 dB. The sound gain SHALL be separate from the pad volume and SHALL NOT be limited by the pad volume range. The gain SHALL be at most +30 dB. The status SHALL show the gain and say when the limit stopped it. The file on disk SHALL NOT change. The gain SHALL be saved per pad in the project. Undo on Pads SHALL bring back the old gain. Undo on Chop or in the slice edit, as the next step after `norm`, SHALL also bring back the old gain. It SHALL say «undo: level of pad N back». One undo SHALL remove the step from both places. When no pad plays the selected slice, `norm` SHALL be grey and a press SHALL say «put the slice on a pad first».
 
 #### Scenario: Quiet break
 - **WHEN** the owner selects a slice whose pad peaks 6 dB below full scale and presses `norm`
@@ -78,6 +78,11 @@ The system SHALL, on Ctrl+G on Chop or on `norm` in the slice edit, set the soun
 #### Scenario: Normalize can be undone
 - **WHEN** the owner presses `norm` and then undo
 - **THEN** the pad sound gain returns to its value before the press
+
+#### Scenario: Undo in the slice edit brings the level back
+- **WHEN** the owner presses `norm` in the slice edit and then undo there
+- **THEN** the pad sound gain returns to its value before the press and a notice says «undo: level of pad 1 back»
+- **AND** a later undo on Pads does not undo the same step again
 
 #### Scenario: Normalize without a pad is grey
 - **WHEN** no pad plays the selected slice and the owner holds PAD BANK in the slice edit

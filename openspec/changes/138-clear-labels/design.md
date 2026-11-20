@@ -134,6 +134,10 @@ volume (−40…+6 dB, `crates/app/src/pads.rs`) stays a mixing control.
 - The engine applies the gain before the pad volume, with the usual smoothing. The audio thread
   gets the gain value through the existing pad parameter path. No allocation, no lock.
 - A second press measures again and keeps the level. Undo on Pads brings back the old gain.
+- Undo in the slice edit, as the next step after `norm`, also brings back the old gain (Q32).
+  On 2026-11-20 the owner chose this, so that undo works where the owner pressed `norm`. The
+  step is in the Chop history and in the Pads history. The undo in one place removes it from the
+  other place, so one press of `norm` takes one undo.
 - The gain stays at +30 dB or less, so that a silent slice does not make noise loud. A notice
   says when the limit stopped it.
 - Ctrl+G stays the key. The old pad volume behaviour leaves.
