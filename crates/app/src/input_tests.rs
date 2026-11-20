@@ -4637,6 +4637,7 @@ fn offline_preview_assignment_and_guards_match_through_all_inputs() {
                 "question" => {
                     drive.load_pad(18, sound.clone(), "occupied");
                     drive.tap(KeyCode::Char('p'), M::NONE);
+                    drive.tap(KeyCode::PageDown, M::NONE);
                     drive.pad_press(Source::Keyboard, 2);
                     drive.pad_release(Source::Keyboard, 2);
                     drive.tap(KeyCode::Enter, M::NONE);

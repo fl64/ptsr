@@ -2092,7 +2092,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 47);
+    assert_eq!(checked + special, 48);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -2364,6 +2364,8 @@ fn shipped_left_and_right_buttons_match_keyboard_results_in_each_view() {
         let mut chop = reach_drive(view, sound.clone());
         let mut keyboard = reach_drive(view, sound.clone());
         for drive in [&mut chop, &mut keyboard] {
+            // a slice on a pad: Chop shows the real pads, not the slice keys (132)
+            drive.link_chop_pad(20, 2);
             let chop = drive.app.chop.as_mut().unwrap();
             chop.snap = chop::Snap::Cuts;
             assert!(chop.select_slice(1));
@@ -3259,7 +3261,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 47);
+    assert_eq!(checked, 48);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
