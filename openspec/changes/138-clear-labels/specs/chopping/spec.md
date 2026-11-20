@@ -41,6 +41,18 @@ Chop SHALL have `remove all cuts` on device pad P13 and on the Delete key. It SH
 - **WHEN** the chop is cut by hits at −6 dB and the owner holds PAD BANK on Chop
 - **THEN** `fewer hits` is grey and a press says «by hits stays at -6 dB»
 
+### Requirement: In order waits for the start pad
+
+In an in-order Assign plan, `Enter` and device pad 4 SHALL place no slice until the owner hits the start pad. A press before the hit SHALL say «hit the start pad first». After the hit, `Enter` or device pad 4 SHALL apply the plan from that pad, with the overwrite question when pads are taken.
+
+#### Scenario: Enter before the start pad places nothing
+- **WHEN** an Assign plan is in order without a start pad and the owner presses `Enter`
+- **THEN** no slice is placed and a notice says «hit the start pad first»
+
+#### Scenario: Enter after the start pad applies the plan
+- **WHEN** an Assign plan is in order, the owner hits pad 9 and presses `Enter`
+- **THEN** slice 1 is on pad 9 and the other slices follow it
+
 ## MODIFIED Requirements
 
 ### Requirement: Normalize
