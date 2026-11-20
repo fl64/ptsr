@@ -11,4 +11,4 @@
 ## 3. Checks
 
 - [x] Run format, Clippy, changed tests, the screen catalogue and the fast checks.
-- [ ] Recommend the walk level to the owner.
+- [x] Recommend the walk level to the owner.
