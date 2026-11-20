@@ -13,7 +13,7 @@ a key after SMC-PAD input.
 - At 80×26 the Settings row under the panel and the Assign mode line with apply and cancel stay readable.
 - Learn names a panel cell that a new binding replaces, before the save.
 - The marking hint names SMC-PAD controls after SMC-PAD input.
-- In the slice edit, the hint names the bound that `cut -` and `end -` remove. After the removal, a notice names the slices that joined.
+- In the slice edit, the panel cells `cut -` and `end -` become `join left` and `join right`. While the panel shows them, the wave marks the two bounds of the selected slice. A cell with no neighbour is dim and explains why. After a join, a notice names the joined slices.
 
 ## Capabilities
 
@@ -26,7 +26,8 @@ None.
 - `screen-layout`: Chop notices and the 80×26 layout with the panel.
 - `controller-reach`: the Learn conflict warning.
 - `screen-help`: the marking hint after SMC-PAD input.
-- `chopping`: the hint and the notice for a cut removal.
+- `chopping`: join the selected slice with its left or right neighbour.
+- `command-panel`: the Chop edit actions table.
 
 ## Impact
 
@@ -39,7 +40,8 @@ Owner checks, controller:
 2. 80×26 → `CHOP` → `[PAD BANK]+[P16]` → the line shows apply and cancel.
 3. `LEARN` → touch `[PAD BANK]+[P6]` → «replaces panel cell P6 open» before the save.
 
-4. `CHOP` → hit the pad of slice 3 → `[PAD BANK]+[P7]` (edit) → the hint names the left and the right bound of slice 3 → `[PAD BANK]+[P15]` (cut -) → «slices 2 and 3 joined».
+4. `CHOP` → hit the pad of slice 3 → `[PAD BANK]+[P7]` (edit) → «join left», «join right» and two marked bounds → `[PAD BANK]+[P15]` → «slices 2 and 3 joined».
+5. `CHOP` → hit the pad of slice 1 → `[PAD BANK]+[P7]` → «join left» is dim → `[PAD BANK]+[P15]` → «slice 1 has no slice on the left».
 
 Owner checks, keyboard: Esc and Enter keep their results.
 

@@ -12,11 +12,15 @@ cells and the Assign bank. This change takes the rest that is not about Chop flo
 - D2. At 80×26 the mode line has priority over the hint columns. Apply and cancel come first.
 - D3. A pending Learn binding on an SMC-PAD panel cell names the cell by its printed number and its current label.
 - D4. The marking hint uses the words of the last input device, as other hints do since 134.
-- D5. In the slice edit, the hint says which bound each cell removes: `cut -` the left bound
-  of the selected slice and `end -` the right bound. The owner selects a bound through its slice.
-  On 2026-11-20 the owner did not find this route. The owner accepted this item for 135.
-- D6. After a removal, a notice names the joined slices, for example «slices 2 and 3 joined».
-  Before this change the screen showed only the new wave.
+- D5. In the slice edit, the panel cells `cut -` (P15) and `end -` (P16) become `join left` and
+  `join right`. The labels name the result, not a cut. The owner chose this on 2026-11-20 after
+  `del left` did not say that a bound goes away. Keyboard keys stay unchanged.
+- D6. While the Chop edit actions show on the panel, the wave marks the left and the right bound
+  of the selected slice. The owner sees which bound goes away before the press.
+- D7. `join left` on slice 1 and `join right` on the last slice are dim. A press shows
+  «slice 1 has no slice on the left» or «slice 8 has no slice on the right». With one slice, both
+  are dim and a press shows «nothing to join: one slice». Before this change the press did nothing.
+- D8. After a join, a notice names the joined slices, for example «slices 2 and 3 joined».
 
 ## Open questions
 

@@ -18,6 +18,9 @@
 - [ ] Add each case to the mode walker test where it applies.
 - [ ] Run format, Clippy, changed tests, the screen catalogue and the fast checks.
 
-## 5. Cut removal
+## 5. Join slices
 
-- [ ] Name the bound of each removal control in the slice edit hint. Name the joined slices after a removal. Test both scenarios with keys and raw MIDI.
+- [ ] Rename the Chop edit cells to `join left` and `join right`. Add both to the label glossary.
+- [ ] Mark both bounds of the selected slice while the panel shows the Chop edit actions.
+- [ ] Dim a cell without a neighbour and explain a press. Name the joined slices after a join.
+- [ ] Test the four scenarios with keys and raw MIDI, at 80×26 and 120×40.
