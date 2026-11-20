@@ -14,6 +14,8 @@ pub struct KnobStrip {
     pub value: Option<String>,
     /// The active mode, its next step and its cancel control (134).
     pub mode: Option<String>,
+    /// The dim line without a mode: how PAD BANK shows the commands (138).
+    pub idle: &'static str,
 }
 
 const STRIP_WIDTH: u16 = 40;
@@ -131,39 +133,53 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
                 .fg(MAGENTA)
                 .bold(),
         ),
-        None => help.push(Line::from("PAD BANK hold · PLAY play · STOP stop").fg(DIM)),
+        None => help.push(Line::from(strip.idle).fg(DIM)),
     }
     let remaining = usize::from(HELP_ROWS + 1).saturating_sub(help.len());
     help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);
 }
 
-/// The mode line in `width` cells (135): the middle steps give way first, so the mode name
-/// and its last two controls (apply and cancel) stay readable at 80×26.
+/// The mode line in `width` cells (135, 138): the middle steps give way first. The last part
+/// is the way out and stays whole; a line with apply and cancel keeps both.
 fn fit_mode(mode: &str, width: usize) -> String {
     let fits = |text: &str| Span::raw(text).width() <= width;
     let parts: Vec<&str> = mode.split(" · ").collect();
-    if fits(mode) || parts.len() < 3 {
+    if fits(mode) || parts.len() < 2 {
         return clip_label(mode, width);
     }
-    let (head, tail) = (parts[0], &parts[parts.len() - 2..]);
+    let (head, last) = (parts[0], parts[parts.len() - 1]);
     let name = head.split(' ').next().unwrap_or(head);
-    // "PAD BANK + 4 apply · PAD BANK + 1 cancel" says the held button once
-    let held: Option<Vec<&str>> = tail
-        .iter()
-        .map(|part| part.strip_prefix("PAD BANK + "))
-        .collect();
-    let short = held.map(|held| format!("PAD BANK: {}", held.join(" · ")));
-    let mut candidates = vec![format!("{head} · {}", tail.join(" · "))];
-    if let Some(short) = &short {
-        candidates.push(format!("{head} · {short}"));
-        candidates.push(format!("{name} · {short}"));
+    let mut candidates = Vec::new();
+    if parts.len() > 2 {
+        let tail = &parts[parts.len() - 2..];
+        // "PAD BANK + 4 apply · PAD BANK + 1 cancel" says the held button once
+        let held: Option<Vec<&str>> = tail
+            .iter()
+            .map(|part| part.strip_prefix("PAD BANK + "))
+            .collect();
+        candidates.push(format!("{head} · {}", tail.join(" · ")));
+        if let Some(held) = held {
+            let short = format!("PAD BANK: {}", held.join(" · "));
+            candidates.push(format!("{head} · {short}"));
+            candidates.push(format!("{name} · {short}"));
+        }
+        candidates.push(format!("{name} · {}", tail.join(" · ")));
     }
-    candidates.push(format!("{name} · {}", tail.join(" · ")));
+    candidates.push(format!("{head} · {last}"));
+    candidates.push(format!("{name} · {last}"));
     candidates
         .into_iter()
         .find(|candidate| fits(candidate))
-        .unwrap_or_else(|| clip_label(mode, width))
+        .unwrap_or_else(|| {
+            // even the mode name gives way before the way out
+            let room = width.saturating_sub(Span::raw(last).width() + 3);
+            if room == 0 {
+                clip_label(last, width)
+            } else {
+                format!("{} · {last}", clip_label(name, room))
+            }
+        })
 }
 
 #[cfg(test)]
@@ -179,6 +195,16 @@ mod tests {
         let keys = "ASSIGN 1/4 · slice 1 next · hit a pad · Enter apply · Esc cancel";
         assert_eq!(fit_mode(keys, 40), "ASSIGN 1/4 · Enter apply · Esc cancel");
         assert_eq!(fit_mode(keys, 80), keys, "a wide line stays whole");
+    }
+
+    /// The way out stays whole in 40 cells, also without apply (138, F12).
+    #[test]
+    fn the_mode_line_keeps_its_way_out() {
+        let edit = "EDIT pad 13 · FILTER · LEFT RIGHT page · PAD BANK + 1 close";
+        assert_eq!(fit_mode(edit, 40), "EDIT pad 13 · PAD BANK + 1 close");
+        let long = "ASK-A-VERY-LONG-MODE-NAME-HERE · PAD BANK + 1 close";
+        assert!(fit_mode(long, 30).ends_with(" · PAD BANK + 1 close"));
+        assert_eq!(fit_mode("COUNT 4", 40), "COUNT 4");
     }
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -196,6 +222,7 @@ mod tests {
             last_knob: Some(6),
             value: Some("B1 7 volume · pad 1 · +1 dB".into()),
             mode: None,
+            idle: "PAD BANK hold · PLAY play · STOP stop",
         };
         for width in [80, 120] {
             let mut term = Terminal::new(TestBackend::new(width, HELP_ROWS + 1)).unwrap();

@@ -2337,6 +2337,31 @@ pub(super) fn assign_deaf(a: &Action) -> bool {
     )
 }
 
+/// The right column of Chop names the controls of the last input device (F19).
+pub(super) fn hint_more_slices() -> &'static str {
+    if tui::pads::smc_words() {
+        "LEFT RIGHT: more slices"
+    } else {
+        "Ctrl+1…8: more slices"
+    }
+}
+
+pub(super) fn hint_banks() -> &'static str {
+    if tui::pads::smc_words() {
+        "LEFT RIGHT: banks"
+    } else {
+        "Ctrl+1…8: banks"
+    }
+}
+
+pub(super) fn hint_put_on_pads() -> &'static str {
+    if tui::pads::smc_words() {
+        "PAD BANK + 9: put on pads"
+    } else {
+        "P: put them on pads"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

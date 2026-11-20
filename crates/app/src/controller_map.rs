@@ -402,6 +402,10 @@ impl App {
                 View::Pads => (self.pads.page().0, "Bank", ""),
                 View::PadEdit => (self.pads.page().0, "Page", "param"),
                 View::Pattern => ("Pattern", "Bar", "step"),
+                // before an assign LEFT and RIGHT turn the slice pages (F18)
+                View::Chop | View::ChopEdit if self.slice_keys_shown() => {
+                    ("Chop", "Slice page", "cursor")
+                }
                 View::Chop | View::ChopEdit => ("Chop", "Bank", "cursor"),
                 View::Files => ("Files", "Folder", "file"),
                 View::Settings => ("Settings", "Tab", "row"),
@@ -480,108 +484,6 @@ impl App {
             " · unavailable"
         };
         Some(format!("B{bank} K{knob} · {purpose}{state}"))
-    }
-
-    /// The mode line (134): the active mode, its item, the next step and the cancel
-    /// control, in the words of the last input device.
-    pub(super) fn mode_line(&self, now: std::time::Instant) -> Option<String> {
-        let smc = self.input_sources.last_is_smc();
-        let (cancel, apply) = if smc {
-            ("PAD BANK + 1 cancel", "PAD BANK + 4 apply")
-        } else {
-            ("Esc cancel", "Enter apply")
-        };
-        if self.ask.is_some() {
-            return Some(if smc {
-                "ASK · pad 4 yes · pad 1 no".into()
-            } else {
-                "ASK · Enter yes · Esc no".into()
-            });
-        }
-        if self.screen_learn.is_some() || self.learning.is_some() {
-            return Some(if smc {
-                "LEARN · touch a control · pad 4 save · pad 1 cancel".into()
-            } else {
-                "LEARN · touch a control · Esc leave".into()
-            });
-        }
-        if let Some((source, at)) = self.recording {
-            let seconds = now.saturating_duration_since(at).as_secs();
-            return Some(if source == super::audio::SOURCE_OUTPUT {
-                let stop = if smc {
-                    "PAD BANK + 14 output"
-                } else {
-                    "the output key"
-                };
-                format!("● REC OUTPUT 0:{seconds:02} · stop: {stop}")
-            } else {
-                let stop = if smc {
-                    "release RECORD"
-                } else {
-                    "release the key"
-                };
-                format!("● REC MIC 0:{seconds:02} · stop: {stop}")
-            });
-        }
-        if self.screen == input::Screen::Chop
-            && let (Some(plan), Some(chop)) = (&self.plan, &self.chop)
-        {
-            let count = chop.slices().len();
-            let placed = plan.targets(count).len();
-            let next = match plan {
-                super::chop::Plan::InOrder(None) => "hit the start pad".to_string(),
-                _ => {
-                    let selected = chop.selected;
-                    let next = if plan
-                        .targets(count)
-                        .iter()
-                        .any(|(slice, _)| *slice == selected)
-                    {
-                        plan.next_unplanned(count, selected)
-                    } else {
-                        Some(selected)
-                    };
-                    next.map_or("all placed".into(), |slice| {
-                        format!("slice {} next · hit a pad", slice + 1)
-                    })
-                }
-            };
-            return Some(format!(
-                "ASSIGN {placed}/{count} · {next} · {apply} · {cancel}"
-            ));
-        }
-        let place = |what: String| Some(format!("{what} · hit a pad · {cancel}"));
-        if self.erase_pads {
-            let stop = if smc { "PAD BANK + 1 stop" } else { "Esc stop" };
-            return Some(format!("ERASE A1 · hit a pad to erase its hits · {stop}"));
-        }
-        if let Some(path) = &self.browser.in_hand {
-            return place(format!("IN HAND {}", super::file_name(path)));
-        }
-        if let Some((source, _)) = &self.copy_in_hand {
-            return place(format!("COPY pad {}", tui::pads::pad_tag(*source)));
-        }
-        if let Some(source) = self.pad_in_hand {
-            return place(format!("SWAP pad {}", tui::pads::pad_tag(source)));
-        }
-        if self.edit && self.screen == input::Screen::Pads {
-            let (page, _) = self.pads.page();
-            let (pages, close) = if smc {
-                ("LEFT RIGHT page", "PAD BANK + 1 close")
-            } else {
-                ("Tab page", "Esc close")
-            };
-            return Some(format!(
-                "EDIT pad {} · {page} · {pages} · {close}",
-                tui::pads::pad_tag(self.pads.selected)
-            ));
-        }
-        if self.pads.marking {
-            let drop = if smc { "PAD BANK + 1 drop" } else { "Esc drop" };
-            let marked = self.pads.marked.len();
-            return Some(format!("MARK · hit pads · {marked} marked · {drop}"));
-        }
-        None
     }
 
     pub(super) fn smc_knob_strip(&self, now: std::time::Instant) -> Option<tui::KnobStrip> {
@@ -667,6 +569,12 @@ impl App {
             last_bank: last.map(|last| last.bank),
             last_knob: last.map(|last| last.knob),
             value,
+            // with PAD BANK off the first pad hit shows the commands (F36)
+            idle: if self.midi_gestures.smc_pad_bank_opens_panel {
+                "PAD BANK hold · PLAY play · STOP stop"
+            } else {
+                "PAD BANK: hit to show commands"
+            },
         })
     }
 

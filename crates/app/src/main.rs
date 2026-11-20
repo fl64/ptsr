@@ -15,6 +15,7 @@ mod learn;
 mod loader;
 mod meters;
 mod midi;
+mod mode_line;
 mod notices;
 mod pads;
 mod panel;
@@ -2636,8 +2637,8 @@ fn chop_view_routed<'a>(
                 "LISTEN".to_string(),
                 vec![
                     "no slice lies on a pad yet".into(),
-                    "Ctrl+1…8: more slices".into(),
-                    "P: put them on pads".into(),
+                    chop::hint_more_slices().into(),
+                    chop::hint_put_on_pads().into(),
                 ],
                 None,
                 tui::Pads {
@@ -2754,11 +2755,11 @@ fn chop_view_routed<'a>(
                     } else {
                         first
                     },
-                    "Ctrl+1…8: banks".into(),
+                    chop::hint_banks().into(),
                     if pattern_pads {
                         "end pattern work to assign".into()
                     } else {
-                        "P: put them on pads".into()
+                        chop::hint_put_on_pads().into()
                     },
                 ],
                 Some(marks),

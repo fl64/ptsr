@@ -23,6 +23,9 @@ mod destroy_asks;
 #[path = "normalize.rs"]
 mod normalize;
 
+#[path = "mode_lines.rs"]
+mod mode_lines;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
@@ -3796,7 +3799,7 @@ fn the_mode_line_shows_a_running_recording() {
     ));
     assert_eq!(
         drive.app.mode_line(now).as_deref(),
-        Some("● REC OUTPUT 0:04 · stop: PAD BANK + 14 output")
+        Some("● REC OUTPUT 0:04 · STOP end rec")
     );
 }
 

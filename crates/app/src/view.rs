@@ -1712,10 +1712,14 @@ impl App {
                 },
                 elapsed.as_secs(),
                 elapsed.subsec_millis() / 100,
-                if *source == audio::SOURCE_MIC {
-                    "release Alt+R to stop"
-                } else {
-                    "Ctrl+T to stop"
+                match (
+                    *source == audio::SOURCE_MIC,
+                    self.input_sources.last_is_smc()
+                ) {
+                    // one stop control, the one the mode line names (F35)
+                    (true, true) => "release RECORD to stop",
+                    (true, false) => "release Alt+R to stop",
+                    (false, smc) => self.output_stop_words(smc),
                 }
             ));
         }
