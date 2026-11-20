@@ -106,7 +106,9 @@ impl App {
         match self.screen {
             Screen::Chop if self.plan.is_some() => !self.plan_undo.is_empty(),
             Screen::Chop => {
-                self.chop.as_ref().is_some_and(chop::Chop::can_undo) || self.fresh_undo.is_some()
+                self.chop.as_ref().is_some_and(chop::Chop::can_undo)
+                    || self.fresh_undo.is_some()
+                    || self.norm_is_next()
             }
             Screen::Pads | Screen::Files | Screen::Fx => {
                 !self.history.is_empty()

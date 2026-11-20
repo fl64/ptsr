@@ -198,6 +198,11 @@ pub struct Chop {
     pub page: usize,
     rate: usize,
     undo: Vec<UndoStep>,
+    /// Steps saved minus steps undone: unlike the stack length, it moves at the step limit.
+    depth: usize,
+    /// `norm` was the newest step (138): the chop depth and the pads history length at that
+    /// time. While both stay, undo on Chop takes the level back instead of a cut.
+    pub norm_step: Option<(usize, usize)>,
     /// The boundary a knob is turning: the whole turn is one undo step.
     turning: Option<usize>,
     /// The owner cut, moved or joined by hand since the last cut by parts or hits (138):
@@ -279,6 +284,8 @@ impl Chop {
             page: 0,
             rate: rate.max(1) as usize,
             undo: Vec::new(),
+            depth: 0,
+            norm_step: None,
             turning: None,
             anchor: None,
             // saved cuts may be the owner's: the first replacement asks
@@ -324,6 +331,8 @@ impl Chop {
             page: 0,
             rate: self.rate,
             undo: Vec::new(),
+            depth: 0,
+            norm_step: None,
             turning: None,
             anchor: None,
             hand: false,
@@ -360,6 +369,7 @@ impl Chop {
     }
 
     fn save_undo(&mut self) {
+        self.depth += 1;
         if self.undo.len() == UNDO {
             self.undo.remove(0);
         }
@@ -1136,6 +1146,10 @@ impl Chop {
         self.anchor = Some((edge, self.cursor));
     }
 
+    pub fn depth(&self) -> usize {
+        self.depth
+    }
+
     /// An undo step waits (138): without one the undo cell is grey.
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
@@ -1147,6 +1161,7 @@ impl Chop {
         let Some((markers, ids, range, epoch, threshold_db)) = self.undo.pop() else {
             return false;
         };
+        self.depth -= 1;
         for (&id, &pos) in ids.iter().zip(&markers) {
             self.known.insert(id, pos);
         }
@@ -1576,6 +1591,10 @@ impl App {
             self.send(self.pads.sound_gain_command(abs));
         }
         self.note_step(before, "normalize".into());
+        let mark = Some(self.history.len()).filter(|_| self.newest_is_norm());
+        if let Some(c) = self.chop.as_mut() {
+            c.norm_step = mark.map(|pads| (c.depth(), pads));
+        }
         self.dirty();
         let count = match pads.len() {
             1 => String::new(),
@@ -1585,10 +1604,50 @@ impl App {
         let text = if stopped {
             format!("normalized{count}: {last:+} dB, the gain limit stopped it")
         } else {
-            format!("normalized{count}: {last:+} dB · {undo} on Pads brings it back")
+            format!("normalized{count}: {last:+} dB · {undo} brings it back")
         };
         let level = if stopped { Level::Warn } else { Level::Done };
         self.post_notice(level, (text, Instant::now()));
+    }
+
+    fn newest_is_norm(&self) -> bool {
+        self.history
+            .last()
+            .is_some_and(|step| step.what == "normalize")
+    }
+
+    /// `norm` is still the newest step of both histories (138): undo on Chop takes it back.
+    pub(super) fn norm_is_next(&self) -> bool {
+        self.newest_is_norm()
+            && self
+                .chop
+                .as_ref()
+                .and_then(|c| {
+                    c.norm_step
+                        .map(|mark| mark == (c.depth(), self.history.len()))
+                })
+                .unwrap_or(false)
+    }
+
+    /// Undo on Chop right after `norm` (138): the pads step goes, so Pads cannot undo it again.
+    pub(super) fn undo_norm(&mut self) {
+        let pads: Vec<usize> = self
+            .history
+            .last()
+            .map(|step| step.pads.iter().map(|(abs, _)| *abs).collect())
+            .unwrap_or_default();
+        if let Some(c) = self.chop.as_mut() {
+            c.norm_step = None;
+        }
+        self.undo_pads();
+        let on = match pads.as_slice() {
+            [abs] => format!("pad {}", tui::pads::pad_tag(*abs)),
+            many => format!("{} pads", many.len()),
+        };
+        self.post_notice(
+            Level::Done,
+            (format!("undo: level of {on} back"), Instant::now()),
+        );
     }
 
     /// Makes the chop of `file` the open one; `true` when it had to be made new.

@@ -60,6 +60,9 @@ impl App {
             && !(action == Action::Confirm && self.project_picker.is_some());
         let what = self.step_name(action);
         let before = undoable.then(|| self.before());
+        // an undo of `norm` on Chop takes no cut back, so nothing relinks (138)
+        let norm_undo =
+            action == Action::Undo && self.screen == Screen::Chop && self.norm_is_next();
         let quit = self.run(action);
         if let Some(b) = before {
             self.note_step(b, what);
@@ -68,7 +71,7 @@ impl App {
         let mut relinked = 0;
         // an undo of the cuts says what came back (138)
         let mut undone = None;
-        if action == Action::Undo && self.screen == Screen::Chop && cuts.is_some() {
+        if action == Action::Undo && self.screen == Screen::Chop && cuts.is_some() && !norm_undo {
             relinked = self.relink_after_undo();
             let now = self.chop.as_ref().map(|c| c.saved());
             if let (Some(before), Some(now)) = (&cuts, &now)
@@ -690,6 +693,7 @@ impl App {
             | Action::PagePrev
             | Action::EditValue { .. }
                 if !matches!(self.screen, Screen::Pads | Screen::Chop) => {}
+            Action::Undo if self.screen == Screen::Chop && self.norm_is_next() => self.undo_norm(),
             Action::Undo if self.screen == Screen::Chop && self.plan.is_some() => {
                 match self.plan_undo.pop() {
                     Some((prev, selected)) => {

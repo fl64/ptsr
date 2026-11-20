@@ -35,6 +35,7 @@
 
 - [x] Add a saved sound gain per pad, applied before the pad volume in the engine.
 - [x] Make `normalize` set the gain of the pads that play the selected slice, with undo.
+- [x] Let undo on Chop and in the slice edit, right after `norm`, bring the level back once.
 - [x] Render before and after to `renders/`. Check level, clipping and clicks. Run the callback benchmark.
 
 ## 7. Modes and recording

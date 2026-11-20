@@ -20,6 +20,11 @@ fn slice_on_pad(sound: Arc<Sample>) -> Drive {
     drive
 }
 
+/// The undo cell: device pad 2 of the fixed bottom row.
+fn slot_of_undo() -> u8 {
+    14
+}
+
 fn press(drive: &mut Drive, view: panel::View, label: &str) {
     hold(drive, true);
     cell(drive, panel_note(slot_of(view, label)));
@@ -82,6 +87,86 @@ fn normalize_can_be_undone() {
     drive.app.screen = Screen::Pads;
     drive.tap(KeyCode::Char('z'), M::CONTROL);
     assert_eq!(drive.app.pads.sound_gain_db[0], 0.0);
+}
+
+/// Scenario "Undo in the slice edit brings the level back" (chopping): device pad 2 on the
+/// PAD BANK layer, right after `norm`, takes the gain back there; Pads cannot undo it again.
+#[test]
+fn undo_in_the_slice_edit_brings_the_level_back() {
+    let mut drive = slice_on_pad(square(0.5));
+    norm(&mut drive);
+    assert!(drive.app.pads.sound_gain_db[0] > 4.0);
+    hold(&mut drive, true);
+    let slot = usize::from(slot_of_undo());
+    assert!(
+        !drive.app.panel_snapshot().unwrap().dim[slot - 1],
+        "undo is not grey after norm"
+    );
+    cell(&mut drive, panel_note(slot as u8));
+    hold(&mut drive, false);
+    assert_eq!(drive.app.pads.sound_gain_db[0], 0.0);
+    assert_eq!(
+        drive.last_notice().text,
+        format!("undo: level of pad {} back", tui::pads::pad_tag(0))
+    );
+    assert!(
+        drive
+            .app
+            .history
+            .iter()
+            .all(|step| step.what != "normalize"),
+        "the Pads history lost the step too"
+    );
+    assert!(drive.app.edit, "the slice edit stays open");
+}
+
+/// The same undo from the keyboard: Ctrl+Z in the slice edit after `norm`.
+#[test]
+fn ctrl_z_in_the_slice_edit_brings_the_level_back() {
+    let mut drive = slice_on_pad(square(0.5));
+    norm(&mut drive);
+    let cuts = drive.app.chop.as_ref().unwrap().slices().len();
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(drive.app.pads.sound_gain_db[0], 0.0);
+    assert_eq!(
+        drive.app.chop.as_ref().unwrap().slices().len(),
+        cuts,
+        "no cut changes"
+    );
+    assert!(drive.last_notice().text.starts_with("undo: level of pad"));
+}
+
+/// A cut after `norm` is the newer step: the first undo takes the cut, the next the level.
+#[test]
+fn a_cut_after_norm_is_undone_first() {
+    let mut drive = slice_on_pad(square(0.5));
+    norm(&mut drive);
+    press(&mut drive, panel::View::ChopEdit, "join right");
+    let joined = drive.app.chop.as_ref().unwrap().slices().len();
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(drive.app.chop.as_ref().unwrap().slices().len(), joined + 1);
+    assert!(
+        drive.app.pads.sound_gain_db[0] > 4.0,
+        "the level stays after the first undo"
+    );
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(drive.app.pads.sound_gain_db[0], 0.0);
+}
+
+/// The reverse order: undo on Pads takes `norm` back, then undo on Chop does not again.
+#[test]
+fn a_pads_undo_of_norm_leaves_nothing_for_chop() {
+    let mut drive = slice_on_pad(square(0.5));
+    norm(&mut drive);
+    let screen = drive.app.screen;
+    drive.app.screen = Screen::Pads;
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(drive.app.pads.sound_gain_db[0], 0.0);
+    drive.app.screen = screen;
+    assert!(!drive.app.norm_is_next());
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(drive.app.pads.sound_gain_db[0], 0.0);
+    assert!(!drive.last_notice().text.starts_with("undo: level"));
 }
 
 /// Scenario "Normalize without a pad is grey" (chopping).
