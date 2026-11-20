@@ -16,7 +16,7 @@
 ## 4. Checks
 
 - [x] Add each case to the mode walker test where it applies. The change adds no mode, so the walker needs no new entry.
-- [ ] Run format, Clippy, changed tests, the screen catalogue and the fast checks.
+- [x] Run format, Clippy, changed tests, the screen catalogue and the fast checks.
 
 ## 5. Join slices
 

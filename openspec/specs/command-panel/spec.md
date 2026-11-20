@@ -82,13 +82,19 @@ The layout check SHALL reject a split or reversed pair.
 
 ### Requirement: Shipped panel labels use short words
 
-Every shipped panel label SHALL use an approved label of at most seven cells.
+Every shipped panel label SHALL use approved words in one or two lines.
+A label longer than seven cells SHALL break at its first space into two lines.
+Each line SHALL use at most seven cells.
 A label SHALL have one meaning on every screen.
 The label check SHALL include fixed cells and the shipped panel file.
 
 #### Scenario: Shipped labels fit the panel glossary
-- **WHEN** a shipped panel label exceeds seven cells or uses an unknown word
+- **WHEN** a shipped panel label line exceeds seven cells or uses an unknown word
 - **THEN** the label check fails
+
+#### Scenario: A two-word label uses two lines
+- **WHEN** the panel shows `join left` at 80×26 and at 120×40
+- **THEN** the cell shows «join» on its first line and «left» on its second line
 
 ### Requirement: Panel views move with LEFT and RIGHT
 
@@ -144,7 +150,7 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 | A1 | step, grid -, grid +, params, record, erase, undoA1, clear, rows, tap |
 | Files | to pad, load, —, star, —, listen, chop |
 | Chop | cut, parts, hits, assign, loop, listen, snap, as pad, whole, —, edit, fill |
-| Chop edit | normal, hits -, cut -, end -, whole |
+| Chop edit | normal, hits -, join left, join right, whole |
 | Settings | —, learn, unbind |
 
 ### Requirement: Visible questions answer with pads 1 and 4
