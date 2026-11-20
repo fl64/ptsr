@@ -16,6 +16,8 @@ panel label say plainly what the press does. Many labels are short codes: `p.gat
 - A cell that cannot act now is dim, and a press says why.
 - Cells that remove or replace work use the warning colour. Before hand cuts, a pad sound or a learned control goes, the program asks. After it, a notice names the undo.
 - `level to peak` gets an undo step.
+- Chop gets `remove all cuts` on P6 and the Delete key. It asks first and can be undone.
+- A label line may use eight cells.
 - The screens view and the control row stay unchanged.
 
 ## Capabilities
@@ -41,5 +43,6 @@ Owner checks, controller:
 2. `CHOP` → hold [PAD BANK] → «cut here», «equal parts», «fill pads», «cursor step».
 3. `CHOP` → turn knob 5 → the strip says «r.from» and the line says «region start».
 4. `CHOP` → [PAD BANK]+[P5] «whole sample» → «region: whole sample» → press again → the cell is dim → «the sample is already whole».
+5. `CHOP` → cut by hand → [PAD BANK]+[P6] «remove all cuts» → «Remove 6 cuts?» → [P4] → «6 cuts removed · P2 undo brings them back».
 
 Renders: none, because sound stays unchanged.

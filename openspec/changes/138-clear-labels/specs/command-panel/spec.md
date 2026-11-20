@@ -64,6 +64,22 @@ The shipped actions SHALL match the table. A dash is a dim cell.
 | Pad edit | play mode, reset pad, pitch gate, copy pad |
 | A1 | edit steps, steps wider, steps finer, A1 setup, record A1, erase hits, undo A1 pass, clear A1, hide empty, tap tempo |
 | Files | take file, load to pad, —, star file, —, listen file, chop file |
-| Chop | cut here, equal parts, cut by hits, put on pads, loop play, play range, cursor step, hear as pad, whole sample, —, edit slice, fill pads |
+| Chop | cut here, equal parts, cut by hits, put on pads, loop play, play range, cursor step, hear as pad, whole sample, remove all cuts, edit slice, fill pads |
 | Chop edit | level to peak, fewer hits, join left, join right, whole sample |
 | Settings | —, learn control, forget control |
+
+### Requirement: Shipped panel labels use short words
+
+Every shipped panel label SHALL use approved words in one or two lines.
+A label longer than eight cells SHALL break at its first space into two lines.
+Each line SHALL use at most eight cells.
+A label SHALL have one meaning on every screen.
+The label check SHALL include fixed cells and the shipped panel file.
+
+#### Scenario: Shipped labels fit the panel glossary
+- **WHEN** a shipped panel label line exceeds eight cells or uses an unknown word
+- **THEN** the label check fails
+
+#### Scenario: A two-word label uses two lines
+- **WHEN** the panel shows `join left` at 80×26 and at 120×40
+- **THEN** the cell shows «join» on its first line and «left» on its second line

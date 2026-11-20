@@ -17,7 +17,13 @@
 - [ ] Name the change and the undo after each destructive action. Add an undo step to `level to peak`.
 - [ ] Test every new scenario with keys and raw MIDI.
 
-## 4. Checks
+## 4. Remove all cuts
+
+- [ ] Add `chop.cuts_clear` with the P6 cell and the Delete key. Dim it without cuts. Ask, then name the undo.
+- [ ] Allow eight cells a label line in the loader, the glossary and the drawing.
+- [ ] Add the route to the route table. Test both scenarios with keys and raw MIDI.
+
+## 5. Checks
 
 - [ ] Check every panel view at 80×26 and 120×40 in the screen catalogue.
 - [ ] Run format, Clippy, changed tests and the fast checks.

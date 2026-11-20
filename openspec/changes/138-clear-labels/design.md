@@ -65,6 +65,18 @@ These cells use the warning colour: `clear pad`, `reset pad`, `clear A1`, `load 
 - `level to peak` gets a pads undo step, so it needs no question.
 - Each destructive action ends with a notice that names the change and the undo control.
 
+### D7. Remove all cuts
+
+On 2026-11-20 the owner cut a sample by hand, pressed `whole` and expected the cuts to go. `whole`
+changes only the region. The owner asked for a cell that says it plainly: `remove all cuts` on P6,
+the free Chop cell. The Delete key gives the same action on the keyboard. The action asks every
+time, because it removes all cuts at once.
+
+### D8. Eight cells a line
+
+A panel cell has 11 cells of text at 80×26. `all cuts` needs eight, so each label line may use
+eight cells. Change 135 set seven.
+
 ## Open questions
 
 - A1 recording replaces hits on the same tick while the owner plays. Default: no question,
