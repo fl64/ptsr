@@ -27,3 +27,8 @@
 - Early checks found a stack overflow and old page routes. The engine allocates
   its pad table at startup. The current test run covers the updated routes.
 - Physical controller and listening checks follow merge.
+
+The first Rust CI run found an old velocity assumption in the bank test.
+The full local run found the same assumption in the erasure reference.
+The bank test now checks both responses. The erasure reference uses 30 dB.
+The local full run passed all 2105 tests.

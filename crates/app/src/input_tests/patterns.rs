@@ -2943,6 +2943,16 @@ fn raw_erasure_keeps_its_audio_interval_through_delayed_ui_and_pass_undo() {
             sound: Some(sound.clone()),
         },
     );
+    reference_engine.handle(
+        0,
+        Command::SetPadShape {
+            pad: 0,
+            shape: engine::pad_shape::Shape {
+                velocity_db: Some(engine::pad_shape::DEFAULT_VELOCITY_DB),
+                ..Default::default()
+            },
+        },
+    );
     let mut reference = (vec![0.0; 288_000], vec![0.0; 288_000]);
     for lap in 0..3 {
         let start = lap * 96_000;
@@ -10198,54 +10208,60 @@ fn pattern_addresses_stay_during_copy_clear_and_file_replacement() {
 /// Scenario "Pattern addresses do not follow the open bank".
 #[test]
 fn pattern_addresses_do_not_follow_the_open_bank() {
-    for source in [Source::Keyboard, Source::Button, Source::Notes] {
-        let mut drive = Drive::offline();
-        swap_routes(&mut drive, source);
-        let raw = session::PatternState {
-            slot: "A1".into(),
-            bars: 1,
-            quantize: "off".into(),
-            strength: 100,
-            hits: vec![[0, 0, 127, 0], [240, 127, 64, 0]],
-        };
-        drive.app.apply_session(session::Session {
-            pattern: Some("A1".into()),
-            patterns: vec![raw.clone()],
-            ..Default::default()
-        });
-        for (pad, value) in [(0, 0.03), (127, 0.07)] {
-            drive.app.send(Command::SetPadSound {
-                pad,
-                sound: Some(Arc::new(Sample::mono(vec![value; 1024]))),
-            });
-        }
-        settle_pattern(&mut drive);
-        drive.tap(KeyCode::Char(' '), M::NONE);
-        let mut wave = drive.render_blocks(20).0;
-        drive.registry_command(source, KeyCode::Char('8'), M::CONTROL, 112);
-        assert_eq!(drive.app.pads.bank, 7);
-        wave.extend(drive.render_blocks(40).0);
-        drive.registry_command(source, KeyCode::Char('1'), M::CONTROL, 114);
-        assert_eq!(drive.app.pads.bank, 0);
-        wave.extend(drive.render_blocks(720).0);
-        assert_eq!(drive.app.pads.pattern.as_ref(), Some(&raw));
-        assert!(
-            wave.iter()
-                .all(|sample| sample.is_finite() && sample.abs() < 1.0)
-        );
-        for (frame, sample) in wave.iter().enumerate() {
-            let local = frame % 96_000;
-            let expected = if local < 1024 {
-                0.03
-            } else if (6000..7024).contains(&local) {
-                0.07 * 64.0 / 127.0
-            } else {
-                0.0
+    // Velocity 64 is the midpoint of the positive MIDI range of 1 to 127.
+    for (pad_velocity_db, mid_velocity_gain) in
+        [(None, 64.0 / 127.0), (Some(30), 10f32.powf(-15.0 / 20.0))]
+    {
+        for source in [Source::Keyboard, Source::Button, Source::Notes] {
+            let mut drive = Drive::offline();
+            swap_routes(&mut drive, source);
+            let raw = session::PatternState {
+                slot: "A1".into(),
+                bars: 1,
+                quantize: "off".into(),
+                strength: 100,
+                hits: vec![[0, 0, 127, 0], [240, 127, 64, 0]],
             };
+            drive.app.apply_session(session::Session {
+                pattern: Some("A1".into()),
+                patterns: vec![raw.clone()],
+                pad_velocity_db,
+                ..Default::default()
+            });
+            for (pad, value) in [(0, 0.03), (127, 0.07)] {
+                drive.app.send(Command::SetPadSound {
+                    pad,
+                    sound: Some(Arc::new(Sample::mono(vec![value; 1024]))),
+                });
+            }
+            settle_pattern(&mut drive);
+            drive.tap(KeyCode::Char(' '), M::NONE);
+            let mut wave = drive.render_blocks(20).0;
+            drive.registry_command(source, KeyCode::Char('8'), M::CONTROL, 112);
+            assert_eq!(drive.app.pads.bank, 7);
+            wave.extend(drive.render_blocks(40).0);
+            drive.registry_command(source, KeyCode::Char('1'), M::CONTROL, 114);
+            assert_eq!(drive.app.pads.bank, 0);
+            wave.extend(drive.render_blocks(720).0);
+            assert_eq!(drive.app.pads.pattern.as_ref(), Some(&raw));
             assert!(
-                (sample - expected).abs() <= 0.000001,
-                "{source:?}, frame {frame}: {sample} != {expected}"
+                wave.iter()
+                    .all(|sample| sample.is_finite() && sample.abs() < 1.0)
             );
+            for (frame, sample) in wave.iter().enumerate() {
+                let local = frame % 96_000;
+                let expected = if local < 1024 {
+                    0.03
+                } else if (6000..7024).contains(&local) {
+                    0.07 * mid_velocity_gain
+                } else {
+                    0.0
+                };
+                assert!(
+                    (sample - expected).abs() <= 0.000001,
+                    "{pad_velocity_db:?}, {source:?}, frame {frame}: {sample} != {expected}"
+                );
+            }
         }
     }
 }
