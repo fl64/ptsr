@@ -1,7 +1,7 @@
 # SMC-PAD paths for current stories
 
 This table covers the headings in [User stories](USER-STORIES.md).
-It describes the SMC-PAD profile and command panel for changes 124 to 141.
+It describes the SMC-PAD profile and command panel for changes 124 to 142.
 Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
@@ -98,7 +98,7 @@ Start on the playing layer with the panel hidden. Select a source before Copy or
 Take. In Files, select a file. In Chop, prepare one slice for each test.
 Release PAD BANK and hit any of the 16 pads to place the item (change 134).
 Hold PAD BANK for the commands: P1 cancels, P2 undoes, P3 opens the menu, and P4
-applies an Assign plan. During Assign, P16 shows and switches the method.
+applies an Assign plan. In the action menu, P3 redoes and P1 returns to the targets. During Assign, P16 shows and switches the method.
 
 The software counts below include PAD BANK switches and one target hit.
 Each count gives **detected shortcut / reveal fallback**.
@@ -146,6 +146,14 @@ While A1 records, use the playing pads. Count those hits separately.
 | Stop all sound | Ctrl+Period (1) | With the panel open, STOP twice (2). From the playing layer with Hold panel, hold PAD BANK, then STOP twice (3). |
 
 Release PAD BANK to cancel the first press. With the panel closed, use STOP for normal playback.
+
+## Redo
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Redo an edit | Ctrl+Y (1) | P3 Redo (1 with the panel open) |
+| Redo an Assign choice | Ctrl+Y (1) | P3 Menu, then P3 Redo (2 with the target panel open) |
+| Return from the Assign action menu | Esc closes Assign | P1 Back (1) |
 
 ## Open owner checks
 

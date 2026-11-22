@@ -20,11 +20,12 @@ The system SHALL retain the state replaced by each successful Undo. Redo SHALL r
 
 - **WHEN** the owner undoes a Chop change, a normalization, a fresh Chop, or a target choice
 - **THEN** Redo restores the edit and the applicable pad links or plan
+- **AND** Undo in Assign takes the latest target choice before an older normalization
 - **AND** use from a different context preserves the pending edit
 
 ### Requirement: New edits end the redo history
 
-A new undoable edit or a project change SHALL clear redo history. Playback, selection, and a refused edit SHALL preserve it.
+A new undoable edit or a project change SHALL clear redo history. Playback, selection, and a refused edit SHALL preserve it. Leaving Assign SHALL discard the redo steps for that plan.
 
 #### Scenario: A new edit replaces the future steps
 

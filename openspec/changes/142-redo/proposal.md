@@ -18,6 +18,7 @@ None.
 ### Modified Capabilities
 
 - editing: replay completed Undo steps.
+- chopping: use Undo and Redo in the active Assign plan.
 - keyboard: bind Ctrl+Y and respect owner bindings.
 - command-panel: show available Redo on P3.
 - screen-help: explain Redo and the Assign route.
@@ -35,6 +36,13 @@ None.
 1. Change a pad value. Hold PAD BANK. Press P2, then P3.
 2. In Assign, select a target. Hold PAD BANK and press P2. Press P3 Menu, then P3 Redo.
 3. Press P1 to return to the targets. Check the restored plan.
+
+### Screens
+
+Check `renders/screens/pads-help-80x26.ansi` and
+`renders/screens/pads-help-120x40.ansi` for the keyboard and panel roles.
+Check `renders/screens/pads-panel-main-80x26.ansi` and
+`renders/screens/pads-panel-main-120x40.ansi` for the dim Redo cell when no edit waits.
 
 ### Sound
 

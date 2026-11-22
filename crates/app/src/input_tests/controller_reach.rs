@@ -38,6 +38,9 @@ mod trim_routes;
 #[path = "binding_changes.rs"]
 mod binding_changes;
 
+#[path = "redo.rs"]
+mod redo;
+
 const SMC: &str = "SINCO SMC-PAD-Master 28:1";
 
 /// A verified SMC-PAD with the PAD BANK shortcut off: second-bank hits reach the panel.
@@ -212,6 +215,7 @@ fn every_current_keyboard_action_has_a_controller_route() {
                     | "help.page_prev"
                     | "help.page_next"
                     | "edit.undo"
+                    | "edit.redo"
                     | "ui.back"
                     | "ui.confirm"
                     | "transport.play_stop"
@@ -2534,7 +2538,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     cell(&mut controller, assign); // Assign opens the target view.
     cell(&mut controller, panel_note(15)); // The menu gives the Chop actions.
     cell(&mut controller, assign); // Order replaces assign while Assign is open.
-    cell(&mut controller, panel_note(15)); // Back to the target pads.
+    cell(&mut controller, panel_note(13)); // Back to the target pads.
     cell(&mut controller, 48); // A first-layer hit on the top-left pad starts the order.
     assert_eq!(controller.app.plan, keyboard.app.plan);
 

@@ -302,6 +302,7 @@ impl State {
         let action = match cell {
             13 => return Choice::Back,
             14 => return Choice::Action(Action::Undo),
+            15 => return Choice::Action(Action::Redo),
             1..=12 if self.page == 0 => SCREENS[usize::from(cell - 1)].1,
             1..=12 => self.config.cell(view, cell).map(|cell| cell.action),
             _ => None,
@@ -558,8 +559,8 @@ impl App {
                 if let Some(owner) = &overrides[index] {
                     return Some(owner.clone());
                 }
-                if index == 14 && target.is_some() {
-                    return Some("target".into());
+                if index == 12 && target.is_some() {
+                    return Some("back".into());
                 }
                 let cell = u8::try_from(index + 1).unwrap();
                 if self.assign_order_cell(cell) {
@@ -590,6 +591,7 @@ impl App {
                 dim: std::array::from_fn(|index| {
                     let action = match index {
                         13 => Some(Action::Undo),
+                        14 => Some(Action::Redo),
                         _ => self.panel.action(view, u8::try_from(index + 1).unwrap()),
                     };
                     action.is_some_and(|action| self.grey(view, action).is_some())
@@ -972,7 +974,7 @@ mod tests {
                 assert_eq!(panel.label(view, cell), Some(label));
             }
             assert_eq!(panel.label(view, 16), None, "no cell shows Panic");
-            assert_eq!(panel.choice(view, 15), Choice::Dim);
+            assert_eq!(panel.choice(view, 15), Choice::Action(Action::Redo));
             assert_eq!(panel.choice(view, 16), Choice::Dim);
         }
         assert_eq!(panel.page(), 1, "a screen change shows the actions");

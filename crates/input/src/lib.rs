@@ -733,6 +733,7 @@ pub enum Action {
     /// Chop: delete the cut at the end of the selected slice.
     SliceEndDelete,
     Undo,
+    Redo,
     BrowserUp,
     BrowserDown,
     /// Open the selected folder.
@@ -985,6 +986,7 @@ impl Action {
             "marker.delete" => Self::MarkerDelete,
             "slice.end_delete" => Self::SliceEndDelete,
             "edit.undo" => Self::Undo,
+            "edit.redo" => Self::Redo,
             "browser.up" => Self::BrowserUp,
             "browser.down" => Self::BrowserDown,
             "browser.enter" => Self::BrowserEnter,
@@ -1313,6 +1315,7 @@ pub fn short_label(action: &str) -> &'static str {
         "marker.delete" => "delcut",
         "slice.end_delete" => "delend",
         "edit.undo" => "undo",
+        "edit.redo" => "redo",
         "chop.commit" => "apply",
         "chop.edit" => "edit",
         "chop.edit_only" => "edit",
@@ -1474,6 +1477,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "ui.back",
         label: "back",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "edit.redo",
+        label: "redo the last undone edit",
         group: Group::Global,
         knob: false,
     },
@@ -5056,9 +5065,9 @@ mod tests {
     }
 
     /// 83a chopping "H cuts at the marks by default": H chops by hits on the chop
-    /// screen; the old Ctrl+Y stays reserved for redo in 93a and runs nothing by default.
+    /// screen; Ctrl+Y runs Redo.
     #[test]
-    fn h_chops_by_hits_and_ctrl_y_stays_free() {
+    fn h_chops_by_hits_and_ctrl_y_redoes() {
         let k = keymap();
         assert_eq!(k.resolve(Screen::Chop, &press('h')), Some(Action::ChopHits));
         assert_eq!(k.resolve(Screen::Chop, &press('р')), Some(Action::ChopHits));
@@ -5068,8 +5077,8 @@ mod tests {
                 &ev(KeyCode::Char(c), KeyModifiers::CONTROL, KeyEventKind::Press),
             )
         };
-        assert_eq!(ctrl('y', Screen::Chop), None);
-        assert_eq!(ctrl('y', Screen::Pads), None);
+        assert_eq!(ctrl('y', Screen::Chop), Some(Action::Redo));
+        assert_eq!(ctrl('y', Screen::Pads), Some(Action::Redo));
     }
 
     /// Recorded from Ghostty: holding Ctrl+L sends presses; the release ends the hold.

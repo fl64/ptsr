@@ -230,6 +230,7 @@ fn undo_brings_back_the_replaced_pads() {
         }
         assert_eq!(drive.app.screen, Screen::Pads, "{source:?}");
         assert_eq!(drive.app.pads.slice[17], Some(4), "applied, {source:?}");
+        let applied = [0, 1, 16, 17].map(|abs| drive.app.pads.snapshot(abs));
         match source {
             Source::Keyboard => {
                 drive.tap(KeyCode::Char('z'), M::CONTROL);
@@ -257,9 +258,10 @@ fn undo_brings_back_the_replaced_pads() {
             8,
             "the cuts stay"
         );
-        // E2: Redo stays dim after the Undo
         press_cell(&mut drive, 15);
-        assert_eq!(drive.last_notice().text, "redo: not available yet");
+        assert!(drive.last_notice().text.starts_with("redo:"));
+        assert!(applied == [0, 1, 16, 17].map(|abs| drive.app.pads.snapshot(abs)));
+        press_cell(&mut drive, 14);
         assert!(before == [0, 1, 16, 17].map(|abs| drive.app.pads.snapshot(abs)));
     }
 }

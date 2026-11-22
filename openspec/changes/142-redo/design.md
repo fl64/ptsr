@@ -10,14 +10,13 @@ The target view already uses P3 to open its action menu. Keep this route. In the
 
 | Situation | Result | Status |
 | --- | --- | --- |
-| Undo a grouped pad or FX edit, swap, or load | One Redo restores the same state and pad addresses | Planned |
-| Start a different edit, or change project | Old redo steps clear | Planned |
-| Move around with an undone edit | Redo remains available in its context | Planned |
-| Undo an active A1 pass, then redo | Restore accepted rows after the pass closes | Planned |
-| Undo Chop bounds, recut, normalization, or a fresh Chop | Restore the edited Chop and affected pad state | Planned |
-| Undo an Assign choice | P3 Menu then P3 Redo restores it | Planned |
+| Undo a grouped pad or FX edit, swap, or load | One Redo restores the same state and pad addresses | Pad, swap, and regression tests pass |
+| Start a different edit, or change project | Old redo steps clear | New edit and project tests pass |
+| Move around with an undone edit | Redo remains available in its context | Playback and Chop context tests pass |
+| Undo an active A1 pass, then redo | Restore accepted rows after the pass closes | Active and closed pass tests pass |
+| Undo Chop bounds, recut, normalization, or a fresh Chop | Restore the edited Chop and affected pad state | Cut, normalization, and fresh Chop tests pass |
+| Undo an Assign choice | P3 Menu then P3 Redo restores it | Keyboard and controller tests pass |
 
 ## Open questions
 
-- Assign route: retain P3 Menu on the target view. Use P3 Redo and P1 Back in its action menu.
-- Manual checks follow merge for this series. The owner authorized this order.
+None. The owner deferred manual checks until after merge.
