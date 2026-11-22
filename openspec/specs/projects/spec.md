@@ -533,3 +533,13 @@ When the projects root has no project, the project picker SHALL show `new projec
 #### Scenario: The date name takes the next number
 - **WHEN** the projects root has no project but has a folder `2026-11-20-1`, and the owner makes a new project from the controller on that date
 - **THEN** the new project is `2026-11-20-2`
+
+### Requirement: Projects keep the shared effect returns
+
+The project SHALL keep the level and mute state per shared FX slot. An existing project with no saved return controls SHALL use 100 percent and unmuted for both slots.
+
+#### Scenario: Shared FX return controls survive a project reload
+
+- **WHEN** the owner saves two different shared FX returns with one muted and opens the project again
+- **THEN** each slot restores its level and mute state
+- **AND** an older project without these values opens at unity with both slots unmuted

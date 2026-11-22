@@ -20,3 +20,13 @@ The system SHALL let the owner change the volume of the whole output from −40 
 #### Scenario: Restart
 - **WHEN** the owner sets the master to −6 dB and restarts the program
 - **THEN** the master volume is −6 dB
+
+### Requirement: The meter names limiter activity
+
+The output meter SHALL show a limiter mark when the master reduces gain by more than 1 dB. The mark SHALL fit at both supported terminal sizes and SHALL preserve higher-priority warnings.
+
+#### Scenario: Limiter feedback names a loud master
+
+- **WHEN** the master reduces gain by more than 1 dB during playback
+- **THEN** the meter shows the limiter mark at 80 by 26 and 120 by 40
+- **AND** a warning or question stays visible

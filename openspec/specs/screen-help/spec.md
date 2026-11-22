@@ -1000,3 +1000,13 @@ The Audio tab SHALL show Click level and its value from 0 to 100 percent. The he
 - **WHEN** the owner selects Click level in Audio settings with keyboard or controller input
 - **THEN** the view shows the same value and the available control
 - **AND** the setting and its hint fit at 80 by 26 and 120 by 40
+
+### Requirement: The FX frame shows return and mute controls
+
+The FX frame SHALL show the level and mute state of the current return. The keyboard SHALL select Return in the existing parameter list and use the normal value controls. M SHALL toggle its mute. The SMC-PAD SHALL use E5 for the current return. The panel SHALL show the mute action on P13. The state and hints SHALL fit both supported terminal sizes.
+
+#### Scenario: Both inputs show the same FX return feedback
+
+- **WHEN** the owner changes a return or mutes it with the keyboard or SMC-PAD
+- **THEN** the selected slot shows its changed level or mute state
+- **AND** the owner can see how to select the other slot and return to the pad screen

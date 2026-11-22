@@ -1117,7 +1117,7 @@ An eligible note SHALL start its existing short cut at the first pattern grid li
 
 #### Scenario: Pitch Gate cuts at empty straight and triplet steps
 - **WHEN** eligible notes play before empty steps on every supported straight or triplet grid
-- **THEN** each cut starts within one output frame of the next grid line, even with no hit on that line
+- **THEN** each cut starts within one output frame of the next grid line plus the fixed device delay, even with no hit on that line
 - **AND** Quantize Off uses 1/16 and changing strength does not move the gate grid
 
 #### Scenario: Pitch Gate respects off-grid onsets and the loop end

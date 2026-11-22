@@ -51,11 +51,11 @@ A tempo change SHALL take effect at an audio block boundary without resetting mu
 
 ### Requirement: Accented metronome
 
-The metronome SHALL be off by default. While enabled and playing, it SHALL sound the existing click on each quarter note. Relative velocity SHALL be 1.0 on beat 1 and 0.6 on beats 2–4. Each onset SHALL be within one output frame of its beat at all supported block lengths. Muting the metronome SHALL NOT stop or reset the clock.
+The metronome SHALL be off by default. While enabled and playing, it SHALL sound the existing click on each quarter note. Relative velocity SHALL be 1.0 on beat 1 and 0.6 on beats 2–4. Each onset SHALL be within one output frame of its beat plus the fixed device delay at all supported block lengths. Muting the metronome SHALL NOT stop or reset the clock.
 
 #### Scenario: Metronome beats and accents follow the clock
 - **WHEN** eight bars play at 120 BPM with the metronome enabled
-- **THEN** each of the 32 clicks starts within one output frame of its beat
+- **THEN** each of the 32 clicks starts within one output frame of its beat plus the fixed device delay
 - **AND** beats 2–4 have 60 percent of beat 1's amplitude with silence between click tails
 
 #### Scenario: Fast tempo retains exact metronome accents
@@ -81,7 +81,7 @@ The beat clock and automatic metronome SHALL NOT allocate, free memory, wait for
 
 #### Scenario: Empty audio blocks preserve the first beat
 - **WHEN** zero-length blocks occur before the first non-empty block after starting
-- **THEN** position remains zero and the first click starts with the first output frame
+- **THEN** position remains zero and the first click starts at the fixed device delay after the first output frame
 
 ### Requirement: Visible transport state
 
@@ -174,7 +174,7 @@ or its controls.
 
 ### Requirement: The click has an independent monitor path
 
-The system SHALL send the automatic click and A1 count-in to the device after the master stage. The master meter and sources for recording and render SHALL exclude the click. Panic SHALL also stop the click.
+The system SHALL send the automatic click and A1 count-in to the device after the master stage. The click SHALL add to the limited master after the fixed device delay. Monitor headroom MAY reduce the cue gain to keep the combined device mix within full scale. The master meter and sources for recording and render SHALL exclude the click. Panic SHALL also stop the click.
 
 #### Scenario: The click plays without moving the master meter
 
