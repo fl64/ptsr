@@ -40,8 +40,8 @@ pub use help::{
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
 pub use pads::{
-    BigView, CommandPanel, SourceRange, SourceSample, SourceStrip, SourceVoice, command_panel,
-    command_panel_area, command_panel_in, device_number,
+    BigView, CommandPanel, PadParam, PadShapeView, PadView, SourceRange, SourceSample, SourceStrip,
+    SourceVoice, command_panel, command_panel_area, command_panel_in, device_number,
 };
 pub use pattern::{PatternOverview, PatternStrip};
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
@@ -365,57 +365,6 @@ impl PitchGate {
     }
 }
 
-pub struct PadView {
-    pub naming: bool,
-    /// No sample is assigned to this pad. This does not include an absent Chop slice.
-    pub empty: bool,
-    /// `✱` when the pad has more settings than its mode line shows (77), or empty.
-    pub glyphs: String,
-    /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
-    pub changed: Vec<PadParam>,
-    /// Keyboard key of the pad.
-    pub key: char,
-    pub name: String,
-    pub gate: bool,
-    pub pitch_gate: PitchGate,
-    pub volume_db: f32,
-    /// Pitch in semitones, shown in the panel.
-    pub pitch: i8,
-    /// The mute group (70): 0 is off, 1–8.
-    pub group: u8,
-    /// Envelope times in ms, shown in the panel.
-    pub attack_ms: u16,
-    pub decay_ms: u16,
-    pub release_ms: u16,
-    /// The pad was hit a moment ago or is held.
-    pub flash: bool,
-    /// Its file is gone or broken.
-    pub missing: bool,
-    /// Loading progress, 0..100.
-    pub loading: Option<u8>,
-    /// Taken with Ctrl+X: the next pad hit swaps it there.
-    pub in_hand: bool,
-    /// Marked for the change scope: framed in the grid.
-    pub marked: bool,
-    /// Second line in place of mode and volume (the chop screen shows slice lengths).
-    pub note: Option<String>,
-    /// What the info panel says about the selected pad in place of its name.
-    pub detail: Option<String>,
-    /// What the pad plays (`all`, `slice 3`, `pad`) and its start and end in seconds,
-    /// for the SOURCE page of the panel (27).
-    pub source: String,
-    pub bounds: (f32, f32),
-    /// The FILTER page as the panel says it (44): kind, cutoff, resonance.
-    pub filter: [String; 3],
-    /// The wave the pad plays with its envelope (29): peaks 0..1.
-    /// An empty pad or missing file has no wave.
-    pub wave: Vec<f32>,
-    /// Drawn dim: on the chop screen a pad that plays no slice of the open chop (36).
-    pub dim: bool,
-    /// A dashed frame: on the chop screen the pad that plays the whole file (46).
-    pub dashed: bool,
-}
-
 /// Chop screen (F3).
 pub struct Chop<'a> {
     pub file: &'a str,
@@ -491,34 +440,6 @@ pub struct Files<'a> {
     pub preview: Option<(f32, &'a [f32])>,
     /// Where the preview plays now, 0..1 of the file, while it sounds (33).
     pub playhead: Option<f32>,
-}
-
-/// The parameter the pads panel highlights: the one the value keys change now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PadParam {
-    Volume,
-    Pitch,
-    Group,
-    Attack,
-    Decay,
-    Release,
-    Source,
-    Start,
-    End,
-    Filter,
-    Cutoff,
-    Reso,
-    Drive,
-    Send1,
-    Send2,
-    Fx1Kind,
-    Fx1A,
-    Fx1B,
-    Fx2Kind,
-    Fx2A,
-    Fx2B,
-    Fx1Return,
-    Fx2Return,
 }
 
 /// The filter response for the strip: `levels` are linear gains at frequencies spread
@@ -1885,6 +1806,7 @@ mod tests {
                     pitch_gate: PitchGate::NeedsSlice,
                     volume_db: if i == 5 { -3.0 } else { 0.0 },
                     pitch: 0,
+                    shape: PadShapeView::default(),
                     attack_ms: 0,
                     decay_ms: 0,
                     release_ms: 0,
@@ -2051,6 +1973,7 @@ mod tests {
             attack: 0.1,
             decay: 0.0,
             release: 0.5,
+            timed: None,
         });
         p.edit = Some("ENV");
         let rows = render_pads_at(p, 100, 44);
@@ -2194,6 +2117,7 @@ mod tests {
             attack: 0.25,
             decay: 0.25,
             release: 0.0,
+            timed: None,
         });
         let rows = render_pads_at(p, 100, 44);
         // the right column: the meters, a gap, the panel; under it, until the notice row,
@@ -2423,6 +2347,7 @@ mod tests {
                     pitch_gate: PitchGate::NeedsSlice,
                     volume_db: 0.0,
                     pitch: 0,
+                    shape: PadShapeView::default(),
                     attack_ms: 0,
                     decay_ms: 0,
                     release_ms: 0,
@@ -4203,6 +4128,7 @@ mod tests {
                 attack: 0.1,
                 decay: 0.0,
                 release: 0.5,
+                timed: None,
             });
             p
         };
@@ -4242,6 +4168,7 @@ mod tests {
                 attack,
                 decay: 0.0,
                 release: 0.5,
+                timed: None,
             });
             let rows = render_pads(p);
             rows[f.strip.y as usize..f.strip.bottom() as usize].to_vec()
@@ -4287,6 +4214,7 @@ mod tests {
                 attack: 0.0,
                 decay: 0.0,
                 release: 0.5,
+                timed: None,
             });
             render_pads(p)
                 .iter()
@@ -4827,7 +4755,7 @@ mod tests {
             .filter(|(_, _, bg)| *bg == CYAN)
             .map(|(s, _, _)| s.as_str())
             .collect();
-        assert_eq!(lit.concat().trim(), "+0 st", "{lit:?}");
+        assert_eq!(lit.concat().trim(), "+0 st +0 ct", "{lit:?}");
     }
 
     /// The chop screen of the marker test: 4 slices, slice 2 selected, the cursor at 0.6.
@@ -4864,6 +4792,7 @@ mod tests {
                     pitch_gate: PitchGate::NeedsSlice,
                     volume_db: 0.0,
                     pitch: 0,
+                    shape: PadShapeView::default(),
                     attack_ms: 0,
                     decay_ms: 0,
                     release_ms: 0,
@@ -6274,6 +6203,7 @@ mod tests {
                     pitch_gate: PitchGate::NeedsSlice,
                     volume_db: 0.0,
                     pitch: 0,
+                    shape: PadShapeView::default(),
                     attack_ms: 0,
                     decay_ms: 0,
                     release_ms: 0,

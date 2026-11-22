@@ -7,10 +7,14 @@ use std::time::Instant;
 
 use engine::filter::{CUTOFF_MAX, CUTOFF_MIN, FilterKind, FilterSettings};
 use engine::fx::{FEEDBACK_MAX, FxKind, FxSettings};
+use engine::pad_shape::{DEFAULT_VELOCITY_DB, Shape, VELOCITY_LIMIT_DB};
 use engine::{Command, FX_SLOTS, PADS, PADS_PER_BANK, PITCH_LIMIT, PadMode, Region, Sample};
 use input::{Action, Dir};
 
-use crate::session::{FxState, PadState, PatternState, Session};
+mod shape;
+pub(crate) use shape::{DisplayEnvelope, SHAPE_PARAMS};
+
+use crate::session::{FxState, PadShape, PadState, PatternState, Session};
 
 /// Everything a pad has, as the undo keeps it (61): the sound by reference.
 #[derive(Clone, Debug)]
@@ -24,6 +28,7 @@ pub struct PadSnap {
     sound_gain_db: f32,
     pitch: i8,
     env: [u16; 3],
+    shape: PadShape,
     filter: (FilterKind, f32, u8),
     drive: u8,
     sends: [u8; FX_SLOTS],
@@ -47,6 +52,7 @@ impl PartialEq for PadSnap {
             && self.group == o.group
             && self.pitch_gate == o.pitch_gate
             && self.sound_gain_db == o.sound_gain_db
+            && self.shape == o.shape
             && (
                 &self.file,
                 self.missing,
@@ -224,6 +230,11 @@ pub enum Param {
     Fx2B,
     Fx1Return,
     Fx2Return,
+    Pan,
+    FineTune,
+    Velocity,
+    Curve,
+    Hold,
 }
 
 impl Param {
@@ -247,13 +258,20 @@ pub const ENV_STEP_MS: i32 = 5;
 const ENV_FINE_MS: i32 = 1;
 
 /// The pages of the pad edit mode: knob k turns the k-th parameter of the page.
-const PAGES: [(&str, &[Param]); 5] = [
+const PAGES: [(&str, &[Param]); 6] = [
     ("TONE", &[Param::Volume, Param::Pitch, Param::Group]),
-    ("ENV", &[Param::Attack, Param::Decay, Param::Release]),
+    (
+        "ENV",
+        &[Param::Attack, Param::Decay, Param::Release, Param::Hold],
+    ),
     ("FILTER", &[Param::Filter, Param::Cutoff, Param::Reso]),
     // the pad's own bounds after the sound: where it plays from (48)
     ("SOURCE", &[Param::Source, Param::Start, Param::End]),
     ("FX", &[Param::Drive, Param::Send1, Param::Send2]),
+    (
+        "SOUND",
+        &[Param::Pan, Param::FineTune, Param::Velocity, Param::Curve],
+    ),
 ];
 
 /// The name of a pad parameter in the panel and the help line.
@@ -265,6 +283,11 @@ pub fn name_of(p: Param) -> &'static str {
         Param::Attack => "attack",
         Param::Decay => "decay",
         Param::Release => "release",
+        Param::Pan => "pan",
+        Param::FineTune => "fine tune",
+        Param::Velocity => "velocity",
+        Param::Curve => "curve",
+        Param::Hold => "hold",
         Param::Source => "source",
         Param::Start => "start",
         Param::End => "end",
@@ -288,16 +311,17 @@ pub fn page_names() -> Vec<&'static str> {
 }
 
 /// All parameters in `Tab` order, for the learn mode's panel (47).
-pub const ORDER_ALL: [Param; 15] = ORDER;
+pub const ORDER_ALL: [Param; 20] = ORDER;
 
 /// All parameters in `I` `K` order.
-const ORDER: [Param; 15] = [
+const ORDER: [Param; 20] = [
     Param::Volume,
     Param::Pitch,
     Param::Group,
     Param::Attack,
     Param::Decay,
     Param::Release,
+    Param::Hold,
     Param::Filter,
     Param::Cutoff,
     Param::Reso,
@@ -307,6 +331,10 @@ const ORDER: [Param; 15] = [
     Param::Drive,
     Param::Send1,
     Param::Send2,
+    Param::Pan,
+    Param::FineTune,
+    Param::Velocity,
+    Param::Curve,
 ];
 
 /// Mute groups 1…`GROUPS` (70); 0 is off.
@@ -369,14 +397,14 @@ pub(crate) fn piece(
     sample: &Sample,
     region: Region,
     rate: u32,
-    attack_ms: u16,
-    decay_ms: u16,
+    envelope: DisplayEnvelope,
     cols: usize,
 ) -> (Vec<f32>, Vec<f32>, f32) {
     let (start, end) = (region.start, region.end.min(sample.len()));
     let wave = crate::loader::envelope_region(sample, start, end, cols);
-    let dur_ms = end.saturating_sub(start) as f32 / rate.max(1) as f32 * 1000.0;
-    let env = crate::env_curve(dur_ms, attack_ms, decay_ms, cols);
+    let source_ms = end.saturating_sub(start) as f32 / rate.max(1) as f32 * 1000.0;
+    let dur_ms = envelope.duration(source_ms);
+    let env = envelope.curve(dur_ms, cols);
     (wave, env, dur_ms)
 }
 
@@ -386,8 +414,7 @@ pub(crate) fn piece(
 struct PadWave {
     sound: Arc<Sample>,
     region: Region,
-    attack_ms: u16,
-    decay_ms: u16,
+    envelope: DisplayEnvelope,
     cols: usize,
     wave: Vec<f32>,
 }
@@ -412,6 +439,8 @@ pub struct Pads {
     pub attack_ms: [u16; PADS],
     pub decay_ms: [u16; PADS],
     pub release_ms: [u16; PADS],
+    pub(super) shape: [PadShape; PADS],
+    pad_velocity_db: Option<u8>,
     /// The pad filter (44): kind, cutoff in Hz, resonance in percent.
     pub filter: [FilterKind; PADS],
     pub cutoff_hz: [f32; PADS],
@@ -476,6 +505,8 @@ impl Default for Pads {
             attack_ms: [0; PADS],
             decay_ms: [0; PADS],
             release_ms: [0; PADS],
+            shape: [PadShape::default(); PADS],
+            pad_velocity_db: None,
             filter: [FilterKind::Off; PADS],
             cutoff_hz: [CUTOFF_DEFAULT; PADS],
             reso: [0; PADS],
@@ -523,23 +554,21 @@ impl Pads {
             self.wave_cache[abs] = None;
             return Vec::new();
         };
-        let (region, attack_ms, decay_ms) =
-            (self.region[abs], self.attack_ms[abs], self.decay_ms[abs]);
+        let region = self.region[abs];
+        let envelope = self.display_envelope(abs);
         let fresh = self.wave_cache[abs].as_ref().is_some_and(|c| {
             Arc::ptr_eq(&c.sound, &sound)
                 && c.region == region
-                && c.attack_ms == attack_ms
-                && c.decay_ms == decay_ms
+                && c.envelope == envelope
                 && c.cols == cols
         });
         if !fresh {
-            let (peaks, env, _) = piece(&sound, region, rate, attack_ms, decay_ms, cols);
+            let (peaks, env, _) = piece(&sound, region, rate, envelope, cols);
             let wave = peaks.iter().zip(&env).map(|(w, e)| w * e).collect();
             self.wave_cache[abs] = Some(PadWave {
                 sound,
                 region,
-                attack_ms,
-                decay_ms,
+                envelope,
                 cols,
                 wave,
             });
@@ -730,6 +759,7 @@ impl Pads {
         self.attack_ms.swap(a, b);
         self.decay_ms.swap(a, b);
         self.release_ms.swap(a, b);
+        self.shape.swap(a, b);
         // every setting moves with the pad, as in the engine (60)
         self.filter.swap(a, b);
         self.cutoff_hz.swap(a, b);
@@ -777,6 +807,7 @@ impl Pads {
                 self.decay_ms[abs],
                 self.release_ms[abs],
             ],
+            shape: self.shape[abs],
             filter: (self.filter[abs], self.cutoff_hz[abs], self.reso[abs]),
             drive: self.drive[abs],
             sends: self.sends[abs],
@@ -831,6 +862,7 @@ impl Pads {
             self.decay_ms[abs],
             self.release_ms[abs],
         ] = s.env;
+        self.shape[abs] = s.shape;
         (self.filter[abs], self.cutoff_hz[abs], self.reso[abs]) = s.filter;
         self.drive[abs] = s.drive;
         self.sends[abs] = s.sends;
@@ -861,6 +893,7 @@ impl Pads {
             },
             self.pitch_gate_command(abs),
             self.env_command(abs),
+            self.shape_command(abs),
             self.filter_command(abs),
             self.drive_command(abs),
             self.sends_command(abs),
@@ -893,6 +926,7 @@ impl Pads {
         let mut s = Session {
             browser_dir,
             bank: self.bank as u8,
+            pad_velocity_db: self.pad_velocity_db,
             fx: self.fx.iter().map(FxSlot::state).collect(),
             pattern: self.pattern.as_ref().map(|p| p.slot.clone()),
             patterns: self.pattern.iter().cloned().collect(),
@@ -912,6 +946,7 @@ impl Pads {
                 attack_ms: self.attack_ms[abs],
                 decay_ms: self.decay_ms[abs],
                 release_ms: self.release_ms[abs],
+                shape: self.shape[abs],
                 filter: match self.filter[abs] {
                     FilterKind::Off => String::new(),
                     k => kind_name(k).to_string(),
@@ -942,6 +977,8 @@ impl Pads {
         self.pattern = s.patterns.first().cloned();
         self.pattern_rows = None;
         self.pitch_gate.fill(true);
+        self.pad_velocity_db = s.pad_velocity_db.map(|db| db.min(VELOCITY_LIMIT_DB));
+        self.shape.fill(PadShape::default());
         for (key, state) in &s.pads {
             let Some(abs) = key.parse::<usize>().ok().filter(|&a| a < PADS) else {
                 log::warn!("session: bad pad {key}");
@@ -959,6 +996,7 @@ impl Pads {
             self.attack_ms[abs] = state.attack_ms;
             self.decay_ms[abs] = state.decay_ms;
             self.release_ms[abs] = state.release_ms;
+            self.shape[abs] = state.shape.bounded();
             self.filter[abs] = kind_of(&state.filter);
             self.cutoff_hz[abs] = state
                 .cutoff_hz
@@ -1002,6 +1040,7 @@ impl Pads {
             });
             cmds.push(self.pitch_gate_command(abs));
             cmds.push(self.env_command(abs));
+            cmds.push(self.shape_command(abs));
             cmds.push(self.filter_command(abs));
             cmds.push(self.drive_command(abs));
             cmds.push(self.sends_command(abs));
@@ -1019,6 +1058,29 @@ impl Pads {
             Err(error) => log::error!("Cannot restore pattern: {error}"),
         }
         cmds
+    }
+
+    pub(super) fn play_shape(&self, abs: usize) -> Shape {
+        self.shape[abs].with_default(self.pad_velocity_db)
+    }
+
+    fn shape_command(&self, abs: usize) -> Command {
+        Command::SetPadShape {
+            pad: abs,
+            shape: self.play_shape(abs),
+        }
+    }
+
+    pub(super) fn first_assignment_shape(&mut self, abs: usize) -> Option<Command> {
+        if self.file[abs].is_some()
+            || self.sound[abs].is_some()
+            || self.shape[abs].velocity_db.is_some()
+            || self.pad_velocity_db == Some(DEFAULT_VELOCITY_DB)
+        {
+            return None;
+        }
+        self.shape[abs].velocity_db = Some(DEFAULT_VELOCITY_DB as i8);
+        Some(self.shape_command(abs))
     }
 
     pub fn pitch_gate_command(&self, abs: usize) -> Command {
@@ -1510,7 +1572,8 @@ impl Pads {
         let abs = self.selected_abs();
         match self.param {
             Param::Volume => format!("{:+} dB", self.volume_db[abs]),
-            Param::Pitch => format!("{:+} st", self.pitch[abs]),
+            Param::Pitch => self.pitch_text(abs),
+            p if SHAPE_PARAMS.contains(&p) => self.shape_text(abs, p),
             Param::Attack => format!("{} ms", self.attack_ms[abs]),
             Param::Decay => format!("{} ms", self.decay_ms[abs]),
             Param::Release => format!("{} ms", self.release_ms[abs]),
@@ -1713,6 +1776,19 @@ impl Pads {
                             }
                             self.set_env_ms(abs, self.param, new);
                             cmds.push(self.env_command(abs));
+                        }
+                    }
+                    p @ (Param::Hold
+                    | Param::Pan
+                    | Param::FineTune
+                    | Param::Velocity
+                    | Param::Curve) => {
+                        for abs in scope(self) {
+                            if let Some(command) = self.step_shape(abs, p, step, fine) {
+                                cmds.push(command);
+                            } else {
+                                limits += 1;
+                            }
                         }
                     }
                     // the app changes the source page: it knows the cuts of the file
@@ -2272,6 +2348,11 @@ impl App {
                         self.pads.sound_gain_db[pad] = 0.0;
                         self.send(self.pads.sound_gain_command(pad));
                     }
+                }
+                if !self.restoring_project
+                    && let Some(command) = self.pads.first_assignment_shape(pad)
+                {
+                    self.send(command);
                 }
                 self.pads.file[pad] = Some(path);
                 self.pads.set_sound(pad, sound.clone());
@@ -3272,6 +3353,7 @@ mod tests {
             Param::Attack,
             Param::Decay,
             Param::Release,
+            Param::Hold,
             Param::Filter,
             Param::Cutoff,
             Param::Reso,
@@ -3281,6 +3363,10 @@ mod tests {
             Param::Drive,
             Param::Send1,
             Param::Send2,
+            Param::Pan,
+            Param::FineTune,
+            Param::Velocity,
+            Param::Curve,
             Param::Volume,
         ] {
             assert!(p.apply(Action::PadParamNext).is_empty());
@@ -3812,7 +3898,7 @@ mod tests {
     fn shift_tab_turns_back() {
         let mut p = Pads::default();
         p.apply(Action::PagePrev);
-        assert_eq!(p.page().0, "FX");
-        assert_eq!(p.param, Param::Drive);
+        assert_eq!(p.page().0, "SOUND");
+        assert_eq!(p.param, Param::Pan);
     }
 }

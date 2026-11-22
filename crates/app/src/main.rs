@@ -30,6 +30,9 @@ mod session;
 mod transport;
 mod values;
 mod view;
+#[cfg(test)]
+use view::big_view;
+use view::{env_curve, pads_view, tui_param};
 mod wav;
 
 #[cfg(test)]
@@ -2032,62 +2035,6 @@ fn out_wave(app: &App) -> Vec<f32> {
 
 /// What differs on a pad from a fresh one (55): its parameters off their defaults; the
 /// source block when it plays a part of the file. An empty pad has nothing.
-fn pad_changes(p: &pads::Pads, abs: usize) -> Vec<tui::PadParam> {
-    use tui::PadParam as W;
-    if p.file[abs].is_none() {
-        return Vec::new();
-    }
-    let mut out = Vec::new();
-    let mut add = |on: bool, w: W| {
-        if on {
-            out.push(w);
-        }
-    };
-    add(p.volume_db[abs] != 0, W::Volume);
-    add(p.pitch[abs] != 0, W::Pitch);
-    add(p.group[abs] != 0, W::Group);
-    add(p.attack_ms[abs] != 0, W::Attack);
-    add(p.decay_ms[abs] != 0, W::Decay);
-    add(p.release_ms[abs] != 0, W::Release);
-    // a filter that is off counts for nothing, whatever its cutoff and reso (55)
-    let on = p.filter[abs] != engine::filter::FilterKind::Off;
-    add(on, W::Filter);
-    add(on && p.cutoff_hz[abs] != pads::CUTOFF_DEFAULT, W::Cutoff);
-    add(on && p.reso[abs] != 0, W::Reso);
-    let part = p.source(abs) != pads::Source::All;
-    for w in [W::Source, W::Start, W::End] {
-        add(part, w);
-    }
-    add(p.drive[abs] != 0, W::Drive);
-    add(p.sends[abs][0] != 0, W::Send1);
-    add(p.sends[abs][1] != 0, W::Send2);
-    out
-}
-
-/// The mark at the end of a pad's mode line (77): `✱` when the pad has settings the line
-/// does not show already: pitch, envelope, filter on, drive, sends. Not the volume, the
-/// mode, the group (on the line) or the source (a slice shows in the name).
-fn pad_glyphs(changed: &[tui::PadParam]) -> String {
-    use tui::PadParam as W;
-    let more = [
-        W::Pitch,
-        W::Attack,
-        W::Decay,
-        W::Release,
-        W::Filter,
-        W::Cutoff,
-        W::Reso,
-        W::Drive,
-        W::Send1,
-        W::Send2,
-    ];
-    if more.iter().any(|w| changed.contains(w)) {
-        "✱".into()
-    } else {
-        String::new()
-    }
-}
-
 fn preview_pad_name(view: &mut tui::Pads, bank: usize, naming: Option<&(usize, String)>) {
     if let Some((abs, name)) = naming
         && *abs / PADS_PER_BANK == bank
@@ -2096,161 +2043,6 @@ fn preview_pad_name(view: &mut tui::Pads, bank: usize, naming: Option<&(usize, S
         pad.name.clone_from(name);
         pad.naming = true;
     }
-}
-
-fn pads_view(
-    p: &mut pads::Pads,
-    pickup: Option<String>,
-    in_hand: Option<usize>,
-    out_wave: Vec<f32>,
-    splash: Option<tui::Splash>,
-    rate: u32,
-) -> tui::Pads {
-    let pads = (0..PADS_PER_BANK)
-        .map(|i| {
-            let abs = p.bank * PADS_PER_BANK + i;
-            let changed = pad_changes(p, abs);
-            tui::PadView {
-                naming: false,
-                empty: p.file[abs].is_none(),
-                glyphs: pad_glyphs(&changed),
-                pitch_gate: view::pitch_gate(p, abs),
-                changed,
-                dim: false,
-                dashed: false,
-                source: source_word(p.source(abs)),
-                bounds: p.sound[abs].as_ref().map_or((0.0, 0.0), |s| {
-                    let r = p.region[abs];
-                    let secs = |f: usize| f.min(s.len()) as f32 / rate.max(1) as f32;
-                    (secs(r.start), secs(r.end))
-                }),
-                wave: p.wave(abs, rate, BIG_COLS),
-                key: PAD_KEYS[i],
-                name: p.file[abs]
-                    .as_ref()
-                    .map_or("—".into(), |_| pad_name(p, abs)),
-                detail: Some(match p.file[abs].as_deref() {
-                    None => format!("empty · test tone {}", test_tone_name(abs)),
-                    Some(f) => format!("{} · {}", file_name(f), source_word(p.source(abs))),
-                }),
-                missing: p.missing[abs],
-                loading: p.loading[abs],
-                in_hand: in_hand == Some(abs),
-                marked: p.marked.contains(&abs),
-                note: None,
-                gate: p.gate[abs],
-                volume_db: p.volume_db[abs] as f32,
-                pitch: p.pitch[abs],
-                attack_ms: p.attack_ms[abs],
-                decay_ms: p.decay_ms[abs],
-                release_ms: p.release_ms[abs],
-                group: p.group[abs],
-                filter: [
-                    pads::kind_name(p.filter[abs]).into(),
-                    pads::cutoff_text(p.cutoff_hz[abs]),
-                    format!("{} %", p.reso[abs]),
-                ],
-                flash: p.held[abs] || p.hit_at[abs].is_some_and(|t| t.elapsed() < HIT_FLASH),
-            }
-        })
-        .collect();
-    // the FX block of the selected pad (56): each send names the kind of its slot
-    let sel = p.bank * PADS_PER_BANK + p.selected;
-    let fx = [pads::Param::Drive, pads::Param::Send1, pads::Param::Send2]
-        .into_iter()
-        .map(|w| {
-            let mut value = p.fx_text(sel, w);
-            if let Some(k) = [pads::Param::Send1, pads::Param::Send2]
-                .iter()
-                .position(|s| *s == w)
-            {
-                value = format!("{value}  {}", pads::kind_word(p.fx[k].kind));
-            }
-            (tui_param(w), label8(p.name(w)), value)
-        })
-        .collect();
-    tui::Pads {
-        feedback: tui::PadFeedback::default(),
-        source: None,
-        pattern: None,
-        overview: None,
-        playing: false,
-        fx,
-        bank: p.bank,
-        pads,
-        selected: p.selected,
-        pickup,
-        param: tui_param(p.param),
-        scope: p.scope_name(),
-        bank_fill: bank_fill(p),
-        bank_marks: bank_marks(p),
-        bank_pattern: tui::BankPattern::default(),
-        out_wave,
-        splash,
-        big: big_view(p, rate),
-        curve: None,
-        learn: Vec::new(),
-        edit: None,
-        pages: Vec::new(),
-        knobs: Vec::new(),
-        lit: None,
-        hidden: false,
-        edit_key: String::new(),
-        slot: None,
-    }
-}
-
-/// The piece of the selected pad with the pad's envelope over it, or nothing when the
-/// pad is empty.
-fn big_view(p: &pads::Pads, rate: u32) -> Option<tui::BigView> {
-    let abs = p.bank * PADS_PER_BANK + p.selected;
-    // an empty pad plays its test tone: the edit shows that piece (98h)
-    let tone;
-    let (sound, region) = match p.sound[abs].as_deref() {
-        Some(sound) => (sound, p.region[abs]),
-        None => {
-            tone = Sample::mono(engine::test_tone(rate, abs));
-            (&tone, Region::WHOLE)
-        }
-    };
-    let (wave, env, dur_ms) = pads::piece(
-        sound,
-        region,
-        rate,
-        p.attack_ms[abs],
-        p.decay_ms[abs],
-        BIG_COLS,
-    );
-    let share = |ms: u16| f32::from(ms) / dur_ms.max(1.0);
-    Some(tui::BigView {
-        wave,
-        env,
-        attack: share(p.attack_ms[abs]).min(1.0),
-        decay: share(p.decay_ms[abs]).min(1.0),
-        release: share(p.release_ms[abs]),
-    })
-}
-
-/// The pad's envelope as a multiplier over the piece, one value per column: attack
-/// fades in over the first `attack_ms`, decay dies into silence over the last
-/// `decay_ms` — the same ramps the audio voice follows.
-fn env_curve(dur_ms: f32, attack_ms: u16, decay_ms: u16, cols: usize) -> Vec<f32> {
-    (0..cols)
-        .map(|c| {
-            let t = (c as f32 + 0.5) / cols.max(1) as f32;
-            let at = if attack_ms == 0 {
-                1.0
-            } else {
-                (t * dur_ms / f32::from(attack_ms)).min(1.0)
-            };
-            let de = if decay_ms == 0 {
-                1.0
-            } else {
-                ((1.0 - t) * dur_ms / f32::from(decay_ms)).min(1.0)
-            };
-            at * de
-        })
-        .collect()
 }
 
 /// The buffer row's next choice: 0 is auto (follow the server), then the fixed sizes.
@@ -2581,6 +2373,7 @@ fn chop_view_routed<'a>(
                         gate: false,
                         volume_db: 0.0,
                         pitch: 0,
+                        shape: tui::PadShapeView::default(),
                         attack_ms: 0,
                         decay_ms: 0,
                         release_ms: 0,
@@ -2681,6 +2474,7 @@ fn chop_view_routed<'a>(
                         gate: p.gate[abs],
                         volume_db: p.volume_db[abs] as f32,
                         pitch: p.pitch[abs],
+                        shape: view::pad_shape_view(p, abs),
                         attack_ms: p.attack_ms[abs],
                         decay_ms: p.decay_ms[abs],
                         release_ms: p.release_ms[abs],
@@ -2806,6 +2600,7 @@ fn chop_view_routed<'a>(
                         gate: p.gate[abs],
                         volume_db: p.volume_db[abs] as f32,
                         pitch: p.pitch[abs],
+                        shape: view::pad_shape_view(p, abs),
                         attack_ms: p.attack_ms[abs],
                         decay_ms: p.decay_ms[abs],
                         release_ms: p.release_ms[abs],
@@ -2972,34 +2767,6 @@ fn chop_view_routed<'a>(
         pads,
         edit: false,
         hot: None,
-    }
-}
-
-fn tui_param(p: pads::Param) -> tui::PadParam {
-    match p {
-        pads::Param::Volume => tui::PadParam::Volume,
-        pads::Param::Pitch => tui::PadParam::Pitch,
-        pads::Param::Group => tui::PadParam::Group,
-        pads::Param::Attack => tui::PadParam::Attack,
-        pads::Param::Decay => tui::PadParam::Decay,
-        pads::Param::Release => tui::PadParam::Release,
-        pads::Param::Source => tui::PadParam::Source,
-        pads::Param::Start => tui::PadParam::Start,
-        pads::Param::End => tui::PadParam::End,
-        pads::Param::Filter => tui::PadParam::Filter,
-        pads::Param::Cutoff => tui::PadParam::Cutoff,
-        pads::Param::Reso => tui::PadParam::Reso,
-        pads::Param::Drive => tui::PadParam::Drive,
-        pads::Param::Send1 => tui::PadParam::Send1,
-        pads::Param::Send2 => tui::PadParam::Send2,
-        pads::Param::Fx1Kind => tui::PadParam::Fx1Kind,
-        pads::Param::Fx1A => tui::PadParam::Fx1A,
-        pads::Param::Fx1B => tui::PadParam::Fx1B,
-        pads::Param::Fx2Kind => tui::PadParam::Fx2Kind,
-        pads::Param::Fx2A => tui::PadParam::Fx2A,
-        pads::Param::Fx2B => tui::PadParam::Fx2B,
-        pads::Param::Fx1Return => tui::PadParam::Fx1Return,
-        pads::Param::Fx2Return => tui::PadParam::Fx2Return,
     }
 }
 
@@ -10834,19 +10601,22 @@ Enter = "browser.hold"
     fn the_envelope_page_fills_three_knobs() {
         use super::pads::Param;
         let mut app = test_app();
-        for want in [Param::Attack, Param::Decay, Param::Release] {
+        for want in [Param::Attack, Param::Decay, Param::Release, Param::Hold] {
             while app.pads.param != want {
                 app.apply(input::Action::ParamNext);
             }
             assert_eq!(
                 app.pads.page(),
-                ("ENV", &[Param::Attack, Param::Decay, Param::Release][..])
+                (
+                    "ENV",
+                    &[Param::Attack, Param::Decay, Param::Release, Param::Hold][..]
+                )
             );
         }
     }
 
     /// Scenario "The page follows the picked parameter" (pad-playback): recorded `Enter`, then
-    /// `K` until decay; the page is ENV and its three knobs are attack, decay, release.
+    /// `K` until decay; the page is ENV and its knobs turn attack, decay, release and hold.
     #[test]
     fn the_page_follows_the_picked_parameter() {
         use super::pads::Param;
@@ -10869,7 +10639,10 @@ Enter = "browser.hold"
         assert_eq!(app.pads.param, Param::Decay, "K reaches the decay");
         assert_eq!(
             app.pads.page(),
-            ("ENV", &[Param::Attack, Param::Decay, Param::Release][..])
+            (
+                "ENV",
+                &[Param::Attack, Param::Decay, Param::Release, Param::Hold][..]
+            )
         );
     }
 
@@ -10881,7 +10654,7 @@ Enter = "browser.hold"
         let mut app = test_app();
         app.apply(input::Action::PadEdit);
         let mut pages = Vec::new();
-        for _ in 0..15 {
+        for _ in 0..super::pads::ORDER_ALL.len() {
             app.apply(input::Action::ParamNext);
             pages.push((app.pads.param, app.pads.page().0));
         }
@@ -10893,6 +10666,7 @@ Enter = "browser.hold"
                 (Param::Attack, "ENV"),
                 (Param::Decay, "ENV"),
                 (Param::Release, "ENV"),
+                (Param::Hold, "ENV"),
                 (Param::Filter, "FILTER"),
                 (Param::Cutoff, "FILTER"),
                 (Param::Reso, "FILTER"),
@@ -10902,6 +10676,10 @@ Enter = "browser.hold"
                 (Param::Drive, "FX"),
                 (Param::Send1, "FX"),
                 (Param::Send2, "FX"),
+                (Param::Pan, "SOUND"),
+                (Param::FineTune, "SOUND"),
+                (Param::Velocity, "SOUND"),
+                (Param::Curve, "SOUND"),
                 (Param::Volume, "TONE"),
             ]
         );
@@ -10928,8 +10706,8 @@ Enter = "browser.hold"
         };
         let mut app = test_app();
         app.apply(input::Action::PadEdit);
-        // past the end of ENV (48)
-        while app.pads.param != Param::Release {
+        // past the end of ENV
+        while app.pads.param != Param::Hold {
             app.apply(input::Action::ParamNext);
         }
         app.apply(input::Action::ParamNext);
@@ -11091,7 +10869,7 @@ Enter = "browser.hold"
     }
 
     /// 56 "SOURCE last" (as 56 has it): K from the reso of FILTER picks the source; K past
-    /// SOURCE picks the drive on FX; K past send 2 comes back to the volume.
+    /// SOURCE picks the drive on FX. SOUND comes after FX and before TONE.
     #[test]
     fn source_last() {
         use super::pads::Param;
@@ -11114,10 +10892,15 @@ Enter = "browser.hold"
             app.apply(input::Action::ParamNext);
         }
         app.apply(input::Action::ParamNext);
+        assert_eq!(app.pads.param, Param::Pan);
+        while app.pads.param != Param::Curve {
+            app.apply(input::Action::ParamNext);
+        }
+        app.apply(input::Action::ParamNext);
         assert_eq!(app.pads.param, Param::Volume);
         assert_eq!(
             super::pads::page_names(),
-            ["TONE", "ENV", "FILTER", "SOURCE", "FX"]
+            ["TONE", "ENV", "FILTER", "SOURCE", "FX", "SOUND"]
         );
     }
 
@@ -11268,7 +11051,8 @@ Enter = "browser.hold"
             [
                 tui::PadParam::Attack,
                 tui::PadParam::Decay,
-                tui::PadParam::Release
+                tui::PadParam::Release,
+                tui::PadParam::Hold
             ]
         );
         // the help line of the edit mode says how to listen
@@ -12374,16 +12158,16 @@ Enter = "browser.hold"
                 takeover: true,
             })
         };
-        // Five equal parts: the middle selects FILTER, without pickup.
-        page(&mut app, 0.5);
+        // The third of six parts selects FILTER without pickup.
+        page(&mut app, 0.45);
         assert_eq!(app.pads.page().0, "FILTER");
         assert_eq!(app.pads.param, P::Filter);
         // a turn inside the same part keeps the pick
         app.apply(input::Action::ParamNext);
-        page(&mut app, 0.52);
+        page(&mut app, 0.47);
         assert_eq!(app.pads.param, P::Cutoff);
         page(&mut app, 1.0);
-        assert_eq!(app.pads.page().0, "FX");
+        assert_eq!(app.pads.page().0, "SOUND");
         // a slice has one page: the knob keeps it
         app.apply(input::Action::Back);
         app.screen = input::Screen::Chop;
@@ -18130,7 +17914,10 @@ Enter = "browser.hold"
         assert!(panel_now(&mut app).slot.is_none());
         recorded_workflow_key(&mut app, K::Enter, M::NONE);
         recorded_workflow_key(&mut app, K::Tab, M::NONE);
+        assert_eq!(app.pads.page().0, "SOUND");
+        recorded_workflow_key(&mut app, K::Tab, M::NONE);
         assert_eq!(app.pads.page().0, "TONE");
+        recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
         recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
         assert_eq!(app.pads.page().0, "FX");
         recorded_workflow_key(&mut app, K::Esc, M::NONE);
@@ -18257,6 +18044,8 @@ Enter = "browser.hold"
         page_knob(&mut app, 2, 0.25);
         assert_eq!(app.pads.group[4..7], [2, 2, 0]);
         recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
+        assert_eq!(app.pads.page().0, "SOUND");
+        recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
         assert_eq!(app.pads.page().0, "FX");
         page_knob(&mut app, 0, 0.4);
         page_knob(&mut app, 1, 0.3);
@@ -18375,6 +18164,7 @@ Enter = "browser.hold"
         let scope = app.pads.scope_pads();
         let selected = app.pads.selected_abs();
         recorded_workflow_key(&mut app, K::Enter, M::NONE);
+        recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
         recorded_workflow_key(&mut app, K::BackTab, M::SHIFT);
         recorded_workflow_key(&mut app, K::Char('k'), M::NONE);
         let pad_param = app.pads.param;

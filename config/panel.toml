@@ -27,6 +27,7 @@ name = "pad_edit"
 page = 1
 cells = [
   { cell = 1, label = "fx page", action = "edit.page_fx" },
+  { cell = 2, label = "sound page", action = "edit.page_sound" },
   { cell = 4, label = "pin sample", action = "pad.source_pin" },
   { cell = 5, label = "tone page", action = "edit.page_tone" },
   { cell = 6, label = "env page", action = "edit.page_env" },

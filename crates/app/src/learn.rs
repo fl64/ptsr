@@ -597,6 +597,11 @@ impl App {
                 ("pad.reso", "reso"),
                 ("pad.start", "start"),
                 ("pad.end", "end"),
+                ("pad.pan", "pan"),
+                ("pad.fine_tune", "fine tune"),
+                ("pad.velocity", "velocity"),
+                ("pad.curve", "curve"),
+                ("pad.hold", "hold"),
             ],
             Screen::Chop => &[
                 ("slice.start", "slice start"),

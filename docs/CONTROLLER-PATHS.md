@@ -177,3 +177,13 @@ and listening checks. The transport reference is `renders/92-command-panel.wav`.
 | Change Return from the first row | Down three times, then Left or Right (4) | E5 turn (0 presses) |
 | Mute or unmute the selected return | M (1) | Hold PAD BANK and press P13 Mute return (2) |
 | Return to Pads | F2 (1) | Hold PAD BANK, LEFT, P13 Pads (3) |
+
+## Shape a pad sound
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Open SOUND from TONE | Enter, Shift+Tab (2) | Hold PAD BANK, P5 Edit pad. Release. Hold PAD BANK, P14 Sound page (4). Release. |
+| Set Pan, Fine tune, Velocity or Curve | Up or Down selects a row. Left or Right changes its value (1 per step). | Turn E7, E5, E3 or E1 (0 presses). |
+| Tune one cent | Shift+Left or Shift+Right (1 per step) | Hold PAD BANK and turn E5 (1). With the hold shortcut off, turn E5 (0 presses). |
+| Set Hold from SOUND | Tab twice to ENV, Down three times, Left or Right (6 for the first step). | Hold PAD BANK, P10 ENV page (2). Release. Turn E1. |
+| Return to Pads | Esc (1) | Hold PAD BANK and press P1 Back (2). Release. |

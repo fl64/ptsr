@@ -275,6 +275,7 @@ impl App {
             Param::PadStart => self.pad_value_target(pads::Param::Start),
             Param::PadEnd => self.pad_value_target(pads::Param::End),
             Param::PadEffect(i) => self.pad_value_target(*EFFECT_PARAMS.get(i as usize)?),
+            Param::PadShape(i) => self.pad_value_target(*pads::SHAPE_PARAMS.get(i as usize)?),
             Param::SliceStart => chop(C::Start),
             Param::SliceEnd => chop(C::End),
             Param::Cursor => chop(C::Cursor),
@@ -439,7 +440,7 @@ impl App {
                             ),
                         ),
                         P::Pitch => (
-                            format!("{:+} st", self.pads.pitch[abs]),
+                            self.pads.pitch_text(abs),
                             Some(
                                 (self.pads.pitch[abs] + engine::PITCH_LIMIT) as f32
                                     / (2 * engine::PITCH_LIMIT) as f32,
@@ -456,6 +457,10 @@ impl App {
                                 Some(ms as f32 / pads::ENV_MS_LIMIT as f32),
                             )
                         }
+                        p if pads::SHAPE_PARAMS.contains(&p) => (
+                            self.pads.shape_text(abs, p),
+                            Some(self.pads.shape_pos(abs, p)),
+                        ),
                         P::Filter => (pads::kind_name(self.pads.filter[abs]).into(), None),
                         P::Cutoff => {
                             use engine::filter::{CUTOFF_MAX, CUTOFF_MIN};
@@ -680,6 +685,9 @@ impl App {
                 pads::Param::Filter => Param::PadFilter,
                 pads::Param::Cutoff => Param::PadCutoff,
                 pads::Param::Reso => Param::PadReso,
+                p if pads::SHAPE_PARAMS.contains(p) => {
+                    Param::PadShape(pads::SHAPE_PARAMS.iter().position(|e| e == p)? as u8)
+                }
                 p => Param::PadEffect(EFFECT_PARAMS.iter().position(|e| e == p)? as u8),
             }),
             Screen::Chop => [Param::SliceStart, Param::SliceEnd].get(k).copied(),

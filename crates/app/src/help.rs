@@ -114,7 +114,10 @@ pub(super) fn describe(a: Action) -> String {
         Action::PagePrev => "the previous page of the edit".into(),
         Action::PadPage(page) => format!(
             "pad edit: the {} page",
-            ["TONE", "ENV", "FILTER", "SOURCE", "FX"][usize::from(page).min(4)]
+            super::pads::page_names()
+                .get(usize::from(page))
+                .copied()
+                .unwrap_or("TONE")
         ),
         Action::EditValue { up, fine } => format!(
             "the picked value {}{}",

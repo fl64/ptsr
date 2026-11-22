@@ -5,12 +5,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Instant;
 
-use engine::{PADS, PADS_PER_BANK};
+use engine::{PADS, PADS_PER_BANK, Region, Sample, test_tone_name};
 use input::Screen;
 
 use super::{
-    App, HelpState, LIT_FOR, Level, Lit, Notice, Origin, audio, chop, chop_view_routed, file_name,
-    filter_curve, pads, same_whole_sound, tui_param,
+    App, BIG_COLS, HIT_FLASH, HelpState, LIT_FOR, Level, Lit, Notice, Origin, PAD_KEYS, audio,
+    bank_fill, bank_marks, chop, chop_view_routed, file_name, filter_curve, label8, pad_name, pads,
+    same_whole_sound, source_word,
 };
 
 pub(super) fn pitch_gate(pads: &pads::Pads, abs: usize) -> tui::PitchGate {
@@ -18,7 +19,7 @@ pub(super) fn pitch_gate(pads: &pads::Pads, abs: usize) -> tui::PitchGate {
         tui::PitchGate::Off
     } else if !matches!(pads.source(abs), pads::Source::Slice(_)) {
         tui::PitchGate::NeedsSlice
-    } else if pads.pitch[abs] <= 0 {
+    } else if i16::from(pads.pitch[abs]) * 100 + i16::from(pads.shape[abs].cents) <= 0 {
         tui::PitchGate::NeedsPitch
     } else {
         tui::PitchGate::A1
@@ -1921,5 +1922,272 @@ impl App {
         } else {
             "ready".into()
         }
+    }
+}
+
+pub(super) fn pad_changes(p: &pads::Pads, abs: usize) -> Vec<tui::PadParam> {
+    use tui::PadParam as W;
+    if p.file[abs].is_none() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut add = |on: bool, w: W| {
+        if on {
+            out.push(w);
+        }
+    };
+    add(p.volume_db[abs] != 0, W::Volume);
+    let shape = p.play_shape(abs);
+    add(p.pitch[abs] != 0 || shape.cents != 0, W::Pitch);
+    add(shape.cents != 0, W::FineTune);
+    add(shape.pan != 0, W::Pan);
+    add(shape.hold_ms != 0, W::Hold);
+    add(shape.exponential, W::Curve);
+    add(
+        p.shape[abs].velocity_db.is_some()
+            && shape.velocity_db != Some(engine::pad_shape::DEFAULT_VELOCITY_DB),
+        W::Velocity,
+    );
+    add(p.group[abs] != 0, W::Group);
+    add(p.attack_ms[abs] != 0, W::Attack);
+    add(p.decay_ms[abs] != 0, W::Decay);
+    add(p.release_ms[abs] != 0, W::Release);
+    // a filter that is off counts for nothing, whatever its cutoff and reso (55)
+    let on = p.filter[abs] != engine::filter::FilterKind::Off;
+    add(on, W::Filter);
+    add(on && p.cutoff_hz[abs] != pads::CUTOFF_DEFAULT, W::Cutoff);
+    add(on && p.reso[abs] != 0, W::Reso);
+    let part = p.source(abs) != pads::Source::All;
+    for w in [W::Source, W::Start, W::End] {
+        add(part, w);
+    }
+    add(p.drive[abs] != 0, W::Drive);
+    add(p.sends[abs][0] != 0, W::Send1);
+    add(p.sends[abs][1] != 0, W::Send2);
+    out
+}
+
+/// The mark at the end of a pad's mode line (77): `✱` when the pad has settings the line
+/// does not show already: pitch, envelope, filter on, drive, sends. Not the volume, the
+/// mode, the group (on the line) or the source (a slice shows in the name).
+pub(super) fn pad_glyphs(changed: &[tui::PadParam]) -> String {
+    use tui::PadParam as W;
+    let more = [
+        W::Pitch,
+        W::Attack,
+        W::Decay,
+        W::Release,
+        W::Pan,
+        W::Hold,
+        W::Curve,
+        W::Velocity,
+        W::Filter,
+        W::Cutoff,
+        W::Reso,
+        W::Drive,
+        W::Send1,
+        W::Send2,
+    ];
+    if more.iter().any(|w| changed.contains(w)) {
+        "✱".into()
+    } else {
+        String::new()
+    }
+}
+
+pub(super) fn pads_view(
+    p: &mut pads::Pads,
+    pickup: Option<String>,
+    in_hand: Option<usize>,
+    out_wave: Vec<f32>,
+    splash: Option<tui::Splash>,
+    rate: u32,
+) -> tui::Pads {
+    let pads = (0..PADS_PER_BANK)
+        .map(|i| {
+            let abs = p.bank * PADS_PER_BANK + i;
+            let changed = pad_changes(p, abs);
+            tui::PadView {
+                naming: false,
+                empty: p.file[abs].is_none(),
+                glyphs: pad_glyphs(&changed),
+                pitch_gate: pitch_gate(p, abs),
+                changed,
+                dim: false,
+                dashed: false,
+                source: source_word(p.source(abs)),
+                bounds: p.sound[abs].as_ref().map_or((0.0, 0.0), |s| {
+                    let r = p.region[abs];
+                    let secs = |f: usize| f.min(s.len()) as f32 / rate.max(1) as f32;
+                    (secs(r.start), secs(r.end))
+                }),
+                wave: p.wave(abs, rate, BIG_COLS),
+                key: PAD_KEYS[i],
+                name: p.file[abs]
+                    .as_ref()
+                    .map_or("—".into(), |_| pad_name(p, abs)),
+                detail: Some(match p.file[abs].as_deref() {
+                    None => format!("empty · test tone {}", test_tone_name(abs)),
+                    Some(f) => format!("{} · {}", file_name(f), source_word(p.source(abs))),
+                }),
+                missing: p.missing[abs],
+                loading: p.loading[abs],
+                in_hand: in_hand == Some(abs),
+                marked: p.marked.contains(&abs),
+                note: None,
+                gate: p.gate[abs],
+                volume_db: p.volume_db[abs] as f32,
+                pitch: p.pitch[abs],
+                shape: pad_shape_view(p, abs),
+                attack_ms: p.attack_ms[abs],
+                decay_ms: p.decay_ms[abs],
+                release_ms: p.release_ms[abs],
+                group: p.group[abs],
+                filter: [
+                    pads::kind_name(p.filter[abs]).into(),
+                    pads::cutoff_text(p.cutoff_hz[abs]),
+                    format!("{} %", p.reso[abs]),
+                ],
+                flash: p.held[abs] || p.hit_at[abs].is_some_and(|t| t.elapsed() < HIT_FLASH),
+            }
+        })
+        .collect();
+    // the FX block of the selected pad (56): each send names the kind of its slot
+    let sel = p.bank * PADS_PER_BANK + p.selected;
+    let fx = [pads::Param::Drive, pads::Param::Send1, pads::Param::Send2]
+        .into_iter()
+        .map(|w| {
+            let mut value = p.fx_text(sel, w);
+            if let Some(k) = [pads::Param::Send1, pads::Param::Send2]
+                .iter()
+                .position(|s| *s == w)
+            {
+                value = format!("{value}  {}", pads::kind_word(p.fx[k].kind));
+            }
+            (tui_param(w), label8(p.name(w)), value)
+        })
+        .collect();
+    tui::Pads {
+        feedback: tui::PadFeedback::default(),
+        source: None,
+        pattern: None,
+        overview: None,
+        playing: false,
+        fx,
+        bank: p.bank,
+        pads,
+        selected: p.selected,
+        pickup,
+        param: tui_param(p.param),
+        scope: p.scope_name(),
+        bank_fill: bank_fill(p),
+        bank_marks: bank_marks(p),
+        bank_pattern: tui::BankPattern::default(),
+        out_wave,
+        splash,
+        big: big_view(p, rate),
+        curve: None,
+        learn: Vec::new(),
+        edit: None,
+        pages: Vec::new(),
+        knobs: Vec::new(),
+        lit: None,
+        hidden: false,
+        edit_key: String::new(),
+        slot: None,
+    }
+}
+
+/// The piece of the selected pad with the pad's envelope over it, or nothing when the
+/// pad is empty.
+pub(super) fn big_view(p: &pads::Pads, rate: u32) -> Option<tui::BigView> {
+    let abs = p.bank * PADS_PER_BANK + p.selected;
+    // an empty pad plays its test tone: the edit shows that piece (98h)
+    let tone;
+    let (sound, region) = match p.sound[abs].as_deref() {
+        Some(sound) => (sound, p.region[abs]),
+        None => {
+            tone = Sample::mono(engine::test_tone(rate, abs));
+            (&tone, Region::WHOLE)
+        }
+    };
+    let envelope = p.display_envelope(abs);
+    let (wave, env, dur_ms) = pads::piece(sound, region, rate, envelope, BIG_COLS);
+    let share = |ms: u16| f32::from(ms) / dur_ms.max(1.0);
+    Some(tui::BigView {
+        wave,
+        env,
+        attack: share(p.attack_ms[abs]).min(1.0),
+        decay: share(p.decay_ms[abs]).min(1.0),
+        release: share(p.release_ms[abs]),
+        timed: envelope
+            .timed()
+            .then_some((share(envelope.hold_ms), envelope.exponential)),
+    })
+}
+
+/// The pad's envelope as a multiplier over the piece, one value per column: attack
+/// fades in over the first `attack_ms`, decay dies into silence over the last
+/// `decay_ms` — the same ramps the audio voice follows.
+pub(super) fn env_curve(dur_ms: f32, attack_ms: u16, decay_ms: u16, cols: usize) -> Vec<f32> {
+    (0..cols)
+        .map(|c| {
+            let t = (c as f32 + 0.5) / cols.max(1) as f32;
+            let at = if attack_ms == 0 {
+                1.0
+            } else {
+                (t * dur_ms / f32::from(attack_ms)).min(1.0)
+            };
+            let de = if decay_ms == 0 {
+                1.0
+            } else {
+                ((1.0 - t) * dur_ms / f32::from(decay_ms)).min(1.0)
+            };
+            at * de
+        })
+        .collect()
+}
+
+pub(super) fn tui_param(p: pads::Param) -> tui::PadParam {
+    match p {
+        pads::Param::Volume => tui::PadParam::Volume,
+        pads::Param::Pitch => tui::PadParam::Pitch,
+        pads::Param::Group => tui::PadParam::Group,
+        pads::Param::Attack => tui::PadParam::Attack,
+        pads::Param::Decay => tui::PadParam::Decay,
+        pads::Param::Release => tui::PadParam::Release,
+        pads::Param::Source => tui::PadParam::Source,
+        pads::Param::Start => tui::PadParam::Start,
+        pads::Param::End => tui::PadParam::End,
+        pads::Param::Filter => tui::PadParam::Filter,
+        pads::Param::Cutoff => tui::PadParam::Cutoff,
+        pads::Param::Reso => tui::PadParam::Reso,
+        pads::Param::Drive => tui::PadParam::Drive,
+        pads::Param::Send1 => tui::PadParam::Send1,
+        pads::Param::Send2 => tui::PadParam::Send2,
+        pads::Param::Fx1Kind => tui::PadParam::Fx1Kind,
+        pads::Param::Fx1A => tui::PadParam::Fx1A,
+        pads::Param::Fx1B => tui::PadParam::Fx1B,
+        pads::Param::Fx2Kind => tui::PadParam::Fx2Kind,
+        pads::Param::Fx2A => tui::PadParam::Fx2A,
+        pads::Param::Fx2B => tui::PadParam::Fx2B,
+        pads::Param::Fx1Return => tui::PadParam::Fx1Return,
+        pads::Param::Fx2Return => tui::PadParam::Fx2Return,
+        pads::Param::Pan => tui::PadParam::Pan,
+        pads::Param::FineTune => tui::PadParam::FineTune,
+        pads::Param::Velocity => tui::PadParam::Velocity,
+        pads::Param::Curve => tui::PadParam::Curve,
+        pads::Param::Hold => tui::PadParam::Hold,
+    }
+}
+
+pub(super) fn pad_shape_view(pads: &pads::Pads, abs: usize) -> tui::PadShapeView {
+    let shape = pads.play_shape(abs);
+    tui::PadShapeView {
+        pan: shape.pan,
+        cents: shape.cents,
+        hold_ms: shape.hold_ms,
+        exponential: shape.exponential,
+        velocity_db: shape.velocity_db,
     }
 }

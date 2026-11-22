@@ -230,9 +230,7 @@ impl Stats {
                 slot.frame.store(voice.pos, SeqCst);
                 slot.start.store(voice.pos0, SeqCst);
                 slot.end.store(voice.end, SeqCst);
-                let fade = voice.fade.map_or(1.0, |remaining| {
-                    voice.fade_gain * remaining as f32 / voice.fade_total.max(1) as f32
-                });
+                let fade = voice.fade.map_or(1.0, |left| voice.fade_level(left));
                 let level = voice.env * voice.velocity * fade;
                 slot.level.store(level.to_bits(), SeqCst);
                 slot.started.store(voice.started, SeqCst);

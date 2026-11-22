@@ -19,6 +19,7 @@ enum Mode {
     Filter,
     Source,
     Sends,
+    SoundEdit,
     Bounds,
     Fx2,
     Mark,
@@ -126,6 +127,7 @@ impl Mode {
         Self::Filter,
         Self::Source,
         Self::Sends,
+        Self::SoundEdit,
         Self::Bounds,
         Self::Fx2,
         Self::Mark,
@@ -233,6 +235,7 @@ impl Mode {
             Self::Filter => "edit-filter",
             Self::Source => "edit-source",
             Self::Sends => "edit-fx",
+            Self::SoundEdit => "edit-sound",
             Self::Bounds => "edit-bounds",
             Self::Fx2 => "fx-2",
             Self::Mark => "mark",
@@ -367,6 +370,7 @@ impl Mode {
             | Self::Filter
             | Self::Source
             | Self::Sends
+            | Self::SoundEdit
             | Self::PitchGateOff
             | Self::PitchGateA1
             | Self::PitchGateSource
@@ -732,6 +736,18 @@ fn fixture(case: Case, now: Instant) -> App {
                 Mode::Source => pads::Param::Source,
                 Mode::Sends => pads::Param::Drive,
                 _ => pads::Param::Volume,
+            };
+        }
+        Mode::SoundEdit => {
+            app.edit = true;
+            app.pads.param = pads::Param::FineTune;
+            let abs = app.pads.selected_abs();
+            app.pads.shape[abs] = session::PadShape {
+                pan: -25,
+                cents: -12,
+                hold_ms: 80,
+                exponential: true,
+                velocity_db: Some(30),
             };
         }
         Mode::Bounds => app.edit = true,
@@ -1638,6 +1654,11 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("Save failed");
         }
         Mode::Tone | Mode::Envelope | Mode::Filter | Mode::Source | Mode::Sends => require("EDIT"),
+        Mode::SoundEdit => {
+            require("SOUND");
+            require("-12 ct");
+            require("30 dB");
+        }
         Mode::Bounds => {
             require("EDIT · BOUNDS");
             require("─ SLICE");
@@ -3902,6 +3923,97 @@ L="none"
                     .any(|row| row.contains("return") && row.contains("100 %")),
                 "{rows:?}"
             );
+        }
+    }
+
+    /// Scenario "Sound shape values fit on both terminal sizes".
+    #[test]
+    fn sound_shape_values_fit_on_both_terminal_sizes() {
+        for size in SIZES {
+            for smc in [false, true] {
+                let at = Instant::now();
+                let case = Case {
+                    screen: Screen::Pads,
+                    mode: Mode::Normal,
+                    size,
+                };
+                let mut app = fixture(case, at);
+                if smc {
+                    fixture_smc_knob_strip(&mut app, at);
+                    let port = "SMC-PAD-Master offline";
+                    let (producer, _consumer) = rtrb::RingBuffer::new(4);
+                    let project = Arc::new(engine::rt::ProjectState::default());
+                    let shared = Arc::new(midi::Shared::default());
+                    app.publish_midi(&shared);
+                    let (midi, worker) = midi::Midi::recorded(
+                        app.profiles.clone(),
+                        producer,
+                        project.clone(),
+                        shared,
+                    );
+                    midi.recorded_connect(port);
+                    midi.recorded_smc_setup();
+                    midi.recorded_bytes_at(port, &[0x99, 48, 100], &project, at);
+                    midi.recorded_fence();
+                    for event in midi.events.try_iter() {
+                        app.input_sources.observe(&event, at);
+                    }
+                    assert!(app.input_sources.last_is_smc());
+                    drop(midi);
+                    worker.join().unwrap();
+                }
+                app.edit = true;
+                app.pads.param = pads::Param::FineTune;
+                let abs = app.pads.selected_abs();
+                app.pads.shape[abs] = session::PadShape {
+                    pan: -100,
+                    cents: -12,
+                    hold_ms: 2000,
+                    exponential: true,
+                    velocity_db: Some(30),
+                };
+                let rows = drawn_rows(case, app, at);
+                let fine = if smc {
+                    "PAD BANK+E5: 1 ct"
+                } else {
+                    "Shift: 1 ct"
+                };
+                let back = if smc {
+                    "PAD BANK + 1 close"
+                } else {
+                    "Esc back"
+                };
+                for expected in [
+                    "SOUND",
+                    "L 100 %",
+                    "fine tune",
+                    "-12 ct",
+                    "velocity  30 dB",
+                    "exponential",
+                    fine,
+                    back,
+                ] {
+                    assert!(
+                        rows.iter().any(|row| row.contains(expected)),
+                        "{size:?} {smc} {expected}: {rows:?}"
+                    );
+                }
+
+                let mut app = fixture(case, at);
+                if smc {
+                    fixture_smc_knob_strip(&mut app, at);
+                }
+                app.edit = true;
+                app.pads.param = pads::Param::Hold;
+                let abs = app.pads.selected_abs();
+                app.pads.shape[abs].hold_ms = 2000;
+                let rows = drawn_rows(case, app, at);
+                assert!(
+                    rows.iter()
+                        .any(|row| row.contains("hold") && row.contains("2000 ms")),
+                    "{size:?} {smc} {rows:?}"
+                );
+            }
         }
     }
 

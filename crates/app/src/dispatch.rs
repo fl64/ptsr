@@ -2488,15 +2488,26 @@ impl App {
                     }
                     Param::PadPitch => {
                         let abs = self.pads.selected_abs();
-                        (
-                            self.pads.pitch_pos(),
-                            abs as u64,
-                            format!("{:+} st", self.pads.pitch[abs]),
-                        )
+                        (self.pads.pitch_pos(), abs as u64, self.pads.pitch_text(abs))
                     }
                     Param::MasterVolume => {
                         let pos = (self.master_db - pads::MIN_DB) as f32 / span;
                         (pos, u64::MAX, format!("{:+} dB", self.master_db))
+                    }
+                    Param::PadShape(i) => {
+                        let Some(&p) = pads::SHAPE_PARAMS
+                            .get(i as usize)
+                            .filter(|_| self.screen == Screen::Pads)
+                        else {
+                            return;
+                        };
+                        let abs = self.pads.selected_abs();
+                        let tag = (p as u64 + 1) << 40;
+                        (
+                            self.pads.shape_pos(abs, p),
+                            tag | abs as u64,
+                            self.pads.shape_text(abs, p),
+                        )
                     }
                     Param::PadAttack | Param::PadDecay | Param::PadRelease => {
                         let p = pad_env(param);
@@ -2586,6 +2597,18 @@ impl App {
                             self.dirty();
                         }
                     }
+                    (Ok(v), Param::PadShape(i)) => {
+                        let p = pads::SHAPE_PARAMS[i as usize];
+                        self.pickup = None;
+                        self.lit = Some((Lit::Pad(p), now));
+                        let cmds = self.pads.set_shape_pos(p, v);
+                        if !cmds.is_empty() {
+                            for cmd in cmds {
+                                self.send(cmd);
+                            }
+                            self.dirty();
+                        }
+                    }
                     (Ok(v), Param::PadAttack | Param::PadDecay | Param::PadRelease) => {
                         let p = pad_env(param);
                         self.pickup = None;
@@ -2636,7 +2659,8 @@ impl App {
                             | Param::PadRelease
                             | Param::PadFilter
                             | Param::PadCutoff
-                            | Param::PadReso => self.pickup = Some((hint, now)),
+                            | Param::PadReso
+                            | Param::PadShape(_) => self.pickup = Some((hint, now)),
                             // the master hint is needed on every screen, not only on the pads one
                             Param::MasterVolume => {
                                 self.post_notice(Level::Info, (format!("Master: {hint}"), now))
@@ -3010,7 +3034,8 @@ impl App {
                 | Param::PadSource
                 | Param::PadStart
                 | Param::PadEnd
-                | Param::PadEffect(_)),
+                | Param::PadEffect(_)
+                | Param::PadShape(_)),
             ) if matches!(self.screen, Screen::Pads | Screen::Fx) => {
                 let selected = match param {
                     Param::PadVolume => pads::Param::Volume,
@@ -3020,6 +3045,10 @@ impl App {
                     Param::PadSource => pads::Param::Source,
                     Param::PadStart => pads::Param::Start,
                     Param::PadEnd => pads::Param::End,
+                    Param::PadShape(i) => match pads::SHAPE_PARAMS.get(i as usize) {
+                        Some(p) => *p,
+                        None => return,
+                    },
                     Param::PadEffect(i) => match EFFECT_PARAMS.get(i as usize) {
                         Some(p) => *p,
                         None => return,
@@ -3036,7 +3065,7 @@ impl App {
                 for _ in 0..steps.unsigned_abs() {
                     let action = Action::EditValue {
                         up: right,
-                        fine: true,
+                        fine: selected != pads::Param::FineTune || fine,
                     };
                     if self.screen == Screen::Fx {
                         let commands = self.pads.apply(action);
@@ -3227,6 +3256,14 @@ impl App {
                     Action::PatternClear
                 }
                 action => action,
+            }
+        } else if self.screen == Screen::Pads
+            && self.pads.param == pads::Param::FineTune
+            && let Action::EditValue { up, .. } = action
+        {
+            Action::EditValue {
+                up,
+                fine: k.modifiers.contains(event::KeyModifiers::SHIFT),
             }
         } else {
             action

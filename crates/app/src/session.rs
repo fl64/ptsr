@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use engine::pad_shape::{DEFAULT_VELOCITY_DB, Shape, VELOCITY_LIMIT_DB};
 use serde::{Deserialize, Serialize};
 
 /// Bumped when the format changes; an older file is migrated, a newer one is refused.
@@ -38,6 +39,9 @@ pub struct Session {
     /// Pad index (0..128) as text, TOML keys are strings; pads at defaults are left out.
     #[serde(default)]
     pub pads: BTreeMap<String, PadState>,
+    /// Missing in older projects, whose pads use linear velocity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad_velocity_db: Option<u8>,
     /// Master volume; absent in older sessions, which reads as 0 dB.
     #[serde(default)]
     pub master_db: i8,
@@ -160,6 +164,7 @@ impl Default for Session {
             patterns: Vec::new(),
             browser_dir: None,
             pads: BTreeMap::new(),
+            pad_velocity_db: Some(DEFAULT_VELOCITY_DB),
             master_db: 0,
             chops: BTreeMap::new(),
             bank: 0,
@@ -189,6 +194,8 @@ pub struct PadState {
     pub attack_ms: u16,
     pub decay_ms: u16,
     pub release_ms: u16,
+    #[serde(flatten)]
+    pub shape: PadShape,
     /// The pad filter (44): `low-pass`, `high-pass`, `band`; absent or empty is off, so
     /// older projects open unchanged. The cutoff is absent at its default of 1 kHz.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -236,6 +243,7 @@ impl Default for PadState {
             attack_ms: 0,
             decay_ms: 0,
             release_ms: 0,
+            shape: PadShape::default(),
             filter: String::new(),
             cutoff_hz: None,
             reso: 0,
@@ -249,6 +257,60 @@ impl Default for PadState {
             epoch: None,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct PadShape {
+    #[serde(skip_serializing_if = "is_zero_i8")]
+    pub pan: i8,
+    #[serde(skip_serializing_if = "is_zero_i8")]
+    pub cents: i8,
+    #[serde(skip_serializing_if = "is_zero_u16")]
+    pub hold_ms: u16,
+    #[serde(skip_serializing_if = "is_false")]
+    pub exponential: bool,
+    /// Absent inherits the project default. Minus one explicitly keeps linear velocity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub velocity_db: Option<i8>,
+}
+
+impl PadShape {
+    pub fn with_default(self, velocity: Option<u8>) -> Shape {
+        Shape {
+            pan: self.pan,
+            cents: self.cents,
+            hold_ms: self.hold_ms,
+            exponential: self.exponential,
+            velocity_db: self
+                .velocity_db
+                .map_or(velocity, |db| u8::try_from(db).ok()),
+        }
+        .bounded()
+    }
+
+    pub fn bounded(mut self) -> Self {
+        let shape = self.with_default(None);
+        self.pan = shape.pan;
+        self.cents = shape.cents;
+        self.hold_ms = shape.hold_ms;
+        self.velocity_db = self
+            .velocity_db
+            .map(|db| db.clamp(-1, VELOCITY_LIMIT_DB as i8));
+        self
+    }
+}
+
+fn is_zero_i8(n: &i8) -> bool {
+    *n == 0
+}
+
+fn is_zero_u16(n: &u16) -> bool {
+    *n == 0
+}
+
+fn is_false(n: &bool) -> bool {
+    !n
 }
 
 fn is_zero(n: &u8) -> bool {
@@ -464,6 +526,7 @@ mod tests {
                 attack_ms: 0,
                 decay_ms: 0,
                 release_ms: 0,
+                shape: PadShape::default(),
                 filter: "band".into(),
                 cutoff_hz: Some(2_000.0),
                 reso: 40,
@@ -590,5 +653,51 @@ mod tests {
             from_stored_path(Path::new("/new/MyBeat"), &stored),
             Path::new("/new/MyBeat/samples/a.wav")
         );
+    }
+}
+
+#[cfg(test)]
+mod pad_shape_tests {
+    use super::*;
+
+    /// Scenario "Old pad playback survives a save and reopen".
+    #[test]
+    fn old_pad_playback_survives_a_save_and_reopen() {
+        let input = r#"version = 5
+pattern = "A1"
+[[patterns]]
+slot = "A1"
+bars = 1
+hits = [[0,0,64,0], [120,1,32,0]]
+[pads.0]
+file = "old.wav"
+decay_ms = 80
+"#;
+        let old: Session = toml::from_str(input).unwrap();
+        let mut pads = crate::pads::Pads::default();
+        pads.restore(&old, 48_000);
+        let legacy = Shape::default();
+        assert_eq!(pads.play_shape(0), legacy);
+        assert_eq!(pads.play_shape(1), legacy);
+        assert_eq!(pads.decay_ms[0], 80);
+        assert!(pads.first_assignment_shape(0).is_none());
+        assert!(pads.first_assignment_shape(2).is_some());
+        pads.file[2] = Some("new.wav".into());
+        pads.shape[3].velocity_db = Some(-1);
+        assert!(pads.first_assignment_shape(3).is_none());
+        let written = toml::to_string(&pads.to_session(None, 48_000)).unwrap();
+        let session: Session = toml::from_str(&written).unwrap();
+        assert_eq!(session.patterns[0].hits, old.patterns[0].hits);
+        let mut reopened = crate::pads::Pads::default();
+        reopened.restore(&session, 48_000);
+        assert_eq!(reopened.play_shape(0), legacy);
+        assert_eq!(reopened.play_shape(1), legacy);
+        assert_eq!(reopened.play_shape(2).velocity_db, Some(30));
+        assert!(reopened.first_assignment_shape(2).is_none());
+        assert!(reopened.first_assignment_shape(3).is_none());
+        assert_eq!(reopened.decay_ms[0], 80);
+
+        reopened.restore(&Session::default(), 48_000);
+        assert_eq!(reopened.play_shape(1).velocity_db, Some(30));
     }
 }

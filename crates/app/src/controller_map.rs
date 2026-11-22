@@ -560,6 +560,7 @@ impl App {
                 ])
         .then_some("B1 3–4 slice · 5–6 trim");
         tui::pads::set_smc_words(self.input_sources.last_is_smc());
+        tui::pads::set_smc_fine_hold(ready && self.midi_gestures.smc_pad_bank_opens_panel);
         Some(tui::KnobStrip {
             mode: self.mode_line(now),
             page,

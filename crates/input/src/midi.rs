@@ -173,6 +173,11 @@ pub const PARAMS: &[(&str, Param)] = &[
     ("pad.fx2_type", Param::PadEffect(6)),
     ("pad.fx2_size", Param::PadEffect(7)),
     ("pad.fx2_tone", Param::PadEffect(8)),
+    ("pad.pan", Param::PadShape(0)),
+    ("pad.fine_tune", Param::PadShape(1)),
+    ("pad.velocity", Param::PadShape(2)),
+    ("pad.curve", Param::PadShape(3)),
+    ("pad.hold", Param::PadShape(4)),
 ];
 
 /// The parameter a knob action drives.
@@ -222,6 +227,7 @@ pub enum Param {
     /// Pads edit, the FX pages (56): the n-th of drive, send 1, send 2, then the kind and
     /// the two parameters of FX 1 and of FX 2; the app knows which is which.
     PadEffect(u8),
+    PadShape(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
