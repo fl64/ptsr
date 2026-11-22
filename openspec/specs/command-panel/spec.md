@@ -152,8 +152,8 @@ The shipped actions SHALL match the table. A dash is an empty cell.
 
 | View | P5–P8 | P9–P12 | P13–P16 |
 | --- | --- | --- | --- |
-| Pads | edit pad, copy pad, chop pad, clear pad | swap pads, mark pad, mark bank, play mode | pitch gate, record output, hide pads, — |
-| Pad edit | play mode, copy pad, pitch gate, reset pad | tone page, env page, filter page, source page | fx page, —, —, — |
+| Pads | edit pad, copy pad, chop pad, clear pad | swap pads, mark pad, mark bank, play mode | pitch gate, record output, hide pads, strip view |
+| Pad edit | play mode, copy pad, pitch gate, reset pad | tone page, env page, filter page, source page | fx page, —, —, pin sample |
 | A1 | record A1, edit steps, erase hits, tap tempo | steps wider, steps finer, A1 setup, clear A1 | hide empty, —, —, — |
 | Files | load to pad, take file, listen file, chop file | star file, —, —, — | —, —, —, — |
 | Chop | cut here, cut by hits, fewer hits, equal parts | put on pads, fill pads, edit slice, trim silence | remove all cuts, loop play, play range, cursor step |
@@ -364,7 +364,7 @@ A cell whose action changes a state SHALL show the current state below its label
 
 ### Requirement: State cells and their states
 
-The panel SHALL show a state for exactly these cells, with these states.
+The panel SHALL show a state for these cells only.
 
 | Cell | States |
 | --- | --- |
@@ -375,10 +375,13 @@ The panel SHALL show a state for exactly these cells, with these states.
 | play mode | 1 shot, gate |
 | pitch gate | on, off |
 | mark pad | on, off |
+| strip view | Sound, Rhythm |
+| pin sample | on, off |
 | hide empty | shown, hidden |
 | listen file | on, off |
 | star file | on, off |
 
 #### Scenario: Every state cell shows one of its states
+
 - **WHEN** the owner holds PAD BANK on each view with a state cell
 - **THEN** each cell of the table shows one of its listed states, and no other cell shows a state
