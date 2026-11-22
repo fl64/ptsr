@@ -7,11 +7,13 @@ pub mod filter;
 pub mod fx;
 mod master;
 pub mod offline;
+pub mod pad_shape;
 pub mod pattern;
 pub mod rt;
 mod sequencer;
 pub mod transport;
 
+use pad_shape::{Pan, Shape, TimedEnvelope};
 use sequencer::Sequencer;
 
 use std::sync::Arc;
@@ -220,6 +222,10 @@ pub enum Command {
         pad: usize,
         semitones: i8,
     },
+    SetPadShape {
+        pad: usize,
+        shape: Shape,
+    },
     /// Pad envelope times in ms: attack fades in at the piece start, decay fades the
     /// tail to silence so it ends right at the piece end, release fades after a gate
     /// release. Zero attack or decay means off; zero release means the short click-free
@@ -317,6 +323,10 @@ struct Pad {
     sound_gain_from: f32,
     /// How many sample frames a voice reads per output frame: `2^(pitch/12)`.
     rate: f32,
+    pitch: i8,
+    shape: Shape,
+    pan: Pan,
+    timed: Option<TimedEnvelope>,
     /// Envelope windows in sample frames of the piece: fade-in at the start,
     /// fade-to-silence at the end; `0.0` means off.
     attack: f32,
@@ -360,6 +370,7 @@ struct Voice {
     fade_total: u32,
     /// Gain at the start of a shortened project-switch fade.
     fade_gain: f32,
+    exp_fade_tail: u32,
     /// Where the voice started in the sound: attack counts from here.
     pos0: usize,
     /// Envelope windows of the pad when the voice started, in frames.
@@ -368,6 +379,11 @@ struct Voice {
     /// Envelope gain applied right now; moves towards the position target by
     /// `env_step` per frame, so a changed envelope does not click.
     env: f32,
+    timed: Option<TimedEnvelope>,
+    age: u32,
+    env_correction: f32,
+    exponential_release: bool,
+    pan_now: [f32; 2],
     /// Fractional part of the read position, `0.0..1.0`.
     frac: f32,
     /// Read speed the voice glides to, in sample frames per output frame.
@@ -428,7 +444,7 @@ struct HeldErasureInput {
 
 pub struct Engine {
     voices: [Voice; SLOTS],
-    pads: [Pad; PADS],
+    pads: Box<[Pad; PADS]>,
     click: Arc<Sample>,
     transport: transport::Clock,
     context_paused: bool,
@@ -482,6 +498,16 @@ fn retire(garbage: &mut Option<rtrb::Producer<Retired>>, value: impl Into<Retire
     }
 }
 
+fn initial_env(attack: f32, decay: f32, frames: usize) -> f32 {
+    if attack > 0.0 {
+        0.0
+    } else if decay > 0.0 {
+        (frames as f32 / decay).clamp(0.0, 1.0)
+    } else {
+        1.0
+    }
+}
+
 fn retire_slot(
     garbage: &mut Option<rtrb::Producer<Retired>>,
     sound: &mut Option<Arc<Sample>>,
@@ -513,7 +539,7 @@ impl Engine {
         sounds.resize(PADS, last);
         Self {
             voices: std::array::from_fn(|_| Voice::default()),
-            pads: std::array::from_fn(|i| Pad {
+            pads: Box::new(std::array::from_fn(|i| Pad {
                 sound: Some(sounds[i].clone()),
                 region: Region::WHOLE,
                 mode: PadMode::OneShot,
@@ -522,6 +548,10 @@ impl Engine {
                 sound_gain: 1.0,
                 sound_gain_from: 1.0,
                 rate: 1.0,
+                pitch: 0,
+                shape: Shape::default(),
+                pan: Pan::default(),
+                timed: None,
                 attack: 0.0,
                 decay: 0.0,
                 release_frames: 0,
@@ -533,7 +563,7 @@ impl Engine {
                 group: 0,
                 pitch_gate: true,
                 linked_slice: false,
-            }),
+            })),
             click: Arc::new(Sample::mono(click)),
             transport: transport::Clock::default(),
             context_paused: false,
@@ -746,12 +776,8 @@ impl Engine {
     fn fade_all_voices(&mut self) {
         let fade_len = self.stop_fade_len();
         for v in &mut self.voices {
-            if v.sound.is_some() && v.fade.is_none_or(|f| f > fade_len) {
-                if let Some(f) = v.fade {
-                    v.fade_gain *= f as f32 / v.fade_total.max(1) as f32;
-                }
-                v.fade = Some(fade_len);
-                v.fade_total = fade_len;
+            if v.sound.is_some() {
+                v.shorten_fade(fade_len);
             }
         }
     }
@@ -813,6 +839,10 @@ impl Engine {
         p.sound_gain = 1.0;
         p.sound_gain_from = 1.0;
         p.rate = 1.0;
+        p.pitch = 0;
+        p.shape = Shape::default();
+        p.pan = Pan::default();
+        p.timed = None;
         p.attack = 0.0;
         p.decay = 0.0;
         p.release_frames = 0;
@@ -1134,20 +1164,11 @@ impl Engine {
                 self.pads[pad].sound_gain = gain.max(0.0);
             }
             Command::SetPadPitch { pad, semitones } if pad < PADS => {
-                let semitones = semitones.clamp(-PITCH_LIMIT, PITCH_LIMIT);
-                let rate = 2f32.powf(semitones as f32 / 12.0);
-                self.pads[pad].rate = rate;
-                // a sounding voice glides to the new speed, so the change does not click
-                let glide = self.glide_len;
-                for v in self
-                    .voices
-                    .iter_mut()
-                    .filter(|v| v.sound.is_some() && (v.pad == Some(pad) || v.as_pad == Some(pad)))
-                {
-                    v.rate = rate;
-                    v.rate_step = (rate - v.rate_now) / glide as f32;
-                    v.glide_left = glide;
-                }
+                self.pads[pad].pitch = semitones.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+                self.retune_pad(pad);
+            }
+            Command::SetPadShape { pad, shape } if pad < PADS => {
+                self.set_pad_shape(pad, shape);
             }
             Command::SetPadEnvelope {
                 pad,
@@ -1161,15 +1182,7 @@ impl Engine {
                 pad_state.attack = attack;
                 pad_state.decay = decay;
                 pad_state.release_frames = release;
-                // the voices pick the new windows up; the envelope gain glides, no click
-                for v in self
-                    .voices
-                    .iter_mut()
-                    .filter(|v| v.sound.is_some() && (v.pad == Some(pad) || v.as_pad == Some(pad)))
-                {
-                    v.attack = attack;
-                    v.decay = decay;
-                }
+                self.refresh_pad_envelope(pad);
             }
             Command::SetPadFilter { pad, settings } if pad < PADS => {
                 self.pads[pad].filter = filter::Target::new(settings, self.sample_rate);
@@ -1266,9 +1279,7 @@ impl Engine {
     fn manual_pad_release(&mut self, offset: usize, pad: usize) {
         let ticks = self.transport.state.ticks + offset as f64 * self.tick_step();
         self.capture.release(pad, ticks);
-        if self.pads[pad].mode == PadMode::Gate {
-            self.release_pad(pad);
-        }
+        self.release_manual_gate(pad);
     }
 
     fn fade_pad(&mut self, pad: usize) {
@@ -1299,9 +1310,8 @@ impl Engine {
                     self.sequencer.forget(v.started);
                     v.gate_release = None;
                     v.pitch_gate = false;
-                    if v.fade.is_none() {
-                        v.fade = Some(self.fade_len);
-                        v.fade_total = self.fade_len;
+                    if v.fade.is_none() || v.exp_fade_tail != 0 {
+                        v.shorten_fade(self.fade_len);
                     }
                 }
             }
@@ -1309,19 +1319,6 @@ impl Engine {
         let sound = self.pads[pad].sound.clone()?;
         let region = self.pads[pad].region;
         Some(self.start(sound, region, Some(pad), offset, velocity, false))
-    }
-
-    /// A gate release: the voices fade over the pad's release time, not the short cut.
-    fn release_pad(&mut self, pad: usize) {
-        let default_fade = self.fade_len;
-        let release = self.pads[pad].release_frames;
-        let fade = if release == 0 { default_fade } else { release };
-        for v in self.voices.iter_mut() {
-            if v.sound.is_some() && v.pad == Some(pad) && !v.sequenced && v.fade.is_none() {
-                v.fade = Some(fade);
-                v.fade_total = fade;
-            }
-        }
     }
 
     /// Envelope windows in frames of the piece; zero attack or decay means off,
@@ -1347,13 +1344,15 @@ impl Engine {
         };
         v.as_pad = Some(p);
         (v.rate, v.rate_now, v.attack, v.decay) = (rate, rate, attack, decay);
-        v.env = if attack > 0.0 {
-            0.0
-        } else if decay > 0.0 {
-            ((v.end - v.pos) as f32 / decay).clamp(0.0, 1.0)
+        v.timed = pad.timed;
+        v.env = if let Some(timed) = v.timed {
+            timed.gain(v.age)
         } else {
-            1.0
+            initial_env(attack, decay, v.end - v.pos)
         };
+        if let Some(sound) = &v.sound {
+            v.pan_now = pad.pan.gains(sound.right.is_some());
+        }
         v.filter = filter::VoiceFilter::start(target, sr);
     }
 
@@ -1398,33 +1397,35 @@ impl Engine {
             retire(&mut self.garbage, old);
         }
         let end = region.end.min(sound.len());
-        let rate = pad.map_or(1.0, |p| self.pads[p].rate);
-        let (attack, decay) = pad.map_or((0.0, 0.0), |p| (self.pads[p].attack, self.pads[p].decay));
+        let pad_state = pad.map(|p| &self.pads[p]);
+        let rate = pad_state.map_or(1.0, |p| p.rate);
+        let (attack, decay) = pad_state.map_or((0.0, 0.0), |p| (p.attack, p.decay));
         let pos = region.start.min(end);
-        // the envelope starts where the position puts it, so a voice without
-        // attack and decay enters at full level, like before the envelope existed
-        let env = if attack > 0.0 {
-            0.0
-        } else if decay > 0.0 {
-            ((end - pos) as f32 / decay).clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
+        let timed = pad_state.and_then(|p| p.timed);
+        let env = timed.map_or_else(|| initial_env(attack, decay, end - pos), |e| e.gain(0));
+        let pan_now = pad_state.map_or([1.0; 2], |p| p.pan.gains(sound.right.is_some()));
+        let velocity = self.shape_velocity(pad, velocity);
         self.voices[slot] = Voice {
             sound: Some(sound),
             pad,
             pos,
             end,
             delay: offset,
-            velocity: velocity.clamp(0.0, 1.0),
+            velocity,
             preview,
             fade: None,
             fade_total: 0,
             fade_gain: 1.0,
+            exp_fade_tail: 0,
             pos0: pos,
             attack,
             decay,
             env,
+            timed,
+            age: 0,
+            env_correction: 0.0,
+            exponential_release: pad_state.is_some_and(|p| p.shape.exponential),
+            pan_now,
             frac: 0.0,
             rate,
             rate_now: rate,
@@ -1514,6 +1515,8 @@ impl Engine {
             let (l, r) = (&sound.left, sound.right.as_ref().unwrap_or(&sound.left));
             // a preview playing as a pad takes its volume and filter (50)
             let src = v.pad.or(v.as_pad);
+            let pan = src.map_or([1.0; 2], |p| self.pads[p].pan.gains(sound.right.is_some()));
+            let panning = v.pan_now != [1.0; 2] || pan != [1.0; 2];
             let (g0, g1) = src.map_or((1.0, 1.0), |p| (self.pads[p].gain_from, self.pads[p].gain));
             let (k0, k1) = src.map_or((1.0, 1.0), |p| {
                 (self.pads[p].sound_gain_from, self.pads[p].sound_gain)
@@ -1555,19 +1558,30 @@ impl Engine {
                     };
                     (v.pos, v.pos0, v.end, v.frac) = (r.start, r.start, r.end, 0.0);
                     v.fade_in = self.fade_len;
+                    v.age = 0;
+                    v.env_correction = 0.0;
                     tail = r.end;
                 }
                 let mut g = v.velocity * (g0 + (g1 - g0) * i as f32 / n as f32);
-                // the pad envelope: attack rises from the piece start, decay dies
-                // at its end; the gain glides to the target, a change does not click
-                let mut env_target: f32 = 1.0;
-                if v.attack > 0.0 {
-                    env_target = env_target.min((v.pos - v.pos0) as f32 / v.attack);
+                if let Some(timed) = v.timed {
+                    if looping.is_none() && timed.finished(v.age) && v.env_correction == 0.0 {
+                        v.fade = Some(0);
+                        break;
+                    }
+                    v.env = (timed.gain(v.age) + v.env_correction).clamp(0.0, 1.0);
+                    v.env_correction -= v.env_correction.clamp(-env_step, env_step);
+                } else {
+                    // With no timed shape the attack and decay follow the sample position.
+                    let mut env_target: f32 = 1.0;
+                    if v.attack > 0.0 {
+                        env_target = env_target.min((v.pos - v.pos0) as f32 / v.attack);
+                    }
+                    if v.decay > 0.0 {
+                        env_target *= ((v.end - v.pos) as f32 / v.decay).clamp(0.0, 1.0);
+                    }
+                    v.env += (env_target - v.env).clamp(-env_step, env_step);
                 }
-                if v.decay > 0.0 {
-                    env_target *= ((v.end - v.pos) as f32 / v.decay).clamp(0.0, 1.0);
-                }
-                v.env += (env_target - v.env).clamp(-env_step, env_step);
+                v.age = v.age.saturating_add(1);
                 g *= v.env;
                 if tail - v.pos < self.fade_len as usize {
                     g *= (tail - v.pos) as f32 / fade_len;
@@ -1576,9 +1590,9 @@ impl Engine {
                     g *= 1.0 - v.fade_in as f32 / fade_len;
                     v.fade_in -= 1;
                 }
-                if let Some(f) = v.fade.as_mut() {
-                    g *= v.fade_gain * *f as f32 / v.fade_total.max(1) as f32;
-                    *f -= 1;
+                if let Some(f) = v.fade {
+                    g *= v.fade_level(f);
+                    v.fade = Some(f - 1);
                 }
                 // linear interpolation between the frames around the read position
                 let f = v.frac;
@@ -1599,6 +1613,12 @@ impl Engine {
                     let d = d0 + (d1 - d0) * t;
                     let drive = fixed_drive.unwrap_or_else(|| fx::Drive::new(d));
                     (sl, sr_) = (drive.apply(sl), drive.apply(sr_));
+                }
+                if panning {
+                    for (gain, target) in v.pan_now.iter_mut().zip(pan) {
+                        *gain += (target - *gain).clamp(-env_step, env_step);
+                    }
+                    (sl, sr_) = (sl * v.pan_now[0], sr_ * v.pan_now[1]);
                 }
                 if v.sequenced && !v.audible {
                     let master = self.master_from + (self.master - self.master_from) * t;
@@ -1697,7 +1717,7 @@ impl Engine {
         }
         self.begin_after_count_in();
         self.capture.expire_targets(self.transport.state.ticks);
-        for p in &mut self.pads {
+        for p in self.pads.iter_mut() {
             p.gain_from = p.gain;
             p.sound_gain_from = p.sound_gain;
             p.drive_from = p.drive;

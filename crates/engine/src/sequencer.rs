@@ -213,21 +213,10 @@ impl crate::Engine {
             / (60.0 * f64::from(self.sample_rate))
     }
 
-    fn release_voice(voice: &mut crate::Voice, kind: ReleaseKind, short: u32) {
+    fn release_voice(voice: &mut crate::Voice, kind: ReleaseKind, short: u32, tail: u32) {
         match kind {
-            ReleaseKind::Gate(frames) if voice.fade.is_none() => {
-                let frames = if frames == 0 { short } else { frames };
-                voice.fade = Some(frames);
-                voice.fade_total = frames;
-            }
-            ReleaseKind::Cut if voice.fade.is_none_or(|f| f > short) => {
-                if let Some(left) = voice.fade {
-                    voice.fade_gain *= left as f32 / voice.fade_total.max(1) as f32;
-                }
-                voice.fade = Some(short);
-                voice.fade_total = short;
-            }
-            _ => {}
+            ReleaseKind::Gate(frames) => voice.start_gate_fade(frames, short, tail),
+            ReleaseKind::Cut => voice.shorten_fade(short),
         }
     }
 
@@ -237,7 +226,12 @@ impl crate::Engine {
             .iter_mut()
             .find(|v| v.started == release.note && v.sequenced && v.sound.is_some())
         {
-            Self::release_voice(v, release.kind, self.fade_len);
+            Self::release_voice(
+                v,
+                release.kind,
+                self.fade_len,
+                crate::pad_shape::tail_frames(self.sample_rate),
+            );
         }
     }
 
@@ -252,7 +246,12 @@ impl crate::Engine {
                 v.gate_release.map(ReleaseKind::Gate)
             };
             if let Some(kind) = kind {
-                Self::release_voice(v, kind, self.fade_len);
+                Self::release_voice(
+                    v,
+                    kind,
+                    self.fade_len,
+                    crate::pad_shape::tail_frames(self.sample_rate),
+                );
             }
             v.gate_release = None;
             v.pitch_gate = false;
