@@ -5231,3 +5231,51 @@ fn the_trim_knob_names_its_edge() {
         .smc_knob_detail("e5", Some("chop.region_start_pos"));
     assert_eq!(detail.as_deref(), Some("B1 K5 · trim start"));
 }
+
+/// Scenario "Click level changes independently".
+#[test]
+fn click_level_changes_independently() {
+    let mut keyboard = hold_drive();
+    let mut controller = hold_drive();
+    let root = std::env::temp_dir().join(format!("ptsr-click-level-{}", std::process::id()));
+    let keyboard_config = root.join("keyboard.toml");
+    let controller_config = root.join("controller.toml");
+    for (drive, config) in [
+        (&mut keyboard, &keyboard_config),
+        (&mut controller, &controller_config),
+    ] {
+        drive.app.user_path = Some(config.clone());
+        assert_eq!(drive.app.cfg.click_level, 100);
+    }
+    keyboard.tap(KeyCode::F(12), M::NONE);
+    hold(&mut controller, true);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(7));
+    hold(&mut controller, false);
+    assert_eq!(controller.app.screen, Screen::Settings);
+    assert_eq!(keyboard.app.settings_tab, 0);
+    assert_eq!(controller.app.settings_tab, 0);
+    let transport = (keyboard.app.transport.bpm, keyboard.app.transport.metronome);
+    let master = keyboard.app.master_db;
+    for _ in 0..4 {
+        keyboard.tap(KeyCode::Down, M::NONE);
+        turn(&mut controller, 30, 65);
+    }
+    assert_eq!(keyboard.app.settings_row, 4);
+    assert_eq!(controller.app.settings_row, 4);
+    keyboard.tap(KeyCode::Left, M::NONE);
+    turn(&mut controller, 31, 63);
+    for (drive, config) in [
+        (&keyboard, &keyboard_config),
+        (&controller, &controller_config),
+    ] {
+        assert_eq!(drive.app.cfg.click_level, 95);
+        assert_eq!(config::load_from(config).config.audio.click_level, 95);
+        assert_eq!(
+            (drive.app.transport.bpm, drive.app.transport.metronome),
+            transport
+        );
+        assert_eq!(drive.app.master_db, master);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

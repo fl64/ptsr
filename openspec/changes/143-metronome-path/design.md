@@ -12,14 +12,15 @@ The probe used a separate PipeWire server with a virtual output. An outside sour
 
 | Case | Expected result | Status |
 | --- | --- | --- |
-| Change the click level while playing | Sound level changes without a step. Beat position stays put. | Planned |
-| Use the click with an empty project | The output carries the click. The master meter is at zero. | Planned |
-| Start or stop an outside source during a take | The capture follows its connection to the selected output. | Planned |
-| Lose the selected output during a take | Keep the recorded part and show the reason. | Planned |
-| Record on a mono output | Keep the selected output mix without adding the same outside source twice. | Planned |
-| Start an A1 count-in or use Panic | The count-in goes to the device. Panic still stops the device sound. | Planned |
+| Change the click level while playing | Sound level changes without a step. Beat position stays put. | Gain and beat tests pass |
+| Use the click with an empty project | The output carries the click. The master meter is at zero. | Master meter test passes |
+| Start or stop an outside source during a take | The capture follows its connection to the selected output. | Link changes and isolated graph probe pass |
+| Lose the selected output during a take | Keep the recorded part and show the reason. | Take handoff test passes |
+| Record on a mono output | Keep the selected output mix without adding the same outside source twice. | Mono mix test passes |
+| Start an A1 count-in or use Panic | The count-in goes to the device. Panic still stops the device sound. | Count-in and Panic tests pass |
 
 ## Open questions
 
 - Default click level: use 100 percent of the current click at unity master gain.
 - Settings scope: store the level in Audio settings for all projects.
+- Level step: change it by 5 percentage points per key press or encoder step.

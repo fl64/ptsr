@@ -1460,7 +1460,7 @@ fn render_app_layers(
                 playhead: None,
             }),
             Screen::Settings => tui::Screen::Settings(tui::Settings {
-                row: 0,
+                row: app.settings_row,
                 graphics: false,
                 output: Some("Offline fixture output"),
                 output_missing: None,
@@ -1469,6 +1469,8 @@ fn render_app_layers(
                 input_level: 0.25,
                 buffer_size: 128,
                 buffer_choice: 128,
+                click_level: app.cfg.click_level,
+                click_encoder: app.click_encoder_available(),
                 routing: true,
                 backend_jack: true,
                 tab: app.settings_tab,
@@ -1912,6 +1914,40 @@ fn check_frame(case: Case, buffer: &Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Scenario "Audio help names the click level controls".
+    #[test]
+    fn audio_help_names_the_click_level_controls() {
+        for size in SIZES {
+            for smc in [false, true] {
+                let case = Case {
+                    screen: Screen::Settings,
+                    mode: Mode::Normal,
+                    size,
+                };
+                let at = Instant::now();
+                let mut app = fixture(case, at);
+                app.settings_row = 4;
+                app.cfg.click_level = 55;
+                if smc {
+                    fixture_smc_knob_strip(&mut app, at);
+                }
+                let rows = drawn_rows(case, app, at);
+                assert!(
+                    rows.iter()
+                        .any(|r| r.contains("▸ click level") && r.contains("55 %")),
+                    "{rows:?}"
+                );
+                assert!(rows.iter().any(|r| r.contains("change")), "{rows:?}");
+                assert_eq!(
+                    rows.iter()
+                        .any(|r| r.contains("SMC-PAD E2 changes the level")),
+                    smc,
+                    "{rows:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn smc_pad_bank_setting_fits_both_sizes() {

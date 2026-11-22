@@ -31,10 +31,16 @@ None.
 
 ### SMC-PAD
 
-1. Open the Settings screen from the panel. Select the Audio tab.
+1. Hold PAD BANK and press LEFT, then P11 Setup. Release PAD BANK. Select Audio.
 2. Turn E1 to Click level. Turn E2 to change it. Start the click with a PLAY hold.
-3. Start output recording through the panel. Play a pad and stop the recording. Play it back.
+3. On Pads, start output recording with P14. Play a pad and use STOP. Play the take.
+
+### Screens
+
+Check `renders/screens/settings-normal-80x26.ansi` and
+`renders/screens/settings-normal-120x40.ansi` for the click level.
 
 ### Sound
 
-Compare the local monitor and record WAVs. Both have the test pad. Only the monitor has the click.
+Compare `renders/143-metronome-monitor.wav` and `renders/143-metronome-record.wav`.
+Both have the pad and the outside source. Only the monitor has the click.

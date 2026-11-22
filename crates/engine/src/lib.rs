@@ -286,6 +286,9 @@ pub enum Command {
     SetMasterGain {
         gain: f32,
     },
+    SetMetronomeGain {
+        gain: f32,
+    },
     /// Two pads trade their sample, mode and volume; their sounding voices fade out.
     SwapPads {
         a: usize,
@@ -431,6 +434,8 @@ pub struct Engine {
     pattern_hits: [u64; PADS],
     metro_pos: Option<usize>,
     metro_velocity: f32,
+    metro_gain: f32,
+    metro_gain_target: f32,
     master: f32,
     /// Master gain at the start of the block: ramps to `master` within the block.
     master_from: f32,
@@ -532,6 +537,8 @@ impl Engine {
             pattern_hits: [0; PADS],
             metro_pos: None,
             metro_velocity: 1.0,
+            metro_gain: 1.0,
+            metro_gain_target: 1.0,
             master: 1.0,
             master_from: 1.0,
             fade_len: ((sample_rate as f32 * FADE_SECONDS) as u32).max(1),
@@ -1158,6 +1165,11 @@ impl Engine {
             Command::SetPadSound { sound: Some(s), .. } => retire(&mut self.garbage, s),
             Command::SetPadRegion { pad, region } if pad < PADS => self.pads[pad].region = region,
             Command::SetMasterGain { gain } => self.master = gain.max(0.0),
+            Command::SetMetronomeGain { gain } => {
+                if gain.is_finite() {
+                    self.metro_gain_target = gain.clamp(0.0, 1.0);
+                }
+            }
             Command::SwapPads { a, b } if a < PADS && b < PADS => {
                 self.fade_pad(a);
                 self.fade_pad(b);
@@ -1405,20 +1417,45 @@ impl Engine {
     /// Fills a block. Any block length; left and right have the same length. A block
     /// longer than the send buses is filled in parts.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_with_master(left, right, |_, _, _| {});
+    }
+
+    /// Give the caller each master block before adding the monitor click to the device output.
+    pub fn process_with_master(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        mut master: impl FnMut(usize, &[f32], &[f32]),
+    ) {
         self.poll_erasure_releases();
         if !self.switch_reset {
             self.advance_tail_clear();
         }
         let n = left.len().min(right.len());
+        let mut cue = [0.0; BUS_FRAMES];
         let mut at = 0;
         while at < n {
             let end = (at + BUS_FRAMES).min(n);
-            self.process_part(&mut left[at..end], &mut right[at..end]);
+            let (left, right) = (&mut left[at..end], &mut right[at..end]);
+            let cue = &mut cue[..end - at];
+            self.process_part(left, right, cue);
+            master(at, left, right);
+            for ((l, r), &click) in left.iter_mut().zip(right.iter_mut()).zip(cue.iter()) {
+                *l += click;
+                *r += click;
+            }
             at = end;
         }
     }
 
-    fn mix_span(&mut self, left: &mut [f32], right: &mut [f32], start: usize, end: usize) {
+    fn mix_span(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        cue: &mut [f32],
+        start: usize,
+        end: usize,
+    ) {
         let n = left.len();
         let bus = &mut self.bus[..n];
         let fade_len = self.fade_len as f32;
@@ -1570,7 +1607,10 @@ impl Engine {
         } else {
             &mut self.transport
         };
-        for i in start..end {
+        let gain_step = 1.0 / self.fade_len as f32;
+        for (i, click) in cue.iter_mut().enumerate().take(end).skip(start) {
+            let change = self.metro_gain_target - self.metro_gain;
+            self.metro_gain += change.max(-gain_step).min(gain_step);
             if let Some(velocity) = clock.frame(self.sample_rate as f64) {
                 self.metro_pos = Some(0);
                 self.metro_velocity = velocity;
@@ -1580,9 +1620,7 @@ impl Engine {
                     let fade = self.tail_fade.map_or(1.0, |f| {
                         f.saturating_sub(i as u32) as f32 / self.fade_len as f32
                     });
-                    let value = sample * self.metro_velocity * fade;
-                    left[i] += value;
-                    right[i] += value;
+                    *click = sample * self.metro_velocity * self.metro_gain * fade;
                     self.metro_pos = Some(pos + 1);
                 } else {
                     self.metro_pos = None;
@@ -1591,11 +1629,12 @@ impl Engine {
         }
     }
 
-    fn process_part(&mut self, left: &mut [f32], right: &mut [f32]) {
+    fn process_part(&mut self, left: &mut [f32], right: &mut [f32], cue: &mut [f32]) {
         let n = left.len().min(right.len());
         let (left, right) = (&mut left[..n], &mut right[..n]);
         left.fill(0.0);
         right.fill(0.0);
+        cue.fill(0.0);
         self.bus[..n].fill([0.0; 2 * FX_SLOTS]);
         let mut at = 0;
         while at < n {
@@ -1609,7 +1648,7 @@ impl Engine {
                 ));
             }
             let end = at + span;
-            self.mix_span(left, right, at, end);
+            self.mix_span(left, right, cue, at, end);
             at = end;
         }
         self.begin_after_count_in();

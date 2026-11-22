@@ -1,5 +1,47 @@
 use super::*;
 
+/// Audio settings screen (F12).
+pub struct Settings<'a> {
+    /// Selected audio row: output, input, buffer, wave or click level. Paths has 0 projects,
+    /// 1 samples.
+    pub row: usize,
+    /// The waves are drawn as kitty pictures from the next start (04b); Braille otherwise.
+    pub graphics: bool,
+    /// Device the audio actually goes to.
+    pub output: Option<&'a str>,
+    /// Saved choice that is not among the devices now.
+    pub output_missing: Option<&'a str>,
+    pub input: Option<&'a str>,
+    pub input_missing: Option<&'a str>,
+    /// Input peak, 0..1.
+    pub input_level: f32,
+    /// The actual buffer size the server runs.
+    pub buffer_size: u32,
+    /// The saved choice: 0 = auto (follow the server), else a fixed size.
+    pub buffer_choice: u32,
+    pub click_level: u8,
+    pub click_encoder: bool,
+    /// Device choice is available (JACK); not in cpal mode.
+    pub routing: bool,
+    /// The config asks for JACK: no routing then means JACK is down, not a wrong backend.
+    pub backend_jack: bool,
+    /// 0 audio, 1 input (MIDI devices and the input debug log), 2 MIDI, 3 paths (11).
+    pub tab: usize,
+    /// Connected MIDI devices: "port (profile)".
+    pub midi_devices: &'a [String],
+    /// Latest input events, newest last.
+    pub input_log: &'a [String],
+    /// MIDI tab: the groups with their actions under the open ones.
+    pub midi_rows: &'a [MidiRow],
+    pub midi_row: usize,
+    /// The ready line about waiting for a control: a single learn or a run (28).
+    pub learning: Option<&'a str>,
+    /// Paths tab (11): the two roots as shown, `~`-shortened.
+    pub paths: Option<(&'a str, &'a str)>,
+    /// Paths tab (11): the open folder picker replaces the tab rows while it is open.
+    pub picker: Option<PathPickerView>,
+}
+
 pub(super) fn draw(frame: &mut Frame, area: Rect, st: &Settings, s: &Status) {
     let [header, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
     let heading = title(
@@ -257,5 +299,12 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
             .fg(DIM)
             .into(),
     );
+    lines.push(Line::from(vec![
+        label(4, "Click level"),
+        Span::from(format!(" ◀ {} % ▶", st.click_level)),
+    ]));
+    if st.row == 4 && st.click_encoder {
+        lines.push(" SMC-PAD E2 changes the level".fg(DIM).into());
+    }
     Paragraph::new(lines)
 }
