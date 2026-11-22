@@ -1008,6 +1008,9 @@ fn fixture(case: Case, now: Instant) -> App {
         | Mode::PatternViewHidden
         | Mode::PatternViewSafety => add_pattern_view(&mut app, case.mode),
         Mode::PatternOverviewAbsent => {
+            let (audio, mut realtime) = audio::offline(48_000);
+            realtime.process(&mut [], &mut []);
+            app.audio = Some(audio);
             app.pads.pattern = None;
             app.pattern_view.overview = true;
         }
@@ -3331,6 +3334,54 @@ L="none"
                 "{}",
                 rows[size.1 as usize - 4]
             );
+        }
+    }
+
+    /// Scenario "A1 next step preserves the screen frame".
+    #[test]
+    fn a1_next_step_preserves_the_screen_frame() {
+        let (mut keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        keymap
+            .overlay("[global]\n'Ctrl+R' = 'none'\n'Ctrl+Alt+Shift+Enter' = 'pattern.record'\n")
+            .unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewAbsent,
+                size,
+            };
+            for (mode, instruction) in [
+                (None, "Ctrl+Alt+Shift+Enter record"),
+                (Some(Mode::PatternCountIn), "Ctrl+Alt+Shift+Enter cancel"),
+                (Some(Mode::PatternRecording), "Pad Ctrl+Alt+Shift+Enter end"),
+                (Some(Mode::PatternFinishing), "Finishing A1 · wait"),
+                (Some(Mode::PatternStopped), "Space play A1"),
+            ] {
+                let now = Instant::now();
+                let mut app = fixture(case, now);
+                match mode {
+                    None => {}
+                    Some(Mode::PatternStopped) => add_pattern(&mut app, Mode::PatternStopped),
+                    Some(mode) => add_recording(&mut app, mode),
+                }
+                app.session_write_error = Some("Save refused.".into());
+                let has_steps = app.pads.pattern.is_some();
+                let (_, buffer) = render_app(case, &keymap, app, now);
+                let rows: Vec<String> = buffer
+                    .content()
+                    .chunks(size.0 as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                assert!(rows[0].contains("Save failed"), "{}", rows[0]);
+                assert!(rows[2].contains("BANKS · pads with A1 hits"), "{}", rows[2]);
+                assert!(rows[3].starts_with(instruction), "{}", rows[3]);
+                if has_steps {
+                    assert!(rows[3][instruction.len()..].contains(" 1 "), "{}", rows[3]);
+                }
+                assert!(rows[4].contains("BANK 1 / 8"), "{}", rows[4]);
+                let help = rows[size.1 as usize - 3..].join("\n");
+                assert!(help.contains("F1"), "{help}");
+            }
         }
     }
 

@@ -1814,6 +1814,90 @@ fn pattern_record_and_erase_cells_match_keyboard_modes() {
     }
 }
 
+/// Scenario "A1 guides a first recording from keyboard and SMC-PAD".
+/// Scenario "A1 offers playback only for the accepted state".
+#[test]
+fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
+    use super::patterns::app_capture_frames;
+
+    for controller in [false, true] {
+        let mut drive = if controller {
+            hold_drive()
+        } else {
+            Drive::offline()
+        };
+        let button = |drive: &mut Drive, cc| {
+            drive.bytes(SMC, &[0xB0, cc, 127]);
+            drive.frame();
+            drive.bytes(SMC, &[0xB0, cc, 0]);
+            drive.frame();
+        };
+        let record = |drive: &mut Drive| {
+            if controller {
+                button(drive, 29);
+            } else {
+                drive.tap(KeyCode::Char('r'), M::CONTROL);
+            }
+        };
+        let cue = |drive: &Drive, keyboard: &str, smc: &str| {
+            assert_eq!(
+                drive.app.pattern_overview(&drive.keymap).next.as_deref(),
+                Some(if controller { smc } else { keyboard }),
+            );
+        };
+        if controller {
+            screens_cell(&mut drive, 4);
+        } else {
+            drive.tap(KeyCode::F(5), M::NONE);
+        }
+        assert!(drive.app.pattern_view.overview);
+        cue(&drive, "Ctrl+R record A1", "RECORD record A1");
+
+        record(&mut drive);
+        cue(&drive, "Starting A1 · wait", "Starting A1 · wait");
+        app_capture_frames(&mut drive, 0);
+        cue(&drive, "Ctrl+R cancel count", "RECORD cancel count");
+        record(&mut drive);
+        app_capture_frames(&mut drive, 0);
+        drive.app.flush_audio();
+        app_capture_frames(&mut drive, 0);
+        cue(&drive, "Ctrl+R record A1", "RECORD record A1");
+
+        record(&mut drive);
+        app_capture_frames(&mut drive, 96_000);
+        cue(&drive, "Hit pads · Ctrl+R end", "Hit pads · RECORD end");
+        if controller {
+            cell(&mut drive, 48);
+        } else {
+            drive.tap(KeyCode::Char('1'), M::NONE);
+        }
+        app_capture_frames(&mut drive, 128);
+        record(&mut drive);
+        cue(&drive, "Finishing A1 · wait", "Finishing A1 · wait");
+        app_capture_frames(&mut drive, 0);
+        cue(&drive, "Finishing A1 · wait", "Finishing A1 · wait");
+        drive.app.flush_audio();
+        app_capture_frames(&mut drive, 128);
+        assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits.len(), 1);
+        cue(&drive, "Space stop A1", "STOP pause A1");
+
+        if controller {
+            button(&mut drive, 28);
+        } else {
+            drive.tap(KeyCode::Char(' '), M::NONE);
+        }
+        app_capture_frames(&mut drive, 128);
+        cue(&drive, "Space play A1", "PLAY play A1");
+        if controller {
+            button(&mut drive, 27);
+        } else {
+            drive.tap(KeyCode::Char(' '), M::NONE);
+        }
+        app_capture_frames(&mut drive, 128);
+        cue(&drive, "Space stop A1", "STOP pause A1");
+    }
+}
+
 /// Scenario "Every reachable mode shows its badge" (controller-reach).
 #[test]
 fn every_reachable_mode_shows_its_badge() {

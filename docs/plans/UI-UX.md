@@ -73,6 +73,9 @@ owner review.
 
 ### 3.1 `pattern-screen`
 
+Change 140 shows the next step of a live pass in the current A1 overview.
+The instruction follows record, count-in, finish, and playback state.
+
 Make F5 open a separate Pattern screen. Keep view and edit as
 modes inside that screen. Show `F5 PATTERN` in the title and show the active mode badge.
 Use Enter to switch between view and edit by default. Free F7 in the keymap and show a

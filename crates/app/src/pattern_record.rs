@@ -1134,6 +1134,122 @@ impl crate::App {
             .flatten()
     }
 
+    pub(super) fn overview_next_step(
+        &self,
+        keymap: &input::Keymap,
+        has_hits: bool,
+    ) -> Option<String> {
+        use input::Action;
+
+        if self.pattern_view.edit
+            || self.key_notice_blocked()
+            || self.pattern_panel.is_some()
+            || self.recording.is_some()
+            || self.erase_pads
+            || self.pattern_erasing()
+            || self.browser.in_hand.is_some()
+            || self.copy_in_hand.is_some()
+            || self.pad_in_hand.is_some()
+            || self.pads.marking
+            || !self.pads.marked.is_empty()
+        {
+            return None;
+        }
+
+        let Some(audio) = self.audio_alive() else {
+            return Some("A1 needs audio".into());
+        };
+        let Some(state) = self
+            .pattern_record_state()
+            .filter(|_| !self.restoring_project)
+        else {
+            return Some("Wait for audio".into());
+        };
+        let capture = &audio.pattern_capture;
+        if state.phase == Phase::Finishing
+            || (capture.end_requested
+                && (state.phase != Phase::Idle || capture.requested.is_some()))
+        {
+            return Some("Finishing A1 · wait".into());
+        }
+        if capture.requested.is_some() && state.phase == Phase::Idle {
+            return Some("Starting A1 · wait".into());
+        }
+
+        let binding = |action| {
+            self.help_bindings(keymap, action)
+                .into_iter()
+                .min_by_key(|key| (key != "Space", key.len()))
+        };
+        let smc = self.input_sources.last_is_smc();
+        let record = || {
+            if smc {
+                Some("RECORD".into())
+            } else {
+                binding(Action::PatternRecord)
+            }
+        };
+        // The narrow overview has at least 27 cells to the left of the grid.
+        let control_cue = |key: &str, text: &str, short: &str| {
+            let text = if key.chars().count() + 1 + text.len() <= 27 {
+                text
+            } else {
+                short
+            };
+            format!("{key} {text}")
+        };
+        let record_step = |text, short| {
+            record().map_or_else(
+                || "No record key".into(),
+                |key| control_cue(&key, text, short),
+            )
+        };
+        let playing = has_hits && self.transport_state().playing;
+        let step = match state.phase {
+            Phase::CountIn => record_step("cancel count", "cancel"),
+            Phase::Recording => {
+                let end = record_step("end", "end");
+                let pads = match end.chars().count() {
+                    0..=16 => "Hit pads · ",
+                    17..=20 => "Pads · ",
+                    _ => "Pad ",
+                };
+                format!("{pads}{end}")
+            }
+            _ if !has_hits => record_step("record A1", "record"),
+            _ if smc => if playing {
+                "STOP pause A1"
+            } else {
+                "PLAY play A1"
+            }
+            .into(),
+            _ => {
+                let context = if playing {
+                    Action::StopContext
+                } else {
+                    Action::PlayContext
+                };
+                let control = binding(Action::TransportToggle)
+                    .map(|key| (key, if playing { "stop" } else { "play" }))
+                    .or_else(|| {
+                        binding(context).map(|key| (key, if playing { "pause" } else { "play" }))
+                    });
+                control.map_or_else(
+                    || {
+                        if playing {
+                            "No stop key"
+                        } else {
+                            "No play key"
+                        }
+                        .into()
+                    },
+                    |(key, action)| control_cue(&key, &format!("{action} A1"), action),
+                )
+            }
+        };
+        Some(step)
+    }
+
     fn pattern_notice(&mut self, text: &str) {
         self.post_notice(crate::Level::Warn, (text.into(), std::time::Instant::now()));
     }
