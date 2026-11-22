@@ -2100,6 +2100,8 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
             drive.app.ui.hide_pads,
             drive.app.preview_on,
             drive.app.help_open,
+            drive.app.source_view.view_name(),
+            drive.app.source_view.pinned(&drive.app.pads),
         ),
         (
             drive.app.help_overlay.page,
@@ -2125,7 +2127,7 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// The shipped panel has 49 action cells, so this production-input matrix belongs to the slow group.
+/// The matrix compares 53 action cells through production keyboard and MIDI input, so it is slow.
 #[test]
 fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     use panel::{Config, View};
@@ -2238,7 +2240,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 51);
+    assert_eq!(checked + special, 53);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3456,7 +3458,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 51);
+    assert_eq!(checked, 53);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
