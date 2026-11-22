@@ -106,7 +106,7 @@ to bottom and the cells from left to right.
 A1 opens Pattern. Setup opens Settings. Mixer stays dim until `mixer-view`.
 Help opens Controller Help. F1 still opens Help. While the panel shows, LEFT and
 RIGHT move the views. With the panel hidden, they keep their screen roles.
-Panic uses only the double press from 93a. It has no panel cell after change 134.
+Panic uses two STOP presses with the command panel open (141).
 
 Keep related actions side by side in a physical row. Put the earlier, lower or
 negative action on the left. For questions, P1 is No and P4 is Yes (change 134).

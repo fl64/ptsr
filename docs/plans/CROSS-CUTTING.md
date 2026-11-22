@@ -42,10 +42,9 @@ One action stops all sound at once: transport stop, all voices fade out over the
 (`HushPads` exists; add the preview and the FX tails), recording stops and keeps what it has.
 
 - Keyboard: `Ctrl+.` (right half; check clashes).
-- SMC-PAD: a Panic panel cell with a question-free double press. Change 92
-  reserves its fixed place and shows it as unavailable. Change 93a sets the
-  time limit and armed state. Neither press changes the transport until the
-  second press runs Panic in 93a.
+- SMC-PAD (141): open the command panel, then press STOP twice within 500 ms.
+  The first press arms Panic and playback continues. Close the panel to cancel.
+  With the panel closed, STOP uses the current playback or recording action.
 - Notice: `! all sound stopped` (Warn).
 
 ### 2.2 A controller goes away while something is held (task in change 89 and 92)
