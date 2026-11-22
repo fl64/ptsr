@@ -22,6 +22,7 @@ impl App {
                 (!self.source_pin_available()).then(|| Grey::Why("select a loaded sample".into()))
             }
             (_, Action::Undo) => (!self.undo_waits()).then(|| Grey::Why("nothing to undo".into())),
+            (_, Action::Redo) => self.redo_refusal().map(|text| Grey::Why(text.into())),
             (View::Pads | View::PadEdit, Action::PadCopy) => (self.pads.sound[abs].is_none()
                 || self.pads.missing[abs]
                 || self.pads.loading[abs].is_some())

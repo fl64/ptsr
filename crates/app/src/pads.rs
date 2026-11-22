@@ -2465,7 +2465,10 @@ impl App {
         self.flush_audio();
         let now = Instant::now();
         let touched: Vec<usize> = pads.iter().map(|(a, _)| *a).collect();
-        if let Some(last) = self.history.last_mut()
+        let join = self.redo.is_empty();
+        self.redo.clear();
+        if join
+            && let Some(last) = self.history.last_mut()
             && last.what == what
             && last.pattern.is_none()
             && what != "Pitch Gate"
@@ -2499,6 +2502,7 @@ impl App {
     }
 
     pub(super) fn push_pattern_step_named(&mut self, before: pattern_record::Undo, what: &str) {
+        self.redo.clear();
         if self.history.len() == UNDO_STEPS {
             self.history.remove(0);
         }
@@ -2515,63 +2519,26 @@ impl App {
     /// `Ctrl+Z` on the pads (61): the last step comes back, every pad of it sounds as before.
     pub(super) fn undo_pads(&mut self) {
         self.flush_audio();
-        if let Some((before, what)) = self
-            .history
-            .last()
-            .and_then(|step| Some((step.pattern.as_ref()?, step.what.clone())))
-        {
-            match before.restore(&mut self.pads) {
-                Ok(command) => {
-                    self.reset_pattern_takeover();
-                    self.history.pop();
-                    if self.audio.as_ref().is_some_and(|audio| {
-                        !audio.stopped.load(Relaxed) && audio.pattern_capture.available()
-                    }) {
-                        self.send(command);
-                    }
-                    self.dirty();
-                    // the step names itself: a pass, an erased pad or a clear (98i)
-                    let said = crate::destroy::a1_undo_text(&what);
-                    self.post_notice(Level::Done, (said, Instant::now()));
-                }
-                Err(error) => self.post_notice(Level::Error, (error, Instant::now())),
-            }
-            return;
-        }
         let Some(step) = self.history.pop() else {
             self.post_notice(Level::Info, ("nothing to undo".into(), Instant::now()));
             return;
         };
-        if let Some((a, b)) = step.swap {
-            match self.pads.swap(a, b) {
-                Ok(cmd) => {
-                    self.load_gen[a] += 1;
-                    self.load_gen[b] += 1;
-                    self.send(cmd);
-                }
-                Err(error) => {
-                    self.history.push(step);
-                    self.post_notice(Level::Error, (error, Instant::now()));
-                    return;
-                }
-            }
-        } else {
-            for (abs, snap) in &step.pads {
-                // a file still loading for the pad would land over the undone one
-                self.load_gen[*abs] += 1;
-                for cmd in self.pads.put_back(*abs, snap) {
-                    self.send(cmd);
-                }
+        match self.exchange_step(&step) {
+            Ok(inverse) => self.remember_redo(crate::history::Redo::Common {
+                step: inverse,
+                norm: None,
+            }),
+            Err(error) => {
+                self.history.push(step);
+                self.post_notice(Level::Error, (error, Instant::now()));
+                return;
             }
         }
-        if let Some(fx) = step.fx {
-            self.pads.fx = fx;
-            for k in 0..engine::FX_SLOTS {
-                let cmd = self.pads.fx_command(k);
-                self.send(cmd);
-            }
+        if step.pattern.is_some() {
+            let said = crate::destroy::a1_undo_text(&step.what);
+            self.post_notice(Level::Done, (said, Instant::now()));
+            return;
         }
-        self.dirty();
         let on = match step.pads.as_slice() {
             [] => "the shared slot".to_string(),
             [(abs, _)] => format!("pad {}", tui::pads::pad_tag(*abs)),

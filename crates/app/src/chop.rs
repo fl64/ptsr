@@ -146,6 +146,13 @@ impl PlayMode {
 /// as they were before a change.
 type UndoStep = (Vec<usize>, Vec<u32>, Region, u32, f32);
 
+pub(super) struct RedoCut {
+    step: UndoStep,
+    threshold_set: bool,
+    hand: bool,
+    parts: Option<usize>,
+}
+
 pub struct Chop {
     pub file: PathBuf,
     pub sound: Arc<Sample>,
@@ -198,6 +205,7 @@ pub struct Chop {
     pub page: usize,
     rate: usize,
     undo: Vec<UndoStep>,
+    last_edit: Option<Instant>,
     /// Steps saved minus steps undone: unlike the stack length, it moves at the step limit.
     depth: usize,
     /// `norm` was the newest step (138): the chop depth and the pads history length at that
@@ -284,6 +292,7 @@ impl Chop {
             page: 0,
             rate: rate.max(1) as usize,
             undo: Vec::new(),
+            last_edit: None,
             depth: 0,
             norm_step: None,
             turning: None,
@@ -331,6 +340,7 @@ impl Chop {
             page: 0,
             rate: self.rate,
             undo: Vec::new(),
+            last_edit: None,
             depth: 0,
             norm_step: None,
             turning: None,
@@ -368,18 +378,44 @@ impl Chop {
         self.rate * ms / 1000
     }
 
-    fn save_undo(&mut self) {
-        self.depth += 1;
-        if self.undo.len() == UNDO {
-            self.undo.remove(0);
-        }
-        self.undo.push((
+    fn undo_step(&self) -> UndoStep {
+        (
             self.markers.clone(),
             self.ids.clone(),
             self.range,
             self.epoch,
             self.threshold_db,
-        ));
+        )
+    }
+
+    fn save_undo(&mut self) {
+        self.last_edit = Some(Instant::now());
+        self.depth += 1;
+        if self.undo.len() == UNDO {
+            self.undo.remove(0);
+        }
+        self.undo.push(self.undo_step());
+    }
+
+    pub(super) fn last_edit(&self) -> Option<Instant> {
+        self.last_edit
+    }
+
+    pub(super) fn redo_cut(&self) -> RedoCut {
+        RedoCut {
+            step: self.undo_step(),
+            threshold_set: self.threshold_set,
+            hand: self.hand,
+            parts: self.parts,
+        }
+    }
+
+    pub(super) fn restore_cut_edit(&mut self, edit: &RedoCut) {
+        self.save_undo();
+        self.restore_cut(edit.step.clone());
+        self.threshold_set = edit.threshold_set;
+        self.hand = edit.hand;
+        self.parts = edit.parts;
     }
 
     /// Range start, cuts, range end.
@@ -1158,10 +1194,15 @@ impl Chop {
     /// Brings back the cuts, range and threshold before the last change; `false` when
     /// there is nothing.
     pub fn undo(&mut self) -> bool {
-        let Some((markers, ids, range, epoch, threshold_db)) = self.undo.pop() else {
+        let Some(step) = self.undo.pop() else {
             return false;
         };
         self.depth -= 1;
+        self.restore_cut(step);
+        true
+    }
+
+    fn restore_cut(&mut self, (markers, ids, range, epoch, threshold_db): UndoStep) {
         for (&id, &pos) in ids.iter().zip(&markers) {
             self.known.insert(id, pos);
         }
@@ -1177,7 +1218,6 @@ impl Chop {
         // the slice under the cursor is the one the line, the edit and the bounds act on (35)
         self.cursor = self.cursor.clamp(self.range.start, self.range.end);
         self.selected = self.slice_at(self.cursor);
-        true
     }
 }
 
@@ -1394,6 +1434,7 @@ impl App {
             && let Some(old) = self.chop.take_if(|c| !c.is_blank())
         {
             let epoch = self.epoch_floor(&old.file).max(old.epoch + 1);
+            self.redo.clear();
             self.fresh_undo = Some((old.file.clone(), epoch, old.epoch));
             self.chop = Some(old.fresh(epoch));
             self.older.push(old);
@@ -1639,7 +1680,13 @@ impl App {
         if let Some(c) = self.chop.as_mut() {
             c.norm_step = None;
         }
+        let steps = self.history.len();
         self.undo_pads();
+        if self.history.len() < steps
+            && let Some(crate::history::Redo::Common { norm, .. }) = self.redo.last_mut()
+        {
+            *norm = self.chop.as_ref().map(crate::history::ChopContext::current);
+        }
         let on = match pads.as_slice() {
             [abs] => format!("pad {}", tui::pads::pad_tag(*abs)),
             many => format!("{} pads", many.len()),
@@ -1915,12 +1962,54 @@ impl App {
         let Some(fresh_chop) = self.chop.replace(back) else {
             return false;
         };
-        if self.linked_to(&file, fresh) {
+        let saved = if self.linked_to(&file, fresh) {
             self.park(fresh_chop);
-        }
+            None
+        } else {
+            Some(Box::new(fresh_chop))
+        };
         self.fresh_undo = None;
         self.sync_links();
+        if let Some(chop) = &self.chop {
+            self.remember_redo(crate::history::Redo::Fresh {
+                context: crate::history::ChopContext::current(chop),
+                epoch: fresh,
+                saved,
+            });
+        }
         true
+    }
+
+    pub(super) fn redo_fresh(
+        &mut self,
+        epoch: u32,
+        saved: &mut Option<Box<Chop>>,
+    ) -> Result<String, String> {
+        let previous = self.chop.as_ref().ok_or("The chop is closed.")?;
+        let file = previous.file.clone();
+        let fresh = if let Some(chop) = saved.take() {
+            *chop
+        } else if self
+            .chops
+            .get(&file)
+            .is_some_and(|chop| chop.epoch == epoch)
+        {
+            self.chops.remove(&file).ok_or("The chop is unavailable.")?
+        } else if let Some(index) = self
+            .older
+            .iter()
+            .position(|chop| chop.file == file && chop.epoch == epoch)
+        {
+            self.older.remove(index)
+        } else {
+            return Err("The chop is unavailable.".into());
+        };
+        let old = previous.epoch;
+        if let Some(previous) = self.chop.replace(fresh) {
+            self.older.push(previous);
+        }
+        self.fresh_undo = Some((file, epoch, old));
+        Ok("new chop".into())
     }
 
     /// Pads linked to the open chop follow its cuts: new regions go to the engine.
@@ -2156,6 +2245,7 @@ impl App {
         if let Some(old) = self.plan.replace(plan.clone())
             && old != plan
         {
+            self.redo.clear();
             self.plan_undo.push((old, selected));
         }
     }
@@ -2166,6 +2256,8 @@ impl App {
             return;
         }
         // tap pads one by one, from the slice just heard (04e): it stays selected
+        self.redo
+            .retain(|step| !matches!(step, crate::history::Redo::Plan { .. }));
         self.plan = Some(chop::Plan::ByHand(Vec::new()));
         self.plan_undo.clear();
     }

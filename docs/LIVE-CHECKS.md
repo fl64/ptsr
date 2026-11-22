@@ -3007,3 +3007,22 @@ Use a disposable project with a loaded pad and A1. These checks are for the owne
 ### Sound
 
 - [ ] Listen to local renders/141-panic.wav. Hear the pad, preview, and delay stop at the fade. After the silence, hear a new pad hit.
+
+## 142: Redo
+
+Use a disposable project. These checks follow merge.
+
+### Keyboard
+
+- [ ] Change the volume of marked pads. Press Ctrl+Z, Ctrl+Y and Ctrl+Z again. Check the values after each press.
+- [ ] Record A1, undo the pass, and redo it. Play the loop and listen to the same hits.
+- [ ] Add a cut, undo it, and redo it. Check the cut and the linked pad. Undo it again. Make another edit and check that Ctrl+Y says `nothing to redo`.
+
+### SMC-PAD
+
+- [ ] Hold PAD BANK. Use P2 Undo, then P3 Redo, after a pad edit.
+- [ ] In Assign, undo a target choice. Use P3 Menu, then P3 Redo. Use P1 to return to targets and check the choice.
+
+### Sound
+
+- [ ] Listen to `renders/142-redo.wav`. Hear the edited level, the original level, and the edited level again.

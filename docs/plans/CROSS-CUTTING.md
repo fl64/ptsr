@@ -79,7 +79,7 @@ stays as specified.
 
 ## 3. Comfort (change 93a `93a-controller-comfort`, after 93)
 
-### 3.1 Redo
+### 3.1 Redo (142)
 
 There is undo (`Ctrl+Z`) but no redo. VISION asks for both. Add `edit.redo` for every step that
 undo covers.

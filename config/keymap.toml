@@ -32,6 +32,7 @@ F1 = "help.toggle"            # not "?": that is Shift plus a character, not a p
 "Alt+PageUp" = "help.page_prev"
 "Alt+PageDown" = "help.page_next"
 "Ctrl+Z" = "edit.undo"
+"Ctrl+Y" = "edit.redo"
 "Alt+Z" = "pattern.undo"
 "Ctrl+R" = "pattern.record"
 "Ctrl+Period" = "transport.panic"

@@ -841,11 +841,20 @@ impl App {
                 "SMC-PAD".into(),
                 format!("{} LEFT and RIGHT move its views. View: {}. PLAY starts or continues. With the panel closed, STOP pauses or resets. With the panel open, STOP twice stops all sound.", if self.midi_gestures.smc_pad_bank_opens_panel { "Hold PAD BANK to show the panel; a pad hit during the hold runs its cell." } else { "PAD BANK shows the panel on the first second-bank hit." }, if self.panel.page() == 0 { "screens" } else { "actions" }),
             ));
+            if self.panel_target().is_some() {
+                rows.push((
+                    "Targets".into(),
+                    "P3 Menu, then P3 Redo. P1 returns to targets.".into(),
+                ));
+            }
             for first in [1, 5, 9, 13] {
                 let cells = (first..first + 4)
                     .map(|cell| {
                         let name = self.panel.label(view, cell).unwrap_or("unavailable");
-                        if cell >= 15 || name == "unavailable" {
+                        if cell == 16
+                            || name == "unavailable"
+                            || (cell == 15 && self.redo_refusal().is_some())
+                        {
                             format!(
                                 "P{} {name} unavailable",
                                 tui::device_number(usize::from(cell))

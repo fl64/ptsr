@@ -174,7 +174,7 @@ pub struct Undo {
 }
 
 impl Undo {
-    fn new(pads: &Pads) -> Result<Self, String> {
+    pub(super) fn new(pads: &Pads) -> Result<Self, String> {
         Ok(Self {
             pattern: pads.pattern.clone().ok_or("Recording needs A1.")?,
             rows: pads
@@ -198,6 +198,7 @@ pub struct Update {
     pub commands: Vec<Command>,
     pub notice: Option<String>,
     pub undo: Option<Undo>,
+    pub redo: Option<Undo>,
     pub changed: bool,
     /// A pass ended: its new hits and the older hits they replaced.
     pub finished: Option<(u32, usize)>,
@@ -421,6 +422,7 @@ impl Capture {
         let closed = self.closed();
         // The previous poll queued the complete take and its acknowledgement first.
         if let Some(before) = &self.undo_pending {
+            update.redo = Some(Undo::new(pads)?);
             let command = before.restore(pads)?;
             if !closed {
                 update.commands.push(command);
@@ -428,7 +430,7 @@ impl Capture {
             self.undo_pending = None;
             self.undo_requested = false;
             update.changed = true;
-            update.notice = Some("Pattern pass undone. No redo is available.".into());
+            update.notice = Some("Pattern pass undone. Redo restores the take.".into());
         }
         let Some(boundary) = self.last.filter(|s| s.epoch == epoch) else {
             if closed {
@@ -1537,7 +1539,7 @@ impl crate::App {
             self.undo_pads();
         } else {
             let text = if self.history.is_empty() {
-                "No pattern pass to undo. No redo is available."
+                "No pattern pass to undo."
             } else {
                 "Pattern Undo blocked: undo the newer pad or FX edit with normal Undo first."
             };

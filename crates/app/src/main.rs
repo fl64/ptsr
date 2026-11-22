@@ -8,6 +8,8 @@ mod diag;
 mod dispatch;
 mod graphics;
 mod help;
+mod history;
+use history::{Before, Redo, Step, UNDO_JOIN, UNDO_STEPS};
 mod looks;
 use help::describe;
 mod input_sources;
@@ -81,29 +83,6 @@ fn held_repeats(repeats: &mut u32, tap: bool) -> u32 {
 /// (`true` is the end).
 /// Pads with their link and slice number before a step unlinked them.
 type PadLinks = Vec<(usize, Option<(u32, u32)>, Option<u16>)>;
-
-/// A pad before its source changed: (pad, region, link, slice number).
-/// One step of the pads' undo (61): what it was, the pads it touched as they were before,
-/// the shared slots as they were if it touched them, and when, so a knob turn joins one step.
-struct Step {
-    what: String,
-    pads: Vec<(usize, pads::PadSnap)>,
-    fx: Option<[pads::FxSlot; engine::FX_SLOTS]>,
-    swap: Option<(usize, usize)>,
-    pattern: Option<pattern_record::Undo>,
-    at: Instant,
-}
-
-/// How many steps the undo keeps (61).
-const UNDO_STEPS: usize = 100;
-/// Changes of one thing closer than this join one step: a knob turn sends many (61).
-const UNDO_JOIN: Duration = Duration::from_secs(1);
-
-/// Every pad and the shared slots, before an action, to see what it changed (61).
-struct Before {
-    pads: Vec<pads::PadSnap>,
-    fx: [pads::FxSlot; engine::FX_SLOTS],
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Lit {
@@ -527,6 +506,7 @@ struct App {
     /// source changed.
     /// The undo of the pads (61), the newest step last.
     history: Vec<Step>,
+    redo: Vec<Redo>,
     /// How the screens draw: the wave picture switch (04b).
     ui: config::UiConfig,
     /// The two roots of the Paths tab (11): the picker writes here and into the config.
@@ -646,6 +626,7 @@ impl App {
         self.plan = None;
         self.plan_undo.clear();
         self.history.clear();
+        self.redo.clear();
         // Replies from the previous session must not apply to this one.
         for generation in &mut self.load_gen {
             *generation += 1;
@@ -883,9 +864,7 @@ impl App {
                         command: ProjectMessage::Command(command),
                     });
                 }
-                if let Some(before) = update.undo {
-                    self.push_pattern_step(before);
-                }
+                self.update_pattern_history(update.undo, update.redo);
                 // a pass that a manual save or quit ends keeps the save notice
                 if let Some((new, replaced)) = update
                     .finished
@@ -1307,6 +1286,7 @@ fn main() -> std::io::Result<()> {
         loop_sent: None,
         chop_from: None,
         history: Vec::new(),
+        redo: Vec::new(),
         ui,
         range_unlinks: Vec::new(),
         plan: None,
@@ -3708,6 +3688,7 @@ fn ctrl_text(a: Action) -> String {
         Action::PadTake => "take pad".into(),
         Action::PadCopy => "copy pad".into(),
         Action::Undo => "undo".into(),
+        Action::Redo => "redo".into(),
         Action::MarkerNudge { fine: true, .. } => "nudge fine".into(),
         Action::MarkerNudge { fine: false, .. } => "slice start".into(),
         Action::ChopRegionClear => "region all".into(),
@@ -3796,7 +3777,8 @@ fn help_section(a: Action) -> usize {
         | Action::MarkerNudge { .. }
         | Action::MarkerDelete
         | Action::SliceEndDelete
-        | Action::Undo => 3,
+        | Action::Undo
+        | Action::Redo => 3,
         Action::SettingsRow(_)
         | Action::SettingsValue(_)
         | Action::SettingsTab
@@ -4612,6 +4594,7 @@ mod tests {
             loop_sent: None,
             chop_from: None,
             history: Vec::new(),
+            redo: Vec::new(),
             ui: Default::default(),
             range_unlinks: Vec::new(),
             plan: None,
@@ -15362,7 +15345,7 @@ Enter = "browser.hold"
         );
     }
 
-    /// Keyboard "Future commands stay unbound": Ctrl+Y stays free during Panic work.
+    /// Scenario "Future commands stay unbound" (keyboard), as updated in 142.
     #[test]
     fn future_commands_stay_unbound() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -15385,7 +15368,7 @@ Enter = "browser.hold"
                 Some(Action::PatternRecord),
                 "Ctrl+R records A1 ({screen:?})"
             );
-            assert_eq!(ctrl('y', screen), None, "Ctrl+Y stays free ({screen:?})");
+            assert_eq!(ctrl('y', screen), Some(Action::Redo));
         }
         assert_eq!(
             ctrl('b', Screen::Files),

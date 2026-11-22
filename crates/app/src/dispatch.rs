@@ -52,18 +52,26 @@ impl App {
         };
         let value_before = self.value_before_action(action);
         let was = self.screen;
+        let had_plan = self.plan.is_some();
+        let edit_started = Instant::now();
+        let chop_mark = self.chop_edit_mark();
         let cuts = self.chop.as_ref().map(|c| c.saved());
         self.note_done(action);
         // a change of the pads made on the pads or files screen is a step of the undo (61)
         let undoable = matches!(self.screen, Screen::Pads | Screen::Files | Screen::Fx)
-            && !matches!(action, Action::Undo | Action::PatternUndo)
+            && !matches!(action, Action::Undo | Action::Redo | Action::PatternUndo)
             && !(action == Action::Confirm && self.project_picker.is_some());
         let what = self.step_name(action);
         let before = undoable.then(|| self.before());
         // an undo of `norm` on Chop takes no cut back, so nothing relinks (138)
-        let norm_undo =
-            action == Action::Undo && self.screen == Screen::Chop && self.norm_is_next();
+        let norm_undo = action == Action::Undo
+            && self.screen == Screen::Chop
+            && self.plan.is_none()
+            && self.norm_is_next();
         let quit = self.run(action);
+        if !matches!(action, Action::Undo | Action::Redo | Action::PatternUndo) {
+            self.discard_redo_after_chop_edit(chop_mark, edit_started);
+        }
         if let Some(b) = before {
             self.note_step(b, what);
         }
@@ -92,7 +100,8 @@ impl App {
                     self.post_notice(Level::Done, (text, Instant::now()));
                 }
                 Some(text) => self.post_notice(Level::Done, (text, Instant::now())),
-                None => self.say_changed(changed, action == Action::Undo),
+                None if action != Action::Redo => self.say_changed(changed, action == Action::Undo),
+                None => {}
             }
         }
         // the preview plays only while the files or the chop screen is open
@@ -114,6 +123,10 @@ impl App {
         }
         if was != Screen::Files && self.screen == Screen::Files {
             self.preview_selection();
+        }
+        if had_plan && self.plan.is_none() {
+            self.redo
+                .retain(|step| !matches!(step, crate::history::Redo::Plan { .. }));
         }
         self.value_after(value_before, Instant::now());
         self.sync_panel_target();
@@ -334,6 +347,7 @@ impl App {
             Action::PatternErase => self.toggle_pattern_erase(),
             Action::PatternUndo if self.transport_input_blocked() => {}
             Action::PatternUndo => self.undo_pattern(),
+            Action::Redo => self.redo_edit(),
             Action::Undo if self.screen == Screen::Pads && self.request_active_pattern_undo() => {}
             Action::TransportToggle | Action::TempoStep { .. } | Action::MetronomeToggle
                 if self.transport_input_blocked() => {}
@@ -698,13 +712,25 @@ impl App {
             | Action::PagePrev
             | Action::EditValue { .. }
                 if !matches!(self.screen, Screen::Pads | Screen::Chop) => {}
-            Action::Undo if self.screen == Screen::Chop && self.norm_is_next() => self.undo_norm(),
+            Action::Undo
+                if self.screen == Screen::Chop && self.plan.is_none() && self.norm_is_next() =>
+            {
+                self.undo_norm()
+            }
             Action::Undo if self.screen == Screen::Chop && self.plan.is_some() => {
                 match self.plan_undo.pop() {
                     Some((prev, selected)) => {
-                        self.plan = Some(prev);
+                        let plan = self.plan.replace(prev);
                         if let Some(c) = self.chop.as_mut() {
+                            let redo = plan.map(|plan| crate::history::Redo::Plan {
+                                context: crate::history::ChopContext::current(c),
+                                plan,
+                                selected: c.selected,
+                            });
                             c.select_slice(selected);
+                            if let Some(redo) = redo {
+                                self.remember_redo(redo);
+                            }
                         }
                         let (method, placed) = (self.assign_method(), self.placed_slices());
                         self.post_notice(
@@ -862,7 +888,16 @@ impl App {
                             self.post_notice(Level::Info, (text, Instant::now()));
                         }
                         _ => {
-                            if !c.undo() && !self.undo_fresh() {
+                            if c.can_undo() {
+                                let edit = c.redo_cut();
+                                if c.undo() {
+                                    let context = crate::history::ChopContext::current(c);
+                                    self.remember_redo(crate::history::Redo::Cuts {
+                                        context,
+                                        edit,
+                                    });
+                                }
+                            } else if !self.undo_fresh() {
                                 self.post_notice(
                                     Level::Info,
                                     ("nothing to undo".into(), Instant::now()),
@@ -1560,6 +1595,9 @@ impl App {
         raw_key: Option<input::midi::Key>,
     ) {
         let value_before = self.value_before_midi(&ev);
+        let edit_started = Instant::now();
+        let chop_mark = self.chop_edit_mark();
+        let edits_chop = matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. });
         let knob = matches!(&ev, midi::Event::Step { port, .. } if port.contains("SMC-PAD-Master"));
         let cuts = self.chop.as_ref().map(|c| c.saved());
         // a knob on the pads screen is a step of the undo (61); a turn joins one step
@@ -1578,6 +1616,9 @@ impl App {
                 && matches!(ev, midi::Event::Param { .. } | midi::Event::Step { .. })))
         .then(|| self.before());
         self.midi_event_inner(ev, released, raw_key);
+        if edits_chop {
+            self.discard_redo_after_chop_edit(chop_mark, edit_started);
+        }
         self.sync_panel_target();
         if let Some(b) = before {
             let what = match self.lit_now() {
@@ -1601,7 +1642,7 @@ impl App {
             return false;
         };
         let menu = self.panel.target_menu == Some(target);
-        if cell == 15 {
+        if (!menu && cell == 15) || (menu && cell == 13) {
             self.panel.target_menu = (!menu).then_some(target);
             self.panel.first_actions();
             return true;
@@ -1929,7 +1970,7 @@ impl App {
                     };
                     // a grey cell says why and changes nothing (138)
                     if let super::panel::Choice::Action(action) = choice
-                        && (self.panel.page() != 0 || cell == 14)
+                        && (self.panel.page() != 0 || matches!(cell, 14 | 15))
                         && let Some(super::looks::Grey::Why(why)) = self.grey(view, action)
                     {
                         self.post_notice(Level::Info, (why, Instant::now()));
