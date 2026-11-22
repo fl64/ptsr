@@ -28,4 +28,7 @@ and neither run dropped dense pattern hits.
 
 The first fast runs found a label length error, an incomplete route test, a
 changed MIDI learn order, and compact FX layout regressions. The final run passed.
+The first full CI run found two panel matrices with the old count of 53 cells.
+Both matrices now cover 54 cells and compare the FX return state.
+The local full run passed all 2092 tests.
 Physical controller and listening checks follow merge.

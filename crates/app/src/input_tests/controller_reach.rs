@@ -2350,7 +2350,7 @@ fn reach_drive_from(mut drive: Drive, view: panel::View, sound: Arc<Sample>) -> 
 
 fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
     let extra = format!(
-        "{:?} {:?}",
+        "{:?} {:?} {:?}",
         (
             drive.app.settings_tab,
             drive.app.settings_row,
@@ -2376,7 +2376,8 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
                 .map(|picker| picker.selected),
             drive.app.path_picker.as_ref().map(|picker| picker.selected),
             drive.app.quit_requested,
-        )
+        ),
+        drive.app.pads.fx
     );
     let commands = frame
         .commands()
@@ -2387,7 +2388,7 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// The matrix compares 53 action cells through production keyboard and MIDI input, so it is slow.
+/// The matrix compares 54 action cells through production keyboard and MIDI input, so it is slow.
 #[test]
 fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     use panel::{Config, View};
@@ -2500,7 +2501,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 53);
+    assert_eq!(checked + special, 54);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3689,7 +3690,7 @@ fn the_panel_shows_only_while_pad_bank_is_held() {
 }
 
 /// Every shipped action cell gives the same result through a PAD BANK hold (131)
-/// as through the second-bank route. The matrix drives 53 cells, so it is slow.
+/// as through the second-bank route. The matrix drives 54 cells, so it is slow.
 #[test]
 fn shipped_panel_cells_act_the_same_during_a_hold() {
     let config = panel::Config::parse(
@@ -3718,7 +3719,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 53);
+    assert_eq!(checked, 54);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
