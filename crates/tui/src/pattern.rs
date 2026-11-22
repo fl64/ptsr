@@ -14,6 +14,24 @@ pub struct PatternStrip {
     pub playhead: Option<usize>,
 }
 
+/// The visible time page for all banks at the current A1 view division.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternOverview {
+    pub header: String,
+    pub next: Option<String>,
+    pub rows: Vec<Vec<PatternCell>>,
+    pub names: Vec<String>,
+    pub active_pads: [u16; BANKS],
+    pub hide_empty: bool,
+    pub beat_cells: usize,
+    pub playhead: Option<usize>,
+    pub first_cell: usize,
+    pub total_cells: usize,
+    pub edit_cursor: Option<usize>,
+    pub event_choice: Option<(usize, usize)>,
+    pub event_velocity: Option<u8>,
+}
+
 fn overview_label_width(width: usize) -> usize {
     (width * 38 / 100).clamp(28, 48)
 }
@@ -248,7 +266,12 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     }
     let cell_width = 3;
     let right_pad = usable.saturating_sub(cell_width * count);
-    let mut numbers = vec![Span::raw(" ".repeat(label_width + 1))];
+    let next = clip_label(view.next.as_deref().unwrap_or_default(), label_width);
+    let padding = label_width + 1 - Span::raw(&next).width();
+    let mut numbers = vec![
+        Span::styled(next, Style::new().fg(CYAN)),
+        Span::raw(" ".repeat(padding)),
+    ];
     for offset in 0..count {
         let cell = first + offset;
         if offset > 0 && cell.is_multiple_of(beat_cells) {

@@ -13,6 +13,7 @@ fn overview_fixed_cells_align_every_division() {
             rows[0][0].count = 1;
             let view = PatternOverview {
                 header: "view 1/16".into(),
+                next: None,
                 rows,
                 names: vec!["sample".into(); 128],
                 active_pads: [1, 0, 0, 0, 0, 0, 0, 0],
@@ -79,6 +80,7 @@ fn overview_velocity_levels_keep_event_marks() {
         }
         let view = PatternOverview {
             header: "view 1/16".into(),
+            next: None,
             rows,
             names: vec!["sample".into(); 128],
             active_pads: [1, 0, 0, 0, 0, 0, 0, 0],
@@ -129,6 +131,7 @@ fn step_cursor_shows_one_time_across_pad_rows() {
         rows[1][2].count = 1;
         let view = PatternOverview {
             header: "view 1/16".into(),
+            next: None,
             rows,
             names: vec!["sample".into(); 128],
             active_pads: [0b11, 0, 0, 0, 0, 0, 0, 0],

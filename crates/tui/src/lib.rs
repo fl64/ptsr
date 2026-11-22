@@ -43,7 +43,7 @@ pub use pads::{
     BigView, CommandPanel, SourceRange, SourceSample, SourceStrip, SourceVoice, command_panel,
     command_panel_area, command_panel_in, device_number,
 };
-pub use pattern::PatternStrip;
+pub use pattern::{PatternOverview, PatternStrip};
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
@@ -602,23 +602,6 @@ pub struct PatternCell {
 pub struct BankPattern {
     pub recorded: [bool; BANKS],
     pub hits: [u16; BANKS],
-}
-
-/// The visible time page for all banks at the current A1 view division.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PatternOverview {
-    pub header: String,
-    pub rows: Vec<Vec<PatternCell>>,
-    pub names: Vec<String>,
-    pub active_pads: [u16; BANKS],
-    pub hide_empty: bool,
-    pub beat_cells: usize,
-    pub playhead: Option<usize>,
-    pub first_cell: usize,
-    pub total_cells: usize,
-    pub edit_cursor: Option<usize>,
-    pub event_choice: Option<(usize, usize)>,
-    pub event_velocity: Option<u8>,
 }
 
 /// Row labels `all` and `pad Q` take this many columns; each beat opens with a space (98i).

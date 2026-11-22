@@ -1,7 +1,7 @@
 # SMC-PAD paths for current stories
 
 This table covers the headings in [User stories](USER-STORIES.md).
-It describes the SMC-PAD profile and command panel for changes 124 to 139.
+It describes the SMC-PAD profile and command panel for changes 124 to 140.
 Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
@@ -125,6 +125,19 @@ Record the actual device sequence. Physical press counts remain open.
 
 From the Pads actions, use P5 to open Pad Edit. Use P16 to pin the sample.
 Use P1 to leave Pad Edit. The route takes three hits from the visible panel.
+
+## First A1 recording
+
+The SMC-PAD counts give visible panel / PAD BANK held / reveal.
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Open A1 | F5 (1) | Screens P4 A1 (2 / 3 / 4) |
+| Start or cancel count-in | Ctrl+R (1) | Tap RECORD (1) |
+| Finish a live pass | Ctrl+R (1) | Tap RECORD (1) |
+| Stop or play the loop | Space (1) | STOP or PLAY (1) |
+
+While A1 records, use the playing pads. Count those hits separately.
 
 ## Open owner checks
 

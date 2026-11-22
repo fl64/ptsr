@@ -452,6 +452,47 @@ fn pattern_view_empty_state_uses_effective_recording_keys_without_creation() {
     );
 }
 
+/// Scenario "A1 omits unavailable actions".
+#[test]
+fn a1_omits_unavailable_actions() {
+    let mut silent = Drive::new();
+    silent.tap(KeyCode::F(5), M::NONE);
+    assert_eq!(
+        silent.app.pattern_overview(&silent.keymap).next.as_deref(),
+        Some("A1 needs audio"),
+    );
+
+    let mut drive = Drive::offline();
+    drive.tap(KeyCode::F(5), M::NONE);
+    drive
+        .keymap
+        .overlay("[global]\n'Ctrl+R' = 'none'\n")
+        .unwrap();
+    let cue = |drive: &Drive| drive.app.pattern_overview(&drive.keymap).next;
+    assert_eq!(cue(&drive).as_deref(), Some("No record key"));
+    drive
+        .keymap
+        .overlay("[global]\n'Ctrl+Shift+F12' = 'pattern.record'\n")
+        .unwrap();
+    assert_eq!(cue(&drive).as_deref(), Some("Ctrl+Shift+F12 record A1"));
+    drive.tap(KeyCode::F(1), M::NONE);
+    assert_eq!(cue(&drive), None);
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(cue(&drive).is_some());
+
+    drive.app.restoring_project = true;
+    assert_eq!(cue(&drive).as_deref(), Some("Wait for audio"));
+    drive.app.restoring_project = false;
+    drive
+        .app
+        .audio
+        .as_ref()
+        .unwrap()
+        .stopped
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(cue(&drive).as_deref(), Some("A1 needs audio"));
+}
+
 /// Scenario "Pattern view keys preserve owner input rules".
 #[test]
 fn pattern_view_keys_respect_owner_layers_removals_and_input_owners() {

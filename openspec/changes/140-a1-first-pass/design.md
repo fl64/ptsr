@@ -16,10 +16,10 @@ The overview reads accepted audio state. A pending start or finish shows a wait 
 
 | Situation | Expected cue | Status |
 | --- | --- | --- |
-| A1 is absent or has no visible hits | Effective record control | Planned |
-| The user presses record while a request is pending | Wait for the current request | Planned |
-| A count-in runs | Cancel control | Planned |
-| Pads record hits | Play pads and finish the pass | Planned |
-| The loop runs or pauses | Stop or play control | Planned |
-| Audio is unavailable | Wait or show that A1 needs audio | Planned |
-| A binding changes or a higher priority mode opens | Show the effective control or let that mode take priority | Planned |
+| A1 is absent or has no visible hits | Effective record control | Checked by tests |
+| The user presses record while a request is pending | Wait for the current request | Checked by tests |
+| A count-in runs | Cancel control | Checked by tests |
+| Pads record hits | Play pads and finish the pass | Checked by tests |
+| The loop runs or pauses | Stop or play control | Checked by tests |
+| Audio is unavailable | Wait or show that A1 needs audio | Checked by tests |
+| A binding changes or a higher priority mode opens | Show the effective control or let that mode take priority | Checked by tests |

@@ -19,6 +19,7 @@ None.
 ### Modified Capabilities
 
 - `screen-help`: the next step for a live A1 pass.
+- `screen-layout`: the empty title and the instruction beside the step numbers.
 
 ## Impact
 
@@ -35,8 +36,8 @@ The A1 overview reads the current recording and playback state to select the ins
 
 ### SMC-PAD
 
-1. Open A1 from the screens panel. Press RECORD. Check its name in the next step.
-2. Wait for recording. Hit pads. Press RECORD to finish.
+1. Hold PAD BANK. Press LEFT, then P4 (A1). Release PAD BANK. Tap RECORD. Check its name in the next step.
+2. Wait for recording. Hit pads. Tap RECORD to finish.
 3. Press STOP to pause the loop. Press PLAY to continue. Check the words on A1 after each press.
 
 ### Views and sound

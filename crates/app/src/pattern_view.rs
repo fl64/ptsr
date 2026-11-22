@@ -585,6 +585,7 @@ impl super::App {
     ) -> tui::PatternOverview {
         let mut view = tui::PatternOverview {
             header: String::new(),
+            next: None,
             rows: vec![Vec::new(); super::PADS],
             names: (0..super::PADS)
                 .map(|abs| {
@@ -609,17 +610,8 @@ impl super::App {
             event_velocity: None,
         };
         let Some(raw) = &self.pads.pattern else {
-            // After an SMC-PAD input the device RECORD button names the route (134).
-            let keys = if self.input_sources.last_is_smc() {
-                "RECORD".to_string()
-            } else {
-                self.help_bindings(keymap, input::Action::PatternRecord)
-                    .join("/")
-            };
-            view.header = format!(
-                "pattern A1 is empty · {} record A1",
-                if keys.is_empty() { "none" } else { &keys }
-            );
+            view.header = "pattern A1 is empty".into();
+            view.next = self.overview_next_step(keymap, false);
             return view;
         };
         let model = raw.checked().and_then(|raw| {
@@ -688,6 +680,8 @@ impl super::App {
         };
         let end = (view.first_cell + page).min(view.total_cells);
         (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
+        let has_hits = view.active_pads.iter().any(|&mask| mask != 0);
+        view.next = self.overview_next_step(keymap, has_hits);
         if self.pattern_view.edit {
             let events =
                 model.events_in_cell(self.pads.selected_abs(), self.pattern_view.cursor_cell);
