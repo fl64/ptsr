@@ -20,10 +20,22 @@ Store fine tune as signed cents from -100 to +100. Add it to the existing pitch
 with a ratio of 2 raised to cents divided by 1200. Check the saved value, the
 shown value, and both limits at 48 kHz.
 
-Keep attack linear. Exponential decay and normal gate release target minus 60 dB
-at the set duration. Fade the last small level to zero. Separate this release
-from steals, pad groups, project switch and Panic. Add a hold between attack and
-decay from zero to 2000 ms. Missing hold means zero.
+Keep attack linear. Linear with zero hold keeps the tail fade at the source end,
+as in an older project. With a hold or the exponential curve, measure attack,
+hold and decay in output time. A zero decay leaves the level at full after
+attack and hold. A positive decay starts at the end of hold. The source end
+can still stop the voice first.
+
+Exponential decay and normal gate release reach minus 60 dB at the set duration.
+A final fade of up to 2 ms then brings the level to zero. Release time zero
+keeps the short cut. A short cut that interrupts an exponential release starts
+from its current gain. Steals, pad groups, project switch and Panic keep their
+existing deadlines.
+
+Check a saved linear tail against the old render. Check a short source with a long
+hold and a pitched pad with the same hold time. Check a group cut and Panic both
+before and during a normal release. These cases protect the timing at the
+boundaries between the new envelope and the existing voice controls.
 
 For a new pad, use 30 dB of velocity range. Pad velocity remains a raw value in
 the pattern. For positive velocities, map step 1 to minus the range and step 127

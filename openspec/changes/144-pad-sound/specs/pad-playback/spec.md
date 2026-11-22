@@ -23,7 +23,7 @@ Each pad SHALL support Pan from minus 100 to plus 100 percent and Fine tune from
 
 ### Requirement: A pad shapes its envelope
 
-The pad SHALL have linear or exponential decay and Gate release. Attack SHALL remain linear. Hold SHALL run from zero to 2000 ms between attack and decay. The exponential stages SHALL reach minus 60 dB at their set duration and fade to zero. Panic, a voice steal and a mute group SHALL keep their timing.
+The pad SHALL have linear or exponential decay and Gate release. Hold SHALL run from zero to 2000 ms. Linear with zero hold SHALL keep the fade at the source end. With a hold or the exponential curve, a positive decay SHALL start after attack and hold in output time. The attack SHALL stay linear. The exponential stages SHALL reach minus 60 dB at their set duration. They SHALL then fade to zero within 2 ms. The source end, Panic, voice steals and mute groups SHALL keep their stop conditions.
 
 #### Scenario: Hold delays the selected decay curve
 
