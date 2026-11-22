@@ -1484,7 +1484,7 @@ fn main() -> std::io::Result<()> {
             }
             // smooth decay so the meter does not flicker between frames
             app.input_level = a.stats.take_input_peak().max(app.input_level * 0.8);
-            app.meters.update(a.stats.take_output(), Instant::now());
+            app.meters.observe(&a.stats, Instant::now());
         }
         let size = match term.size() {
             Ok(size) => size,
@@ -1527,11 +1527,7 @@ fn main() -> std::io::Result<()> {
             load_peak,
             xruns: app.audio.as_ref().map_or(0, |a| a.stats.xruns()),
             master_db: app.master_db,
-            meters: (
-                app.meters.level_db(),
-                app.meters.peak_db(),
-                app.meters.clip_elapsed(),
-            ),
+            meters: app.meters.snapshot(text_at),
             notice: notice.as_deref().map(|text| tui::NoticeLine {
                 text,
                 level: app.frame_notice_level.map(|level| match level {
@@ -3002,6 +2998,8 @@ fn tui_param(p: pads::Param) -> tui::PadParam {
         pads::Param::Fx2Kind => tui::PadParam::Fx2Kind,
         pads::Param::Fx2A => tui::PadParam::Fx2A,
         pads::Param::Fx2B => tui::PadParam::Fx2B,
+        pads::Param::Fx1Return => tui::PadParam::Fx1Return,
+        pads::Param::Fx2Return => tui::PadParam::Fx2Return,
     }
 }
 
@@ -3022,20 +3020,7 @@ fn label8(name: &str) -> &'static str {
 // the screen and the engine count the same banks
 const _: () = assert!(tui::BANKS == engine::BANKS);
 
-/// The parameters of the FX pages in the order of `Param::PadEffect` (56).
-const EFFECT_PARAMS: [pads::Param; 10] = [
-    pads::Param::Drive,
-    pads::Param::Send1,
-    pads::Param::Send2,
-    pads::Param::Fx1Kind,
-    pads::Param::Fx1A,
-    pads::Param::Fx1B,
-    pads::Param::Fx2Kind,
-    pads::Param::Fx2A,
-    pads::Param::Fx2B,
-    // the mute group (70) rides the same knob path: knob 3 of TONE
-    pads::Param::Group,
-];
+use values::EFFECT_PARAMS;
 
 fn keys(keymap: &Keymap, screen: Screen, actions: &[Action]) -> String {
     let all: Vec<String> = actions
@@ -3293,6 +3278,7 @@ fn help_groups(keymap: &Keymap, screen: Screen, st: &HelpState) -> Vec<tui::Help
                         ],
                         st.param_name.into(),
                     ),
+                    item(&[Action::FxMute], "mute return".into()),
                     item(&[Action::Undo], "undo".into()),
                     ("pad".into(), "play".into()),
                 ],
@@ -3688,6 +3674,7 @@ fn ctrl_text(a: Action) -> String {
         Action::PadCopy => "copy pad".into(),
         Action::Undo => "undo".into(),
         Action::Redo => "redo".into(),
+        Action::FxMute => "mute return".into(),
         Action::MarkerNudge { fine: true, .. } => "nudge fine".into(),
         Action::MarkerNudge { fine: false, .. } => "slice start".into(),
         Action::ChopRegionClear => "region all".into(),
@@ -3777,7 +3764,8 @@ fn help_section(a: Action) -> usize {
         | Action::MarkerDelete
         | Action::SliceEndDelete
         | Action::Undo
-        | Action::Redo => 3,
+        | Action::Redo
+        | Action::FxMute => 3,
         Action::SettingsRow(_)
         | Action::SettingsValue(_)
         | Action::SettingsTab
@@ -16767,7 +16755,7 @@ Enter = "browser.hold"
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], None),
+            meters: ([-60.0; 2], [-60.0; 2], None, false),
             notice: None,
             no_releases: false,
             project: None,
@@ -17267,7 +17255,7 @@ Enter = "browser.hold"
             load_peak: 0.0,
             xruns: 0,
             master_db: app.master_db,
-            meters: ([-60.0; 2], [-60.0; 2], None),
+            meters: ([-60.0; 2], [-60.0; 2], None, false),
             notice: None,
             no_releases: false,
             project: None,

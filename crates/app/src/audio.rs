@@ -251,6 +251,7 @@ const GARBAGE: usize = 1024;
 /// An engine whose released samples come back through the returned queue.
 fn engine(
     sample_rate: u32,
+    device_output: bool,
 ) -> (
     Engine,
     rtrb::Consumer<Retired>,
@@ -259,6 +260,9 @@ fn engine(
 ) {
     let (tx, rx) = rtrb::RingBuffer::new(GARBAGE);
     let mut engine = Engine::new(sample_rate);
+    if device_output {
+        engine.enable_master_output();
+    }
     engine.set_garbage(tx);
     let preview_pos = Arc::new(AtomicUsize::new(usize::MAX));
     engine.set_preview_pos(preview_pos.clone());
@@ -268,7 +272,7 @@ fn engine(
 
 #[cfg(test)]
 pub fn offline(sample_rate: u32) -> (Audio, Realtime) {
-    let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate);
+    let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate, false);
     let (commands, midi_commands, consumers) = queues();
     let stats = Arc::new(Stats::default());
     let project = Arc::new(ProjectState::default());
@@ -547,7 +551,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
     let stopped = Arc::new(AtomicBool::new(false));
     let ports_changed = Arc::new(AtomicBool::new(false));
     let (commands, midi_commands, rx) = queues();
-    let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate);
+    let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate, true);
     let recorder = Arc::new(Recorder::new(sample_rate as usize));
     let project = Arc::new(ProjectState::default());
     let process = JackProcess {
@@ -619,7 +623,7 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
 
     let build = |buffer: cpal::BufferSize| {
         let (commands, midi_commands, rx) = queues();
-        let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate);
+        let (engine, garbage, preview_pos, pattern_capture) = engine(sample_rate, true);
         let project = Arc::new(ProjectState::default());
         let mut rt =
             Realtime::with_project(engine, rx, stats.clone(), sample_rate, project.clone());

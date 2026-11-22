@@ -157,6 +157,7 @@ impl App {
             self.pads.fx = fx;
             for slot in 0..engine::FX_SLOTS {
                 self.send(self.pads.fx_command(slot));
+                self.send(self.pads.fx_return_command(slot));
             }
         }
         self.dirty();

@@ -93,6 +93,13 @@ cells = [
 ]
 
 [[view]]
+name = "fx"
+page = 1
+cells = [
+  { cell = 1, label = "mute return", action = "fx.mute_return" },
+]
+
+[[view]]
 name = "settings"
 page = 1
 cells = [

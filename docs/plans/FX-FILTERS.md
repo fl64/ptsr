@@ -27,8 +27,8 @@ This plan uses checked code paths. They describe the current implementation, not
   Maximum Q is about 16. The filter does not self-oscillate.
   Cutoff glides in log frequency over about 10 ms. During a glide, each voice can calculate `tan` each frame.
 - `crates/engine/src/lib.rs` applies filter and drive to each voice. It takes sends after voice gain.
-  Shared slot returns enter the mix at unity gain. Each slot has no return level or mute.
-  Master processing has a gain only. The engine has no limiter or clipper.
+  Each shared slot has a return level and a mute. Existing projects start at unity.
+  Change 111 limits the master with 1.5 ms of fixed device latency.
   A device can cut values above 1.0. Voice sample reads use linear interpolation.
   Pitch-up aliasing from that read belongs to 110, outside this plan.
 - There is no explicit FTZ, DAZ, FPCR FZ, or state-value denormal guard in the engine.

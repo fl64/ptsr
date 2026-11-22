@@ -9,8 +9,8 @@ use engine::{PADS, PADS_PER_BANK};
 use input::Screen;
 
 use super::{
-    App, EFFECT_PARAMS, HelpState, LIT_FOR, Level, Lit, Notice, Origin, audio, chop,
-    chop_view_routed, file_name, filter_curve, pads, same_whole_sound, tui_param,
+    App, HelpState, LIT_FOR, Level, Lit, Notice, Origin, audio, chop, chop_view_routed, file_name,
+    filter_curve, pads, same_whole_sound, tui_param,
 };
 
 pub(super) fn pitch_gate(pads: &pads::Pads, abs: usize) -> tui::PitchGate {
@@ -1600,10 +1600,11 @@ impl App {
 
     pub(super) fn fx_view(&self) -> tui::Fx {
         let profiles = self.live_profiles();
+        let row_keys = [0, 1, 2, 4];
         tui::Fx {
             blocks: std::array::from_fn(|k| tui::FxBlock {
                 rows: std::array::from_fn(|i| {
-                    let p = EFFECT_PARAMS[3 + k * 3 + i];
+                    let p = super::values::fx_row(k, i);
                     (
                         self.pads.name(p),
                         self.pads.fx_text(self.pads.selected_abs(), p),
@@ -1614,9 +1615,9 @@ impl App {
             param: self.fx_param,
             pickup: self.pickup.as_ref().map(|p| p.0.clone()),
             learn: if self.screen_learn.is_some() {
-                (0..3)
+                (0..4)
                     .map(|i| {
-                        let name = self.learn_params()[i].0;
+                        let name = self.learn_params()[row_keys[i]].0;
                         (
                             i,
                             self.learn_shown(&profiles, name)
@@ -1628,13 +1629,13 @@ impl App {
                 Vec::new()
             },
             lit: match self.lit_now() {
-                _ if self.screen_learn.is_some() => self.learn_params()[..3]
-                    .iter()
-                    .position(|(name, _)| self.learn_picked().is_some_and(|p| p.0 == *name)),
-                Some(Lit::Pad(p)) if p.slot() == Some(self.fx_slot) => EFFECT_PARAMS
-                    [3 + self.fx_slot * 3..6 + self.fx_slot * 3]
-                    .iter()
-                    .position(|&v| v == p),
+                _ if self.screen_learn.is_some() => row_keys.iter().position(|&i| {
+                    self.learn_picked()
+                        .is_some_and(|p| p.0 == self.learn_params()[i].0)
+                }),
+                Some(Lit::Pad(p)) if p.slot() == Some(self.fx_slot) => {
+                    (0..4).find(|&row| super::values::fx_row(self.fx_slot, row) == p)
+                }
                 _ => None,
             },
         }

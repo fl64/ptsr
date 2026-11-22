@@ -20,6 +20,7 @@ pub struct Stats {
     /// Peak output level per channel since the last read, as `f32` bits.
     out_peak_l: AtomicU32,
     out_peak_r: AtomicU32,
+    limiting: AtomicU8,
     /// Per-block output peaks for the live strip.
     hist: History,
     /// Per-block peaks of what the recording writes, zero while nothing records (25).
@@ -145,6 +146,7 @@ impl Default for Stats {
             input_peak: AtomicU32::new(0),
             out_peak_l: AtomicU32::new(0),
             out_peak_r: AtomicU32::new(0),
+            limiting: AtomicU8::new(0),
             hist: History::default(),
             rec_hist: History::default(),
             buffer_size: AtomicU32::new(0),
@@ -362,6 +364,15 @@ impl Stats {
             f32::from_bits(self.out_peak_l.swap(0, Relaxed)),
             f32::from_bits(self.out_peak_r.swap(0, Relaxed)),
         )
+    }
+
+    pub(crate) fn record_limiting(&self) {
+        self.limiting.store(1, Relaxed);
+    }
+
+    /// Whether the limiter reduced gain by more than 1 dB since the last read.
+    pub fn take_limiting(&self) -> bool {
+        self.limiting.swap(0, Relaxed) != 0
     }
 
     /// Up to `n` recent history values, oldest first (the newest is last).

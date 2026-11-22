@@ -640,6 +640,7 @@ pub enum Action {
     ScreenFiles,
     ScreenChop,
     ScreenFx,
+    FxMute,
     /// Chop screen: play the sample from the start / stop.
     ChopPlay,
     /// Chop screen: the next play mode — to the end, to the cut, the slice.
@@ -855,6 +856,7 @@ impl Action {
             "screen.files" => Self::ScreenFiles,
             "screen.chop" => Self::ScreenChop,
             "screen.fx" => Self::ScreenFx,
+            "fx.mute_return" => Self::FxMute,
             "transport.play_stop" => Self::ChopPlay,
             "transport.toggle" => Self::TransportToggle,
             "play.context" => Self::PlayContext,
@@ -1247,6 +1249,8 @@ pub fn short_label(action: &str) -> &'static str {
         "edit.param_1" => "knob1",
         "edit.param_2" => "knob2",
         "edit.param_3" => "knob3",
+        "edit.param_4" => "return",
+        "fx.mute_return" => "mute",
         "edit.page" => "page",
         "settings.row_prev" => "row^",
         "settings.row_next" => "rowv",
@@ -2632,6 +2636,18 @@ pub const ACTIONS: &[ActionInfo] = &[
         label: "knob 3: second parameter",
         group: Group::Fx,
         knob: true,
+    },
+    ActionInfo {
+        name: "edit.param_4",
+        label: "return level",
+        group: Group::Fx,
+        knob: true,
+    },
+    ActionInfo {
+        name: "fx.mute_return",
+        label: "mute the effect return",
+        group: Group::Fx,
+        knob: false,
     },
     ActionInfo {
         name: "edit.page",

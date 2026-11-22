@@ -136,6 +136,7 @@ pub(super) fn describe(a: Action) -> String {
         Action::SliceEndDelete => "chop: join the slice with the next one".into(),
         Action::Undo => "undo the last change".into(),
         Action::Redo => "redo the last undone edit".into(),
+        Action::FxMute => "mute or unmute the selected return".into(),
         Action::BrowserUp => "file up".into(),
         Action::BrowserDown => "file down".into(),
         Action::BrowserEnter => "open folder".into(),

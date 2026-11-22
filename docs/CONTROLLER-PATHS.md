@@ -167,3 +167,13 @@ Release PAD BANK to cancel the first press. With the panel closed, use STOP for 
 
 Use [Live checks](LIVE-CHECKS.md) for the physical device, terminal composition,
 and listening checks. The transport reference is `renders/92-command-panel.wav`.
+
+## Control the shared FX returns
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Open shared FX from Pads | F4 (1) | Hold PAD BANK, LEFT, P9 FX (3) |
+| Select the other slot | Tab (1) | LEFT or RIGHT with the panel closed (1) |
+| Change Return from the first row | Down three times, then Left or Right (4) | E5 turn (0 presses) |
+| Mute or unmute the selected return | M (1) | Hold PAD BANK and press P13 Mute return (2) |
+| Return to Pads | F2 (1) | Hold PAD BANK, LEFT, P13 Pads (3) |

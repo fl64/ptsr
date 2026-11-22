@@ -430,6 +430,9 @@ fn every_current_controller_action_has_a_keyboard_route() {
             | "smc.page_7" | "edit.param_1" | "edit.param_2" | "edit.param_3" => {
                 has("edit.value_dec") && has("edit.value_inc")
             }
+            "edit.param_4" => {
+                has("edit.param_next") && has("edit.value_dec") && has("edit.value_inc")
+            }
             "none" => true,
             "master.volume" => has("master.volume_down") && has("master.volume_up"),
             "transport.tempo" => has("transport.tempo_down") && has("transport.tempo_up"),
@@ -2347,7 +2350,7 @@ fn reach_drive_from(mut drive: Drive, view: panel::View, sound: Arc<Sample>) -> 
 
 fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
     let extra = format!(
-        "{:?} {:?}",
+        "{:?} {:?} {:?}",
         (
             drive.app.settings_tab,
             drive.app.settings_row,
@@ -2373,7 +2376,8 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
                 .map(|picker| picker.selected),
             drive.app.path_picker.as_ref().map(|picker| picker.selected),
             drive.app.quit_requested,
-        )
+        ),
+        drive.app.pads.fx
     );
     let commands = frame
         .commands()
@@ -2384,7 +2388,7 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// The matrix compares 53 action cells through production keyboard and MIDI input, so it is slow.
+/// The matrix compares 54 action cells through production keyboard and MIDI input, so it is slow.
 #[test]
 fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     use panel::{Config, View};
@@ -2497,7 +2501,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 53);
+    assert_eq!(checked + special, 54);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3686,7 +3690,7 @@ fn the_panel_shows_only_while_pad_bank_is_held() {
 }
 
 /// Every shipped action cell gives the same result through a PAD BANK hold (131)
-/// as through the second-bank route. The matrix drives 53 cells, so it is slow.
+/// as through the second-bank route. The matrix drives 54 cells, so it is slow.
 #[test]
 fn shipped_panel_cells_act_the_same_during_a_hold() {
     let config = panel::Config::parse(
@@ -3715,7 +3719,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 53);
+    assert_eq!(checked, 54);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
@@ -5278,4 +5282,64 @@ fn click_level_changes_independently() {
         assert_eq!(drive.app.master_db, master);
     }
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Scenario "Both inputs show the same FX return feedback".
+#[test]
+fn both_inputs_show_the_same_fx_return_feedback() {
+    let mut keyboard = hold_drive();
+    let mut controller = hold_drive();
+    keyboard.tap(KeyCode::F(4), M::NONE);
+    hold(&mut controller, true);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(5));
+    hold(&mut controller, false);
+    assert_eq!(controller.app.screen, Screen::Fx);
+
+    for _ in 0..3 {
+        keyboard.tap(KeyCode::Down, M::NONE);
+    }
+    keyboard.tap(KeyCode::Left, M::NONE);
+    let level = keyboard.app.pads.fx[0].return_level;
+    assert!(level < 100);
+    for _ in level..100 {
+        turn(&mut controller, 34, 63);
+    }
+    assert_eq!(controller.app.pads.fx[0].return_level, level);
+    assert_eq!(controller.app.fx_param, 3);
+    assert_eq!(
+        keyboard.app.fx_view().blocks[0].rows,
+        controller.app.fx_view().blocks[0].rows
+    );
+    assert_eq!(
+        controller.app.smc_value_label("edit.param_4"),
+        Some(("return", false))
+    );
+
+    keyboard.tap(KeyCode::Char('m'), M::NONE);
+    hold(&mut controller, true);
+    cell(&mut controller, panel_note(1));
+    hold(&mut controller, false);
+    for drive in [&mut keyboard, &mut controller] {
+        assert!(drive.app.pads.fx[0].return_muted);
+        assert!(!drive.app.pads.fx[1].return_muted);
+        assert_eq!(
+            drive.app.fx_view().blocks[0].rows[3].1,
+            format!("{level} % · muted")
+        );
+        drive.tap(KeyCode::Char('z'), M::CONTROL);
+        assert!(!drive.app.pads.fx[0].return_muted);
+        assert_eq!(drive.app.pads.fx[0].return_level, level);
+    }
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    list_button(&mut controller, true);
+    assert_eq!(keyboard.app.fx_slot, 1);
+    assert_eq!(controller.app.fx_slot, 1);
+    keyboard.tap(KeyCode::F(2), M::NONE);
+    hold(&mut controller, true);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(1));
+    hold(&mut controller, false);
+    assert_eq!(keyboard.app.screen, Screen::Pads);
+    assert_eq!(controller.app.screen, Screen::Pads);
 }

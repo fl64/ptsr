@@ -113,12 +113,9 @@ fn main() -> io::Result<()> {
         .collect();
     let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
     setup(|cmd| tx.push(cmd).unwrap());
-    let mut rt = Realtime::new(
-        Engine::with_sounds(SR, engine::click(SR), vec![sound]),
-        vec![rx],
-        Arc::new(Stats::default()),
-        SR,
-    );
+    let mut engine = Engine::with_sounds(SR, engine::click(SR), vec![sound]);
+    engine.enable_master_output();
+    let mut rt = Realtime::new(engine, vec![rx], Arc::new(Stats::default()), SR);
     let (mut l, mut r) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
 
     let samples = (0..blocks)
@@ -271,12 +268,9 @@ fn bench_tails(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<(f64
         });
     }
     let pads = vec![drum.clone(), drum.clone(), drum.clone(), drum];
-    let mut rt = Realtime::new(
-        Engine::with_sounds(SR, engine::click(SR), pads),
-        vec![rx],
-        Arc::new(Stats::default()),
-        SR,
-    );
+    let mut engine = Engine::with_sounds(SR, engine::click(SR), pads);
+    engine.enable_master_output();
+    let mut rt = Realtime::new(engine, vec![rx], Arc::new(Stats::default()), SR);
     let (mut left, mut right) = ([0.0; BLOCK], [0.0; BLOCK]);
     // Ten seconds of hits, then the measured tails.
     for block in 0..SR as usize * 10 / BLOCK {
@@ -310,6 +304,7 @@ fn bench_pattern(budget: f64, trace: &mut Trace, blocks: usize) -> io::Result<(f
         .map(|i| (i as f32 * 0.01).sin() * 0.001)
         .collect();
     let mut engine = Engine::with_sounds(SR, engine::click(SR), vec![sound]);
+    engine.enable_master_output();
     let (garbage, mut retired) = rtrb::RingBuffer::new(1024);
     engine.set_garbage(garbage);
     setup(|command| {
@@ -361,6 +356,7 @@ fn bench_switch(budget: f64, trace: &mut Trace, switches: u64) -> io::Result<f64
     ));
     let (garbage_tx, mut garbage_rx) = rtrb::RingBuffer::new(1024);
     let mut engine = Engine::with_sounds(SR, engine::click(SR), vec![]);
+    engine.enable_master_output();
     engine.set_garbage(garbage_tx);
     let (mut tx, rx) = rtrb::RingBuffer::new(8 * MAX_VOICES);
     let state = Arc::new(ProjectState::default());

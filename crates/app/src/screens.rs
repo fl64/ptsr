@@ -1403,14 +1403,10 @@ fn render_app_layers(
             0
         },
         master_db: 0,
-        meters: if case.mode == Mode::ClipEvent {
-            (
-                app.meters.level_db(),
-                app.meters.peak_db(),
-                app.meters.clip_elapsed(),
-            )
+        meters: if case.mode == Mode::ClipEvent || app.meters.snapshot(now).3 {
+            app.meters.snapshot(now)
         } else {
-            ([-18.0, -12.0], [-20.0, -16.0], None)
+            ([-18.0, -12.0], [-20.0, -16.0], None, false)
         },
         notice: notice.as_deref().map(|text| tui::NoticeLine {
             text,
@@ -3838,6 +3834,74 @@ L="none"
                 "{rows_text}"
             );
             assert!(rows[..top].iter().any(|row| row.contains("redo")));
+        }
+    }
+
+    /// Scenario "Limiter feedback names a loud master".
+    #[test]
+    fn limiter_feedback_names_a_loud_master() {
+        let at = Instant::now();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::Warn,
+                size,
+            };
+            let mut app = fixture(case, at);
+            let stats = std::sync::Arc::new(engine::rt::Stats::default());
+            let mut engine = engine::Engine::with_sounds(48_000, vec![], vec![vec![1.5; 512]]);
+            engine.enable_master_output();
+            engine.set_stats(stats.clone());
+            engine.handle(
+                0,
+                engine::Command::PadPress {
+                    pad: 0,
+                    velocity: 1.0,
+                },
+            );
+            engine.process(&mut [0.0; 384], &mut [0.0; 384]);
+            app.meters.observe(&stats, at);
+            assert!(app.meters.snapshot(at).3);
+            assert!(
+                !app.meters
+                    .snapshot(at + std::time::Duration::from_secs(1))
+                    .3
+            );
+            let rows = drawn_rows(case, app, at);
+            assert!(rows.iter().any(|row| row.contains("LIMIT")), "{rows:?}");
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains("Offline fixture: wait for loading")),
+                "{rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn return_level_and_mute_fit_at_both_sizes() {
+        for size in SIZES {
+            let at = Instant::now();
+            let case = Case {
+                screen: Screen::Fx,
+                mode: Mode::Normal,
+                size,
+            };
+            let mut app = fixture(case, at);
+            fixture_smc_knob_strip(&mut app, at);
+            app.pads.fx[0].return_level = 72;
+            app.pads.fx[0].return_muted = true;
+            app.fx_param = 3;
+            let rows = drawn_rows(case, app, at);
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains("return") && row.contains("72 % · muted")),
+                "{rows:?}"
+            );
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains("return") && row.contains("100 %")),
+                "{rows:?}"
+            );
         }
     }
 

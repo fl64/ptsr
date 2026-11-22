@@ -578,7 +578,7 @@ impl App {
         })
     }
 
-    fn smc_value_label(&self, action: &str) -> Option<(&'static str, bool)> {
+    pub(super) fn smc_value_label(&self, action: &str) -> Option<(&'static str, bool)> {
         use input::midi::Param;
         let param = match input::midi::param_of(action)? {
             Param::SmcPageValue(knob) => {
@@ -592,7 +592,7 @@ impl App {
             Some(Param::PadSource) => "source",
             Some(Param::PadEffect(0)) => "drive",
             Some(Param::PadEffect(9)) => "mute",
-            Some(Param::PadEffect(index @ 3..=8)) => {
+            Some(Param::PadEffect(index @ (3..=8 | 10..=11))) => {
                 self.pads.name(super::EFFECT_PARAMS[usize::from(index)])
             }
             Some(param) => input::midi::PARAMS

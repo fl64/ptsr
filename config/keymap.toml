@@ -167,6 +167,7 @@ M = "pad.mark_toggle"    # the marker key: marks pads here, a cut on the chop sc
 
 # Shared effects: the page keys select FX 1 or FX 2.
 [screens.fx]
+M = "fx.mute_return"
 Tab = "edit.page_next"
 "Shift+Tab" = "edit.page_prev"
 I = "edit.param_prev"

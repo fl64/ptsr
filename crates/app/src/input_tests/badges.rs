@@ -750,7 +750,7 @@ fn pads_play_badge(drive: &mut Drive) -> bool {
         load_peak: 0.0,
         xruns: 0,
         master_db: 0,
-        meters: ([-60.0; 2], [-60.0; 2], None),
+        meters: ([-60.0; 2], [-60.0; 2], None, false),
         notice: None,
         no_releases: false,
         project: None,
