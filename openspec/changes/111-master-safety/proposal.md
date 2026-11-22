@@ -37,11 +37,16 @@ None.
 
 ### SMC-PAD
 
-1. Open FX from the screens panel. Select a slot.
+1. Hold PAD BANK. Press LEFT, then P9 FX. Release PAD BANK. Select a slot.
 2. Turn E5 to change Return. Open the panel and press P13 to mute it.
 3. Release PAD BANK. Check the level and mute state of each slot.
 
+### Screens
+
+Check `renders/screens/fx-normal-80x26.ansi` and `renders/screens/fx-normal-120x40.ansi`.
+Check the return action in `renders/screens/fx-panel-main-80x26.ansi`.
+
 ### Sound
 
-Compare the normal and loud master renders. Check the click against the pad attack.
-Listen to the return and mute changes while a delay or reverb tail sounds.
+Compare `renders/111-master-normal.wav`, `renders/111-master-loud.wav` and
+`renders/111-master-record.wav`. Listen to the return changes in `renders/111-fx-returns.wav`.

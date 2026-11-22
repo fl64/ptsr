@@ -12,7 +12,7 @@ pub(super) fn db_height(p: f32) -> f32 {
 /// L/R meters of the master output: a dB bar per channel with a peak-hold mark,
 /// and the latching overload light.
 pub(super) fn meters(frame: &mut Frame, area: Rect, s: &Status) {
-    let (level, peak, clip) = s.meters;
+    let (level, peak, clip, limiting) = s.meters;
     let rows = Layout::vertical([Constraint::Length(1); METER_ROWS as usize]).split(area);
     // " L " + bar + " -60 dB": the number keeps its width across the range
     let bar_w = (area.width.saturating_sub(11)) as usize;
@@ -47,6 +47,8 @@ pub(super) fn meters(frame: &mut Frame, area: Rect, s: &Status) {
             ),
             Style::new().fg(BG).bg(MAGENTA),
         )
+    } else if limiting {
+        " LIMIT ".fg(BG).bg(MAGENTA)
     } else {
         Span::raw("")
     };

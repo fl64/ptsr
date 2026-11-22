@@ -301,6 +301,8 @@ pub struct Slot {
     sample_rate: f32,
     /// Nothing reached the effect yet: a new setting takes hold at once, no slide.
     quiet: bool,
+    return_gain: f32,
+    return_target: f32,
 }
 
 impl Slot {
@@ -314,6 +316,8 @@ impl Slot {
             glide: 1.0 / (PARAM_GLIDE_SECONDS * sample_rate).max(1.0),
             sample_rate,
             quiet: true,
+            return_gain: 1.0,
+            return_target: 1.0,
         }
     }
 
@@ -347,6 +351,15 @@ impl Slot {
                 if fresh {
                     self.delay.time_now = self.delay.time;
                 }
+            }
+        }
+    }
+
+    pub(crate) fn set_return(&mut self, gain: f32) {
+        if gain.is_finite() {
+            self.return_target = gain.clamp(0.0, 1.0);
+            if self.quiet {
+                self.return_gain = self.return_target;
             }
         }
     }
@@ -411,7 +424,11 @@ impl Slot {
             out[1] += tail[1] * g;
             self.leaving = (left > 1).then_some((k, left - 1));
         }
-        out
+        if self.return_gain != self.return_target {
+            let step = 1.0 / self.fade_len as f32;
+            self.return_gain += (self.return_target - self.return_gain).max(-step).min(step);
+        }
+        out.map(|sample| sample * self.return_gain)
     }
 }
 

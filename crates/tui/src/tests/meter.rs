@@ -6,7 +6,7 @@ use super::*;
 fn meters_follow_the_sound() {
     let p = idle_pads();
     // L at -6 dB with its peak at -3, R at -12 dB with the peak under the bar
-    let rows = render_pads_with(p, ([-6.0, -12.0], [-3.0, -12.0], None));
+    let rows = render_pads_with(p, ([-6.0, -12.0], [-3.0, -12.0], None, false));
     // the meters top the right column (31)
     let y = frame_at(100, 26).side.y as usize;
     let (l, r) = (row_text(&rows, y), row_text(&rows, y + 1));
@@ -25,7 +25,12 @@ fn overload_latches() {
     let y = frame_at(100, 26).side.y as usize + 2;
     let rows = render_pads_with(
         idle_pads(),
-        ([-6.0, -6.0], [-6.0, -6.0], Some(Duration::from_secs(3_723))),
+        (
+            [-6.0, -6.0],
+            [-6.0, -6.0],
+            Some(Duration::from_secs(3_723)),
+            false,
+        ),
     );
     assert!(row_text(&rows, y).contains("CLIP +01:02:03"));
     let light = rows[y]
@@ -33,7 +38,7 @@ fn overload_latches() {
         .find(|(s, _, _)| s == "C")
         .expect("the lit CLIP light");
     assert_eq!(light.2, MAGENTA, "the light is a magenta plate");
-    let rows = render_pads_with(idle_pads(), ([-60.0, -60.0], [-60.0, -60.0], None));
+    let rows = render_pads_with(idle_pads(), ([-60.0, -60.0], [-60.0, -60.0], None, false));
     let side = frame_at(100, 26).side;
     assert!(
         rows[y][side.x as usize..side.right() as usize]

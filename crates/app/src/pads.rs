@@ -88,6 +88,8 @@ pub struct FxSlot {
     /// Delay time in ms and feedback in percent.
     pub time_ms: u16,
     pub feedback: u8,
+    pub return_level: u8,
+    pub return_muted: bool,
 }
 
 impl FxSlot {
@@ -102,6 +104,8 @@ impl FxSlot {
             tone: 50,
             time_ms: 250,
             feedback: 40,
+            return_level: 100,
+            return_muted: false,
         }
     }
 
@@ -125,6 +129,8 @@ impl FxSlot {
             tone: self.tone,
             time_ms: self.time_ms,
             feedback: self.feedback,
+            return_level: (self.return_level != 100).then_some(self.return_level),
+            return_muted: self.return_muted,
         }
     }
 
@@ -141,6 +147,8 @@ impl FxSlot {
             tone: s.tone.min(100),
             time_ms: s.time_ms.clamp(10, 2_000),
             feedback: s.feedback.min(max_fb),
+            return_level: s.return_level.unwrap_or(100).min(100),
+            return_muted: s.return_muted,
         }
     }
 }
@@ -214,14 +222,20 @@ pub enum Param {
     Fx2Kind,
     Fx2A,
     Fx2B,
+    Fx1Return,
+    Fx2Return,
 }
 
 impl Param {
+    pub fn is_fx_return(self) -> bool {
+        matches!(self, Self::Fx1Return | Self::Fx2Return)
+    }
+
     /// The shared slot a parameter sets (56): those pages act on every pad.
     pub fn slot(self) -> Option<usize> {
         match self {
-            Param::Fx1Kind | Param::Fx1A | Param::Fx1B => Some(0),
-            Param::Fx2Kind | Param::Fx2A | Param::Fx2B => Some(1),
+            Param::Fx1Kind | Param::Fx1A | Param::Fx1B | Param::Fx1Return => Some(0),
+            Param::Fx2Kind | Param::Fx2A | Param::Fx2B | Param::Fx2Return => Some(1),
             _ => None,
         }
     }
@@ -264,6 +278,7 @@ pub fn name_of(p: Param) -> &'static str {
         // the names of a slot's parameters follow its kind: see `Pads::name`
         Param::Fx1A | Param::Fx2A => "fx a",
         Param::Fx1B | Param::Fx2B => "fx b",
+        Param::Fx1Return | Param::Fx2Return => "return",
     }
 }
 
@@ -997,6 +1012,7 @@ impl Pads {
             std::array::from_fn(|k| s.fx.get(k).map_or(FxSlot::DEFAULTS[k], FxSlot::from_state));
         for k in 0..FX_SLOTS {
             cmds.push(self.fx_command(k));
+            cmds.push(self.fx_return_command(k));
         }
         match Self::compile_pattern(self.pattern.as_ref(), None) {
             Ok(pattern) => cmds.push(Command::SetPattern { pattern }),
@@ -1056,6 +1072,18 @@ impl Pads {
         Command::SetFx {
             slot,
             settings: self.fx[slot].settings(),
+        }
+    }
+
+    pub fn fx_return_command(&self, slot: usize) -> Command {
+        let state = self.fx[slot];
+        Command::SetFxReturn {
+            slot,
+            gain: if state.return_muted {
+                0.0
+            } else {
+                f32::from(state.return_level) / 100.0
+            },
         }
     }
 
@@ -1347,6 +1375,11 @@ impl Pads {
             Param::Drive => format!("{} %", self.drive[abs]),
             Param::Send1 => format!("{} %", self.sends[abs][0]),
             Param::Send2 => format!("{} %", self.sends[abs][1]),
+            Param::Fx1Return | Param::Fx2Return => {
+                let fx = slot(p.slot().unwrap_or(0));
+                let state = if fx.return_muted { " · muted" } else { "" };
+                format!("{} %{state}", fx.return_level)
+            }
             Param::Fx1Kind | Param::Fx2Kind => kind_word(slot(p.slot().unwrap_or(0)).kind).into(),
             Param::Fx1A | Param::Fx2A => {
                 let f = slot(p.slot().unwrap_or(0));
@@ -1377,6 +1410,7 @@ impl Pads {
             (Param::Drive, _) => pct(self.drive[abs]),
             (Param::Send1, _) => pct(self.sends[abs][0]),
             (Param::Send2, _) => pct(self.sends[abs][1]),
+            (Param::Fx1Return | Param::Fx2Return, Some(f)) => pct(f.return_level),
             (Param::Fx1Kind | Param::Fx2Kind, Some(f)) => match f.kind {
                 FxKind::Reverb => 0.25,
                 FxKind::Delay => 0.75,
@@ -1402,6 +1436,7 @@ impl Pads {
             let f = &mut self.fx[k];
             let before = *f;
             match p {
+                Param::Fx1Return | Param::Fx2Return => f.return_level = pct,
                 Param::Fx1Kind | Param::Fx2Kind => {
                     f.kind = if pos < 0.5 {
                         FxKind::Reverb
@@ -1419,7 +1454,11 @@ impl Pads {
                 },
             }
             return if *f != before {
-                vec![self.fx_command(k)]
+                vec![if p.is_fx_return() {
+                    self.fx_return_command(k)
+                } else {
+                    self.fx_command(k)
+                }]
             } else {
                 Vec::new()
             };
@@ -1707,7 +1746,9 @@ impl Pads {
                     | Param::Fx1B
                     | Param::Fx2Kind
                     | Param::Fx2A
-                    | Param::Fx2B) => {
+                    | Param::Fx2B
+                    | Param::Fx1Return
+                    | Param::Fx2Return) => {
                         let k = p.slot().unwrap_or(0);
                         let f = &mut self.fx[k];
                         let before = *f;
@@ -1716,6 +1757,9 @@ impl Pads {
                                 .clamp(0, max as i16) as u8
                         };
                         match p {
+                            Param::Fx1Return | Param::Fx2Return => {
+                                f.return_level = pct(f.return_level, 100)
+                            }
                             Param::Fx1Kind | Param::Fx2Kind => {
                                 f.kind = match f.kind {
                                     FxKind::Reverb => FxKind::Delay,
@@ -1739,7 +1783,11 @@ impl Pads {
                         if *f == before {
                             limits += 1;
                         } else {
-                            cmds.push(self.fx_command(k));
+                            cmds.push(if p.is_fx_return() {
+                                self.fx_return_command(k)
+                            } else {
+                                self.fx_command(k)
+                            });
                         }
                     }
                     Param::Filter | Param::Cutoff | Param::Reso => {
@@ -2419,6 +2467,7 @@ impl App {
                 };
                 self.param_step_name(p)
             }
+            Action::FxMute => format!("FX {} return mute", self.fx_slot + 1),
             Action::PadModeNext => "mode".into(),
             Action::PadPitchGateToggle => "Pitch Gate".into(),
             Action::PadClear => "clear".into(),
@@ -2752,6 +2801,45 @@ mod tests {
         assert_eq!(old.name, None);
     }
     use super::*;
+
+    /// Scenario "Shared FX return controls survive a project reload".
+    #[test]
+    fn shared_fx_return_controls_survive_a_project_reload() {
+        let mut pads = Pads::default();
+        let args = |slot: &mut FxSlot, level, muted| {
+            slot.return_level = level;
+            slot.return_muted = muted;
+        };
+        args(&mut pads.fx[0], 64, true);
+        args(&mut pads.fx[1], 83, false);
+        let state = Session {
+            fx: pads.fx.iter().map(FxSlot::state).collect(),
+            ..Session::default()
+        };
+        let root = std::env::temp_dir().join(format!("ptsr-111-fx-{}", std::process::id()));
+        let path = root.join("project.toml");
+        std::fs::create_dir_all(&root).unwrap();
+        crate::session::save_project(&path, &state).unwrap();
+        let loaded = crate::session::load(&path).unwrap();
+        let slot0 = FxSlot::from_state(&loaded.fx[0]);
+        let slot1 = FxSlot::from_state(&loaded.fx[1]);
+        assert_eq!([slot0, slot1], pads.fx);
+        let old: FxState = toml::from_str("kind = 'delay'").unwrap();
+        let old = FxSlot::from_state(&old);
+        assert_eq!((old.return_level, old.return_muted), (100, false));
+        assert!(matches!(
+            pads.fx_return_command(0),
+            Command::SetFxReturn { slot: 0, gain: 0.0 }
+        ));
+        assert!(matches!(
+            pads.fx_return_command(1),
+            Command::SetFxReturn {
+                slot: 1,
+                gain: 0.83
+            }
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn press(pad: usize) -> Action {
         Action::PadPress { pad, velocity: 1.0 }

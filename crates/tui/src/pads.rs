@@ -67,7 +67,7 @@ pub fn smc_words() -> bool {
 }
 
 thread_local! {
-    /// The knobs that turn the rows of a pad edit page, top down; `None` counts 1, 2, 3.
+    /// The knobs that turn the rows of a pad edit page, top down; `None` counts 1 to 4.
     static ROW_KNOBS: std::cell::Cell<Option<[u8; 4]>> = const { std::cell::Cell::new(None) };
 }
 
@@ -76,11 +76,11 @@ pub fn set_row_knobs(knobs: Option<[u8; 4]>) {
 }
 
 thread_local! {
-    /// The knobs that turn the rows of the selected FX slot; `None` counts 1, 2, 3.
-    static FX_KNOBS: std::cell::Cell<Option<[u8; 3]>> = const { std::cell::Cell::new(None) };
+    /// The knobs that turn the rows of the selected FX slot; `None` counts 1 to 4.
+    static FX_KNOBS: std::cell::Cell<Option<[u8; 4]>> = const { std::cell::Cell::new(None) };
 }
 
-pub fn set_fx_knobs(knobs: Option<[u8; 3]>) {
+pub fn set_fx_knobs(knobs: Option<[u8; 4]>) {
     FX_KNOBS.set(knobs);
 }
 

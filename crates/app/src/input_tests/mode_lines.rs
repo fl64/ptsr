@@ -59,7 +59,7 @@ fn strip_rows_at(drive: &mut Drive, width: u16, height: u16, now: Instant) -> Ve
         load_peak: 0.0,
         xruns: 0,
         master_db: app.master_db,
-        meters: ([-60.0; 2], [-60.0; 2], None),
+        meters: ([-60.0; 2], [-60.0; 2], None, false),
         notice: None,
         no_releases: false,
         project: None,

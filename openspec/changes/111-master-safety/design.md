@@ -59,3 +59,19 @@ Check the labels and controls at 80 by 26 and 120 by 40.
 
 A limiter indicator names gain reduction above 1 dB. Keep it visible long enough
 to read in the shared output meter. Do not cover a warning or a question.
+
+## Audio boundary cases
+
+| Case | Expected result | Check |
+| --- | --- | --- |
+| A quiet block or an empty callback | Quiet samples keep their level. Empty callbacks leave the delay unchanged. | Engine tests |
+| A loud phase between samples | Sample ceiling and the independent 4x reference stay within the limit. | Engine render |
+| Panic and then a new hit | The old output ends within five milliseconds. The new hit can play. | Callback test |
+| A project switch at one frame per callback | Old frames drain before the new project is ready. | Callback test |
+| Mute an active slot, then undo | The other return and dry mix stay at the same level. The old setting returns. | Engine and input tests |
+| Open a project saved before the new controls | Each level starts at 100 percent, with both returns unmuted. | Project reload test |
+
+Both device backends enable the same engine output stage before their callbacks start.
+The engine can also render the mix before the device stage for scheduling tests.
+Tests for this change and the callback benchmark enable the device stage.
+The LIMIT mark holds for 400 ms after gain reduction exceeds 1 dB.

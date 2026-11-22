@@ -5,6 +5,7 @@ pub mod capture;
 pub mod checks;
 pub mod filter;
 pub mod fx;
+mod master;
 pub mod offline;
 pub mod pattern;
 pub mod rt;
@@ -255,6 +256,10 @@ pub enum Command {
         slot: usize,
         settings: fx::FxSettings,
     },
+    SetFxReturn {
+        slot: usize,
+        gain: f32,
+    },
     /// A new sample for a pad; `None` makes it silent. Playing voices keep their old sample.
     /// The pad plays the whole sample until a `SetPadRegion` follows.
     SetPadSound {
@@ -439,6 +444,8 @@ pub struct Engine {
     master: f32,
     /// Master gain at the start of the block: ramps to `master` within the block.
     master_from: f32,
+    output: Option<master::Output>,
+    switch_output_frames: usize,
     fade_len: u32,
     /// Length of a pitch glide, in output frames.
     glide_len: u32,
@@ -541,6 +548,8 @@ impl Engine {
             metro_gain_target: 1.0,
             master: 1.0,
             master_from: 1.0,
+            output: None,
+            switch_output_frames: 0,
             fade_len: ((sample_rate as f32 * FADE_SECONDS) as u32).max(1),
             glide_len: ((sample_rate as f32 * PITCH_GLIDE_SECONDS) as u32).max(1),
             env_step: 1.0 / (ENV_GLIDE_SECONDS * sample_rate as f32),
@@ -700,6 +709,19 @@ impl Engine {
         !needed || self.garbage.as_ref().is_none_or(|g| g.slots() > 0)
     }
 
+    /// Install the device output before starting the audio thread.
+    pub fn enable_master_output(&mut self) {
+        self.output = Some(master::Output::new(self.sample_rate as u32));
+    }
+
+    fn stop_fade_len(&self) -> u32 {
+        let delay = self
+            .output
+            .as_ref()
+            .map_or(0, |output| output.latency() as u32);
+        self.fade_len.saturating_sub(delay).max(1)
+    }
+
     /// Begin a project transition without releasing samples on the audio thread.
     pub fn switch_project(&mut self) {
         self.capture.reset(self.recording().epoch);
@@ -711,6 +733,9 @@ impl Engine {
         self.pattern_hits.fill(0);
         self.reset_pattern = true;
         self.switch_reset = true;
+        if self.output.is_some() {
+            self.switch_output_frames = self.fade_len as usize;
+        }
         self.fade_all_voices();
         if self.tail_clear.is_some() {
             self.reset_pad = Some(0);
@@ -719,20 +744,21 @@ impl Engine {
     }
 
     fn fade_all_voices(&mut self) {
+        let fade_len = self.stop_fade_len();
         for v in &mut self.voices {
-            if v.sound.is_some() && v.fade.is_none_or(|f| f > self.fade_len) {
+            if v.sound.is_some() && v.fade.is_none_or(|f| f > fade_len) {
                 if let Some(f) = v.fade {
                     v.fade_gain *= f as f32 / v.fade_total.max(1) as f32;
                 }
-                v.fade = Some(self.fade_len);
-                v.fade_total = self.fade_len;
+                v.fade = Some(fade_len);
+                v.fade_total = fade_len;
             }
         }
     }
 
     fn start_tail_fade(&mut self) {
         if self.tail_clear.is_none() && self.tail_fade.is_none() {
-            self.tail_fade = Some(self.fade_len);
+            self.tail_fade = Some(self.stop_fade_len());
         }
     }
 
@@ -772,8 +798,10 @@ impl Engine {
             }
             self.reset_pattern = false;
         }
-        self.switch_reset =
-            self.tail_clear.is_some() || self.reset_pad.is_some() || self.reset_pattern;
+        self.switch_reset = self.tail_clear.is_some()
+            || self.reset_pad.is_some()
+            || self.reset_pattern
+            || self.switch_output_frames != 0;
         !self.switch_reset
     }
 
@@ -1156,6 +1184,9 @@ impl Engine {
             Command::SetFx { slot, settings } if slot < FX_SLOTS => {
                 self.slots[slot].set(settings);
             }
+            Command::SetFxReturn { slot, gain } if slot < FX_SLOTS => {
+                self.slots[slot].set_return(gain);
+            }
             Command::SetPadSound { pad, sound } if pad < PADS => {
                 self.pads[pad].region = Region::WHOLE;
                 if let Some(old) = std::mem::replace(&mut self.pads[pad].sound, sound) {
@@ -1439,6 +1470,18 @@ impl Engine {
             let (left, right) = (&mut left[at..end], &mut right[at..end]);
             let cue = &mut cue[..end - at];
             self.process_part(left, right, cue);
+            let limiting = self
+                .output
+                .as_mut()
+                .is_some_and(|output| output.process(left, right, cue));
+            if let Some(stats) = &self.stats {
+                let peak = |b: &[f32]| b.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+                stats.record_output(peak(left), peak(right));
+                if limiting {
+                    stats.record_limiting();
+                }
+            }
+            self.switch_output_frames = self.switch_output_frames.saturating_sub(end - at);
             master(at, left, right);
             for ((l, r), &click) in left.iter_mut().zip(right.iter_mut()).zip(cue.iter()) {
                 *l += click;
@@ -1602,6 +1645,7 @@ impl Engine {
                 retire_slot(&mut self.garbage, &mut v.sound);
             }
         }
+        let fade_len = self.stop_fade_len() as f32;
         let clock = if self.capture.counting() {
             &mut self.count_in
         } else {
@@ -1617,9 +1661,9 @@ impl Engine {
             }
             if let Some(pos) = self.metro_pos {
                 if let Some(&sample) = self.click.left.get(pos) {
-                    let fade = self.tail_fade.map_or(1.0, |f| {
-                        f.saturating_sub(i as u32) as f32 / self.fade_len as f32
-                    });
+                    let fade = self
+                        .tail_fade
+                        .map_or(1.0, |f| f.saturating_sub(i as u32) as f32 / fade_len);
                     *click = sample * self.metro_velocity * self.metro_gain * fade;
                     self.metro_pos = Some(pos + 1);
                 } else {
@@ -1659,15 +1703,16 @@ impl Engine {
             p.drive_from = p.drive;
             p.sends_from = p.sends;
         }
+        let fade_len = self.stop_fade_len() as f32;
         let bus = &self.bus[..n];
         // the shared slots add their wet sound to the pads' own (56)
         if self.tail_clear.is_none() {
             for (k, slot) in self.slots.iter_mut().enumerate() {
                 for (i, frame) in bus.iter().enumerate() {
                     let [wl, wr] = slot.tick([frame[2 * k], frame[2 * k + 1]]);
-                    let gain = self.tail_fade.map_or(1.0, |f| {
-                        f.saturating_sub(i as u32) as f32 / self.fade_len as f32
-                    });
+                    let gain = self
+                        .tail_fade
+                        .map_or(1.0, |f| f.saturating_sub(i as u32) as f32 / fade_len);
                     left[i] += wl * gain;
                     right[i] += wr * gain;
                 }
@@ -1702,10 +1747,6 @@ impl Engine {
             *r *= g;
         }
         self.master_from = self.master;
-        if let Some(stats) = &self.stats {
-            let peak = |b: &[f32]| b.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-            stats.record_output(peak(left), peak(right));
-        }
     }
 }
 

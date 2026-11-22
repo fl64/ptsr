@@ -430,6 +430,9 @@ fn every_current_controller_action_has_a_keyboard_route() {
             | "smc.page_7" | "edit.param_1" | "edit.param_2" | "edit.param_3" => {
                 has("edit.value_dec") && has("edit.value_inc")
             }
+            "edit.param_4" => {
+                has("edit.param_next") && has("edit.value_dec") && has("edit.value_inc")
+            }
             "none" => true,
             "master.volume" => has("master.volume_down") && has("master.volume_up"),
             "transport.tempo" => has("transport.tempo_down") && has("transport.tempo_up"),
@@ -5278,4 +5281,64 @@ fn click_level_changes_independently() {
         assert_eq!(drive.app.master_db, master);
     }
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Scenario "Both inputs show the same FX return feedback".
+#[test]
+fn both_inputs_show_the_same_fx_return_feedback() {
+    let mut keyboard = hold_drive();
+    let mut controller = hold_drive();
+    keyboard.tap(KeyCode::F(4), M::NONE);
+    hold(&mut controller, true);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(5));
+    hold(&mut controller, false);
+    assert_eq!(controller.app.screen, Screen::Fx);
+
+    for _ in 0..3 {
+        keyboard.tap(KeyCode::Down, M::NONE);
+    }
+    keyboard.tap(KeyCode::Left, M::NONE);
+    let level = keyboard.app.pads.fx[0].return_level;
+    assert!(level < 100);
+    for _ in level..100 {
+        turn(&mut controller, 34, 63);
+    }
+    assert_eq!(controller.app.pads.fx[0].return_level, level);
+    assert_eq!(controller.app.fx_param, 3);
+    assert_eq!(
+        keyboard.app.fx_view().blocks[0].rows,
+        controller.app.fx_view().blocks[0].rows
+    );
+    assert_eq!(
+        controller.app.smc_value_label("edit.param_4"),
+        Some(("return", false))
+    );
+
+    keyboard.tap(KeyCode::Char('m'), M::NONE);
+    hold(&mut controller, true);
+    cell(&mut controller, panel_note(1));
+    hold(&mut controller, false);
+    for drive in [&mut keyboard, &mut controller] {
+        assert!(drive.app.pads.fx[0].return_muted);
+        assert!(!drive.app.pads.fx[1].return_muted);
+        assert_eq!(
+            drive.app.fx_view().blocks[0].rows[3].1,
+            format!("{level} % · muted")
+        );
+        drive.tap(KeyCode::Char('z'), M::CONTROL);
+        assert!(!drive.app.pads.fx[0].return_muted);
+        assert_eq!(drive.app.pads.fx[0].return_level, level);
+    }
+    keyboard.tap(KeyCode::Tab, M::NONE);
+    list_button(&mut controller, true);
+    assert_eq!(keyboard.app.fx_slot, 1);
+    assert_eq!(controller.app.fx_slot, 1);
+    keyboard.tap(KeyCode::F(2), M::NONE);
+    hold(&mut controller, true);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(1));
+    hold(&mut controller, false);
+    assert_eq!(keyboard.app.screen, Screen::Pads);
+    assert_eq!(controller.app.screen, Screen::Pads);
 }

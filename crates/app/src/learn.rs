@@ -584,6 +584,7 @@ impl App {
                 ("edit.param_2", "first parameter"),
                 ("edit.param_3", "second parameter"),
                 ("edit.page", "effect block"),
+                ("edit.param_4", "return level"),
             ],
             Screen::Pads => &[
                 ("pad.volume", "volume"),

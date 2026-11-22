@@ -705,6 +705,7 @@ mod tests {
             "mark pad",
             "menu",
             "mixer",
+            "mute return",
             "new project",
             "no",
             "norm",
@@ -883,7 +884,7 @@ mod tests {
                     "hear as pad",
                 ],
             ),
-            (View::Fx, &[]),
+            (View::Fx, &["mute return"]),
             (View::Settings, &["", "", "", "", "", "", "", "", "choose"]),
         ];
         for (view, labels) in table {

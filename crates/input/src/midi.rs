@@ -158,6 +158,7 @@ pub const PARAMS: &[(&str, Param)] = &[
     ("edit.param_1", Param::Slot(0)),
     ("edit.param_2", Param::Slot(1)),
     ("edit.param_3", Param::Slot(2)),
+    ("edit.param_4", Param::Slot(3)),
     ("smc.page_2", Param::SmcPageValue(2)),
     ("smc.page_3", Param::SmcPageValue(3)),
     ("smc.page_4", Param::SmcPageValue(4)),

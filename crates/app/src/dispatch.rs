@@ -686,8 +686,17 @@ impl App {
             Action::ParamNext | Action::ParamPrev | Action::PadParamNext
                 if self.screen == Screen::Fx =>
             {
-                let step = if action == Action::ParamPrev { 2 } else { 1 };
-                self.fx_param = (self.fx_param + step) % 3;
+                let step = if action == Action::ParamPrev { 3 } else { 1 };
+                self.fx_param = (self.fx_param + step) % 4;
+            }
+            Action::FxMute if self.screen == Screen::Fx => {
+                let slot = self.fx_slot;
+                let muted = &mut self.pads.fx[slot].return_muted;
+                *muted = !*muted;
+                self.fx_param = 3;
+                self.lit = Some((Lit::Pad(super::values::fx_row(slot, 3)), Instant::now()));
+                self.send(self.pads.fx_return_command(slot));
+                self.dirty();
             }
             Action::EditValue { .. } | Action::PadParam(_) if self.screen == Screen::Fx => {
                 let p = self.fx_selected_param();
@@ -2222,6 +2231,9 @@ impl App {
                 match value {
                     Ok(v) => {
                         self.pickup = None;
+                        if self.screen == Screen::Fx && p.is_fx_return() {
+                            self.fx_param = 3;
+                        }
                         self.lit = Some((Lit::Pad(p), now));
                         let cmds = self.pads.set_fx_pos(p, v);
                         if !cmds.is_empty() {
@@ -3016,6 +3028,9 @@ impl App {
                 };
                 if self.screen == Screen::Fx && selected.slot().is_none() {
                     return;
+                }
+                if self.screen == Screen::Fx && selected.is_fx_return() {
+                    self.fx_param = 3;
                 }
                 let previous = std::mem::replace(&mut self.pads.param, selected);
                 for _ in 0..steps.unsigned_abs() {

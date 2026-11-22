@@ -1,8 +1,7 @@
 //! Applied-value feedback. Observe production setters without another input route.
 
 use super::{
-    Action, App, EFFECT_PARAMS, Instant, MidiListRow, Param, Screen, bank_key, file_name, midi,
-    pads, source_word,
+    Action, App, Instant, MidiListRow, Param, Screen, bank_key, file_name, midi, pads, source_word,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -92,7 +91,29 @@ type KnobRole = (&'static str, Option<Param>);
 /// Pad edit values follow the screen column from the top knob down.
 pub(super) const PAD_EDIT_KNOBS: [u8; 4] = [7, 5, 3, 1];
 /// SMC-PAD knobs 2–4 turn the three rows of the selected FX slot.
-pub(super) const FX_KNOBS: [u8; 3] = [2, 3, 4];
+/// The parameters of the FX pages in the order of `Param::PadEffect` (56).
+pub(super) const EFFECT_PARAMS: [pads::Param; 12] = [
+    pads::Param::Drive,
+    pads::Param::Send1,
+    pads::Param::Send2,
+    pads::Param::Fx1Kind,
+    pads::Param::Fx1A,
+    pads::Param::Fx1B,
+    pads::Param::Fx2Kind,
+    pads::Param::Fx2A,
+    pads::Param::Fx2B,
+    // the mute group (70) rides the same knob path: knob 3 of TONE
+    pads::Param::Group,
+    pads::Param::Fx1Return,
+    pads::Param::Fx2Return,
+];
+
+const FX_ROWS: [[usize; 4]; 2] = [[3, 4, 5, 10], [6, 7, 8, 11]];
+pub(super) const FX_KNOBS: [u8; 4] = [2, 3, 4, 5];
+
+pub(super) fn fx_row(slot: usize, row: usize) -> pads::Param {
+    EFFECT_PARAMS[FX_ROWS[slot][row]]
+}
 
 fn pad_knob_label(param: pads::Param) -> &'static str {
     match param {
@@ -599,7 +620,7 @@ impl App {
         Some(c)
     }
     pub(super) fn fx_selected_param(&self) -> pads::Param {
-        EFFECT_PARAMS[3 + self.fx_slot * 3 + self.fx_param]
+        fx_row(self.fx_slot, self.fx_param)
     }
 
     pub(super) fn select_fx(&mut self, slot: usize) {
@@ -638,7 +659,9 @@ impl App {
     /// or past the page.
     pub(super) fn slot_param(&self, k: u8) -> Option<Param> {
         if self.screen == Screen::Fx {
-            return (k < 3).then(|| Param::PadEffect(3 + self.fx_slot as u8 * 3 + k));
+            return FX_ROWS[self.fx_slot]
+                .get(usize::from(k))
+                .map(|&index| Param::PadEffect(index as u8));
         }
         if !self.edit {
             return None;

@@ -262,6 +262,8 @@ impl TextCache {
     }
 }
 
+pub type MeterSnapshot = ([f32; 2], [f32; 2], Option<Duration>, bool);
+
 /// Shared title and status snapshot.
 pub struct Status<'a> {
     pub badges: Vec<Badge>,
@@ -277,7 +279,7 @@ pub struct Status<'a> {
     pub xruns: u64,
     pub master_db: i8,
     /// Output meter levels and the latest session-relative clip time.
-    pub meters: ([f32; 2], [f32; 2], Option<Duration>),
+    pub meters: MeterSnapshot,
     /// Message for the owner: why there is no audio, terminal warning.
     pub notice: Option<NoticeLine<'a>>,
     /// The terminal has no kitty protocol: no key releases, gate pads play as one-shot.
@@ -515,6 +517,8 @@ pub enum PadParam {
     Fx2Kind,
     Fx2A,
     Fx2B,
+    Fx1Return,
+    Fx2Return,
 }
 
 /// The filter response for the strip: `levels` are linear gains at frequencies spread
@@ -640,24 +644,7 @@ pub struct Pads {
     pub slot: Option<(&'static str, String, Vec<PanelRow>)>,
 }
 
-/// One project-wide effect. Rows are type, first parameter and second parameter.
-/// Labels and values come from the app; this view does not interpret effect settings.
-pub struct FxBlock {
-    pub rows: [(&'static str, String); 3],
-}
-
-/// Shared effects screen (F4). Block and parameter indices start at zero.
-pub struct Fx {
-    pub blocks: [FxBlock; 2],
-    pub selected: usize,
-    pub param: usize,
-    /// A takeover hint for the selected block, shown above the bottom help.
-    pub pickup: Option<String>,
-    /// Learned controls of the selected block: (parameter index, control label).
-    pub learn: Vec<(usize, String)>,
-    /// The parameter that changed a moment ago, in the selected block.
-    pub lit: Option<usize>,
-}
+pub use fx::{Fx, FxBlock};
 
 pub enum Screen<'a> {
     Pads(Pads),
@@ -1352,7 +1339,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -1945,7 +1932,7 @@ mod tests {
             load_peak: 1.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -2145,7 +2132,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], None),
+            meters: ([-60.0; 2], [-60.0; 2], None, false),
             no_releases: false,
             notice: None,
             project,
@@ -2180,7 +2167,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], None),
+            meters: ([-60.0; 2], [-60.0; 2], None, false),
             no_releases,
             notice: None,
             project: None,
@@ -2498,7 +2485,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -2640,6 +2627,7 @@ mod tests {
                         ("type", "reverb".into()),
                         ("size", "65 %".into()),
                         ("tone", "80 %".into()),
+                        ("return", "100 %".into()),
                     ],
                 },
                 FxBlock {
@@ -2647,6 +2635,7 @@ mod tests {
                         ("type", "delay".into()),
                         ("time", "250 ms".into()),
                         ("feedback", "40 %".into()),
+                        ("return", "100 %".into()),
                     ],
                 },
             ],
@@ -2717,7 +2706,7 @@ mod tests {
     fn select_the_next_shared_effect() {
         for (w, h) in [(80, 24), (40, 12)] {
             for selected in 0..2 {
-                for param in 0..3 {
+                for param in 0..if w >= 80 { 4 } else { 3 } {
                     let mut f = shared_fx();
                     f.selected = selected;
                     f.param = param;
@@ -2773,9 +2762,10 @@ mod tests {
                 assert_eq!(tops.len(), 1, "{w}x{h}: one frame");
                 assert_eq!(bottoms.len(), 1);
                 let (x, top) = tops[0];
+                let rows_per_slot = if h == 16 { 3 } else { 4 };
                 assert_eq!(
                     bottoms[0],
-                    (x, top + 9),
+                    (x, top + 2 * (rows_per_slot + 1) + 1),
                     "{w}x{h}: the frame fits its content"
                 );
                 assert_eq!(rows[top][x].1, MAGENTA, "the edit colour");
@@ -2785,10 +2775,16 @@ mod tests {
                     assert!(title.contains("EDIT · FX 1 FX 2"), "{w}x{h}: {title}");
                 }
                 assert_eq!(fx_lit(&rows), Some(selected), "{w}x{h}");
-                let block_lines = [top + 1, top + 5];
+                let block_lines = [top + 1, top + rows_per_slot + 2];
                 for (i, y) in block_lines.into_iter().enumerate() {
                     let line = row_text(&rows, y);
                     assert!(line.contains(&format!("─ FX {} ·", i + 1)), "{line}");
+                    let return_line = if rows_per_slot == 4 {
+                        row_text(&rows, y + 4)
+                    } else {
+                        line.clone()
+                    };
+                    assert!(return_line.contains("100 %"), "{return_line}");
                     // inside the frame: its sides have the edit colour too
                     let right = positions("┐")[0].0;
                     let lit = rows[y][x + 1..right]
@@ -3665,7 +3661,7 @@ mod tests {
                             };
                             let rows = render_pads_snapshot(
                                 p,
-                                ([-60.0; 2], [-60.0; 2], None),
+                                ([-60.0; 2], [-60.0; 2], None, false),
                                 false,
                                 width,
                                 height,
@@ -4112,7 +4108,7 @@ mod tests {
                 load_peak: 0.0,
                 xruns: 0,
                 master_db: 0,
-                meters: ([-60.0; 2], [-60.0; 2], None),
+                meters: ([-60.0; 2], [-60.0; 2], None, false),
                 no_releases: false,
                 notice: None,
                 project: None,
@@ -4179,7 +4175,7 @@ mod tests {
         };
         let rec = strip_colors(&render_pads_rec(
             loud(),
-            ([-60.0; 2], [-60.0; 2], None),
+            ([-60.0; 2], [-60.0; 2], None, false),
             true,
             100,
             26,
@@ -4212,7 +4208,7 @@ mod tests {
         };
         let rec = strip_colors(&render_pads_rec(
             edit(),
-            ([-60.0; 2], [-60.0; 2], None),
+            ([-60.0; 2], [-60.0; 2], None, false),
             true,
             100,
             26,
@@ -4961,7 +4957,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], None),
+            meters: ([-60.0; 2], [-60.0; 2], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -5257,7 +5253,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -5549,7 +5545,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -6318,24 +6314,27 @@ mod tests {
 
     /// The pads screen as cells: (symbol, fg, bg) per position.
     fn render_pads(p: Pads) -> Vec<Vec<(String, Color, Color)>> {
-        render_pads_with(p, ([-60.0, -60.0], [-60.0, -60.0], None))
+        render_pads_with(p, ([-60.0, -60.0], [-60.0, -60.0], None, false))
     }
 
-    fn render_pads_with(
-        p: Pads,
-        meters: ([f32; 2], [f32; 2], Option<Duration>),
-    ) -> Vec<Vec<(String, Color, Color)>> {
+    fn render_pads_with(p: Pads, meters: MeterSnapshot) -> Vec<Vec<(String, Color, Color)>> {
         render_pads_rec(p, meters, false, 100, 26)
     }
 
     /// The pads screen at any size, for the wave-row tests.
     fn render_pads_at(p: Pads, w: u16, h: u16) -> Vec<Vec<(String, Color, Color)>> {
-        render_pads_rec(p, ([-60.0, -60.0], [-60.0, -60.0], None), false, w, h)
+        render_pads_rec(
+            p,
+            ([-60.0, -60.0], [-60.0, -60.0], None, false),
+            false,
+            w,
+            h,
+        )
     }
 
     fn render_pads_rec(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], Option<Duration>),
+        meters: MeterSnapshot,
         recording: bool,
         w: u16,
         h: u16,
@@ -6345,7 +6344,7 @@ mod tests {
 
     fn render_pads_snapshot(
         p: Pads,
-        meters: ([f32; 2], [f32; 2], Option<Duration>),
+        meters: MeterSnapshot,
         recording: bool,
         w: u16,
         h: u16,
@@ -6667,7 +6666,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -6785,7 +6784,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -6919,7 +6918,7 @@ mod tests {
             );
             assert_eq!(cache.builds, 1);
         }
-        status.meters = ([-1.0; 2], [0.0; 2], Some(Duration::ZERO));
+        status.meters = ([-1.0; 2], [0.0; 2], Some(Duration::ZERO), false);
         status.notice = Some(NoticeLine::plain("another frame's notice"));
         status
             .badges
@@ -6975,9 +6974,9 @@ mod tests {
                 let mut pads = idle_pads();
                 pads.playing = phase == 1;
                 status.meters = if phase == 1 {
-                    ([-1.0; 2], [0.0; 2], Some(Duration::ZERO))
+                    ([-1.0; 2], [0.0; 2], Some(Duration::ZERO), false)
                 } else {
-                    ([-60.0; 2], [-60.0; 2], None)
+                    ([-60.0; 2], [-60.0; 2], None, false)
                 };
                 status.notice = (phase == 1).then_some(NoticeLine::plain("an active notice"));
                 let help = Help {
@@ -7450,7 +7449,7 @@ mod tests {
             load_peak: 0.0,
             xruns,
             master_db: 0,
-            meters: ([-60.0; 2], [-60.0; 2], None),
+            meters: ([-60.0; 2], [-60.0; 2], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -7530,7 +7529,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -7626,7 +7625,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -7702,7 +7701,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -7839,7 +7838,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -7888,7 +7887,7 @@ mod tests {
             load_peak: 0.0,
             xruns: 0,
             master_db: 0,
-            meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+            meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
             no_releases: false,
             notice: None,
             project: None,
@@ -8133,7 +8132,7 @@ mod tests {
                 load_peak: 0.0,
                 xruns: 0,
                 master_db: 0,
-                meters: ([-60.0, -60.0], [-60.0, -60.0], None),
+                meters: ([-60.0, -60.0], [-60.0, -60.0], None, false),
                 no_releases: false,
                 notice: None,
                 project: None,

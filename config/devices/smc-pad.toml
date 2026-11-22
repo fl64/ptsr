@@ -146,6 +146,7 @@ right = "smc.list_next"
 e2 = "edit.param_1"
 e3 = "edit.param_2"
 e4 = "edit.param_3"
+e5 = "edit.param_4"
 
 [screens.settings]
 left = "smc.list_prev"

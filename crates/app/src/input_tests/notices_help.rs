@@ -546,7 +546,7 @@ pub(super) fn f1_message_screen(drive: &mut Drive, width: u16, height: u16) -> V
         load_peak: 0.0,
         xruns: 0,
         master_db: app.master_db,
-        meters: ([-60.0; 2], [-60.0; 2], None),
+        meters: ([-60.0; 2], [-60.0; 2], None, false),
         notice: None,
         no_releases: false,
         project: app.project.as_ref().map(|project| project.name.as_str()),

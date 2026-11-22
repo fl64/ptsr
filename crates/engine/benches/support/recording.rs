@@ -99,6 +99,7 @@ impl Workload {
                 .collect(),
         ));
         let mut engine = Engine::with_sounds(SAMPLE_RATE, engine::click(SAMPLE_RATE), vec![]);
+        engine.enable_master_output();
         let (garbage_tx, garbage) = rtrb::RingBuffer::new(1024);
         engine.set_garbage(garbage_tx);
         for pad in 0..MAX_VOICES {

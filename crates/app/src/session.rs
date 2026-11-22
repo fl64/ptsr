@@ -133,6 +133,9 @@ pub struct FxState {
     pub tone: u8,
     pub time_ms: u16,
     pub feedback: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_level: Option<u8>,
+    pub return_muted: bool,
 }
 
 /// The cuts of a file, in seconds.

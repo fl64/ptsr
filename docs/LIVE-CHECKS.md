@@ -3049,3 +3049,25 @@ Use the output that you listen to. Play a source from another application on tha
 
 Listen to the local `renders/143-metronome-monitor.wav` and `renders/143-metronome-record.wav`.
 The monitor has the click on each beat. Both files have the pad and the outside source.
+
+## 111: Master limiting and FX returns
+
+### Keyboard
+
+- [ ] On Pads, play several loud pads with both shared effects active. Check the LIMIT mark in the output meter.
+- [ ] Enable the metronome and play A1. Listen for a click and pad attack on the same beat.
+- [ ] Press F4. In FX 1, press Down three times to select Return. Change its level with Left or Right.
+- [ ] Press M to mute FX 1. Press Tab and check that FX 2 keeps its level. Use Ctrl+Z to restore FX 1.
+
+### SMC-PAD
+
+- [ ] Hold PAD BANK. Press LEFT, then P9 FX. Release PAD BANK.
+- [ ] Turn E5. Check the Return level on the selected slot.
+- [ ] Hold PAD BANK and press P13 Mute return. Release PAD BANK. Check the muted state.
+- [ ] Press RIGHT to select FX 2. Check its return. Use the screens panel and P13 Pads to return.
+
+### Sound
+
+- Compare renders/111-master-normal.wav and renders/111-master-loud.wav.
+- Compare renders/111-master-loud.wav and renders/111-master-record.wav. The recording excludes the click.
+- Listen to renders/111-fx-returns.wav. The first return moves to 50 percent and then to mute.

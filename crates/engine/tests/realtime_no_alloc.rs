@@ -408,13 +408,15 @@ fn stale_patterns_and_swaps_retire_outside_callback_during_project_restore() {
 #[test]
 fn transport_remains_allocation_free_under_active_control() {
     let (mut tx, rx) = rtrb::RingBuffer::new(64);
-    let mut rt = Realtime::new(
-        Engine::new(48_000),
-        vec![rx],
-        Arc::new(Stats::default()),
-        48_000,
-    );
+    let mut engine = Engine::with_sounds(48_000, engine::click(48_000), vec![vec![1.4; 48_000]]);
+    engine.enable_master_output();
+    let mut rt = Realtime::new(engine, vec![rx], Arc::new(Stats::default()), 48_000);
     let (mut l, mut r) = ([0.0; 128], [0.0; 128]);
+    tx.push(Command::PadPress {
+        pad: 0,
+        velocity: 1.0,
+    })
+    .unwrap();
     let before = allocs();
     for block in 0..2000 {
         for command in [

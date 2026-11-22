@@ -23,6 +23,7 @@ pub struct Meters {
     start: Instant,
     /// Latest clipped output observed since the last clean hit.
     clip_at: Option<Instant>,
+    limit_at: Option<Instant>,
     /// A pad hit happened; the first read with sound (or after the timeout) decides the light.
     probing: Option<Instant>,
     last: Instant,
@@ -50,6 +51,7 @@ impl Meters {
             peak_at: [now; 2],
             start: now,
             clip_at: None,
+            limit_at: None,
             probing: None,
             last: now,
         }
@@ -69,6 +71,20 @@ impl Meters {
     pub fn clip_elapsed(&self) -> Option<Duration> {
         self.clip_at
             .map(|at| at.saturating_duration_since(self.start))
+    }
+
+    pub fn observe(&mut self, stats: &engine::rt::Stats, now: Instant) {
+        self.update(stats.take_output(), now);
+        if stats.take_limiting() {
+            self.limit_at = Some(now);
+        }
+    }
+
+    pub fn snapshot(&self, now: Instant) -> tui::MeterSnapshot {
+        let limit = self
+            .limit_at
+            .is_some_and(|at| now.saturating_duration_since(at) < Duration::from_millis(400));
+        (self.level_db(), self.peak_db(), self.clip_elapsed(), limit)
     }
 
     /// A pad was hit: the next blocks it produces decide the overload light.
