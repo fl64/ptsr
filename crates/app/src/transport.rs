@@ -36,6 +36,18 @@ impl Default for State {
 }
 
 impl App {
+    pub(super) fn stop_all_sound(&mut self) {
+        if self.audio_alive().is_some() {
+            self.pattern_stop_requested();
+            self.send(Command::Panic);
+            self.post_notice(
+                super::Level::Warn,
+                ("All sound stopped.".into(), Instant::now()),
+            );
+        }
+        self.record_stop();
+    }
+
     pub(super) fn context_button(&mut self, action: Action) {
         let focus = self.focus();
         if focus.mode.text

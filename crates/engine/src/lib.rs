@@ -104,6 +104,7 @@ pub enum Command {
     },
     TransportPlay,
     TransportStop,
+    Panic,
     TransportToggle,
     TransportPlayContext,
     TransportStopContext,
@@ -455,8 +456,9 @@ pub struct Engine {
     /// The shared effect slots and their send buses, left and right per slot (56).
     slots: [fx::Slot; FX_SLOTS],
     bus: Vec<[f32; 2 * FX_SLOTS]>,
-    switch_fade: Option<u32>,
-    switch_clear: Option<(usize, usize)>,
+    switch_reset: bool,
+    tail_fade: Option<u32>,
+    tail_clear: Option<(usize, usize)>,
     reset_pad: Option<usize>,
     reset_pattern: bool,
 }
@@ -552,8 +554,9 @@ impl Engine {
                 )
             }),
             bus: vec![[0.0; 2 * FX_SLOTS]; BUS_FRAMES],
-            switch_fade: None,
-            switch_clear: None,
+            switch_reset: false,
+            tail_fade: None,
+            tail_clear: None,
             reset_pad: None,
             reset_pattern: false,
         }
@@ -700,6 +703,15 @@ impl Engine {
         self.sequencer.dropped = 0;
         self.pattern_hits.fill(0);
         self.reset_pattern = true;
+        self.switch_reset = true;
+        self.fade_all_voices();
+        if self.tail_clear.is_some() {
+            self.reset_pad = Some(0);
+        }
+        self.start_tail_fade();
+    }
+
+    fn fade_all_voices(&mut self) {
         for v in &mut self.voices {
             if v.sound.is_some() && v.fade.is_none_or(|f| f > self.fade_len) {
                 if let Some(f) = v.fade {
@@ -709,23 +721,33 @@ impl Engine {
                 v.fade_total = self.fade_len;
             }
         }
-        if self.switch_clear.is_none() && self.switch_fade.is_none() {
-            self.switch_fade = Some(self.fade_len);
+    }
+
+    fn start_tail_fade(&mut self) {
+        if self.tail_clear.is_none() && self.tail_fade.is_none() {
+            self.tail_fade = Some(self.fade_len);
+        }
+    }
+
+    fn advance_tail_clear(&mut self) {
+        if let Some((slot, mut cursor)) = self.tail_clear {
+            if self.slots[slot].clear_step(&mut cursor, 4096) {
+                self.tail_clear = (slot + 1 < FX_SLOTS).then_some((slot + 1, 0));
+            } else {
+                self.tail_clear = Some((slot, cursor));
+            }
         }
     }
 
     /// Advance bounded transition work; true means restore commands may run.
     pub fn project_transition_step(&mut self) -> bool {
-        if self.switch_fade.is_some() {
+        if !self.switch_reset {
+            return true;
+        }
+        if self.tail_fade.is_some() {
             return false;
         }
-        if let Some((slot, mut cursor)) = self.switch_clear {
-            if self.slots[slot].clear_step(&mut cursor, 4096) {
-                self.switch_clear = (slot + 1 < FX_SLOTS).then_some((slot + 1, 0));
-            } else {
-                self.switch_clear = Some((slot, cursor));
-            }
-        }
+        self.advance_tail_clear();
         if let Some(mut cursor) = self.reset_pad {
             while cursor < PADS {
                 let p = &mut self.pads[cursor];
@@ -743,7 +765,9 @@ impl Engine {
             }
             self.reset_pattern = false;
         }
-        self.switch_clear.is_none() && self.reset_pad.is_none() && !self.reset_pattern
+        self.switch_reset =
+            self.tail_clear.is_some() || self.reset_pad.is_some() || self.reset_pattern;
+        !self.switch_reset
     }
 
     fn reset_pad_settings(p: &mut Pad) {
@@ -849,12 +873,16 @@ impl Engine {
                 }
                 self.transport.play();
             }
-            Command::TransportStop => {
+            Command::TransportStop | Command::Panic => {
                 self.context_paused = false;
                 self.close_erasure(self.recording().pass);
                 self.capture.stop(self.transport.state.ticks);
                 self.count_in.stop();
                 self.stop_pattern();
+                if matches!(cmd, Command::Panic) {
+                    self.fade_all_voices();
+                    self.start_tail_fade();
+                }
             }
             Command::TransportToggle => {
                 self.context_paused = false;
@@ -1378,6 +1406,9 @@ impl Engine {
     /// longer than the send buses is filled in parts.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         self.poll_erasure_releases();
+        if !self.switch_reset {
+            self.advance_tail_clear();
+        }
         let n = left.len().min(right.len());
         let mut at = 0;
         while at < n {
@@ -1546,7 +1577,7 @@ impl Engine {
             }
             if let Some(pos) = self.metro_pos {
                 if let Some(&sample) = self.click.left.get(pos) {
-                    let fade = self.switch_fade.map_or(1.0, |f| {
+                    let fade = self.tail_fade.map_or(1.0, |f| {
                         f.saturating_sub(i as u32) as f32 / self.fade_len as f32
                     });
                     let value = sample * self.metro_velocity * fade;
@@ -1591,11 +1622,11 @@ impl Engine {
         }
         let bus = &self.bus[..n];
         // the shared slots add their wet sound to the pads' own (56)
-        if self.switch_clear.is_none() {
+        if self.tail_clear.is_none() {
             for (k, slot) in self.slots.iter_mut().enumerate() {
                 for (i, frame) in bus.iter().enumerate() {
                     let [wl, wr] = slot.tick([frame[2 * k], frame[2 * k + 1]]);
-                    let gain = self.switch_fade.map_or(1.0, |f| {
+                    let gain = self.tail_fade.map_or(1.0, |f| {
                         f.saturating_sub(i as u32) as f32 / self.fade_len as f32
                     });
                     left[i] += wl * gain;
@@ -1603,16 +1634,18 @@ impl Engine {
                 }
             }
         }
-        if let Some(f) = self.switch_fade {
+        if let Some(f) = self.tail_fade {
             if f as usize <= n {
-                self.switch_fade = None;
+                self.tail_fade = None;
                 self.metro_pos = None;
-                self.reset_pad = Some(0);
+                if self.switch_reset {
+                    self.reset_pad = Some(0);
+                }
                 self.preview_loop = None;
                 self.preview_as = None;
-                self.switch_clear = Some((0, 0));
+                self.tail_clear = Some((0, 0));
             } else {
-                self.switch_fade = Some(f - n as u32);
+                self.tail_fade = Some(f - n as u32);
             }
         }
         if let Some(at) = &self.preview_pos {

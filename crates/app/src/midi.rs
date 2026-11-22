@@ -1430,6 +1430,13 @@ fn dispatch(
         {
             continue;
         }
+        if repeated
+            && matches!(resolved, Some(Resolved::Action(Action::StopContext)))
+            && matches!(msg, Msg::Cc { cc: 28, .. })
+            && port.contains("SMC-PAD-Master")
+        {
+            continue;
+        }
         let route = route_pad(focus);
         let allowed_while_ignored = matches!(resolved, Some(Resolved::PanelCell(_)))
             || (waiting && matches!(resolved, Some(Resolved::Action(_))))
@@ -4144,6 +4151,11 @@ mod tests {
         let after = app.full_help_recording_keys(&keymap, true, None);
         assert!(after.iter().any(|(_, text)| text.contains("View: screens")));
         assert!(after.iter().any(|(_, text)| text.contains("P13 pads")));
+        assert!(
+            after
+                .iter()
+                .any(|(_, text)| text.contains("STOP twice stops all sound"))
+        );
         assert!(
             after
                 .iter()

@@ -156,6 +156,7 @@ fn every_current_keyboard_action_has_a_controller_route() {
         ("slice.end_right", "e4", "slice.end"),
         ("play.context", "play", "play.context"),
         ("stop.context", "stop", "stop.context"),
+        ("transport.panic", "stop", "stop.context"),
         ("metronome.toggle", "play", "play.context"),
         ("record.mic", "record", "pattern.record"),
     ];
@@ -1882,6 +1883,9 @@ fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
         cue(&drive, "Space stop A1", "STOP pause A1");
 
         if controller {
+            hold(&mut drive, true);
+            cue(&drive, "Space stop A1", "Close panel · STOP pause");
+            hold(&mut drive, false);
             button(&mut drive, 28);
         } else {
             drive.tap(KeyCode::Char(' '), M::NONE);
@@ -1895,6 +1899,171 @@ fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
         }
         app_capture_frames(&mut drive, 128);
         cue(&drive, "Space stop A1", "STOP pause A1");
+    }
+}
+
+fn stop_at(drive: &mut Drive, port: &str, at: Instant, value: u8) -> Frame {
+    drive
+        .midi()
+        .recorded_bytes_at(port, &[0xB0, 28, value], &drive.project, at);
+    drive.frame()
+}
+
+/// Scenario "Two STOP presses cut sound from the panel".
+#[test]
+fn two_stop_presses_cut_sound_from_the_panel() {
+    let mut drive = hold_drive();
+    drive.tap(KeyCode::Char(' '), M::NONE);
+    drive.render_blocks(1);
+    hold(&mut drive, true);
+    let now = Instant::now();
+    let first = stop_at(&mut drive, SMC, now, 127);
+    assert!(
+        !first
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::Panic))
+    );
+    drive.render_blocks(1);
+    assert!(drive.app.transport_state().playing);
+    assert!(drive.app.panel.panic_armed(now));
+    stop_at(&mut drive, SMC, now, 0);
+    let second = stop_at(
+        &mut drive,
+        SMC,
+        now + std::time::Duration::from_millis(100),
+        127,
+    );
+    assert!(
+        second
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::Panic))
+    );
+    drive.render_blocks(1);
+    assert!(!drive.app.transport_state().playing);
+}
+
+/// Scenario "Panic needs two presses on one open panel".
+#[test]
+fn panic_needs_two_presses_on_one_open_panel() {
+    use std::time::Duration;
+
+    let mut drive = hold_drive();
+    drive.tap(KeyCode::Char(' '), M::NONE);
+    drive.render_blocks(1);
+    let other = "SINCO SMC-PAD-Master 29:1";
+    drive.midi().recorded_connect(other);
+    drive.frame();
+    hold(&mut drive, true);
+    let now = Instant::now();
+    assert!(stop_at(&mut drive, SMC, now, 127).commands().is_empty());
+    assert!(
+        stop_at(&mut drive, SMC, now + Duration::from_millis(20), 127)
+            .commands()
+            .is_empty()
+    );
+    stop_at(&mut drive, SMC, now + Duration::from_millis(21), 0);
+    assert!(
+        stop_at(&mut drive, SMC, now + Duration::from_millis(600), 127)
+            .commands()
+            .is_empty()
+    );
+    stop_at(&mut drive, SMC, now + Duration::from_millis(601), 0);
+    assert!(
+        !stop_at(&mut drive, other, now + Duration::from_millis(602), 127)
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::Panic))
+    );
+    drive.render_blocks(1);
+    hold(&mut drive, false);
+    assert!(
+        !drive
+            .app
+            .panel
+            .panic_armed(now + Duration::from_millis(603))
+    );
+    hold(&mut drive, true);
+    assert!(
+        stop_at(&mut drive, SMC, now + Duration::from_millis(650), 127)
+            .commands()
+            .is_empty()
+    );
+    stop_at(&mut drive, SMC, now + Duration::from_millis(651), 0);
+    hold(&mut drive, false);
+    let ordinary = stop_at(&mut drive, SMC, now + Duration::from_millis(652), 127);
+    assert!(
+        ordinary
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::TransportStopContext))
+    );
+}
+
+/// Scenario "Panic uses the effective keyboard chord".
+#[test]
+fn panic_uses_the_effective_keyboard_chord() {
+    let mut drive = Drive::offline();
+    drive.tap(KeyCode::Char(' '), M::NONE);
+    drive.render_blocks(1);
+    let frame = drive.tap(KeyCode::Char('.'), M::CONTROL);
+    assert_eq!(
+        frame
+            .commands()
+            .iter()
+            .filter(|command| matches!(command, Command::Panic))
+            .count(),
+        1
+    );
+    drive.render_blocks(1);
+    assert!(!drive.app.transport_state().playing);
+    drive
+        .keymap
+        .overlay("[global]\n'Ctrl+Period' = 'none'\nF9 = 'transport.panic'\n")
+        .unwrap();
+    drive.tap(KeyCode::Char(' '), M::NONE);
+    drive.render_blocks(1);
+    assert!(
+        drive
+            .tap(KeyCode::Char('.'), M::CONTROL)
+            .commands()
+            .is_empty()
+    );
+    let frame = drive.tap(KeyCode::F(9), M::NONE);
+    assert!(
+        frame
+            .commands()
+            .iter()
+            .any(|command| matches!(command, Command::Panic))
+    );
+    drive.render_blocks(1);
+    assert!(!drive.app.transport_state().playing);
+}
+
+/// Scenario "Panic retains the recorded take".
+#[test]
+fn panic_retains_the_recorded_take() {
+    use super::patterns::app_capture_frames;
+
+    for hit in [false, true] {
+        let mut drive = Drive::offline();
+        drive.tap(KeyCode::Char('r'), M::CONTROL);
+        app_capture_frames(&mut drive, 0);
+        if hit {
+            app_capture_frames(&mut drive, 96_000);
+            drive.tap(KeyCode::Char('1'), M::NONE);
+            app_capture_frames(&mut drive, 128);
+        }
+        drive.tap(KeyCode::Char('.'), M::CONTROL);
+        app_capture_frames(&mut drive, 0);
+        drive.app.flush_audio();
+        app_capture_frames(&mut drive, 128);
+        assert!(!drive.app.transport_state().playing);
+        assert_eq!(
+            drive.app.pads.pattern.as_ref().unwrap().hits.len(),
+            usize::from(hit)
+        );
     }
 }
 

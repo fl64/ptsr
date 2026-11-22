@@ -372,9 +372,9 @@ answer, take the default and write the question into `design.md` under "Open que
 | 92 | Is PAD BANK layer 2 the main panel path? | Yes. It latches the panel. |
 | 92 | Does the first layer 2 hit only show a hidden panel? | Yes. It runs no cell. |
 | 93a | What does STOP do? | STOP controls playback. PAD BANK opens the panel. |
-| 93a | How does Panic work? | Cell 16 stays dim in 92. In 93a, a question-free double press runs Panic. |
+| 141 | How does Panic work? | Press Ctrl+Period or open the SMC-PAD panel and press STOP twice within 500 ms. |
 | 92 | May an SMC panel cell apply a layout or answer a replacement question? | Yes, with a visible question for destructive changes through every panel path. Keep X-Session direct defaults unchanged |
-| 93a | Where are Panic, Undo, and Redo? | Fixed panel cells. Panic needs a double press. |
+| 93a | Where are Undo and Redo? | Fixed panel cells. Panic uses the STOP button when the panel shows (141). |
 | 93a | A new project from the controller gets a date name (`2026-11-03-1`) | Yes |
 | 96 | Does a pattern store absolute pads (0–127) or pads of the open bank? | Absolute |
 | 96 | `Ctrl+X` swaps two pads: do the pattern hits follow the sound? | Yes |

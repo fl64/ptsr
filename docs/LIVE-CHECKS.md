@@ -2988,3 +2988,22 @@ Leave each box open until you check it with your keyboard, controller, eyes, or 
 Review `renders/screens/pads-pattern-overview-velocity-80x26.ansi` and `pads-pattern-step-add-80x26.ansi`.
 Review the matching `120x40` files. Compare the other A1 overview and step frames at both sizes.
 Review `renders/screens/pads-pattern-step-target-80x26.ansi` and its `120x40` match.
+## 141: Stop all sound
+
+Use a disposable project with a loaded pad and A1. These checks are for the owner after merge.
+
+### Keyboard
+
+- [ ] Start A1 and play a pad with a long shared effect tail. Press Ctrl+Period. Check that the clock stops and the sound fades. Hit a pad again.
+- [ ] Start a live A1 pass and play a rhythm. Press Ctrl+Period. Start A1 and check that it plays the accepted hits.
+- [ ] Start a microphone or output recording. Press Ctrl+Period. Check that the WAV is in hand.
+
+### SMC-PAD
+
+- [ ] Start A1. Hold PAD BANK and press STOP once. Check the second-press hint and ongoing playback. Release PAD BANK to cancel.
+- [ ] Hold PAD BANK and press STOP twice. Check the stop notice. Release PAD BANK. Use PLAY again.
+- [ ] With the panel closed, press STOP once to check the normal pause route.
+
+### Sound
+
+- [ ] Listen to local renders/141-panic.wav. Hear the pad, preview, and delay stop at the fade. After the silence, hear a new pad hit.

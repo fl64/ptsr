@@ -124,6 +124,10 @@ impl App {
     }
 
     pub(super) fn run(&mut self, action: Action) -> bool {
+        if action == Action::Panic {
+            self.stop_all_sound();
+            return false;
+        }
         // the folder picker is open: the keys go to it before the screen (11)
         if self.ask.is_none() && self.path_picker.is_some() {
             let action = match action {
@@ -1378,7 +1382,24 @@ impl App {
             }
             self.midi_preview_blocked = !preview_ready;
             self.transport.tap_input_at = received_at;
-            self.midi_event_with_release(ev, released, raw_key);
+            let panic = if matches!(ev, midi::Event::Action(Action::StopContext))
+                && raw_key == Some(input::midi::Key::Cc(28))
+                && self.panel_input_available()
+                && let Origin::Device(port) = &self.notice_origin
+                && port.contains("SMC-PAD-Master")
+            {
+                self.panel
+                    .panic_press(port, received_at.unwrap_or_else(Instant::now))
+            } else {
+                None
+            };
+            match panic {
+                Some(true) => {
+                    self.apply(Action::Panic);
+                }
+                Some(false) => {}
+                None => self.midi_event_with_release(ev, released, raw_key),
+            }
             self.transport.tap_input_at = None;
             self.midi_preview_blocked = false;
             self.notice_origin = old;
@@ -3130,6 +3151,9 @@ impl App {
             self.moved_key_notice(keymap, &k);
             return false;
         };
+        if action == Action::Panic && k.kind != event::KeyEventKind::Press {
+            return false;
+        }
         if k.code == event::KeyCode::Enter && self.ask.is_some() && action == Action::Quit {
             return false;
         }

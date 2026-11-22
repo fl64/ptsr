@@ -1,7 +1,7 @@
 # SMC-PAD paths for current stories
 
 This table covers the headings in [User stories](USER-STORIES.md).
-It describes the SMC-PAD profile and command panel for changes 124 to 140.
+It describes the SMC-PAD profile and command panel for changes 124 to 141.
 Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
@@ -138,6 +138,14 @@ The SMC-PAD counts give visible panel / PAD BANK held / reveal.
 | Stop or play the loop | Space (1) | STOP or PLAY (1) |
 
 While A1 records, use the playing pads. Count those hits separately.
+
+## Stop all sound
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Stop all sound | Ctrl+Period (1) | With the panel open, STOP twice (2). From the playing layer with Hold panel, hold PAD BANK, then STOP twice (3). |
+
+Release PAD BANK to cancel the first press. With the panel closed, use STOP for normal playback.
 
 ## Open owner checks
 

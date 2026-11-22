@@ -197,6 +197,7 @@ impl Target {
 
 pub(super) struct State {
     owner: Option<String>,
+    panic_at: Option<Instant>,
     /// The last cell hit and its time, lit for one pad hit flash (131).
     pub flash: Option<(u8, Instant)>,
     page: usize,
@@ -224,6 +225,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             owner: None,
+            panic_at: None,
             flash: None,
             page: 1,
             view: None,
@@ -267,6 +269,21 @@ impl State {
             Some(owner) if owner == port => Press::Cell(cell),
             Some(_) => Press::OtherDevice,
         }
+    }
+
+    pub(super) fn panic_armed(&self, now: Instant) -> bool {
+        self.panic_at
+            .and_then(|at| now.checked_duration_since(at))
+            .is_some_and(|elapsed| elapsed <= std::time::Duration::from_millis(500))
+    }
+
+    pub(super) fn panic_press(&mut self, port: &str, now: Instant) -> Option<bool> {
+        if self.owner() != Some(port) {
+            return None;
+        }
+        let armed = self.panic_armed(now);
+        self.panic_at = (!armed).then_some(now);
+        Some(armed)
     }
 
     pub(super) fn visible(&self) -> bool {
@@ -333,6 +350,7 @@ impl State {
 
     pub(super) fn hide(&mut self) {
         self.owner = None;
+        self.panic_at = None;
         self.flash = None;
         self.target_menu = None;
         self.page = 1;
