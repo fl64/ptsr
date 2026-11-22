@@ -3071,3 +3071,29 @@ The monitor has the click on each beat. Both files have the pad and the outside 
 - Compare renders/111-master-normal.wav and renders/111-master-loud.wav.
 - Compare renders/111-master-loud.wav and renders/111-master-record.wav. The recording excludes the click.
 - Listen to renders/111-fx-returns.wav. The first return moves to 50 percent and then to mute.
+
+## 144: Pad sound controls
+
+### Keyboard
+
+- [ ] Select an assigned pad. Press Enter, then Shift+Tab. Check the four SOUND rows.
+- [ ] Set Pan with Left or Right. Select Fine tune with Down. Compare normal and Shift steps.
+- [ ] Set Velocity and Curve. Press Tab twice, select Hold on ENV, and set a value.
+- [ ] Save and open the project again. Check the five values and play A1.
+
+### SMC-PAD
+
+- [ ] Hold PAD BANK and press P5 Edit pad. Release PAD BANK.
+- [ ] Hold PAD BANK and press P14 Sound page. Release PAD BANK.
+- [ ] Turn E7, E5, E3 and E1. Check Pan, Fine tune, Velocity and Curve.
+- [ ] Hold PAD BANK while you turn E5. Check a one-cent step. Release PAD BANK.
+- [ ] Hold PAD BANK and press P10 ENV page. Release PAD BANK and turn E1 for Hold.
+- [ ] Hold PAD BANK and press P1 Back. Release PAD BANK and play the pad.
+
+### Sound
+
+- Listen to renders/144-pan.wav. Hear the move from left to center to right.
+- Listen to renders/144-fine-tune.wav. Compare the coarse pitch with each cent limit.
+- Listen to renders/144-envelope.wav. Compare the level after hold for both curves.
+- Listen to renders/144-velocity.wav. The three ranges are 0, 30 and 60 dB.
+- Listen to renders/144-legacy.wav. Check the linear hit response and the tail fade.
