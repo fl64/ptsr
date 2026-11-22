@@ -471,6 +471,7 @@ impl Realtime {
         let started = Instant::now();
         self.stats.callback_enter(started);
         self.engine.poll_erasure_releases();
+        let mut panic = false;
         for queue in self.commands.iter_mut() {
             for _ in 0..256 {
                 let Ok(cmd) = queue.peek() else { break };
@@ -478,7 +479,11 @@ impl Realtime {
                     break;
                 }
                 let Ok(cmd) = queue.pop() else { break };
-                self.engine.handle(0, cmd);
+                if matches!(cmd, Command::Panic) {
+                    panic = true;
+                } else {
+                    self.engine.handle(0, cmd);
+                }
             }
         }
         self.stats.callback_stage(Stage::Project);
@@ -505,6 +510,7 @@ impl Realtime {
                                 | Command::PatternPadRelease { .. }
                                 | Command::TransportPlay
                                 | Command::TransportStop
+                                | Command::Panic
                                 | Command::TransportToggle
                                 | Command::TransportPlayContext
                                 | Command::TransportStopContext
@@ -553,6 +559,7 @@ impl Realtime {
                                 | Command::PatternPadRelease { .. }
                                 | Command::TransportPlay
                                 | Command::TransportStop
+                                | Command::Panic
                                 | Command::TransportToggle
                                 | Command::TransportPlayContext
                                 | Command::TransportStopContext
@@ -583,6 +590,8 @@ impl Realtime {
                                     || project.ready.load(Acquire) != epoch)
                             {
                                 self.engine.discard(cmd);
+                            } else if matches!(cmd, Command::Panic) {
+                                panic = true;
                             } else {
                                 self.engine.handle(0, cmd);
                             }
@@ -593,6 +602,10 @@ impl Realtime {
             if transition_done && self.marker && project.epoch.load(Acquire) == epoch {
                 project.ready.store(epoch, Release);
             }
+        }
+        // A stop takes effect after both input queues for this block.
+        if panic {
+            self.engine.handle(0, Command::Panic);
         }
         self.stats.callback_stage(Stage::Render);
         self.engine.process(left, right);

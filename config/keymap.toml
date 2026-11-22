@@ -34,6 +34,7 @@ F1 = "help.toggle"            # not "?": that is Shift plus a character, not a p
 "Ctrl+Z" = "edit.undo"
 "Alt+Z" = "pattern.undo"
 "Ctrl+R" = "pattern.record"
+"Ctrl+Period" = "transport.panic"
 "Alt+E" = "pattern.erase"       # in a pass: held pads erase under the playhead; else on F2: a pad erases all its hits (98b)
 "Alt+N" = "pattern.controls"
 "Ctrl+S" = "session.save"

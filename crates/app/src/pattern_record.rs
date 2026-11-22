@@ -1217,7 +1217,9 @@ impl crate::App {
                 format!("{pads}{end}")
             }
             _ if !has_hits => record_step("record A1", "record"),
-            _ if smc => if playing {
+            _ if smc => if playing && self.panel.visible() {
+                "Close panel · STOP pause"
+            } else if playing {
                 "STOP pause A1"
             } else {
                 "PLAY play A1"

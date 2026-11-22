@@ -2,12 +2,13 @@
 
 ### Requirement: Panic gives an instruction and result
 
-The effective keyboard Panic key SHALL appear in Help. The SMC-PAD help SHALL name its two STOP presses. After the first press the screen SHALL show how to complete or cancel the gesture. After Panic the screen SHALL report the stop. Safety messages SHALL keep their space.
+The effective keyboard Panic key SHALL appear in Help. The SMC-PAD help SHALL name its two STOP presses. After the first press the screen SHALL show how to complete or cancel the gesture. After Panic the screen SHALL report the stop. Safety messages SHALL keep their space. With the panel open, the A1 pause cue SHALL name how to reach ordinary STOP, and output recording SHALL name the two-press finish.
 
 #### Scenario: Panic instructions fit both terminal sizes
 
 - **WHEN** the owner opens the panel and arms Panic at 80x26 or 120x40
 - **THEN** the next STOP and the cancel route are visible with the safety messages
+- **AND** the A1 and output recording cues follow the active STOP role
 
 ## MODIFIED Requirements
 

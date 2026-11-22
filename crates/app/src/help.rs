@@ -161,6 +161,7 @@ pub(super) fn describe(a: Action) -> String {
         Action::TransportToggle => "transport: play / stop".into(),
         Action::PlayContext => "start or continue transport, or start a stopped preview".into(),
         Action::StopContext => "pause transport or stop a preview; press again to reset".into(),
+        Action::Panic => "stop all sound and keep the recording".into(),
         Action::MetronomeToggle => "metronome: on / off".into(),
         Action::TapTempo => "tap tempo in Pattern".into(),
         Action::TempoStep { up, fine } => format!(

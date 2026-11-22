@@ -755,6 +755,48 @@ mod tests {
         assert_eq!(take[1], -0.0);
     }
 
+    /// Scenario "Panic retains the recorded take".
+    #[test]
+    fn panic_runs_the_normal_save_for_mic_and_output() {
+        let root = std::env::temp_dir().join(format!(
+            "ptsr-panic-rec-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        for source in [SOURCE_MIC, SOURCE_OUTPUT] {
+            let save = |panic| {
+                let mut app = crate::tests::test_app();
+                let (audio, _) = offline(48_000);
+                audio.recorder.start(source);
+                audio.recorder.write(&[0.25; 1024], &[-0.125; 1024]);
+                app.audio = Some(audio);
+                app.paths.samples = root.clone();
+                app.recording = Some((source, std::time::Instant::now()));
+                if panic {
+                    app.stop_all_sound();
+                } else {
+                    app.record_stop();
+                }
+                assert!(app.recording.is_none());
+                let path = app.browser.in_hand.as_ref().unwrap();
+                let mut wav = hound::WavReader::open(path).unwrap();
+                assert_eq!(wav.duration(), 1024);
+                assert_eq!(wav.spec().bits_per_sample, 16);
+                let samples: Vec<i16> = wav.samples().map(Result::unwrap).collect();
+                assert_eq!(&samples[1024..1028], &[8192, -4096, 8192, -4096]);
+                samples
+            };
+            assert!(
+                save(true) == save(false),
+                "panic changed the WAV for source {source}"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn recorder_stop_returns_the_length_and_drops_nothing() {
         let rec = Recorder::new(48);

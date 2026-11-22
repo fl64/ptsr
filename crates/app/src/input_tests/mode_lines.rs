@@ -39,8 +39,11 @@ fn settle(drive: &mut Drive) {
 
 /// The screen as the program draws it, with the SMC-PAD knob strip and its mode line.
 fn strip_rows(drive: &mut Drive, width: u16, height: u16) -> Vec<String> {
+    strip_rows_at(drive, width, height, Instant::now())
+}
+
+fn strip_rows_at(drive: &mut Drive, width: u16, height: u16, now: Instant) -> Vec<String> {
     use ratatui::{Terminal, backend::TestBackend};
-    let now = Instant::now();
     let app = &mut drive.app;
     let mut feedback = app.status_feedback_at(now);
     feedback.knob_strip = app.smc_knob_strip(now);
@@ -77,6 +80,28 @@ fn strip_rows(drive: &mut Drive, width: u16, height: u16) -> Vec<String> {
         .chunks(width as usize)
         .map(|row| row.iter().map(|cell| cell.symbol()).collect())
         .collect()
+}
+
+/// Scenario "Panic instructions fit both terminal sizes".
+#[test]
+fn panic_instructions_fit_both_terminal_sizes() {
+    let mut drive = hold_drive();
+    hold(&mut drive, true);
+    drive.app.session_write_error = Some("Save refused.".into());
+    assert_eq!(
+        drive.app.output_stop_words(true),
+        "STOP twice · stop and save"
+    );
+    let now = Instant::now();
+    stop_at(&mut drive, SMC, now, 127);
+    for (width, height) in [(80, 26), (120, 40)] {
+        let rows = strip_rows_at(&mut drive, width, height, now).join("\n");
+        assert!(rows.contains("STOP again"), "{rows}");
+        assert!(rows.contains("release PAD BANK to cancel"), "{rows}");
+        assert!(rows.contains("Save failed"), "{rows}");
+    }
+    hold(&mut drive, false);
+    assert!(drive.app.mode_line(now).is_none());
 }
 
 /// A1 with one hit, restored, on the A1 overview.

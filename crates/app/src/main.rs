@@ -3807,6 +3807,7 @@ fn help_section(a: Action) -> usize {
         | Action::TransportToggle
         | Action::PlayContext
         | Action::StopContext
+        | Action::Panic
         | Action::MetronomeToggle
         | Action::TempoStep { .. }
         | Action::TapTempo => 5,
@@ -15361,8 +15362,7 @@ Enter = "browser.hold"
         );
     }
 
-    /// Keyboard "Future commands stay unbound": Ctrl+R records A1, Ctrl+Y and
-    /// Ctrl+. stay free, and Ctrl+B keeps the Files favorite.
+    /// Keyboard "Future commands stay unbound": Ctrl+Y stays free during Panic work.
     #[test]
     fn future_commands_stay_unbound() {
         use ratatui::crossterm::event::{KeyCode, KeyModifiers as M};
@@ -15386,7 +15386,6 @@ Enter = "browser.hold"
                 "Ctrl+R records A1 ({screen:?})"
             );
             assert_eq!(ctrl('y', screen), None, "Ctrl+Y stays free ({screen:?})");
-            assert_eq!(ctrl('.', screen), None, "Ctrl+. stays free ({screen:?})");
         }
         assert_eq!(
             ctrl('b', Screen::Files),

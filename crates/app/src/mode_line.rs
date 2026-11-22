@@ -43,6 +43,14 @@ impl App {
                 "LEARN · touch a control · Esc leave".into()
             });
         }
+        if smc && self.panel.panic_armed(now) {
+            let cancel = if self.midi_gestures.smc_pad_bank_opens_panel {
+                "release PAD BANK"
+            } else {
+                "pad 1 back"
+            };
+            return Some(format!("STOP again · {cancel} to cancel"));
+        }
         if let Some((source, at)) = self.recording {
             let seconds = now.saturating_duration_since(at).as_secs();
             return Some(if source == audio::SOURCE_OUTPUT {
@@ -135,7 +143,7 @@ impl App {
         {
             return Some("TAP · 1 hit · tap again".into());
         }
-        None
+        (smc && self.panel.visible()).then(|| "STOP twice · stop all sound".into())
     }
 
     /// The A1 count-in and pass on the screen where they started (F45).
@@ -153,6 +161,9 @@ impl App {
 
     /// STOP first pauses what plays, so the recording keeps the tail; then it ends (138).
     pub(super) fn output_stop_words(&self, smc: bool) -> &'static str {
+        if smc && self.panel.visible() {
+            return "STOP twice · stop and save";
+        }
         let playing = self.transport_state().playing || self.preview_frame().is_some();
         match (smc, playing) {
             (true, true) => "STOP stops play · STOP end rec",

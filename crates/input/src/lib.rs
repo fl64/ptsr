@@ -604,6 +604,7 @@ pub enum Action {
     TransportToggle,
     PlayContext,
     StopContext,
+    Panic,
     TapTempo,
     TempoStep {
         up: bool,
@@ -857,6 +858,7 @@ impl Action {
             "transport.toggle" => Self::TransportToggle,
             "play.context" => Self::PlayContext,
             "stop.context" => Self::StopContext,
+            "transport.panic" => Self::Panic,
             "transport.tap" => Self::TapTempo,
             "transport.tempo_up" => Self::TempoStep {
                 up: true,
@@ -1133,6 +1135,7 @@ pub fn short_label(action: &str) -> &'static str {
         "transport.toggle" => "play",
         "play.context" => "play",
         "stop.context" => "stop",
+        "transport.panic" => "panic",
         "metronome.toggle" => "metro",
         "transport.tempo_up" => "bpm+",
         "transport.tempo_down" => "bpm-",
@@ -1357,6 +1360,12 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo {
         name: "transport.toggle",
         label: "transport play / stop",
+        group: Group::Global,
+        knob: false,
+    },
+    ActionInfo {
+        name: "transport.panic",
+        label: "stop all sound",
         group: Group::Global,
         knob: false,
     },

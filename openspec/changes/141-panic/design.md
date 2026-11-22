@@ -10,14 +10,14 @@ At the audio boundary, apply Panic after the available commands for that block. 
 
 | Situation | Result | Status |
 | --- | --- | --- |
-| Two different controller connections press STOP | One connection cannot complete the press of the other | Planned |
-| One press repeats or stays down | It cannot run Panic | Planned |
-| Panel closes, owner disconnects, or the interval expires | The next press starts a new gesture | Planned |
-| Panic and queued hits reach one audio block | The block stops and fades the sounds before output continues | Planned |
-| COUNT or a live pass is active | Cancel count-in or retain accepted hits | Planned |
-| Old effects have energy and a new pad plays | Old wet sound goes silent. The new dry hit plays | Planned |
-| Project switching overlaps the effect clear | The new project runs with clean effects | Planned |
-| The owner uses ordinary STOP | The usual pause and recording routes apply | Planned |
+| Two different controller connections press STOP | One connection cannot complete the press of the other | Checked offline |
+| One press repeats or stays down | It cannot run Panic | Checked offline |
+| Panel closes, owner disconnects, or the interval expires | The next press starts a new gesture | Checked offline |
+| Panic and queued hits reach one audio block | The block stops and fades the sounds before output continues | Checked offline |
+| COUNT or a live pass is active | Cancel count-in or retain accepted hits | Checked offline |
+| Old effects have energy and a new pad plays | Old wet sound goes silent. The new dry hit plays | Checked offline |
+| Project switching overlaps the effect clear | The new project runs with clean effects | Checked offline |
+| The owner uses ordinary STOP | The usual pause and recording routes apply | Checked offline |
 
 ## Open questions
 

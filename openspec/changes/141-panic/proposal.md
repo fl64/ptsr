@@ -40,6 +40,11 @@ The command uses the existing audio queues and the existing short fade.
 2. Release PAD BANK to cancel. Check that A1 keeps playing.
 3. Hold PAD BANK again. Press STOP twice. Check the result. Release PAD BANK and play again.
 
+### Screens
+
+Review `renders/screens/pads-help-80x26.ansi` and `renders/screens/pads-help-120x40.ansi`.
+The screen test checks the active second-press instruction at both sizes.
+
 ### Sound
 
 Listen to renders/141-panic.wav. The old sound goes silent after the short fade. The next hit plays.
