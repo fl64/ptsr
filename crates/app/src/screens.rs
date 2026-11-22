@@ -3342,7 +3342,7 @@ L="none"
     fn a1_next_step_preserves_the_screen_frame() {
         let (mut keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
         keymap
-            .overlay("[global]\n'Ctrl+R' = 'none'\n'Ctrl+Alt+Shift+PageDown' = 'pattern.record'\n")
+            .overlay("[global]\n'Ctrl+R' = 'none'\n'Ctrl+Alt+Shift+Enter' = 'pattern.record'\n")
             .unwrap();
         for size in SIZES {
             let case = Case {
@@ -3351,9 +3351,9 @@ L="none"
                 size,
             };
             for (mode, instruction) in [
-                (None, "Ctrl+Alt+Shift+PgDn record"),
-                (Some(Mode::PatternCountIn), "Ctrl+Alt+Shift+PgDn cancel"),
-                (Some(Mode::PatternRecording), "Pad Ctrl+Alt+Shift+PgDn end"),
+                (None, "Ctrl+Alt+Shift+Enter record"),
+                (Some(Mode::PatternCountIn), "Ctrl+Alt+Shift+Enter cancel"),
+                (Some(Mode::PatternRecording), "Pad Ctrl+Alt+Shift+Enter end"),
                 (Some(Mode::PatternFinishing), "Finishing A1 · wait"),
                 (Some(Mode::PatternStopped), "Space play A1"),
             ] {

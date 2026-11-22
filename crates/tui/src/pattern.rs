@@ -266,8 +266,9 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     }
     let cell_width = 3;
     let right_pad = usable.saturating_sub(cell_width * count);
-    let next = clip_label(view.next.as_deref().unwrap_or_default(), label_width);
-    let padding = label_width + 1 - Span::raw(&next).width();
+    let next_width = label_width + 1;
+    let next = clip_label(view.next.as_deref().unwrap_or_default(), next_width);
+    let padding = next_width - Span::raw(&next).width();
     let mut numbers = vec![
         Span::styled(next, Style::new().fg(CYAN)),
         Span::raw(" ".repeat(padding)),
