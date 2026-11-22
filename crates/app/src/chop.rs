@@ -2361,6 +2361,9 @@ impl App {
             self.pads.custom_name[abs] = None;
             self.pads.sound_gain_db[abs] = 0.0;
             self.send(self.pads.sound_gain_command(abs));
+            if let Some(command) = self.pads.first_assignment_shape(abs) {
+                self.send(command);
+            }
             self.pads.file[abs] = Some(file.clone());
             self.pads.set_sound(abs, sound.clone());
             self.pads.region[abs] = region;

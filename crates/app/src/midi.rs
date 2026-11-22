@@ -1563,7 +1563,10 @@ fn dispatch(
                 steps,
             }) => {
                 // Each detent is one step at any speed: the owner found accelerated turns too coarse.
-                let is_fine = fine.contains_key(&port);
+                let fine_e5 = target == StepTarget::Param(Param::SmcPageValue(5))
+                    && port.contains("SMC-PAD-Master")
+                    && (!hold_routes || hold.held.contains(&port));
+                let is_fine = fine.contains_key(&port) || fine_e5;
                 ui.send(
                     Event::Step {
                         port,

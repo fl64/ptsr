@@ -48,3 +48,10 @@ Listen to the pan sweep in renders/144-pan.wav, reference pitch and cent
 limits in renders/144-fine-tune.wav, and the change of attack hold and decay
 in renders/144-envelope.wav. Compare the three ranges in renders/144-velocity.wav
 and listen to the old response in renders/144-legacy.wav.
+
+### Screen catalogue
+
+- renders/screens/pads-edit-sound-80x26.ansi
+- renders/screens/pads-edit-sound-120x40.ansi
+- renders/screens/pads-edit-env-80x26.ansi
+- renders/screens/pads-edit-env-120x40.ansi

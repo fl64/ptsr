@@ -728,6 +728,7 @@ mod tests {
             "save",
             "setup",
             "show pads",
+            "sound page",
             "source page",
             "star file",
             "steps finer",
@@ -803,7 +804,7 @@ mod tests {
                 View::PadEdit,
                 &[
                     "fx page",
-                    "",
+                    "sound page",
                     "",
                     "pin sample",
                     "tone page",

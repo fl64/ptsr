@@ -5,6 +5,100 @@ use super::*;
 mod source;
 pub use source::{BigView, SourceRange, SourceSample, SourceStrip, SourceVoice};
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PadShapeView {
+    pub pan: i8,
+    pub cents: i8,
+    pub hold_ms: u16,
+    pub exponential: bool,
+    pub velocity_db: Option<u8>,
+}
+
+pub struct PadView {
+    pub naming: bool,
+    /// No sample is assigned to this pad. This does not include an absent Chop slice.
+    pub empty: bool,
+    /// `✱` when the pad has more settings than its mode line shows (77), or empty.
+    pub glyphs: String,
+    /// The parameters that differ from a fresh pad (55): bright in the panel, the rest dim.
+    pub changed: Vec<PadParam>,
+    /// Keyboard key of the pad.
+    pub key: char,
+    pub name: String,
+    pub gate: bool,
+    pub pitch_gate: PitchGate,
+    pub volume_db: f32,
+    /// Pitch in semitones, shown in the panel.
+    pub pitch: i8,
+    pub shape: PadShapeView,
+    /// The mute group (70): 0 is off, 1–8.
+    pub group: u8,
+    /// Envelope times in ms, shown in the panel.
+    pub attack_ms: u16,
+    pub decay_ms: u16,
+    pub release_ms: u16,
+    /// The pad was hit a moment ago or is held.
+    pub flash: bool,
+    /// Its file is gone or broken.
+    pub missing: bool,
+    /// Loading progress, 0..100.
+    pub loading: Option<u8>,
+    /// Taken with Ctrl+X: the next pad hit swaps it there.
+    pub in_hand: bool,
+    /// Marked for the change scope: framed in the grid.
+    pub marked: bool,
+    /// Second line in place of mode and volume (the chop screen shows slice lengths).
+    pub note: Option<String>,
+    /// What the info panel says about the selected pad in place of its name.
+    pub detail: Option<String>,
+    /// What the pad plays (`all`, `slice 3`, `pad`) and its start and end in seconds,
+    /// for the SOURCE page of the panel (27).
+    pub source: String,
+    pub bounds: (f32, f32),
+    /// The FILTER page as the panel says it (44): kind, cutoff, resonance.
+    pub filter: [String; 3],
+    /// The wave the pad plays with its envelope (29): peaks 0..1.
+    /// An empty pad or missing file has no wave.
+    pub wave: Vec<f32>,
+    /// Drawn dim: on the chop screen a pad that plays no slice of the open chop (36).
+    pub dim: bool,
+    /// A dashed frame: on the chop screen the pad that plays the whole file (46).
+    pub dashed: bool,
+}
+
+/// The parameter the pads panel highlights: the one the value keys change now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadParam {
+    Volume,
+    Pitch,
+    Group,
+    Attack,
+    Decay,
+    Release,
+    Source,
+    Start,
+    End,
+    Filter,
+    Cutoff,
+    Reso,
+    Drive,
+    Send1,
+    Send2,
+    Fx1Kind,
+    Fx1A,
+    Fx1B,
+    Fx2Kind,
+    Fx2A,
+    Fx2B,
+    Fx1Return,
+    Fx2Return,
+    Pan,
+    FineTune,
+    Velocity,
+    Curve,
+    Hold,
+}
+
 /// The current command labels for the SMC-PAD second bank.
 pub struct CommandPanel {
     pub labels: [Option<String>; 16],
@@ -60,6 +154,14 @@ thread_local! {
 
 pub fn set_smc_words(on: bool) {
     SMC_WORDS.set(on);
+}
+
+thread_local! {
+    static SMC_FINE_HOLD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_smc_fine_hold(on: bool) {
+    SMC_FINE_HOLD.set(on);
 }
 
 pub fn smc_words() -> bool {
@@ -422,7 +524,7 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
                 p,
                 PadParam::Pitch,
                 "pitch   ",
-                format!("{:+} st", sel.pitch),
+                format!("{:+} st {:+} ct", sel.pitch, sel.shape.cents),
             ),
             param_line(
                 p,
@@ -442,7 +544,18 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
             // a block with a change carries a dot (55)
             let params: &[PadParam] = match name {
                 "TONE" => &[PadParam::Volume, PadParam::Pitch, PadParam::Group],
-                "ENV" => &[PadParam::Attack, PadParam::Decay, PadParam::Release],
+                "ENV" => &[
+                    PadParam::Attack,
+                    PadParam::Decay,
+                    PadParam::Release,
+                    PadParam::Hold,
+                ],
+                "SOUND" => &[
+                    PadParam::Pan,
+                    PadParam::FineTune,
+                    PadParam::Velocity,
+                    PadParam::Curve,
+                ],
                 "FILTER" => &[PadParam::Filter, PadParam::Cutoff, PadParam::Reso],
                 "FX" => &[PadParam::Drive, PadParam::Send1, PadParam::Send2],
                 _ => &[PadParam::Source, PadParam::Start, PadParam::End],
@@ -468,7 +581,12 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
         let mut blocks: Vec<(&str, Vec<PadParam>, Vec<Line>)> = vec![
             (
                 "ENV",
-                vec![PadParam::Attack, PadParam::Decay, PadParam::Release],
+                vec![
+                    PadParam::Attack,
+                    PadParam::Decay,
+                    PadParam::Release,
+                    PadParam::Hold,
+                ],
                 vec![
                     param_line(
                         p,
@@ -483,6 +601,12 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
                         format!("{} ms", sel.decay_ms),
                     ),
                     release_line(p, sel),
+                    param_line(
+                        p,
+                        PadParam::Hold,
+                        "hold    ",
+                        format!("{} ms", sel.shape.hold_ms),
+                    ),
                 ],
             ),
             (
@@ -514,6 +638,11 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
                 ],
             ),
         ];
+        if p.edit != Some("ENV") && p.param != PadParam::Hold && sel.shape.hold_ms == 0 {
+            let (_, params, rows) = &mut blocks[0];
+            params.pop();
+            rows.pop();
+        }
         // Only drive and sends belong to the pad. Shared slots have their own screen (82).
         if !p.fx.is_empty() {
             blocks.push((
@@ -522,6 +651,55 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
                 p.fx.iter()
                     .map(|(w, label, value)| param_line(p, *w, label, value.clone()))
                     .collect(),
+            ));
+        }
+        if p.pages.contains(&"SOUND")
+            || p.param == PadParam::Pan
+            || p.param == PadParam::FineTune
+            || p.param == PadParam::Velocity
+            || p.param == PadParam::Curve
+        {
+            let pan = match sel.shape.pan {
+                0 => "center".into(),
+                n if n < 0 => format!("L {} %", n.unsigned_abs()),
+                n => format!("R {n} %"),
+            };
+            blocks.push((
+                "SOUND",
+                vec![
+                    PadParam::Pan,
+                    PadParam::FineTune,
+                    PadParam::Velocity,
+                    PadParam::Curve,
+                ],
+                vec![
+                    param_line(p, PadParam::Pan, "pan       ", pan),
+                    param_line(
+                        p,
+                        PadParam::FineTune,
+                        "fine tune ",
+                        format!("{:+} ct", sel.shape.cents),
+                    ),
+                    param_line(
+                        p,
+                        PadParam::Velocity,
+                        "velocity  ",
+                        sel.shape
+                            .velocity_db
+                            .map_or("Linear".into(), |db| format!("{db} dB")),
+                    ),
+                    param_line(
+                        p,
+                        PadParam::Curve,
+                        "curve     ",
+                        if sel.shape.exponential {
+                            "exponential"
+                        } else {
+                            "linear"
+                        }
+                        .into(),
+                    ),
+                ],
             ));
         }
         // the pad rows: TONE stands under the mode
@@ -537,6 +715,16 @@ fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
         let mut tail = Vec::new();
         if let Some(hint) = &p.pickup {
             tail.push(Line::from(hint.clone()).fg(MAGENTA));
+        }
+        if p.edit == Some("SOUND") {
+            let hint = if !smc_words() {
+                "Shift: 1 ct · Esc back"
+            } else if SMC_FINE_HOLD.get() {
+                "PAD BANK+E5: 1 ct"
+            } else {
+                "E5: 1 ct · P1 back"
+            };
+            tail.push(Line::from(hint).fg(DIM));
         }
         let full = lines.len()
             + 1
@@ -664,6 +852,11 @@ fn short_label(label: &str) -> Option<&'static str> {
         "attack  " => "atk  ",
         "decay   " => "dec  ",
         "release " => "rel  ",
+        "hold    " => "hold ",
+        "pan       " => "pan  ",
+        "fine tune " => "fine ",
+        "velocity  " => "vel  ",
+        "curve     " => "curve",
         "filter  " => "flt  ",
         "cutoff  " => "cut  ",
         "reso    " => "res  ",
@@ -854,6 +1047,12 @@ fn pad_envelope_strip(frame: &mut Frame, area: Rect, big: &BigView, picked: PadP
             let i = ((t * big.env.len() as f32) as usize).min(big.env.len().saturating_sub(1));
             let which = if t < big.attack {
                 PadParam::Attack
+            } else if let Some((hold, _)) = big.timed {
+                if t < big.attack + hold {
+                    PadParam::Hold
+                } else {
+                    PadParam::Decay
+                }
             } else if t > 1.0 - big.decay {
                 PadParam::Decay
             } else {
@@ -868,7 +1067,12 @@ fn pad_envelope_strip(frame: &mut Frame, area: Rect, big: &BigView, picked: PadP
                 continue;
             }
             let t = (x - from) as f32 / (dx - from).max(1) as f32;
-            (1.0 - t, PadParam::Release)
+            let level = if big.timed.is_some_and(|(_, exponential)| exponential) {
+                10f32.powf(-3.0 * t)
+            } else {
+                1.0 - t
+            };
+            (level, PadParam::Release)
         };
         let y = ((1.0 - level.clamp(0.0, 1.0)) * (dy - 1) as f32).round() as usize;
         line[y / 4][x / 2] |= BITS[x % 2][y % 4];

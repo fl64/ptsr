@@ -6,6 +6,8 @@ pub struct BigView {
     pub attack: f32,
     pub decay: f32,
     pub release: f32,
+    /// The hold as a fraction of the piece and whether the curve is exponential.
+    pub timed: Option<(f32, bool)>,
 }
 
 pub struct SourceStrip {

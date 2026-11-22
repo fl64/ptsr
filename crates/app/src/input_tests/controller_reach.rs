@@ -2388,7 +2388,7 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// The matrix compares 54 action cells through production keyboard and MIDI input, so it is slow.
+/// The matrix compares 55 action cells through production keyboard and MIDI input, so it is slow.
 #[test]
 fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     use panel::{Config, View};
@@ -2501,7 +2501,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 54);
+    assert_eq!(checked + special, 55);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -2987,10 +2987,10 @@ fn pad_edit_knobs_follow_the_screen_rows() {
     drive.app.pads.param = pads::Param::Volume;
     let abs = drive.app.pads.selected_abs();
     let mut names = Vec::new();
-    for _ in 0..5 {
+    for _ in 0..6 {
         let (name, params) = drive.app.pads.page();
         names.push(name);
-        for (index, cc) in [36, 34, 32].into_iter().enumerate() {
+        for (index, cc) in [36, 34, 32, 30].into_iter().take(params.len()).enumerate() {
             let param = params[index];
             let others = |drive: &mut Drive| {
                 params
@@ -3018,12 +3018,14 @@ fn pad_edit_knobs_follow_the_screen_rows() {
                 turn(&mut drive, cc, value);
             }
         }
-        // Knob 1 is the fourth value; the current pages have three.
-        turn(&mut drive, 30, 65);
+        // A four-row page uses E1. On the other pages E1 has no row.
+        if params.len() < 4 {
+            turn(&mut drive, 30, 65);
+        }
         assert!(drive.app.pads.snapshot(abs) == pad, "{name}");
         list_button(&mut drive, true);
     }
-    assert_eq!(names, ["TONE", "ENV", "FILTER", "SOURCE", "FX"]);
+    assert_eq!(names, ["TONE", "ENV", "FILTER", "SOURCE", "FX", "SOUND"]);
 }
 
 #[test]
@@ -3091,6 +3093,7 @@ fn the_fx_page_cell_opens_fx_in_one_press() {
         ("env page", "ENV"),
         ("filter page", "FILTER"),
         ("source page", "SOURCE"),
+        ("sound page", "SOUND"),
     ] {
         cell(&mut drive, panel_note(slot_of(panel::View::PadEdit, label)));
         assert_eq!(drive.app.pads.page().0, page);
@@ -3099,13 +3102,13 @@ fn the_fx_page_cell_opens_fx_in_one_press() {
 
 /// Scenario "LEFT on TONE opens FX" (pad-playback).
 #[test]
-fn left_on_tone_opens_fx() {
+fn left_on_tone_opens_sound() {
     let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
     let mut drive = reach_drive(panel::View::PadEdit, sound);
     assert!(!drive.app.panel.visible());
     assert_eq!(drive.app.pads.page().0, "TONE");
     list_button(&mut drive, false);
-    assert_eq!(drive.app.pads.page().0, "FX");
+    assert_eq!(drive.app.pads.page().0, "SOUND");
     list_button(&mut drive, true);
     assert_eq!(drive.app.pads.page().0, "TONE");
 }
@@ -3690,7 +3693,7 @@ fn the_panel_shows_only_while_pad_bank_is_held() {
 }
 
 /// Every shipped action cell gives the same result through a PAD BANK hold (131)
-/// as through the second-bank route. The matrix drives 54 cells, so it is slow.
+/// as through the second-bank route. The matrix drives 55 cells, so it is slow.
 #[test]
 fn shipped_panel_cells_act_the_same_during_a_hold() {
     let config = panel::Config::parse(
@@ -3719,7 +3722,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 54);
+    assert_eq!(checked, 55);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
@@ -5342,4 +5345,158 @@ fn both_inputs_show_the_same_fx_return_feedback() {
     hold(&mut controller, false);
     assert_eq!(keyboard.app.screen, Screen::Pads);
     assert_eq!(controller.app.screen, Screen::Pads);
+}
+
+/// Scenario "Keyboard and raw controller events change the same sound shape".
+#[test]
+fn keyboard_and_raw_controller_events_change_the_same_sound_shape() {
+    let mut k = Drive::new();
+    let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
+    k.load_pad(0, sound.clone(), "source");
+    let mut m = reach_drive_from(hold_drive(), panel::View::Pads, sound);
+    k.tap(KeyCode::Enter, M::NONE);
+    k.tap(KeyCode::BackTab, M::SHIFT);
+    hold(&mut m, true);
+    cell(
+        &mut m,
+        panel_note(slot_of(panel::View::Pads, "edit pad")) - 16,
+    );
+    hold(&mut m, false);
+    assert!(m.app.edit, "MIDI route: {:?}", m.app.input_log);
+    hold(&mut m, true);
+    cell(
+        &mut m,
+        panel_note(slot_of(panel::View::PadEdit, "sound page")) - 16,
+    );
+    hold(&mut m, false);
+    assert_eq!(k.app.pads.page().0, "SOUND");
+    assert_eq!(m.app.pads.page().0, "SOUND");
+
+    for cc in [36, 34, 32, 30] {
+        k.tap(KeyCode::Right, M::NONE);
+        turn(&mut m, cc, 65);
+        if cc != 30 {
+            k.tap(KeyCode::Down, M::NONE);
+        }
+    }
+    assert_eq!(k.app.pads.play_shape(0), m.app.pads.play_shape(0));
+    let shape = m.app.pads.play_shape(0);
+    assert_eq!(
+        (shape.pan, shape.cents, shape.velocity_db, shape.exponential),
+        (1, 5, Some(0), true)
+    );
+
+    k.tap(KeyCode::Tab, M::NONE);
+    k.tap(KeyCode::Tab, M::NONE);
+    for _ in 0..3 {
+        k.tap(KeyCode::Down, M::NONE);
+    }
+    hold(&mut m, true);
+    cell(
+        &mut m,
+        panel_note(slot_of(panel::View::PadEdit, "env page")) - 16,
+    );
+    hold(&mut m, false);
+    assert_eq!(m.app.pads.page().0, "ENV");
+    k.tap(KeyCode::Right, M::NONE);
+    turn(&mut m, 30, 65);
+    assert_eq!(k.app.pads.play_shape(0), m.app.pads.play_shape(0));
+    assert_eq!(m.app.pads.play_shape(0).hold_ms, 1);
+
+    k.tap(KeyCode::Esc, M::NONE);
+    hold(&mut m, true);
+    cell(&mut m, panel_note(13) - 16);
+    hold(&mut m, false);
+    assert!(!m.app.edit);
+    assert!(!k.app.edit);
+}
+
+/// Scenario "The controller can tune one cent with or without a hold shortcut".
+#[test]
+fn the_controller_can_tune_one_cent_with_or_without_a_hold_shortcut() {
+    let mut drive = hold_drive();
+    drive.tap(KeyCode::Enter, M::NONE);
+    drive.tap(KeyCode::BackTab, M::SHIFT);
+    hold(&mut drive, true);
+    turn(&mut drive, 34, 65);
+    assert_eq!(drive.app.pads.play_shape(0).cents, 1);
+    hold(&mut drive, false);
+    assert!(!drive.app.panel.visible());
+    assert_eq!(drive.app.pads.page().0, "SOUND");
+    turn(&mut drive, 34, 65);
+    assert_eq!(drive.app.pads.play_shape(0).cents, 6);
+
+    drive.app.set_smc_pad_bank(false);
+    drive.frame();
+    turn(&mut drive, 34, 63);
+    assert_eq!(drive.app.pads.play_shape(0).cents, 5);
+    drive.tap(KeyCode::Down, M::NONE);
+    drive.tap(KeyCode::Left, M::SHIFT);
+    assert_eq!(drive.app.pads.play_shape(0).cents, 4);
+}
+
+/// Scenario "A learned controller changes pad sound settings".
+#[test]
+fn a_learned_controller_changes_pad_sound_settings() {
+    let mut drive = Drive::new();
+    drive.tap(KeyCode::Enter, M::NONE);
+    drive.app.takeover.response = input::midi::Response::Jump;
+    for action in [
+        "pad.pan",
+        "pad.fine_tune",
+        "pad.velocity",
+        "pad.curve",
+        "pad.hold",
+    ] {
+        assert!(
+            drive
+                .app
+                .learn_params()
+                .iter()
+                .any(|(name, _)| *name == action)
+        );
+        let frame = value_knob(&mut drive, action, 127);
+        assert!(
+            frame
+                .ui
+                .iter()
+                .any(|command| matches!(command, Command::SetPadShape { pad: 0, .. }))
+        );
+    }
+    let shape = drive.app.pads.play_shape(0);
+    assert_eq!(
+        (shape.pan, shape.cents, shape.velocity_db, shape.hold_ms),
+        (100, 100, Some(60), 2000)
+    );
+    assert!(shape.exponential);
+}
+
+/// Scenario "Copy and undo preserve the pad sound shape".
+#[test]
+fn copy_and_undo_preserve_the_pad_sound_shape() {
+    let mut drive = Drive::new();
+    drive.app.pads.file[0] = Some("pad.wav".into());
+    drive
+        .app
+        .pads
+        .set_sound(0, Arc::new(Sample::mono(vec![0.2; 512])));
+    drive.app.pads.shape[0] = session::PadShape {
+        pan: -25,
+        cents: 15,
+        hold_ms: 170,
+        exponential: true,
+        velocity_db: Some(22),
+    };
+    let original = drive.app.pads.play_shape(0);
+    drive.tap(KeyCode::Char('c'), M::CONTROL);
+    drive.tap(KeyCode::Char('2'), M::NONE);
+    assert_eq!(drive.app.pads.play_shape(1), original);
+    drive.tap(KeyCode::Char('z'), M::CONTROL);
+    assert_eq!(
+        drive.app.pads.play_shape(1),
+        engine::pad_shape::Shape::default()
+    );
+    drive.tap(KeyCode::Char('y'), M::CONTROL);
+    assert_eq!(drive.app.pads.play_shape(1), original);
+    assert_eq!(drive.app.pads.play_shape(0), original);
 }

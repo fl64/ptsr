@@ -46,3 +46,34 @@ The velocity range SHALL run from zero to 60 dB. A new pad SHALL start with 30 d
 - **WHEN** the owner plays and replays a range of hit velocities
 - **THEN** both paths use the pad range and preserve the raw pattern velocities
 - **AND** zero range gives the same gain for every positive velocity
+
+## MODIFIED Requirements
+
+### Requirement: The pad panel in blocks
+
+The system SHALL group the parameter rows in this order: TONE, ENV, FILTER, SOURCE, FX, SOUND.
+Each block SHALL show its page name above its rows. The current page name SHALL be bright. `Tab` turns the pages in this order, `I` `K` walk
+the parameters in this order, and the frame title names the pages in this order.
+
+#### Scenario: Blocks
+- **WHEN** the pad edit is open
+- **THEN** the panel shows the lines TONE, ENV, FILTER, SOURCE, FX, SOUND in this order, each over its rows
+
+#### Scenario: SOURCE last
+- **WHEN** the edit is on the reso of the FILTER page and the owner presses `K`
+- **THEN** the program selects Source on SOURCE.
+- **AND** `K` moves from the last row of SOURCE to Drive on FX.
+- **AND** `K` moves from the last row of FX to Pan on SOUND.
+- **AND** `K` moves from the last row of SOUND to Volume on TONE.
+
+### Requirement: Pad edit page cells
+
+The pad edit panel SHALL have six page cells: `tone page`, `env page`, `filter page`, `source page` `fx page` and `sound page` on device pads 9 to 14. A press SHALL open that page in one press. The cell of the current page SHALL be brighter than the other page cells. SMC-PAD LEFT and RIGHT without PAD BANK SHALL go around the pages as Tab and Shift+Tab do. LEFT on TONE SHALL open SOUND. RIGHT on SOUND SHALL open TONE.
+
+#### Scenario: The fx page cell opens FX in one press
+- **WHEN** pad edit is open on TONE and the owner presses PAD BANK with device pad 13
+- **THEN** the page is FX and the fx page cell is brighter than the other page cells
+
+#### Scenario: LEFT on TONE opens FX
+- **WHEN** pad edit is open on TONE, the panel is hidden and the owner presses LEFT
+- **THEN** the page is SOUND
