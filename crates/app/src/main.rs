@@ -18,6 +18,8 @@ mod midi;
 mod mode_line;
 mod notices;
 mod pads;
+mod pads_source;
+use pads_source::{BIG_COLS, file_name};
 mod panel;
 mod pattern_record;
 mod pattern_view;
@@ -428,6 +430,7 @@ struct App {
     /// Whole-pad erasure on Pads outside a pass (98b).
     erase_pads: bool,
     pattern_view: pattern_view::State,
+    source_view: pads_source::State,
     /// Pad key presses accepted for editing must stay silent through their release.
     silent_pad_keys: [bool; PADS_PER_BANK],
     input_sources: input_sources::State,
@@ -594,6 +597,7 @@ impl App {
         self.pattern_panel = None;
         self.erase_pads = false;
         self.pattern_view = pattern_view::State::default();
+        self.source_view = pads_source::State::default();
         self.pending_audio.clear();
         self.audio_held.fill(None);
         self.midi_ui_held.clear();
@@ -1152,12 +1156,6 @@ fn tilde(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
 /// One short plain message when nothing plays; the raw reason goes to the log only.
 const NO_AUDIO_SERVER: &str = "No sound: the audio server is not available.";
 /// Same, when the fallback output carries the sound.
@@ -1262,6 +1260,7 @@ fn main() -> std::io::Result<()> {
         pattern_panel: None,
         erase_pads: false,
         pattern_view: pattern_view::State::default(),
+        source_view: pads_source::State::default(),
         silent_pad_keys: [false; PADS_PER_BANK],
         input_sources: input_sources::State::default(),
         pads: pads::Pads::default(),
@@ -1538,6 +1537,7 @@ fn main() -> std::io::Result<()> {
         if let Some(rows) = &full {
             app.prepare_key_help(&keymap, rows, pattern_recording);
         }
+        let source = app.live_source_strip(text_at);
         let status = tui::Status {
             badges: frame_text
                 .badges_for(&app, text_at, pattern_recording)
@@ -1655,13 +1655,7 @@ fn main() -> std::io::Result<()> {
                     }
                     let mut view = app.mark_pads_recording(view, pattern_recording);
                     view.bank_pattern = app.bank_pattern();
-                    if app.screen == Screen::Pads {
-                        if app.pattern_view.overview {
-                            view.overview = Some(app.pattern_overview_at(&keymap, size.width));
-                        } else {
-                            view.pattern = Some(app.pattern_strip(&keymap));
-                        }
-                    }
+                    app.pads_strip(&mut view, &keymap, size.width, source);
                     tui::Screen::Pads(view)
                 }
                 (Screen::Settings, _) => tui::Screen::Settings(tui::Settings {
@@ -2202,6 +2196,7 @@ fn pads_view(
         .collect();
     tui::Pads {
         feedback: tui::PadFeedback::default(),
+        source: None,
         pattern: None,
         overview: None,
         playing: false,
@@ -2229,10 +2224,6 @@ fn pads_view(
         slot: None,
     }
 }
-
-/// Resolution of the big pad view: more columns than any terminal row is wide, so the
-/// tui can shrink it to any width without losing the shape.
-const BIG_COLS: usize = 1200;
 
 /// The piece of the selected pad with the pad's envelope over it, or nothing when the
 /// pad is empty.
@@ -2642,6 +2633,7 @@ fn chop_view_routed<'a>(
                 ],
                 None,
                 tui::Pads {
+                    source: None,
                     pattern: None,
                     overview: None,
                     feedback: tui::PadFeedback::default(),
@@ -2764,6 +2756,7 @@ fn chop_view_routed<'a>(
                 ],
                 Some(marks),
                 tui::Pads {
+                    source: None,
                     pattern: None,
                     overview: None,
                     playing: false,
@@ -2896,6 +2889,7 @@ fn chop_view_routed<'a>(
                 side,
                 Some(marks),
                 tui::Pads {
+                    source: None,
                     pattern: None,
                     overview: None,
                     feedback: tui::PadFeedback::default(),
@@ -3752,6 +3746,8 @@ fn help_section(a: Action) -> usize {
         | Action::PadTake
         | Action::PadCopy
         | Action::PadRename
+        | Action::PadsStripToggle
+        | Action::PadsSourcePin
         | Action::LearnToggle => 0,
         Action::BankNext | Action::BankPrev | Action::BankSelect(_) | Action::SmcList { .. } => 1,
         Action::BrowserUp
@@ -4568,6 +4564,7 @@ mod tests {
             pattern_panel: None,
             erase_pads: false,
             pattern_view: pattern_view::State::default(),
+            source_view: pads_source::State::default(),
             silent_pad_keys: [false; PADS_PER_BANK],
             input_sources: input_sources::State::default(),
             pads: pads::Pads::default(),

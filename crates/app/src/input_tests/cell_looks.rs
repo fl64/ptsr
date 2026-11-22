@@ -158,11 +158,14 @@ fn undo_with_nothing_to_undo_is_grey() {
 /// of real views; the drawing of each look is tested in `tui`.
 #[test]
 fn grey_orange_and_empty_cells_look_different() {
-    use panel::View::{Chop, Pads};
+    use panel::View::{Chop, PadEdit, Pads};
     let mut drive = hold_drive();
     hold(&mut drive, true);
     let panel = looks(&drive);
     assert!(panel.dim[at(Pads, "copy pad")] && panel.warn[at(Pads, "clear pad")]);
+    let mut drive = reach_drive_from(hold_drive(), PadEdit, tone());
+    hold(&mut drive, true);
+    let panel = looks(&drive);
     let empty = (0..12).find(|&i| panel.labels[i].is_none()).unwrap();
     assert!(
         !panel.dim[empty] && !panel.warn[empty],
@@ -261,8 +264,8 @@ fn loop_play_shows_its_state_at_80x26() {
 /// table shows a listed state, and the other cells of the view show none.
 #[test]
 fn every_state_cell_shows_one_of_its_states() {
-    use panel::View::{Chop, ChopEdit, Files, Pads, Pattern};
-    let table: [(panel::View, &str, &[&str]); 10] = [
+    use panel::View::{Chop, ChopEdit, Files, PadEdit, Pads, Pattern};
+    let table: [(panel::View, &str, &[&str]); 14] = [
         (Chop, "play range", &["to end", "to cut", "slice"]),
         (Chop, "loop play", &["on", "off"]),
         (Chop, "cursor step", &["even", "hits", "cuts"]),
@@ -270,11 +273,15 @@ fn every_state_cell_shows_one_of_its_states() {
         (Pads, "play mode", &["1 shot", "gate"]),
         (Pads, "pitch gate", &["on", "off"]),
         (Pads, "mark pad", &["on", "off"]),
+        (Pads, "strip view", &["Sound", "Rhythm"]),
+        (PadEdit, "play mode", &["1 shot", "gate"]),
+        (PadEdit, "pitch gate", &["on", "off"]),
+        (PadEdit, "pin sample", &["on", "off"]),
         (Pattern, "hide empty", &["shown", "hidden"]),
         (Files, "listen file", &["on", "off"]),
         (Files, "star file", &["on", "off"]),
     ];
-    for view in [Chop, ChopEdit, Pads, Pattern, Files] {
+    for view in [Chop, ChopEdit, Pads, PadEdit, Pattern, Files] {
         let mut drive = reach_drive_from(hold_drive(), view, tone());
         hold(&mut drive, true);
         let states = looks(&drive).states;

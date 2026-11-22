@@ -61,6 +61,11 @@ enum Mode {
     Slices128,
     Loop,
     AsPad,
+    SourceLive,
+    SourceOverflow,
+    SourceSilent,
+    SourcePinned,
+    SourceRhythm,
     PatternActive,
     PatternStopped,
     PatternEmpty,
@@ -163,6 +168,11 @@ impl Mode {
         Self::Slices128,
         Self::Loop,
         Self::AsPad,
+        Self::SourceLive,
+        Self::SourceOverflow,
+        Self::SourceSilent,
+        Self::SourcePinned,
+        Self::SourceRhythm,
         Self::PatternActive,
         Self::PatternStopped,
         Self::PatternEmpty,
@@ -265,6 +275,11 @@ impl Mode {
             Self::Slices128 => "128-slices",
             Self::Loop => "loop",
             Self::AsPad => "as-pad",
+            Self::SourceLive => "source-live",
+            Self::SourceOverflow => "source-overflow",
+            Self::SourceSilent => "source-silent",
+            Self::SourcePinned => "source-pinned",
+            Self::SourceRhythm => "source-rhythm",
             Self::PatternActive => "pattern-active",
             Self::PatternStopped => "pattern-stopped",
             Self::PatternEmpty => "pattern-empty",
@@ -317,7 +332,12 @@ impl Mode {
 
     fn applies(self, screen: Screen) -> bool {
         match self {
-            Self::PatternViewFine
+            Self::SourceLive
+            | Self::SourceOverflow
+            | Self::SourceSilent
+            | Self::SourcePinned
+            | Self::SourceRhythm
+            | Self::PatternViewFine
             | Self::PatternViewTriplet
             | Self::PatternViewOffGrid
             | Self::PatternViewMultiple
@@ -478,6 +498,11 @@ fn validate(cases: &[Case]) -> Result<(), String> {
                         "clip-event",
                         "exit-recovery",
                         "long-labels",
+                        "source-live",
+                        "source-overflow",
+                        "source-silent",
+                        "source-pinned",
+                        "source-rhythm",
                         "pattern-view-fine",
                         "pattern-view-triplet",
                         "pattern-view-off-grid",
@@ -921,6 +946,43 @@ fn fixture(case: Case, now: Instant) -> App {
             app.session_write_error = Some("Save refused.".into());
         }
         Mode::Normal | Mode::Value | Mode::Device => {}
+        Mode::SourceLive
+        | Mode::SourceOverflow
+        | Mode::SourceSilent
+        | Mode::SourcePinned
+        | Mode::SourceRhythm => {
+            let mut rt = pads_source::fixture(&mut app);
+            let hits: &[usize] = match case.mode {
+                Mode::SourceOverflow => &[2, 3, 4, 0, 1],
+                Mode::SourceSilent => &[],
+                _ => &[2, 0, 1],
+            };
+            if case.mode == Mode::SourcePinned {
+                app.apply(Action::PadsSourcePin);
+            }
+            if case.mode == Mode::SourceRhythm {
+                app.apply(Action::PadsStripToggle);
+                let pattern = session::PatternState {
+                    slot: "A1".into(),
+                    bars: 2,
+                    quantize: "off".into(),
+                    strength: 100,
+                    hits: vec![[0, 0, 100, 0], [240, 1, 78, 0], [480, 2, 90, 0]],
+                };
+                app.send(Command::SetPattern {
+                    pattern: Some(Arc::new(pattern.checked().unwrap().compile())),
+                });
+                app.pads.pattern = Some(pattern);
+                app.send(Command::TransportPlay);
+            }
+            for &pad in hits {
+                app.send(Command::PadPress {
+                    pad,
+                    velocity: 0.85,
+                });
+            }
+            rt.process(&mut [0.0; 1_024], &mut [0.0; 1_024]);
+        }
         Mode::PatternCountIn
         | Mode::PatternRecording
         | Mode::PatternErase
@@ -1236,7 +1298,17 @@ fn render_app_layers(
     let mut pads = app.mark_pads_recording(pads, pattern_recording);
     pads.bank_pattern = app.bank_pattern();
     if app.screen == Screen::Pads {
-        if app.pattern_view.overview {
+        if matches!(
+            case.mode,
+            Mode::SourceLive
+                | Mode::SourceOverflow
+                | Mode::SourceSilent
+                | Mode::SourcePinned
+                | Mode::SourceRhythm
+        ) {
+            let source = app.live_source_strip(now);
+            app.pads_strip(&mut pads, keymap, case.size.0, source);
+        } else if app.pattern_view.overview {
             pads.overview = Some(app.pattern_overview_at(keymap, case.size.0));
         } else {
             pads.pattern = Some(app.pattern_strip(keymap));
@@ -2915,6 +2987,105 @@ L="none"
         Mode::PatternViewHidden,
         Mode::PatternViewSafety,
     ];
+
+    #[test]
+    fn sound_strip_names_hidden_sounding_pads() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for (size, count, heads) in [
+            ((80, 26), "+ 2 more · 3, 4", 3),
+            ((120, 40), "+ 1 more · 3", 4),
+        ] {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::SourceOverflow,
+                size,
+            };
+            let (_, buffer) = render(case, &keymap);
+            let rows = buffer
+                .content()
+                .chunks(usize::from(size.0))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>();
+            let start = rows.iter().position(|row| row.contains("Sound ·")).unwrap();
+            let end = rows.iter().position(|row| row.contains("bank [")).unwrap();
+            let strip = rows[start..end].join("\n");
+            assert!(strip.contains(count), "{strip}");
+            assert!(strip.contains("noise.wav"), "{strip}");
+            assert_eq!(strip.contains("hat.wav"), size.0 == 120, "{strip}");
+            assert!(
+                strip
+                    .lines()
+                    .map(|row| row.matches('│').count())
+                    .sum::<usize>()
+                    >= heads,
+                "{strip}"
+            );
+        }
+    }
+
+    #[test]
+    fn sound_strip_catalogue_shows_live_silent_and_pinned_states() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            for (mode, status) in [
+                (Mode::SourceLive, "3 voices"),
+                (Mode::SourceSilent, "silent"),
+                (Mode::SourcePinned, "pinned"),
+            ] {
+                let case = Case {
+                    screen: Screen::Pads,
+                    mode,
+                    size,
+                };
+                let (_, frame) = render(case, &keymap);
+                let header = frame
+                    .content()
+                    .chunks(usize::from(size.0))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .find(|row| row.starts_with("Sound ·"))
+                    .unwrap();
+                assert!(
+                    header.contains("break.wav") && header.contains(status),
+                    "{header}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rhythm_shows_other_pad_rows_when_space_permits() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::SourceRhythm,
+                size,
+            };
+            let (_, buffer) = render(case, &keymap);
+            let rows = buffer
+                .content()
+                .chunks(usize::from(size.0))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>();
+            assert!(rows.iter().any(|row| row.starts_with("Rhythm · A1")));
+            assert!(rows.iter().any(|row| row.starts_with("pad 1")));
+            if size.0 == 120 {
+                for name in ["pad 2", "pad 3"] {
+                    let line = rows.iter().position(|row| row.starts_with(name)).unwrap();
+                    assert!(rows[line].contains('■'));
+                    assert!(
+                        buffer
+                            .content()
+                            .chunks(usize::from(size.0))
+                            .nth(line)
+                            .unwrap()
+                            .iter()
+                            .any(|cell| cell.modifier.contains(ratatui::style::Modifier::BOLD))
+                    );
+                }
+            }
+        }
+    }
 
     /// Scenario "Catalogue covers the pattern view".
     #[test]

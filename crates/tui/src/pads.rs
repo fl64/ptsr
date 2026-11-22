@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod source;
+pub use source::{BigView, SourceRange, SourceSample, SourceStrip, SourceVoice};
+
 /// The current command labels for the SMC-PAD second bank.
 pub struct CommandPanel {
     pub labels: [Option<String>; 16],
@@ -276,42 +279,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
     } else {
         frame.render_widget(Line::from(banks(p)), f.bank);
     }
-    // a recording takes the strip in the rec colour (25), `out_wave` then holds what goes
-    // into the file; the pad edit draws the pad's envelope over its piece; else the output
-    // the splash keeps only the wave rows: the rhythm shows from the start (98b)
-    let show_pattern =
-        p.pattern.is_some() && p.edit.is_none() && !s.recording && f.strip.height >= 3;
-    // a three-row strip holds only the rhythm; the L/R meters still show the level
-    let wave = if show_pattern {
-        let wave = Rect {
-            height: f.strip.height - 3,
-            ..f.strip
-        };
-        let events = Rect {
-            y: wave.bottom(),
-            height: 3,
-            ..f.strip
-        };
-        pattern_strip(frame, events, p.pattern.as_ref().unwrap());
-        wave
-    } else {
-        f.strip
-    };
-    match (p.edit, &p.big) {
-        _ if s.recording => envelope_strip(frame, f.strip, &p.out_wave, MAGENTA),
-        (Some(_), _) if p.curve.is_some() => filter_strip(
-            frame,
-            f.strip,
-            p.curve.as_ref().unwrap_or(&FilterCurve::default()),
-        ),
-        (Some(_), Some(big)) => {
-            let gate = p.pads.get(p.selected).is_some_and(|v| v.gate);
-            pad_envelope_strip(frame, f.strip, big, p.param, gate)
-        }
-        _ if wave.height == 0 => {}
-        _ if p.splash.is_some() => splash_strip(frame, wave, p.splash.as_ref().unwrap()),
-        _ => envelope_strip(frame, wave, &p.out_wave, DIM),
-    }
+    draw_strip(frame, f.strip, p, s);
     let [meters_area, _, info] = Layout::vertical([
         Constraint::Length(METER_ROWS),
         Constraint::Length(1),
@@ -323,6 +291,60 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, p: &Pads, s: &Status) {
         pad_grid(frame, f.grid, p, f.waves);
     }
 
+    draw_side(frame, info, p);
+}
+
+fn draw_strip(frame: &mut Frame, strip: Rect, p: &Pads, s: &Status) {
+    if !s.recording
+        && p.edit.is_none()
+        && let Some(source) = &p.source
+    {
+        source::draw(frame, strip, source);
+        return;
+    }
+    // a three-row strip holds only the rhythm; the L/R meters still show the level
+    let wave = if let Some(pattern) = &p.pattern
+        && p.edit.is_none()
+        && !s.recording
+        && strip.height >= 3
+    {
+        let tracks = pattern
+            .tracks
+            .len()
+            .min(usize::from(strip.height.saturating_sub(4))) as u16;
+        let events_h = 3 + tracks;
+        let wave = Rect {
+            height: strip.height - events_h,
+            ..strip
+        };
+        let events = Rect {
+            y: wave.bottom(),
+            height: events_h,
+            ..strip
+        };
+        pattern_strip(frame, events, pattern);
+        wave
+    } else {
+        strip
+    };
+    match (p.edit, &p.big) {
+        _ if s.recording => envelope_strip(frame, strip, &p.out_wave, MAGENTA),
+        (Some(_), _) if p.curve.is_some() => filter_strip(
+            frame,
+            strip,
+            p.curve.as_ref().unwrap_or(&FilterCurve::default()),
+        ),
+        (Some(_), Some(big)) => {
+            let gate = p.pads.get(p.selected).is_some_and(|v| v.gate);
+            pad_envelope_strip(frame, strip, big, p.param, gate)
+        }
+        _ if wave.height == 0 => {}
+        _ if p.splash.is_some() => splash_strip(frame, wave, p.splash.as_ref().unwrap()),
+        _ => envelope_strip(frame, wave, &p.out_wave, DIM),
+    }
+}
+
+fn draw_side(frame: &mut Frame, info: Rect, p: &Pads) {
     if let Some(sel) = p.pads.get(p.selected) {
         let [panel, _] =
             Layout::vertical([Constraint::Length(PANEL_ROWS), Constraint::Fill(1)]).areas(info);

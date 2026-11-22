@@ -1,7 +1,7 @@
 # SMC-PAD paths for current stories
 
 This table covers the headings in [User stories](USER-STORIES.md).
-It describes the SMC-PAD profile and command panel for changes 124 to 138.
+It describes the SMC-PAD profile and command panel for changes 124 to 139.
 Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
@@ -115,6 +115,16 @@ the bottom row applies. Change 127 moves Apply to P4 and keeps the counts.
 Change 134 makes all 16 pads targets on the playing layer.
 Repeat with an occupied pad. Check the question and count P1 or P4 separately.
 Record the actual device sequence. Physical press counts remain open.
+
+## Pads Sound strip
+
+| Action | Keyboard | Visible panel / reveal |
+| --- | --- | --- |
+| Switch Sound and Rhythm | Alt+9 | On Pads, P16 (`1/3`) |
+| Pin or release the selected sample | Alt+0 | On Pad Edit, P16 (`1/3`) |
+
+From the Pads actions, use P5 to open Pad Edit. Use P16 to pin the sample.
+Use P1 to leave Pad Edit. The route takes three hits from the visible panel.
 
 ## Open owner checks
 

@@ -1449,6 +1449,41 @@ impl App {
         };
         let mut items = items;
         if self.screen == Screen::Pads
+            && self.pattern_panel.is_none()
+            && self.recording.is_none()
+            && !self.erase_pads
+            && recording.is_none_or(|state| state.phase == Phase::Idle)
+            && (self.source_pin_available()
+                || self.pads.sound.iter().any(Option::is_some)
+                || self.source_view.view_name() == "Rhythm")
+        {
+            let (action, label) = if self.edit {
+                (
+                    Action::PadsSourcePin,
+                    if self.source_view.pinned(&self.pads) {
+                        "unpin sample"
+                    } else {
+                        "pin sample"
+                    },
+                )
+            } else {
+                (
+                    Action::PadsStripToggle,
+                    if self.source_view.view_name() == "Sound" {
+                        "Rhythm"
+                    } else {
+                        "Sound"
+                    },
+                )
+            };
+            let hint = if self.input_sources.last_is_smc() {
+                ("PAD BANK+P16".into(), label.into())
+            } else {
+                item(action, label)
+            };
+            items.insert(0, hint);
+        }
+        if self.screen == Screen::Pads
             && self.pads.pattern.is_some()
             && self.pattern_panel.is_none()
             && recording.is_none_or(|state| state.phase == Phase::Idle)

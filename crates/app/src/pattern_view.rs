@@ -196,6 +196,35 @@ impl Model {
             .collect()
     }
 
+    fn strip_tracks(
+        &self,
+        bank: usize,
+        selected: usize,
+        count: usize,
+    ) -> Vec<(String, Vec<tui::PatternCell>)> {
+        let mut tracks: [Option<Vec<tui::PatternCell>>; super::PADS_PER_BANK] =
+            std::array::from_fn(|_| None);
+        let spacing = self.division.spacing();
+        for event in &self.events {
+            let pad = event.played.pad();
+            let cell = (event.played.tick() / spacing) as usize;
+            if pad == selected || !(bank..bank + tracks.len()).contains(&pad) || cell >= count {
+                continue;
+            }
+            let track =
+                tracks[pad - bank].get_or_insert_with(|| vec![tui::PatternCell::default(); count]);
+            let value = &mut track[cell];
+            value.count += 1;
+            value.off_grid |= !event.played.tick().is_multiple_of(spacing);
+            value.max_velocity = value.max_velocity.max(event.raw.velocity());
+        }
+        tracks
+            .into_iter()
+            .enumerate()
+            .filter_map(|(pad, track)| track.map(|track| (strip_pad_label(pad), track)))
+            .collect()
+    }
+
     #[cfg(test)]
     pub(super) fn overview_cells(&self, bank: usize) -> Vec<Vec<tui::PatternCell>> {
         let count = (u32::from(self.bars) * self.division.cells_per_bar()) as usize;
@@ -758,6 +787,7 @@ impl super::App {
             label: String::new(),
             cells: Vec::new(),
             all: Vec::new(),
+            tracks: Vec::new(),
             beat_cells: 1,
             playhead: None,
         };
@@ -839,7 +869,20 @@ impl super::App {
             })
             .collect();
         strip.all = cells.bank;
+        if self.source_view.rhythm() {
+            strip.label = strip_pad_label(self.pads.selected);
+            strip.tracks = model.strip_tracks(bank, pad, strip.cells.len());
+        }
         strip
+    }
+}
+
+fn strip_pad_label(pad: usize) -> String {
+    let tag = tui::pads::pad_tag(pad);
+    if tui::pads::device_numbers() {
+        format!("P{tag}")
+    } else {
+        format!("pad {tag}")
     }
 }
 

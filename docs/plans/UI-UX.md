@@ -90,83 +90,20 @@ The new proposal must name view, edit, step-lane, empty-pattern, and moved-key c
 files at both sizes. It must give separate keyboard and controller checks and name the
 renders to hear.
 
-### 3.2 `pads-source-view` (includes `pads-context-lane`)
+### 3.2 `pads-source-view` (change 139)
 
-Make the top strip of F2 Pads show what the pad grid and inspector do not show. This is one
-OpenSpec change. The strip has a source view and a pattern view. Source is the proposed
-default while the owner plays pads. A key and a controller panel cell switch the views.
-In pad edit, the strip shows the edit context. The design must choose the exact keys and
-panel cells and keep both views available without changing the pad block.
+The top strip of F2 Pads has a Sound view and a Rhythm view. Sound shows the full
+sample wave, the ranges of the pads, and a playback line for each sounding voice.
+The last wave stays visible in silence. A pin keeps focus on the selected sample.
 
-#### Source view
+Show one other sounding sample at 80x26 and up to two at 120x40. Give each a
+compact row. Show a count and the pad labels for samples beyond those rows.
+Keep all new playback indicators in the strip. Rhythm uses the A1 event rows.
+Recording and pad edit take priority when active.
 
-- Fill the main strip with the focus sample's Braille wave. Show its slice bounds and the
-  labels of pads that use each slice, for example `1` or `Q`. By default, focus follows the
-  last hit pad. A key and a panel cell pin the selected pad's sample instead. After a hit,
-  change focus only when the current sample's visible time reaches the focus hold time.
-  Its proposed default is 150 ms. A pin keeps focus on the selected pad's sample.
-- Put the sample name at the left of the header. Put `▶ N voices` at the right while voices
-  sound, or muted `■ silent` when none sound. Keep the focus wave visible in silence.
-- For each sounding voice on the focus sample, light its region in the play accent (cyan).
-  Use three brightness levels that follow the voice level after its envelope. Draw a white
-  vertical line at the current position of each voice. Light a slice's pad label in cyan
-  while that pad sounds. Return it to the bank tint after. The dim wave remains the sample
-  map. Use no other strip colors except the yellow loop bracket.
-- Draw a thin yellow bracket with `loop` below a loop region. Put a small `◀` at a reverse
-  head. A retrigger, roll, or note repeat returns its head to the region start. A loop wraps
-  its head inside the bracket. Reverse moves left. Pitch changes speed. A cut or choke fades
-  the lit region with the voice level.
-- Give each other sounding sample one compact row with its name and heads: at most two rows
-  at 120×40, or one at 80×26. Use `+ N more` for additional samples. Show these rows only
-  while another sample sounds. Do not print `none sounding`. The design must decide whether
-  unused rows stay clear or increase the focus wave's height.
-- Show a head in the mini wave of each sounding pad cell, even when the strip shows another
-  sample or the pattern view. Mark a master effect that does not read a sample at the right
-  of the strip, for example `STUTTER 1/16`. Do not draw a false sample head.
-- Add a view-density setting: `full` (regions and all heads, default), `regions` (no heads),
-  and `loudest` (one head for the loudest voice on each sample). The owner chooses after a
-  real-screen check. Add a refresh setting of off, 15, 30, or 60 frames per second. The
-  proposed default is 30. With off, show the focus wave without heads.
-
-The sound thread writes one fixed-size snapshot at each audio-block end. The snapshot has
-up to 32 active voice entries and the block-end frame count. Each entry records its pad,
-sample ID, region bounds, and active loop bounds. It also records current frame position,
-direction, playback rate, level after the envelope, and voice serial number. The serial
-number separates a retrigger from a continuing voice. Use a fixed triple buffer or a
-seqlock with a fixed array. The callback must not allocate, lock, or wait. Include
-snapshot cost in the callback benchmark.
-
-Move drawn heads forward by the reported output latency (device latency plus one buffer)
-at each voice's rate and direction. Show the reported latency in F12. The design must state
-how it gets latency from each audio backend and what happens when it is unavailable.
-Compute each Braille overview once per sample and width, then cache it. Redraw the strip
-and sounding pad cells at the selected source-view rate. Redraw the rest of Pads on change.
-Set a measurable 32-voice, 60-frame-per-second UI limit on the owner's machine in the
-design before implementation.
-
-#### Pattern and edit context
-
-- The pattern view shows the used pads, up to the rows that fit, and its moving playhead.
-- In pad edit, show the selected region with attack, decay, and release over its wave.
-  Keep the filter curve on the filter page. Show sends on the FX page.
-- If the strip has nothing useful to add, reduce its height and give the rows to the grid.
-  Do not leave empty strip rows.
-
-Test a scripted snapshot with two pads on one sample and one on another, plus retrigger,
-loop, reverse, and choke. Check positions, regions, serial numbers, and callback allocation
-at specified block ends. With fixed reported latency, check each drawn position against
-the engine position plus latency times playback rate in its direction. Measure frame time
-with 32 voices at 60 frames per second on the owner's machine.
-
-The proposal must name catalogue fixtures at 120×40 and 80×26 for these states:
-
-- One, three, and five voices on one sample.
-- Two samples and more than three samples.
-- A roll, a loop, reverse, and pinned focus.
-- The pattern view, region envelope, filter, sends, and a reduced strip.
-
-Give separate keyboard and controller checks and name the renders to hear. Accept this
-combined change before `compact-help` starts.
+Alt+9 changes the strip. Alt+0 pins the selected sample. In the SMC-PAD panel,
+P16 changes the strip on Pads and pins the sample on Pad Edit. Change 139 defines
+the input paths, focus timing, and screen checks.
 
 ### 3.3 `compact-help`
 

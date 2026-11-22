@@ -74,7 +74,7 @@ checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpe
 | 88 `ui-confirm` | Active on `88-ui-confirm`. Automated keyboard and MIDI checks pass. | Check Enter and a learned button on the physical controller. |
 | `denormals` | Planned in a separate branch | Review the silence render and callback measurements. Keep 94a open. |
 | `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
-| `pads-source-view` | Planned after `pattern-screen`. The plan is in [PR #16](https://github.com/fl64/ptsr/pull/16). | Check voice heads, sample rows, the mini pattern, and pad edit pages at both sizes. |
+| `pads-source-view` | Active as change 139. See [the Pads strip plan](UI-UX.md#32-pads-source-view-change-139). | Check positions, sample rows, and the rhythm strip at both sizes. |
 | `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
 | `key-consistency` | Planned | Check bank keys, Files folder-up, and moved-key notices. |
 
@@ -201,9 +201,9 @@ The owner hears clean pitched breaks, natural decays, real dynamics, and no clic
 
 ### Phase C — sequencing on screen
 
-9. [pattern-screen](UI-UX.md#31-pattern-screen): F5 screen, view and edit, F7 free, step lane.
-10. [control-pages](ROADMAP-DETAILS.md#control-pages): one control table per screen and mode.
-11. [pads-source-view](UI-UX.md#32-pads-source-view-includes-pads-context-lane): live source and mini pattern lane.
+9. [pads-source-view](UI-UX.md#32-pads-source-view-change-139): sample positions and the rhythm strip.
+10. [pattern-screen](UI-UX.md#31-pattern-screen): F5 screen, view and edit, F7 free, step lane.
+11. [control-pages](ROADMAP-DETAILS.md#control-pages): one control table per screen and mode.
 12. [99 pattern slots](PATTERNS.md#change-99--99-pattern-slots): 16 slots with 4, 8, or 16 bar switches.
 13. [100 note repeat](PATTERNS.md#change-100--100-note-repeat): 1/32 and triplets.
 14. [100a pad mute](CROSS-CUTTING.md#change-100a--100a-pad-mute-after-100): mute pads during play.

@@ -413,7 +413,7 @@ them. The keys in use are in `config/keymap.toml`; the table below is historical
 | Key | Screen | Content |
 | --- | --- | --- |
 | F1 | Launcher | grid of tracks × scenes, launch of clips and scenes |
-| F2 | Pads | 4×4 program, layers and parameters of the selected pad, levels |
+| F2 | Pads | 4×4 program, selected pad controls, levels, and a planned Sound and Rhythm strip |
 | F3 | Chop | waveform, markers, slices |
 | F4 | Sequencer | steps, substeps, step parameters, piano roll |
 | F5 | Effects | pad, track, buses, performance, input |

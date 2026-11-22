@@ -324,6 +324,7 @@ impl App {
                 self.pattern_view.hide_empty_banks = !self.pattern_view.hide_empty_banks;
             }
             Action::PatternOverviewEmptyToggle => {}
+            Action::PadsStripToggle | Action::PadsSourcePin => self.apply_source_action(action),
             Action::PatternClear => self.ask_clear_pattern(),
             Action::PatternRecord => self.toggle_pattern_record(),
             Action::PatternErase => self.toggle_pattern_erase(),

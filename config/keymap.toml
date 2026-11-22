@@ -134,6 +134,8 @@ Enter = "browser.hold"        # "file in hand": a pad hit puts it there, Enter a
 "Ctrl+B" = "browser.favorite_toggle"
 
 [screens.pads]
+"Alt+9" = "pad.strip_toggle"
+"Alt+0" = "pad.source_pin"
 "Alt+B" = "transport.tap"
 F7 = "pattern.step_edit"     # toggle correction in the A1 overview
 "Alt+Up" = "pattern.view_next"     # a finer rhythm view, as Up zooms in on Chop
