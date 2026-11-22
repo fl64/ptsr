@@ -990,3 +990,13 @@ The effective keyboard Panic key SHALL appear in Help. The SMC-PAD help SHALL na
 - **WHEN** the owner opens the panel and arms Panic at 80x26 or 120x40
 - **THEN** the next STOP and the cancel route are visible with the safety messages
 - **AND** the A1 and output recording cues follow the active STOP role
+
+### Requirement: Audio settings show the click control
+
+The Audio tab SHALL show Click level and its value from 0 to 100 percent. The help SHALL explain how to change it with the available input devices at both supported terminal sizes.
+
+#### Scenario: Audio help names the click level controls
+
+- **WHEN** the owner selects Click level in Audio settings with keyboard or controller input
+- **THEN** the view shows the same value and the available control
+- **AND** the setting and its hint fit at 80 by 26 and 120 by 40

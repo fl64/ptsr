@@ -93,7 +93,7 @@ const FRAME: Duration = Duration::from_millis(33);
 /// How long the audio thread load peak stays on screen.
 const LOAD_WINDOW: Duration = Duration::from_millis(500);
 const BUFFER_SIZES: [u32; 5] = [64, 128, 256, 512, 1024];
-const SETTINGS_ROWS: usize = 4;
+const SETTINGS_ROWS: usize = 5;
 const DEVICES: &str = "config/devices";
 /// Lines kept on the input debug tab.
 const INPUT_LOG: usize = 12;
@@ -948,18 +948,11 @@ impl App {
             );
             return;
         }
-        if source == audio::SOURCE_OUTPUT {
-            let tapped = a.tap_output(&self.routed.playback);
-            if !tapped {
-                self.post_notice(
-                    Level::Warn,
-                    (
-                        "The output device has no monitor to record.".into(),
-                        Instant::now(),
-                    ),
-                );
-                return;
-            }
+        if source == audio::SOURCE_OUTPUT
+            && let Err(reason) = a.sync_output_tap(&self.routed.playback)
+        {
+            self.post_notice(Level::Warn, (reason.into(), Instant::now()));
+            return;
         }
         self.recording = Some((source, Instant::now()));
         // a recording is sound too: the splash ends (73)
@@ -970,6 +963,9 @@ impl App {
         }
         if let Some(a) = self.audio.as_ref() {
             a.recorder.start(source);
+            if source == audio::SOURCE_OUTPUT {
+                a.ports_changed.store(true, Relaxed);
+            }
         }
     }
 
@@ -1379,6 +1375,7 @@ fn main() -> std::io::Result<()> {
         log::info!("devices: outputs {:?}, inputs {:?}", d.outputs, d.inputs);
     }
     app.reroute();
+    app.sync_click_gain();
 
     let mut term = ratatui::init();
     let kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
@@ -1651,6 +1648,8 @@ fn main() -> std::io::Result<()> {
                         .as_ref()
                         .map_or(app.cfg.buffer_size, |a| a.stats.format().0),
                     buffer_choice: app.cfg.buffer_size,
+                    click_level: app.cfg.click_level,
+                    click_encoder: app.click_encoder_available(),
                     graphics: app.ui.graphics,
                     routing: app.audio_alive().is_some_and(|a| a.devices().is_some()),
                     backend_jack: matches!(app.cfg.backend, audio::Backend::Jack),

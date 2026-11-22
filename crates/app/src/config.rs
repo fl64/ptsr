@@ -193,6 +193,7 @@ pub type Learned = BTreeMap<String, BTreeMap<String, BTreeMap<String, MidiBindin
 pub struct AudioConfig {
     pub backend: Backend,
     pub buffer_size: u32,
+    pub click_level: u8,
     /// Output device name (JACK port prefix); unset means the first available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
@@ -206,6 +207,7 @@ impl Default for AudioConfig {
             backend: Backend::Auto,
             // 0 = auto: take the sound server's size, never reconfigure the shared graph
             buffer_size: 0,
+            click_level: 100,
             output: None,
             input: None,
         }
@@ -283,6 +285,7 @@ pub fn load_from(user: &Path) -> Loaded {
         error = Some(format!("bad config: {e}"));
         Config::default()
     });
+    config.audio.click_level = config.audio.click_level.min(100);
     if !config.midi_gestures.valid() {
         error = Some(format!(
             "invalid MIDI hold time {} ms; using 300 ms",
@@ -362,6 +365,7 @@ impl App {
 
     pub(super) fn reroute(&mut self) {
         let Some(a) = self.audio_alive() else {
+            self.finish_output_on_route_loss("The output stopped. Recording ended.");
             return;
         };
         let routed = a.route(
@@ -376,7 +380,23 @@ impl App {
                 routed.input
             );
         }
+        if matches!(self.recording, Some((audio::SOURCE_OUTPUT, _))) {
+            if routed.playback != self.routed.playback {
+                self.finish_output_on_route_loss("The output changed. Recording ended.");
+            } else if a.sync_output_tap(&routed.playback).is_err() {
+                self.finish_output_on_route_loss(
+                    "The recording input disconnected. Recording ended.",
+                );
+            }
+        }
         self.routed = routed;
+    }
+
+    fn finish_output_on_route_loss(&mut self, reason: &str) {
+        if matches!(self.recording, Some((audio::SOURCE_OUTPUT, _))) {
+            self.record_stop();
+            self.post_notice(Level::Warn, (reason.into(), Instant::now()));
+        }
     }
 
     pub(super) fn save(&mut self) {
@@ -419,8 +439,31 @@ impl App {
         }
     }
 
+    pub(super) fn click_encoder_available(&self) -> bool {
+        self.help_overlay
+            .controller
+            .smc_status
+            .as_ref()
+            .is_some_and(|(ready, _)| *ready)
+    }
+
+    pub(super) fn sync_click_gain(&mut self) {
+        self.send(Command::SetMetronomeGain {
+            gain: f32::from(self.cfg.click_level) / 100.0,
+        });
+    }
+
     /// Left/Right on the settings screen: apply at once and save.
     pub(super) fn change(&mut self, row: usize, step: isize) {
+        if row == 4 {
+            let level = (isize::from(self.cfg.click_level) + step * 5).clamp(0, 100) as u8;
+            if level != self.cfg.click_level {
+                self.cfg.click_level = level;
+                self.sync_click_gain();
+                self.save();
+            }
+            return;
+        }
         if row == 3 {
             // the wave as a picture or Braille (04b), from the next start
             self.ui.graphics = !self.ui.graphics;

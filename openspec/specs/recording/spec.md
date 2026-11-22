@@ -37,15 +37,32 @@ recording SHALL run at a time, as before.
 - **THEN** the recording continues until the release and does not stop on repeats
 
 ### Requirement: Record the output device
-The system SHALL record what plays on the current output device while the record-output mode is on — ptsr and other programs alike — by tapping the device's monitor ports; the mode is toggled by the key or a learned control, and a device without monitors reports it instead of recording silence. The tap is unlinked from the monitor when the recording stops.
+
+While output recording is active, the system SHALL record the sampler master and the other applications on the selected output before the sampler click. The key and learned control SHALL toggle the same recording. If the device has no monitor or the system cannot link the recording inputs, the system SHALL report the cause and refuse to start. When recording stops, the input links for the take SHALL close.
 
 #### Scenario: Capture what plays
-- **WHEN** music plays on the output device, the owner starts the output recording and stops it after a while
-- **THEN** the recording is in hand and playing it back matches what was heard, other programs included
+
+- **WHEN** music plays on the output device and the owner starts and stops output recording
+- **THEN** the recording is in hand
+- **AND** playback contains the sampler and other applications on the chosen output
+- **AND** the recording has no sampler click
 
 #### Scenario: No monitor on the device
+
 - **WHEN** the output device exposes no monitor ports and the owner starts the output recording
 - **THEN** the status says the device has no monitor to record and nothing starts
+
+#### Scenario: Follow other playback sources during an output recording
+
+- **WHEN** another application connects to or leaves the selected output during a recording
+- **THEN** the system updates the recording links and keeps the take
+- **AND** links from other outputs stay out of the capture
+
+#### Scenario: Closing the output preserves the captured part
+
+- **WHEN** the selected output disappears while output recording is active
+- **THEN** the system stops the take and reports the loss
+- **AND** retained audio follows the usual recording handoff
 
 ### Requirement: A recording lands in hand
 The system SHALL put a finished recording in hand as a WAV file in the samples root, named by time, and a pad hit binds it with the usual overwrite question; Esc drops the recording. A silent recording is dropped with a message instead. The kept file fades in and out over 5 ms, so a pad playing it never clicks at its edges, even when the recording started in the middle of a loud sound.

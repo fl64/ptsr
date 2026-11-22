@@ -78,33 +78,70 @@ impl Audio {
         while self.garbage.pop().is_ok() {}
     }
 
-    /// Connects the output tap to the monitor twins of the `playback` ports the sound
-    /// actually goes to — including what other programs play. `false` when a monitor
-    /// port is missing for any of them.
-    pub fn tap_output(&self, playback: &[String]) -> bool {
-        let Stream::Jack { client, recs, .. } = &self.stream else {
-            return false;
+    /// Follow the other sources of the selected output. The callback adds our master.
+    pub fn sync_output_tap(&self, playback: &[String]) -> Result<(), &'static str> {
+        const NO_MONITOR: &str = "The output device has no monitor to record.";
+        const LINK_FAILED: &str = "Cannot connect the output recording.";
+        let Stream::Jack {
+            client, outs, recs, ..
+        } = &self.stream
+        else {
+            return Err(NO_MONITOR);
         };
         let c = client.as_client();
-        // monitor ports are sources and not physical in PipeWire: look through all audio outputs
-        let all_outputs = c.ports(None, Some("audio"), PortFlags::IS_OUTPUT);
-        let Some(monitors) = monitors_of(playback, &all_outputs) else {
-            log::warn!("no monitor ports for {playback:?}");
-            return false;
+        let outputs = c.ports(None, Some("audio"), PortFlags::IS_OUTPUT);
+        if monitors_of(playback, &outputs).is_none() {
+            return Err(NO_MONITOR);
+        }
+        let connected = |name: &str| c.port_by_name(name).map(|port| port.get_connections());
+        let peers = playback
+            .iter()
+            .take(recs.len())
+            .map(|port| connected(port).ok_or(LINK_FAILED))
+            .collect::<Result<Vec<_>, _>>()?;
+        let want = recording_links(peers, outs, recs);
+        let have: Vec<_> = recs
+            .iter()
+            .flat_map(|dst| {
+                connected(dst)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(move |src| (src, dst.clone()))
+            })
+            .collect();
+        let linked = |src: &str, dst: &str| {
+            connected(dst).is_some_and(|peers| peers.iter().any(|port| port == src))
         };
-        for (rec, mon) in recs.iter().zip(&monitors) {
-            // the monitor is the source, our tap is the destination
-            let _ = c.disconnect_ports_by_name(mon, rec);
-            if c.connect_ports_by_name(mon, rec).is_err() {
-                log::warn!("cannot connect {rec} to {mon}");
-                return false;
+        let (remove, add) = diff(&have, &want);
+        for (src, dst) in remove {
+            if c.disconnect_ports_by_name(src, dst).is_err() && linked(src, dst) {
+                self.untap_output();
+                return Err(LINK_FAILED);
             }
         }
-        true
+        for (src, dst) in add {
+            if c.connect_ports_by_name(src, dst).is_err()
+                && !linked(src, dst)
+                && playback
+                    .iter()
+                    .zip(recs)
+                    .any(|(out, rec)| rec == dst && linked(src, out))
+            {
+                self.untap_output();
+                return Err(LINK_FAILED);
+            }
+        }
+        self.recorder
+            .capture_mono
+            .store(playback.len() == 1, Relaxed);
+        Ok(())
     }
 
     /// Unlinks the output tap from whatever it listens to, so it shows only while recording.
     pub fn untap_output(&self) {
+        if self.stopped.load(Relaxed) {
+            return;
+        }
         let Stream::Jack { client, recs, .. } = &self.stream else {
             return;
         };
@@ -301,6 +338,7 @@ pub struct Recorder {
     cap_frames: usize,
     pub recording: AtomicBool,
     pub source: AtomicU8,
+    capture_mono: AtomicBool,
     /// Interleaved stereo frames written so far.
     pub frames: AtomicUsize,
     /// The cap stopped the recording by itself.
@@ -317,6 +355,7 @@ impl Recorder {
             cap_frames,
             recording: AtomicBool::new(false),
             source: AtomicU8::new(SOURCE_MIC),
+            capture_mono: AtomicBool::new(false),
             frames: AtomicUsize::new(0),
             capped: AtomicBool::new(false),
         }
@@ -342,24 +381,47 @@ impl Recorder {
     }
 
     /// Audio thread only: appends one block of stereo frames, stopping at the cap.
-    fn write(&self, l: &[f32], r: &[f32]) {
-        if !self.recording.load(Relaxed) {
-            return;
+    fn write(&self, l: &[f32], r: &[f32]) -> f32 {
+        self.write_frames(l.iter().zip(r).map(|(&l, &r)| (l, r)))
+    }
+
+    fn write_master(&self, master: [&[f32]; 2], external: [&[f32]; 2]) -> f32 {
+        let mono = self.capture_mono.load(Relaxed);
+        let frames = master[0]
+            .iter()
+            .zip(master[1])
+            .zip(external[0].iter().zip(external[1]));
+        self.write_frames(frames.map(|((&l, &r), (&ext_l, &ext_r))| {
+            if mono {
+                (l + r + ext_l, 0.0)
+            } else {
+                (l + ext_l, r + ext_r)
+            }
+        }))
+    }
+
+    fn write_frames(&self, frames: impl Iterator<Item = (f32, f32)>) -> f32 {
+        if !self.recording.load(Acquire) {
+            return 0.0;
         }
-        // safe: only the audio thread writes, and only while `recording` is set
+        // Only the audio thread writes. The app reads the published prefix.
         let buf = unsafe { &mut *self.buf.get() };
-        let mut f = self.frames.load(Relaxed);
-        for i in 0..l.len() {
-            if f >= self.cap_frames {
+        let mut frame = self.frames.load(Relaxed);
+        let mut peak: f32 = 0.0;
+        for (l, r) in frames {
+            if frame == self.cap_frames {
+                self.frames.store(frame, Release);
                 self.capped.store(true, Release);
                 self.recording.store(false, Release);
-                return;
+                return peak;
             }
-            buf[f * 2] = l[i];
-            buf[f * 2 + 1] = r[i];
-            f += 1;
+            buf[frame * 2] = l;
+            buf[frame * 2 + 1] = r;
+            peak = peak.max(l.abs()).max(r.abs());
+            frame += 1;
         }
-        self.frames.store(f, Release);
+        self.frames.store(frame, Release);
+        peak
     }
 
     /// The app, after `stop`: a copy of the recorded interleaved stereo frames.
@@ -389,24 +451,34 @@ impl jack::ProcessHandler for JackProcess {
         let peak = |buf: &[f32]| buf.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         let input = peak(self.in_l.as_slice(ps)).max(peak(self.in_r.as_slice(ps)));
         self.stats.record_input_peak(input);
-        if self.recorder.source.load(Relaxed) == SOURCE_MIC {
-            self.recorder
-                .write(self.in_l.as_slice(ps), self.in_r.as_slice(ps));
-        }
-        self.rt
-            .process(self.out_l.as_mut_slice(ps), self.out_r.as_mut_slice(ps));
-        if self.recorder.source.load(Relaxed) == SOURCE_OUTPUT {
-            self.recorder
-                .write(self.rec_l.as_slice(ps), self.rec_r.as_slice(ps));
-        }
-        // the strip shows what goes into the file (25); zero while nothing records
-        let rec = match (
-            self.recorder.recording.load(Relaxed),
-            self.recorder.source.load(Relaxed),
-        ) {
-            (false, _) => 0.0,
-            (true, SOURCE_MIC) => input,
-            (true, _) => peak(self.rec_l.as_slice(ps)).max(peak(self.rec_r.as_slice(ps))),
+        let rec = if self.recorder.source.load(Relaxed) == SOURCE_OUTPUT
+            && self.recorder.recording.load(Acquire)
+        {
+            let rec_l = self.rec_l.as_slice(ps);
+            let rec_r = self.rec_r.as_slice(ps);
+            let mut peak: f32 = 0.0;
+            self.rt.process_with_master(
+                self.out_l.as_mut_slice(ps),
+                self.out_r.as_mut_slice(ps),
+                |at, master_l, master_r| {
+                    let end = at + master_l.len();
+                    peak = peak.max(
+                        self.recorder
+                            .write_master([master_l, master_r], [&rec_l[at..end], &rec_r[at..end]]),
+                    );
+                },
+            );
+            peak
+        } else {
+            let rec = if self.recorder.source.load(Relaxed) == SOURCE_MIC {
+                self.recorder
+                    .write(self.in_l.as_slice(ps), self.in_r.as_slice(ps))
+            } else {
+                0.0
+            };
+            self.rt
+                .process(self.out_l.as_mut_slice(ps), self.out_r.as_mut_slice(ps));
+            rec
         };
         self.stats.record_rec_peak(rec);
         jack::Control::Continue
@@ -422,12 +494,14 @@ pub struct JackNotify {
     stats: Arc<Stats>,
     stopped: Arc<AtomicBool>,
     ports_changed: Arc<AtomicBool>,
+    recorder: Arc<Recorder>,
 }
 
 // JACK must not be called from notification callbacks: only raise flags.
 impl jack::NotificationHandler for JackNotify {
     unsafe fn shutdown(&mut self, _: jack::ClientStatus, _: &str) {
         self.stopped.store(true, Relaxed);
+        self.ports_changed.store(true, Relaxed);
     }
 
     fn xrun(&mut self, _: &jack::Client) -> jack::Control {
@@ -437,6 +511,14 @@ impl jack::NotificationHandler for JackNotify {
 
     fn port_registration(&mut self, _: &jack::Client, _: jack::PortId, _: bool) {
         self.ports_changed.store(true, Relaxed);
+    }
+
+    fn ports_connected(&mut self, _: &jack::Client, _: jack::PortId, _: jack::PortId, _: bool) {
+        if self.recorder.recording.load(Acquire)
+            && self.recorder.source.load(Relaxed) == SOURCE_OUTPUT
+        {
+            self.ports_changed.store(true, Relaxed);
+        }
     }
 }
 
@@ -483,6 +565,7 @@ fn start_jack(buffer_size: u32) -> Result<Audio, String> {
         stats: stats.clone(),
         stopped: stopped.clone(),
         ports_changed: ports_changed.clone(),
+        recorder: recorder.clone(),
     };
     let client = client.activate_async(notify, process).map_err(err)?;
     // buffer size may be 0 right after activation; the real one arrives via the buffer_size callback
@@ -555,18 +638,17 @@ fn start_cpal(buffer_size: u32) -> Result<Audio, String> {
                     cb_stats.set_format((data.len() / channels) as u32, sample_rate);
                     for chunk in data.chunks_mut(channels * CPAL_CHUNK) {
                         let n = chunk.len() / channels;
-                        rt.process(&mut l[..n], &mut r[..n]);
-                        // no input stream in cpal: only the output mix can be recorded
-                        let recording = rec_cb.recording.load(Relaxed)
-                            && rec_cb.source.load(Relaxed) == SOURCE_OUTPUT;
-                        if rec_cb.source.load(Relaxed) == SOURCE_OUTPUT {
-                            rec_cb.write(&l[..n], &r[..n]);
+                        let mut peak: f32 = 0.0;
+                        if rec_cb.source.load(Relaxed) == SOURCE_OUTPUT
+                            && rec_cb.recording.load(Acquire)
+                        {
+                            rt.process_with_master(&mut l[..n], &mut r[..n], |_, l, r| {
+                                peak = peak.max(rec_cb.write(l, r));
+                            });
+                        } else {
+                            rt.process(&mut l[..n], &mut r[..n]);
                         }
-                        let peak = l[..n]
-                            .iter()
-                            .chain(&r[..n])
-                            .fold(0.0f32, |m, s| m.max(s.abs()));
-                        cb_stats.record_rec_peak(if recording { peak } else { 0.0 });
+                        cb_stats.record_rec_peak(peak);
                         for (i, frame) in chunk.chunks_mut(channels).enumerate() {
                             frame.fill(0.0);
                             frame[0] = l[i];
@@ -708,6 +790,23 @@ fn wanted(
             .map(|(ours, dev)| (dev, ours)),
     );
     want
+}
+
+fn recording_links(
+    peers: Vec<Vec<String>>,
+    outputs: &[String; 2],
+    inputs: &[String; 2],
+) -> Vec<(String, String)> {
+    peers
+        .into_iter()
+        .zip(inputs)
+        .flat_map(|(sources, input)| {
+            sources
+                .into_iter()
+                .filter(|source| !outputs.contains(source))
+                .map(|source| (source, input.clone()))
+        })
+        .collect()
 }
 
 /// A JACK link: from, to.
@@ -930,6 +1029,169 @@ mod tests {
         );
         // looking among the inputs (the playback ports themselves) finds nothing
         assert_eq!(monitors_of(&playback, &playback), None);
+    }
+
+    /// Scenario "Follow other playback sources during an output recording".
+    #[test]
+    fn follow_other_playback_sources_during_an_output_recording() {
+        let own = ["ptsr:out_l".into(), "ptsr:out_r".into()];
+        let take = ["ptsr:rec_l".into(), "ptsr:rec_r".into()];
+        let initial = recording_links(
+            vec![
+                ports(&["ptsr:out_l", "radio:out_l"]),
+                ports(&["ptsr:out_r"]),
+            ],
+            &own,
+            &take,
+        );
+        let current = recording_links(
+            vec![
+                ports(&["ptsr:out_l", "browser:left"]),
+                ports(&["ptsr:out_r", "browser:right"]),
+            ],
+            &own,
+            &take,
+        );
+        assert_eq!(
+            diff(&initial, &current),
+            (
+                vec![("radio:out_l", "ptsr:rec_l")],
+                vec![
+                    ("browser:left", "ptsr:rec_l"),
+                    ("browser:right", "ptsr:rec_r")
+                ],
+            )
+        );
+
+        let mono = recording_links(
+            vec![ports(&["ptsr:out_l", "ptsr:out_r", "radio:mono"])],
+            &own,
+            &take,
+        );
+        assert_eq!(mono, vec![("radio:mono".into(), "ptsr:rec_l".into())]);
+        let recorder = Recorder::new(48_000);
+        recorder.capture_mono.store(true, Relaxed);
+        recorder.start(SOURCE_OUTPUT);
+        recorder.write_master([&[0.25], &[0.125]], [&[0.125], &[0.0]]);
+        assert_eq!(recorder.take(recorder.stop()), [0.5, 0.0]);
+    }
+
+    /// Scenario "Closing the output preserves the captured part".
+    #[test]
+    fn closing_the_output_preserves_the_captured_part() {
+        let dir = std::env::temp_dir().join(format!(
+            "ptsr-output-loss-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = crate::tests::test_app();
+        app.paths.samples = dir.clone();
+        let (audio, _) = offline(48_000);
+        audio.recorder.start(SOURCE_OUTPUT);
+        audio.recorder.write(&[0.25; 1024], &[-0.125; 1024]);
+        app.audio = Some(audio);
+        app.routed.playback = ports(&["removed:playback_FL", "removed:playback_FR"]);
+        app.recording = Some((SOURCE_OUTPUT, std::time::Instant::now()));
+
+        app.reroute();
+        assert!(app.recording.is_none());
+        assert_eq!(
+            app.notice().unwrap(),
+            "The output changed. Recording ended."
+        );
+        let path = app.browser.in_hand.as_ref().unwrap();
+        let mut wav = hound::WavReader::open(path).unwrap();
+        assert_eq!(wav.duration(), 1024);
+        let samples: Vec<i16> = wav.samples().map(Result::unwrap).collect();
+        assert_eq!(&samples[1024..1028], &[8192, -4096, 8192, -4096]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Scenario "Capture what plays".
+    #[test]
+    fn capture_what_plays_excludes_the_sampler_click() {
+        use engine::{Command, checks, click, offline::write_wav};
+        const RATE: u32 = 48_000;
+        const FRAMES: usize = RATE as usize;
+        let tone = |hz: f32, offset: usize, len: usize| -> Vec<f32> {
+            (0..FRAMES)
+                .map(|i| {
+                    if !(offset..offset + len).contains(&i) {
+                        return 0.0;
+                    }
+                    let i = i - offset;
+                    let fade = (i.min(len - 1 - i) as f32 / 240.0).min(1.0);
+                    0.15 * fade * (std::f32::consts::TAU * hz * i as f32 / RATE as f32).sin()
+                })
+                .collect()
+        };
+        let outside = [tone(330.0, 6000, 12_000), tone(440.0, 6000, 12_000)];
+        let mut engine = Engine::with_sounds(RATE, click(RATE), vec![tone(220.0, 1600, 12_000)]);
+        engine.handle(0, Command::SetMetronome { enabled: true });
+        engine.handle(0, Command::TransportPlay);
+        engine.handle(
+            0,
+            Command::PadPress {
+                pad: 0,
+                velocity: 1.0,
+            },
+        );
+        let recorder = Recorder::new(RATE as usize);
+        recorder.start(SOURCE_OUTPUT);
+        let mut left = vec![0.0; FRAMES];
+        let mut right = vec![0.0; FRAMES];
+        let mut expected = Vec::with_capacity(2 * FRAMES);
+        for (block, (l, r)) in left.chunks_mut(128).zip(right.chunks_mut(128)).enumerate() {
+            engine.process_with_master(l, r, |offset, l, r| {
+                let at = block * 128 + offset;
+                let end = at + l.len();
+                let external = [&outside[0][at..end], &outside[1][at..end]];
+                recorder.write_master([l, r], external);
+                for i in 0..l.len() {
+                    expected.extend([l[i] + external[0][i], r[i] + external[1][i]]);
+                }
+            });
+        }
+        let recorded = recorder.take(recorder.stop());
+        assert_eq!(recorded, expected);
+        let clean_l: Vec<f32> = recorded.iter().step_by(2).copied().collect();
+        let clean_r: Vec<f32> = recorded.iter().skip(1).step_by(2).copied().collect();
+        let pulse = click(RATE);
+        for (actual, external) in [(&mut left, &outside[0]), (&mut right, &outside[1])] {
+            for (played, &other) in actual.iter_mut().zip(external) {
+                *played += other;
+            }
+            assert_eq!(&actual[..pulse.len()], &pulse);
+        }
+        for channel in [&clean_l, &clean_r] {
+            assert_eq!(checks::peak(&channel[..1600]), 0.0);
+            assert_eq!(checks::peak(&channel[24_000..]), 0.0);
+            assert!(checks::peak(&channel[1600..6000]) > 0.10);
+            assert!(checks::peak(&channel[14_000..17_000]) > 0.10);
+        }
+        for channel in [&left, &right, &clean_l, &clean_r] {
+            assert_eq!(checks::first_non_finite(channel), None);
+            assert!(checks::peak(channel) < 1.0);
+            assert!(checks::max_step(channel) < 0.11);
+        }
+        let renders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders");
+        write_wav(
+            &renders.join("143-metronome-monitor.wav"),
+            RATE,
+            &left,
+            &right,
+        )
+        .unwrap();
+        write_wav(
+            &renders.join("143-metronome-record.wav"),
+            RATE,
+            &clean_l,
+            &clean_r,
+        )
+        .unwrap();
     }
 
     #[test]

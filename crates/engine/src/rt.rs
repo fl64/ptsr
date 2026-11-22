@@ -467,6 +467,16 @@ impl Realtime {
 
     /// Called from the audio callback: no allocation, no locks, no I/O.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_with_master(left, right, |_, _, _| {});
+    }
+
+    /// Report the master blocks without the monitor click, and write the device mix.
+    pub fn process_with_master(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        master: impl FnMut(usize, &[f32], &[f32]),
+    ) {
         flush_subnormals();
         let started = Instant::now();
         self.stats.callback_enter(started);
@@ -608,7 +618,7 @@ impl Realtime {
             self.engine.handle(0, Command::Panic);
         }
         self.stats.callback_stage(Stage::Render);
-        self.engine.process(left, right);
+        self.engine.process_with_master(left, right, master);
         self.stats.callback_stage(Stage::Publish);
         self.stats
             .record_pad_positions(&self.engine.voices, &self.engine.pattern_hits, self.epoch);

@@ -541,3 +541,94 @@ fn transport_owner_render() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/95-transport.wav");
     write_wav(&path, SR, &out, &out).unwrap();
 }
+
+/// Scenario "The click plays without moving the master meter".
+#[test]
+fn the_click_plays_without_moving_the_master_meter() {
+    for count_in in [false, true] {
+        let stats = Arc::new(Stats::default());
+        let mut engine = engine(SR);
+        let _feedback = engine.enable_capture();
+        let (mut commands, queue) = rtrb::RingBuffer::new(16);
+        let mut rt = Realtime::new(engine, vec![queue], stats.clone(), SR);
+        commands.push(Command::SetMasterGain { gain: 0.0 }).unwrap();
+        if count_in {
+            let pattern = RawPattern::new(1, Grid::Off, 100, vec![]).unwrap();
+            commands
+                .push(Command::SetPattern {
+                    pattern: Some(Arc::new(pattern.compile())),
+                })
+                .unwrap();
+            commands
+                .push(Command::PatternRecordStart { pass: 1 })
+                .unwrap();
+        } else {
+            commands
+                .push(Command::SetMetronome { enabled: true })
+                .unwrap();
+            commands.push(Command::TransportPlay).unwrap();
+        }
+
+        let mut left = [0.0; 4096];
+        let mut right = left;
+        let mut frames = 0;
+        rt.process_with_master(&mut left, &mut right, |offset, master_l, master_r| {
+            assert_eq!(offset, frames);
+            assert_eq!(peak(master_l), 0.0);
+            assert_eq!(peak(master_r), 0.0);
+            frames += master_l.len();
+        });
+        assert_eq!(frames, left.len());
+        assert_eq!(&left[..click(SR).len()], &click(SR));
+        assert_eq!(left, right);
+        assert_eq!(stats.take_output(), (0.0, 0.0));
+    }
+}
+
+/// Scenario "Panic stops the click path".
+#[test]
+fn panic_stops_the_click_path() {
+    let mut actual = engine(SR);
+    let mut reference = engine(SR);
+    start(&mut actual, 120.0);
+    start(&mut reference, 120.0);
+    let lead = audio(&mut actual, 256, 128);
+    assert_eq!(lead, audio(&mut reference, 256, 128));
+    assert!(peak(&lead) > 0.0);
+    actual.handle(0, Command::Panic);
+    let stopped = audio(&mut actual, 1024, 128);
+    let continued = audio(&mut reference, 1024, 128);
+    assert!(peak(&continued[240..]) > 0.0);
+    for (frame, (&stopped, &continued)) in stopped[..240].iter().zip(&continued).enumerate() {
+        let fade = (240 - frame) as f32 / 240.0;
+        assert!((stopped - continued * fade).abs() < 1e-7);
+    }
+    assert_eq!(peak(&stopped[240..]), 0.0);
+}
+
+#[test]
+fn a_click_gain_change_is_smooth_and_keeps_the_clock() {
+    let mut actual = engine(SR);
+    let mut reference = engine(SR);
+    start(&mut actual, 120.0);
+    start(&mut reference, 120.0);
+    assert_eq!(
+        audio(&mut actual, 256, 128),
+        audio(&mut reference, 256, 128)
+    );
+
+    let tick = actual.transport().ticks;
+    actual.handle(0, Command::SetMetronomeGain { gain: 0.5 });
+    assert_eq!(actual.transport().ticks, tick);
+    let faded = audio(&mut actual, 28_000, 128);
+    let full = audio(&mut reference, 28_000, 128);
+    assert_eq!(actual.transport().ticks, reference.transport().ticks);
+    assert_eq!(
+        onsets(&faded, 1e-6, click(SR).len()),
+        onsets(&full, 1e-6, click(SR).len())
+    );
+    for (frame, (&changed, &original)) in faded.iter().zip(&full).enumerate() {
+        let gain = (1.0 - (frame + 1) as f32 / 240.0).max(0.5);
+        assert!((changed - original * gain).abs() < 1e-6);
+    }
+}

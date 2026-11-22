@@ -3026,3 +3026,26 @@ Use a disposable project. These checks follow merge.
 ### Sound
 
 - [ ] Listen to `renders/142-redo.wav`. Hear the edited level, the original level, and the edited level again.
+
+## 143: Metronome monitor and output recording
+
+Use the output that you listen to. Play a source from another application on that output.
+
+### Keyboard
+
+- [ ] Open F12 Audio. Select Click level and set it to 50 percent.
+- [ ] Enable the click. Play the transport with no pads playing. Check that the master meter stays at zero.
+- [ ] Press Ctrl+T. Play a pad while the second application also plays. Press Ctrl+T again and listen to the take.
+- [ ] Check that the take has both sounds and no sampler click. Restart and check the click level.
+
+### SMC-PAD
+
+- [ ] Hold PAD BANK. Press LEFT, then P11 Setup. Release PAD BANK. Use LEFT or RIGHT to select Audio if necessary.
+- [ ] Turn E1 to Click level and change it with E2. Check the value.
+- [ ] Return to Pads. Hold PLAY to enable the click. Start output recording with P14 on the panel.
+- [ ] Play a pad. Use STOP to save. If A1 plays, STOP once to pause it and again to save the take.
+
+### Sound
+
+Listen to the local `renders/143-metronome-monitor.wav` and `renders/143-metronome-record.wav`.
+The monitor has the click on each beat. Both files have the pad and the outside source.

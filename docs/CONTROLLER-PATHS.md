@@ -1,7 +1,7 @@
 # SMC-PAD paths for current stories
 
 This table covers the headings in [User stories](USER-STORIES.md).
-It describes the SMC-PAD profile and command panel for changes 124 to 142.
+It describes the SMC-PAD profile and command panel for changes 124 to 143.
 Raw MIDI tests check these paths. Physical press counts remain open.
 
 ## Count a command
@@ -154,6 +154,14 @@ Release PAD BANK to cancel the first press. With the panel closed, use STOP for 
 | Redo an edit | Ctrl+Y (1) | P3 Redo (1 with the panel open) |
 | Redo an Assign choice | Ctrl+Y (1) | P3 Menu, then P3 Redo (2 with the target panel open) |
 | Return from the Assign action menu | Esc closes Assign | P1 Back (1) |
+
+## Change the click level
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Open Audio settings from Pads | F12 (1). Use Tab if needed. | Hold PAD BANK, LEFT, P11 Setup (3). Release PAD BANK. Use LEFT or RIGHT if needed. |
+| Select Click level from the first row | Down four times (4) | E1 turns (0 presses) |
+| Change Click level by 5 percent | Left or Right (1 per step) | E2 turns (0 presses) |
 
 ## Open owner checks
 

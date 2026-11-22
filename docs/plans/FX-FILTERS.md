@@ -38,7 +38,7 @@ This plan uses checked code paths. They describe the current implementation, not
   Attack, decay, and gate release use linear gain ramps. Voice gain multiplies linear velocity by pad gain.
   Half velocity gives about −6 dB relative to full velocity.
   A pad cannot play its region backward. Plan 114 has a separate reverse sample operation.
-- The metronome click enters the left and right mix in `mix_span`, before master gain and the output meter.
+- Change 143 adds the metronome click after the master and output meter. The click has its own level.
   Thus master gain changes the click, and the current meter includes it.
   CPAL output recording takes that mix. JACK output recording takes a device monitor, which includes the click when it monitors ptsr playback.
   Plans 105 and 115 specify internal tempo resampling and offline export. Their click paths do not exist yet.
