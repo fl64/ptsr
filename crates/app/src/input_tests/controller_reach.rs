@@ -1968,6 +1968,55 @@ fn panel_note(slot: u8) -> u8 {
     ][usize::from(slot - 1)]
 }
 
+#[test]
+fn keyboard_and_smc_pad_switch_and_pin_the_pads_strip() {
+    let mut keyboard = Drive::offline();
+    let mut smc = hold_drive();
+    let sound = Arc::new(Sample::mono(vec![0.2; 2_048]));
+    for drive in [&mut keyboard, &mut smc] {
+        drive.load_pad(0, sound.clone(), "break");
+        drive.app.publish_midi(&drive.shared);
+        assert_eq!(drive.app.source_view.view_name(), "Sound");
+    }
+    for (target, key_label) in [("Rhythm", "Sound"), ("Sound", "Rhythm")] {
+        keyboard.tap(KeyCode::Char('9'), M::ALT);
+        hold(&mut smc, true);
+        cell(&mut smc, panel_note(4));
+        assert_eq!(smc.app.panel_snapshot().unwrap().states[3], Some(target));
+        hold(&mut smc, false);
+        for drive in [&keyboard, &smc] {
+            assert_eq!(drive.app.source_view.view_name(), target);
+            let groups = drive
+                .app
+                .pattern_help_groups(&drive.keymap, vec![], None, true);
+            let key = if std::ptr::eq(drive, &keyboard) {
+                "Alt 9"
+            } else {
+                "PAD BANK+P16"
+            };
+            assert!(
+                groups
+                    .iter()
+                    .flat_map(|group| &group.items)
+                    .any(|item| item == &(key.into(), key_label.into()))
+            );
+        }
+    }
+    keyboard.tap(KeyCode::Char('0'), M::ALT);
+    hold(&mut smc, true);
+    cell(&mut smc, panel_note(slot_of(panel::View::Pads, "edit pad")));
+    assert!(smc.app.edit);
+    cell(&mut smc, panel_note(4));
+    assert_eq!(smc.app.panel_snapshot().unwrap().states[3], Some("on"));
+    cell(&mut smc, panel_note(13));
+    hold(&mut smc, false);
+    assert!(!smc.app.edit);
+    assert!(
+        keyboard.app.source_view.pinned(&keyboard.app.pads)
+            && smc.app.source_view.pinned(&smc.app.pads)
+    );
+}
+
 const ALL_VIEWS: [panel::View; 8] = [
     panel::View::Pads,
     panel::View::PadEdit,

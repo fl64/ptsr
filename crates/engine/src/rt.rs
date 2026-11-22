@@ -69,6 +69,36 @@ struct PadPosition {
     pad: AtomicUsize,
     frame: AtomicUsize,
     started: AtomicU64,
+    start: AtomicUsize,
+    end: AtomicUsize,
+    level: AtomicU32,
+}
+
+/// A sounding pad voice at the end of one completed audio block.
+#[derive(Clone, Copy, Debug)]
+pub struct PadVoice {
+    sample: usize,
+    pub pad: usize,
+    pub frame: usize,
+    pub start: usize,
+    pub end: usize,
+    pub level: f32,
+    pub serial: u64,
+}
+
+impl PadVoice {
+    /// The caller keeps the sample alive while comparing its identity.
+    pub fn plays(&self, sample: &Arc<crate::Sample>) -> bool {
+        Arc::as_ptr(sample) as usize == self.sample
+    }
+}
+
+pub struct PadVoices([Option<PadVoice>; crate::SLOTS]);
+
+impl PadVoices {
+    pub fn iter(&self) -> impl Iterator<Item = PadVoice> + '_ {
+        self.0.iter().flatten().copied()
+    }
 }
 
 /// History length: ~2.7 s of blocks at 128 samples / 48 kHz.
@@ -196,6 +226,13 @@ impl Stats {
                 slot.sound.store(Arc::as_ptr(sound) as usize, SeqCst);
                 slot.pad.store(pad, SeqCst);
                 slot.frame.store(voice.pos, SeqCst);
+                slot.start.store(voice.pos0, SeqCst);
+                slot.end.store(voice.end, SeqCst);
+                let fade = voice.fade.map_or(1.0, |remaining| {
+                    voice.fade_gain * remaining as f32 / voice.fade_total.max(1) as f32
+                });
+                let level = voice.env * voice.velocity * fade;
+                slot.level.store(level.to_bits(), SeqCst);
                 slot.started.store(voice.started, SeqCst);
             } else {
                 slot.started.store(0, SeqCst);
@@ -205,6 +242,27 @@ impl Stats {
             published.store(*hit, SeqCst);
         }
         self.pad_revision.fetch_add(1, SeqCst);
+    }
+
+    /// All sounding pad voices in this project, or no snapshot during a write.
+    pub fn pad_voices(&self, epoch: u64) -> Option<PadVoices> {
+        let revision = self.pad_revision.load(SeqCst);
+        if revision & 1 != 0 || self.pad_epoch.load(SeqCst) != epoch {
+            return None;
+        }
+        let voices = self.pad_positions.each_ref().map(|slot| {
+            let serial = slot.started.load(SeqCst);
+            (serial != 0).then(|| PadVoice {
+                sample: slot.sound.load(SeqCst),
+                pad: slot.pad.load(SeqCst),
+                frame: slot.frame.load(SeqCst),
+                start: slot.start.load(SeqCst),
+                end: slot.end.load(SeqCst),
+                level: f32::from_bits(slot.level.load(SeqCst)),
+                serial,
+            })
+        });
+        (self.pad_revision.load(SeqCst) == revision).then_some(PadVoices(voices))
     }
 
     /// Last audible sequenced note per pad, including notes that ended within a callback.

@@ -18,6 +18,9 @@ impl App {
         let why = |text: &str| Some(Grey::Why(text.into()));
         let abs = self.pads.selected_abs();
         match (view, action) {
+            (View::PadEdit, Action::PadsSourcePin) => {
+                (!self.source_pin_available()).then(|| Grey::Why("select a loaded sample".into()))
+            }
             (_, Action::Undo) => (!self.undo_waits()).then(|| Grey::Why("nothing to undo".into())),
             (View::Pads | View::PadEdit, Action::PadCopy) => (self.pads.sound[abs].is_none()
                 || self.pads.missing[abs]
@@ -146,6 +149,8 @@ impl App {
         let on = |on: bool| Some(if on { "on" } else { "off" });
         let abs = self.pads.selected_abs();
         match action {
+            Action::PadsStripToggle => Some(self.source_view.view_name()),
+            Action::PadsSourcePin => on(self.source_view.pinned(&self.pads)),
             Action::ChopPlayMode => self.chop.as_ref().map(|c| c.play.name()),
             Action::ChopLoopToggle => self.chop.as_ref().and_then(|c| on(c.looping)),
             Action::ChopSnapToggle => self.chop.as_ref().map(|c| match c.snap {

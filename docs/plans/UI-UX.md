@@ -101,7 +101,7 @@ compact row. Show a count and the pad labels for samples beyond those rows.
 Keep all new playback indicators in the strip. Rhythm uses the A1 event rows.
 Recording and pad edit take priority when active.
 
-Alt+O changes the strip. Alt+P pins the selected sample. In the SMC-PAD panel,
+Alt+9 changes the strip. Alt+0 pins the selected sample. In the SMC-PAD panel,
 P16 changes the strip on Pads and pins the sample on Pad Edit. Change 139 defines
 the input paths, focus timing, and screen checks.
 

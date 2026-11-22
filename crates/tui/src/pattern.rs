@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// The rhythm of the whole loop. The drawing picks the page that fits its width.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternStrip {
+    pub header: String,
+    pub label: String,
+    pub cells: Vec<PatternCell>,
+    pub all: Vec<bool>,
+    pub tracks: Vec<(String, Vec<PatternCell>)>,
+    pub beat_cells: usize,
+    pub playhead: Option<usize>,
+}
+
 fn overview_label_width(width: usize) -> usize {
     (width * 38 / 100).clamp(28, 48)
 }
@@ -69,19 +81,26 @@ pub(super) fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStri
         .map(|&hit| if hit { '■' } else { '·' })
         .collect();
     let pad: Vec<char> = pattern.cells.iter().map(pad_glyph).collect();
-    let pad_label = clip_name(&pattern.label, PATTERN_LABEL);
-    let pad_label = format!(
-        "{pad_label}{}",
-        " ".repeat(PATTERN_LABEL - Span::raw(&pad_label).width())
-    );
-    let rows = [
+    let label = |name: &str| {
+        let name = clip_name(name, PATTERN_LABEL);
+        let padding = " ".repeat(PATTERN_LABEL - Span::raw(&name).width());
+        Span::styled(format!("{name}{padding}"), Style::new().fg(TEXT))
+    };
+    let mut rows = vec![
         (
             Span::styled(format!("{:<5}", "all"), Style::new().fg(DIM)),
             all,
             TEXT,
         ),
-        (Span::styled(pad_label, Style::new().fg(TEXT)), pad, WHITE),
+        (label(&pattern.label), pad, WHITE),
     ];
+    rows.extend(
+        pattern
+            .tracks
+            .iter()
+            .take(usize::from(area.height.saturating_sub(3)))
+            .map(|(name, cells)| (label(name), cells.iter().map(pad_glyph).collect(), WHITE)),
+    );
     for (row, (label, glyphs, hit_color)) in rows.into_iter().enumerate() {
         // a beat is " g g g g ": every glyph has a space on both sides, so the playback
         // plate over a glyph and its two neighbour spaces stays centred

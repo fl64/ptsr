@@ -11,6 +11,7 @@ cells = [
   { cell = 1, label = "pitch gate", action = "pad.pitch_gate_toggle" },
   { cell = 2, label = "record output", action = "record.output" },
   { cell = 3, label = "hide pads", action = "ui.pads_toggle" },
+  { cell = 4, label = "strip view", action = "pad.strip_toggle" },
   { cell = 5, label = "swap pads", action = "pad.take" },
   { cell = 6, label = "mark pad", action = "pad.mark_toggle" },
   { cell = 7, label = "mark bank", action = "pad.mark_bank" },
@@ -26,6 +27,7 @@ name = "pad_edit"
 page = 1
 cells = [
   { cell = 1, label = "fx page", action = "edit.page_fx" },
+  { cell = 4, label = "pin sample", action = "pad.source_pin" },
   { cell = 5, label = "tone page", action = "edit.page_tone" },
   { cell = 6, label = "env page", action = "edit.page_env" },
   { cell = 7, label = "filter page", action = "edit.page_filter" },

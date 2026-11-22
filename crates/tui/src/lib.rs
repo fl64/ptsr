@@ -39,7 +39,11 @@ pub use help::{
 };
 pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
-pub use pads::{CommandPanel, command_panel, command_panel_area, command_panel_in, device_number};
+pub use pads::{
+    BigView, CommandPanel, SourceRange, SourceSample, SourceStrip, SourceVoice, command_panel,
+    command_panel_area, command_panel_in, device_number,
+};
+pub use pattern::PatternStrip;
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
@@ -600,21 +604,6 @@ pub struct BankPattern {
     pub hits: [u16; BANKS],
 }
 
-/// The rhythm of the whole loop; the drawing picks the page that fits its width.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PatternStrip {
-    pub header: String,
-    /// The selected pad's row label.
-    pub label: String,
-    /// The selected pad, one cell per view step of the loop.
-    pub cells: Vec<PatternCell>,
-    /// Any onset of a pad in the visible bank, per cell.
-    pub all: Vec<bool>,
-    pub beat_cells: usize,
-    /// The playback cell in the loop.
-    pub playhead: Option<usize>,
-}
-
 /// The visible time page for all banks at the current A1 view division.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PatternOverview {
@@ -659,6 +648,7 @@ pub fn pattern_overview_page_cells(width: usize, beat_cells: usize, total: usize
 }
 
 pub struct Pads {
+    pub source: Option<SourceStrip>,
     pub pattern: Option<PatternStrip>,
     pub overview: Option<PatternOverview>,
     pub feedback: PadFeedback,
@@ -703,18 +693,6 @@ pub struct Pads {
     pub fx: Vec<PanelRow>,
     /// Kept for callers that still build the old shared-slot view; not drawn on pads.
     pub slot: Option<(&'static str, String, Vec<PanelRow>)>,
-}
-
-/// The big view of the selected pad's piece, both at the same resolution.
-pub struct BigView {
-    /// Shape of the piece: peaks per column, 0..1.
-    pub wave: Vec<f32>,
-    /// The pad's envelope over it: attack from the start, decay into the end, 0..1.
-    pub env: Vec<f32>,
-    /// The attack, the decay and the release as fractions of the piece's length.
-    pub attack: f32,
-    pub decay: f32,
-    pub release: f32,
 }
 
 /// One project-wide effect. Rows are type, first parameter and second parameter.
@@ -1452,6 +1430,7 @@ mod tests {
                 })
                 .collect(),
             all: (0..cells).map(|index| index % 2 == 0).collect(),
+            tracks: Vec::new(),
             beat_cells: 4,
             playhead: None,
         }
@@ -1824,6 +1803,7 @@ mod tests {
                 })
                 .collect(),
             all: vec![false; 256],
+            tracks: Vec::new(),
             beat_cells: 4,
             playhead: None,
         };
@@ -1864,6 +1844,7 @@ mod tests {
                             })
                             .collect(),
                         all: (0..total).map(|index| index % 2 == 0).collect(),
+                        tracks: Vec::new(),
                         beat_cells,
                         playhead: None,
                     };
@@ -1948,6 +1929,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         let pads = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 1,
@@ -2482,6 +2464,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         let pads = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 2,
@@ -4912,6 +4895,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         let pads = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 0,
@@ -5626,6 +5610,7 @@ mod tests {
             project: None,
         };
         let pads = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 0,
@@ -6324,6 +6309,7 @@ mod tests {
             '1', '2', '3', '4', 'q', 'w', 'e', 'r', 'a', 's', 'd', 'f', 'z', 'x', 'c', 'v',
         ];
         Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 0,
@@ -6684,6 +6670,7 @@ mod tests {
     /// The file's wave fills the shared strip (31), over the full width.
     fn files_preview_fills_the_strip() {
         let pads = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 0,
@@ -6787,6 +6774,7 @@ mod tests {
     #[test]
     fn one_slice_in_plain_words() {
         let pads = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 0,
@@ -8036,6 +8024,7 @@ mod tests {
     #[test]
     fn bank_row_with_fill_fits_narrow_terminals() {
         let p = Pads {
+            source: None,
             pattern: None,
             overview: None,
             bank: 0,

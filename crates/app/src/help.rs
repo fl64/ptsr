@@ -34,6 +34,8 @@ pub(super) fn describe(a: Action) -> String {
             "A1 overview: show or hide empty bank sections.".into()
         }
         Action::PatternStepEdit => "A1 overview: enter or leave step correction.".into(),
+        Action::PadsStripToggle => "Pads: switch between the Sound and Rhythm strips.".into(),
+        Action::PadsSourcePin => "Pads: pin the selected sample or follow pad playback.".into(),
         Action::PatternClear => "clear all of A1 after a question. Ctrl+Z restores.".into(),
         Action::CursorMove { right, .. } => {
             format!(

@@ -2,13 +2,18 @@
 
 ### Requirement: Pads pattern event strip
 
-The Rhythm view on F2 SHALL show a header, an all-pads row, and the selected pad's row. A strip of at least four rows SHALL keep one output wave row. A three-row strip SHALL show the event rows. The frame and safety status SHALL keep their positions. For absent A1 the strip SHALL show the recording instruction. Other screens SHALL keep their strip contents.
+F2 Rhythm SHALL show a header, an all-pads row, and the selected pad's row. A strip of four or more rows SHALL keep an output wave row. Extra rows SHALL show other pads with hits in the open bank. The frame and safety status SHALL keep their positions. For absent A1 the strip SHALL show the recording instruction.
 
 #### Scenario: Pattern strip fits the shared frame
 
 - **WHEN** F2 shows Rhythm with absent, empty, or populated A1 at 80x26 and 120x40
 - **THEN** its event rows fit, and the outer frame and warnings stay visible
 - **AND** Chop and Files draw no event rows
+
+#### Scenario: Rhythm shows other pad rows when space permits
+
+- **WHEN** several pads in the open bank have A1 hits and the Rhythm view has spare rows
+- **THEN** the extra rows name their pads and follow the same moving playback marker
 
 ## ADDED Requirements
 

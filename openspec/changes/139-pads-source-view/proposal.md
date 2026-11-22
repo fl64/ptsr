@@ -22,6 +22,7 @@ None.
 
 - `screen-layout`: Pads source and rhythm views.
 - `controller-reach`: keyboard and SMC-PAD routes for both actions.
+- `command-panel`: the states of the strip and pin cells.
 
 ## Impact
 
@@ -34,7 +35,7 @@ The audio thread supplies bounded read-only voice data. The app groups this data
 1. Place slices of one sample on two pads. Place a second sample on a third pad.
 2. Play the three pads. Check two lines on the main wave and a row for the other sample.
 3. Let the samples end. Check that the main wave stays and says `silent`.
-4. Press Alt+O twice. Check Rhythm, then Sound. Select a loaded pad and press Alt+P. Check that the wave stays on this sample as other pads play.
+4. Press Alt+9 twice. Check Rhythm, then Sound. Select a loaded pad and press Alt+0. Check that the wave stays on this sample as other pads play.
 5. Repeat at 80x26 and 120x40. Play more samples than the strip can show. Check the pad names next to the extra sample count.
 
 ### Controller
@@ -45,4 +46,4 @@ The audio thread supplies bounded read-only voice data. The app groups this data
 
 ### Views and sound
 
-Compare `renders/screens/pads-source-live-80x26.ansi` and `renders/screens/pads-source-live-120x40.ansi`. Listen to `renders/139-source-view.wav` while checking the playback lines in a matching project.
+Compare `renders/screens/pads-source-live-80x26.ansi` and `renders/screens/pads-source-live-120x40.ansi`. Check `renders/screens/pads-source-overflow-80x26.ansi` and `renders/screens/pads-source-overflow-120x40.ansi` for the hidden pad labels. Listen to `renders/139-source-view.wav` while checking the playback lines in a matching project.
