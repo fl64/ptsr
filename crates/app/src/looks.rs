@@ -27,6 +27,9 @@ impl App {
                 || self.pads.missing[abs]
                 || self.pads.loading[abs].is_some())
             .then_some(Grey::Itself),
+            (View::Pads, Action::PadTake) => self
+                .swap_source_refusal(abs)
+                .map(|reason| Grey::Why(reason.into())),
             (View::Pads, Action::ScreenChop) => {
                 self.pads.sound[abs].is_none().then_some(Grey::Itself)
             }
