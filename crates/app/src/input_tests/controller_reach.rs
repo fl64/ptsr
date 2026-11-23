@@ -1239,13 +1239,111 @@ fn shipped_settings_row_knob_matches_keyboard_on_each_tab() {
             keyboard.tap(code, M::NONE);
             turn(&mut controller, 30, value);
             let result = |drive: &Drive| (drive.app.settings_row, drive.app.midi_row);
-            assert_ne!(result(&keyboard), before, "tab {tab} row {row}");
+            if tab == 1 {
+                assert_eq!(result(&keyboard), before, "Input has no row controls");
+            } else {
+                assert_ne!(result(&keyboard), before, "tab {tab} row {row}");
+            }
             assert_eq!(
                 result(&controller),
                 result(&keyboard),
                 "tab {tab} row {row}"
             );
         }
+    }
+}
+
+/// Scenario "Input ignores row and value controls" (controller-reach).
+#[test]
+fn input_ignores_row_and_value_controls() {
+    let files = TransitionFiles::new();
+    let config = files.0.join("config.toml");
+    let original = "[audio]\nclick_level = 100\n";
+    std::fs::write(&config, original).unwrap();
+    for controller in [false, true] {
+        let mut drive = hold_drive();
+        drive.app.user_path = Some(config.clone());
+        drive.tap(KeyCode::F(12), M::NONE);
+        for _ in 0..4 {
+            if controller {
+                turn(&mut drive, 30, 65);
+            } else {
+                drive.tap(KeyCode::Down, M::NONE);
+            }
+        }
+        assert_eq!(drive.app.settings_row, 4);
+        if controller {
+            list_button(&mut drive, true);
+            turn(&mut drive, 30, 63);
+            turn(&mut drive, 31, 63);
+        } else {
+            drive.tap(KeyCode::Tab, M::NONE);
+            drive.tap(KeyCode::Up, M::NONE);
+            drive.tap(KeyCode::Left, M::NONE);
+        }
+        assert_eq!((drive.app.settings_tab, drive.app.settings_row), (1, 4));
+        assert_eq!(drive.app.cfg.click_level, 100);
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
+    }
+}
+
+/// Scenario "Paths bounds its row and opens the selected root" (controller-reach).
+#[test]
+fn paths_bounds_its_row_and_opens_the_selected_root() {
+    let files = TransitionFiles::new();
+    let projects = files.0.join("A");
+    let samples = files.0.join("B");
+    let config = files.0.join("config.toml");
+    let original = "[audio]\nclick_level = 100\n";
+    std::fs::write(&config, original).unwrap();
+    for (controller, forward, changes) in [(false, true, 3), (true, true, 3), (true, false, 1)] {
+        let mut drive = hold_drive();
+        drive.app.user_path = Some(config.clone());
+        drive.app.paths.projects = projects.clone();
+        drive.app.paths.samples = samples.clone();
+        drive.tap(KeyCode::F(12), M::NONE);
+        for _ in 0..4 {
+            if controller {
+                turn(&mut drive, 30, 65);
+            } else {
+                drive.tap(KeyCode::Down, M::NONE);
+            }
+        }
+        assert_eq!(drive.app.settings_row, 4);
+        for _ in 0..changes {
+            if controller {
+                list_button(&mut drive, forward);
+            } else {
+                drive.tap(KeyCode::Tab, M::NONE);
+            }
+        }
+        assert_eq!((drive.app.settings_tab, drive.app.settings_row), (3, 1));
+        for (row, root) in [(1, &samples), (0, &projects)] {
+            if controller {
+                turn(&mut drive, 31, 63);
+                turn(&mut drive, 31, 65);
+                labelled_cell(&mut drive, panel::View::Settings, "choose");
+            } else {
+                drive.tap(KeyCode::Left, M::NONE);
+                drive.tap(KeyCode::Right, M::NONE);
+                drive.tap(KeyCode::Enter, M::NONE);
+            }
+            let picker = drive.app.path_picker.as_ref().unwrap();
+            assert_eq!(picker.which, row);
+            assert_eq!(&picker.at, root);
+            if controller {
+                exit_by_hold(&mut drive);
+                turn(&mut drive, 30, 63);
+            } else {
+                drive.tap(KeyCode::Esc, M::NONE);
+                drive.tap(KeyCode::Up, M::NONE);
+            }
+            assert!(drive.app.path_picker.is_none());
+        }
+        assert_eq!(drive.app.cfg.click_level, 100);
+        assert_eq!(drive.app.paths.projects, projects);
+        assert_eq!(drive.app.paths.samples, samples);
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
     }
 }
 

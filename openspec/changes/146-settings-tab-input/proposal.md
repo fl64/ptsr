@@ -35,7 +35,7 @@ None.
 2. Select Click level with E1. Note the percent.
 3. Press LEFT to open Paths. Check the selected root.
 4. Turn E2. Hold PAD BANK and press P5 Choose. Check the folder picker title.
-5. Press P1 to cancel. Return to Audio with RIGHT. Check the click level.
+5. Hold PAD BANK and press P1 to cancel. Release PAD BANK. Press RIGHT for Audio. Check the click level.
 6. Press RIGHT to open Input. Turn E1 and E2. Check the input log.
 
 ### Sound

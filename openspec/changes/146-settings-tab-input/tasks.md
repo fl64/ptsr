@@ -1,6 +1,12 @@
 ## 1. Settings input
 
-- [ ] Use the same tab transition for Tab and SMC-PAD LEFT and RIGHT.
-- [ ] Limit the row and value controls to their tabs.
-- [ ] Check both input devices with the shipped bindings and a temporary config.
-- [ ] Run the project checks.
+- [x] Use the same tab transition for Tab and SMC-PAD LEFT and RIGHT.
+- [x] Limit the row and value controls to their tabs.
+- [x] Check both input devices with the shipped bindings and a temporary config.
+- [x] Run the project checks.
+
+## Verification
+
+- Input row and value controls passed with keyboard and raw SMC-PAD events.
+- Paths passed with both roots and both SMC-PAD tab directions.
+- Folder picker navigation and cancel passed.
