@@ -263,7 +263,7 @@ Spec deltas: `patterns` (record, overdub, quantize, erase, undo, count-in, limit
 Behavior:
 
 1. Record toggle while stopped: one bar of count-in with the click, then play and record from
-   tick 0. While playing: record from now.
+   tick 0. While playing: record from now. On A1, Esc or command P1 cancels count-in and keeps the overview open.
 2. Overdub always: new hits add to the old.
 3. A pass is from record on to record off; one pass is one undo step (`Ctrl+Z`, panel Undo).
 4. The quantize and strength are settings of the pattern (§2.3), default 1/16 and 100 %.

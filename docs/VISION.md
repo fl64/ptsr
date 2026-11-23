@@ -410,6 +410,7 @@ You do all work without a mouse. The left hand is on the pads (1234/QWER/ASDF/ZX
 
 Today F1 is help, F2 Pads, F3 Chop, F4 FX, F5 Pattern, F6 Files, F10 learn and F12 Settings.
 On F5, change 140 shows the next step for live recording and playback of A1.
+During count-in, Esc or SMC-PAD command P1 cancels and keeps the A1 overview open.
 The keys in use are in `config/keymap.toml`. The table below is historical.
 
 | Key | Screen | Content |
