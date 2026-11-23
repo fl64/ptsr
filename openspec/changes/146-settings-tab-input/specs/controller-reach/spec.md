@@ -42,3 +42,13 @@ The Paths folder picker SHALL show the folder role for E1.
 - **WHEN** the owner uses E1 or E2 on Audio, Input, MIDI, Paths or its folder picker
 - **THEN** the strip shows which encoder can act in the current view
 - **AND** a turn leaves an unavailable encoder dim
+
+### Requirement: The folder picker keeps the current selection visible
+
+At 80x26 and 120x40, the Paths picker SHALL show its title, the selected folder and the pick and cancel controls.
+The command panel SHALL give the work area to the folder picker while it is open.
+
+#### Scenario: The folder picker keeps the selection and controls visible
+- **WHEN** the owner opens the Paths picker from the command panel and moves to a folder beyond the first page
+- **THEN** the screen shows the selected folder and the controls for navigation, pick and cancel
+- **AND** closing the picker restores the previous panel view

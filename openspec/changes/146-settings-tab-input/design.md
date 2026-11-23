@@ -7,6 +7,8 @@ the last root. On Input, row controls leave the stored row in place.
 Process folder picker input before Settings input. This keeps the distinct
 navigation roles of the arrow keys, E1, LEFT and RIGHT inside the picker.
 
+The folder picker takes the work area. It gives the list enough rows to show the selection and keeps its controls visible.
+
 ## Edge cases
 
 - Audio to Input with Click level selected. Cover both input devices. Preserve
@@ -15,7 +17,9 @@ navigation roles of the arrow keys, E1, LEFT and RIGHT inside the picker.
   The visible root and the root that the picker opens must match.
 - Paths with either root selected. E2 and the value keys must preserve the
   audio config and both roots.
-- Open folder picker. Use the existing tests for navigation, select and cancel.
+- Open the picker with and without the panel. Check the selected folder and controls at 80x26 and 120x40.
+- Move to the end of a long list. Keep the selection and controls visible.
+- Cancel or pick the current folder. Keep the prior panel state and the existing input routes.
 
 ## Open questions
 

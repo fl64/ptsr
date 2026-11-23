@@ -258,6 +258,29 @@ impl Browser {
 
 use crate::*;
 
+impl PathPicker {
+    pub(super) fn view(&self) -> tui::PathPickerView {
+        tui::PathPickerView {
+            title: if self.which == 0 {
+                " PICK THE PROJECTS ROOT "
+            } else {
+                " PICK THE SAMPLES ROOT "
+            },
+            entries: self
+                .entries
+                .iter()
+                .map(|entry| {
+                    entry.file_name().map_or_else(
+                        || entry.display().to_string(),
+                        |name| name.to_string_lossy().into_owned(),
+                    )
+                })
+                .collect(),
+            selected: self.selected,
+        }
+    }
+}
+
 impl App {
     /// The keys of the open folder picker (11): Up/Down choose, Right enters a folder,
     /// Left goes up (at `/` it stays), Enter picks the folder it is in, Esc cancels;

@@ -1659,24 +1659,7 @@ fn main() -> std::io::Result<()> {
                     midi_row: app.midi_row,
                     learning: learning.as_deref(),
                     paths: Some((paths_view.0.as_str(), paths_view.1.as_str())),
-                    picker: app.path_picker.as_ref().map(|p| tui::PathPickerView {
-                        title: if p.which == 0 {
-                            " PICK THE PROJECTS ROOT "
-                        } else {
-                            " PICK THE SAMPLES ROOT "
-                        },
-                        entries: p
-                            .entries
-                            .iter()
-                            .map(|e| {
-                                e.file_name().map_or_else(
-                                    || e.display().to_string(),
-                                    |n| n.to_string_lossy().into_owned(),
-                                )
-                            })
-                            .collect(),
-                        selected: p.selected,
-                    }),
+                    picker: app.path_picker.as_ref().map(PathPicker::view),
                 }),
             },
         };
@@ -1700,7 +1683,7 @@ fn main() -> std::io::Result<()> {
         let learn_lines = app.learning_view(&keymap);
         let question = app.question_view(&keymap);
         let feedback = frame_text.feedback_at(&app, text_at);
-        let panel = app.panel_snapshot();
+        let panel = app.panel_for_frame();
         let help = tui::Help {
             groups: &groups,
             hint: hint_for(&app).filter(|_| !app.input_sources.last_is_smc()),
@@ -1857,7 +1840,10 @@ fn hint_for(app: &App) -> Option<&'static str> {
         Screen::Files => {
             Some("Enter takes a file, a pad hit puts it there; Ctrl+Enter: the selected pad.")
         }
-        Screen::Settings => Some("Left/Right or SMC E2 changes and saves the selected value."),
+        Screen::Settings => app
+            .path_picker
+            .is_none()
+            .then_some("Left/Right or SMC E2 changes and saves the selected value."),
         Screen::Chop if app.plan.is_some() => Some(
             "Hit pads to plan where the slices go; J L pick the slice, PgUp/PgDn the bank; Enter applies.",
         ),
