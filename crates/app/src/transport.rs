@@ -49,28 +49,35 @@ impl App {
     }
 
     pub(super) fn context_button(&mut self, action: Action) {
+        let stopping_output = action == Action::StopContext
+            && self
+                .recording
+                .is_some_and(|(source, _)| source == super::audio::SOURCE_OUTPUT);
         let focus = self.focus();
         if focus.mode.text
             || focus.mode.picker
             || focus.mode.screen_learn
             || focus.mode.midi_learn
             || self.restoring_project
-            || (self.screen == Screen::Chop && self.plan.is_some())
+            || (self.screen == Screen::Chop && self.plan.is_some() && !stopping_output)
             || self.audio.as_ref().is_some_and(|audio| {
                 audio.project.epoch.load(Acquire) != audio.project.ready.load(Acquire)
             })
         {
             return;
         }
-        // STOP first stops what plays and the recording keeps the tail; then it ends (138)
-        if action == Action::StopContext
-            && self
-                .recording
-                .is_some_and(|(source, _)| source == super::audio::SOURCE_OUTPUT)
-            && self.preview_frame().is_none()
-            && !self.transport_state().playing
-        {
-            self.audio_record_action(Action::RecordOutputToggle);
+        if stopping_output {
+            let preview_playing = self.preview_frame().is_some();
+            if preview_playing || self.screen == Screen::Files {
+                self.stop_preview();
+            }
+            if !preview_playing {
+                if self.transport_state().playing {
+                    self.send(Command::TransportStopContext);
+                } else {
+                    self.audio_record_action(Action::RecordOutputToggle);
+                }
+            }
             return;
         }
         match (self.screen, action) {

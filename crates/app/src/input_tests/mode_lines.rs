@@ -507,6 +507,158 @@ fn stop_on_chop_stops_the_preview_before_the_recording() {
     assert!(drive.app.recording.is_none(), "the second tap saves");
 }
 
+fn stop_recording(drive: &mut Drive, keyboard: bool) {
+    if keyboard {
+        drive.tap(KeyCode::Char('y'), M::ALT);
+    } else {
+        button(drive, STOP);
+    }
+    settle(drive);
+}
+
+fn record_test_take(drive: &mut Drive, files: &TransitionFiles) {
+    drive.app.paths.samples = files.0.clone();
+    recording(drive);
+    let recorder = &drive.app.audio.as_ref().unwrap().recorder;
+    recorder.start(audio::SOURCE_OUTPUT);
+    recorder.append_test_output(&[0.25; 512]);
+}
+
+fn take_path(drive: &Drive) -> &Path {
+    assert!(drive.app.recording.is_none());
+    drive
+        .app
+        .browser
+        .in_hand
+        .as_deref()
+        .expect("the take in hand")
+}
+
+/// Scenario "STOP pauses A1 and keeps the take on Files and Chop" (recording).
+#[test]
+fn stop_pauses_a1_and_keeps_the_take_on_files_and_chop() {
+    let files = TransitionFiles::new();
+    for keyboard in [false, true] {
+        for (screen, assign) in [(6, false), (3, false), (3, true)] {
+            let mut drive = a1_drive();
+            drive.load_pad(0, tone(), "source");
+            button(&mut drive, PLAY);
+            settle(&mut drive);
+            assert!(drive.app.transport_state().playing);
+
+            record_test_take(&mut drive, &files);
+            drive.tap(KeyCode::F(screen), M::NONE);
+            assert_eq!(
+                drive.app.screen,
+                if screen == 6 {
+                    Screen::Files
+                } else {
+                    Screen::Chop
+                }
+            );
+            if assign {
+                drive.tap(KeyCode::Char('p'), M::NONE);
+                assert!(drive.app.plan.is_some());
+            }
+            stop_recording(&mut drive, keyboard);
+            let paused = drive.app.transport_state();
+            assert!(!paused.playing, "STOP must pause A1");
+            assert!(drive.app.recording.is_some(), "the take keeps the tail");
+            assert!(drive.app.browser.in_hand.is_none());
+
+            drive
+                .app
+                .audio
+                .as_ref()
+                .unwrap()
+                .recorder
+                .append_test_output(&[0.125; 512]);
+            stop_recording(&mut drive, keyboard);
+            assert_eq!(drive.app.transport_state(), paused);
+            assert_eq!(drive.app.plan.is_some(), assign);
+            let mut wav = hound::WavReader::open(take_path(&drive)).unwrap();
+            assert_eq!(wav.duration(), 1024);
+            let samples: Vec<i16> = wav.samples().map(Result::unwrap).collect();
+            assert_eq!(samples[400 * 2], 8192);
+            assert_eq!(samples[700 * 2], 4096);
+        }
+    }
+}
+
+/// Scenario "STOP handles preview A1 and capture in order" (recording).
+#[test]
+fn stop_handles_preview_a1_and_capture_in_order() {
+    let files = TransitionFiles::new();
+    for keyboard in [false, true] {
+        let mut drive = a1_drive();
+        drive.load_pad(0, tone(), "source");
+        button(&mut drive, PLAY);
+        settle(&mut drive);
+        assert!(drive.app.transport_state().playing);
+        record_test_take(&mut drive, &files);
+        drive.tap(KeyCode::F(3), M::NONE);
+        button(&mut drive, PLAY);
+        settle(&mut drive);
+        assert!(drive.app.preview_frame().is_some());
+        assert!(line(&drive).ends_with("STOP stop preview"));
+
+        stop_recording(&mut drive, keyboard);
+        assert!(drive.app.preview_frame().is_none());
+        assert!(drive.app.transport_state().playing);
+        assert!(drive.app.recording.is_some());
+
+        stop_recording(&mut drive, keyboard);
+        assert!(!drive.app.transport_state().playing);
+        assert!(drive.app.recording.is_some());
+
+        stop_recording(&mut drive, keyboard);
+        assert!(take_path(&drive).is_file());
+    }
+}
+
+/// Scenario "Saving the take cancels the pending preview" (transport).
+#[test]
+fn saving_the_take_cancels_the_pending_preview() {
+    let files = TransitionFiles::new();
+    for keyboard in [false, true] {
+        let mut drive = hold_drive();
+        drive.app.browser = browser::Browser::new(Some(files.0.clone()));
+        drive.tap(KeyCode::F(6), M::NONE);
+        drive.app.browser.selected = drive
+            .app
+            .browser
+            .entries
+            .iter()
+            .position(|entry| entry.name == "tone.wav")
+            .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (_reply_tx, reply_rx) = std::sync::mpsc::channel();
+        drive.app.loader = Some((tx, reply_rx));
+        button(&mut drive, PLAY);
+        let load = rx.try_recv().unwrap();
+        assert!(drive.app.preview_frame().is_none());
+        assert!(!drive.app.transport_state().playing);
+        record_test_take(&mut drive, &files);
+
+        stop_recording(&mut drive, keyboard);
+        assert!(take_path(&drive).is_file());
+        drive.app.loader_reply(loader::Reply::Loaded {
+            pad: PREVIEW,
+            generation: load.generation,
+            path: load.path,
+            sound: tone(),
+        });
+        assert!(drive.app.preview.is_none());
+        assert!(
+            !drive
+                .frame()
+                .ui
+                .iter()
+                .any(|command| matches!(command, Command::Preview { sound: Some(_), .. }))
+        );
+    }
+}
+
 /// Scenario "The recording hint names one stop control" (recording).
 #[test]
 fn the_recording_hint_names_one_stop_control() {
