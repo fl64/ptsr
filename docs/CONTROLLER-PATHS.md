@@ -163,6 +163,17 @@ Release PAD BANK to cancel the first press. With the panel closed, use STOP for 
 | Select Click level from the first row | Down four times (4) | E1 turns (0 presses) |
 | Change Click level by 5 percent | Left or Right (1 per step) | E2 turns (0 presses) |
 
+## Select a root folder in Settings
+
+Start on Paths with the root row selected.
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Open the folder picker | Enter (1) | P5 Choose (1 with the panel visible, 3 with reveal) |
+| Move the selection | Up or Down (1 per step) | E1 turn (0 presses) |
+| Enter a folder or go to its parent | Right or Left (1) | RIGHT or LEFT (1) |
+| Save the current folder or cancel | Enter or Esc (1) | P4 or P1 (1) |
+
 ## Open owner checks
 
 Use [Live checks](LIVE-CHECKS.md) for the physical device, terminal composition,

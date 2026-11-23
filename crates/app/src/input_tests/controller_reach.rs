@@ -1239,7 +1239,11 @@ fn shipped_settings_row_knob_matches_keyboard_on_each_tab() {
             keyboard.tap(code, M::NONE);
             turn(&mut controller, 30, value);
             let result = |drive: &Drive| (drive.app.settings_row, drive.app.midi_row);
-            assert_ne!(result(&keyboard), before, "tab {tab} row {row}");
+            if tab == 1 {
+                assert_eq!(result(&keyboard), before, "Input has no row controls");
+            } else {
+                assert_ne!(result(&keyboard), before, "tab {tab} row {row}");
+            }
             assert_eq!(
                 result(&controller),
                 result(&keyboard),
@@ -1247,6 +1251,163 @@ fn shipped_settings_row_knob_matches_keyboard_on_each_tab() {
             );
         }
     }
+}
+
+/// Scenario "Input ignores row and value controls" (controller-reach).
+#[test]
+fn input_ignores_row_and_value_controls() {
+    let files = TransitionFiles::new();
+    let config = files.0.join("config.toml");
+    let original = "[audio]\nclick_level = 100\n";
+    std::fs::write(&config, original).unwrap();
+    for controller in [false, true] {
+        let mut drive = hold_drive();
+        drive.app.user_path = Some(config.clone());
+        drive.tap(KeyCode::F(12), M::NONE);
+        for _ in 0..4 {
+            if controller {
+                turn(&mut drive, 30, 65);
+            } else {
+                drive.tap(KeyCode::Down, M::NONE);
+            }
+        }
+        assert_eq!(drive.app.settings_row, 4);
+        if controller {
+            list_button(&mut drive, true);
+            turn(&mut drive, 30, 63);
+            turn(&mut drive, 31, 63);
+        } else {
+            drive.tap(KeyCode::Tab, M::NONE);
+            drive.tap(KeyCode::Up, M::NONE);
+            drive.tap(KeyCode::Left, M::NONE);
+        }
+        assert_eq!((drive.app.settings_tab, drive.app.settings_row), (1, 4));
+        assert_eq!(drive.app.cfg.click_level, 100);
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
+    }
+}
+
+/// Scenario "Paths bounds its row and opens the selected root" (controller-reach).
+#[test]
+fn paths_bounds_its_row_and_opens_the_selected_root() {
+    let files = TransitionFiles::new();
+    let projects = files.0.join("A");
+    let samples = files.0.join("B");
+    let config = files.0.join("config.toml");
+    let original = "[audio]\nclick_level = 100\n";
+    std::fs::write(&config, original).unwrap();
+    for (controller, forward, changes) in [(false, true, 3), (true, true, 3), (true, false, 1)] {
+        let mut drive = hold_drive();
+        drive.app.user_path = Some(config.clone());
+        drive.app.paths.projects = projects.clone();
+        drive.app.paths.samples = samples.clone();
+        drive.tap(KeyCode::F(12), M::NONE);
+        for _ in 0..4 {
+            if controller {
+                turn(&mut drive, 30, 65);
+            } else {
+                drive.tap(KeyCode::Down, M::NONE);
+            }
+        }
+        assert_eq!(drive.app.settings_row, 4);
+        for _ in 0..changes {
+            if controller {
+                list_button(&mut drive, forward);
+            } else {
+                drive.tap(KeyCode::Tab, M::NONE);
+            }
+        }
+        assert_eq!((drive.app.settings_tab, drive.app.settings_row), (3, 1));
+        for (row, root) in [(1, &samples), (0, &projects)] {
+            if controller {
+                turn(&mut drive, 31, 63);
+                turn(&mut drive, 31, 65);
+                labelled_cell(&mut drive, panel::View::Settings, "choose");
+            } else {
+                drive.tap(KeyCode::Left, M::NONE);
+                drive.tap(KeyCode::Right, M::NONE);
+                drive.tap(KeyCode::Enter, M::NONE);
+            }
+            let picker = drive.app.path_picker.as_ref().unwrap();
+            assert_eq!(picker.which, row);
+            assert_eq!(&picker.at, root);
+            if controller {
+                exit_by_hold(&mut drive);
+                turn(&mut drive, 30, 63);
+            } else {
+                drive.tap(KeyCode::Esc, M::NONE);
+                drive.tap(KeyCode::Up, M::NONE);
+            }
+            assert!(drive.app.path_picker.is_none());
+        }
+        assert_eq!(drive.app.cfg.click_level, 100);
+        assert_eq!(drive.app.paths.projects, projects);
+        assert_eq!(drive.app.paths.samples, samples);
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
+    }
+}
+
+/// Scenario "Settings encoder hints follow the tab and picker" (controller-reach).
+#[test]
+fn settings_encoder_hints_follow_the_tab_and_picker() {
+    let files = TransitionFiles::new();
+    let mut drive = hold_drive();
+    drive.app.paths.projects = files.0.clone();
+    drive.tap(KeyCode::F(12), M::NONE);
+    let strip = |drive: &Drive| drive.app.smc_knob_strip(Instant::now()).unwrap();
+
+    turn(&mut drive, 31, 63);
+    assert_eq!(
+        strip(&drive).roles[0][..2],
+        [("row", true), ("value", true)]
+    );
+    assert_eq!(strip(&drive).last_knob, Some(1));
+
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.settings_tab, 1);
+    for knob in [30, 31] {
+        turn(&mut drive, knob, 65);
+        let shown = strip(&drive);
+        assert_eq!(shown.roles[0][..2], [("row", false), ("value", false)]);
+        assert_eq!(shown.last_knob, None);
+    }
+    assert!(
+        drive
+            .app
+            .smc_knob_detail("e2", Some("settings.value_next"))
+            .unwrap()
+            .ends_with("unavailable")
+    );
+
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.settings_tab, 2);
+    assert_eq!(
+        strip(&drive).roles[0][..2],
+        [("row", true), ("value", true)]
+    );
+
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.settings_tab, 3);
+    turn(&mut drive, 31, 65);
+    assert_eq!(
+        strip(&drive).roles[0][..2],
+        [("row", true), ("value", false)]
+    );
+    assert_eq!(strip(&drive).last_knob, None);
+
+    labelled_cell(&mut drive, panel::View::Settings, "choose");
+    assert!(drive.app.path_picker.is_some());
+    turn(&mut drive, 30, 65);
+    let shown = strip(&drive);
+    assert_eq!(shown.roles[0][..2], [("folder", true), ("value", false)]);
+    assert_eq!(shown.last_knob, Some(0));
+    assert_eq!(
+        drive
+            .app
+            .smc_knob_detail("e1", Some("settings.row"))
+            .as_deref(),
+        Some("B1 K1 · select a folder")
+    );
 }
 
 /// Scenario "Modal answer wins over panel entry" (controller-reach).
