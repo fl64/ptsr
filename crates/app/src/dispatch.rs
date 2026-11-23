@@ -957,6 +957,9 @@ impl App {
             // the mode goes first and the screen stays: A1 keeps its view (98b, 138)
             Action::Back if self.erase_pads => self.toggle_pattern_erase(),
             Action::Back if self.pattern_erasing() => self.toggle_pattern_erase(),
+            Action::Back if self.a1_overview_count_in() => {
+                self.finish_pattern_record();
+            }
             Action::Back if self.pattern_view.overview => self.pattern_view.overview = false,
             // the edit mode is the innermost layer of the screen: Esc closes it, the screen stays
             Action::Back if self.edit => self.edit = false,
@@ -1952,6 +1955,10 @@ impl App {
                     if cell == 13 && may_answer {
                         self.panel_back();
                     }
+                    return;
+                }
+                if cell == 13 && may_answer && self.a1_overview_count_in() {
+                    self.panel_back();
                     return;
                 }
                 if self.panel.press(&port, cell) == super::panel::Press::Cell(cell) {

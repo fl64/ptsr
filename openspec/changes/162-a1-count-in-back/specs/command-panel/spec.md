@@ -20,6 +20,6 @@ Without the PAD BANK hold shortcut, the Master profile SHALL map 16 second-bank 
 - **AND** the original release ends that Gate once without releasing another pad
 
 #### Scenario: P1 cancels count-in before panel reveal
-- **WHEN** Hold panel is off and command P1 reaches the A1 overview during count-in with a hidden panel
+- **WHEN** command P1 reaches the A1 overview during count-in with a hidden panel and the PAD BANK hold is off or unavailable
 - **THEN** the first press cancels count-in, the overview stays open and the panel stays hidden
 - **AND** a P1 press in the playing layer still plays its pad

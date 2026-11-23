@@ -1136,6 +1136,13 @@ impl crate::App {
             .flatten()
     }
 
+    pub(super) fn a1_overview_count_in(&self) -> bool {
+        self.pattern_view.overview
+            && self
+                .pattern_record_state()
+                .is_some_and(|state| state.phase == Phase::CountIn)
+    }
+
     pub(super) fn overview_next_step(
         &self,
         keymap: &input::Keymap,
@@ -1208,7 +1215,24 @@ impl crate::App {
         };
         let playing = has_hits && self.transport_state().playing;
         let step = match state.phase {
-            Phase::CountIn => record_step("cancel count", "cancel"),
+            Phase::CountIn => {
+                let back = if smc {
+                    let hold_panel = self.midi_gestures.smc_pad_bank_opens_panel
+                        && self
+                            .help_overlay
+                            .controller
+                            .smc_status
+                            .as_ref()
+                            .is_some_and(|(ready, _)| *ready);
+                    Some(if hold_panel { "PAD BANK+P1" } else { "P1" }.into())
+                } else {
+                    binding(Action::Back)
+                };
+                back.map_or_else(
+                    || record_step("cancel count", "cancel"),
+                    |key| control_cue(&key, "cancel count", "cancel"),
+                )
+            }
             Phase::Recording => {
                 let end = record_step("end", "end");
                 let pads = match end.chars().count() {

@@ -6,7 +6,7 @@ During the A1 count-in, Esc and SMC-PAD P1 leave the overview. The count-in cont
 
 - Cancel count-in with Esc or SMC-PAD command pad P1. Keep the A1 overview open.
 - Show the current cancel control beside the step numbers.
-- With Hold panel off, accept command P1 while the panel is hidden.
+- With Hold panel off or unavailable, accept command P1 while the panel is hidden.
 
 ## Capabilities
 

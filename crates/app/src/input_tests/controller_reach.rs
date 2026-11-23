@@ -2025,7 +2025,7 @@ fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
         record(&mut drive);
         cue(&drive, "Starting A1 · wait", "Starting A1 · wait");
         app_capture_frames(&mut drive, 0);
-        cue(&drive, "Ctrl+R cancel count", "RECORD cancel count");
+        cue(&drive, "Esc cancel count", "PAD BANK+P1 cancel count");
         record(&mut drive);
         app_capture_frames(&mut drive, 0);
         drive.app.flush_audio();
