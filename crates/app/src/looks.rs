@@ -128,17 +128,20 @@ impl App {
         }
     }
 
-    /// The A1 cells that need hits, or that wait for the count-in (138).
+    /// The availability of the A1 edit, erase and clear cells.
     fn pattern_grey(&self, action: Action) -> Option<&'static str> {
         use engine::capture::Phase;
-        let phase = self.pattern_record_state().map(|s| s.phase);
-        let undo_on = (action == Action::PatternStepEdit && self.pattern_view.edit)
-            || (action == Action::PatternErase && self.erase_pads);
-        if undo_on {
-            return None;
+        if action == Action::PatternStepEdit {
+            return self.step_edit_refusal();
         }
-        if action != Action::PatternClear && phase == Some(Phase::CountIn) {
-            return Some("wait for the count-in");
+        let phase = self.pattern_record_state().map(|s| s.phase);
+        if action == Action::PatternErase {
+            if self.erase_pads {
+                return None;
+            }
+            if phase == Some(Phase::CountIn) {
+                return Some("wait for the count-in");
+            }
         }
         let hits = self
             .pads
