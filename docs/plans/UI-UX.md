@@ -181,6 +181,7 @@ Let each screen allocate its body inside the fixed zones.
   and tempo when known. Keep the existing selected-file preview wave in the strip and make its source clear.
   Hide the pad grid when no file is in hand. Show the grid while placing a file.
   Preserve the keyboard and controller path to pads in hand.
+  A successful pickup replaces the item in hand. A refused pickup keeps it.
 - **FX (F4):** show both slots large and side by side, with all current parameters.
   Add a return meter for each slot. Show a send matrix for the open bank:
   up to 16 pads with sound by FX 1 and FX 2, with short bars and values.
