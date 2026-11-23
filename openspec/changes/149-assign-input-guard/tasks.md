@@ -1,5 +1,5 @@
 ## 1. Assign input
 
-- [ ] Ignore the three Chop actions during Assign.
-- [ ] Check the plan, preview settings and gain with keyboard and MIDI.
-- [ ] Run the project checks.
+- [x] Ignore the three Chop actions during Assign.
+- [x] Check the plan, preview settings and gain with keyboard and MIDI.
+- [x] Run the project checks.
