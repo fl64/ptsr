@@ -1347,6 +1347,69 @@ fn paths_bounds_its_row_and_opens_the_selected_root() {
     }
 }
 
+/// Scenario "Settings encoder hints follow the tab and picker" (controller-reach).
+#[test]
+fn settings_encoder_hints_follow_the_tab_and_picker() {
+    let files = TransitionFiles::new();
+    let mut drive = hold_drive();
+    drive.app.paths.projects = files.0.clone();
+    drive.tap(KeyCode::F(12), M::NONE);
+    let strip = |drive: &Drive| drive.app.smc_knob_strip(Instant::now()).unwrap();
+
+    turn(&mut drive, 31, 63);
+    assert_eq!(
+        strip(&drive).roles[0][..2],
+        [("row", true), ("value", true)]
+    );
+    assert_eq!(strip(&drive).last_knob, Some(1));
+
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.settings_tab, 1);
+    for knob in [30, 31] {
+        turn(&mut drive, knob, 65);
+        let shown = strip(&drive);
+        assert_eq!(shown.roles[0][..2], [("row", false), ("value", false)]);
+        assert_eq!(shown.last_knob, None);
+    }
+    assert!(
+        drive
+            .app
+            .smc_knob_detail("e2", Some("settings.value_next"))
+            .unwrap()
+            .ends_with("unavailable")
+    );
+
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.settings_tab, 2);
+    assert_eq!(
+        strip(&drive).roles[0][..2],
+        [("row", true), ("value", true)]
+    );
+
+    list_button(&mut drive, true);
+    assert_eq!(drive.app.settings_tab, 3);
+    turn(&mut drive, 31, 65);
+    assert_eq!(
+        strip(&drive).roles[0][..2],
+        [("row", true), ("value", false)]
+    );
+    assert_eq!(strip(&drive).last_knob, None);
+
+    labelled_cell(&mut drive, panel::View::Settings, "choose");
+    assert!(drive.app.path_picker.is_some());
+    turn(&mut drive, 30, 65);
+    let shown = strip(&drive);
+    assert_eq!(shown.roles[0][..2], [("folder", true), ("value", false)]);
+    assert_eq!(shown.last_knob, Some(0));
+    assert_eq!(
+        drive
+            .app
+            .smc_knob_detail("e1", Some("settings.row"))
+            .as_deref(),
+        Some("B1 K1 · select a folder")
+    );
+}
+
 /// Scenario "Modal answer wins over panel entry" (controller-reach).
 #[test]
 fn modal_answer_wins_over_panel_entry() {

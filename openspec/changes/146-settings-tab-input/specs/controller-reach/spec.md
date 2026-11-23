@@ -31,3 +31,14 @@ These rules SHALL apply to tab selection with Tab and with SMC-PAD LEFT and RIGH
 - **THEN** the app selects the last root row and preserves the audio settings and paths
 - **AND** the choose action opens the picker of the visible root
 - **AND** row controls can select the other root
+
+### Requirement: Settings encoder hints show usable controls
+
+The SMC-PAD strip and Controller Help SHALL show which encoders can act.
+An unavailable encoder SHALL stay dim after a turn.
+The Paths folder picker SHALL show the folder role for E1.
+
+#### Scenario: Settings encoder hints follow the tab and picker
+- **WHEN** the owner uses E1 or E2 on Audio, Input, MIDI, Paths or its folder picker
+- **THEN** the strip shows which encoder can act in the current view
+- **AND** a turn leaves an unavailable encoder dim

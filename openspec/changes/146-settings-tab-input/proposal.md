@@ -8,6 +8,7 @@ Paths can also retain a row number that it cannot show.
 - Limit the Settings value keys and E2 to tabs with value controls.
 - Keep Input available for MIDI event inspection.
 - Select a visible root when Paths opens. Keep the folder picker controls.
+- Dim unavailable encoders in the strip and Controller Help.
 
 ## Capabilities
 
@@ -34,9 +35,10 @@ None.
 1. Open Setup. Release PAD BANK. Select Audio with LEFT or RIGHT.
 2. Select Click level with E1. Note the percent.
 3. Press LEFT to open Paths. Check the selected root.
-4. Turn E2. Hold PAD BANK and press P5 Choose. Check the folder picker title.
+4. Turn E2. Check that it stays dim. Hold PAD BANK and press P5 Choose. Check the picker title.
+   Turn E1. Check that the strip says folder.
 5. Hold PAD BANK and press P1 to cancel. Release PAD BANK. Press RIGHT for Audio. Check the click level.
-6. Press RIGHT to open Input. Turn E1 and E2. Check the input log.
+6. Press RIGHT to open Input. Turn E1 and E2. Check that both stay dim. Check the input log.
 
 ### Sound
 
