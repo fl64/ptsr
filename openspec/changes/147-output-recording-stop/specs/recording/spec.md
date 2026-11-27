@@ -2,14 +2,15 @@
 
 ### Requirement: STOP ends the output recording
 
-During output recording, STOP SHALL first stop an active preview.
-With no preview, STOP SHALL pause A1 if it plays. The recording SHALL keep the tail.
-With both stopped, STOP SHALL save the recording at the current position.
-This order SHALL apply on every work screen, including Assign.
+On any work screen, including Assign, each STOP during output recording SHALL do the first applicable action.
+
+1. Stop an active preview.
+2. Pause A1 if it plays. Keep its tail in the take.
+3. Save the take and keep the A1 position.
+
 If the next STOP arrives before A1 pauses, the app SHALL save the take when A1 pauses.
-If the recording continues after the pause, the mode line SHALL say
-«● REC OUTPUT 0:12 · STOP end rec».
-`record output` on Pads SHALL also end a running recording.
+If recording continues after the pause, the mode line SHALL say «● REC OUTPUT 0:12 · STOP end rec».
+On Pads, `record output` SHALL also end the take.
 
 #### Scenario: STOP on A1 pauses A1 and keeps the recording
 - **WHEN** the output recording runs, A1 plays and the owner presses STOP on A1
