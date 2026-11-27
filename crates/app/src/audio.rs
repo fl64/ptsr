@@ -428,6 +428,11 @@ impl Recorder {
         peak
     }
 
+    #[cfg(test)]
+    pub(super) fn append_test_output(&self, channel: &[f32]) {
+        self.write(channel, channel);
+    }
+
     /// The app, after `stop`: a copy of the recorded interleaved stereo frames.
     pub fn take(&self, frames: usize) -> Vec<f32> {
         let n = frames.min(self.cap_frames) * 2;

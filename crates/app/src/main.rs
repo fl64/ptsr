@@ -763,8 +763,8 @@ impl App {
         }
         if let Command::PatternRecordEnd { pass } = &cmd {
             self.pattern_end_requested(*pass);
-        } else if matches!(&cmd, Command::TransportStop | Command::TransportStopContext) {
-            self.pattern_stop_requested();
+        } else {
+            self.observe_transport_command(&cmd);
         }
         // the first sound ends the splash (73): a note that can sound, or a preview
         let sounds = match &cmd {
@@ -914,7 +914,7 @@ impl App {
                 self.splash = false;
             }
         }
-        self.finish_manual_save();
+        self.finish_audio_feedback();
     }
 
     fn set_master(&mut self, db: i8) {
@@ -974,7 +974,7 @@ impl App {
 
     /// Stops the recording: a WAV in the samples root, then the file is in hand.
     fn record_stop(&mut self) {
-        // no recording running: the ring still holds the previous one, which must not be kept twice
+        self.clear_output_stop();
         let Some((source, _)) = self.recording.take() else {
             return;
         };

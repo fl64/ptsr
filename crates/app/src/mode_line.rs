@@ -164,8 +164,10 @@ impl App {
         if smc && self.panel.visible() {
             return "STOP twice · stop and save";
         }
-        let playing = self.transport_state().playing || self.preview_frame().is_some();
-        match (smc, playing) {
+        if smc && self.preview_frame().is_some() {
+            return "STOP stop preview";
+        }
+        match (smc, self.transport_state().playing) {
             (true, true) => "STOP stops play · STOP end rec",
             (true, false) => "STOP end rec",
             (false, _) => "Ctrl+T end rec",
