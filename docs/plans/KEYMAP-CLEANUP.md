@@ -165,3 +165,45 @@ The flash names the threshold, as `chop.hits` does.
 - Pads (option A): `I` / `K` pick a parameter, `J` / `L` change it; `U` / `O` turn the banks.
 - Pads: `Ctrl+C`, hit another pad: a copy that plays the same; hit an occupied pad: a question.
 - Help (F1) and the bottom line show the new keys only.
+
+## 8. Pattern screen keys (pattern track)
+
+This section is a later plan, not part of 83a. It gives the keys of the pattern screen from
+[the pattern track](PATTERNS.md#pattern-track-owner-review-2026-11-27).
+Change `pattern-step-input` binds them. Use right-half keys. Common work needs no Alt chord.
+
+| Key | Action |
+|---|---|
+| `Space` | Play or stop |
+| `Ctrl+R` | Start or end a record pass (global, no change) |
+| `Enter` | Start or end step edit |
+| `Tab` | Step edit: pads = steps or pads = sounds |
+| `J` / `L` | Step left or right |
+| `I` / `K` | Row up or down |
+| `U` / `O` | Previous or next bar page |
+| `Y` / `H` | Finer or coarser view grid (one column, as parts and hits on Chop) |
+| `N` | Focus on the setup line |
+| `M` | Metronome on or off (see conflict 2) |
+| `B` | Tap tempo |
+| `Backspace` | Delete the hit at the cursor. Held with a pad: erase that pad (as `Alt+E` now) |
+| `Ctrl+Backspace` | Clear the selected row, after a question |
+| `Ctrl+Z` / `Ctrl+Y` | Undo or redo, one history for the owner |
+| `Alt+H` | All rows or used rows |
+| `Esc` / `F2` | Back to Pads |
+
+Keep `Alt+E`, `Alt+N`, `Alt+B`, `Alt+Up`, `Alt+Down`, `Alt+Z` and F7 for one release.
+They show moved-key notices. After that release, the shipped keymap does not bind them.
+An owner keymap binding still wins, as in §4.2.
+
+Conflicts with the rules of §2 and the current `config/keymap.toml`:
+
+1. `Ctrl+Backspace` is `marker.delete` on Chop. Rule 2 needs the same kind of action on all screens.
+   Clearing a row is a delete. Give the action a name that ends in `delete`, or add it to
+   the allowed list of the consistency test with its reason.
+2. `M` puts a mark on Pads and a cut on Chop (rule 3). A metronome on `M` breaks rule 3.
+   `Alt+M` already toggles the metronome on all screens. Ask the owner before the change.
+   Default: keep `Alt+M` and leave `M` free on the pattern screen.
+3. `U` / `O` turn banks on screens with a pad grid. The pattern screen has no pad grid,
+   so `U` / `O` move bar pages. `PageUp` / `PageDown` still turn banks, also in pads = sounds.
+   `Tab` switches the meaning of the pads. Rule 3 gives `Tab` the next page or group.
+   The design of `pattern-step-input` records this as an exception, or selects another key.
