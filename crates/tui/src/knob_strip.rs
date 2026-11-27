@@ -16,15 +16,21 @@ pub struct KnobStrip {
     pub mode: Option<String>,
     /// The dim line without a mode: how PAD BANK shows the commands (138).
     pub idle: &'static str,
+    /// Rhythm needs the extra row when the pad grid is visible at minimum height.
+    pub compact_rhythm: bool,
 }
 
 const STRIP_WIDTH: u16 = 40;
 
 impl Feedback {
+    fn knob_height(&self, area: Rect) -> Option<u16> {
+        let strip = self.knob_strip.as_ref()?;
+        (area.width >= 72 && area.height >= 26)
+            .then_some(HELP_ROWS + u16::from(!strip.compact_rhythm || area.height > 26))
+    }
+
     pub fn content_area(&self, mut area: Rect) -> Rect {
-        if self.knob_strip.is_some() && area.width >= 72 && area.height >= 26 {
-            area.height -= 1;
-        }
+        area.height -= self.knob_height(area).unwrap_or(HELP_ROWS) - HELP_ROWS;
         area
     }
 
@@ -38,7 +44,7 @@ impl Feedback {
 }
 
 pub(super) fn help_width(area: Rect, feedback: &Feedback, compact: bool) -> u16 {
-    if compact || feedback.content_area(area) == area {
+    if compact || feedback.knob_height(area).is_none() {
         area.width
     } else {
         area.width - STRIP_WIDTH
@@ -68,7 +74,7 @@ pub(super) fn draw_help(
         ];
         frame.render_widget(Paragraph::new(lines.to_vec()), area);
     } else if let Some(strip) = &feedback.knob_strip
-        && feedback.content_area(frame.area()) != frame.area()
+        && let Some(height) = feedback.knob_height(frame.area())
     {
         if compact {
             let line = if let Some(mode) = &strip.mode {
@@ -98,7 +104,7 @@ pub(super) fn draw_help(
                 },
             );
         } else {
-            draw_strip(frame, area, strip, rows);
+            draw_strip(frame, Rect { height, ..area }, strip, rows);
         }
     } else {
         frame.render_widget(Paragraph::new(rows), area);
@@ -106,9 +112,13 @@ pub(super) fn draw_help(
 }
 
 fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'_>>) {
-    let left = Rect::new(area.x, area.y, STRIP_WIDTH, HELP_ROWS + 1);
-    let right = Rect::new(left.right(), area.y, area.width - left.width, HELP_ROWS + 1);
-    // Bank 1 in physical rows; bank 2 has only master, so it takes one cell (127).
+    let left = Rect::new(area.x, area.y, STRIP_WIDTH, area.height);
+    let right = Rect::new(left.right(), area.y, area.width - left.width, area.height);
+    let pairs: &[&[usize]] = if area.height == HELP_ROWS {
+        &[&[7, 8], &[5, 6], &[3, 4, 1, 2]]
+    } else {
+        &[&[7, 8], &[5, 6], &[3, 4], &[1, 2]]
+    };
     let mark = |bank: usize| strip.last_bank == Some(bank);
     let cell = |bank: usize, knob: usize| {
         let (label, available) = strip.roles[bank][knob - 1];
@@ -137,16 +147,13 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
         )
     };
     let mut knobs = Vec::new();
-    for (row, first) in [7, 5, 3, 1].into_iter().enumerate() {
-        let mut line = vec![
-            if row == 0 {
-                bank_name(0, "B1 ")
-            } else {
-                Span::raw("   ")
-            },
-            cell(0, first),
-            cell(0, first + 1),
-        ];
+    for (row, knobs_in_row) in pairs.iter().enumerate() {
+        let mut line = vec![if row == 0 {
+            bank_name(0, "B1 ")
+        } else {
+            Span::raw("   ")
+        }];
+        line.extend(knobs_in_row.iter().map(|&knob| cell(0, knob)));
         if row == 0 {
             line.push(bank_name(1, " B2 "));
             line.push(cell(1, 8));
@@ -173,7 +180,7 @@ fn draw_strip(frame: &mut Frame, area: Rect, strip: &KnobStrip, rows: Vec<Line<'
         ),
         None => help.push(Line::from(strip.idle).fg(DIM)),
     }
-    let remaining = usize::from(HELP_ROWS + 1).saturating_sub(help.len());
+    let remaining = usize::from(right.height).saturating_sub(help.len());
     help.extend(rows.into_iter().take(remaining));
     frame.render_widget(Paragraph::new(help), right);
 }
@@ -261,6 +268,7 @@ mod tests {
             value: Some("B1 7 volume · pad 1 · +1 dB".into()),
             mode: None,
             idle: "PAD BANK hold · PLAY play · STOP stop",
+            compact_rhythm: false,
         };
         for width in [80, 120] {
             let mut term = Terminal::new(TestBackend::new(width, HELP_ROWS + 1)).unwrap();
