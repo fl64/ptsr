@@ -3608,94 +3608,10 @@ fn pair(a: Action) -> Option<(String, i8)> {
     })
 }
 
-/// An F1 row while it is built: its keys with their place in the row, and the text.
-type HelpRow = (Vec<(i8, String)>, String);
-
 /// F1: the keys of the screen under headings; a heading is a row without keys.
 /// `kitty`: the terminal gives key releases; without them F1 says where they come from (68).
 fn full_help(keymap: &Keymap, screen: Screen, kitty: bool) -> Vec<(String, String)> {
-    // per section: rows of (keys with their place, text); pairs gather into one row
-    let mut sections: Vec<Vec<HelpRow>> = vec![Vec::new(); HELP_SECTIONS.len()];
-    sections[0].push((
-        vec![(0, "1-4 Q-R A-F Z-V".to_string())],
-        "play pads; Shift = full velocity".to_string(),
-    ));
-    for (k, a) in keymap.bindings(screen) {
-        let section = &mut sections[help_section(a)];
-        let (key, text) = match a {
-            Action::RecordMic(_) if !kitty => (
-                (0, k),
-                "record the microphone: toggle on / off (no key releases)".into(),
-            ),
-            Action::PageNext | Action::PagePrev if screen == Screen::Fx => {
-                ((0, k), "select the next / previous shared FX block".into())
-            }
-            Action::ParamNext | Action::ParamPrev if screen == Screen::Fx => {
-                ((0, k), "select the next / previous effect parameter".into())
-            }
-            // eight banks are one row
-            Action::BankSelect(0) => ((0, format!("{k}…8")), "bank 1–8".to_string()),
-            Action::BankSelect(_) => continue,
-            a => match pair(a) {
-                Some((text, place)) => ((place, k), text),
-                None => ((0, k), describe(a)),
-            },
-        };
-        match section.iter_mut().find(|(_, t)| *t == text) {
-            Some((keys, _)) => keys.push(key),
-            None => section.push((vec![key], text)),
-        }
-    }
-    let sections = sections.into_iter().map(|rows| {
-        rows.into_iter()
-            .map(|(mut keys, text)| {
-                keys.sort_by_key(|k| k.0);
-                let keys: Vec<String> = keys.into_iter().map(|k| k.1).collect();
-                (keys.join(" "), text)
-            })
-            .collect::<Vec<_>>()
-    });
-    let mut rows = Vec::new();
-    for (name, section) in HELP_SECTIONS.iter().zip(sections) {
-        if !section.is_empty() {
-            rows.push((String::new(), name.to_string()));
-            rows.extend(section);
-        }
-    }
-    // the mode line of a pad and the dots in the panel (55, 77)
-    if matches!(screen, Screen::Pads | Screen::Files) {
-        rows.push((String::new(), "GLYPHS ON A PAD".to_string()));
-        for (glyph, text) in [
-            (
-                "✱",
-                "more settings, see the panel: pitch, envelope, filter, drive or sends",
-            ),
-            (
-                "mute N",
-                "its group: a hit stops the other pads of the group",
-            ),
-            ("⇥", "gate: plays until the release stops it"),
-            ("no mark", "one-shot: pressed, it goes on to the end"),
-            (
-                "●",
-                "in the panel: a block with a change; changed values are bright",
-            ),
-        ] {
-            rows.push((glyph.to_string(), text.to_string()));
-        }
-    }
-    if !kitty {
-        rows.push((String::new(), "NO KEY RELEASES".to_string()));
-        rows.push((
-            "gate pads".to_string(),
-            "play one-shot: this terminal gives no key releases".to_string(),
-        ));
-        rows.push((
-            "key releases".to_string(),
-            "come in Ghostty, kitty, WezTerm and foot".to_string(),
-        ));
-    }
-    rows
+    help::key_rows(keymap.bindings(screen), screen, kitty, false, |_, _| None)
 }
 
 #[cfg(test)]

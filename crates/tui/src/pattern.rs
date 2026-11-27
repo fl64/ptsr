@@ -170,7 +170,45 @@ pub(super) fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStri
 }
 
 pub(super) fn compact_a1(area: Rect, screen: &Screen<'_>) -> bool {
-    area.width <= 80 && matches!(screen, Screen::Pads(pads) if pads.overview.is_some())
+    area.width <= 80 && a1_overview(screen)
+}
+
+pub(super) fn a1_overview(screen: &Screen<'_>) -> bool {
+    matches!(screen, Screen::Pads(pads) if pads.overview.is_some())
+}
+
+pub(super) fn compact_a1_body(content: Rect) -> Rect {
+    let [_, body, _, _] = frame_areas(content);
+    Rect::new(
+        body.x,
+        body.y.saturating_add(1),
+        body.width,
+        body.height.saturating_sub(1),
+    )
+}
+
+pub(super) fn controls_area(area: Rect, screen: &Screen) -> Rect {
+    if compact_a1(area, screen) {
+        return compact_a1_body(area);
+    }
+    let [_, body, _, _] = frame_areas(area);
+    let side = match screen {
+        Screen::Pads(pads) => pad_frame(body, pads.hidden).side,
+        Screen::Files(files) => pad_frame(body, files.pads.hidden).side,
+        Screen::Chop(chop) => pad_frame(body, chop.pads.hidden).side,
+        _ => Rect::new(
+            body.right().saturating_sub(body.width.min(SIDE_W)),
+            body.y.saturating_add(1),
+            body.width.min(SIDE_W),
+            body.height.saturating_sub(1),
+        ),
+    };
+    let top = (METER_ROWS + 1).min(side.height);
+    Rect {
+        y: side.y + top,
+        height: side.height - top,
+        ..side
+    }
 }
 
 pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view: &PatternOverview) {

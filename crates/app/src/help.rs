@@ -182,6 +182,108 @@ pub(super) fn describe(a: Action) -> String {
     }
 }
 
+type HelpRow = (Vec<(i8, String)>, String);
+
+pub(super) fn key_rows(
+    bindings: Vec<(String, Action)>,
+    screen: Screen,
+    kitty: bool,
+    setup: bool,
+    describe_mode: impl Fn(Action, &str) -> Option<&'static str>,
+) -> Vec<(String, String)> {
+    // per section: rows of (keys with their place, text); pairs gather into one row
+    let mut sections: Vec<Vec<HelpRow>> = vec![Vec::new(); super::HELP_SECTIONS.len() + 1];
+    sections[1].push((
+        vec![(0, "1-4 Q-R A-F Z-V".to_string())],
+        "play pads; Shift = full velocity".to_string(),
+    ));
+    for (k, a) in bindings {
+        let mode_text = describe_mode(a, &k);
+        let section = if setup && mode_text.is_some() {
+            &mut sections[0]
+        } else {
+            &mut sections[super::help_section(a) + 1]
+        };
+        let (key, text) = match (mode_text, a) {
+            (Some(text), _) => ((0, k), text.into()),
+            (_, Action::RecordMic(_)) if !kitty => (
+                (0, k),
+                "record the microphone: toggle on / off (no key releases)".into(),
+            ),
+            (_, Action::PageNext | Action::PagePrev) if screen == Screen::Fx => {
+                ((0, k), "select the next / previous shared FX block".into())
+            }
+            (_, Action::ParamNext | Action::ParamPrev) if screen == Screen::Fx => {
+                ((0, k), "select the next / previous effect parameter".into())
+            }
+            // eight banks are one row
+            (_, Action::BankSelect(0)) => ((0, format!("{k}…8")), "bank 1–8".to_string()),
+            (_, Action::BankSelect(_)) => continue,
+            (_, a) => match super::pair(a) {
+                Some((text, place)) => ((place, k), text),
+                None => ((0, k), describe(a)),
+            },
+        };
+        match section.iter_mut().find(|(_, t)| *t == text) {
+            Some((keys, _)) => keys.push(key),
+            None => section.push((vec![key], text)),
+        }
+    }
+    let sections = sections.into_iter().map(|rows| {
+        rows.into_iter()
+            .map(|(mut keys, text)| {
+                keys.sort_by_key(|k| k.0);
+                let keys: Vec<String> = keys.into_iter().map(|k| k.1).collect();
+                (keys.join(" "), text)
+            })
+            .collect::<Vec<_>>()
+    });
+    let mut rows = Vec::new();
+    for (name, section) in std::iter::once("A1 SETUP")
+        .chain(super::HELP_SECTIONS)
+        .zip(sections)
+    {
+        if !section.is_empty() {
+            rows.push((String::new(), name.to_string()));
+            rows.extend(section);
+        }
+    }
+    // the mode line of a pad and the dots in the panel (55, 77)
+    if matches!(screen, Screen::Pads | Screen::Files) {
+        rows.push((String::new(), "GLYPHS ON A PAD".to_string()));
+        for (glyph, text) in [
+            (
+                "✱",
+                "more settings, see the panel: pitch, envelope, filter, drive or sends",
+            ),
+            (
+                "mute N",
+                "its group: a hit stops the other pads of the group",
+            ),
+            ("⇥", "gate: plays until the release stops it"),
+            ("no mark", "one-shot: pressed, it goes on to the end"),
+            (
+                "●",
+                "in the panel: a block with a change; changed values are bright",
+            ),
+        ] {
+            rows.push((glyph.to_string(), text.to_string()));
+        }
+    }
+    if !kitty {
+        rows.push((String::new(), "NO KEY RELEASES".to_string()));
+        rows.push((
+            "gate pads".to_string(),
+            "play one-shot: this terminal gives no key releases".to_string(),
+        ));
+        rows.push((
+            "key releases".to_string(),
+            "come in Ghostty, kitty, WezTerm and foot".to_string(),
+        ));
+    }
+    rows
+}
+
 /// The F1 tabs, in Tab order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Page {
@@ -267,6 +369,66 @@ impl App {
         self.help_overlay.controller_view = (self.help_open
             && self.help_overlay.page == Page::Controller)
             .then(|| self.controller_view(keymap));
+    }
+
+    pub(super) fn setup_key_help(&self, keymap: &Keymap, kitty: bool) -> Vec<(String, String)> {
+        let edit_actions = [
+            Action::Back,
+            Action::PatternControls,
+            Action::ParamPrev,
+            Action::ParamNext,
+            Action::PatternParamPrev,
+            Action::PatternParamNext,
+            Action::EditValue {
+                up: false,
+                fine: false,
+            },
+            Action::EditValue {
+                up: true,
+                fine: false,
+            },
+            Action::PatternValueDec,
+            Action::PatternValueInc,
+        ];
+        let mut bindings: Vec<_> = keymap
+            .bindings(self.screen)
+            .into_iter()
+            .map(|(_, action)| action)
+            .chain(edit_actions)
+            .filter(|&action| {
+                action != Action::PatternStepEdit && self.pattern_controls_own(action).is_some()
+            })
+            .flat_map(|action| {
+                self.help_bindings(keymap, action)
+                    .into_iter()
+                    .map(move |key| (key, action))
+            })
+            .collect();
+        bindings.sort_by(|a, b| a.0.cmp(&b.0));
+        bindings.dedup();
+        key_rows(
+            bindings,
+            self.screen,
+            kitty,
+            true,
+            |action, key| match action {
+                Action::Back
+                    if key == "Enter"
+                        && self.pattern_panel == Some(super::pattern_record::CLEAR_ROW) =>
+                {
+                    Some("Ask to clear A1.")
+                }
+                Action::Back | Action::PatternControls => Some("Close A1 Setup."),
+                Action::ParamNext
+                | Action::ParamPrev
+                | Action::PatternParamPrev
+                | Action::PatternParamNext => Some("Select an A1 setting."),
+                Action::EditValue { .. } | Action::PatternValueDec | Action::PatternValueInc => {
+                    Some("Change the A1 setting.")
+                }
+                _ => None,
+            },
+        )
     }
 
     pub(super) fn help_bindings(&self, keymap: &Keymap, action: Action) -> Vec<String> {

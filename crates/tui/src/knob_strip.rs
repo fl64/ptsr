@@ -71,18 +71,31 @@ pub(super) fn draw_help(
         && feedback.content_area(frame.area()) != frame.area()
     {
         if compact {
-            let status = strip
-                .mode
-                .as_deref()
-                .or(strip.value.as_deref())
-                .or(strip.operation)
-                .unwrap_or(strip.idle);
-            let prefix = format!("◀ ▶ {} · {}  ", strip.list, strip.page);
-            let width = usize::from(area.width).saturating_sub(Span::raw(prefix.as_str()).width());
-            let line = Line::from(vec![prefix.fg(CYAN), fit_mode(status, width).fg(TEXT)]);
+            let line = if let Some(mode) = &strip.mode {
+                Line::from(fit_mode(mode, usize::from(area.width)))
+                    .fg(MAGENTA)
+                    .bold()
+            } else {
+                let mut prefix = format!("◀ ▶ {} · {}  ", strip.list, strip.page);
+                let (role, ready) = strip.roles[0][0];
+                if strip.page == "Pattern" && strip.list == "Bar" && ready {
+                    prefix.push_str(&format!("E1 {role}  "));
+                }
+                let status = strip
+                    .value
+                    .as_deref()
+                    .or(strip.operation)
+                    .unwrap_or(strip.idle);
+                let width =
+                    usize::from(area.width).saturating_sub(Span::raw(prefix.as_str()).width());
+                Line::from(vec![prefix.fg(CYAN), fit_mode(status, width).fg(TEXT)])
+            };
             frame.render_widget(
                 Paragraph::new(std::iter::once(line).chain(rows).collect::<Vec<_>>()),
-                area,
+                Rect {
+                    height: frame.area().bottom().saturating_sub(area.y),
+                    ..area
+                },
             );
         } else {
             draw_strip(frame, area, strip, rows);

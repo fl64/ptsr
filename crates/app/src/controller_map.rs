@@ -496,6 +496,18 @@ impl App {
         Some(format!("B{bank} K{knob} · {purpose}{state}"))
     }
 
+    pub(super) fn smc_knobs_ready(&self) -> bool {
+        self.help_overlay
+            .controller
+            .smc_status
+            .as_ref()
+            .is_some_and(|(ready, _)| *ready)
+    }
+
+    pub(super) fn smc_panel_hold_available(&self) -> bool {
+        self.midi_gestures.smc_pad_bank_opens_panel && self.smc_knobs_ready()
+    }
+
     pub(super) fn smc_knob_strip(&self, now: std::time::Instant) -> Option<tui::KnobStrip> {
         if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
             return None;
@@ -524,12 +536,7 @@ impl App {
         } else {
             (page, list)
         };
-        let ready = self
-            .help_overlay
-            .controller
-            .smc_status
-            .as_ref()
-            .is_some_and(|(ready, _)| *ready);
+        let ready = self.smc_knobs_ready();
         let names = [
             ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8"],
             ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"],

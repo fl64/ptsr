@@ -616,7 +616,7 @@ impl super::App {
             event_velocity: None,
         };
         let Some(raw) = &self.pads.pattern else {
-            view.header = "pattern A1 is empty".into();
+            view.header = "No A1 · open Setup or record".into();
             view.next = self.overview_next_step(keymap, false, recording, None);
             return view;
         };

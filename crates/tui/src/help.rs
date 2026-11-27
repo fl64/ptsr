@@ -102,6 +102,10 @@ pub(super) fn help_lines(groups: &[HelpGroup], width: u16) -> Vec<Line<'static>>
     help_lines_at(groups, width, HELP_ROWS as usize)
 }
 
+pub(super) fn a1_setup_help(help: &super::Help<'_>) -> bool {
+    help.groups.iter().any(|group| group.name == "A1 SETUP")
+}
+
 pub(super) fn help_lines_at(groups: &[HelpGroup], width: u16, rows: usize) -> Vec<Line<'static>> {
     let mut blocks: Vec<Vec<Vec<Span<'static>>>> = groups
         .iter()

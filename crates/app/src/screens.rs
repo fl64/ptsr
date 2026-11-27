@@ -1762,7 +1762,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("xruns 3");
             require("~");
         }
-        Mode::PatternOverviewAbsent => require("pattern A1 is empty"),
+        Mode::PatternOverviewAbsent => require("No A1"),
         Mode::PatternOverviewEmpty => require("Grid 1/16"),
         Mode::PatternOverviewStraight => require("steps 1-"),
         Mode::PatternOverviewTriplet => require("Grid 1/16T"),
@@ -2673,7 +2673,12 @@ L="none"
                 }
                 let shown = text(app);
                 assert!(shown.contains(hint), "{size:?}: {hint}\n{shown}");
-                assert!(shown.contains("Enter run"), "{size:?}\n{shown}");
+                let enter = if rows == 3 {
+                    "Enter clear"
+                } else {
+                    "Enter/Esc close"
+                };
+                assert!(shown.contains(enter), "{size:?}: {enter}\n{shown}");
             }
         }
     }
@@ -3824,6 +3829,129 @@ L="none"
         }
     }
 
+    /// Scenario "Absent A1 offers Setup".
+    /// Scenario "A1 Setup shows only applicable edit actions".
+    /// Draws each Setup view on both terminal sizes.
+    #[test]
+    fn a1_setup_names_the_working_controls() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewAbsent,
+                size,
+            };
+            let now = Instant::now();
+            let render_text = |app| {
+                render_app(case, &keymap, app, now)
+                    .1
+                    .content()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+            };
+            let mut absent = fixture(case, now);
+            fixture_smc_knob_strip(&mut absent, now);
+            let shown = render_text(absent);
+            for cue in ["No A1", "Alt+N", "setup", "F1"] {
+                assert!(shown.contains(cue), "{cue}: {shown}");
+            }
+            assert!(!shown.contains("F7"), "{shown}");
+
+            let mut app = fixture(case, now);
+            add_pattern_step(&mut app, Mode::PatternStepEmpty);
+            app.pattern_view.edit = false;
+            assert!(render_text(app).contains("F7"));
+
+            let make_setup = || {
+                let mut setup = fixture(case, now);
+                fixture_smc_knob_strip(&mut setup, now);
+                setup.pattern_panel = Some(0);
+                setup.panel.reveal("SMC-PAD-Master offline");
+                setup
+            };
+            let mut setup_with_help = make_setup();
+            setup_with_help.toggle_help();
+            let rows = setup_with_help.full_help_keys(&keymap, true);
+            assert_eq!(
+                rows.first().map(|(_, label)| label.as_str()),
+                Some("A1 SETUP")
+            );
+            assert!(
+                rows.iter()
+                    .any(|(_, label)| label == "Select an A1 setting.")
+            );
+            assert!(rows.iter().any(|(_, label)| label == "Close A1 Setup."));
+            assert!(!rows.iter().any(|(keys, _)| {
+                keys.split_whitespace()
+                    .any(|key| matches!(key, "Bksp" | "Ctrl+C" | "Ctrl+X" | "F7"))
+            }));
+            let help = render_text(setup_with_help);
+            assert!(help.contains("Close A1 Setup."), "{help}");
+            assert!(help.contains("Alt+N/Enter/Esc close"), "{help}");
+            assert!(!help.contains("Bksp clear"), "{help}");
+            assert!(!help.contains("PANEL │ HELP"), "{help}");
+
+            let shown = render_text(make_setup());
+            assert!(
+                shown.contains("A1 SETUP") && shown.contains("Enter/Esc close"),
+                "{shown}"
+            );
+            assert!(!shown.contains("Bksp clear"), "{shown}");
+            if size.0 == 80 {
+                assert!(
+                    !shown.contains("PATTERN actions") && !shown.contains("BANKS · pads"),
+                    "{shown}"
+                );
+            }
+        }
+    }
+
+    /// Scenario "A1 clear question hides underlying edit help".
+    #[test]
+    fn a1_clear_question_hides_underlying_edit_help() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewStraight,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            fixture_smc_knob_strip(&mut app, now);
+            let port = "SMC-PAD-Master offline";
+            let (producer, _consumer) = rtrb::RingBuffer::new(1);
+            let (midi, worker) = midi::Midi::recorded(
+                app.profiles.clone(),
+                producer,
+                Arc::new(engine::rt::ProjectState::default()),
+                Arc::new(midi::Shared::default()),
+            );
+            midi.recorded_connect(port);
+            midi.recorded_fence();
+            for event in midi.events.try_iter() {
+                app.input_sources.observe(&event, now);
+            }
+            drop(midi);
+            worker.join().unwrap();
+            app.panel.reveal(port);
+            app.pattern_panel = Some(crate::pattern_record::CLEAR_ROW);
+            app.apply(input::Action::PatternClear);
+            let shown = render_app(case, &keymap, app, now)
+                .1
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            for cue in ["Enter: clear", "Esc: keep", "P1: keep", "P4: clear"] {
+                assert!(shown.contains(cue), "{cue}: {shown}");
+            }
+            assert!(!shown.contains("Bksp clear"), "{shown}");
+            assert!(!shown.contains("mark: off"), "{shown}");
+        }
+    }
+
     /// Scenario "Compact A1 panel and picker stay readable".
     #[test]
     fn compact_a1_panel_and_picker_stay_readable() {
@@ -3938,7 +4066,14 @@ L="none"
                 .iter()
                 .map(|cell| cell.symbol())
                 .collect();
-            assert!(footer.contains("◀ ▶"), "{footer}");
+            if mode == Mode::PatternStepStraight {
+                assert!(
+                    footer.contains("hit a pad to add or remove · Esc close"),
+                    "{footer}"
+                );
+            } else {
+                assert!(footer.contains("◀ ▶"), "{footer}");
+            }
             for cue in cues {
                 assert!(footer.contains(cue), "{cue}: {footer}");
             }

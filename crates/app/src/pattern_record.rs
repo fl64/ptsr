@@ -1242,14 +1242,14 @@ impl crate::App {
         let step = match state.phase {
             Phase::CountIn => {
                 let back = if smc {
-                    let hold_panel = self.midi_gestures.smc_pad_bank_opens_panel
-                        && self
-                            .help_overlay
-                            .controller
-                            .smc_status
-                            .as_ref()
-                            .is_some_and(|(ready, _)| *ready);
-                    Some(if hold_panel { "PAD BANK+P1" } else { "P1" }.into())
+                    Some(
+                        if self.smc_panel_hold_available() {
+                            "PAD BANK+P1"
+                        } else {
+                            "P1"
+                        }
+                        .into(),
+                    )
                 } else {
                     binding(Action::Back)
                 };
