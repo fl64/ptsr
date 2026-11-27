@@ -165,6 +165,7 @@ The grid marks the selected time column. Playback has a separate mark.
 | Move one step | Left/Right or J/L (1) | Turn E1 one detent |
 | Move one bar in the overview | Up/Down or I/K (1) | Close the panel, then press LEFT or RIGHT (1 per bar) |
 | Enter Step Edit at the selected step | F7 (1) | Hold PAD BANK, press P6 Edit Steps (2) |
+| Select the previous or next hit | I/K or Up/Down (1) | Hold PAD BANK, press P14 or P15 (2) |
 | Add or remove a hit | Press the pad key (1) | Release PAD BANK. Press the playing pad (1) |
 | Undo the edit | Ctrl+Z (1) | Hold PAD BANK, press P2 Undo (2) |
 | Return to the overview at the same step | Esc (1) | Hold PAD BANK, press P1 Back (2) |

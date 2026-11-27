@@ -343,6 +343,12 @@ In the A1 overview, press J/L or Left/Right to move one step. Press I/K or
 Up/Down to move one bar. On SMC-PAD, turn E1 for a step. Close the command
 panel to use LEFT and RIGHT for bars. Press F2 to edit a pad.
 
+### Select one hit in Step Edit (156)
+
+If a step contains more than one hit on the selected pad, press I/K to
+select one. On the SMC-PAD panel, use P14 for the previous hit and P15 for
+the next hit. The hit number and velocity are visible with the panel open.
+
 ### Change 98 — `98-pattern-screen`
 
 The [pattern track](#pattern-track-owner-review-2026-11-27) replaces the screen sketch and the keys of this section.
