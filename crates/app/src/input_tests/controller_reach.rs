@@ -2558,7 +2558,7 @@ fn reach_result(drive: &Drive, frame: &Frame) -> (Seen, String, Vec<String>) {
 }
 
 /// Scenario "Every current controller action has a keyboard route" (controller-reach).
-/// The matrix compares 55 action cells through production keyboard and MIDI input, so it is slow.
+/// The matrix compares 57 action cells through production keyboard and MIDI input, so it is slow.
 #[test]
 fn shipped_panel_cells_match_keyboard_results_in_each_view() {
     use panel::{Config, View};
@@ -2671,7 +2671,7 @@ fn shipped_panel_cells_match_keyboard_results_in_each_view() {
             }
         }
     }
-    assert_eq!(checked + special, 55);
+    assert_eq!(checked + special, 57);
 
     for view in ALL_VIEWS {
         let sound = Arc::new(Sample::mono(vec![0.2; 4_800]));
@@ -3863,7 +3863,7 @@ fn the_panel_shows_only_while_pad_bank_is_held() {
 }
 
 /// Every shipped action cell gives the same result through a PAD BANK hold (131)
-/// as through the second-bank route. The matrix drives 55 cells, so it is slow.
+/// as through the second-bank route. The matrix drives 57 cells, so it is slow.
 #[test]
 fn shipped_panel_cells_act_the_same_during_a_hold() {
     let config = panel::Config::parse(
@@ -3892,7 +3892,7 @@ fn shipped_panel_cells_act_the_same_during_a_hold() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 55);
+    assert_eq!(checked, 57);
 }
 
 /// Scenario "A hold takes LEFT and RIGHT over saved roles" (controller-reach).
