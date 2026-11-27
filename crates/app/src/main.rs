@@ -545,11 +545,10 @@ struct App {
     chop_loading: Option<PathBuf>,
     keymap_warnings: std::collections::VecDeque<String>,
     keymap_warning_shown: bool,
-    /// The splash in the wave strip at start (73): `true` until the first sound — a note
-    /// that plays or a recording that starts.
+    /// The splash stays until a pad plays or recording starts.
     splash: bool,
-    /// The running recording: its source and when it started.
     recording: Option<(u8, Instant)>,
+    midi_mic_hold: Option<(String, input::midi::Key, Instant)>,
     /// Test only: every command the app sent, for asserting on the engine's input.
     #[cfg(test)]
     sent: Vec<Command>,
@@ -1306,9 +1305,9 @@ fn main() -> std::io::Result<()> {
         chop_loading: None,
         keymap_warnings: Default::default(),
         keymap_warning_shown: false,
-        // the splash shows from the first frame on and lives until the first sound (73)
         splash: true,
         recording: None,
+        midi_mic_hold: None,
         #[cfg(test)]
         sent: Vec::new(),
     };
@@ -4271,6 +4270,7 @@ mod tests {
             keymap_warning_shown: false,
             splash: false,
             recording: None,
+            midi_mic_hold: None,
             #[cfg(test)]
             sent: Vec::new(),
         }
