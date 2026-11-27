@@ -4,8 +4,8 @@
 - [x] Keep a pending Files preview from starting after STOP.
 - [x] Show the preview step in the recording hint.
 - [x] Test the saved take through keyboard and recorded SMC-PAD input.
-- [ ] Save the take after the pause if the second STOP arrives before pause feedback.
-- [ ] Test two STOP presses before the pause with keyboard and raw SMC-PAD input.
+- [x] Save the take after the pause if the second STOP arrives before pause feedback.
+- [x] Test two STOP presses before the pause with keyboard and raw SMC-PAD input.
 
 ## Verification
 

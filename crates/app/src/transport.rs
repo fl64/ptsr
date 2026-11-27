@@ -9,12 +9,19 @@ use std::time::{Duration, Instant};
 
 pub(super) const TEMPO_TARGET: u64 = u64::MAX - 1;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OutputStop {
+    Pausing,
+    SaveAfterPause,
+}
+
 pub(super) struct State {
     pub bpm: f64,
     pub metronome: bool,
     pub(super) taps: VecDeque<Instant>,
     pub(super) tap_input_at: Option<Instant>,
     accepted: Cell<(u64, Snapshot)>,
+    output_stop: Option<OutputStop>,
     pub(super) feedback: Option<(usize, u64)>,
     pub(super) pattern_hits: [u64; engine::PADS],
     pub(super) dropped_hits: u64,
@@ -28,6 +35,7 @@ impl Default for State {
             taps: VecDeque::new(),
             tap_input_at: None,
             accepted: Cell::new((0, Snapshot::default())),
+            output_stop: None,
             feedback: None,
             pattern_hits: [0; engine::PADS],
             dropped_hits: 0,
@@ -67,17 +75,7 @@ impl App {
             return;
         }
         if stopping_output {
-            let preview_playing = self.preview_frame().is_some();
-            if preview_playing || self.screen == Screen::Files {
-                self.stop_preview();
-            }
-            if !preview_playing {
-                if self.transport_state().playing {
-                    self.send(Command::TransportStopContext);
-                } else {
-                    self.audio_record_action(Action::RecordOutputToggle);
-                }
-            }
+            self.stop_output_recording();
             return;
         }
         match (self.screen, action) {
@@ -118,6 +116,62 @@ impl App {
             (_, Action::PlayContext) => self.send(Command::TransportPlayContext),
             (_, Action::StopContext) => self.send(Command::TransportStopContext),
             _ => {}
+        }
+    }
+
+    fn stop_output_recording(&mut self) {
+        let preview_playing = self.preview_frame().is_some();
+        if preview_playing || self.screen == Screen::Files {
+            self.stop_preview();
+        }
+        if preview_playing || self.recording.is_none() {
+            return;
+        }
+        if !self.transport_state().playing {
+            self.record_stop();
+        } else if self.transport.output_stop.is_some() {
+            // A second context stop would reset the position after the first pauses A1.
+            self.transport.output_stop = Some(OutputStop::SaveAfterPause);
+        } else if self.try_send(Command::TransportStopContext) {
+            self.transport.output_stop = Some(OutputStop::Pausing);
+        }
+    }
+
+    pub(super) fn observe_transport_command(&mut self, command: &Command) {
+        match command {
+            Command::TransportStop | Command::TransportStopContext => self.pattern_stop_requested(),
+            Command::TransportToggle | Command::TransportPlayContext => {
+                self.finish_output_stop();
+                self.clear_output_stop();
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn finish_audio_feedback(&mut self) {
+        self.finish_manual_save();
+        self.finish_output_stop();
+    }
+
+    pub(super) fn clear_output_stop(&mut self) {
+        self.transport.output_stop = None;
+    }
+
+    fn finish_output_stop(&mut self) {
+        if self.transport.output_stop.is_none() {
+            return;
+        }
+        let Some(audio) = self.audio_alive() else {
+            return;
+        };
+        let epoch = audio.project.epoch.load(Acquire);
+        let paused = audio.project.ready.load(Acquire) == epoch
+            && audio
+                .stats
+                .transport(epoch)
+                .is_some_and(|state| !state.playing);
+        if paused && self.transport.output_stop.take() == Some(OutputStop::SaveAfterPause) {
+            self.record_stop();
         }
     }
 
