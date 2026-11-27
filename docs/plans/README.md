@@ -384,7 +384,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | 97 | What is one undo step of recording? | One recording pass, from record on to record off |
 | 97 | Stop: do one-shot tails ring out? | Yes. Gate notes get their release |
 | 98 | 32 steps per page, or a 1/16 ↔ 1/32 switch with 16 steps? | The switch, with two pages per bar at 1/32 |
-| Pattern track | The six pattern track questions: words, step edit, undo, Alt chords, knob 2 and Help | Yes to all six on 2026-11-27. The rows are in [UI-UX.md §6](UI-UX.md#6-owner-decisions-before-implementation). The metronome key is still open there |
+| Pattern track | The six pattern track questions: words, step edit, undo, Alt chords, knob 2 and Help | Yes to all six on 2026-11-27. The rows are in [UI-UX.md §6](UI-UX.md#6-owner-decisions-before-implementation). The metronome stays on `Alt+M` |
 | 99 | How many patterns play at the same time before a launcher exists? | One |
 | 99 | Default slot switch boundary | 8 bars |
 | 102 | Pad fit default for a new slice | Off. The owner enables it |

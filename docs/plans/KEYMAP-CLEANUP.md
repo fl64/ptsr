@@ -183,7 +183,7 @@ Change `pattern-step-input` binds them. Use right-half keys. Common work needs n
 | `U` / `O` | Previous or next bar page |
 | `Y` / `H` | Finer or coarser view grid (one column, as parts and hits on Chop) |
 | `N` | Focus on the setup line |
-| `M` | Metronome on or off (see conflict 2) |
+| `Alt+M` | Metronome on or off, on all screens (no change, see conflict 2) |
 | `B` | Tap tempo |
 | `Backspace` | Delete the hit at the cursor. Held with a pad: erase that pad (as `Alt+E` now) |
 | `Ctrl+Backspace` | Clear the selected row, after a question |
@@ -201,8 +201,8 @@ Conflicts with the rules of §2 and the current `config/keymap.toml`:
    Clearing a row is a delete. Give the action a name that ends in `delete`, or add it to
    the allowed list of the consistency test with its reason.
 2. `M` puts a mark on Pads and a cut on Chop (rule 3). A metronome on `M` breaks rule 3.
-   `Alt+M` already toggles the metronome on all screens. Ask the owner before the change.
-   Default: keep `Alt+M` and leave `M` free on the pattern screen.
+   `Alt+M` already toggles the metronome on all screens. The owner decision of 2026-11-27:
+   keep `Alt+M` and leave `M` free on the pattern screen.
 3. `U` / `O` turn banks on screens with a pad grid. The pattern screen has no pad grid,
    so `U` / `O` move bar pages. `PageUp` / `PageDown` still turn banks, also in pads = sounds.
    `Tab` switches the meaning of the pads. Rule 3 gives `Tab` the next page or group.

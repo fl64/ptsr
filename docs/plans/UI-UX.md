@@ -276,7 +276,7 @@ Do not run two active behavior changes at once.
 | 3.1 | Remove the old Alt chords after one release? | Yes. Owner default, 2026-11-27. |
 | 3.1 | Does SMC-PAD knob 2 select the row in step edit? | Yes. Owner default, 2026-11-27. |
 | 3.1 | Does Help open on the tasks of the current screen? | Yes. Owner default, 2026-11-27. |
-| 3.1 | Metronome on `M` breaks the mark-key rule. Which key? | Keep `Alt+M`. Not asked yet. |
+| 3.1 | Metronome on `M` breaks the mark-key rule. Which key? | Keep `Alt+M`. Owner decision, 2026-11-27. |
 | 3.2 | Does Pads show a mini pattern lane when a pattern exists? | Yes. |
 | 3.2 | Is source the default strip view on F2 while playing? | Yes. |
 | 3.2 | Does source focus follow the last hit or the selected pad? | Last hit, with a pin for the selected pad. |
