@@ -12,6 +12,96 @@ fn pattern(hits: Vec<[u32; 4]>) -> session::PatternState {
     }
 }
 
+/// Scenario "Overview browses cells and bars with both inputs".
+#[test]
+fn overview_browses_cells_and_bars_with_both_inputs() {
+    const PORT: &str = "SINCO SMC-PAD-Master 28:1";
+    let mut keyboard = Drive::new();
+    let mut smc = Drive::smc_offline();
+    smc.midi().recorded_smc_setup();
+    for drive in [&mut keyboard, &mut smc] {
+        drive.app.pads.pattern = Some(pattern(vec![[0, 0, 100, 0]]));
+        drive.tap(KeyCode::F(5), M::NONE);
+    }
+    keyboard.tap(KeyCode::Right, M::NONE);
+    smc.bytes(PORT, &[0xb0, 30, 65]);
+    smc.frame();
+    assert_eq!(keyboard.app.pattern_view.browse_cell, Some(1));
+    assert_eq!(smc.app.pattern_view.browse_cell, Some(1));
+    keyboard.tap(KeyCode::Char('k'), M::NONE);
+    smc.bytes(PORT, &[0xb0, 26, 127]);
+    smc.bytes(PORT, &[0xb0, 26, 0]);
+    smc.frame();
+    let next_bar = keyboard.app.pattern_view.division.cells_per_bar() as usize;
+    assert_eq!(keyboard.app.pattern_view.browse_cell, Some(next_bar));
+    assert_eq!(smc.app.pattern_view.browse_cell, Some(next_bar));
+    assert_eq!(keyboard.app.pads.pattern, smc.app.pads.pattern);
+    let rows = keyboard.app.full_help_keys(&keyboard.keymap, true);
+    for (key, description) in [("L", "Select a time cell."), ("K", "Browse one bar.")] {
+        assert!(
+            rows.iter()
+                .any(|(keys, text)| keys.contains(key) && text == description)
+        );
+    }
+    assert!(
+        rows.iter()
+            .any(|(_, text)| text.contains("LEFT and RIGHT move a bar"))
+    );
+}
+
+/// Scenario "Overview does not change the selected pad".
+#[test]
+fn overview_does_not_change_the_selected_pad() {
+    let mut drive = Drive::new();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.2; 4096])), "tone");
+    drive.app.pads.pattern = Some(pattern(vec![[0, 0, 100, 0]]));
+    drive.bind_action(89, "pad.clear");
+    drive.bind_action(90, "pad.edit_only");
+    drive.bind_action(91, "pad.volume");
+    drive.tap(KeyCode::F(5), M::NONE);
+    let pad = drive.app.pads.snapshot(0);
+    let raw = drive.app.pads.pattern.clone();
+    for (code, modifiers) in [
+        (KeyCode::Enter, M::NONE),
+        (KeyCode::Backspace, M::NONE),
+        (KeyCode::Tab, M::NONE),
+        (KeyCode::Char('h'), M::NONE),
+        (KeyCode::Char('m'), M::NONE),
+        (KeyCode::Char('c'), M::CONTROL),
+        (KeyCode::Char('x'), M::CONTROL),
+        (KeyCode::Char('g'), M::ALT),
+    ] {
+        let frame = drive.tap(code, modifiers);
+        assert!(frame.commands().is_empty(), "{code:?}");
+        assert_eq!(drive.last_notice().text, "F2 opens Pads for pad edits.");
+    }
+    for cc in 89..=91 {
+        drive.bytes(PAD_PORT, &[0xb0, cc, 127]);
+        assert!(drive.frame().commands().is_empty(), "CC {cc}");
+    }
+    assert!(!drive.app.edit);
+    assert!(drive.app.ask.is_none());
+    assert!(drive.app.pads.marked.is_empty());
+    assert!(drive.app.copy_in_hand.is_none() && drive.app.pad_in_hand.is_none());
+    assert!(drive.app.pads.snapshot(0) == pad);
+    assert_eq!(drive.app.pads.pattern, raw);
+    let rows = drive.app.full_help_keys(&drive.keymap, true);
+    assert!(
+        rows.iter()
+            .any(|(_, text)| text == "Return to Pads to edit pads.")
+    );
+    for (keys, _) in &rows {
+        for key in ["Tab", "Bksp", "Ctrl+C", "Ctrl+X", "Alt+G"] {
+            assert!(!keys.split_whitespace().any(|shown| shown == key), "{keys}");
+        }
+    }
+    assert_full_hit(&drive.pad_press(Source::Keyboard, 0), 0);
+    assert_only_release(&drive.pad_release(Source::Keyboard, 0), 0);
+    drive.tap(KeyCode::F(2), M::NONE);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.edit);
+}
+
 /// Scenario "Step input adds at an empty cursor without sound".
 #[test]
 fn step_input_adds_keyboard_and_raw_midi_velocity_without_sound() {
