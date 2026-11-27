@@ -541,6 +541,90 @@ fn a1_tells_the_owner_how_to_close_the_current_mode() {
     }
 }
 
+/// Scenario "Step Edit and Setup stay in order" (patterns).
+#[test]
+fn step_edit_and_setup_stay_in_order() {
+    let mut drive = a1_drive();
+    let note = |label| panel_note(slot_of(panel::View::Pattern, label));
+    let back = panel_note(13);
+    drive.tap(KeyCode::F(7), M::NONE);
+    drive.tap(KeyCode::Down, M::NONE);
+    let cursor = drive.app.pattern_view.cursor_cell;
+    let bank = drive.app.pads.bank;
+    let event = drive
+        .app
+        .pattern_view
+        .selected_event
+        .as_ref()
+        .unwrap()
+        .event;
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    assert_eq!(drive.last_notice().text, "Close Step Edit first.");
+    assert!(drive.app.pattern_panel.is_none());
+    hold(&mut drive, true);
+    assert!(
+        drive.app.panel_snapshot().unwrap().dim
+            [usize::from(slot_of(panel::View::Pattern, "A1 setup") - 1)]
+    );
+    cell(&mut drive, note("A1 setup"));
+    assert_eq!(drive.last_notice().text, "Close Step Edit first.");
+    assert!(line(&drive).starts_with("STEP "));
+
+    drive.tap(KeyCode::F(1), M::NONE);
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    assert!(drive.app.help_open);
+    hold(&mut drive, true);
+    cell(&mut drive, back);
+    assert!(!drive.app.help_open);
+    assert!(drive.app.pattern_view.edit);
+    cell(&mut drive, note("clear A1"));
+    assert!(matches!(drive.app.ask, Some(Ask::ClearPattern { .. })));
+    cell(&mut drive, back);
+    assert!(drive.app.ask.is_none());
+    assert!(drive.app.pattern_view.edit);
+    assert_eq!(drive.app.pattern_view.cursor_cell, cursor);
+    assert_eq!(drive.app.pads.bank, bank);
+    assert_eq!(
+        drive
+            .app
+            .pattern_view
+            .selected_event
+            .as_ref()
+            .unwrap()
+            .event,
+        event
+    );
+    cell(&mut drive, back);
+    assert!(!drive.app.pattern_view.edit);
+    assert!(drive.app.pattern_view.overview);
+
+    hold(&mut drive, true);
+    cell(&mut drive, note("A1 setup"));
+    assert_eq!(drive.app.pattern_panel, Some(0));
+    drive.tap(KeyCode::F(7), M::NONE);
+    assert_eq!(drive.last_notice().text, "Close A1 Setup first.");
+    assert!(!drive.app.pattern_view.edit);
+    assert!(
+        drive.app.panel_snapshot().unwrap().dim
+            [usize::from(slot_of(panel::View::Pattern, "edit steps") - 1)]
+    );
+    cell(&mut drive, note("edit steps"));
+    assert_eq!(drive.last_notice().text, "Close A1 Setup first.");
+    assert!(line(&drive).starts_with("A1 SETUP"));
+
+    cell(&mut drive, note("clear A1"));
+    assert!(drive.app.ask.is_some());
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.ask.is_none());
+    assert_eq!(drive.app.pattern_panel, Some(0));
+    hold(&mut drive, false);
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.pattern_panel.is_none());
+    assert!(drive.app.pattern_view.overview);
+    assert_eq!(drive.app.pattern_view.cursor_cell, cursor);
+    assert_eq!(drive.app.pads.bank, bank);
+}
+
 /// Scenario "Chop names slice pages before an assign" (screen-layout).
 #[test]
 fn chop_names_slice_pages_before_an_assign() {

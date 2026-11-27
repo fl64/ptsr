@@ -57,6 +57,7 @@ impl App {
                     ))
                 })
             }
+            (View::Pattern, Action::PatternControls) => self.pattern_setup_refusal().and_then(why),
             (
                 View::Pattern,
                 Action::PatternStepEdit | Action::PatternErase | Action::PatternClear,
