@@ -1778,7 +1778,16 @@ impl App {
             }
             return Some(status.into());
         }
-        if let Some(notice) = self.notices.current_at(now) {
+        let current = self.notices.current_at(now);
+        if current.is_none_or(|notice| notice.level < Level::Warn)
+            && self.keymap_warnings.is_empty()
+            && !self.input_sources.last_is_smc()
+            && !self.key_notice_blocked()
+            && let Some(cue) = self.tap_tempo_hint_at(now)
+        {
+            return Some(cue.into());
+        }
+        if let Some(notice) = current {
             return Some(notice.text.clone());
         }
         if let Some(path) = &self.chop_loading {
@@ -1888,6 +1897,7 @@ impl App {
         } else {
             self.notices
                 .current()
+                .filter(|entry| notice.as_deref() == Some(entry.text.as_str()))
                 .map(|entry| entry.level)
                 .or_else(|| self.keymap_warning_shown.then_some(Level::Warn))
         };

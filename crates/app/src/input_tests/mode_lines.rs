@@ -170,6 +170,7 @@ fn the_copy_line_keeps_its_source_after_a_bank_change() {
 #[test]
 fn tap_tempo_confirms_the_first_tap() {
     let mut drive = a1_drive();
+    let bpm = drive.app.transport.bpm;
     hold(&mut drive, true);
     cell(
         &mut drive,
@@ -177,8 +178,49 @@ fn tap_tempo_confirms_the_first_tap() {
     );
     hold(&mut drive, false);
     assert_eq!(line(&drive), "TAP · 1 hit · tap again");
-    let bpm = drive.app.transport.bpm;
     assert_eq!(bpm, drive.app.transport.bpm, "one tap keeps the tempo");
+}
+
+#[test]
+fn keyboard_tap_cue_follows_the_current_sequence() {
+    let mut drive = Drive::offline();
+    drive.tap(KeyCode::F(5), M::NONE);
+    let before = drive.app.transport.bpm;
+    let tap = |drive: &mut Drive| drive.tap(KeyCode::Char('b'), M::ALT);
+    tap(&mut drive);
+    let first = drive.app.transport.taps[0];
+    let cue = Some("TAP · 1 hit · tap again");
+    assert_eq!(drive.app.notice_at(first).as_deref(), cue);
+    assert_eq!(drive.app.transport.bpm, before);
+
+    drive.app.transport.tap_input_at = Some(first + Duration::from_millis(100));
+    drive.app.apply(Action::TapTempo);
+    assert_eq!(drive.app.transport.taps.len(), 1);
+    assert_eq!(drive.app.transport.taps[0], first);
+    assert_eq!(
+        drive
+            .app
+            .notice_at(first + Duration::from_secs(2))
+            .as_deref(),
+        cue
+    );
+    assert_eq!(
+        drive.app.notice_at(first + Duration::from_millis(2001)),
+        None
+    );
+
+    drive.app.transport.taps[0] = Instant::now() - Duration::from_millis(400);
+    drive.app.transport.tap_input_at = None;
+    tap(&mut drive);
+    assert!(drive.app.notice().unwrap().starts_with("Tempo "));
+    drive.app.transport.taps[1] = Instant::now() - Duration::from_millis(2100);
+    tap(&mut drive);
+    assert_eq!(drive.app.frame_notice().as_deref(), cue);
+    assert_eq!(drive.app.frame_notice_level, None);
+
+    drive.tap(KeyCode::F(2), M::NONE);
+    assert!(drive.app.transport.taps.is_empty());
+    assert_ne!(drive.app.notice().as_deref(), cue);
 }
 
 /// Scenario "A1 shows the count-in and the recording" (screen-layout).

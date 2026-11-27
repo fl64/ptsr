@@ -161,7 +161,7 @@ If `stop.context` pauses during A1 CountIn, it SHALL cancel CountIn with transpo
 Pattern SHALL offer Tap Tempo on its action page, P8. Alt+B SHALL use
 the same action. Tempo SHALL use the mean interval of up to four taps.
 A gap longer than two seconds SHALL start a new sequence.
-The first tap SHALL leave tempo as it was, and the mode line SHALL say «TAP · 1 hit · tap again». Intervals under 200 ms SHALL be ignored.
+The first tap SHALL keep the tempo and show «TAP · 1 hit · tap again». The program SHALL ignore intervals under 200 ms.
 The program SHALL use MIDI receipt times. Tap Tempo SHALL act only in Pattern
 or its controls.
 

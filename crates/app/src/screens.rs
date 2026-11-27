@@ -3770,6 +3770,7 @@ L="none"
     }
 
     /// Scenario "A1 tap tempo uses the notice row".
+    /// Scenario "A1 shows the first keyboard tempo tap without a controller".
     #[test]
     fn a1_tap_tempo_uses_the_notice_row() {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
@@ -3779,16 +3780,25 @@ L="none"
                 mode: Mode::PatternOverviewStraight,
                 size,
             };
-            for warning in [None, Some("Pattern warning")] {
+            for (second_tap, warning) in [
+                (false, None),
+                (true, None),
+                (false, Some("Pattern warning")),
+                (true, Some("Pattern warning")),
+            ] {
                 let now = Instant::now();
                 let mut app = fixture(case, now);
                 if let Some(text) = warning {
                     app.post_system_notice(Level::Warn, (text.into(), now));
                 }
+                let bpm = app.transport.bpm;
                 app.transport.tap_input_at = Some(now - Duration::from_millis(400));
                 app.apply(Action::TapTempo);
-                app.transport.tap_input_at = Some(now);
-                app.apply(Action::TapTempo);
+                assert_eq!(app.transport.bpm, bpm);
+                if second_tap {
+                    app.transport.tap_input_at = Some(now);
+                    app.apply(Action::TapTempo);
+                }
                 let after = Instant::now();
                 assert!(app.current_value_at(after).is_none());
                 let (_, buffer) = render_app(case, &keymap, app, after);
@@ -3803,7 +3813,11 @@ L="none"
                     "{}",
                     rows[4]
                 );
-                let notice = warning.unwrap_or("Tempo 150.0 BPM");
+                let notice = warning.unwrap_or(if second_tap {
+                    "Tempo 150.0 BPM"
+                } else {
+                    "TAP · 1 hit · tap again"
+                });
                 assert!(rows[size.1 as usize - 4].contains(notice), "{rows:?}");
             }
         }
