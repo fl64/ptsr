@@ -318,7 +318,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
 /// The detail line and, under it, the setup line.
 fn footer(frame: &mut Frame, area: Rect, view: &PatternOverview, y: u16) {
     let width = area.width as usize;
-    if area.height < 4 || y + 1 >= area.bottom() + 1 {
+    if area.height < 4 || y >= area.bottom() {
         return;
     }
     let parts = [
