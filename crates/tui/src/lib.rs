@@ -41,7 +41,8 @@ pub use kitty::{Shown, WaveImage, is_graphics_ack};
 use pads::draw as pads;
 pub use pads::{
     BigView, CommandPanel, PadParam, PadShapeView, PadView, SourceRange, SourceSample, SourceStrip,
-    SourceVoice, command_panel, command_panel_area, command_panel_in, device_number,
+    SourceVoice, command_panel, command_panel_area, command_panel_for, command_panel_in,
+    device_number, panel_overlay_area,
 };
 pub use pattern::{PatternOverview, PatternStrip};
 use pattern::{overview_page_layout, pattern_overview, pattern_strip};
@@ -1032,8 +1033,8 @@ fn draw_inner(
     images: Option<&mut Vec<WaveImage>>,
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
-    // the help row explains Pitch Gate only where it acts: a linked slice with it on;
-    // elsewhere the panel and F1 keep the state and the row goes back to ordinary help
+    let content = feedback.screen_content_area(frame.area(), screen, help);
+    let compact = content == frame.area() && feedback.content_area(frame.area()) != content;
     let pitch_gate = match screen {
         Screen::Pads(pads) if pads.overview.is_none() => pads
             .pads
@@ -1044,14 +1045,14 @@ fn draw_inner(
     };
     let mut help_rows = help_lines_at(
         help.groups,
-        knob_strip::help_width(frame.area(), feedback),
-        HELP_ROWS as usize - usize::from(pitch_gate.is_some()),
+        knob_strip::help_width(frame.area(), feedback, compact),
+        HELP_ROWS as usize - usize::from(compact || pitch_gate.is_some()),
     );
     if let Some(pitch_gate) = pitch_gate {
         help_rows.resize(HELP_ROWS as usize - 1, Line::default());
         help_rows.push(Line::from(format!(" {}", pitch_gate.help())).fg(DIM));
     }
-    let [top, body, notice, help_area] = frame_areas(feedback.content_area(frame.area()));
+    let [top, body, notice, help_area] = frame_areas(content);
 
     match cache {
         Some(cache) => frame.render_widget(cache.row(s, feedback, top.width), top),
@@ -1080,8 +1081,6 @@ fn draw_inner(
         _ => {}
     }
     match screen {
-        // the project picker (11) is modal: it takes the body instead of the screen,
-        // the help line below stays as on any screen
         Screen::ProjectPicker(p) => frame.render_widget(project_picker(p, s, body.width), body),
         Screen::Pads(p) => match &p.overview {
             Some(overview) => pattern_overview(frame, body, p, overview),
@@ -1092,7 +1091,7 @@ fn draw_inner(
         Screen::Files(f) => files(frame, body, f, s),
         Screen::Chop(c) => chop(frame, body, c, s, images),
     }
-    knob_strip::draw_help(frame, help_area, help, feedback, help_rows);
+    knob_strip::draw_help(frame, help_area, help, feedback, help_rows, compact);
     match help.full {
         Some(FullHelp::Keys(rows)) => full_help(frame, body, rows),
         Some(FullHelp::KeyPage {

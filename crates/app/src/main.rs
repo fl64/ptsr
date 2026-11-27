@@ -1562,8 +1562,6 @@ fn main() -> std::io::Result<()> {
             tilde(&app.paths.projects.display().to_string()),
             tilde(&app.paths.samples.display().to_string()),
         );
-        // the project picker (11) is modal: while it is open the body shows it instead of
-        // the screen, so the view replaces the whole screen on the display
         let project_picker = app.picker_view();
         let screen = match project_picker {
             Some(p) => tui::Screen::ProjectPicker(p),
@@ -1670,9 +1668,7 @@ fn main() -> std::io::Result<()> {
             kitty,
         );
         let groups = match (&app.project_picker, mods.get()) {
-            // the learn mode speaks in its own lines, the columns step aside (52)
-            _ if app.screen_learn.is_some() || app.input_sources.last_is_smc() => Vec::new(),
-            // the picker takes the keys: the line says its own (35)
+            _ if app.hide_keyboard_help() => Vec::new(),
             (Some(p), _) => picker_help(p.naming.is_some()),
             (None, Some(m)) => modifier_groups(&keymap, app.screen, m, app.ui.hide_pads),
             (None, None) if app.pattern_view.overview => as_combos(groups),
@@ -1706,11 +1702,14 @@ fn main() -> std::io::Result<()> {
         let mut want = Vec::new();
         let mut blockers = Vec::new();
         let drawn = term.try_draw(|f| -> std::io::Result<()> {
-            let content = feedback.content_area(f.area());
+            let content = feedback.screen_content_area(f.area(), &screen, &help);
             blockers = tui::overlay_areas(content, &screen, &help, value);
-            if panel.is_some() {
-                blockers.push(tui::command_panel_area(content));
-            }
+            blockers.extend(tui::panel_overlay_area(
+                content,
+                &screen,
+                &help,
+                panel.as_ref(),
+            ));
             if pattern_controls.is_some() {
                 blockers.push(tui::pattern_controls_area(content, &screen));
             }
@@ -1726,7 +1725,7 @@ fn main() -> std::io::Result<()> {
                 graphics.then_some(&mut want),
             );
             if let Some(panel) = &panel {
-                tui::command_panel_in(f, content, panel, question.as_ref());
+                tui::command_panel_for(f, content, &screen, panel, &help);
             }
             if let Some(value) = value {
                 tui::value_popup(f, value);

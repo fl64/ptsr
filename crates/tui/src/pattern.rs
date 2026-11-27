@@ -169,6 +169,10 @@ pub(super) fn pattern_strip(frame: &mut Frame, area: Rect, pattern: &PatternStri
     }
 }
 
+pub(super) fn compact_a1(area: Rect, screen: &Screen<'_>) -> bool {
+    area.width <= 80 && matches!(screen, Screen::Pads(pads) if pads.overview.is_some())
+}
+
 pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view: &PatternOverview) {
     if area.width < 40 || area.height == 0 {
         return;

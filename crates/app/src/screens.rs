@@ -1531,11 +1531,12 @@ fn render_app_layers(
             .draw(|frame| {
                 tui::draw_cached(frame, &status, &screen, &help, &feedback, &mut cache, None);
                 if let Some(panel) = &panel {
-                    tui::command_panel_in(
+                    tui::command_panel_for(
                         frame,
-                        feedback.content_area(frame.area()),
+                        feedback.screen_content_area(frame.area(), &screen, &help),
+                        &screen,
                         panel,
-                        question.as_ref(),
+                        &help,
                     );
                 }
                 if let Some(value) = &value {
@@ -1544,7 +1545,7 @@ fn render_app_layers(
                 if let Some(controls) = &pattern_controls {
                     tui::pattern_controls_in(
                         frame,
-                        feedback.content_area(frame.area()),
+                        feedback.screen_content_area(frame.area(), &screen, &help),
                         &screen,
                         controls,
                     );
@@ -3819,6 +3820,127 @@ L="none"
                     "TAP · 1 hit · tap again"
                 });
                 assert!(rows[size.1 as usize - 4].contains(notice), "{rows:?}");
+            }
+        }
+    }
+
+    /// Scenario "Compact A1 panel and picker stay readable".
+    #[test]
+    fn compact_a1_panel_and_picker_stay_readable() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let case = Case {
+            screen: Screen::Pads,
+            mode: Mode::PatternOverviewStraight,
+            size: (80, 26),
+        };
+        let now = Instant::now();
+        let make = || {
+            let mut app = fixture(case, now);
+            fixture_smc_knob_strip(&mut app, now);
+            app.panel.reveal("SMC-PAD-Master offline");
+            app
+        };
+        let text = |buffer: &Buffer| {
+            buffer
+                .content()
+                .chunks(80)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let (_, open) = render_app(case, &keymap, make(), now);
+        let shown = text(&open);
+        assert!(
+            shown.contains("PATTERN · A1") && shown.contains("PATTERN actions"),
+            "{shown}"
+        );
+        assert!(!shown.contains("BANKS · pads"), "{shown}");
+        assert_eq!(open[(79, 3)].symbol(), "┐", "{shown}");
+        assert!(
+            shown.contains("clear") && shown.contains("tempo"),
+            "{shown}"
+        );
+
+        let mut picker = make();
+        picker.project_picker = Some(ProjectPicker {
+            entries: vec![
+                "First take".into(),
+                "Second take".into(),
+                "Third take".into(),
+            ],
+            selected: 2,
+            naming: None,
+        });
+        let shown = text(&render_app(case, &keymap, picker, now).1);
+        assert!(
+            shown.contains("Third take") && shown.contains("Esc/P1 close"),
+            "{shown}"
+        );
+        assert!(!shown.contains("PANEL │ LIST"), "{shown}");
+
+        let mut help = make();
+        help.help_open = true;
+        let shown = text(&render_app(case, &keymap, help, now).1);
+        assert!(shown.contains("[HELP]"), "{shown}");
+        assert!(!shown.contains("PANEL │ HELP"), "{shown}");
+
+        let mut question = make();
+        question.ask_clear_pattern();
+        let shown = text(&render_app(case, &keymap, question, now).1);
+        assert!(
+            shown.contains("Clear all") && shown.contains("keep"),
+            "{shown}"
+        );
+
+        let mut closed = make();
+        closed.panel.hide();
+        closed.pattern_view.hide_empty_banks = false;
+        let shown = text(&render_app(case, &keymap, closed, now).1);
+        assert!(
+            shown.contains("BANKS · pads") && shown.contains("Record quantize"),
+            "{shown}"
+        );
+        for (index, key) in "1234QWERASDFZXCV".chars().enumerate() {
+            let row = shown.lines().nth(6 + index).unwrap();
+            assert!(row.contains(&format!(" {key} ")), "{key}: {shown}");
+        }
+    }
+
+    /// Scenario "Compact A1 keeps navigation help with MIDI".
+    #[test]
+    fn compact_a1_keeps_navigation_help_with_midi() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for (mode, cues) in [
+            (
+                Mode::PatternOverviewStraight,
+                ["bank", "view", "F1", "marks"],
+            ),
+            (
+                Mode::PatternStepStraight,
+                ["STEP EDIT", "leave", "pads", "add/remove"],
+            ),
+        ] {
+            let case = Case {
+                screen: Screen::Pads,
+                mode,
+                size: (80, 26),
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            fixture_smc_knob_strip(&mut app, now);
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let title: String = buffer.content()[80..160]
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(title.contains("bar ") && title.contains("step "), "{title}");
+            let footer: String = buffer.content()[23 * 80..]
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(footer.contains("◀ ▶"), "{footer}");
+            for cue in cues {
+                assert!(footer.contains(cue), "{cue}: {footer}");
             }
         }
     }

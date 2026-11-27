@@ -1,4 +1,4 @@
-use super::{BG, BRIGHT, CYAN, DIM, Feedback, HELP_ROWS, Help, MAGENTA, MARK, PANEL, TEXT};
+use super::{BG, BRIGHT, CYAN, DIM, Feedback, HELP_ROWS, Help, MAGENTA, MARK, PANEL, Screen, TEXT};
 use super::{Block, Frame, Line, Paragraph, Rect, Span, Style, Stylize, clip_label};
 
 /// Physical SMC-PAD knob roles, in bank and knob order.
@@ -27,10 +27,18 @@ impl Feedback {
         }
         area
     }
+
+    pub fn screen_content_area(&self, area: Rect, screen: &Screen<'_>, help: &Help<'_>) -> Rect {
+        if help.full.is_none() && super::pattern::compact_a1(area, screen) {
+            area
+        } else {
+            self.content_area(area)
+        }
+    }
 }
 
-pub(super) fn help_width(area: Rect, feedback: &Feedback) -> u16 {
-    if feedback.content_area(area) == area {
+pub(super) fn help_width(area: Rect, feedback: &Feedback, compact: bool) -> u16 {
+    if compact || feedback.content_area(area) == area {
         area.width
     } else {
         area.width - STRIP_WIDTH
@@ -43,6 +51,7 @@ pub(super) fn draw_help(
     help: &Help,
     feedback: &Feedback,
     rows: Vec<Line<'_>>,
+    compact: bool,
 ) {
     if let Some(learn) = help.learn {
         frame.render_widget(Block::new().bg(PANEL), area);
@@ -61,7 +70,23 @@ pub(super) fn draw_help(
     } else if let Some(strip) = &feedback.knob_strip
         && feedback.content_area(frame.area()) != frame.area()
     {
-        draw_strip(frame, area, strip, rows);
+        if compact {
+            let status = strip
+                .mode
+                .as_deref()
+                .or(strip.value.as_deref())
+                .or(strip.operation)
+                .unwrap_or(strip.idle);
+            let prefix = format!("◀ ▶ {} · {}  ", strip.list, strip.page);
+            let width = usize::from(area.width).saturating_sub(Span::raw(prefix.as_str()).width());
+            let line = Line::from(vec![prefix.fg(CYAN), fit_mode(status, width).fg(TEXT)]);
+            frame.render_widget(
+                Paragraph::new(std::iter::once(line).chain(rows).collect::<Vec<_>>()),
+                area,
+            );
+        } else {
+            draw_strip(frame, area, strip, rows);
+        }
     } else {
         frame.render_widget(Paragraph::new(rows), area);
     }
