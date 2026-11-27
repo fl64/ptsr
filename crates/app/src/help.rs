@@ -431,6 +431,107 @@ impl App {
         )
     }
 
+    pub(super) fn settings_hint(&self) -> &'static str {
+        let smc = self.input_sources.last_is_smc();
+        let knobs = smc && self.smc_knobs_ready();
+        if self.path_picker.is_some() {
+            return if smc {
+                "LEFT/RIGHT browses. P4 picks this folder. P1 cancels."
+            } else {
+                "I/K selects. Left/Right browses. Enter uses this folder. Esc cancels."
+            };
+        }
+        match self.settings_tab {
+            0 if knobs => "E1 selects. E2 changes and saves the selected audio value.",
+            0 => "Left/Right or SMC E2 changes and saves the selected audio value.",
+            1 if smc => "Watch the latest MIDI input. LEFT and RIGHT switch tabs.",
+            1 => "Watch the latest MIDI input. Tab switches to MIDI settings.",
+            2 if knobs => "E1 selects a row. E2 opens a group or changes a value.",
+            2 => "I/K selects a row. Left/Right opens a group or changes a value.",
+            _ if smc => "Choose opens the folder picker for the selected path.",
+            _ => "I/K selects a path. Enter opens the folder picker.",
+        }
+    }
+
+    pub(super) fn settings_key_help(&self, keymap: &Keymap) -> Vec<(String, String)> {
+        let mut rows = vec![(String::new(), "SETTINGS".into())];
+        let add = |rows: &mut Vec<(String, String)>, actions: &[Action], text: &str| {
+            let keys = actions
+                .iter()
+                .flat_map(|&action| self.help_bindings(keymap, action))
+                .collect::<Vec<_>>();
+            if !keys.is_empty() {
+                rows.push((keys.join(" "), text.into()));
+            }
+        };
+        let select = [Action::SettingsRow(-1), Action::SettingsRow(1)];
+        let change = [Action::SettingsValue(-1), Action::SettingsValue(1)];
+        let enter = [Action::SettingsLearn];
+        if self.path_picker.is_some() {
+            add(&mut rows, &select, "Select a subfolder.");
+            add(
+                &mut rows,
+                &change,
+                "Go to the parent folder or open the selected subfolder.",
+            );
+            add(
+                &mut rows,
+                &[Action::Confirm, Action::SettingsLearn],
+                "Use the current folder.",
+            );
+            add(&mut rows, &[Action::Back], "Cancel the folder picker.");
+            return rows;
+        }
+        match self.settings_tab {
+            0 => {
+                add(&mut rows, &select, "Select an audio row.");
+                add(&mut rows, &change, "Change and save the audio value.");
+            }
+            1 => rows.push((
+                "MIDI input".into(),
+                "Watch the connected devices and their latest events.".into(),
+            )),
+            2 => {
+                add(&mut rows, &select, "Select a MIDI row.");
+                add(
+                    &mut rows,
+                    &change,
+                    "Open or close a group, or change the selected value.",
+                );
+                add(
+                    &mut rows,
+                    &enter,
+                    "Open the row or save the pending MIDI binding.",
+                );
+                add(
+                    &mut rows,
+                    &[Action::SettingsClear],
+                    "Ask to clear the learned control.",
+                );
+            }
+            _ => {
+                add(&mut rows, &select, "Select the projects or samples path.");
+                add(&mut rows, &enter, "Open the folder picker.");
+            }
+        }
+        add(
+            &mut rows,
+            &[Action::SettingsTab],
+            &describe(Action::SettingsTab),
+        );
+        add(
+            &mut rows,
+            &[Action::ScreenPads, Action::ScreenSettings],
+            "Return to Pads.",
+        );
+        add(
+            &mut rows,
+            &[Action::Back, Action::HelpToggle],
+            "Close Help.",
+        );
+        rows
+    }
+
     pub(super) fn help_bindings(&self, keymap: &Keymap, action: Action) -> Vec<String> {
         let edit = self.edit_keys() || self.pattern_panel.is_some();
         let mut keys = keymap.keys_for(self.screen, action);

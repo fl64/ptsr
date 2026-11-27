@@ -638,3 +638,51 @@ fn chop_help_identifies_the_slice_and_region_knobs() {
         }
     }
 }
+
+/// Scenario "Settings help follows the current controls" (screen-help).
+#[test]
+fn settings_help_follows_the_current_controls() {
+    let mut drive = Drive::new();
+    let files = TransitionFiles::new();
+    drive.app.paths.projects = files.0.clone();
+    drive.tap(KeyCode::F(12), M::NONE);
+    for (tab, hint, description) in [
+        (0, "audio value", Some("Change and save the audio value.")),
+        (1, "latest MIDI input", None),
+        (
+            2,
+            "MIDI",
+            Some("Open the row or save the pending MIDI binding."),
+        ),
+        (3, "folder picker", Some("Open the folder picker.")),
+    ] {
+        assert_eq!(drive.app.settings_tab, tab);
+        assert!(
+            hint_for(&drive.app).unwrap().contains(hint)
+                || (tab == 2 && hint_for(&drive.app).unwrap().contains("opens a group"))
+        );
+        drive.tap(KeyCode::F(1), M::NONE);
+        let rows = drive.app.full_help_keys(&drive.keymap, true);
+        let row = |text: &str| rows.iter().any(|(_, described)| described == text);
+        if let Some(description) = description {
+            assert!(row(description), "{description}");
+        }
+        assert_eq!(row("Change and save the audio value."), tab == 0);
+        assert_eq!(row("Select a MIDI row."), tab == 2);
+        assert_eq!(row("Select the projects or samples path."), tab == 3);
+        drive.tap(KeyCode::Esc, M::NONE);
+        if tab != 3 {
+            drive.tap(KeyCode::Tab, M::NONE);
+        }
+    }
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.path_picker.is_some());
+    let hint = hint_for(&drive.app).unwrap();
+    assert!(
+        hint.contains("Left/Right")
+            && hint.contains("Enter uses this folder")
+            && hint.contains("Esc")
+    );
+    drive.tap(KeyCode::Esc, M::NONE);
+    assert!(drive.app.path_picker.is_none());
+}
