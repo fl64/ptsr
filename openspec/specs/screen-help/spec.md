@@ -1128,3 +1128,12 @@ Copy, Swap and a file in hand SHALL show the applicable cancel control. When the
 - **THEN** the hidden panel hint names two P1 presses in pad bank 2
 - **AND** the target panel names pad bank 1 for placement and one P1 for cancel
 - **AND** P1 in the target menu returns to the targets and keeps the item in hand
+
+### Requirement: Key help names all Settings tabs
+
+The Settings help row for Tab SHALL name Audio, Input, MIDI and Paths.
+
+#### Scenario: Settings help names Paths
+
+- **WHEN** the owner opens the key help on Settings
+- **THEN** the Tab action names Paths with the other Settings tabs

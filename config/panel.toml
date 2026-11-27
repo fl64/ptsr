@@ -58,7 +58,7 @@ cells = [
 name = "files"
 page = 1
 cells = [
-  { cell = 5, label = "star file", action = "browser.favorite_toggle" },
+  { cell = 5, label = "star folder", action = "browser.favorite_toggle" },
   { cell = 9, label = "load to pad", action = "browser.load" },
   { cell = 10, label = "take file", action = "browser.hold" },
   { cell = 11, label = "listen file", action = "browser.preview_toggle" },
