@@ -953,11 +953,58 @@ fn pad_bank_off_names_the_first_hit() {
     let mut drive = smc_drive();
     let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
     assert_eq!(strip.mode, None);
-    assert_eq!(strip.idle, "PAD BANK: hit to show commands");
+    assert_eq!(strip.idle, "Pad bank 2 · hit pad for commands");
     drive.app.midi_gestures.smc_pad_bank_opens_panel = true;
     drive.frame();
     let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
     assert_eq!(strip.idle, "PAD BANK hold · PLAY play · STOP stop");
+    drive.midi().recorded_smc_failure();
+    drive.frame();
+    let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
+    assert_eq!(strip.idle, "Pad bank 2 · hit pad for commands");
+}
+
+/// Scenario "Panel entry and editor close follow the available route".
+#[test]
+fn panel_entry_and_editor_close_follow_the_available_route() {
+    for (screen, hold_unavailable) in [
+        (Screen::Pads, false),
+        (Screen::Chop, false),
+        (Screen::Pads, true),
+        (Screen::Chop, true),
+    ] {
+        let mut drive = smc_drive();
+        if hold_unavailable {
+            drive.app.midi_gestures.smc_pad_bank_opens_panel = true;
+            drive.midi().set_pad_bank_shortcut(true);
+            drive.midi().recorded_smc_failure();
+            drive.frame();
+        }
+        match screen {
+            Screen::Pads => drive.load_pad(0, tone(), "kick"),
+            Screen::Chop => drive.prepare_chop(tone(), 4),
+            _ => unreachable!(),
+        }
+        drive.frame();
+        let strip = drive.app.smc_knob_strip(Instant::now()).unwrap();
+        assert_eq!(strip.idle, "Pad bank 2 · hit pad for commands");
+
+        drive.tap(KeyCode::Enter, M::NONE);
+        assert!(drive.app.edit, "{screen:?}");
+        assert!(line(&drive).ends_with("Esc close"));
+        button(&mut drive, RIGHT);
+        for (width, height) in [(80, 26), (120, 40)] {
+            let shown = strip_rows(&mut drive, width, height).join("\n");
+            assert!(shown.contains("Pad bank 2 · P1 twice to close"), "{shown}");
+        }
+
+        cell(&mut drive, panel_note(13));
+        assert!(drive.app.panel.visible() && drive.app.edit);
+        assert!(line(&drive).ends_with(" · P1 close"));
+        cell(&mut drive, panel_note(13));
+        assert!(!drive.app.edit);
+        assert_eq!(drive.app.screen, screen);
+    }
 }
 
 /// The save failure answers keep the words of its question in the line and the cells (F33).

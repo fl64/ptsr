@@ -598,11 +598,10 @@ impl App {
             last_bank: last.map(|last| last.bank),
             last_knob: last.map(|last| last.knob),
             value,
-            // with PAD BANK off the first pad hit shows the commands (F36)
-            idle: if self.midi_gestures.smc_pad_bank_opens_panel {
+            idle: if self.smc_panel_hold_available() {
                 "PAD BANK hold · PLAY play · STOP stop"
             } else {
-                "PAD BANK: hit to show commands"
+                "Pad bank 2 · hit pad for commands"
             },
         })
     }
