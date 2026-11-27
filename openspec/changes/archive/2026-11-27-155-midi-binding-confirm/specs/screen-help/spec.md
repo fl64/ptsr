@@ -2,7 +2,7 @@
 
 ### Requirement: Truthful question controls
 
-An existing question SHALL show ASK, its current target and effective keyboard answer controls. A controller answer SHALL appear only for an actual connected binding that reaches that answer through current production dispatch. A saved `ui.confirm` binding SHALL be eligible when it can answer this question. The help SHALL omit an unavailable controller path. The help for a binding question SHALL show keyboard confirmation and any working cancel path. Other questions SHALL keep their safety rules and answer behavior.
+An existing question SHALL show ASK, its current target and effective keyboard answers. The help SHALL name only connected controller inputs that can answer through normal dispatch. This includes a learned `ui.confirm` when it can answer. Binding questions SHALL show keyboard confirmation and any working cancel path. Other questions SHALL keep their safety rules and answers.
 
 #### Scenario: Questions show effective working answers
 - **WHEN** an existing question opens with default keys, owner key overrides or a working connected controller binding

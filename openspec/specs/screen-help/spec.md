@@ -568,7 +568,7 @@ Existing input priority and unrelated keyboard and MIDI actions SHALL retain the
 
 ### Requirement: Truthful question controls
 
-An existing question SHALL show ASK, its current target and effective keyboard answer controls. A controller answer SHALL appear only for an actual connected binding that reaches that answer through current production dispatch. A saved `ui.confirm` binding SHALL be eligible when it can answer this question. An unavailable controller path SHALL be omitted. Question safety, existing answers and non-answer input behavior SHALL stay unchanged.
+An existing question SHALL show ASK, its current target and effective keyboard answers. The help SHALL name only connected controller inputs that can answer through normal dispatch. This includes a learned `ui.confirm` when it can answer. Binding questions SHALL show keyboard confirmation and any working cancel path. Other questions SHALL keep their safety rules and answers.
 
 #### Scenario: Questions show effective working answers
 - **WHEN** an existing question opens with default keys, owner key overrides or a working connected controller binding
@@ -582,7 +582,7 @@ An existing question SHALL show ASK, its current target and effective keyboard a
 
 #### Scenario: Learned shared confirmation appears only when it works
 - **WHEN** the owner saves `ui.confirm` on a button and opens each current question with that controller connected
-- **THEN** the question names the button and its press answers through the current target checks
+- **THEN** the question names the button only if its press can answer the current question within the current target limits
 - **AND** disconnecting the controller removes its answer label without changing keyboard answers
 
 ### Requirement: Question answer layout
