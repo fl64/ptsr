@@ -78,6 +78,70 @@ fn chop_without_a_pad() {
     assert!(drive.app.pads.sound_gain_db.iter().all(|&db| db == 0.0));
 }
 
+/// Scenario "Assign ignores preview and gain changes" (chopping).
+#[test]
+fn assign_ignores_preview_and_gain_changes() {
+    for source in [Source::Keyboard, Source::Button] {
+        let mut drive = slice_on_pad(square(0.5));
+        let controls = [
+            ('o', M::ALT, 90, "chop.loop_toggle"),
+            ('p', M::ALT, 91, "chop.as_pad_toggle"),
+            ('g', M::CONTROL, 92, "chop.normalize"),
+        ];
+        for (_, _, cc, action) in controls {
+            drive.bind_action(cc, action);
+        }
+        drive.tap(KeyCode::Char('p'), M::NONE);
+        assert!(drive.app.plan.is_some());
+        drive.pad_press(source, 4);
+        drive.pad_release(source, 4);
+        let targets = drive.app.plan.as_ref().unwrap().targets(2);
+        assert!(!targets.is_empty());
+        let chop = drive.app.chop.as_ref().unwrap();
+        let preview = (chop.looping, chop.as_pad);
+        let history = drive.app.history.len();
+        let gain = drive.app.pads.sound_gain_db[0];
+
+        for (key, mods, cc, _) in controls {
+            let frame = drive.registry_command(source, KeyCode::Char(key), mods, cc);
+            assert!(frame.commands().is_empty());
+            assert_eq!(
+                drive.last_notice().text,
+                "assigning: Enter applies, Esc leaves"
+            );
+            let chop = drive.app.chop.as_ref().unwrap();
+            assert_eq!((chop.looping, chop.as_pad), preview);
+            assert_eq!(drive.app.pads.sound_gain_db[0], gain);
+            assert_eq!(drive.app.history.len(), history);
+            assert_eq!(drive.app.plan.as_ref().unwrap().targets(2), targets);
+        }
+    }
+}
+
+#[test]
+fn assign_loop_refusal_names_the_smc_controls() {
+    let mut drive = slice_on_pad(square(0.5));
+    press(&mut drive, panel::View::Chop, "put on pads");
+    let targets = drive.app.plan.as_ref().unwrap().targets(2);
+    let looping = drive.app.chop.as_ref().unwrap().looping;
+
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(15)); // P3 Menu opens Chop actions.
+    let frame = cell(
+        &mut drive,
+        panel_note(slot_of(panel::View::Chop, "loop play")),
+    );
+
+    assert!(frame.commands().is_empty());
+    assert_eq!(
+        drive.last_notice().text,
+        "assigning: PAD BANK + 4 applies, PAD BANK + 1 leaves"
+    );
+    assert_eq!(drive.app.chop.as_ref().unwrap().looping, looping);
+    assert_eq!(drive.app.plan.as_ref().unwrap().targets(2), targets);
+    hold(&mut drive, false);
+}
+
 /// Scenario "Normalize can be undone" (chopping): undo on Pads brings the old gain back.
 #[test]
 fn normalize_can_be_undone() {

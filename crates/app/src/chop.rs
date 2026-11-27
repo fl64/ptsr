@@ -2484,6 +2484,9 @@ pub(super) fn assign_deaf(a: &Action) -> bool {
         a,
         Action::ChopPlay
             | Action::ChopPlayMode
+            | Action::ChopLoopToggle
+            | Action::ChopAsPadToggle
+            | Action::ChopNormalize
             | Action::ChopCut
             | Action::ChopEqualParts
             | Action::ChopHits
