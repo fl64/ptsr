@@ -47,6 +47,7 @@ You write a terminal sampler in Rust for Linux. The project owner **does not rea
 - The `Change names` CI check must pass before merge. It checks the PR title and every new commit, including signoffs. A title edit starts a new check.
 - The `Specs` CI check must pass before merge. It checks OpenSpec format, archived scenarios, proposal catalogue names and PR body sections. A body edit starts a new check.
 - The `Rust` CI check must pass before merge. It checks format, Clippy, licenses, all tests, the screen catalogue, and any required benchmark.
+  It skips these steps when a PR changes only Markdown in the repository root or files in `docs/`. `docs/USER-STORIES.md` and `docs/CONTROLLER-PATHS.md` are test inputs, so they still start the checks. `scripts/ci_code_changed.py` holds the list.
 - Merge only by squash. Let GitHub use the PR title for the final commit. Do not supply a different `--subject` or API `commit_title`. Only GitHub's final commit may add ` (#<PR number>)`.
 - Before merge, check the current title, head commit and successful CI result. Use an exact-head merge guard. Keep the final commit's signoff. After merge, check its title against the PR title.
 - Keep `master` protected: require a PR, `Change names`, `Specs`, and `Rust`, with no bypass actors. Do not push directly or use an admin merge bypass.
