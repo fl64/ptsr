@@ -257,26 +257,27 @@ fn full_help_block(
 
 /// The bottom line of the full help: how to move, close and scroll.
 fn help_footer(tab: Tab, navigation: &str, width: u16) -> String {
-    let purpose = if tab == Tab::Controller {
-        "select"
-    } else {
-        "scroll"
+    let purpose = match tab {
+        Tab::Help | Tab::Messages => "page",
+        Tab::Controller => "select",
     };
-    // after SMC-PAD input the hint names the held button with the pads (F44)
-    let smc = crate::pads::smc_words();
-    let base = if smc {
-        format!(" LEFT/RIGHT · PAD BANK + 1 close · PAD BANK + 5/6 {purpose} ")
-    } else {
-        format!(" Tab/LEFT/RIGHT · F1/Esc/P1 · P5/P6 {purpose} ")
-    };
-    if tab == Tab::Messages && smc {
-        " LEFT/RIGHT · PAD BANK + 1 close · PAD BANK + 5/6 scroll ".to_owned()
+    let base = if crate::pads::smc_words() {
+        let bank = if crate::pads::smc_fine_hold() {
+            "Hold PAD BANK"
+        } else {
+            "Pad bank 2"
+        };
+        format!(" LEFT/RIGHT tabs · {bank} · P1 close · P5/P6 {purpose} ")
     } else if tab == Tab::Messages {
-        " Tab/LEFT/RIGHT · F1/Esc close/P1 · P5/P6/↑↓ scroll · PgUp/PgDn page ".to_owned()
-    } else if navigation.is_empty() {
-        base
-    } else if Line::raw(format!("{base}· {navigation}")).width()
-        <= usize::from(width.saturating_sub(2))
+        " Tab/LEFT/RIGHT · F1/Esc close · P1 close · ↑↓ scroll · P5/P6/PgUp/PgDn page ".into()
+    } else if tab == Tab::Controller {
+        " Tab/LEFT/RIGHT · F1/Esc/P1 close · ↑↓←→/P5/P6 select ".into()
+    } else {
+        format!(" Tab/LEFT/RIGHT · F1/Esc/P1 close · P5/P6 {purpose} ")
+    };
+    if !navigation.is_empty()
+        && Line::raw(format!("{base}· {navigation}")).width()
+            <= usize::from(width.saturating_sub(2))
     {
         format!("{base}· {navigation}")
     } else {
@@ -633,15 +634,29 @@ pub(super) fn message_history_caption(
 mod tests {
     use super::*;
 
-    /// After SMC-PAD input the full help names PAD BANK with the pads (138, F44).
+    /// Scenario "The Help border names the route for the current pad bank setting".
     #[test]
-    fn the_help_footer_names_pad_bank_after_smc_input() {
+    fn the_help_border_names_the_route_for_the_current_pad_bank_setting() {
         crate::pads::set_smc_words(true);
-        let smc = help_footer(Tab::Controller, "", 120);
+        for (tab, purpose) in [
+            (Tab::Help, "page"),
+            (Tab::Messages, "page"),
+            (Tab::Controller, "select"),
+        ] {
+            for (hold, gesture) in [(true, "Hold PAD BANK"), (false, "Pad bank 2")] {
+                crate::pads::set_smc_fine_hold(hold);
+                let shown = help_footer(tab, "", 80);
+                for cue in [gesture, "LEFT/RIGHT tabs", "P1 close", purpose] {
+                    assert!(shown.contains(cue), "{shown}");
+                }
+                assert!(Line::raw(shown).width() <= 78);
+            }
+        }
         crate::pads::set_smc_words(false);
         let keys = help_footer(Tab::Controller, "", 120);
-        assert!(smc.contains("PAD BANK + 5/6 select"), "{smc}");
-        assert!(smc.contains("PAD BANK + 1 close"), "{smc}");
-        assert!(keys.contains("P5/P6 select"), "{keys}");
+        assert!(keys.contains("F1/Esc/P1 close") && keys.contains("P5/P6 select"));
+        let compact = help_footer(Tab::Controller, "Alt+PgUp / Alt+PgDn device", 80);
+        assert!(compact.contains("↑↓←→/P5/P6 select"));
+        assert!(Line::raw(compact).width() <= 78);
     }
 }
