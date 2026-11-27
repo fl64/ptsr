@@ -68,8 +68,12 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, f: &Files, s: &Status) {
     // the title carries what the screen says: the file in hand or the error (31)
     let note = match (f.in_hand, f.error) {
         (Some(name), _) if pads::smc_words() => {
-            format!("   In hand: {name}. Hit a pad. PAD BANK + 1 puts it back.")
-                .fg(MAGENTA)
+            let placement = if pads::smc_fine_hold() {
+                "hit a pad"
+            } else {
+                "hit pad in pad bank 1"
+            };
+            format!("   {name} · {placement}").fg(MAGENTA)
         }
         (Some(name), _) => format!(
             "   In hand: {name}. Arrows choose a pad, Enter puts it there (or hit a pad). Esc puts it back."

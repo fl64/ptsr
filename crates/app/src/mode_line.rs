@@ -67,7 +67,22 @@ impl App {
         {
             return Some(assign_line(plan, chop, apply, cancel));
         }
-        let place = |what: String| Some(format!("{what} · hit a pad · {cancel}"));
+        let place = |what: String| {
+            let cancel = if !smc {
+                "Esc cancel"
+            } else if self.panel.visible() {
+                if self.panel.target_menu.is_some() {
+                    "P1 back to targets"
+                } else {
+                    "P1 cancel"
+                }
+            } else if self.smc_panel_hold_available() {
+                "PAD BANK + 1 cancel"
+            } else {
+                "Pad bank 2 · P1 twice cancels"
+            };
+            Some(format!("{what} · hit a pad · {cancel}"))
+        };
         if self.erase_pads || self.pattern_erasing() {
             let off = if smc { "PAD BANK + 1 off" } else { "Esc off" };
             return Some(format!("ERASE A1 · hit a pad to erase its hits · {off}"));
