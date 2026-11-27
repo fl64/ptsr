@@ -166,7 +166,7 @@ The shipped actions SHALL match the table. A dash is an empty cell.
 | --- | --- | --- | --- |
 | Pads | edit pad, copy pad, chop pad, clear pad | swap pads, mark pad, mark bank, play mode | pitch gate, record output, hide pads, strip view |
 | Pad edit | play mode, copy pad, pitch gate, reset pad | tone page, env page, filter page, source page | fx page, —, —, pin sample |
-| A1 | record A1, edit steps, erase hits, tap tempo | steps wider, steps finer, A1 setup, clear A1 | hide empty, —, —, — |
+| A1 | record A1, edit steps, erase hits, tap tempo | steps wider, steps finer, A1 setup, clear A1 | hide empty, prev hit, next hit, — |
 | Files | load to pad, take file, listen file, chop file | star folder, —, —, — | —, —, —, — |
 | Chop | cut here, cut by hits, fewer hits, equal parts | put on pads, fill pads, edit slice, trim silence | remove all cuts, loop play, play range, cursor step |
 | Chop edit | norm, join left, join right, hear as pad | —, —, —, — | —, —, —, — |
@@ -410,3 +410,13 @@ A press during count-in SHALL say «wait for the count-in».
 - **THEN** a pad hit adds one step, with no pad sound
 - **AND** Undo removes that step
 - **AND** the same entry request with no A1 leaves Step Edit closed
+
+### Requirement: SMC-PAD selects one hit in Step Edit
+
+P14 and P15 SHALL select the previous and next hit of the current pad and cell in Step Edit. The screen SHALL show the selected index and velocity, also while the panel is open at 80×26 and 120×40. The cells SHALL show their names and stay dim outside Step Edit.
+
+#### Scenario: The panel selects and removes the second hit
+
+- **WHEN** the owner selects the second of two hits with P15 and hits its pad in Step Edit
+- **THEN** the screen shows the second hit index and velocity before removal
+- **AND** the first hit keeps its position and velocity, and Undo restores the second hit

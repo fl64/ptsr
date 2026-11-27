@@ -132,8 +132,9 @@ impl App {
         }
         if self.pattern_view.edit {
             let close = self.panel_close_words(smc, "Open panel, P1 close");
+            let choice = if smc { " · P14/P15 pick" } else { "" };
             return Some(format!(
-                "STEP {} · hit a pad to add or remove · {close}",
+                "STEP {} · hit a pad to add or remove{choice} · {close}",
                 self.pattern_view.cursor_cell + 1
             ));
         }

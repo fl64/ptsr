@@ -476,6 +476,72 @@ fn step_edit_names_its_next_step_and_close_control() {
     assert!(line.ends_with("PAD BANK + 1 close"), "{line}");
 }
 
+/// Scenario "The panel selects and removes the second hit" (command-panel).
+#[test]
+fn the_panel_selects_and_removes_the_second_hit() {
+    let mut drive = hold_drive();
+    let hits = vec![[0, 0, 100, 0], [24, 0, 70, 0]];
+    drive.app.apply_session(session::Session {
+        pattern: Some("A1".into()),
+        patterns: vec![session::PatternState {
+            slot: "A1".into(),
+            bars: 2,
+            quantize: "off".into(),
+            strength: 100,
+            hits: hits.clone(),
+        }],
+        ..Default::default()
+    });
+    settle(&mut drive);
+    drive.tap(KeyCode::F(5), M::NONE);
+    let note = |label| panel_note(slot_of(panel::View::Pattern, label));
+    assert_eq!(note("prev hit"), 65);
+    assert_eq!(note("next hit"), 66);
+    hold(&mut drive, true);
+    assert!(drive.app.panel_snapshot().unwrap().dim[2]);
+    cell(&mut drive, 66);
+    assert_eq!(drive.last_notice().text, "Open Step Edit to select a hit.");
+    cell(&mut drive, note("edit steps"));
+    hold(&mut drive, false);
+    assert!(drive.app.pattern_view.edit);
+    assert!(line(&drive).contains("P14/P15 pick"));
+    assert!(line(&drive).chars().count() <= 80);
+    let playing_pad = 48;
+    assert!(cell(&mut drive, playing_pad).commands().is_empty());
+    assert_eq!(
+        drive.app.pattern_overview(&drive.keymap).event_choice,
+        Some((1, 2))
+    );
+
+    hold(&mut drive, true);
+    assert!(!drive.app.panel_snapshot().unwrap().dim[2]);
+    cell(&mut drive, 66);
+    let chosen = drive.app.pattern_overview(&drive.keymap);
+    assert_eq!(chosen.event_choice, Some((2, 2)));
+    assert_eq!(chosen.event_velocity, Some(70));
+    assert_eq!(chosen.state_label.as_deref(), Some("event 2/2 · vel 70"));
+    let wide = drive.app.pattern_overview_at(&drive.keymap, 120);
+    assert_eq!(wide.event_choice, Some((2, 2)));
+    assert_eq!(wide.event_velocity, Some(70));
+    cell(&mut drive, 65);
+    assert_eq!(
+        drive.app.pattern_overview(&drive.keymap).event_velocity,
+        Some(100)
+    );
+    cell(&mut drive, 66);
+    hold(&mut drive, false);
+    assert!(
+        !cell(&mut drive, playing_pad)
+            .commands()
+            .iter()
+            .any(|cmd| matches!(cmd, Command::PadPress { .. }))
+    );
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits, hits[..1]);
+    hold(&mut drive, true);
+    cell(&mut drive, panel_note(14));
+    assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits, hits);
+}
+
 /// Scenario "A1 setup names its knobs" (screen-layout).
 #[test]
 fn a1_setup_names_its_knobs() {

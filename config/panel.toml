@@ -44,6 +44,8 @@ name = "pattern"
 page = 1
 cells = [
   { cell = 1, label = "hide empty", action = "pattern.overview_empty_toggle" },
+  { cell = 2, label = "prev hit", action = "edit.param_prev", pair = "hit:lower" },
+  { cell = 3, label = "next hit", action = "edit.param_next", pair = "hit:upper" },
   { cell = 5, label = "steps wider", action = "pattern.view_prev", pair = "grid:lower" },
   { cell = 6, label = "steps finer", action = "pattern.view_next", pair = "grid:upper" },
   { cell = 7, label = "A1 setup", action = "pattern.controls" },
