@@ -139,6 +139,13 @@ The screens view SHALL NOT show learn, because control bindings change from the 
 - **THEN** save, open and exit appear only in the screens view
 - **AND** no action page shows play, help or learn
 
+#### Scenario: Setup keeps Settings open on a second selection
+
+- **WHEN** the owner selects P11 Setup, changes the Settings tab and selects Setup again
+- **THEN** both selections show the Settings actions and keep Settings open
+- **AND** the second selection keeps the current tab
+- **AND** F12 still closes Settings
+
 ### Requirement: Each view has at most 12 actions
 
 A screen or mode SHALL have one action page with at most 12 actions in cells 1 through 12.
@@ -160,7 +167,7 @@ The shipped actions SHALL match the table. A dash is an empty cell.
 | Pads | edit pad, copy pad, chop pad, clear pad | swap pads, mark pad, mark bank, play mode | pitch gate, record output, hide pads, strip view |
 | Pad edit | play mode, copy pad, pitch gate, reset pad | tone page, env page, filter page, source page | fx page, —, —, pin sample |
 | A1 | record A1, edit steps, erase hits, tap tempo | steps wider, steps finer, A1 setup, clear A1 | hide empty, —, —, — |
-| Files | load to pad, take file, listen file, chop file | star file, —, —, — | —, —, —, — |
+| Files | load to pad, take file, listen file, chop file | star folder, —, —, — | —, —, —, — |
 | Chop | cut here, cut by hits, fewer hits, equal parts | put on pads, fill pads, edit slice, trim silence | remove all cuts, loop play, play range, cursor step |
 | Chop edit | norm, join left, join right, hear as pad | —, —, —, — | —, —, —, — |
 | Settings | choose, —, —, — | —, —, —, — | —, —, —, — |
@@ -384,7 +391,7 @@ The panel SHALL show a state for these cells only.
 | pin sample | on, off |
 | hide empty | shown, hidden |
 | listen file | on, off |
-| star file | on, off |
+| star folder | on, off |
 
 #### Scenario: Every state cell shows one of its states
 
