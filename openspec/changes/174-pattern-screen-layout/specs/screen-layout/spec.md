@@ -41,7 +41,7 @@ An absent or empty pattern SHALL show two lines in the grid area. The first line
 
 ### Requirement: Catalogue includes the A1 overview
 
-The offline screen catalogue SHALL include the Pattern screen at 80x26 and 120x40. It SHALL cover absent, empty, straight, triplet, fine, off-grid, multiple-event, velocity, hidden-hit, all-rows, setup, count-in, recording, playback, narrow panel and safety-warning states. Generation SHALL NOT open audio or MIDI devices or change projects.
+The offline screen catalogue SHALL include the Pattern screen at 80x26 and 120x40. It SHALL cover absent, empty, straight, triplet, off-grid, multiple-event, velocity, hidden-hit and safety-warning states. It SHALL also cover the Step Edit states. Generation SHALL NOT open audio or MIDI devices or change projects.
 
 #### Scenario: Catalogue covers the overview without devices
 - **WHEN** the offline catalogue runs with the Pattern screen registered

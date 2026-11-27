@@ -1046,3 +1046,68 @@ fn step_correction_render_removal_and_undo_keep_other_pad_playing() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renders/98a-step-correction.wav");
     engine::offline::write_wav(&path, 48_000, &left, &right).unwrap();
 }
+
+/// Scenario "Detail line names the cell content".
+#[test]
+fn detail_line_names_the_cell_content() {
+    let mut drive = Drive::new();
+    drive.app.pads.pattern = Some(pattern(vec![
+        [240, 0, 127, 0],
+        [492, 0, 100, 0],
+        [720, 0, 60, 0],
+        [780, 0, 80, 0],
+    ]));
+    drive.tap(KeyCode::F(5), M::NONE);
+    let before = drive.app.pads.pattern.clone();
+    let detail = |drive: &Drive| drive.app.pattern_overview(&drive.keymap).detail.unwrap();
+    assert!(detail(&drive).ends_with("· no hit"), "{}", detail(&drive));
+    for expected in ["loud (vel 127)", "off grid +12 ticks", "· 2 hits"] {
+        drive.tap(KeyCode::Right, M::NONE);
+        assert!(
+            detail(&drive).contains(expected),
+            "{expected}: {}",
+            detail(&drive)
+        );
+    }
+    assert!(
+        detail(&drive).starts_with("step 1.4 · "),
+        "{}",
+        detail(&drive)
+    );
+    assert_eq!(drive.app.pads.pattern, before);
+}
+
+/// Scenario "Pattern keys act on the Pattern screen".
+#[test]
+fn pattern_keys_act_on_the_pattern_screen() {
+    let mut drive = Drive::new();
+    drive.app.pads.pattern = Some(pattern(vec![[0, 0, 100, 0]]));
+    drive.tap(KeyCode::F(5), M::NONE);
+    let hidden = drive.app.pattern_view.hide_empty_banks;
+    drive.tap(KeyCode::Char('h'), M::ALT);
+    assert_ne!(drive.app.pattern_view.hide_empty_banks, hidden);
+    let division = drive.app.pattern_view.division;
+    drive.tap(KeyCode::Up, M::ALT);
+    assert_ne!(drive.app.pattern_view.division, division);
+    drive.tap(KeyCode::F(7), M::NONE);
+    assert!(drive.app.pattern_view.edit);
+    drive.tap(KeyCode::F(7), M::NONE);
+    assert!(!drive.app.pattern_view.edit);
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    assert!(drive.app.pattern_panel.is_some());
+    drive.tap(KeyCode::Char('n'), M::ALT);
+    assert!(drive.app.pattern_panel.is_none());
+    assert!(
+        drive.app.pattern_view.overview,
+        "the Pattern screen stays open"
+    );
+    drive.tap(KeyCode::F(2), M::NONE);
+    assert!(!drive.app.pattern_view.overview);
+    assert_eq!(drive.app.screen, input::Screen::Pads);
+    for (key, screen) in [(4, input::Screen::Fx), (6, input::Screen::Files)] {
+        drive.tap(KeyCode::F(5), M::NONE);
+        drive.tap(KeyCode::F(key), M::NONE);
+        assert_eq!(drive.app.screen, screen);
+        assert!(!drive.app.pattern_view.overview);
+    }
+}

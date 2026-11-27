@@ -42,12 +42,12 @@ None.
 
 ## Catalogue files
 
-Review these files at 120x40 and 80x26 (`renders/screens/pattern-<state>-<size>.ansi`):
-`pattern-absent`, `pattern-empty`, `pattern-straight`, `pattern-triplet`, `pattern-fine`,
-`pattern-off-grid`, `pattern-multiple`, `pattern-velocity`, `pattern-hidden-hit`, `pattern-all-rows`,
-`pattern-step-straight`, `pattern-step-cursor`, `pattern-setup`, `pattern-count-in`, `pattern-recording`,
-`pattern-playback`, `pattern-narrow-panel` and `pattern-safety`.
-The `pads-pattern-overview-*` and `pads-pattern-step-*` files go away.
+Review these files at 120x40 and 80x26 (`renders/screens/<name>-<size>.ansi`).
+The Pattern screen is a Pads mode inside the program, so the names keep the pads prefix:
+`pads-pattern-overview-absent`, `pads-pattern-overview-empty`, `pads-pattern-overview-straight`,
+`pads-pattern-overview-triplet`, `pads-pattern-overview-off-grid`, `pads-pattern-overview-multiple`,
+`pads-pattern-overview-velocity`, `pads-pattern-overview-hidden-hit`, `pads-pattern-overview-safety`,
+`pads-pattern-step-straight`, `pads-pattern-step-cursor`, `pads-pattern-step-target` and `pads-pattern-step-safety`.
 Also compare `pads-pattern-view-*` for the `F5 pattern` hint.
 
 ## How to check

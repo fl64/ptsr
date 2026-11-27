@@ -651,9 +651,35 @@ impl super::App {
             cursor_hint: None,
             event_choice: None,
             event_velocity: None,
+            status: String::new(),
+            length: String::new(),
+            mode: self.pattern_mode_badge(recording),
+            detail: None,
+            setup: String::new(),
+            empty: None,
+        };
+        let key = |action: input::Action| {
+            self.help_bindings(keymap, action)
+                .into_iter()
+                .min_by_key(String::len)
         };
         let Some(raw) = &self.pads.pattern else {
-            view.header = "No A1 · open Setup or record".into();
+            view.header = "No pattern yet".into();
+            view.status = "Stopped".into();
+            view.setup = format!(
+                "no pattern yet · {} opens setup",
+                key(input::Action::PatternControls).unwrap_or_else(|| "Setup".into())
+            );
+            view.empty = Some([
+                format!(
+                    "{} records what you play",
+                    key(input::Action::PatternRecord).unwrap_or_else(|| "Record".into())
+                ),
+                format!(
+                    "{} opens setup to start a pattern",
+                    key(input::Action::PatternControls).unwrap_or_else(|| "Setup".into())
+                ),
+            ]);
             view.next = self.overview_next_step(keymap, false, recording, None);
             return view;
         };
@@ -668,7 +694,7 @@ impl super::App {
         let model = match model {
             Ok(model) => model,
             Err(error) => {
-                view.header = format!("A1 unavailable: {error}");
+                view.header = format!("Pattern unavailable: {error}");
                 return view;
             }
         };
@@ -688,6 +714,34 @@ impl super::App {
             "Grid {} · {per_bar} per bar · Record quantize {quantize}",
             model.division.grid()
         );
+        let bpm = format!("{:.1}", self.transport.bpm);
+        let bpm = bpm.trim_end_matches(".0");
+        let bars = model.bars;
+        view.length = format!(
+            "{bars} {}  {bpm} BPM",
+            if bars == 1 { "bar" } else { "bars" }
+        );
+        view.setup = format!(
+            "bars {bars} · tempo {bpm} · grid {} · record quantize {quantize} · metronome {} · count-in 1 bar",
+            model.division.grid(),
+            if self.transport.metronome {
+                "on"
+            } else {
+                "off"
+            }
+        );
+        view.status = match clock {
+            Some(state) if state.playing => {
+                let (bar, beat) = state.bar_beat();
+                format!("▶ {bar}.{beat}")
+            }
+            Some(mut state) if state.paused => {
+                state.ticks %= f64::from(loop_ticks);
+                let (bar, beat) = state.bar_beat();
+                format!("Paused {bar}.{beat}")
+            }
+            _ => "Stopped".into(),
+        };
         view.beat_cells = (960 / spacing) as usize;
         view.playhead = tick.map(|tick| (tick / spacing) as usize);
         view.total_cells = usize::from(model.bars) * per_bar;
@@ -731,6 +785,44 @@ impl super::App {
         (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
         let has_hits = view.active_pads.iter().any(|&mask| mask != 0);
         view.next = self.overview_next_step(keymap, has_hits, recording, clock);
+        if !has_hits && !self.pattern_view.edit {
+            view.empty = Some([
+                format!(
+                    "{} records what you play",
+                    key(input::Action::PatternRecord).unwrap_or_else(|| "Record".into())
+                ),
+                format!(
+                    "{} writes steps",
+                    key(input::Action::PatternStepEdit).unwrap_or_else(|| "Step edit".into())
+                ),
+            ]);
+        }
+        let selected = self.pads.selected_abs();
+        let events = model.events_in_cell(selected, cursor);
+        let content = match events.as_slice() {
+            [] => "no hit".to_string(),
+            [event] => {
+                let velocity = event.raw.velocity();
+                let offset = event.played.tick() - (cursor as u32) * spacing;
+                let level = tui::velocity_level(velocity);
+                if offset == 0 {
+                    format!("{level} (vel {velocity})")
+                } else {
+                    format!("{level} (vel {velocity}) · off grid +{offset} ticks")
+                }
+            }
+            many => format!("{} hits", many.len()),
+        };
+        let name = view
+            .names
+            .get(selected)
+            .filter(|name| name.as_str() != "empty")
+            .map_or_else(|| format!("pad {}", selected + 1), Clone::clone);
+        view.detail = Some(format!(
+            "step {}.{} · {name} · {content}",
+            cursor / per_bar + 1,
+            cursor % per_bar + 1
+        ));
         if self.pattern_view.edit {
             let events = model.events_in_cell(self.pads.selected_abs(), cursor);
             if !events.is_empty() {
@@ -755,22 +847,29 @@ impl super::App {
                 Some(state) if state.phase == Phase::Recording => {
                     self.a1_pass_label(state).map(str::to_owned)
                 }
-                None
-                | Some(engine::capture::Snapshot {
-                    phase: Phase::Idle, ..
-                }) => clock.filter(|state| !state.playing).map(|mut state| {
-                    if state.paused {
-                        state.ticks %= f64::from(loop_ticks);
-                        let (bar, beat) = state.bar_beat();
-                        format!("Paused {bar}:{beat}")
-                    } else {
-                        "Stopped".into()
-                    }
-                }),
                 _ => None,
             };
         }
         view
+    }
+
+    /// The mode badge of the Pattern screen header.
+    fn pattern_mode_badge(&self, recording: Option<engine::capture::Snapshot>) -> Option<String> {
+        use engine::capture::Phase;
+        if self.pattern_view.edit {
+            return Some("STEP EDIT".into());
+        }
+        if self.pattern_panel.is_some() {
+            return Some("SETUP".into());
+        }
+        if self.pattern_erasing() || self.erase_pads {
+            return Some("ERASE".into());
+        }
+        match recording.map(|state| state.phase) {
+            Some(Phase::CountIn) => Some("COUNT-IN".into()),
+            Some(Phase::Recording) => Some("● REC".into()),
+            _ => None,
+        }
     }
 
     pub(super) fn change_pattern_view(&mut self, next: bool) {
@@ -860,17 +959,12 @@ impl super::App {
             playhead: None,
         };
         let Some(raw) = &self.pads.pattern else {
-            // After an SMC-PAD input the device RECORD button names the route (134).
-            let keys = if self.input_sources.last_is_smc() {
-                "RECORD".to_string()
-            } else {
-                self.help_bindings(keymap, input::Action::PatternRecord)
-                    .join("/")
-            };
-            strip.header = format!(
-                "No A1 · {} record A1",
-                if keys.is_empty() { "none" } else { &keys }
-            );
+            // The lane only points to the Pattern screen; recording starts there.
+            let key = self
+                .help_bindings(keymap, input::Action::ScreenPattern)
+                .into_iter()
+                .min_by_key(String::len);
+            strip.header = key.map_or_else(|| "pattern".into(), |key| format!("{key} pattern"));
             return strip;
         };
         let model = raw.checked().and_then(|raw| {

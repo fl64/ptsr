@@ -45,7 +45,7 @@ fn trim_clear_and_a1_pass_undo_have_controller_routes() {
     settle_pattern(&mut drive);
     hold(&mut drive, true);
     list_button(&mut drive, false);
-    let a1 = slot_of_screen(&drive, "A1");
+    let a1 = slot_of_screen(&drive, "pattern");
     cell(&mut drive, panel_note(a1));
     hold(&mut drive, false);
     app_capture_start(&mut drive, 1);
