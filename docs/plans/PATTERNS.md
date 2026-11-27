@@ -310,6 +310,14 @@ Tests:
 
 Render for the owner: `renders/97-pattern-record.wav` (raw take, then the quantized loop).
 
+### A1 step timeline (172)
+
+Show the selected bar and global step with their totals in the overview and Step Edit.
+Use a second line for the view grid and the quantize of the next live recording.
+Show the current playback position separately from the selected column.
+Keep the selected time when the owner enters Step Edit or returns to the overview.
+See [the keyboard and SMC-PAD routes](../CONTROLLER-PATHS.md#select-and-edit-an-a1-step).
+
 ### Change 98 — `98-pattern-screen`
 
 Goal: the Pattern screen (F5) with the step grid and the step mode (TR-REC).

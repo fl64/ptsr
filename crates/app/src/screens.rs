@@ -1762,9 +1762,9 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("~");
         }
         Mode::PatternOverviewAbsent => require("pattern A1 is empty"),
-        Mode::PatternOverviewEmpty => require("view 1/16"),
+        Mode::PatternOverviewEmpty => require("Grid 1/16"),
         Mode::PatternOverviewStraight => require("steps 1-"),
-        Mode::PatternOverviewTriplet => require("view 1/16 triplet"),
+        Mode::PatternOverviewTriplet => require("Grid 1/16T"),
         Mode::PatternOverviewOffGrid | Mode::PatternOverviewHiddenHit => require("~"),
         Mode::PatternOverviewMultiple => require(" 2"),
         Mode::PatternOverviewVelocity => require("PATTERN · A1"),
@@ -1777,7 +1777,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("vel 80");
             require("added one hit");
         }
-        Mode::PatternStepTriplet => require("triplet"),
+        Mode::PatternStepTriplet => require("Grid 1/16T"),
         Mode::PatternStepTarget => {
             assert!(
                 rows.iter()
@@ -3370,16 +3370,16 @@ L="none"
                 .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
                 .collect::<Vec<_>>();
             assert!(rows[1].contains("PATTERN · A1"));
-            assert!(rows[2].contains("BANKS · pads with A1 hits"));
-            assert!(rows[2].contains("8:0 all rows shown"), "{}", rows[2]);
+            assert!(rows[3].contains("BANKS · pads with A1 hits"));
+            assert!(rows[3].contains("8:0 all rows shown"), "{}", rows[3]);
             for number in 10..16 {
-                assert!(rows[3].contains(&format!("{number} ")), "{}", rows[3]);
+                assert!(rows[4].contains(&format!("{number} ")), "{}", rows[4]);
             }
             for (index, key) in "1234QWERASDFZXCV".chars().enumerate() {
                 assert!(
-                    rows[5 + index].contains(&format!(" {key} ")),
+                    rows[6 + index].contains(&format!(" {key} ")),
                     "{key}: {}",
-                    rows[5 + index]
+                    rows[6 + index]
                 );
             }
             assert!(rows[0].contains("Save failed"));
@@ -3431,14 +3431,57 @@ L="none"
                     .map(|row| row.iter().map(|cell| cell.symbol()).collect())
                     .collect();
                 assert!(rows[0].contains("Save failed"), "{}", rows[0]);
-                assert!(rows[2].contains("BANKS · pads with A1 hits"), "{}", rows[2]);
-                assert!(rows[3].starts_with(instruction), "{}", rows[3]);
+                let bank_index = 2 + usize::from(has_steps);
+                assert!(rows[bank_index].contains("BANKS · pads with A1 hits"));
+                let ruler = &rows[bank_index + 1];
+                assert!(ruler.starts_with(instruction), "{ruler}");
                 if has_steps {
-                    assert!(rows[3][instruction.len()..].contains(" 1 "), "{}", rows[3]);
+                    assert!(ruler[instruction.len()..].contains(" 1 "), "{ruler}");
                 }
-                assert!(rows[4].contains("BANK 1 / 8"), "{}", rows[4]);
+                assert!(rows[bank_index + 2].contains("BANK 1 / 8"));
                 let help = rows[size.1 as usize - 3..].join("\n");
                 assert!(help.contains("F1"), "{help}");
+            }
+        }
+    }
+
+    /// Scenario "A1 position remains visible across a bar line".
+    #[test]
+    fn a1_position_remains_visible_across_a_bar_line() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewStraight,
+                size,
+            };
+            for (step, bar) in [(15, 1), (16, 2)] {
+                let now = Instant::now();
+                let mut app = fixture(case, now);
+                let raw = app.pads.pattern.as_mut().unwrap();
+                raw.bars = 2;
+                raw.quantize = "1/8".into();
+                raw.strength = 70;
+                app.pattern_view.browse_cell = Some(step);
+                let (_, buffer) = render_app(case, &keymap, app, now);
+                let width = usize::from(size.0);
+                let row = |n| {
+                    buffer.content()[n * width..(n + 1) * width]
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                };
+                let title = row(1);
+                let settings = row(2);
+                assert!(
+                    title.contains(&format!("bar {bar}/2 · step {}/32", step + 1)),
+                    "{title}"
+                );
+                assert!(
+                    settings.contains("Grid 1/16 · 16 per bar · Record quantize 1/8 70%"),
+                    "{settings}"
+                );
+                assert!(!settings.contains('…'), "{settings}");
             }
         }
     }
@@ -3463,11 +3506,11 @@ L="none"
                 .any(|row| row.contains("rec-20261031-200404 20 minute take"))
         );
         assert!(
-            (45..105).any(|x| matches!(buffer[(x, 5)].symbol(), "·" | "■" | "~")),
+            (45..105).any(|x| matches!(buffer[(x, 6)].symbol(), "·" | "■" | "~")),
             "fixed-width time cells must remain visible"
         );
         assert!(
-            (105..119).all(|x| buffer[(x, 5)].symbol() == " "),
+            (105..119).all(|x| buffer[(x, 6)].symbol() == " "),
             "unused width stays blank"
         );
 
@@ -3504,8 +3547,8 @@ L="none"
         let now = Instant::now();
         let app = fixture(case, now);
         let (_, buffer) = render_app(case, &keymap, app, now);
-        assert_eq!(buffer[(0, 4)].symbol(), "┏");
-        assert_eq!(buffer[(0, 4)].fg, tui::BANK_COLORS[0]);
+        assert_eq!(buffer[(0, 5)].symbol(), "┏");
+        assert_eq!(buffer[(0, 5)].fg, tui::BANK_COLORS[0]);
         let second = buffer
             .content()
             .chunks(case.size.0 as usize)
@@ -3518,7 +3561,7 @@ L="none"
             .expect("bank 2 remains visible");
         assert_eq!(buffer[(0, second as u16)].symbol(), "╭");
         assert_eq!(buffer[(0, second as u16)].fg, tui::BANK_COLORS[1]);
-        let index = buffer.content()[2 * 120..3 * 120]
+        let index = buffer.content()[3 * 120..4 * 120]
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();

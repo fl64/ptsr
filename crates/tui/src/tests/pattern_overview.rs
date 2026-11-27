@@ -22,7 +22,9 @@ fn overview_fixed_cells_align_every_division() {
                 playhead: Some(beat_cells.min(page - 1)),
                 first_cell: 0,
                 total_cells: total,
-                edit_cursor: Some(0),
+                editing: false,
+                cursor: Some(0),
+                cursor_hint: None,
                 event_choice: None,
                 event_velocity: None,
             };
@@ -41,26 +43,26 @@ fn overview_fixed_cells_align_every_division() {
                 }
                 let number = format!("{:^3}", cell % (4 * beat_cells) + 1);
                 let actual = (x..x + 3)
-                    .map(|column| buffer[(column as u16, 2)].symbol())
+                    .map(|column| buffer[(column as u16, 3)].symbol())
                     .collect::<String>();
                 assert_eq!(
                     actual, number,
                     "{width}x{height}, beat {beat_cells}, cell {cell}"
                 );
                 assert_eq!(
-                    buffer[((x + 1) as u16, 4)].symbol(),
+                    buffer[((x + 1) as u16, 5)].symbol(),
                     if cell == 0 { "■" } else { "·" },
                     "{width}x{height}, beat {beat_cells}, cell {cell}"
                 );
                 if cell == 0 {
-                    assert_eq!(buffer[((x + 1) as u16, 4)].bg, CYAN);
+                    assert_eq!(buffer[((x + 1) as u16, 5)].bg, CYAN);
                 } else if view.playhead == Some(cell) {
-                    assert_eq!(buffer[((x + 1) as u16, 4)].bg, PLATE);
+                    assert_eq!(buffer[((x + 1) as u16, 5)].bg, PLATE);
                 }
                 x += 3;
             }
             assert!(x < width as usize);
-            assert_eq!(buffer[(width - 1, 4)].symbol(), "┃");
+            assert_eq!(buffer[(width - 1, 5)].symbol(), "┃");
         }
     }
 }
@@ -89,7 +91,9 @@ fn overview_velocity_levels_keep_event_marks() {
             playhead: None,
             first_cell: 0,
             total_cells: 16,
-            edit_cursor: Some(6),
+            editing: true,
+            cursor: Some(6),
+            cursor_hint: None,
             event_choice: Some((1, 1)),
             event_velocity: Some(85),
         };
@@ -98,10 +102,10 @@ fn overview_velocity_levels_keep_event_marks() {
         term.draw(|frame| pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &view))
             .unwrap();
         let buffer = term.backend().buffer();
-        let title = (0..width)
-            .map(|x| buffer[(x, 0)].symbol())
+        let ruler = (0..width)
+            .map(|x| buffer[(x, 3)].symbol())
             .collect::<String>();
-        assert!(title.contains("vel 85"), "{width}x{height}: {title}");
+        assert!(ruler.contains("vel 85"), "{width}x{height}: {ruler}");
         for (index, (glyph, color)) in [
             ("■", DIM),
             ("■", DIM),
@@ -114,7 +118,7 @@ fn overview_velocity_levels_keep_event_marks() {
         .enumerate()
         {
             let x = label_width + 2 + 3 * index + usize::from(index >= 4);
-            let cell = &buffer[(x as u16, 4)];
+            let cell = &buffer[(x as u16, 5)];
             assert_eq!(cell.symbol(), glyph, "{width}x{height}, cell {index}");
             assert_eq!(cell.fg, color, "{width}x{height}, cell {index}");
         }
@@ -140,7 +144,9 @@ fn step_cursor_shows_one_time_across_pad_rows() {
             playhead: Some(2),
             first_cell: 0,
             total_cells: 16,
-            edit_cursor: Some(1),
+            editing: true,
+            cursor: Some(1),
+            cursor_hint: None,
             event_choice: None,
             event_velocity: None,
         };
@@ -151,21 +157,21 @@ fn step_cursor_shows_one_time_across_pad_rows() {
             .unwrap();
         let buffer = term.backend().buffer();
         let cursor_x = (label_width + 1 + 3) as u16;
-        for y in [2, 4, 5] {
+        for y in [3, 5, 6] {
             assert_eq!(buffer[(cursor_x, y)].bg, CYAN, "{width}x{height}, row {y}");
             assert_eq!(buffer[(cursor_x + 2, y)].bg, CYAN);
         }
-        assert_eq!(buffer[(label_width as u16, 5)].symbol(), "▶");
-        assert_eq!(buffer[(cursor_x, 5)].symbol(), " ");
-        assert_eq!(buffer[(cursor_x + 2, 5)].symbol(), " ");
-        assert_eq!(buffer[(cursor_x + 4, 4)].bg, PLATE);
+        assert_eq!(buffer[(label_width as u16, 6)].symbol(), "▶");
+        assert_eq!(buffer[(cursor_x, 6)].symbol(), " ");
+        assert_eq!(buffer[(cursor_x + 2, 6)].symbol(), " ");
+        assert_eq!(buffer[(cursor_x + 4, 5)].bg, PLATE);
 
         let mut overlap = view.clone();
         overlap.playhead = Some(1);
         term.draw(|frame| pattern_overview(frame, Rect::new(0, 0, width, height), &pads, &overlap))
             .unwrap();
         let buffer = term.backend().buffer();
-        for y in [2, 4, 5] {
+        for y in [3, 5, 6] {
             assert_eq!(buffer[(cursor_x + 1, y)].bg, CYAN);
             assert_eq!(buffer[(cursor_x + 1, y)].fg, PLATE);
         }

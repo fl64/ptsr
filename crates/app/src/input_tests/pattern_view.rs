@@ -54,7 +54,7 @@ fn overview_bank_and_view_changes_leave_a1_unchanged() {
         assert!(drive.app.pattern_view.overview);
         assert_eq!(drive.app.pads.bank, 1);
         let view = drive.app.pattern_overview(&drive.keymap);
-        assert!(view.header.contains("view 1/32"), "{}", view.header);
+        assert!(view.header.contains("Grid 1/32"), "{}", view.header);
         assert_eq!(view.rows.len(), 128);
         assert!(
             view.rows[16..32]
@@ -201,6 +201,30 @@ fn overview_opens_absent_empty_and_playing_a1_without_mutation() {
     assert!(playing.app.pattern_view.overview);
     playing.tap(KeyCode::Esc, M::NONE);
     assert!(!playing.app.pattern_view.overview);
+}
+
+/// Scenario "A1 selection stays visible while playback passes another bar".
+#[test]
+fn a1_selection_stays_visible_while_playback_passes_another_bar() {
+    let mut drive = Drive::offline();
+    let raw = pattern();
+    drive.app.send(Command::SetPattern {
+        pattern: Some(Arc::new(raw.checked().unwrap().compile())),
+    });
+    drive.app.pads.pattern = Some(raw.clone());
+    drive.tap(KeyCode::F(5), M::NONE);
+    drive.tap(KeyCode::Right, M::NONE);
+    drive.tap(KeyCode::Char(' '), M::NONE);
+    drive.render_blocks(800);
+
+    for width in [80, 120] {
+        let view = drive.app.pattern_overview_at(&drive.keymap, width);
+        assert_eq!(view.cursor, Some(1));
+        assert_eq!(view.first_cell, 0);
+        assert!(view.playhead.is_some_and(|step| step >= 16));
+    }
+    assert_eq!(drive.app.pads.pattern, Some(raw));
+    assert!(drive.app.history.is_empty());
 }
 
 /// Scenario "Overview pad input keeps sound ownership".

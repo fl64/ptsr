@@ -27,7 +27,9 @@ pub struct PatternOverview {
     pub playhead: Option<usize>,
     pub first_cell: usize,
     pub total_cells: usize,
-    pub edit_cursor: Option<usize>,
+    pub editing: bool,
+    pub cursor: Option<usize>,
+    pub cursor_hint: Option<String>,
     pub event_choice: Option<(usize, usize)>,
     pub event_velocity: Option<u8>,
 }
@@ -178,31 +180,28 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     let bar_cells = 4 * beat_cells;
     let first = view.first_cell;
     let end = (first + count).min(view.total_cells);
-    let mut title = if let Some(cursor) = view.edit_cursor {
-        let choice = match view.event_choice {
-            Some((index, count)) => match view.event_velocity {
-                Some(velocity) => format!("event {index}/{count} · vel {velocity}"),
-                None => format!("event {index}/{count}"),
-            },
-            None => "empty cell".into(),
-        };
-        format!(
-            "STEP EDIT · A1 · B{}/8 · step {}/{} · {choice} · {}",
-            pads.bank + 1,
-            cursor + 1,
-            view.total_cells,
-            view.header
-        )
-    } else {
-        format!("PATTERN · A1 · B{}/8 · {}", pads.bank + 1, view.header)
-    };
-    if view.total_cells > 0 && view.edit_cursor.is_none() {
+    let mode = if view.editing { "STEP EDIT" } else { "PATTERN" };
+    let mut title = format!("{mode} · A1 · B{}/8", pads.bank + 1);
+    if let Some(cursor) = view.cursor {
         title.push_str(&format!(
-            " · steps {}-{}/{}",
-            first + 1,
-            end,
+            " · bar {}/{} · step {}/{}",
+            cursor / bar_cells + 1,
+            view.total_cells / bar_cells,
+            cursor + 1,
             view.total_cells
         ));
+        if let Some(playhead) = view.playhead {
+            title.push_str(&format!(" · play {}", playhead + 1));
+        }
+    } else {
+        title.push_str(" · ");
+        title.push_str(&view.header);
+    }
+    if let Some(hint) = view.cursor_hint.as_deref()
+        && Span::raw(title.as_str()).width() + 3 + Span::raw(hint).width() <= width
+    {
+        title.push_str(" · ");
+        title.push_str(hint);
     }
     let selected = pads.bank * 16 + pads.selected;
     if let (Some(name), Some(pad)) = (view.names.get(selected), pads.pads.get(pads.selected)) {
@@ -216,6 +215,19 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         Rect::new(area.x, area.y, area.width, 1),
     );
     if area.height < 2 {
+        return;
+    }
+    let header_rows = if view.cursor.is_some() {
+        let settings = format!("{} · steps {}-{end}", view.header, first + 1);
+        frame.render_widget(
+            Line::from(clip_label(&settings, width)).fg(TEXT),
+            Rect::new(area.x, area.y + 1, area.width, 1),
+        );
+        4
+    } else {
+        3
+    };
+    if area.height < header_rows - 1 {
         return;
     }
 
@@ -247,11 +259,12 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     ));
     frame.render_widget(
         Line::from(index),
-        Rect::new(area.x, area.y + 1, area.width, 1),
+        Rect::new(area.x, area.y + header_rows - 2, area.width, 1),
     );
-    if area.height < 3 {
+    if area.height < header_rows {
         return;
     }
+    let ruler_y = area.y + header_rows - 1;
 
     let separators = (1..count)
         .filter(|offset| (first + offset).is_multiple_of(beat_cells))
@@ -260,14 +273,22 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     if count > 0 && usable < 3 * count {
         frame.render_widget(
             Line::from("Widen the terminal to show this view division.").fg(DIM),
-            Rect::new(area.x, area.y + 2, area.width, 1),
+            Rect::new(area.x, ruler_y, area.width, 1),
         );
         return;
     }
     let cell_width = 3;
     let right_pad = usable.saturating_sub(cell_width * count);
     let next_width = label_width + 1;
-    let next = clip_label(view.next.as_deref().unwrap_or_default(), next_width);
+    let hit = view.editing.then(|| match view.event_choice {
+        Some((index, count)) => match view.event_velocity {
+            Some(velocity) => format!("event {index}/{count} · vel {velocity}"),
+            None => format!("event {index}/{count}"),
+        },
+        None => "empty cell".into(),
+    });
+    let detail = view.next.as_deref().or(hit.as_deref()).unwrap_or_default();
+    let next = clip_label(detail, next_width);
     let padding = next_width - Span::raw(&next).width();
     let mut numbers = vec![
         Span::styled(next, Style::new().fg(CYAN)),
@@ -285,7 +306,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 Style::new().fg(DIM),
             ));
         }
-        let style = if view.edit_cursor == Some(cell) {
+        let style = if view.cursor == Some(cell) {
             Style::new()
                 .fg(if view.playhead == Some(cell) {
                     PLATE
@@ -304,7 +325,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     }
     frame.render_widget(
         Line::from(numbers),
-        Rect::new(area.x, area.y + 2, area.width, 1),
+        Rect::new(area.x, ruler_y, area.width, 1),
     );
 
     let visible = (0..BANKS)
@@ -323,7 +344,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         .iter()
         .position(|&bank| bank == pads.bank)
         .unwrap_or(0);
-    let available = (area.height as usize).saturating_sub(3);
+    let available = usize::from(area.height.saturating_sub(header_rows));
     let mut start = selected_pos;
     let mut used = shown_rows(pads.bank).len() + 2;
     while start > 0 {
@@ -334,7 +355,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         used += before;
         start -= 1;
     }
-    let mut y = area.y + 3;
+    let mut y = area.y + header_rows;
     for &bank in visible.iter().skip(start) {
         if y >= area.bottom() {
             break;
@@ -368,13 +389,13 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
         y += 1;
 
         let rows = shown_rows(bank);
-        let row_start = if current {
-            let room = (area.bottom() - y).saturating_sub(1) as usize;
+        let room = usize::from(area.bottom() - y);
+        let row_start = if current && rows.len() > room {
             let selected = rows
                 .iter()
                 .position(|&row| row == pads.selected)
                 .unwrap_or(0);
-            selected.saturating_sub(room.saturating_sub(1))
+            selected.saturating_sub(room.saturating_sub(2))
         } else {
             0
         };
@@ -433,7 +454,7 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
                 } else {
                     Style::new()
                 };
-                let cell_style = if view.edit_cursor == Some(cell) {
+                let cell_style = if view.cursor == Some(cell) {
                     Style::new()
                         .fg(if view.playhead == Some(cell) {
                             PLATE
