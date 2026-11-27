@@ -950,7 +950,7 @@ After an SMC-PAD input, the marking hint SHALL name the SMC-PAD control that dro
 
 ### Requirement: A1 shows the next live recording step
 
-The A1 overview SHALL use the label space beside the step numbers for one short instruction. An empty pattern SHALL name the effective live record control. A count-in SHALL name its cancel control. During a pass, the instruction SHALL tell the owner to hit pads and name the finish control.
+The A1 overview SHALL use the label space beside the step numbers for one short instruction. An empty pattern SHALL name the effective live record control. A count-in SHALL name the effective Back key or SMC-PAD command P1. If Hold panel is on and the SMC-PAD supports it, the cue SHALL include PAD BANK. If the Back key has no binding, the keyboard cue SHALL name the record control. During a pass, the instruction SHALL tell the owner to hit pads and name the finish control.
 
 #### Scenario: A1 guides a first recording from keyboard and SMC-PAD
 

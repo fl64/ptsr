@@ -145,7 +145,8 @@ The SMC-PAD counts give visible panel / PAD BANK held / reveal.
 | Action | Keyboard | SMC-PAD |
 | --- | --- | --- |
 | Open A1 | F5 (1) | Screens P16 A1 (2 / 3 / 4) |
-| Start or cancel count-in | Ctrl+R (1) | Tap RECORD (1) |
+| Start count-in | Ctrl+R (1) | Tap RECORD (1) |
+| Cancel count-in on A1 | Esc or Ctrl+R (1) | Hold PAD BANK and press P1 (2). With Hold panel off or unavailable, press P1 in the second bank (1). Tap RECORD to cancel from either bank (1). |
 | Finish a live pass | Ctrl+R (1) | Tap RECORD (1) |
 | Stop or play the loop | Space (1) | STOP or PLAY (1) |
 

@@ -223,6 +223,126 @@ fn a1_shows_the_count_in_and_the_recording() {
     );
 }
 
+/// Scenario "Back cancels count-in on A1" (patterns).
+/// Scenario "P1 cancels count-in before panel reveal" (command-panel).
+#[test]
+fn back_cancels_count_in_on_a1() {
+    use super::super::patterns::app_capture_frames;
+    use engine::capture::Phase;
+
+    for (hold_setting, hold_ready) in [
+        (None, true),
+        (Some(false), true),
+        (Some(true), true),
+        (Some(true), false),
+    ] {
+        let mut drive = a1_drive();
+        if let Some(enabled) = hold_setting {
+            drive.app.midi_gestures.smc_pad_bank_opens_panel = enabled;
+            drive.midi().set_pad_bank_shortcut(enabled);
+        }
+        if !hold_ready {
+            drive.midi().recorded_smc_failure();
+            drive.frame();
+        }
+        let hold_panel = hold_setting.map(|enabled| enabled && hold_ready);
+        let back = |drive: &mut Drive| match hold_panel {
+            None => drive.tap(KeyCode::Esc, M::NONE),
+            Some(hold_panel) => {
+                if hold_panel {
+                    hold(drive, true);
+                }
+                let frame = cell(drive, 52);
+                if hold_panel {
+                    hold(drive, false);
+                }
+                frame
+            }
+        };
+        drive.tap(KeyCode::Char('o'), M::NONE);
+        assert_eq!(drive.app.pads.bank, 1);
+        let sound = tone();
+        drive.load_pad(16, sound.clone(), "warm-up");
+        drive.app.send(Command::SetPadSound {
+            pad: 16,
+            sound: Some(sound),
+        });
+        drive.frame();
+        drive.tap(KeyCode::Char('r'), M::CONTROL);
+        app_capture_frames(&mut drive, 0);
+        assert_eq!(
+            drive.app.pattern_record_state().unwrap().phase,
+            Phase::CountIn
+        );
+
+        if hold_panel.is_some() {
+            app_capture_frames(&mut drive, 6000);
+            let quiet = app_capture_frames(&mut drive, 128).0;
+            assert_eq!(engine::checks::peak(&quiet), 0.0);
+
+            drive.bytes(SMC, &[0x99, 48, 100]);
+            drive.frame();
+            let warm_up = app_capture_frames(&mut drive, 128).0;
+            assert!(engine::checks::peak(&warm_up) > 0.0, "{hold_panel:?}");
+            drive.bytes(SMC, &[0x89, 48, 0]);
+            drive.frame();
+            assert_eq!(
+                drive.app.pattern_record_state().unwrap().phase,
+                Phase::CountIn
+            );
+        }
+        let cue = match hold_panel {
+            None => "Esc cancel count",
+            Some(false) => "P1 cancel count",
+            Some(true) => "PAD BANK+P1 cancel count",
+        };
+        for width in [80, 120] {
+            assert_eq!(
+                drive
+                    .app
+                    .pattern_overview_at(&drive.keymap, width)
+                    .next
+                    .as_deref(),
+                Some(cue)
+            );
+        }
+        let selected = drive.app.pads.selected_abs();
+        let before = drive.app.pads.pattern.as_ref().unwrap().clone();
+
+        drive.tap(KeyCode::F(1), M::NONE);
+        assert!(drive.app.help_open);
+        back(&mut drive);
+        assert!(!drive.app.help_open);
+        app_capture_frames(&mut drive, 0);
+        assert_eq!(
+            drive.app.pattern_record_state().unwrap().phase,
+            Phase::CountIn
+        );
+
+        drive.app.ask = Some(Ask::ClearPattern { lines: Vec::new() });
+        back(&mut drive);
+        assert!(drive.app.ask.is_none());
+        app_capture_frames(&mut drive, 0);
+        assert_eq!(
+            drive.app.pattern_record_state().unwrap().phase,
+            Phase::CountIn
+        );
+
+        assert!(!drive.app.panel.visible());
+        back(&mut drive);
+        assert!(!drive.app.panel.visible());
+        assert!(drive.app.pattern_view.overview);
+        app_capture_frames(&mut drive, 0);
+        drive.frame();
+        assert_eq!(drive.app.pattern_record_state().unwrap().phase, Phase::Idle);
+        assert!(!drive.app.transport_state().playing);
+        assert_eq!(drive.app.pads.bank, 1);
+        assert_eq!(drive.app.pads.selected_abs(), selected);
+        assert_eq!(drive.app.pads.pattern.as_ref(), Some(&before));
+        assert!(drive.app.history.is_empty());
+    }
+}
+
 /// Scenario "Step edit names its next step and close control" (screen-layout).
 #[test]
 fn step_edit_names_its_next_step_and_close_control() {

@@ -3398,9 +3398,10 @@ L="none"
     /// Scenario "A1 next step preserves the screen frame".
     #[test]
     fn a1_next_step_preserves_the_screen_frame() {
-        let (mut keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
-        keymap
-            .overlay("[global]\n'Ctrl+R' = 'none'\n'Ctrl+Alt+Shift+Enter' = 'pattern.record'\n")
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let (mut remapped, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        remapped
+            .overlay("[global]\nEsc = 'none'\n'Ctrl+R' = 'none'\n'Ctrl+Alt+Shift+Enter' = 'pattern.record'\n")
             .unwrap();
         for size in SIZES {
             let case = Case {
@@ -3408,12 +3409,25 @@ L="none"
                 mode: Mode::PatternOverviewAbsent,
                 size,
             };
-            for (mode, instruction) in [
-                (None, "Ctrl+Alt+Shift+Enter record"),
-                (Some(Mode::PatternCountIn), "Ctrl+Alt+Shift+Enter cancel"),
-                (Some(Mode::PatternRecording), "Pad Ctrl+Alt+Shift+Enter end"),
-                (Some(Mode::PatternFinishing), "Finishing A1 · wait"),
-                (Some(Mode::PatternStopped), "Space play A1"),
+            for (keys, mode, instruction) in [
+                (&keymap, Some(Mode::PatternCountIn), "Esc cancel count"),
+                (&remapped, None, "Ctrl+Alt+Shift+Enter record"),
+                (
+                    &remapped,
+                    Some(Mode::PatternCountIn),
+                    "Ctrl+Alt+Shift+Enter cancel",
+                ),
+                (
+                    &remapped,
+                    Some(Mode::PatternRecording),
+                    "Pad Ctrl+Alt+Shift+Enter end",
+                ),
+                (
+                    &remapped,
+                    Some(Mode::PatternFinishing),
+                    "Finishing A1 · wait",
+                ),
+                (&remapped, Some(Mode::PatternStopped), "Space play A1"),
             ] {
                 let now = Instant::now();
                 let mut app = fixture(case, now);
@@ -3424,7 +3438,7 @@ L="none"
                 }
                 app.session_write_error = Some("Save refused.".into());
                 let has_steps = app.pads.pattern.is_some();
-                let (_, buffer) = render_app(case, &keymap, app, now);
+                let (_, buffer) = render_app(case, keys, app, now);
                 let rows: Vec<String> = buffer
                     .content()
                     .chunks(size.0 as usize)
