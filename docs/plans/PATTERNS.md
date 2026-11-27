@@ -345,6 +345,9 @@ panel to use LEFT and RIGHT for bars. Press F2 to edit a pad.
 
 ### Change 98 — `98-pattern-screen`
 
+The [pattern track](#pattern-track-owner-review-2026-11-27) replaces the screen sketch and the keys of this section.
+Keep this section as history of the 98 decisions.
+
 Goal: the Pattern screen (F5) with the step grid and the step mode (TR-REC).
 
 Spec deltas: `patterns`; `screen-layout`; `screen-help`; `keyboard`; `command-panel` (Pattern
@@ -435,6 +438,126 @@ Spec deltas: `patterns` (96 compile, 97 capture and settings), `screen-layout` (
 - old projects with raw ticks (default: load them as they are, no migration).
 - Gate lengths.
 - the controls text for Quantize and Strength.
+
+### Pattern track (owner review 2026-11-27)
+
+The owner used the pattern work on `master` at `97cdda8`. The result is not clear and not
+fast on the keyboard or on the SMC-PAD. The screen looks poor, and Help does not help.
+The owner approved an interactive mockup of the new screen. This track replaces the
+`pattern-screen` item of [UI-UX.md](UI-UX.md#31-pattern-track).
+
+Checked problems at `97cdda8`:
+
+- The pattern is in five places: the mini lane on Pads, the F5 overview, step edit on F7,
+  the setup panel on `Alt+N` and global chords (`config/keymap.toml`: `Alt+E`, `Alt+N`,
+  `Alt+Z`, `Alt+B`, `Alt+Up`, `Alt+Down`, `Alt+H`).
+- F5 is a mode of Pads. F7 works only from the overview.
+- `Ctrl+Z` and `Alt+Z` are two undo keys with different histories.
+- The screen says `A1` on each label, but only one pattern exists.
+- To write four kicks, the owner moves the cursor four times. No mode makes the 16 pads
+  the 16 steps of one sound.
+- The header uses lines such as `BANKS · pads with A1 hits` (`crates/tui/src/pattern.rs`).
+  The `~` glyph (`crates/tui/src/pattern.rs`) has no explanation on the screen.
+- F1 starts with the Pitch Gate row (`crates/app/src/help.rs`).
+
+- The catalogue entry `pads-pattern-overview-straight-120x40` draws a frame for each bank.
+  One pad row uses three lines. The grid starts near column 46.
+- The catalogue entry `pads-help-120x40` has 78 rows. Undo and redo are in the CHOP group.
+  Tap tempo is in the SOUND group.
+
+Goals:
+
+- One place for the pattern: the F5 screen, with plain keys of the right half.
+  Common work needs no Alt chord.
+- Two clear ways to write: play it (record) and step it (pads as steps).
+- The grid is the screen: large cells, visible velocity, one header line.
+- The same model on the SMC-PAD.
+- Help answers tasks first.
+
+#### The pattern screen
+
+```
+ F5 PATTERN  ▶ 1.3  2 bars  120 BPM  bar 1/2            [STEP · pads = steps of kick]
+            1  ·  ·  ·  2  ·  ·  ·  3  ·  ·  ·  4  ·  ·  ·
+ 1 kick     █  ·  ·  ·  ·  ·  █  ·  █  ·  ·  ·  ·  ·  ·  ·
+ 2 snare    ·  ·  ·  ·  █  ·  ·  ·  ·  ·  ·  ·  █  ·  ·  ▪
+ 3 hat      ▓  ·  ▪  ·  ▓  ·  ▪  ·  ▓  ·  ▪  ·  ▓  ·  ▪  ·
+ Q chop 3   ·  ·  ·  ·  ·  ·  ▓  ·  ·  ·  ·  ·  ·  ·  ·  ·
+ velocity   ▆  ▁  ▁  ▁  ▁  ▁  ▆  ▁  ▆  ▁  ▁  ▁  ▁  ▁  ▁  ▁
+ step 1.1 · kick · loud (vel 127)
+ setup  bars 2 · tempo 120 · grid 1/16 · record quantize 1/16 100 % · metronome on · count-in 1 bar
+```
+
+- **Header:** one line. It shows the screen badge, the transport state and position
+  (bar.beat), the length, the tempo, the bar page and the mode badge.
+- **Rows:** the pads with hits and the selected pad, in bank order. No bank frames.
+  The pad label uses its bank tint. A thin rule separates banks only when two banks show.
+  `Alt+H` shows all rows.
+- **Columns:** the grid uses the full width. A step cell is at least 3 columns wide and
+  grows with the terminal. The header numbers the beats (`1 · · · 2 · · ·`).
+  Keep the beat shading. Show one bar per page at 1/16. The design selects half a bar per
+  page or narrower cells for finer grids. All cells on one page have the same width.
+- **Velocity:** three different levels (fill or brightness). The velocity lane under the
+  grid shows the selected row. Later step values (locks, ratchets, probability in 0.4b)
+  use this lane.
+- **Detail line:** the selected step, the pad and its content: `no hit`, the velocity,
+  `off grid +12 ticks` or `2 hits`. The glyphs can stay. The detail line and Help explain them.
+- **Setup line:** bars, tempo, view grid, record quantize and strength, metronome and
+  count-in. It is always visible. `N` moves the focus to it: `I` / `K` select, `J` / `L`
+  change, Esc goes back. It replaces the `Alt+N` panel.
+- **Playhead:** a lit column during play. The edit cursor has its own mark.
+- **Empty pattern:** two lines, `Ctrl+R records what you play` and `Enter writes steps`.
+- **Words:** `pattern` on all labels. A slot name shows only after slots exist (99).
+
+#### Two ways to write
+
+1. **Play it.** `Ctrl+R` (RECORD on the SMC-PAD) starts a pass with the count-in.
+   The pads play and the pass records them. `Ctrl+R` ends the pass.
+   The header shows `● REC 1.2`. The result notice gives the hit count and the undo key.
+2. **Step it.** `Enter` starts and ends step edit. F7 stays as a second key for one
+   release with a moved-key notice. Then F7 is free.
+   - **Pads = steps** (default in step edit): each of the 16 pad keys is one step of the visible bar.
+     The 16 SMC-PAD pads act the same. The steps belong to the selected row. A hit toggles the step.
+     Keyboard Shift gives full velocity. The SMC-PAD gives the hit velocity.
+     The header shows the key of each step above its column. `I` / `K` select the row.
+     To add a row for a new pad, select that pad in pads = sounds.
+   - **Pads = sounds:** the current behavior. `J` / `L` move the time column.
+     A pad toggles its own hit there.
+   - `Tab` switches the two. The mode badge always names the active one:
+     `STEP · pads = steps of kick` or `STEP · pads = sounds`.
+
+The pattern screen keys and their conflicts are in
+[KEYMAP-CLEANUP.md](KEYMAP-CLEANUP.md#8-pattern-screen-keys-pattern-track).
+
+#### One undo
+
+`Ctrl+Z` undoes the last action of the owner, also a pattern pass or a step.
+If the program keeps two histories inside, it orders them by time for the owner.
+Keep the existing safety rule: a pattern undo does not cross a newer structural edit.
+In that case, the notice tells the reason. `Alt+Z` stays for one release with a moved-key notice.
+
+#### Pads screen
+
+The Pads strip keeps a small pattern lane: the used rows that fit, with the playhead.
+It shows one hint, `F5 pattern`. Pads has no pattern settings and no pattern edits.
+
+#### The four changes
+
+Do them in this order. Each change gets the next free OpenSpec number, its own branch and its own PR.
+Write the specifications first. Add catalogue fixtures at 120×40 and 80×26, and keyboard and raw MIDI tests.
+Start the next change only after owner acceptance.
+
+1. `pattern-screen-layout`: F5 as its own screen with the layout above. View and live record only.
+   Remove the old overview and the `Alt+N` panel. Pads keeps the mini lane.
+2. `pattern-step-input`: step edit in the screen with pads = steps and pads = sounds,
+   the pattern screen keys and one undo.
+3. `pattern-smc`: the SMC-PAD model of
+   [SMC-PAD-INTEGRATION.md](SMC-PAD-INTEGRATION.md#25-the-pattern-screen-pattern-smc),
+   with routes in `docs/CONTROLLER-PATHS.md` and device checks.
+4. `help-tasks`: Help by tasks, see [UI-UX.md](UI-UX.md#31-pattern-track).
+
+Renders: change 2 renders a beat written only in pads = steps, with soft, medium and loud hits.
+Changes 1, 3 and 4 do not change sound. Each proposal states this in one sentence.
 
 ### Change 99 — `99-pattern-slots`
 

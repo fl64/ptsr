@@ -71,27 +71,46 @@ The archive of change 122 is complete. Its design assigns `No A1 · Ctrl+R recor
 `CLOCK` to `compact-help`. Check the affected catalogue entries when each change reaches
 owner review.
 
-### 3.1 `pattern-screen`
+### 3.1 Pattern track
 
-Change 140 shows the next step of a live pass in the current A1 overview.
-The instruction follows record, count-in, finish, and playback state.
+The owner review of 2026-11-27 replaces the `pattern-screen` item with four changes.
+[PATTERNS.md](PATTERNS.md#pattern-track-owner-review-2026-11-27) gives the checked
+problems, the approved screen mockup, the two ways to write and the one undo.
+[KEYMAP-CLEANUP.md](KEYMAP-CLEANUP.md#8-pattern-screen-keys-pattern-track) gives the keys.
+[SMC-PAD-INTEGRATION.md](SMC-PAD-INTEGRATION.md#25-the-pattern-screen-pattern-smc) gives the controller model.
 
-Make F5 open a separate Pattern screen. Keep view and edit as
-modes inside that screen. Show `F5 PATTERN` in the title and show the active mode badge.
-Use Enter to switch between view and edit by default. Free F7 in the keymap and show a
-moved-key notice for one release. Keep pattern data and saved files unchanged.
+1. `pattern-screen-layout`: F5 opens its own Pattern screen. It has one header line,
+   rows without bank frames and full-width cells. It has three velocity levels and the velocity lane.
+   It has the detail line, the setup line and the empty state. View and live record only.
+   Remove the old overview and the `Alt+N` panel. Pads keeps the mini lane.
+2. `pattern-step-input`: step edit in the screen with pads = steps and pads = sounds,
+   the pattern screen keys and one undo.
+3. `pattern-smc`: the SMC-PAD model, its routes and device checks.
+4. `help-tasks`: Help by tasks, as below.
 
-Reserve one row below the grid for the selected row's step value. Show velocity in that
-row now. Later 0.4b changes can use the row for locks, ratchets, and probability.
-Replace `No A1 · Ctrl+R record A1` with `pattern A1 is empty · Ctrl+R records` when the
-pattern has no hits.
+Each proposal names the catalogue files at both sizes. It gives separate keyboard and
+controller checks and names the renders to hear, or tells why the sound does not change.
 
-Give the controller a panel action for the Pattern screen, LEFT/RIGHT bar pages, and knobs
-for the step value. Record that the physical SMC-PAD mapping still needs measurement.
+#### Help by tasks (`help-tasks`)
 
-The new proposal must name view, edit, step-lane, empty-pattern, and moved-key catalogue
-files at both sizes. It must give separate keyboard and controller checks and name the
-renders to hear.
+The owner finding: F1 is one flat list. It starts with the Pitch Gate row. Undo and redo are
+under CHOP, and tap tempo is under SOUND. It does not answer "how do I record a beat".
+The proposal checks the row count and the groups in the catalogue.
+
+- **Tab 1, THIS SCREEN, opens first.** It gives the tasks of the current screen and mode.
+  Each task is a short recipe of one to three lines with the keys, in the order of use.
+  Pattern tasks: "Record a beat", "Write steps", "Change one hit", "Erase a pad",
+  "Length, tempo and grid" and "Undo". After an SMC-PAD input, the recipes name its controls.
+- **Tab 2, KEYS.** First the keys of the current screen, then the global keys. Group them by
+  task: play, record, edit, navigate and project. Use two columns at 120 columns. No paragraphs.
+  Undo and redo are global. Tap tempo is in the Pattern group.
+- **Tab 3, CONTROLLER** and **Tab 4, MESSAGES** stay as now.
+- A long explanation, for example Pitch Gate, moves to a "more" line under its recipe.
+  The line stays closed until the owner opens it.
+- A test checks that each action of the current screen is in tab 1 or tab 2.
+  It also checks that no action is in the group of another screen.
+
+`compact-help` (§3.3) changes the help band at the bottom. `help-tasks` changes F1 only.
 
 ### 3.2 `pads-source-view` (change 139)
 
@@ -233,7 +252,8 @@ The order within [FX-FILTERS.md](FX-FILTERS.md) and sections 3 and 4 above stays
 2. The owner merged `repo-fast-checks` and accepted `pattern-view-polish` (123).
 3. Do `denormals` next. Record this order
    in its proposal. Keep the 94a callback peak investigation open until its criteria pass.
-4. Do `pattern-screen`, `pads-source-view` (including `pads-context-lane`),
+4. Do the pattern track of §3.1 (`pattern-screen-layout`, `pattern-step-input`,
+   `pattern-smc`, `help-tasks`), `pads-source-view` (including `pads-context-lane`),
    `compact-help`, and `key-consistency` in that order.
 5. Do `style-doc-split` after the glossary exists and before `screen-layouts`.
 6. Do `screen-layouts` next. Keep its FX geometry ready for later effect parameters.
@@ -250,6 +270,13 @@ Do not run two active behavior changes at once.
 | Before | Question | Proposed default |
 | --- | --- | --- |
 | 3.1 | Which key switches view and edit inside Pattern? | Enter. |
+| 3.1 | Does the screen say `pattern`, with no `A1` until slots exist? | Yes. Owner default, 2026-11-27. |
+| 3.1 | What is the default in step edit? | Pads = steps. Owner default, 2026-11-27. |
+| 3.1 | One undo key for pattern and other edits? | Yes. Owner default, 2026-11-27. |
+| 3.1 | Remove the old Alt chords after one release? | Yes. Owner default, 2026-11-27. |
+| 3.1 | Does SMC-PAD knob 2 select the row in step edit? | Yes. Owner default, 2026-11-27. |
+| 3.1 | Does Help open on the tasks of the current screen? | Yes. Owner default, 2026-11-27. |
+| 3.1 | Metronome on `M` breaks the mark-key rule. Which key? | Keep `Alt+M`. Owner decision, 2026-11-27. |
 | 3.2 | Does Pads show a mini pattern lane when a pattern exists? | Yes. |
 | 3.2 | Is source the default strip view on F2 while playing? | Yes. |
 | 3.2 | Does source focus follow the last hit or the selected pad? | Last hit, with a pin for the selected pad. |

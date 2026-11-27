@@ -103,7 +103,7 @@ to bottom and the cells from left to right.
 3. Save · Open · — · Exit. Learn left the screens view in change 138: binding changes use the keyboard.
 4. Back or No · Undo · Redo · Yes or Apply (change 134).
 
-A1 opens Pattern. Setup opens Settings. Mixer stays dim until `mixer-view`.
+A1 opens Pattern. Change `pattern-screen-layout` renames this cell to `pattern`. Setup opens Settings. Mixer stays dim until `mixer-view`.
 Help opens Controller Help. F1 still opens Help. While the panel shows, LEFT and
 RIGHT move the views. With the panel hidden, they keep their screen roles.
 Panic uses two STOP presses with the command panel open (141).
@@ -151,6 +151,7 @@ Remove the global roles for project scroll, tempo and bank selection from knobs 
 
 Put tempo on the Pattern transport page with swing, quantize and length.
 The A1 actions use P6 `tap` for Tap Tempo. The keyboard uses Alt+B.
+The pattern track moves tap tempo to `B` on the pattern screen (§2.5).
 Files, Chop and Settings have no tempo knob.
 While ptsr Note Repeat is on, bank 1 knobs 1–4 use RATE, SWING, TEMPO and LATCH.
 These roles follow the printed labels. Keep this override tied to change 100.
@@ -242,6 +243,37 @@ or all listed changes. Use Esc or P7 to cancel.
 | `smc-panel-polish` | Enable PAD BANK detection on supported USB. | Yes, after its status-read check passes. |
 | `smc-panel-polish` | Use direct targets on the command layer for P1–P12. | Test the full layout and count presses during review. |
 | `smc-panel-polish` | Move Help from the main page to More. | Yes. |
+
+### 2.5 The pattern screen (`pattern-smc`)
+
+This section gives the SMC-PAD part of
+[the pattern track](PATTERNS.md#pattern-track-owner-review-2026-11-27).
+It uses the same model as the keyboard.
+
+- **Pads:** the pads play sounds. In step edit, the pads are steps or sounds, as on the keyboard.
+  Step edit is a latched mode with its badge. P1 Back ends it.
+- **Actions view:** `step`, `steps / sounds`, `grid -` and `grid +` (one row), `record`,
+  `erase`, `clear`, `tap`, `metro` and `rows`. Setup has no cell, because the knobs change it.
+- **LEFT / RIGHT:** bar pages.
+- **Knobs, bank 1, in pairs on one row:**
+
+| Row | Left knob | Right knob |
+|---|---|---|
+| Top | 7 Strength | 8 Master |
+| Third | 5 View grid | 6 Record quantize |
+| Second | 3 Bars | 4 Tempo |
+| Bottom | 1 Step position | 2 Row |
+
+In pads = steps, knob 2 selects the row (owner default, 2026-11-27).
+
+Count-in has a keyboard path on the setup line, but no knob and no cell in the list above.
+The reach test fails without a controller path. The `pattern-smc` design adds a `count-in`
+cell in a free place of the actions view, or gives another path.
+
+Write six full routes in `docs/CONTROLLER-PATHS.md` for the keyboard and the SMC-PAD.
+The routes are: record a beat, write four kicks, add a ghost snare, delete a hit,
+change the length and tap the tempo. Count the presses of each route.
+Keep the physical results unverified until the owner checks the device.
 
 ## 3. The changes
 
