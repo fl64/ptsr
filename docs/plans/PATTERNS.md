@@ -323,7 +323,7 @@ See [the keyboard and SMC-PAD routes](../CONTROLLER-PATHS.md#select-and-edit-an-
 Show First pass or Overdub from the hits present at the start of the pass.
 Show the accepted pause position and name the control that resumes it.
 Show Stopped when the transport returns to the start.
-Put the new BPM from Tap Tempo in the notice row.
+Put the first keyboard tap and the new BPM in the notice row.
 
 ### Change 98 — `98-pattern-screen`
 
