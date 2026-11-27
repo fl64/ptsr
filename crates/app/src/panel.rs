@@ -713,6 +713,7 @@ mod tests {
             "mixer",
             "mute return",
             "new project",
+            "next hit",
             "no",
             "norm",
             "open",
@@ -722,6 +723,7 @@ mod tests {
             "pitch gate",
             "play mode",
             "play range",
+            "prev hit",
             "put on pads",
             "record A1",
             "record output",
@@ -827,8 +829,8 @@ mod tests {
                 View::Pattern,
                 &[
                     "hide empty",
-                    "",
-                    "",
+                    "prev hit",
+                    "next hit",
                     "",
                     "steps wider",
                     "steps finer",
@@ -959,7 +961,7 @@ mod tests {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 1);
+        assert_eq!(checked, 2);
         assert!(adjacent(7, 8), "No and Yes");
         assert!(adjacent(14, 15), "Undo and Redo");
         assert!(!adjacent(4, 5), "split row");

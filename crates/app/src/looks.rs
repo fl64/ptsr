@@ -48,6 +48,9 @@ impl App {
                 .into_iter()
                 .any(|a| self.pads.file[a].is_some()))
             .then(|| Grey::Why("nothing to reset".into())),
+            (View::Pattern, Action::ParamPrev | Action::ParamNext) if !self.pattern_view.edit => {
+                why("Open Step Edit to select a hit.")
+            }
             (View::Pattern, Action::PatternViewPrev | Action::PatternViewNext) => {
                 let finer = action == Action::PatternViewNext;
                 self.pattern_view.division.at_limit(finer).then(|| {

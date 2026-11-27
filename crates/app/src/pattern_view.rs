@@ -742,6 +742,13 @@ impl super::App {
                     .map_or(usize::from(events.len() == 1), |index| index + 1);
                 view.event_choice = Some((index, events.len()));
                 view.event_velocity = (index > 0).then(|| events[index - 1].raw.velocity());
+                if width <= 80
+                    && self.panel.visible()
+                    && let Some(velocity) = view.event_velocity
+                {
+                    view.state_label =
+                        Some(format!("event {index}/{} · vel {velocity}", events.len()));
+                }
             }
         } else {
             view.state_label = match recording {

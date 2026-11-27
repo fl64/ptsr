@@ -857,7 +857,7 @@ impl App {
             if self.pattern_view.edit {
                 rows.push((
                     "Step correction".into(),
-                    "Use the shown step keys or learned MIDI step controls to move the time column. A pad selects its row and adds or removes only its hit at that step. An arrow marks the selected pad row. Use the event keys when several hits share one cell. Edit pads stay silent. Undo restores."
+                    "Use the shown step keys or learned MIDI step controls to move the time column. A pad selects its row and adds or removes only its hit at that step. An arrow marks the selected pad row. Use the shown event keys or P14/P15 on the command panel when several hits share one cell. Edit pads stay silent. Undo restores."
                         .into(),
                 ));
             }
