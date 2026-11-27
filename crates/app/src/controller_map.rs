@@ -425,8 +425,17 @@ impl App {
                 position => (position, true),
             },
             Some("master.volume") => ("master", true),
-            Some("settings.row") => ("row", true),
-            Some("settings.value_next") => ("value", true),
+            Some("settings.row") if self.path_picker.is_some() => ("folder", name == "e1"),
+            Some("settings.row") => (
+                "row",
+                self.screen == input::Screen::Settings && self.settings_tab != 1,
+            ),
+            Some("settings.value_next") => (
+                "value",
+                self.screen == input::Screen::Settings
+                    && self.path_picker.is_none()
+                    && matches!(self.settings_tab, 0 | 2),
+            ),
             Some("files.scroll") => ("file", true),
             Some("projects.scroll") => ("select", true),
             Some(action) => {
@@ -454,6 +463,7 @@ impl App {
                 "param" => "select a parameter",
                 position => position,
             },
+            Some("settings.row") if short == "folder" => "select a folder",
             Some("chop.region_start_pos") => "trim start",
             Some("chop.region_end_pos") => "trim end",
             Some("chop.threshold") => "hit level",
@@ -535,7 +545,9 @@ impl App {
             .controller
             .smc_last_knob
             .as_ref()
-            .filter(|_| ready);
+            .filter(|last| {
+                ready && (self.screen != input::Screen::Settings || roles[last.bank][last.knob].1)
+            });
         let value = last
             .filter(|_| self.value_popup.as_ref().is_some_and(|shown| shown.knob))
             .zip(self.current_value_at(now))

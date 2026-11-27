@@ -517,6 +517,13 @@ impl App {
         })
     }
 
+    pub(super) fn panel_for_frame(&self) -> Option<tui::CommandPanel> {
+        if self.path_picker.is_some() && self.ask.is_none() && !self.help_open {
+            return None;
+        }
+        self.panel_snapshot()
+    }
+
     pub(super) fn panel_snapshot(&self) -> Option<tui::CommandPanel> {
         if self.panel.visible() && !self.panel_input_available() {
             return self.modal_snapshot();
