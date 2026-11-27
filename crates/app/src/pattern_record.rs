@@ -775,12 +775,23 @@ impl Capture {
 }
 
 impl crate::App {
+    pub(super) fn pattern_setup_refusal(&self) -> Option<&'static str> {
+        self.pattern_view.edit.then_some("Close Step Edit first.")
+    }
+
     pub(super) fn pattern_panel_action(&mut self, action: input::Action) {
         use input::Action;
         if self.transport_input_blocked() {
             return;
         }
         if action == Action::PatternControls {
+            if self.help_open {
+                return;
+            }
+            if let Some(text) = self.pattern_setup_refusal() {
+                self.pattern_notice(text);
+                return;
+            }
             if self.pattern_panel.take().is_some() {
                 return;
             }

@@ -350,6 +350,8 @@ impl super::App {
             .is_some_and(|state| state.phase == engine::capture::Phase::CountIn)
         {
             Some("wait for the count-in")
+        } else if self.pattern_panel.is_some() {
+            Some("Close A1 Setup first.")
         } else if self.pads.pattern.is_none() {
             Some("No A1: record A1 before step correction.")
         } else if self.transport_input_blocked()
@@ -359,7 +361,6 @@ impl super::App {
             || self.copy_in_hand.is_some()
             || self.browser.in_hand.is_some()
             || self.erase_pads
-            || self.pattern_panel.is_some()
             || self.recording.is_some()
         {
             Some("Finish the current edit or recording before step correction.")
