@@ -164,6 +164,10 @@ pub fn set_smc_fine_hold(on: bool) {
     SMC_FINE_HOLD.set(on);
 }
 
+pub(super) fn smc_fine_hold() -> bool {
+    SMC_FINE_HOLD.get()
+}
+
 pub fn smc_words() -> bool {
     SMC_WORDS.get()
 }
@@ -251,9 +255,7 @@ pub fn panel_overlay_area(
     if content.width <= 80 && matches!(screen, Screen::ProjectPicker(_)) {
         return None;
     }
-    if help.full.is_some()
-        && (super::pattern::a1_overview(screen) || super::help::a1_setup_help(help))
-    {
+    if help.full.is_some() {
         return None;
     }
     if super::pattern::compact_a1(content, screen) {

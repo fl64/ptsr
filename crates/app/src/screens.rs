@@ -3952,6 +3952,73 @@ L="none"
         }
     }
 
+    /// Scenario "Panel and Full Help stay readable together".
+    /// Render three tabs at two sizes on each work screen.
+    #[test]
+    fn panel_and_full_help_stay_readable_together() {
+        use crate::help::Page;
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let now = Instant::now();
+        let text = |frame: Buffer| {
+            frame
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+        for size in SIZES {
+            for screen in [
+                Screen::Pads,
+                Screen::Chop,
+                Screen::Files,
+                Screen::Fx,
+                Screen::Settings,
+            ] {
+                let case = Case {
+                    screen,
+                    mode: Mode::Normal,
+                    size,
+                };
+                let make = || {
+                    let mut app = fixture(case, now);
+                    app.panel.reveal("SMC-PAD-Master offline");
+                    app.toggle_help();
+                    app
+                };
+                for (page, title, cue) in [
+                    (Page::Help, "[HELP]", "P5/P6 page"),
+                    (Page::Messages, "[MESSAGES]", "P5/P6/PgUp/PgDn page"),
+                    (Page::Controller, "[CONTROLLER]", "P5/P6 select"),
+                ] {
+                    let mut app = make();
+                    app.help_overlay.page = page;
+                    let shown = text(render_app(case, &keymap, app, now).1);
+                    assert!(shown.contains(title) && shown.contains(cue), "{shown}");
+                    assert!(shown.contains("P1 close"), "{shown}");
+                    assert!(!shown.contains("PANEL │ HELP"), "{shown}");
+                }
+                let mut app = make();
+                assert!(app.help_key(&KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+                assert_eq!(app.screen, screen);
+                let shown = text(render_app(case, &keymap, app, now).1);
+                assert!(shown.contains(" actions │"), "{shown}");
+            }
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::Question,
+                size,
+            };
+            let mut app = fixture(case, now);
+            app.panel.reveal("SMC-PAD-Master offline");
+            app.toggle_help();
+            let shown = text(render_app(case, &keymap, app, now).1);
+            assert!(shown.contains("Reset 2 pads to clean?") && shown.contains("Esc: keep"));
+            assert!(shown.contains("[HELP]") && !shown.contains("PANEL │ HELP"));
+        }
+    }
+
     /// Scenario "Compact A1 panel and picker stay readable".
     #[test]
     fn compact_a1_panel_and_picker_stay_readable() {
