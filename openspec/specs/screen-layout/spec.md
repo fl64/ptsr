@@ -191,20 +191,6 @@ Every screen SHALL use shared title composition. Badge colors SHALL remain yello
 - **WHEN** title badges appear in a terminal with limited colors
 - **THEN** their text still distinguishes mode, editing, learning, questions and recording
 
-### Requirement: Existing mode badge labels
-
-Placement labels SHALL be `IN HAND`, `COPY`, `SWAP` or `ASSIGN`. Marking SHALL show `MARK` or `N MARKED`, editing `EDIT` with its page, learning `LEARN` and questions `ASK`. Recording SHALL show `REC` with elapsed time when space permits. Chop toggles SHALL show `LOOP` and `AS PAD`. Mark and assignment badges SHALL retain counts. Inactive states SHALL NOT produce these mode labels. Transport feedback SHALL remain distinct from pad playback. Controller panels remain out of scope.
-
-#### Scenario: Every existing mode has its badge
-- **WHEN** each existing placement, marking, edit, learning, question, recording or Chop toggle state is active in a separate fixture
-- **THEN** its badge uses the specified label, page, count or elapsed time
-- **AND** transport feedback remains separate from pad-playback state without advertising a controller panel
-
-#### Scenario: Overlapping placements remain visible
-- **WHEN** more than one of file placement, copy and swap is pending
-- **THEN** one compound PadMode badge names the pending placement modes
-- **AND** existing keyboard and MIDI action priorities remain unchanged
-
 ### Requirement: Badge width and compatibility
 
 At supported widths, badges SHALL retain screen identity, transport feedback, questions and the active PadMode label. Compact labels SHALL precede removal of lower-priority badges. File details SHALL yield space first. Crowded Chop headers MAY use `#i/n` for variants and `Nsl` for slice counts without losing these numbers. PLAY and LISTEN SHALL retain their ten-cell slots, styles, actual-playback semantics and stable following columns. Badges SHALL NOT change sound, keys, data or input order.
@@ -1103,3 +1089,21 @@ Sound SHALL use positions from completed audio blocks. A restart SHALL replace t
 
 - **WHEN** the owner edits a pad or records from Pads
 - **THEN** the edit or recording view takes the strip, and the previous view returns after exit
+
+### Requirement: The visible mode has its badge
+
+Placement badges SHALL use `IN HAND`, `COPY`, `SWAP` or `ASSIGN`.
+Marking SHALL show `MARK` or `N MARKED`. Edit SHALL show `EDIT` with its page.
+Learning and questions SHALL use `LEARN` and `ASK`. Recording SHALL show `REC`
+with elapsed time if it fits. Chop toggles SHALL show `LOOP` and `AS PAD`.
+Marks and Assign SHALL retain their counts. A badge SHALL show only an active mode.
+Transport and pad playback SHALL show separate feedback.
+
+#### Scenario: Every existing mode has its badge
+- **WHEN** each existing placement, marking, edit, learning, question, recording or Chop toggle state is active in a separate fixture
+- **THEN** its badge uses the specified label, page, count or elapsed time
+- **AND** transport feedback remains separate from pad playback
+
+#### Scenario: One placement badge names the held item
+- **WHEN** a successful pickup replaces an item in hand
+- **THEN** the badge names only the new item

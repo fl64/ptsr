@@ -119,7 +119,9 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                 p.title,
                 Style::new().fg(BG).bg(TEXT),
             )));
-            for (i, name) in p.entries.iter().enumerate() {
+            let visible = usize::from(height.saturating_sub(4));
+            let start = (p.selected + 1).saturating_sub(visible);
+            for (i, name) in p.entries.iter().enumerate().skip(start).take(visible) {
                 let row = format!("   {name}");
                 lines.push(Line::from(if i == p.selected {
                     Span::styled(row, Style::new().fg(BG).bg(CYAN))

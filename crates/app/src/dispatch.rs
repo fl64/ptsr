@@ -288,7 +288,7 @@ impl App {
                 if self.screen == Screen::Files && self.browser.in_hand.is_none() =>
             {
                 let dir = self.browser.dir.clone();
-                self.browser.take();
+                self.take_browser_entry();
                 if self.browser.dir != dir {
                     self.dirty();
                     self.preview_selection();
@@ -940,15 +940,8 @@ impl App {
                 self.put_in_hand(self.pads.selected_abs())
             }
             Action::PadEdit if self.screen == Screen::Pads => self.edit = true,
-            Action::PadTake => {
-                self.browser.in_hand = None;
-                self.pad_in_hand = Some(self.pads.selected_abs());
-            }
-            // 83a: Ctrl+C copies, Ctrl+Q stays the quit; a copy and a swap never share a hand
-            Action::PadCopy if self.screen == Screen::Pads => {
-                self.pad_in_hand = None;
-                self.take_copy();
-            }
+            Action::PadTake => self.take_swap(),
+            Action::PadCopy if self.screen == Screen::Pads => self.take_copy(),
             // a run waits for the next control: Esc stops it and keeps what is learned (28)
             Action::Back if self.midi_run.is_some() => self.midi_run = None,
             Action::Back if self.learning.is_some() => self.learning = None,
@@ -984,6 +977,7 @@ impl App {
             {
                 self.turn_slice_page(action)
             }
+            Action::SettingsRow(_) if self.settings_tab == 1 => {}
             Action::SettingsRow(step) if self.settings_tab == 2 => {
                 self.midi_row = (self.midi_row as isize + step as isize)
                     .clamp(0, self.midi_list().len() as isize - 1)
@@ -999,6 +993,7 @@ impl App {
                     .clamp(0, SETTINGS_ROWS as isize - 1)
                     as usize
             }
+            Action::SettingsValue(_) if self.screen != Screen::Settings => {}
             Action::SettingsValue(step)
                 if self.settings_tab == 2
                     && self
@@ -1124,12 +1119,11 @@ impl App {
             },
             Action::Confirm | Action::SettingsLearn | Action::SettingsClear => {}
             Action::SmcList { next } => self.smc_list(next),
-            Action::SettingsValue(step) => self.change(self.settings_row, step as isize),
-            Action::SettingsTab => {
-                self.settings_tab = (self.settings_tab + 1) % 4;
-                self.learning = None;
-                self.midi_run = None;
+            Action::SettingsValue(step) if self.settings_tab == 0 => {
+                self.change(self.settings_row, step as isize)
             }
+            Action::SettingsValue(_) => {}
+            Action::SettingsTab => self.move_settings_tab(true),
             // a file in hand: the list keys choose the pad it goes to
             Action::BrowserHold
                 if self.screen == Screen::Files && self.browser.in_hand.is_some() =>
@@ -1165,7 +1159,7 @@ impl App {
                 match action {
                     Action::BrowserEnter => self.browser.enter(),
                     Action::BrowserParent => self.browser.parent(),
-                    _ => self.browser.take(),
+                    _ => self.take_browser_entry(),
                 }
                 if self.browser.dir != dir {
                     self.dirty();
@@ -1523,12 +1517,6 @@ impl App {
             }
             // A late direct notification is not a new Chop action.
         } else {
-            // Existing overlap order differs: MIDI file/copy/swap; keyboard copy/swap/file.
-            if from_midi && self.browser.in_hand.is_some() {
-                self.put_in_hand(abs);
-                self.pads.selected = local;
-                return None;
-            }
             if self.copy_in_hand.is_some() {
                 let before = from_midi.then(|| self.before());
                 self.pads.selected = local;
@@ -2715,6 +2703,15 @@ impl App {
         self.say_changed(changed, false);
     }
 
+    fn move_settings_tab(&mut self, next: bool) {
+        self.settings_tab = (self.settings_tab + if next { 1 } else { 3 }) % 4;
+        if self.settings_tab == 3 {
+            self.settings_row = self.settings_row.min(1);
+        }
+        self.learning = None;
+        self.midi_run = None;
+    }
+
     fn smc_list(&mut self, next: bool) {
         // A visible panel takes LEFT and RIGHT for its views (127); a question and the
         // target view keep their own cells.
@@ -2782,9 +2779,7 @@ impl App {
                 return;
             }
             Screen::Settings => {
-                self.settings_tab = (self.settings_tab + if next { 1 } else { 3 }) % 4;
-                self.learning = None;
-                self.midi_run = None;
+                self.move_settings_tab(next);
                 return;
             }
         };

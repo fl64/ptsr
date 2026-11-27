@@ -1957,6 +1957,29 @@ impl App {
         self.followers.push((leader, abs, self.load_gen[abs]));
     }
 
+    pub(super) fn swap_source_refusal(&self, abs: usize) -> Option<&'static str> {
+        if self.pads.loading[abs].is_some() {
+            Some("Wait until loading finishes, then swap.")
+        } else if self.pads.file[abs].is_none() {
+            Some("Swap what? This pad holds nothing.")
+        } else if self.pads.missing[abs] {
+            Some("Swap what? The file this pad plays is gone.")
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn take_swap(&mut self) {
+        let abs = self.pads.selected_abs();
+        if let Some(reason) = self.swap_source_refusal(abs) {
+            self.post_notice(Level::Warn, (reason.into(), Instant::now()));
+            return;
+        }
+        self.browser.in_hand = None;
+        self.copy_in_hand = None;
+        self.pad_in_hand = Some(abs);
+    }
+
     /// 83a: Ctrl+C takes a copy of the selected loaded pad; the snapshot is taken now,
     /// so later changes of the source do not change what is placed. Empty, missing and
     /// loading sources are refused with a plain notice, nothing else changes.
@@ -1992,6 +2015,8 @@ impl App {
         let mut snap = self.pads.snapshot(abs);
         // Keep the full pickup name even if the source later changes or has no file name.
         snap.name = Some(pad_name(&self.pads, abs));
+        self.browser.in_hand = None;
+        self.pad_in_hand = None;
         self.copy_in_hand = Some((abs, snap));
         self.post_notice(Level::Info, (("COPY · hit a pad").into(), Instant::now()));
     }

@@ -186,18 +186,7 @@ fn placement_marks_distinguish_confirmation_from_swap() {
                         "an available target adds no question"
                     );
                     if operation == "file" {
-                        let deadline = Instant::now() + Duration::from_secs(5);
-                        while drive.app.pads.loading[target].is_some() {
-                            let reply = drive
-                                .app
-                                .loader
-                                .as_ref()
-                                .unwrap()
-                                .1
-                                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                                .unwrap();
-                            drive.app.loader_reply(reply);
-                        }
+                        wait_for_pad_file(&mut drive, target);
                         assert!(drive.app.pads.sound[target].is_some());
                         assert!(drive.app.browser.in_hand.is_none());
                     }
@@ -542,98 +531,148 @@ fn every_existing_mode_has_its_badge() {
     }
 }
 
-/// Scenario "Overlapping placements remain visible".
+fn wait_for_pad_file(drive: &mut Drive, target: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while drive.app.pads.loading[target].is_some() {
+        let reply = drive
+            .app
+            .loader
+            .as_ref()
+            .unwrap()
+            .1
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap();
+        drive.app.loader_reply(reply);
+    }
+}
+
+fn placement_drive() -> Drive {
+    let mut drive = Drive::new();
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "source");
+    for (cc, action) in [(102, "pad.copy"), (103, "pad.take"), (104, "edit.undo")] {
+        drive.bind_action(cc, action);
+    }
+    drive
+}
+
+/// Scenario "Successful pickups replace the previous placement" (pad-assignment).
+/// Scenario "One placement badge names the held item" (screen-layout).
 #[test]
-fn overlapping_placements_remain_visible_without_changing_priority() {
-    for source in [Source::Keyboard, Source::Notes, Source::Button] {
-        for mask in 1..8 {
-            let mut drive = Drive::new();
-            let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
-            drive.load_pad(0, sound.clone(), "source");
-            drive.load_pad(4, sound, "target");
-            for (cc, action) in [
-                (102, "pad.copy"),
-                (103, "pad.take"),
-                (104, "screen.files"),
-                (105, "browser.hold"),
-                (106, "screen.pads"),
-            ] {
-                drive.bind_action(cc, action);
-            }
-            let controls = if matches!(source, Source::Keyboard) {
-                Source::Keyboard
+fn successful_pickups_replace_the_previous_placement() {
+    for source in [Source::Keyboard, Source::Button] {
+        for swap_last in [false, true] {
+            let mut drive = placement_drive();
+            let copy = ('c', 102);
+            let swap = ('x', 103);
+            let actions = if swap_last {
+                [copy, swap]
             } else {
-                Source::Button
+                [swap, copy]
             };
-            if mask & 2 != 0 {
-                drive.registry_command(controls, KeyCode::Char('c'), M::CONTROL, 102);
+            for (key, cc) in actions {
+                drive.registry_command(source, KeyCode::Char(key), M::CONTROL, cc);
             }
-            if mask & 4 != 0 {
-                drive.registry_command(controls, KeyCode::Char('x'), M::CONTROL, 103);
-            }
-            if mask & 1 != 0 {
-                drive.app.browser.dir = "target/87-badge-files".into();
-                drive.registry_command(controls, KeyCode::F(6), M::NONE, 104);
-                drive.app.browser.entries = vec![browser::Entry {
-                    name: "new.wav".into(),
-                    is_dir: false,
-                    favorite: None,
-                }];
-                drive.app.browser.selected = 0;
-                drive.registry_command(controls, KeyCode::Enter, M::NONE, 105);
-                drive.registry_command(controls, KeyCode::F(2), M::NONE, 106);
-            }
-            let labels = badge_labels(&drive);
-            assert_eq!(labels.len(), 1, "one compound badge");
-            for (bit, name) in [(1, "IN HAND"), (2, "COPY"), (4, "SWAP")] {
-                assert_eq!(
-                    labels[0].contains(name),
-                    mask & bit != 0,
-                    "{mask}: {labels:?}"
-                );
-            }
-            assert_eq!(
-                pad_feedback(&drive).corners[4],
-                Some(if mask & 3 != 0 {
-                    tui::PadCorner::Replace
-                } else {
-                    tui::PadCorner::Available
-                }),
-                "all seven overlapping operations retain their target marks"
-            );
-            let before = drive.seen().pads;
+            let label = if swap_last { "SWAP" } else { "COPY" };
+            assert_eq!(badge_labels(&drive), [format!("{label} · hit a pad")]);
+            assert_eq!(drive.app.pad_in_hand.is_some(), swap_last);
+            assert_eq!(drive.app.copy_in_hand.is_some(), !swap_last);
+
             assert_silent_target(&drive.pad_press(source, 4));
             drive.pad_release(source, 4);
-            let swap_wins = mask & 4 != 0
-                && mask & 2 == 0
-                && (matches!(source, Source::Keyboard) || mask & 1 == 0);
-            if swap_wins {
-                assert!(drive.app.ask.is_none(), "an occupied swap remains direct");
-                assert_ne!(drive.seen().pads, before);
-                assert_eq!(
-                    badge_labels(&drive),
-                    if mask & 1 != 0 {
-                        vec!["IN HAND · hit a pad".to_string()]
-                    } else {
-                        Vec::new()
-                    }
-                );
-            } else {
-                assert_eq!(drive.seen().pads, before);
-                let file_wins =
-                    mask & 1 != 0 && (!matches!(source, Source::Keyboard) || mask & 6 == 0);
-                assert_eq!(
-                    matches!(drive.app.ask, Some(Ask::PutFile { .. })),
-                    file_wins
-                );
-                assert_eq!(
-                    matches!(drive.app.ask, Some(Ask::CopyPad { .. })),
-                    !file_wins && mask & 2 != 0
-                );
-                assert_eq!(badge_labels(&drive)[1], "ASK");
-            }
+            assert_eq!(drive.app.pads.file[0].is_none(), swap_last);
+            assert_eq!(
+                drive.app.pads.file[4].as_deref(),
+                Some(Path::new("source.wav"))
+            );
+            assert!(badge_labels(&drive).is_empty());
+
+            assert_full_hit(&drive.pad_press(source, 4), 4);
+            drive.pad_release(source, 4);
+            drive.registry_command(source, KeyCode::Char('z'), M::CONTROL, 104);
+            assert_eq!(
+                drive.app.pads.file[0].as_deref(),
+                Some(Path::new("source.wav"))
+            );
+            assert!(drive.app.pads.file[4].is_none());
+            assert!(badge_labels(&drive).is_empty());
         }
     }
+}
+
+/// Scenario "File pickup replaces the pad operation" (pad-assignment).
+#[test]
+fn file_pickup_replaces_the_pad_operation() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (key, cc) in [('c', 102), ('x', 103)] {
+            let mut drive = placement_drive();
+            drive.registry_command(source, KeyCode::Char(key), M::CONTROL, cc);
+            let path = drive.ordered_file();
+            drive.registry_command(source, KeyCode::Enter, M::NONE, 82);
+            assert_eq!(badge_labels(&drive), ["IN HAND · hit a pad"]);
+            assert!(drive.app.copy_in_hand.is_none() && drive.app.pad_in_hand.is_none());
+
+            assert_silent_target(&drive.pad_press(source, 4));
+            drive.pad_release(source, 4);
+            assert!(drive.app.pads.loading[4].is_some());
+            wait_for_pad_file(&mut drive, 4);
+            assert_eq!(drive.app.pads.file[4].as_deref(), Some(path.as_path()));
+            assert!(drive.app.browser.in_hand.is_none());
+            assert!(badge_labels(&drive).is_empty());
+        }
+    }
+}
+
+/// Scenario "A refused pickup preserves the held item" (pad-assignment).
+#[test]
+fn a_refused_pickup_preserves_the_held_item() {
+    for source in [Source::Keyboard, Source::Button] {
+        for (held, refused) in [(('c', 102), ('x', 103)), (('x', 103), ('c', 102))] {
+            let mut drive = placement_drive();
+            drive.registry_command(source, KeyCode::Char(held.0), M::CONTROL, held.1);
+            let label = badge_labels(&drive);
+            let before = drive.seen().pads;
+            drive.app.pads.selected = 1;
+            drive.registry_command(source, KeyCode::Char(refused.0), M::CONTROL, refused.1);
+            assert!(drive.last_notice().text.contains("This pad holds nothing"));
+            assert_eq!(badge_labels(&drive), label);
+            assert_eq!(drive.seen().pads, before);
+
+            drive.load_pad(1, Arc::new(Sample::mono(vec![0.25; 1024])), "busy");
+            drive.app.pads.loading[1] = Some(20);
+            drive.registry_command(source, KeyCode::Char(refused.0), M::CONTROL, refused.1);
+            assert!(drive.last_notice().text.contains("loading finishes"));
+            assert_eq!(badge_labels(&drive), label);
+
+            drive.app.pads.loading[1] = None;
+            drive.app.pads.missing[1] = true;
+            drive.registry_command(source, KeyCode::Char(refused.0), M::CONTROL, refused.1);
+            assert!(
+                drive
+                    .last_notice()
+                    .text
+                    .contains("file this pad plays is gone")
+            );
+            assert_eq!(badge_labels(&drive), label);
+        }
+    }
+}
+
+/// Scenario "A saved recording replaces the held item" (pad-assignment).
+#[test]
+fn a_saved_recording_replaces_the_held_item() {
+    let files = TransitionFiles::new();
+    let mut drive = placement_drive();
+    drive.load_pad(4, Arc::new(Sample::mono(vec![0.25; 1024])), "target");
+    drive.tap(KeyCode::Char('c'), M::CONTROL);
+    drive.pad_press(Source::Keyboard, 4);
+    drive.pad_release(Source::Keyboard, 4);
+    assert!(matches!(drive.app.ask, Some(Ask::CopyPad { .. })));
+
+    drive.app.keep_recording(&[0.25; 1024], false, &files.0);
+    assert!(drive.app.ask.is_none());
+    assert!(drive.app.copy_in_hand.is_none());
+    assert!(drive.app.browser.in_hand.as_ref().unwrap().is_file());
+    assert_eq!(badge_labels(&drive), ["IN HAND · hit a pad"]);
 }
 
 #[test]

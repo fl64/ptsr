@@ -2050,54 +2050,50 @@ fn modes_85_chop_precedes_hand_targets_and_keeps_edit() {
 }
 
 #[test]
-fn modes_85_overlapping_hands_keep_source_specific_priority() {
-    for with_file in [false, true] {
-        for source in [Source::Keyboard, Source::Notes, Source::Button] {
-            let mut drive = Drive::new();
-            let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
-            drive.load_pad(0, sound.clone(), "source");
-            drive.load_pad(4, sound, "target");
-            drive.tap(KeyCode::Char('c'), M::CONTROL);
-            drive.tap(KeyCode::Char('x'), M::CONTROL);
-            assert!(drive.app.copy_in_hand.is_some());
-            assert_eq!(drive.app.pad_in_hand, Some(0));
-            if with_file {
-                drive.tap(KeyCode::F(6), M::NONE);
-                drive.app.browser.dir = "target/85-files".into();
-                drive.app.browser.entries = vec![browser::Entry {
-                    name: "new file.wav".into(),
-                    is_dir: false,
-                    favorite: None,
-                }];
-                drive.app.browser.selected = 0;
-                drive.tap(KeyCode::Enter, M::NONE);
-                drive.tap(KeyCode::F(2), M::NONE);
-                assert!(drive.app.browser.in_hand.is_some());
-            }
-            let before = drive.seen().pads;
-            assert_silent_target(&drive.pad_press(source, 4));
-            if with_file && !matches!(source, Source::Keyboard) {
-                assert!(matches!(drive.app.ask, Some(Ask::PutFile { abs: 4, .. })));
-            } else {
-                assert!(matches!(
-                    drive.app.ask,
-                    Some(Ask::CopyPad { source: 0, .. })
-                ));
-            }
-            assert_eq!(drive.seen().pads, before);
-            assert_eq!(drive.app.pads.selected_abs(), 4);
-            assert!(drive.app.history.is_empty());
-            assert!(drive.app.copy_in_hand.is_some());
-            assert_eq!(drive.app.pad_in_hand, Some(0));
-            let release = drive.pad_release(source, 4);
-            if matches!(source, Source::Keyboard) {
-                // A keyboard target keeps its existing release attempt. It did
-                // not start an accepted audio hold and adds no new pad hit.
-                assert_only_release(&release, 4);
-            } else {
-                assert!(release.commands().is_empty());
-            }
+fn one_item_in_hand_asks_about_the_same_target_from_each_input() {
+    for source in [Source::Keyboard, Source::Notes, Source::Button] {
+        let mut drive = Drive::new();
+        let sound = Arc::new(Sample::mono(vec![0.25; 1024]));
+        drive.load_pad(0, sound.clone(), "source");
+        drive.load_pad(4, sound, "target");
+        drive.tap(KeyCode::Char('c'), M::CONTROL);
+        assert!(drive.app.copy_in_hand.is_some());
+        drive.tap(KeyCode::Char('x'), M::CONTROL);
+        assert!(drive.app.copy_in_hand.is_none());
+        assert_eq!(drive.app.pad_in_hand, Some(0));
+
+        drive.tap(KeyCode::F(6), M::NONE);
+        drive.app.browser.dir = "target/placement-files".into();
+        drive.app.browser.entries = vec![browser::Entry {
+            name: "new file.wav".into(),
+            is_dir: false,
+            favorite: None,
+        }];
+        drive.app.browser.selected = 0;
+        drive.tap(KeyCode::Enter, M::NONE);
+        drive.tap(KeyCode::F(2), M::NONE);
+        assert!(drive.app.pad_in_hand.is_none());
+        assert!(drive.app.copy_in_hand.is_none());
+        let path = drive.app.browser.in_hand.clone().unwrap();
+
+        let before = drive.seen().pads;
+        assert_silent_target(&drive.pad_press(source, 4));
+        assert!(matches!(
+            &drive.app.ask,
+            Some(Ask::PutFile { abs: 4, path: asked, .. }) if asked == &path
+        ));
+        assert_eq!(drive.seen().pads, before);
+        assert_eq!(drive.app.pads.selected_abs(), 4);
+        assert!(drive.app.history.is_empty());
+        let release = drive.pad_release(source, 4);
+        if matches!(source, Source::Keyboard) {
+            assert_only_release(&release, 4);
+        } else {
+            assert!(release.commands().is_empty());
         }
+        drive.tap(KeyCode::Esc, M::NONE);
+        assert!(drive.app.ask.is_none());
+        assert_eq!(drive.app.browser.in_hand.as_ref(), Some(&path));
     }
 }
 
