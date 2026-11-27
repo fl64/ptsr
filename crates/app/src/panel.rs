@@ -468,14 +468,6 @@ impl App {
 
     /// The panel of a mode that takes the screen (134): only the cells that act there.
     fn modal_snapshot(&self) -> Option<tui::CommandPanel> {
-        let pending = self
-            .screen_learn
-            .as_ref()
-            .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
-            || self
-                .learning
-                .as_ref()
-                .is_some_and(|learn| learn.pending.is_some());
         let (view, cells): (&'static str, &[(usize, &str)]) = if self.help_open {
             (
                 "HELP · LEFT RIGHT tabs",
@@ -493,9 +485,10 @@ impl App {
             )
         } else if self.project_picker.is_some() || self.path_picker.is_some() {
             ("LIST · knob 1 moves", &[(12, "close"), (15, "open")])
-        } else if self.screen_learn.is_some() || self.learning.is_some() {
-            if pending {
-                ("LEARN", &[(12, "cancel"), (15, "save")])
+        } else if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some()
+        {
+            if self.midi_binding_pending() {
+                ("LEARN · Enter saves", &[(12, "cancel")])
             } else {
                 ("LEARN · touch a control", &[(12, "back")])
             }
@@ -533,9 +526,12 @@ impl App {
         }
         (self.panel.visible() && self.panel_input_available()).then(|| {
             // Behind a question only its two answers show (134).
-            if self.ask.is_some() {
+            if let Some(ask) = &self.ask {
                 return tui::CommandPanel {
                     labels: std::array::from_fn(|index| {
+                        if ask.changes_midi_binding() && index == 15 {
+                            return None;
+                        }
                         // the save failure answers keep the words of its question (F33)
                         let recovery = matches!(self.ask, Some(super::Ask::ExitRecovery { .. }));
                         match (index, recovery) {

@@ -3274,7 +3274,7 @@ fn pending_pad_uses_preceding_commands_in_order() {
             assert_eq!(engine::checks::peak(&stopped.0[2048..]), 0.0);
         }
     }
-    // A blocked/no-op command and F10 transitions must retire too.
+    // Blocked actions must retire before later pad hits.
     let mut drive = Drive::new();
     drive.bind_action(85, "ui.back");
     drive.bind_action(86, "learn.toggle");
@@ -3286,10 +3286,23 @@ fn pending_pad_uses_preceding_commands_in_order() {
         drive.frame().ui[..],
         [Command::PadPress { pad: 2, .. }]
     ));
+    drive.raw_ordered_release(Source::Notes, RecordedRelease::Off);
+    drive.frame();
     drive.bytes(PAD_PORT, &[0xb0, 86, 127]);
     drive.raw_ordered_hit(Source::Notes, 101);
-    assert_silent_target(&drive.frame());
+    assert!(matches!(
+        drive.frame().ui[..],
+        [Command::PadPress { pad: 2, .. }]
+    ));
+    assert!(drive.app.screen_learn.is_none());
+    drive.raw_ordered_release(Source::Notes, RecordedRelease::Off);
+    drive.frame();
+    drive.tap(KeyCode::F(10), M::NONE);
     assert!(drive.app.screen_learn.is_some());
+    drive.raw_ordered_hit(Source::Notes, 101);
+    assert_silent_target(&drive.frame());
+    drive.raw_ordered_release(Source::Notes, RecordedRelease::Off);
+    drive.frame();
     drive.tap(KeyCode::F(10), M::NONE);
     drive.raw_ordered_hit(Source::Notes, 101);
     assert_eq!(

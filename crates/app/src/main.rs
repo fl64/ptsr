@@ -2173,8 +2173,7 @@ fn overwrite_footer(undo: &str) -> [String; 3] {
     ]
 }
 
-/// A run over the pads or the banks row: every control pressed goes to the next one
-/// (28).
+/// A run over the pads or banks row. Enter saves the pending control.
 struct MidiRun {
     infos: &'static [input::ActionInfo],
     /// The action waiting for a control now.
@@ -4014,8 +4013,7 @@ mod tests {
         app.apply(Action::SettingsLearn);
     }
 
-    /// A controller hit while the MIDI tab works with the learn flow.
-    fn hit_note(app: &mut super::App, note: u8) {
+    fn feed_run_note(app: &mut super::App, note: u8, save: bool) {
         app.midi_event(super::midi::Event::Message {
             port: "X".into(),
             profile: "xsession-pro".into(),
@@ -4026,6 +4024,9 @@ mod tests {
             },
             meaning: String::new(),
         });
+        if save {
+            app.apply(Action::SettingsLearn);
+        }
     }
 
     /// The `who` of the drawn pads row.
@@ -4048,9 +4049,7 @@ mod tests {
             .find_map(|(k, a)| (a == action).then_some(k.clone()))
     }
 
-    /// 28 midi-learn: "Sixteen pads in a row" — Enter on "pads 1–16" and 16 hits learn
-    /// pad k on the k-th control; the row says "16 of 16 learned"; Backspace clears
-    /// them all.
+    /// Scenario "Sixteen pads in a row": save each control with Enter.
     #[test]
     fn sixteen_pads_in_a_row() {
         let mut app = test_app();
@@ -4060,7 +4059,7 @@ mod tests {
             Some(" pad 1 of 16: hit a control, Esc stops")
         );
         for n in 0..16u8 {
-            hit_note(&mut app, 40 + n);
+            feed_run_note(&mut app, 40 + n, true);
         }
         for n in 0..16u8 {
             assert_eq!(
@@ -4091,15 +4090,15 @@ mod tests {
     fn a_double_hit() {
         let mut app = test_app();
         start_pad_run(&mut app);
-        hit_note(&mut app, 40);
+        feed_run_note(&mut app, 40, true);
         assert_eq!(learned_control(&app, "pad.1"), Some("note 40".into()));
         // the same button again: the run keeps waiting for another control
-        hit_note(&mut app, 40);
+        feed_run_note(&mut app, 40, true);
         assert_eq!(
             app.learning_line().as_deref(),
             Some(" pad 2 of 16: hit a control, Esc stops")
         );
-        hit_note(&mut app, 41);
+        feed_run_note(&mut app, 41, true);
         assert_eq!(learned_control(&app, "pad.2"), Some("note 41".into()));
         assert_eq!(
             app.learning_line().as_deref(),
@@ -4108,15 +4107,16 @@ mod tests {
         );
     }
 
-    /// 28 midi-learn: "Stop in the middle" — Esc after 5 pads keeps them learned; the
-    /// next run starts at the first not learned one.
+    /// Scenario "Stop in the middle": Esc keeps the first five bindings.
     #[test]
     fn stop_in_the_middle() {
         let mut app = test_app();
         start_pad_run(&mut app);
         for n in 0..5u8 {
-            hit_note(&mut app, 40 + n);
+            feed_run_note(&mut app, 40 + n, true);
         }
+        feed_run_note(&mut app, 45, false);
+        assert!(app.midi_binding_pending());
         app.apply(Action::Back);
         assert_eq!(app.learning_line(), None, "Esc stops the run");
         assert_eq!(pads_row_who(&app), "5 of 16 learned");

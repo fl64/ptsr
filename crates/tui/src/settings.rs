@@ -235,9 +235,14 @@ fn settings_body(st: &Settings, height: u16) -> Paragraph<'static> {
                 }
             }
         }
-        // scroll only when the selected row would leave the screen
-        let offset = (selected_line as u16 + 2).saturating_sub(height);
-        return Paragraph::new(lines).scroll((offset, 0));
+        let offset = (selected_line + 2).saturating_sub(usize::from(height));
+        if st.learning.is_some() {
+            // Keep the pending control and its next action above the scrolled list.
+            let scrolled = offset.min(lines.len() - 1);
+            lines.drain(1..1 + scrolled);
+            return Paragraph::new(lines);
+        }
+        return Paragraph::new(lines).scroll((offset as u16, 0));
     }
     if st.tab == 1 {
         lines.push(" MIDI devices".fg(DIM).into());

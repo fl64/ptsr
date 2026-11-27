@@ -27,6 +27,19 @@ pub(super) fn pitch_gate(pads: &pads::Pads, abs: usize) -> tui::PitchGate {
 }
 
 impl super::Ask {
+    pub(super) fn changes_midi_binding(&self) -> bool {
+        use super::Ask;
+        matches!(
+            self,
+            Ask::SmcLayout(_)
+                | Ask::ResetProfile { .. }
+                | Ask::Destroy {
+                    act: crate::destroy::Act::Forget,
+                    ..
+                }
+        )
+    }
+
     pub(super) fn lines(&self) -> &[String] {
         use super::Ask;
         match self {
@@ -45,7 +58,7 @@ impl super::Ask {
     }
 }
 
-fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
+pub(super) fn question_answer(ask: &super::Ask, action: input::Action) -> Option<bool> {
     use super::Ask;
     use input::Action;
     match action {
@@ -442,14 +455,19 @@ impl App {
         );
         let mut answers = vec![format!("KB {confirm} · {cancel}")];
         // After an SMC-PAD input the answer row names its pads only (134).
-        if self.input_sources.last_is_smc() && !focus.mode.midi_learn {
+        if self.input_sources.last_is_smc() && !focus.mode.midi_learn && !ask.changes_midi_binding()
+        {
             answers.clear();
         }
         if !keyboard_blocked && !focus.mode.midi_learn {
             let maps = super::midi::parse_learned(&self.learned);
             for (index, (port, _)) in self.input_sources.connected().enumerate() {
                 if port.contains("SMC-PAD-Master") {
-                    answers.push(format!("SMC P1: {cancel_verb} · P4: {verb}"));
+                    answers.push(if ask.changes_midi_binding() {
+                        format!("SMC P1: {cancel_verb}")
+                    } else {
+                        format!("SMC P1: {cancel_verb} · P4: {verb}")
+                    });
                     continue;
                 }
                 // Match the worker's port selection. Assignment labels can search another layer.
@@ -484,6 +502,9 @@ impl App {
                             let Some(confirm) = question_answer(ask, action) else {
                                 continue;
                             };
+                            if confirm && ask.changes_midi_binding() {
+                                continue;
+                            }
                             let slot = &mut controls[usize::from(!confirm)];
                             if slot.is_none() {
                                 *slot = Some(format!(

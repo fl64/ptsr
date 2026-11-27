@@ -624,7 +624,11 @@ fn screen_learning_keeps_its_existing_entry_points() {
             }
             assert_eq!(drive.app.edit, editing);
             let before = drive.app.learned.clone();
-            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            if matches!(source, Source::Button) {
+                drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+                assert!(drive.app.screen_learn.is_none());
+            }
+            drive.tap(KeyCode::F(10), M::NONE);
             let learn = drive.app.screen_learn.as_ref().unwrap();
             assert_eq!(learn.group, group);
             assert_eq!(drive.app.learn_group(), group);
@@ -683,7 +687,7 @@ fn screen_learning_keeps_its_existing_entry_points() {
         for tab in 0..4 {
             assert_eq!(drive.app.settings_tab, tab);
             let before = drive.app.learned.clone();
-            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            drive.tap(KeyCode::F(10), M::NONE);
             assert!(drive.app.screen_learn.is_none());
             assert!(drive.app.learning.is_none() && drive.app.midi_run.is_none());
             assert_eq!(drive.app.learned, before);
