@@ -288,7 +288,7 @@ impl App {
                 if self.screen == Screen::Files && self.browser.in_hand.is_none() =>
             {
                 let dir = self.browser.dir.clone();
-                self.browser.take();
+                self.take_browser_entry();
                 if self.browser.dir != dir {
                     self.dirty();
                     self.preview_selection();
@@ -940,15 +940,8 @@ impl App {
                 self.put_in_hand(self.pads.selected_abs())
             }
             Action::PadEdit if self.screen == Screen::Pads => self.edit = true,
-            Action::PadTake => {
-                self.browser.in_hand = None;
-                self.pad_in_hand = Some(self.pads.selected_abs());
-            }
-            // 83a: Ctrl+C copies, Ctrl+Q stays the quit; a copy and a swap never share a hand
-            Action::PadCopy if self.screen == Screen::Pads => {
-                self.pad_in_hand = None;
-                self.take_copy();
-            }
+            Action::PadTake => self.take_swap(),
+            Action::PadCopy if self.screen == Screen::Pads => self.take_copy(),
             // a run waits for the next control: Esc stops it and keeps what is learned (28)
             Action::Back if self.midi_run.is_some() => self.midi_run = None,
             Action::Back if self.learning.is_some() => self.learning = None,
@@ -1166,7 +1159,7 @@ impl App {
                 match action {
                     Action::BrowserEnter => self.browser.enter(),
                     Action::BrowserParent => self.browser.parent(),
-                    _ => self.browser.take(),
+                    _ => self.take_browser_entry(),
                 }
                 if self.browser.dir != dir {
                     self.dirty();
@@ -1524,12 +1517,6 @@ impl App {
             }
             // A late direct notification is not a new Chop action.
         } else {
-            // Existing overlap order differs: MIDI file/copy/swap; keyboard copy/swap/file.
-            if from_midi && self.browser.in_hand.is_some() {
-                self.put_in_hand(abs);
-                self.pads.selected = local;
-                return None;
-            }
             if self.copy_in_hand.is_some() {
                 let before = from_midi.then(|| self.before());
                 self.pads.selected = local;

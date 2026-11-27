@@ -116,6 +116,18 @@ Change 134 makes all 16 pads targets on the playing layer.
 Repeat with an occupied pad. Check the question and count P1 or P4 separately.
 Record the actual device sequence. Physical press counts remain open.
 
+### Replace a copy with a file
+
+Start on Pads with a copy in hand and a file selected in Files.
+On SMC-PAD, start on the second layer with the target panel visible.
+
+| Input | Steps | Presses |
+| --- | --- | --- |
+| Keyboard | Press F6. Press Enter. Hit an empty pad. | 3 |
+| SMC-PAD | Press P3 Menu, LEFT and P14 Files. Press P3 Menu again. Press P6 Take. Press PAD BANK to use the playing layer. Hit an empty pad. | 7 |
+
+The badge changes from COPY to IN HAND. The target gets the file.
+
 ## Pads Sound strip
 
 | Action | Keyboard | Visible panel / reveal |

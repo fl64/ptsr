@@ -282,6 +282,22 @@ impl PathPicker {
 }
 
 impl App {
+    pub(super) fn hold_file_for_placement(&mut self, path: PathBuf) {
+        self.pad_in_hand = None;
+        self.copy_in_hand = None;
+        if matches!(self.ask, Some(Ask::CopyPad { .. } | Ask::PutFile { .. })) {
+            self.ask = None;
+        }
+        self.browser.in_hand = Some(path);
+    }
+
+    pub(super) fn take_browser_entry(&mut self) {
+        self.browser.take();
+        if let Some(path) = self.browser.in_hand.take() {
+            self.hold_file_for_placement(path);
+        }
+    }
+
     /// The keys of the open folder picker (11): Up/Down choose, Right enters a folder,
     /// Left goes up (at `/` it stays), Enter picks the folder it is in, Esc cancels;
     /// the rest do nothing.

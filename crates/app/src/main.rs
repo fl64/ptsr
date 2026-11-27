@@ -1035,7 +1035,7 @@ impl App {
                 Instant::now(),
             ),
         );
-        self.browser.in_hand = Some(path);
+        self.hold_file_for_placement(path);
     }
 
     /// Switches the screen; the edit mode does not survive the switch.
