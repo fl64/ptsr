@@ -415,8 +415,56 @@ fn a1_setup_names_its_knobs() {
     assert!(drive.app.pattern_panel.is_some());
     assert_eq!(
         line(&drive),
-        "A1 SETUP · knob 3 quantize · knob 4 strength · knob 5 bars · PAD BANK + 1 close"
+        "A1 SETUP · E1 row · E3 quantize · E4 strength · E5 bars · PAD BANK + 1 close"
     );
+}
+
+/// Scenario "A1 tells the owner how to close the current mode".
+#[test]
+fn a1_tells_the_owner_how_to_close_the_current_mode() {
+    for (hold_panel, ready) in [(true, true), (false, true), (true, false)] {
+        let mut drive = a1_drive();
+        drive.app.midi_gestures.smc_pad_bank_opens_panel = hold_panel;
+        drive.midi().set_pad_bank_shortcut(hold_panel);
+        if !ready {
+            drive.midi().recorded_smc_failure();
+            drive.frame();
+        }
+        for setup in [true, false] {
+            if setup {
+                drive.tap(KeyCode::Char('n'), M::ALT);
+                assert!(drive.app.pattern_panel.is_some());
+            } else {
+                drive.tap(KeyCode::F(7), M::NONE);
+                assert!(drive.app.pattern_view.edit);
+            }
+            button(&mut drive, RIGHT);
+            let held = hold_panel && ready;
+            let expected = if held {
+                "PAD BANK + 1 close"
+            } else {
+                "Open panel, P1 close"
+            };
+            let shown = line(&drive);
+            assert!(shown.ends_with(expected), "{shown}");
+            if !setup {
+                assert!(shown.contains("hit a pad to add or remove"), "{shown}");
+            }
+            if held {
+                hold(&mut drive, true);
+            } else {
+                cell(&mut drive, 52);
+                assert!(drive.app.panel.visible());
+                assert!(line(&drive).ends_with(" · P1 close"));
+            }
+            cell(&mut drive, 52);
+            hold(&mut drive, false);
+            drive.app.panel.hide();
+            assert!(drive.app.pattern_panel.is_none());
+            assert!(!drive.app.pattern_view.edit);
+            assert!(drive.app.pattern_view.overview);
+        }
+    }
 }
 
 /// Scenario "Chop names slice pages before an assign" (screen-layout).

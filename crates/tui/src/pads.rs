@@ -251,20 +251,15 @@ pub fn panel_overlay_area(
     if content.width <= 80 && matches!(screen, Screen::ProjectPicker(_)) {
         return None;
     }
+    if help.full.is_some()
+        && (super::pattern::a1_overview(screen) || super::help::a1_setup_help(help))
+    {
+        return None;
+    }
     if super::pattern::compact_a1(content, screen) {
-        return help.full.is_none().then(|| compact_panel_area(content));
+        return Some(super::pattern::compact_a1_body(content));
     }
     Some(command_panel_area(content))
-}
-
-fn compact_panel_area(content: Rect) -> Rect {
-    let [_, body, _, _] = frame_areas(content);
-    Rect::new(
-        body.x,
-        body.y.saturating_add(1),
-        body.width,
-        body.height.saturating_sub(1),
-    )
 }
 
 pub fn command_panel_for(
@@ -308,7 +303,7 @@ fn draw_command_panel(
     let [_, body, _, _] = frame_areas(content);
     let pad = pad_frame(body, false);
     let (header, grid, rows, columns) = if compact {
-        let area = compact_panel_area(content);
+        let area = super::pattern::compact_a1_body(content);
         frame.render_widget(Clear, area);
         let [header, grid] =
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);

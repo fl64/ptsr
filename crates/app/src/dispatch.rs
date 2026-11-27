@@ -1272,7 +1272,7 @@ impl App {
 
     /// Open pattern controls own the edit keys and buttons: they change A1, and commands
     /// that change a pad, a slice or an effect wait (98b). Pads still play.
-    fn pattern_controls_own(&self, action: Action) -> Option<Action> {
+    pub(super) fn pattern_controls_own(&self, action: Action) -> Option<Action> {
         if self.pattern_panel.is_none() || self.transport_input_blocked() {
             return Some(action);
         }

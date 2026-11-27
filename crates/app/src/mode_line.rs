@@ -115,17 +115,22 @@ impl App {
             ));
         }
         if self.pattern_view.edit {
+            let close = self.a1_close_words(smc);
             return Some(format!(
                 "STEP {} · hit a pad to add or remove · {close}",
                 self.pattern_view.cursor_cell + 1
             ));
         }
         if self.pattern_panel.is_some() {
-            return Some(if smc {
-                format!("A1 SETUP · knob 3 quantize · knob 4 strength · knob 5 bars · {close}")
+            let close = self.a1_close_words(smc);
+            let controls = if smc && self.smc_knobs_ready() {
+                "E1 row · E3 quantize · E4 strength · E5 bars"
+            } else if smc {
+                "use the keys below"
             } else {
-                format!("A1 SETUP · I K select · J L change · {close}")
-            });
+                "I K select · J L change"
+            };
+            return Some(format!("A1 SETUP · {controls} · {close}"));
         }
         if self.pads.marking {
             let drop = if smc { "PAD BANK + 1 drop" } else { "Esc drop" };
@@ -135,7 +140,28 @@ impl App {
         if smc && let Some(cue) = self.tap_tempo_hint_at(now) {
             return Some(cue.into());
         }
+        if smc && self.pattern_view.overview && self.pads.pattern.is_none() && !self.panel.visible()
+        {
+            let setup = if self.smc_panel_hold_available() {
+                "PAD BANK + P11 setup"
+            } else {
+                "Open panel, P11 setup"
+            };
+            return Some(format!("No A1 · {setup}"));
+        }
         (smc && self.panel.visible()).then(|| "STOP twice · stop all sound".into())
+    }
+
+    fn a1_close_words(&self, smc: bool) -> &'static str {
+        if !smc {
+            "Esc close"
+        } else if self.smc_panel_hold_available() {
+            "PAD BANK + 1 close"
+        } else if self.panel.visible() {
+            "P1 close"
+        } else {
+            "Open panel, P1 close"
+        }
     }
 
     /// The A1 count-in and pass on the screen where they started (F45).

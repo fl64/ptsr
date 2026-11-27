@@ -777,24 +777,7 @@ pub struct PatternControls {
 
 /// The column under the meters: the pad panel's place, which the controls take whole (98b).
 pub fn pattern_controls_area(area: Rect, screen: &Screen) -> Rect {
-    let [_, body, _, _] = frame_areas(area);
-    let side = match screen {
-        Screen::Pads(pads) => pad_frame(body, pads.hidden).side,
-        Screen::Files(files) => pad_frame(body, files.pads.hidden).side,
-        Screen::Chop(chop) => pad_frame(body, chop.pads.hidden).side,
-        _ => Rect::new(
-            body.right().saturating_sub(body.width.min(SIDE_W)),
-            body.y.saturating_add(1),
-            body.width.min(SIDE_W),
-            body.height.saturating_sub(1),
-        ),
-    };
-    let top = (METER_ROWS + 1).min(side.height);
-    Rect {
-        y: side.y + top,
-        height: side.height - top,
-        ..side
-    }
+    pattern::controls_area(area, screen)
 }
 
 /// Draw after the screen and exclude this area from terminal wave pictures.
@@ -1034,7 +1017,9 @@ fn draw_inner(
 ) {
     frame.render_widget(Block::new().bg(BG).fg(TEXT), frame.area());
     let content = feedback.screen_content_area(frame.area(), screen, help);
-    let compact = content == frame.area() && feedback.content_area(frame.area()) != content;
+    let compact = feedback.content_area(frame.area()) != frame.area()
+        && (pattern::compact_a1(frame.area(), screen)
+            || (frame.area().width <= 80 && help::a1_setup_help(help)));
     let pitch_gate = match screen {
         Screen::Pads(pads) if pads.overview.is_none() => pads
             .pads
@@ -1043,11 +1028,13 @@ fn draw_inner(
             .filter(|state| matches!(state, PitchGate::A1 | PitchGate::NeedsPitch)),
         _ => None,
     };
-    let mut help_rows = help_lines_at(
-        help.groups,
-        knob_strip::help_width(frame.area(), feedback, compact),
-        HELP_ROWS as usize - usize::from(compact || pitch_gate.is_some()),
-    );
+    let help_width = knob_strip::help_width(frame.area(), feedback, compact);
+    let setup_with_strip = help_width < frame.area().width && help::a1_setup_help(help);
+    let rows = HELP_ROWS as usize
+        - usize::from(
+            (compact && content == frame.area()) || pitch_gate.is_some() || setup_with_strip,
+        );
+    let mut help_rows = help_lines_at(help.groups, help_width, rows);
     if let Some(pitch_gate) = pitch_gate {
         help_rows.resize(HELP_ROWS as usize - 1, Line::default());
         help_rows.push(Line::from(format!(" {}", pitch_gate.help())).fg(DIM));

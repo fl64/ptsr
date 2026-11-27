@@ -622,6 +622,23 @@ impl App {
             let keys = super::letters_first(keys).join("/");
             if keys.is_empty() { "none".into() } else { keys }
         };
+        let close = keys(&[Action::Back, Action::PatternControls]);
+        let close = if selected == super::pattern_record::CLEAR_ROW
+            && close.split('/').any(|key| key == "Enter")
+        {
+            let back = close
+                .split('/')
+                .filter(|key| *key != "Enter")
+                .collect::<Vec<_>>()
+                .join("/");
+            if back.is_empty() {
+                "Enter clear".into()
+            } else {
+                format!("Enter clear · {back} close")
+            }
+        } else {
+            format!("{close} close")
+        };
         let (restriction, refused) = self.pattern_controls_restriction(selected);
         let hits = self.pads.pattern.as_ref().map_or(0, |p| p.hits.len());
         Some(tui::PatternControls {
@@ -673,15 +690,7 @@ impl App {
                         Action::PatternValueInc,
                     ]),
                 ),
-                // Enter runs the clear row and closes from a value row (98i)
-                format!(
-                    "{} close · Enter run",
-                    keys(&[Action::Back, Action::PatternControls])
-                        .split('/')
-                        .filter(|key| *key != "Enter")
-                        .collect::<Vec<_>>()
-                        .join("/")
-                ),
+                close,
             ],
         })
     }
@@ -738,6 +747,9 @@ impl App {
     ) -> Vec<(String, String)> {
         use input::Action;
         use input::midi::{Activity, Msg, Resolved};
+        if self.pattern_panel.is_some() {
+            return self.setup_key_help(keymap, kitty);
+        }
         let mut rows = super::full_help(keymap, self.screen, kitty);
         if self.pattern_view.overview {
             rows.push((
@@ -1238,7 +1250,9 @@ impl App {
 
     pub(super) fn hide_keyboard_help(&self) -> bool {
         self.screen_learn.is_some()
+            || matches!(self.ask, Some(super::Ask::ClearPattern { .. }))
             || (self.input_sources.last_is_smc()
+                && self.pattern_panel.is_none()
                 && (!self.pattern_view.overview || self.help_overlay.size.0 > 80))
     }
 
@@ -1259,7 +1273,10 @@ impl App {
     ) -> Vec<tui::HelpGroup> {
         use engine::capture::Phase;
         use input::Action;
-        if self.pattern_view.overview {
+        if matches!(self.ask, Some(super::Ask::ClearPattern { .. })) {
+            return Vec::new();
+        }
+        if self.pattern_view.overview && self.pattern_panel.is_none() {
             let item = |actions: &[Action], label: &str| {
                 let keys = actions
                     .iter()
@@ -1271,9 +1288,13 @@ impl App {
                     label.into(),
                 )
             };
+            let compact = self.compact_a1_help();
+            let absent = self.pads.pattern.is_none();
             let mut clock = super::transport_help(keymap, self.screen);
             clock.items.truncate(1);
-            clock.items.push(item(&[Action::HelpToggle], "marks"));
+            if !compact && !absent {
+                clock.items.push(item(&[Action::HelpToggle], "marks"));
+            }
             let bank_keys = [Action::BankPrev, Action::BankNext]
                 .into_iter()
                 .filter_map(|action| {
@@ -1332,12 +1353,15 @@ impl App {
                 name: "PATTERN",
                 items: vec![
                     item(&[Action::ScreenPads, Action::Back], "Pads"),
-                    item(&[Action::PatternStepEdit], "edit"),
+                    if absent {
+                        item(&[Action::PatternControls], "setup")
+                    } else {
+                        item(&[Action::PatternStepEdit], "edit")
+                    },
                     item(&[Action::PatternViewPrev, Action::PatternViewNext], "view"),
                 ],
             };
-            let compact = self.compact_a1_help();
-            if compact {
+            if compact || absent {
                 pattern.items.push(item(&[Action::HelpToggle], "marks"));
             }
             let mut overview = vec![
@@ -1362,7 +1386,7 @@ impl App {
             }
             return overview;
         }
-        if self.key_notice_blocked() {
+        if self.key_notice_blocked() && !(self.help_open && self.pattern_panel.is_some()) {
             return groups;
         }
         let item = |action, text: &str| {
@@ -1376,7 +1400,7 @@ impl App {
                 text.to_string(),
             )
         };
-        let items = if self.pattern_panel.is_some() {
+        if let Some(selected) = self.pattern_panel {
             let keys = |actions: &[Action]| {
                 let mut keys = actions
                     .iter()
@@ -1391,7 +1415,7 @@ impl App {
                     .join("/");
                 if keys.is_empty() { "none".into() } else { keys }
             };
-            vec![
+            let mut items = vec![
                 (
                     keys(&[
                         Action::ParamPrev,
@@ -1416,72 +1440,77 @@ impl App {
                     ]),
                     "change".into(),
                 ),
-                (
-                    keys(&[Action::Back, Action::PatternControls])
-                        .split('/')
-                        .filter(|key| *key != "Enter")
-                        .collect::<Vec<_>>()
-                        .join("/"),
-                    "close controls".into(),
-                ),
-                ("Enter".into(), "run / close".into()),
-            ]
-        } else {
-            match recording.map(|s| (s.phase, s.erasing)) {
-                _ if self.erase_pads => vec![
-                    ("pads".into(), "erase all A1 hits".into()),
-                    item(Action::Undo, "undo"),
-                    (
-                        format!(
-                            "{}/{}",
-                            item(Action::Back, "").0,
-                            item(Action::PatternErase, "").0
-                        ),
-                        "exit".into(),
-                    ),
-                ],
-                Some((Phase::CountIn, _)) => vec![
-                    item(Action::Back, "cancel count"),
-                    item(Action::PatternRecord, "cancel count"),
-                    ("pads".into(), "not recorded yet".into()),
-                ],
-                Some((Phase::Recording, true)) => vec![
-                    (
-                        "pads".into(),
-                        if kitty {
-                            "erase: hold"
-                        } else {
-                            "erase: 1 loop"
-                        }
-                        .into(),
-                    ),
-                    item(Action::PatternErase, "play pads"),
-                    item(Action::PatternRecord, "end A1"),
-                ],
-                Some((Phase::Recording, false)) => vec![
-                    item(Action::PatternRecord, "end A1"),
-                    item(Action::PatternErase, "erase pads"),
-                    item(Action::PatternUndo, "pass undo"),
-                ],
-                Some((Phase::Finishing, _)) => vec![("A1".into(), "finishing: wait".into())],
-                // idle with A1: pass Undo is the hidden next step; an unbound one is left out
-                _ if self.pads.pattern.is_some() => [
-                    item(Action::PatternRecord, "record A1"),
-                    item(Action::PatternUndo, "pass undo"),
-                    item(Action::PatternControls, "pattern keys"),
-                ]
-                .into_iter()
-                .filter(|(keys, text)| !(text == "pass undo" && keys == "none"))
-                .collect(),
-                _ => vec![
-                    item(Action::PatternRecord, "record A1"),
-                    item(Action::PatternControls, "pattern keys"),
-                ],
+            ];
+            let close = keys(&[Action::Back, Action::PatternControls]);
+            if selected == super::pattern_record::CLEAR_ROW
+                && close.split('/').any(|key| key == "Enter")
+            {
+                let back = close
+                    .split('/')
+                    .find(|key| *key != "Enter")
+                    .unwrap_or("none");
+                items.push(("Enter".into(), format!("clear · {back} close")));
+            } else {
+                items.push((close, "close controls".into()));
             }
+            return vec![tui::HelpGroup {
+                name: "A1 SETUP",
+                items,
+            }];
+        }
+        let items = match recording.map(|s| (s.phase, s.erasing)) {
+            _ if self.erase_pads => vec![
+                ("pads".into(), "erase all A1 hits".into()),
+                item(Action::Undo, "undo"),
+                (
+                    format!(
+                        "{}/{}",
+                        item(Action::Back, "").0,
+                        item(Action::PatternErase, "").0
+                    ),
+                    "exit".into(),
+                ),
+            ],
+            Some((Phase::CountIn, _)) => vec![
+                item(Action::Back, "cancel count"),
+                item(Action::PatternRecord, "cancel count"),
+                ("pads".into(), "not recorded yet".into()),
+            ],
+            Some((Phase::Recording, true)) => vec![
+                (
+                    "pads".into(),
+                    if kitty {
+                        "erase: hold"
+                    } else {
+                        "erase: 1 loop"
+                    }
+                    .into(),
+                ),
+                item(Action::PatternErase, "play pads"),
+                item(Action::PatternRecord, "end A1"),
+            ],
+            Some((Phase::Recording, false)) => vec![
+                item(Action::PatternRecord, "end A1"),
+                item(Action::PatternErase, "erase pads"),
+                item(Action::PatternUndo, "pass undo"),
+            ],
+            Some((Phase::Finishing, _)) => vec![("A1".into(), "finishing: wait".into())],
+            // idle with A1: pass Undo is the hidden next step; an unbound one is left out
+            _ if self.pads.pattern.is_some() => [
+                item(Action::PatternRecord, "record A1"),
+                item(Action::PatternUndo, "pass undo"),
+                item(Action::PatternControls, "pattern keys"),
+            ]
+            .into_iter()
+            .filter(|(keys, text)| !(text == "pass undo" && keys == "none"))
+            .collect(),
+            _ => vec![
+                item(Action::PatternRecord, "record A1"),
+                item(Action::PatternControls, "pattern keys"),
+            ],
         };
         let mut items = items;
         if self.screen == Screen::Pads
-            && self.pattern_panel.is_none()
             && self.recording.is_none()
             && !self.erase_pads
             && recording.is_none_or(|state| state.phase == Phase::Idle)
@@ -1517,7 +1546,6 @@ impl App {
         }
         if self.screen == Screen::Pads
             && self.pads.pattern.is_some()
-            && self.pattern_panel.is_none()
             && recording.is_none_or(|state| state.phase == Phase::Idle)
         {
             let previous = item(Action::PatternViewPrev, "view");

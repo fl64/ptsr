@@ -332,6 +332,11 @@ Show full Help and the project picker above that panel.
 Give the controller status one row and short help two rows.
 Restore the grid when the panel closes.
 
+### A1 Setup help (165)
+
+Show the Setup route before A1 exists. Show the current row action and the close control.
+Show the Setup keys first in F1. Give the clear question its own controls.
+
 ### Change 98 — `98-pattern-screen`
 
 Goal: the Pattern screen (F5) with the step grid and the step mode (TR-REC).
