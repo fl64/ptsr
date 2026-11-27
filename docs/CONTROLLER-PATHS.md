@@ -49,7 +49,7 @@ step and its cancel control. It stays after the PAD BANK release.
 | Read pad playback | Hit a playing pad. Read PLAY (`0/0`). | Pad hits and releases are separate. |
 | Your own keys | Edit `~/.config/ptsr/keymap.toml`. | Keyboard-only document edit. |
 | The splash screen | Open a screen from the screens view (`2/4`). Play a pad in the playing layer. | Splash text is an observation. A silent hit keeps it open. |
-| Play a beat | Hit playing pads. PLAY and STOP control transport (`1/1`). Hold PLAY for the metronome (`1/1`). Screens A1, then `tap tempo` on P8 sets tempo (`3/5` for the first tap). | A Gate release belongs to its original pad. |
+| Play a beat | Hit playing pads. PLAY and STOP control transport (`1/1`). Hold PLAY for the metronome (`1/1`). Screens pattern, then `tap tempo` on P8 sets tempo (`3/5` for the first tap). | A Gate release belongs to its original pad. |
 | Name a pad | Press `Ctrl+N` and type a name. | Keyboard-only text entry. |
 | Copy a pad without a growing name | Pads `copy pad` on P6 (`1/3`). Hit a target pad. Pads `clear pad` on P8 and P4 yes (`2/4`). Screens Save (`2/4`). Fixed Undo (`1/3`). | Read the generated name. |
 | A project for a track | Screens Open (`2/4`). Turn knob 1 (`0/0`). P4 opens the project (`1/2`). With no project, P4 `new project` makes a project with a date name (`1/2`). | A typed name needs keyboard text. |
@@ -144,7 +144,7 @@ The SMC-PAD counts give visible panel / PAD BANK held / reveal.
 
 | Action | Keyboard | SMC-PAD |
 | --- | --- | --- |
-| Open A1 | F5 (1) | Screens P16 A1 (2 / 3 / 4) |
+| Open the Pattern screen | F5 (1) | Screens P16 pattern (2 / 3 / 4) |
 | Start count-in | Ctrl+R (1) | Tap RECORD (1) |
 | Cancel count-in on A1 | Esc or Ctrl+R (1) | Hold PAD BANK and press P1 (2). With Hold panel off or unavailable, press P1 in the second bank (1). Tap RECORD to cancel from either bank (1). |
 | Finish a live pass | Ctrl+R (1) | Tap RECORD (1) |
