@@ -689,12 +689,12 @@ The Chop slice line SHALL wrap only between its ` · ` parts. A number SHALL sta
 
 ### Requirement: Pattern labels and hints stay whole
 
-The A1 strip SHALL show the pad row label `pad` with its key whole at 80x26 and 120x40. In pattern controls, a row hint that does not fit beside its value SHALL take its own line under the value. The key line SHALL name Enter as run and close.
+The A1 strip SHALL show the pad row label `pad` with its key whole at 80x26 and 120x40. In pattern controls, a row hint that does not fit beside its value SHALL take its own line under the value. If Enter is bound, the key line SHALL name close on a value row and clear on the clear row.
 
 #### Scenario: Pattern labels and hints stay whole
 - **WHEN** the owner selects pad Q with A1 hits, opens pattern controls and selects quantize, strength and clear A1 at 80x26 and 120x40
 - **THEN** the strip shows `pad Q`, and `next hits`, `next hits, step 10` and `Enter` show whole
-- **AND** the key line says `Enter run`
+- **AND** the key line names close on value rows and clear on the clear row
 
 ### Requirement: A1 overview fits bank sections at supported sizes
 
