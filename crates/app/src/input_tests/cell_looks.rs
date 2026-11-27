@@ -192,6 +192,87 @@ fn p6_and_f7_can_add_the_first_a1_step() {
     }
 }
 
+/// Scenario "A1 keeps the chosen step through edit and Undo".
+#[test]
+fn a1_keeps_the_chosen_step_through_edit_and_undo() {
+    use panel::View::Pattern;
+    for keyboard in [false, true] {
+        let mut drive = hold_drive();
+        drive.load_pad(0, tone(), "Kick");
+        drive.app.pads.pattern = Some(session::PatternState {
+            slot: "A1".into(),
+            bars: 2,
+            quantize: "1/8".into(),
+            strength: 70,
+            hits: Vec::new(),
+        });
+        drive.tap(KeyCode::F(5), M::NONE);
+        let step = |drive: &mut Drive| {
+            if keyboard {
+                drive.tap(KeyCode::Right, M::NONE);
+            } else {
+                turn(drive, 30, 65);
+            }
+        };
+        for _ in 0..15 {
+            step(&mut drive);
+        }
+        assert_eq!(drive.app.pattern_overview(&drive.keymap).cursor, Some(15));
+        drive.tap(KeyCode::F(1), M::NONE);
+        step(&mut drive);
+        assert_eq!(drive.app.pattern_overview(&drive.keymap).cursor, Some(15));
+        drive.tap(KeyCode::F(1), M::NONE);
+        step(&mut drive);
+        for width in [80, 120] {
+            let view = drive.app.pattern_overview_at(&drive.keymap, width);
+            assert_eq!(view.cursor, Some(16));
+            assert_eq!(view.total_cells, 32);
+            assert_eq!(
+                view.header,
+                "Grid 1/16 · 16 per bar · Record quantize 1/8 70%"
+            );
+        }
+
+        let hit = if keyboard {
+            drive.tap(KeyCode::F(7), M::NONE);
+            drive.tap(KeyCode::Char('1'), M::NONE)
+        } else {
+            labelled_cell(&mut drive, Pattern, "edit steps");
+            cell(&mut drive, 48)
+        };
+        assert!(drive.app.pattern_view.edit);
+        assert_eq!(drive.app.pattern_view.cursor_cell, 16);
+        assert!(
+            !hit.commands()
+                .iter()
+                .any(|command| matches!(command, Command::PadPress { .. }))
+        );
+        let notice = drive.last_notice();
+        assert!(notice.text.contains("step 17: added one hit"), "{notice:?}");
+        assert!(notice.text.contains("Kick"), "{notice:?}");
+        assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits[0][0], 3840);
+
+        if keyboard {
+            drive.tap(KeyCode::Char('z'), M::CONTROL);
+            drive.tap(KeyCode::Esc, M::NONE);
+        } else {
+            action_cell(&mut drive, 14);
+            action_cell(&mut drive, 13);
+        }
+        assert!(drive.app.pads.pattern.as_ref().unwrap().hits.is_empty());
+        assert!(drive.app.pattern_view.overview);
+        let overview = drive.app.pattern_overview(&drive.keymap);
+        assert!(!overview.editing);
+        assert_eq!(overview.cursor, Some(16));
+        drive.tap(KeyCode::Up, M::ALT);
+        drive.tap(KeyCode::Up, M::ALT);
+        let finer = drive.app.pattern_overview(&drive.keymap);
+        assert_eq!(finer.cursor, Some(32));
+        assert_eq!(finer.total_cells, 64);
+        assert!(finer.header.contains("Record quantize 1/8 70%"));
+    }
+}
+
 /// Scenario "Undo with nothing to undo is grey" (command-panel).
 #[test]
 fn undo_with_nothing_to_undo_is_grey() {

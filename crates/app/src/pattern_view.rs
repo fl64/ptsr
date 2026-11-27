@@ -300,8 +300,7 @@ impl super::App {
             return;
         }
         if self.pattern_view.edit {
-            self.pattern_view.edit = false;
-            self.pattern_view.selected_event = None;
+            self.leave_step_edit();
             return;
         }
         self.flush_audio();
@@ -319,16 +318,27 @@ impl super::App {
             );
             return;
         };
-        if !self.pattern_view.cursor_visited {
+        if let Some(cell) = self.pattern_view.browse_cell {
+            self.pattern_view.cursor_cell = cell;
+        } else if !self.pattern_view.cursor_visited {
             let tick = position(
                 self.pattern_snapshot(),
                 u32::from(model.bars) * TICKS_PER_BAR,
             );
             self.pattern_view.cursor_cell =
                 tick.map_or(0, |tick| tick / model.division.spacing()) as usize;
-            self.pattern_view.cursor_visited = true;
         }
+        let count = usize::from(model.bars) * model.division.cells_per_bar() as usize;
+        self.pattern_view.cursor_cell = self.pattern_view.cursor_cell.min(count.saturating_sub(1));
+        self.pattern_view.browse_cell = Some(self.pattern_view.cursor_cell);
+        self.pattern_view.cursor_visited = true;
         self.pattern_view.edit = true;
+        self.pattern_view.selected_event = None;
+    }
+
+    pub(super) fn leave_step_edit(&mut self) {
+        self.pattern_view.browse_cell = Some(self.pattern_view.cursor_cell);
+        self.pattern_view.edit = false;
         self.pattern_view.selected_event = None;
     }
 
@@ -356,22 +366,6 @@ impl super::App {
         } else {
             self.pattern_tidy_refusal()
         }
-    }
-
-    pub(super) fn move_step_cursor(&mut self, right: bool) {
-        if !self.pattern_view.edit || self.transport_input_blocked() || self.help_open {
-            return;
-        }
-        let Ok(model) = self.step_model() else {
-            return;
-        };
-        let count = (u32::from(model.bars) * model.division.cells_per_bar()) as usize;
-        self.pattern_view.cursor_cell = if right {
-            (self.pattern_view.cursor_cell + 1).min(count.saturating_sub(1))
-        } else {
-            self.pattern_view.cursor_cell.saturating_sub(1)
-        };
-        self.pattern_view.selected_event = None;
     }
 
     pub(super) fn move_pattern_position(&mut self, steps: i32, bars: bool) {
@@ -478,6 +472,8 @@ impl super::App {
         let Ok(model) = self.step_model() else {
             return;
         };
+        let count = usize::from(model.bars) * model.division.cells_per_bar() as usize;
+        self.pattern_view.cursor_cell = self.pattern_view.cursor_cell.min(count.saturating_sub(1));
         let events = model.events_in_cell(abs, self.pattern_view.cursor_cell);
         if self
             .pattern_view
@@ -506,6 +502,9 @@ impl super::App {
                     .then(|| events.iter().find(|event| **event == choice.event).copied())
                     .flatten()
             });
+        let step = self.pattern_view.cursor_cell + 1;
+        let bank = self.pads.bank + 1;
+        let pad = super::pad_label(&self.pads, abs);
         let target = match events.as_slice() {
             [] => {
                 self.pattern_view.selected_event = None;
@@ -524,10 +523,7 @@ impl super::App {
                         super::Level::Done,
                         (
                             format!(
-                                "A1: bank {} pad {} step {}: added one hit. Undo removes it.",
-                                self.pads.bank + 1,
-                                tui::pads::pad_tag(abs),
-                                self.pattern_view.cursor_cell + 1,
+                                "A1 step {step}: added one hit · bank {bank} {pad}. Undo removes it."
                             ),
                             std::time::Instant::now(),
                         ),
@@ -564,10 +560,7 @@ impl super::App {
                 super::Level::Done,
                 (
                     format!(
-                        "A1: bank {} pad {} step {}: removed one hit. Undo restores it.",
-                        self.pads.bank + 1,
-                        tui::pads::pad_tag(abs),
-                        self.pattern_view.cursor_cell + 1,
+                        "A1 step {step}: removed one hit · bank {bank} {pad}. Undo restores it."
                     ),
                     std::time::Instant::now(),
                 ),
@@ -612,10 +605,9 @@ impl super::App {
             playhead: None,
             first_cell: 0,
             total_cells: 0,
-            edit_cursor: self
-                .pattern_view
-                .edit
-                .then_some(self.pattern_view.cursor_cell),
+            editing: self.pattern_view.edit,
+            cursor: None,
+            cursor_hint: None,
             event_choice: None,
             event_velocity: None,
         };
@@ -644,57 +636,53 @@ impl super::App {
             self.pattern_snapshot(),
             u32::from(model.bars) * TICKS_PER_BAR,
         );
-        let location = tick.map_or_else(
-            || format!("{} bars", model.bars),
-            |tick| {
-                format!(
-                    "bar {}/{} beat {}",
-                    tick / TICKS_PER_BAR + 1,
-                    model.bars,
-                    tick % TICKS_PER_BAR / 960 + 1
-                )
-            },
-        );
         let quantize = if raw.quantize == "off" {
-            "quantize off".to_string()
+            "Off".to_string()
         } else {
-            format!("quantize {} {} %", raw.quantize, raw.strength)
+            format!("{} {}%", raw.quantize, raw.strength)
         };
-        view.header = format!("{} · {location} · {quantize}", model.division.label());
+        let per_bar = model.division.cells_per_bar() as usize;
+        view.header = format!(
+            "Grid {} · {per_bar} per bar · Record quantize {quantize}",
+            model.division.grid()
+        );
         view.beat_cells = (960 / spacing) as usize;
         view.playhead = tick.map(|tick| (tick / spacing) as usize);
-        view.total_cells = (u32::from(model.bars) * model.division.cells_per_bar()) as usize;
+        view.total_cells = usize::from(model.bars) * per_bar;
         let page =
             tui::pattern_overview_page_cells(width as usize, view.beat_cells, view.total_cells);
-        let browse_cell = self.pattern_view.browse_cell.map(|cell| {
-            if self.pattern_view.edit {
-                self.pattern_view.cursor_cell
-            } else {
-                cell
-            }
-            .min(view.total_cells.saturating_sub(1))
-        });
-        view.first_cell = if let Some(cursor) = browse_cell {
-            let per_bar = model.division.cells_per_bar() as usize;
-            let bar = cursor / per_bar;
-            let step = cursor % per_bar;
-            view.header = format!("bar {} · step {} · {}", bar + 1, step + 1, view.header);
-            bar * per_bar + step / page * page
+        let cursor = if self.pattern_view.edit {
+            self.pattern_view.cursor_cell
         } else {
-            let cursor = if self.pattern_view.edit {
-                self.pattern_view.cursor_cell
+            self.pattern_view.browse_cell.or(view.playhead).unwrap_or(0)
+        }
+        .min(view.total_cells.saturating_sub(1));
+        view.cursor = Some(cursor);
+        view.first_cell = cursor / page * page;
+        if !view.editing && self.pattern_panel.is_none() && !self.key_notice_blocked() {
+            if self.input_sources.last_is_smc() {
+                view.cursor_hint = Some("Turn STEP".into());
             } else {
-                view.playhead.unwrap_or(0)
-            };
-            cursor / page * page
-        };
+                let keys = [false, true]
+                    .into_iter()
+                    .filter_map(|up| {
+                        self.help_bindings(keymap, input::Action::EditValue { up, fine: false })
+                            .into_iter()
+                            .min_by_key(String::len)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("/");
+                if !keys.is_empty() {
+                    view.cursor_hint = Some(format!("{keys} step"));
+                }
+            }
+        }
         let end = (view.first_cell + page).min(view.total_cells);
         (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
         let has_hits = view.active_pads.iter().any(|&mask| mask != 0);
         view.next = self.overview_next_step(keymap, has_hits);
         if self.pattern_view.edit {
-            let events =
-                model.events_in_cell(self.pads.selected_abs(), self.pattern_view.cursor_cell);
+            let events = model.events_in_cell(self.pads.selected_abs(), cursor);
             if !events.is_empty() {
                 let index = self
                     .pattern_view

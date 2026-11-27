@@ -144,12 +144,29 @@ The SMC-PAD counts give visible panel / PAD BANK held / reveal.
 
 | Action | Keyboard | SMC-PAD |
 | --- | --- | --- |
-| Open A1 | F5 (1) | Screens P4 A1 (2 / 3 / 4) |
+| Open A1 | F5 (1) | Screens P16 A1 (2 / 3 / 4) |
 | Start or cancel count-in | Ctrl+R (1) | Tap RECORD (1) |
 | Finish a live pass | Ctrl+R (1) | Tap RECORD (1) |
 | Stop or play the loop | Space (1) | STOP or PLAY (1) |
 
 While A1 records, use the playing pads. Count those hits separately.
+
+## Select and edit an A1 step
+
+The first two lines show the position, loop length, grid, and recording quantize.
+The grid marks the selected time column. Playback has a separate mark.
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Move one step | Left/Right or J/L (1) | Turn STEP one detent |
+| Enter Step Edit at the selected step | F7 (1) | Hold PAD BANK, press P6 Edit Steps (2) |
+| Add or remove a hit | Press the pad key (1) | Release PAD BANK. Press the playing pad (1) |
+| Undo the edit | Ctrl+Z (1) | Hold PAD BANK, press P2 Undo (2) |
+| Return to the overview at the same step | Esc (1) | Hold PAD BANK, press P1 Back (2) |
+
+During the same hold, P2 Undo and P1 Back each take one hit.
+When the hold shortcut is off, use the second pad bank for commands.
+The first command pad press shows a hidden panel. Press the command again.
 
 ## Stop an output recording
 

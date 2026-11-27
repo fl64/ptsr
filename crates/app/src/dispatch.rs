@@ -329,7 +329,11 @@ impl App {
                 self.change_pattern_view(action == Action::PatternViewNext);
             }
             Action::PatternStepEdit => self.toggle_step_edit(),
-            Action::EditValue { up, .. } if self.pattern_view.edit => self.move_step_cursor(up),
+            Action::EditValue { up, .. }
+                if self.pattern_view.overview && self.pattern_panel.is_none() =>
+            {
+                self.move_pattern_position(if up { 1 } else { -1 }, false);
+            }
             Action::ParamPrev if self.pattern_view.edit => self.choose_step_event(false),
             Action::ParamNext if self.pattern_view.edit => self.choose_step_event(true),
             Action::PatternOverviewEmptyToggle
@@ -947,10 +951,7 @@ impl App {
             Action::Back if self.learning.is_some() => self.learning = None,
             // the help covers the screen: Esc closes it before the edit mode under it
             Action::Back if self.help_open => self.help_open = false,
-            Action::Back if self.pattern_view.edit => {
-                self.pattern_view.edit = false;
-                self.pattern_view.selected_event = None;
-            }
+            Action::Back if self.pattern_view.edit => self.leave_step_edit(),
             // The A1 settings lie over the A1 view: Back closes the top one first (134).
             Action::Back if self.pattern_panel.is_some() => self.pattern_panel = None,
             // the mode goes first and the screen stays: A1 keeps its view (98b, 138)
