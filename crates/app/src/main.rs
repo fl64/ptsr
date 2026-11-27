@@ -1681,7 +1681,8 @@ fn main() -> std::io::Result<()> {
         let panel = app.panel_for_frame();
         let help = tui::Help {
             groups: &groups,
-            hint: hint_for(&app).filter(|_| !app.input_sources.last_is_smc()),
+            hint: hint_for(&app)
+                .filter(|_| app.screen == Screen::Settings || !app.input_sources.last_is_smc()),
             full: full
                 .as_deref()
                 .and_then(|rows| app.full_help_view(rows, &messages)),
