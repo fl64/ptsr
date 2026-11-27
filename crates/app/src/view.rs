@@ -752,6 +752,73 @@ impl App {
         }
         let mut rows = super::full_help(keymap, self.screen, kitty);
         if self.pattern_view.overview {
+            let pad_keys: std::collections::HashSet<_> = keymap
+                .bindings(self.screen)
+                .into_iter()
+                .filter(|(_, action)| {
+                    super::pattern_view::is_pad_edit_action(*action)
+                        || matches!(
+                            action,
+                            Action::EditValue { .. } | Action::ParamPrev | Action::ParamNext
+                        )
+                })
+                .map(|(key, _)| key)
+                .collect();
+            rows.retain_mut(|(keys, _)| {
+                if keys.is_empty() {
+                    return true;
+                }
+                *keys = keys
+                    .split_whitespace()
+                    .filter(|key| !pad_keys.contains(*key))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                !keys.is_empty()
+            });
+            let keys = |actions: &[Action]| {
+                actions
+                    .iter()
+                    .flat_map(|&action| self.help_bindings(keymap, action))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            let (exit_keys, exit) = if self.pattern_view.edit {
+                if let Some((_, text)) = rows.iter_mut().find(|(key, _)| key == "1-4 Q-R A-F Z-V") {
+                    *text = "Edit one hit in the current cell. Pads stay silent.".into();
+                }
+                (
+                    [Action::Back, Action::PatternStepEdit],
+                    "Close Step Edit and keep this cell.",
+                )
+            } else {
+                (
+                    [Action::ScreenPads, Action::Back],
+                    "Return to Pads to edit pads.",
+                )
+            };
+            let cell_keys = [false, true].map(|up| Action::EditValue { up, fine: false });
+            rows.splice(
+                0..0,
+                [
+                    (keys(&exit_keys), exit.into()),
+                    (keys(&cell_keys), "Select a time cell.".into()),
+                    (
+                        keys(&[Action::ParamPrev, Action::ParamNext]),
+                        if self.pattern_view.edit {
+                            "Select the hit in this cell."
+                        } else {
+                            "Browse one bar."
+                        }
+                        .into(),
+                    ),
+                    (
+                        "SMC-PAD".into(),
+                        "E1 moves a cell. LEFT and RIGHT move a bar with the panel closed.".into(),
+                    ),
+                ]
+                .into_iter()
+                .filter(|(key, _)| !key.is_empty()),
+            );
             rows.push((
                 "Pattern overview".into(),
                 if self.pattern_view.edit {
@@ -880,7 +947,7 @@ impl App {
                 rows.push(("SMC cells".into(), cells.join(" · ")));
             }
         }
-        if self.screen != Screen::Pads {
+        if self.screen != Screen::Pads || self.pattern_view.overview {
             return rows;
         }
         rows.retain(|(_, text)| !text.starts_with("Pitch Gate:"));

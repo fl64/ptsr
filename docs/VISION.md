@@ -300,6 +300,8 @@ A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio
 - **Step mode (like TR-REC):** a step grid. A pad adds or deletes a hit.
 - The A1 overview and Step Edit show the same selected time. They show the loop length,
   view grid, and recording quantize. Playback has a separate mark.
+- In the A1 overview, the keyboard and SMC-PAD can move one step or one bar.
+  Pad edits use Pads (F2).
 - Planned: the [pattern track](plans/UI-UX.md#31-pattern-track) makes F5 one Pattern screen.
   In step edit, the 16 pads can be the 16 steps of the selected row.
 - **Substeps (ratchets):** 2, 3, 4, 6, 8 hits in a step, with decreasing or increasing volume.

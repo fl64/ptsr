@@ -285,6 +285,12 @@ impl App {
                 }
                 _ => {}
             },
+            action
+                if self.pattern_view.overview
+                    && super::pattern_view::is_pad_edit_action(action) =>
+            {
+                self.refuse_a1_pad_edit();
+            }
             Action::PadEditOnly if self.screen == Screen::Pads => self.edit = true,
             Action::ChopEditOnly if self.screen == Screen::Chop && self.plan.is_none() => {
                 self.edit = true;
@@ -341,6 +347,11 @@ impl App {
             }
             Action::ParamPrev if self.pattern_view.edit => self.choose_step_event(false),
             Action::ParamNext if self.pattern_view.edit => self.choose_step_event(true),
+            Action::ParamPrev | Action::ParamNext
+                if self.pattern_view.overview && self.pattern_panel.is_none() =>
+            {
+                self.move_pattern_position(if action == Action::ParamNext { 1 } else { -1 }, true);
+            }
             Action::PatternOverviewEmptyToggle
                 if self.screen == Screen::Pads
                     && self.pattern_view.overview
@@ -1275,6 +1286,18 @@ impl App {
         false
     }
 
+    fn refuse_a1_pad_edit(&mut self) {
+        if self.transport_input_blocked() || self.help_open {
+            return;
+        }
+        let text = if self.input_sources.last_is_smc() {
+            "Open Pads to edit a pad."
+        } else {
+            "F2 opens Pads for pad edits."
+        };
+        self.post_notice(Level::Info, (text.into(), Instant::now()));
+    }
+
     /// Open pattern controls own the edit keys and buttons: they change A1, and commands
     /// that change a pad, a slice or an effect wait (98b). Pads still play.
     pub(super) fn pattern_controls_own(&self, action: Action) -> Option<Action> {
@@ -2169,6 +2192,13 @@ impl App {
             } => {
                 self.midi_step(&port, &control, target, steps, fine);
             }
+            midi::Event::Param { param, .. }
+                if self.pattern_view.overview
+                    && self.pattern_panel.is_none()
+                    && !super::pattern_view::is_a1_knob(param) =>
+            {
+                self.refuse_a1_pad_edit();
+            }
             // open pattern controls: edit knobs 1-3 turn A1, other edit knobs wait (98b)
             midi::Event::Param {
                 port,
@@ -2913,6 +2943,13 @@ impl App {
                 self.panel.sync_view(view);
                 self.panel.move_view(steps);
             }
+            return;
+        }
+        if self.pattern_view.overview
+            && self.pattern_panel.is_none()
+            && matches!(target, StepTarget::Param(param) if !super::pattern_view::is_a1_knob(param))
+        {
+            self.refuse_a1_pad_edit();
             return;
         }
         if let Some(param) = smc_live_pad_param(port, control, target) {

@@ -337,6 +337,12 @@ Restore the grid when the panel closes.
 Show the Setup route before A1 exists. Show the current row action and the close control.
 Show the Setup keys first in F1. Give the clear question its own controls.
 
+### A1 overview controls (154)
+
+In the A1 overview, press J/L or Left/Right to move one step. Press I/K or
+Up/Down to move one bar. On SMC-PAD, turn E1 for a step. Close the command
+panel to use LEFT and RIGHT for bars. Press F2 to edit a pad.
+
 ### Change 98 — `98-pattern-screen`
 
 The [pattern track](#pattern-track-owner-review-2026-11-27) replaces the screen sketch and the keys of this section.

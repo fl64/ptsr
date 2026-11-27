@@ -2,6 +2,42 @@
 
 use engine::pattern::{Grid, Hit, MAX_HITS, PlaybackRow, RawPattern, RowId, TICKS_PER_BAR};
 
+pub(super) fn is_pad_edit_action(action: input::Action) -> bool {
+    use input::Action;
+    matches!(
+        action,
+        Action::PadClear
+            | Action::PadCopy
+            | Action::PadEdit
+            | Action::PadEditOnly
+            | Action::PadMarkBank
+            | Action::PadMarkToggle
+            | Action::PadModeNext
+            | Action::PadPage(_)
+            | Action::PadParam(_)
+            | Action::PadParamNext
+            | Action::PadPitchGateToggle
+            | Action::PadRename
+            | Action::PadTake
+            | Action::PadsSourcePin
+            | Action::PadsStripToggle
+            | Action::PageNext
+            | Action::PagePrev
+    )
+}
+
+pub(super) fn is_a1_knob(param: input::midi::Param) -> bool {
+    use input::midi::Param;
+    matches!(
+        param,
+        Param::MasterVolume
+            | Param::Tempo
+            | Param::PatternBars
+            | Param::PatternQuantize
+            | Param::PatternStrength
+    )
+}
+
 /// In order of cell size: a finer step always zooms in.
 const GRIDS: [Grid; 8] = [
     Grid::Quarter,
@@ -667,20 +703,28 @@ impl super::App {
         view.first_cell = cursor / page * page;
         if !view.editing && self.pattern_panel.is_none() && !self.key_notice_blocked() {
             if self.input_sources.last_is_smc() {
-                view.cursor_hint = Some("Turn STEP".into());
+                view.cursor_hint = Some("E1 step · ◀ ▶ bar".into());
             } else {
-                let keys = [false, true]
-                    .into_iter()
-                    .filter_map(|up| {
-                        self.help_bindings(keymap, input::Action::EditValue { up, fine: false })
-                            .into_iter()
-                            .min_by_key(String::len)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("/");
-                if !keys.is_empty() {
-                    view.cursor_hint = Some(format!("{keys} step"));
-                }
+                use input::Action;
+                let cue = |actions: [Action; 2], label: &str| {
+                    let keys = actions
+                        .into_iter()
+                        .filter_map(|action| {
+                            self.help_bindings(keymap, action)
+                                .into_iter()
+                                .min_by_key(String::len)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    (!keys.is_empty()).then(|| format!("{keys} {label}"))
+                };
+                let step = cue(
+                    [false, true].map(|up| Action::EditValue { up, fine: false }),
+                    "step",
+                );
+                let bar = cue([Action::ParamPrev, Action::ParamNext], "bar");
+                let hints = step.into_iter().chain(bar).collect::<Vec<_>>().join(" · ");
+                view.cursor_hint = (!hints.is_empty()).then_some(hints);
             }
         }
         let end = (view.first_cell + page).min(view.total_cells);
