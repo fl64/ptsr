@@ -3154,6 +3154,65 @@ L="none"
         }
     }
 
+    /// Scenario "Compact Rhythm keeps its rows and MIDI roles".
+    #[test]
+    fn compact_rhythm_keeps_its_rows_and_midi_roles() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let now = Instant::now();
+        let case = Case {
+            screen: Screen::Pads,
+            mode: Mode::SourceRhythm,
+            size: (80, 26),
+        };
+        let make = || {
+            let mut app = fixture(case, now);
+            fixture_smc_knob_strip(&mut app, now);
+            app.post_system_notice(Level::Warn, ("Check the session.".into(), now));
+            app
+        };
+        let rows = |app| {
+            render_app(case, &keymap, app, now)
+                .1
+                .content()
+                .chunks(80)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+        };
+        for present in [None, Some(false), Some(true)] {
+            let mut app = make();
+            match present {
+                None => app.pads.pattern = None,
+                Some(false) => app.pads.pattern.as_mut().unwrap().hits.clear(),
+                Some(true) => {}
+            }
+            let rows = rows(app);
+            assert_eq!(
+                rows.iter().filter(|row| row.starts_with('┌')).count(),
+                4,
+                "{rows:?}"
+            );
+            match present {
+                None => assert!(rows[2].contains("No A1") && rows[2].contains("record A1")),
+                Some(_) => {
+                    assert!(rows[2].starts_with("Rhythm · A1"), "{rows:?}");
+                    assert!(rows[3].starts_with("all"), "{rows:?}");
+                    assert!(rows[4].starts_with("pad 1"), "{rows:?}");
+                }
+            }
+            assert!(rows[22].contains("! Check the session."), "{rows:?}");
+            assert!(rows[23].contains("B1 7") && rows[23].contains("B2 8 master"));
+            let roles = rows[25].chars().take(40).collect::<String>();
+            for knob in [3, 4, 1, 2] {
+                assert!(roles.contains(&format!("{knob} ")), "{roles}");
+            }
+        }
+        let mut edit = make();
+        edit.apply(Action::PadEdit);
+        let rows = rows(edit);
+        assert!(!rows[2].starts_with("Rhythm"), "{rows:?}");
+        assert!(rows[22].starts_with("B1 7"), "{rows:?}");
+    }
+
     /// Scenario "Catalogue covers the pattern view".
     #[test]
     fn catalogue_covers_the_pattern_view() {

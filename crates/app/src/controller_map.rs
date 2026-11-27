@@ -581,6 +581,15 @@ impl App {
         tui::pads::set_smc_words(self.input_sources.last_is_smc());
         tui::pads::set_smc_fine_hold(ready && self.midi_gestures.smc_pad_bank_opens_panel);
         Some(tui::KnobStrip {
+            compact_rhythm: self.screen == input::Screen::Pads
+                && self.source_view.rhythm()
+                && !self.ui.hide_pads
+                && !self.pattern_view.overview
+                && !edit
+                && self.recording.is_none()
+                && self.pattern_panel.is_none()
+                && !self.help_open
+                && self.project_picker.is_none(),
             mode: self.mode_line(now),
             page,
             list,
