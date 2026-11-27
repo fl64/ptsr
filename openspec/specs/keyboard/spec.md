@@ -515,3 +515,13 @@ On Chop and Chop edit, the shipped keyboard map SHALL bind `Ctrl+Alt+Up` to `cho
 - **WHEN** the owner presses either threshold key with or without the kitty keyboard protocol
 - **THEN** the same threshold action reaches Chop or Chop edit once per key press
 - **AND** an owner binding for that key replaces the shipped action
+
+### Requirement: A held Gate can end in the folder picker
+
+The folder picker SHALL pass the release of a keyboard Gate it did not start. The release SHALL use the original pad address. A new keyboard pad press in the picker SHALL stay silent.
+
+#### Scenario: A folder picker lets an earlier Gate end
+
+- **WHEN** a key starts a Gate and the owner changes banks and opens a folder picker before releasing it
+- **THEN** the original Gate stops
+- **AND** pressing and releasing another pad key in the picker does not play or release a pad
