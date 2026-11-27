@@ -73,20 +73,22 @@ owner review.
 
 ### 3.1 Pattern track
 
-The owner review of 2026-11-27 replaces the `pattern-screen` item with four changes.
+The owner review of 2026-11-27 replaces the `pattern-screen` item with five changes.
 [PATTERNS.md](PATTERNS.md#pattern-track-owner-review-2026-11-27) gives the checked
 problems, the approved screen mockup, the two ways to write and the one undo.
 [KEYMAP-CLEANUP.md](KEYMAP-CLEANUP.md#8-pattern-screen-keys-pattern-track) gives the keys.
 [SMC-PAD-INTEGRATION.md](SMC-PAD-INTEGRATION.md#25-the-pattern-screen-pattern-smc) gives the controller model.
 
-1. `pattern-screen-layout`: F5 opens its own Pattern screen. It has one header line,
+1. `pattern-screen-layout` (174): F5 opens its own Pattern screen. It has one header line,
    rows without bank frames and full-width cells. It has three velocity levels and the velocity lane.
-   It has the detail line, the setup line and the empty state. View and live record only.
-   Remove the old overview and the `Alt+N` panel. Pads keeps the mini lane.
-2. `pattern-step-input`: step edit in the screen with pads = steps and pads = sounds,
+   It has the detail line, a read-only setup line and the empty state.
+   Current pattern keys and SMC-PAD routes keep working there. Pads keeps the mini lane.
+2. `pattern-setup-line` (175): setup line focus replaces the `Alt+N` panel.
+   SMC-PAD knobs change the setup on F5. Clear moves to the pattern screen.
+3. `pattern-step-input` (176): step edit in the screen with pads = steps and pads = sounds,
    the pattern screen keys and one undo.
-3. `pattern-smc`: the SMC-PAD model, its routes and device checks.
-4. `help-tasks`: Help by tasks, as below.
+4. `pattern-smc` (177): the SMC-PAD model, its routes and device checks.
+5. `help-tasks` (178): Help by tasks, as below.
 
 Each proposal names the catalogue files at both sizes. It gives separate keyboard and
 controller checks and names the renders to hear, or tells why the sound does not change.
@@ -252,8 +254,8 @@ The order within [FX-FILTERS.md](FX-FILTERS.md) and sections 3 and 4 above stays
 2. The owner merged `repo-fast-checks` and accepted `pattern-view-polish` (123).
 3. Do `denormals` next. Record this order
    in its proposal. Keep the 94a callback peak investigation open until its criteria pass.
-4. Do the pattern track of §3.1 (`pattern-screen-layout`, `pattern-step-input`,
-   `pattern-smc`, `help-tasks`), `pads-source-view` (including `pads-context-lane`),
+4. Do the pattern track of §3.1 (`pattern-screen-layout`, `pattern-setup-line`,
+   `pattern-step-input`, `pattern-smc`, `help-tasks`), `pads-source-view` (including `pads-context-lane`),
    `compact-help`, and `key-consistency` in that order.
 5. Do `style-doc-split` after the glossary exists and before `screen-layouts`.
 6. Do `screen-layouts` next. Keep its FX geometry ready for later effect parameters.

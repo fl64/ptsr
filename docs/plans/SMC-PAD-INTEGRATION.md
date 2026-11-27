@@ -248,6 +248,7 @@ or all listed changes. Use Esc or P7 to cancel.
 
 This section gives the SMC-PAD part of
 [the pattern track](PATTERNS.md#pattern-track-owner-review-2026-11-27).
+Change `pattern-setup-line` puts the setup knobs on F5. Change `pattern-smc` does the rest.
 It uses the same model as the keyboard.
 
 - **Pads:** the pads play sounds. In step edit, the pads are steps or sounds, as on the keyboard.

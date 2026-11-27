@@ -170,7 +170,8 @@ The flash names the threshold, as `chop.hits` does.
 
 This section is a later plan, not part of 83a. It gives the keys of the pattern screen from
 [the pattern track](PATTERNS.md#pattern-track-owner-review-2026-11-27).
-Change `pattern-step-input` binds them. Use right-half keys. Common work needs no Alt chord.
+Change `pattern-step-input` binds them. `N` and the setup line focus come earlier, in `pattern-setup-line`.
+Use right-half keys. Common work needs no Alt chord.
 
 | Key | Action |
 |---|---|

@@ -509,7 +509,8 @@ Goals:
 - **Detail line:** the selected step, the pad and its content: `no hit`, the velocity,
   `off grid +12 ticks` or `2 hits`. The glyphs can stay. The detail line and Help explain them.
 - **Setup line:** bars, tempo, view grid, record quantize and strength, metronome and
-  count-in. It is always visible. `N` moves the focus to it: `I` / `K` select, `J` / `L`
+  count-in. It is always visible. Count-in stays one bar. The line shows it and does not change it
+  (owner decision, 2026-11-27). `N` moves the focus to it: `I` / `K` select, `J` / `L`
   change, Esc goes back. It replaces the `Alt+N` panel.
 - **Playhead:** a lit column during play. The edit cursor has its own mark.
 - **Empty pattern:** two lines, `Ctrl+R records what you play` and `Enter writes steps`.
@@ -547,23 +548,31 @@ In that case, the notice tells the reason. `Alt+Z` stays for one release with a 
 The Pads strip keeps a small pattern lane: the used rows that fit, with the playhead.
 It shows one hint, `F5 pattern`. Pads has no pattern settings and no pattern edits.
 
-#### The four changes
+#### The five changes
+
+The owner split the track into five changes on 2026-11-27. Each change keeps every current
+keyboard and SMC-PAD path until a later change replaces it.
 
 Do them in this order. Each change gets the next free OpenSpec number, its own branch and its own PR.
 Write the specifications first. Add catalogue fixtures at 120×40 and 80×26, and keyboard and raw MIDI tests.
 Start the next change only after owner acceptance.
 
-1. `pattern-screen-layout`: F5 as its own screen with the layout above. View and live record only.
-   Remove the old overview and the `Alt+N` panel. Pads keeps the mini lane.
-2. `pattern-step-input`: step edit in the screen with pads = steps and pads = sounds,
+1. `pattern-screen-layout` (174): F5 as its own screen with the layout above. The setup line
+   only shows values. The old overview goes. The `Alt+N` panel, the SMC-PAD setup cell, F7 step edit,
+   live record, erase and tap tempo keep their current keys on the new screen.
+   The empty screen names F7 for steps. Pads keeps the mini lane with the hint `F5 pattern`.
+2. `pattern-setup-line` (175): `N` moves the focus to the setup line. It replaces the `Alt+N` panel.
+   SMC-PAD knobs on F5 change bars, tempo, view grid, record quantize and strength directly.
+   Clear moves to the pattern screen.
+3. `pattern-step-input` (176): step edit with pads = steps and pads = sounds,
    the pattern screen keys and one undo.
-3. `pattern-smc`: the SMC-PAD model of
+4. `pattern-smc` (177): the rest of the SMC-PAD model of
    [SMC-PAD-INTEGRATION.md](SMC-PAD-INTEGRATION.md#25-the-pattern-screen-pattern-smc),
    with routes in `docs/CONTROLLER-PATHS.md` and device checks.
-4. `help-tasks`: Help by tasks, see [UI-UX.md](UI-UX.md#31-pattern-track).
+5. `help-tasks` (178): Help by tasks, see [UI-UX.md](UI-UX.md#31-pattern-track).
 
-Renders: change 2 renders a beat written only in pads = steps, with soft, medium and loud hits.
-Changes 1, 3 and 4 do not change sound. Each proposal states this in one sentence.
+Renders: change 3 renders a beat written only in pads = steps, with soft, medium and loud hits.
+Changes 1, 2, 4 and 5 do not change sound. Each proposal states this in one sentence.
 
 ### Change 99 — `99-pattern-slots`
 
