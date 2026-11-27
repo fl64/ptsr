@@ -18,6 +18,7 @@ pub struct PatternStrip {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PatternOverview {
     pub header: String,
+    pub state_label: Option<String>,
     pub next: Option<String>,
     pub rows: Vec<Vec<PatternCell>>,
     pub names: Vec<String>,
@@ -196,6 +197,10 @@ pub(super) fn pattern_overview(frame: &mut Frame, area: Rect, pads: &Pads, view:
     } else {
         title.push_str(" · ");
         title.push_str(&view.header);
+    }
+    if let Some(state) = &view.state_label {
+        title.push_str(" · ");
+        title.push_str(state);
     }
     if let Some(hint) = view.cursor_hint.as_deref()
         && Span::raw(title.as_str()).width() + 3 + Span::raw(hint).width() <= width

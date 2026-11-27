@@ -2059,7 +2059,7 @@ fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
             drive.tap(KeyCode::Char(' '), M::NONE);
         }
         app_capture_frames(&mut drive, 128);
-        cue(&drive, "Space play A1", "PLAY play A1");
+        cue(&drive, "Space play A1", "PLAY resume A1");
         if controller {
             button(&mut drive, 27);
         } else {
@@ -5195,6 +5195,8 @@ fn pattern_taps_use_the_beat_interval() {
     assert_eq!(controller.app.transport.bpm, initial);
     let frame = tap(&mut controller, 400);
     assert_eq!(controller.app.transport.bpm, 150.0);
+    assert_eq!(controller.last_notice().text, "Tempo 150.0 BPM");
+    assert!(controller.app.current_value_at(Instant::now()).is_none());
     assert!(
         frame
             .commands()
@@ -5222,6 +5224,16 @@ fn pattern_taps_use_the_beat_interval() {
     keyboard.tap(KeyCode::Char('b'), M::ALT);
     assert!(keyboard.app.transport.taps.is_empty());
     assert_eq!(keyboard.app.transport.bpm, initial);
+
+    keyboard.tap(KeyCode::F(5), M::NONE);
+    keyboard.tap(KeyCode::Char('b'), M::ALT);
+    keyboard.app.transport.taps[0] = Instant::now() - std::time::Duration::from_millis(400);
+    keyboard.tap(KeyCode::Char('b'), M::ALT);
+    assert_eq!(
+        keyboard.last_notice().text,
+        format!("Tempo {:.1} BPM", keyboard.app.transport.bpm)
+    );
+    assert!(keyboard.app.current_value_at(Instant::now()).is_none());
 }
 
 const SMC_PRIVATE: &str = "SINCO SMC-PAD-Private 28:0";

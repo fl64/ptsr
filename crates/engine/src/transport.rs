@@ -17,6 +17,7 @@ pub fn tempo(value: f64) -> Option<f64> {
 pub struct Snapshot {
     pub bpm: f64,
     pub playing: bool,
+    pub paused: bool,
     pub metronome: bool,
     pub ticks: f64,
     /// Zero means no accepted pattern; a present empty pattern still has a length.
@@ -29,6 +30,7 @@ impl Default for Snapshot {
         Self {
             bpm: DEFAULT_BPM,
             playing: false,
+            paused: false,
             metronome: false,
             ticks: 0.0,
             pattern_ticks: 0,
@@ -139,7 +141,9 @@ impl Published {
             .store(u64::from(state.pattern_ticks), SeqCst);
         self.dropped_hits.store(state.dropped_hits, SeqCst);
         self.flags.store(
-            u64::from(state.playing) | (u64::from(state.metronome) << 1),
+            u64::from(state.playing)
+                | (u64::from(state.metronome) << 1)
+                | (u64::from(state.paused) << 2),
             SeqCst,
         );
         self.revision.fetch_add(1, SeqCst);
@@ -157,6 +161,7 @@ impl Published {
             bpm,
             ticks,
             playing: flags & 1 != 0,
+            paused: flags & 4 != 0,
             metronome: flags & 2 != 0,
             pattern_ticks: self.pattern_ticks.load(SeqCst) as u32,
             dropped_hits: self.dropped_hits.load(SeqCst),
@@ -177,6 +182,7 @@ mod tests {
             bpm: 90.0,
             ticks: 123.0,
             playing: true,
+            paused: false,
             metronome: false,
             pattern_ticks: 3840,
             dropped_hits: 7,
@@ -185,6 +191,7 @@ mod tests {
             bpm: 172.0,
             ticks: 456.0,
             playing: false,
+            paused: true,
             metronome: true,
             pattern_ticks: 0,
             dropped_hits: 19,

@@ -289,6 +289,133 @@ fn raw_midi_buttons_control_transport_and_metronome() {
     }
 }
 
+/// Scenario "A1 distinguishes pause and reset".
+#[test]
+fn a1_distinguishes_pause_and_reset() {
+    use super::patterns::app_capture_frames;
+    for midi in [false, true] {
+        let mut drive = Drive::smc_offline();
+        drive.app.apply_session(session::Session {
+            pattern: Some("A1".into()),
+            patterns: vec![session::PatternState {
+                slot: "A1".into(),
+                bars: 2,
+                quantize: "off".into(),
+                strength: 100,
+                hits: vec![[0, 0, 100, 0]],
+            }],
+            ..Default::default()
+        });
+        settle(&mut drive);
+        drive.tap(KeyCode::F(5), M::NONE);
+        let context = |drive: &mut Drive, play| {
+            if midi {
+                let cc = if play { 27 } else { 28 };
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, cc, 127]);
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, cc, 0]);
+                drive.frame();
+            } else {
+                drive.tap(KeyCode::Char(if play { 't' } else { 'y' }), M::ALT);
+            }
+            app_capture_frames(drive, 0);
+        };
+        context(&mut drive, true);
+        context(&mut drive, false);
+        let paused = drive.app.transport_state();
+        assert!(paused.paused && !paused.playing, "{paused:?}");
+        assert_eq!(paused.ticks, 0.0);
+        for width in [80, 120] {
+            let view = drive.app.pattern_overview_at(&drive.keymap, width);
+            assert_eq!(view.state_label.as_deref(), Some("Paused 1:1"));
+            assert_eq!(
+                view.next.as_deref(),
+                Some(if midi {
+                    "PLAY resume A1"
+                } else {
+                    "Alt+T resume A1"
+                })
+            );
+        }
+        context(&mut drive, true);
+        assert!(drive.app.transport_state().playing);
+        app_capture_frames(&mut drive, 25_000);
+        context(&mut drive, false);
+        let paused = drive.app.transport_state();
+        assert!(paused.ticks > 960.0);
+        let view = drive.app.pattern_overview(&drive.keymap);
+        assert_eq!(view.state_label.as_deref(), Some("Paused 1:2"));
+        context(&mut drive, true);
+        assert_eq!(drive.app.transport_state().ticks, paused.ticks);
+        context(&mut drive, false);
+        if !midi {
+            drive
+                .keymap
+                .overlay("[global]\n'Alt+T' = 'none'\n")
+                .unwrap();
+            let view = drive.app.pattern_overview(&drive.keymap);
+            assert_eq!(view.next.as_deref(), Some("Space restart A1"));
+        }
+        context(&mut drive, false);
+        let stopped = drive.app.transport_state();
+        assert!(!stopped.paused && !stopped.playing, "{stopped:?}");
+        assert_eq!(stopped.ticks, 0.0);
+        let view = drive.app.pattern_overview(&drive.keymap);
+        assert_eq!(view.state_label.as_deref(), Some("Stopped"));
+        assert_eq!(
+            view.next.as_deref(),
+            Some(if midi {
+                "PLAY play A1"
+            } else {
+                "Space play A1"
+            })
+        );
+    }
+}
+
+/// Scenario "A1 labels the pass from its initial hits".
+#[test]
+fn a1_labels_the_pass_from_its_initial_hits() {
+    use super::patterns::app_capture_frames;
+    for midi in [false, true] {
+        let mut drive = Drive::smc_offline();
+        drive.tap(KeyCode::F(5), M::NONE);
+        let record = |drive: &mut Drive| {
+            if midi {
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 29, 127]);
+                drive.bytes("SINCO SMC-PAD-Master 28:1", &[0xB0, 29, 0]);
+                drive.frame();
+            } else {
+                drive.tap(KeyCode::Char('r'), M::CONTROL);
+            }
+        };
+        record(&mut drive);
+        app_capture_frames(&mut drive, 96_000);
+        let first = drive.app.pattern_overview(&drive.keymap);
+        assert_eq!(first.state_label.as_deref(), Some("First pass"));
+        if midi {
+            drive.bytes("SINCO SMC-PAD-Master 28:1", &[0x99, 48, 100]);
+            drive.bytes("SINCO SMC-PAD-Master 28:1", &[0x89, 48, 0]);
+            drive.frame();
+        } else {
+            drive.tap(KeyCode::Char('1'), M::NONE);
+        }
+        app_capture_frames(&mut drive, 128);
+        drive.app.flush_audio();
+        assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits.len(), 1);
+        let first_with_hits = drive.app.pattern_overview(&drive.keymap);
+        assert_eq!(first_with_hits.state_label.as_deref(), Some("First pass"));
+        record(&mut drive);
+        for _ in 0..4 {
+            app_capture_frames(&mut drive, 128);
+            drive.app.flush_audio();
+        }
+        record(&mut drive);
+        app_capture_frames(&mut drive, 128);
+        let overdub = drive.app.pattern_overview(&drive.keymap);
+        assert_eq!(overdub.state_label.as_deref(), Some("Overdub"));
+    }
+}
+
 /// Scenario "Context PLAY and STOP match keyboard and raw MIDI" (keyboard).
 #[test]
 fn context_play_and_stop_match_keyboard_and_raw_midi() {
