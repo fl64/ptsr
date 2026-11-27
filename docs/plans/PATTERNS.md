@@ -454,8 +454,10 @@ Checked problems at `97cdda8`:
   The `~` glyph (`crates/tui/src/pattern.rs`) has no explanation on the screen.
 - F1 starts with the Pitch Gate row (`crates/app/src/help.rs`).
 
-Not checked yet: bank frames, the grid start column, the F1 row count and the undo group in F1.
-The first change of this track checks them in the screen catalogue.
+- The catalogue entry `pads-pattern-overview-straight-120x40` draws a frame for each bank.
+  One pad row uses three lines. The grid starts near column 46.
+- The catalogue entry `pads-help-120x40` has 78 rows. Undo and redo are in the CHOP group.
+  Tap tempo is in the SOUND group.
 
 Goals:
 
