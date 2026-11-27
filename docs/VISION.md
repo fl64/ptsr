@@ -413,6 +413,7 @@ On F5, change 140 shows the next step for live recording and playback of A1.
 During count-in, Esc or SMC-PAD command P1 cancels and keeps the A1 overview open.
 The A1 title shows the position, First pass or Overdub during recording, and Paused or Stopped.
 Tap tempo shows the first keyboard tap and the new BPM in the notice row.
+At 80x26, the A1 command panel takes the grid area. Help and the project picker take priority.
 The keys in use are in `config/keymap.toml`. The table below is historical.
 
 | Key | Screen | Content |
