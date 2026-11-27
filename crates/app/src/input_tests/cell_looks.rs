@@ -136,6 +136,60 @@ fn erase_hits_during_the_count_in_is_grey() {
     cell(&mut drive, panel_note(slot_of(Pattern, "erase hits")));
     assert_eq!(drive.last_notice().text, "wait for the count-in");
     assert!(!drive.app.erase_pads);
+    cell(&mut drive, panel_note(slot_of(Pattern, "edit steps")));
+    assert_eq!(drive.last_notice().text, "wait for the count-in");
+    assert!(!drive.app.pattern_view.edit);
+}
+
+/// Scenario "P6 and F7 can add the first A1 step" (command-panel).
+#[test]
+fn p6_and_f7_can_add_the_first_a1_step() {
+    use panel::View::Pattern;
+    for keyboard in [false, true] {
+        let mut drive = hold_drive();
+        drive.tap(KeyCode::F(5), M::NONE);
+        let toggle = |drive: &mut Drive| {
+            if keyboard {
+                drive.tap(KeyCode::F(7), M::NONE);
+            } else {
+                labelled_cell(drive, Pattern, "edit steps");
+            }
+        };
+        assert!(drive.app.pads.pattern.is_none());
+        toggle(&mut drive);
+        assert!(!drive.app.pattern_view.edit);
+        assert!(drive.last_notice().text.starts_with("No A1"));
+
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        drive.tap(KeyCode::Char('n'), M::ALT);
+        assert!(drive.app.pads.pattern.as_ref().unwrap().hits.is_empty());
+        hold(&mut drive, true);
+        assert!(!looks(&drive).dim[at(Pattern, "edit steps")]);
+        hold(&mut drive, false);
+        toggle(&mut drive);
+        assert!(drive.app.pattern_view.edit);
+
+        let frame = if keyboard {
+            drive.tap(KeyCode::Char('1'), M::NONE)
+        } else {
+            cell(&mut drive, 48)
+        };
+        assert!(
+            !frame
+                .commands()
+                .iter()
+                .any(|command| matches!(command, Command::PadPress { .. }))
+        );
+        assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits.len(), 1);
+
+        if keyboard {
+            drive.tap(KeyCode::Char('z'), M::CONTROL);
+        } else {
+            action_cell(&mut drive, 14);
+        }
+        assert!(drive.app.pads.pattern.as_ref().unwrap().hits.is_empty());
+        assert!(drive.app.pattern_view.edit);
+    }
 }
 
 /// Scenario "Undo with nothing to undo is grey" (command-panel).

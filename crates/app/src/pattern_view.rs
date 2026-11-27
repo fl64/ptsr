@@ -305,23 +305,7 @@ impl super::App {
             return;
         }
         self.flush_audio();
-        let refusal = if self.pads.pattern.is_none() {
-            Some("No A1: record A1 before step correction.")
-        } else if self.transport_input_blocked()
-            || self.edit
-            || self.pads.marking
-            || self.pad_in_hand.is_some()
-            || self.copy_in_hand.is_some()
-            || self.browser.in_hand.is_some()
-            || self.erase_pads
-            || self.pattern_panel.is_some()
-            || self.recording.is_some()
-        {
-            Some("Finish the current edit or recording before step correction.")
-        } else {
-            self.pattern_tidy_refusal()
-        };
-        if let Some(text) = refusal {
+        if let Some(text) = self.step_edit_refusal() {
             self.post_notice(super::Level::Warn, (text.into(), std::time::Instant::now()));
             return;
         }
@@ -346,6 +330,32 @@ impl super::App {
         }
         self.pattern_view.edit = true;
         self.pattern_view.selected_event = None;
+    }
+
+    pub(super) fn step_edit_refusal(&self) -> Option<&'static str> {
+        if self.pattern_view.edit {
+            None
+        } else if self
+            .pattern_record_state()
+            .is_some_and(|state| state.phase == engine::capture::Phase::CountIn)
+        {
+            Some("wait for the count-in")
+        } else if self.pads.pattern.is_none() {
+            Some("No A1: record A1 before step correction.")
+        } else if self.transport_input_blocked()
+            || self.edit
+            || self.pads.marking
+            || self.pad_in_hand.is_some()
+            || self.copy_in_hand.is_some()
+            || self.browser.in_hand.is_some()
+            || self.erase_pads
+            || self.pattern_panel.is_some()
+            || self.recording.is_some()
+        {
+            Some("Finish the current edit or recording before step correction.")
+        } else {
+            self.pattern_tidy_refusal()
+        }
     }
 
     pub(super) fn move_step_cursor(&mut self, right: bool) {
