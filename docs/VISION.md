@@ -414,6 +414,7 @@ During count-in, Esc or SMC-PAD command P1 cancels and keeps the A1 overview ope
 The A1 title shows the position, First pass or Overdub during recording, and Paused or Stopped.
 Tap tempo shows the first keyboard tap and the new BPM in the notice row.
 At 80x26, the A1 command panel takes the grid area. Help and the project picker take priority.
+An absent A1 names the Setup control. Setup shows its own keys and controller actions.
 The keys in use are in `config/keymap.toml`. The table below is historical.
 
 | Key | Screen | Content |
