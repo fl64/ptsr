@@ -166,6 +166,80 @@ fn the_copy_line_keeps_its_source_after_a_bank_change() {
     assert!(line.ends_with("PAD BANK + 1 cancel"), "{line}");
 }
 
+/// Scenario "Placement hints follow reveal and target menu state".
+#[test]
+fn placement_hints_follow_reveal_and_target_menu_state() {
+    use panel::Target;
+
+    let files = TransitionFiles::new();
+    for hold_unavailable in [false, true] {
+        for (target, label) in [
+            (Target::Copy, "COPY"),
+            (Target::Swap, "SWAP"),
+            (Target::File, "IN HAND"),
+        ] {
+            let mut drive = smc_drive();
+            if hold_unavailable {
+                drive.app.midi_gestures.smc_pad_bank_opens_panel = true;
+                drive.midi().set_pad_bank_shortcut(true);
+                drive.midi().recorded_smc_failure();
+                drive.frame();
+            }
+            drive.load_pad(0, tone(), "kick");
+            drive.frame();
+            match target {
+                Target::Copy => drive.tap(KeyCode::Char('c'), M::CONTROL),
+                Target::Swap => drive.tap(KeyCode::Char('x'), M::CONTROL),
+                Target::File => {
+                    drive.tap(KeyCode::F(6), M::NONE);
+                    drive.app.browser.dir = files.0.clone();
+                    drive.app.browser.reread();
+                    drive.app.browser.selected = drive
+                        .app
+                        .browser
+                        .entries
+                        .iter()
+                        .position(|entry| entry.name == "tone.wav")
+                        .unwrap();
+                    drive.tap(KeyCode::Enter, M::NONE)
+                }
+                Target::Assign => unreachable!(),
+            };
+            assert_eq!(drive.app.panel_target(), Some(target));
+            assert!(line(&drive).ends_with("Esc cancel"));
+
+            button(&mut drive, RIGHT);
+            for (width, height) in [(80, 26), (120, 40)] {
+                let rows = strip_rows(&mut drive, width, height);
+                assert!(
+                    rows.iter().any(|row| {
+                        row.contains(label) && row.contains("Pad bank 2 · P1 twice cancels")
+                    }),
+                    "{rows:?}"
+                );
+            }
+
+            cell(&mut drive, panel_note(13));
+            assert_eq!(drive.app.panel_target(), Some(target));
+            let open = drive.app.panel_snapshot().unwrap();
+            assert!(open.view.ends_with("pad bank 1 to place"));
+            assert_eq!(open.labels[12].as_deref(), Some("cancel"));
+            assert!(line(&drive).ends_with(" · P1 cancel"));
+
+            cell(&mut drive, panel_note(15));
+            assert!(line(&drive).ends_with(" · P1 back to targets"));
+            cell(&mut drive, panel_note(13));
+            assert_eq!(drive.app.panel_target(), Some(target));
+            assert!(line(&drive).ends_with(" · P1 cancel"));
+
+            cell(&mut drive, panel_note(13));
+            assert!(drive.app.panel_target().is_none());
+            assert!(drive.app.history.is_empty());
+            assert_eq!(drive.app.pads.custom_name[0].as_deref(), Some("kick"));
+        }
+    }
+}
+
 /// Scenario "Tap tempo confirms the first tap" (screen-layout).
 #[test]
 fn tap_tempo_confirms_the_first_tap() {

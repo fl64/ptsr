@@ -194,7 +194,11 @@ fn fit_mode(mode: &str, width: usize) -> String {
         return clip_label(mode, width);
     }
     let (head, last) = (parts[0], parts[parts.len() - 1]);
-    let name = head.split(' ').next().unwrap_or(head);
+    let name = if head.starts_with("IN HAND ") {
+        "IN HAND"
+    } else {
+        head.split(' ').next().unwrap_or(head)
+    };
     let mut candidates = Vec::new();
     if parts.len() > 2 {
         let tail = &parts[parts.len() - 2..];
@@ -250,6 +254,11 @@ mod tests {
         let long = "ASK-A-VERY-LONG-MODE-NAME-HERE · PAD BANK + 1 close";
         assert!(fit_mode(long, 30).ends_with(" · PAD BANK + 1 close"));
         assert_eq!(fit_mode("COUNT 4", 40), "COUNT 4");
+        let file = "IN HAND long sample.wav · hit a pad · Pad bank 2 · P1 twice cancels";
+        assert_eq!(
+            fit_mode(file, 40),
+            "IN HAND · Pad bank 2 · P1 twice cancels"
+        );
     }
     use ratatui::{Terminal, backend::TestBackend};
 

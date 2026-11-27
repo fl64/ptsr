@@ -185,12 +185,15 @@ pub(super) enum Target {
 }
 
 impl Target {
-    fn title(self) -> &'static str {
-        match self {
-            Self::Copy => "COPY · release, hit a pad",
-            Self::Swap => "SWAP · release, hit a pad",
-            Self::File => "FILE · release, hit a pad",
-            Self::Assign => "ASSIGN · release, hit a pad",
+    fn title(self, hold: bool) -> &'static str {
+        match (self, hold) {
+            (Self::Copy, true) => "COPY · release, hit a pad",
+            (Self::Swap, true) => "SWAP · release, hit a pad",
+            (Self::File, true) => "FILE · release, hit a pad",
+            (Self::Copy, false) => "COPY · pad bank 1 to place",
+            (Self::Swap, false) => "SWAP · pad bank 1 to place",
+            (Self::File, false) => "FILE · pad bank 1 to place",
+            (Self::Assign, _) => "ASSIGN · release, hit a pad",
         }
     }
 }
@@ -450,7 +453,7 @@ impl App {
         tui::CommandPanel {
             labels,
             page: 0,
-            view: target.title(),
+            view: target.title(self.smc_panel_hold_available()),
             target: true,
             flash: self.panel_flash(),
             dim: std::array::from_fn(|index| {
