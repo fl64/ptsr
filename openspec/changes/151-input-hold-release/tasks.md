@@ -1,6 +1,6 @@
 ## 1. Hold releases
 
-- [ ] Release a keyboard Gate with the folder picker open.
-- [ ] Finish the microphone hold on key or button release.
-- [ ] Check both keyboard release orders, SMC-PAD and the legacy toggle.
-- [ ] Run the project checks.
+- [x] Release a keyboard Gate with the folder picker open.
+- [x] Finish the microphone hold on key or button release.
+- [x] Check both keyboard release orders, SMC-PAD and the legacy toggle.
+- [x] Run the project checks.

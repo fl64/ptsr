@@ -1,8 +1,9 @@
 use super::{
     Action, App, Ask, CLICK_VELOCITY, Command, EFFECT_PARAMS, HeldPads, INPUT_LOG, Instant, Keymap,
     Level, Lit, MidiListRow, Move, NUDGE_FINE_MS, NUDGE_MS, Origin, PADS, PADS_PER_BANK, Param,
-    PathPicker, ProjectPicker, SETTINGS_ROWS, Screen, UiPadHold, action_info, bank_key, chop,
-    config, event, group_jump, held_repeats, learn, midi, pad_env, pad_filter, pad_name, pads,
+    PathPicker, ProjectPicker, SETTINGS_ROWS, Screen, UiPadHold, action_info, audio, bank_key,
+    chop, config, event, group_jump, held_repeats, learn, midi, pad_env, pad_filter, pad_name,
+    pads,
 };
 
 /// Bindings change from the keyboard only (138): what the SMC-PAD hears instead.
@@ -139,6 +140,10 @@ impl App {
     pub(super) fn run(&mut self, action: Action) -> bool {
         if action == Action::Panic {
             self.stop_all_sound();
+            return false;
+        }
+        if action == Action::RecordMic(false) {
+            self.audio_record_action(action);
             return false;
         }
         // the folder picker is open: the keys go to it before the screen (11)
@@ -2120,6 +2125,21 @@ impl App {
                 }
             }
             midi::Event::Action(action) => {
+                if action == Action::RecordMic(false) {
+                    let owns_take = self
+                        .midi_mic_hold
+                        .as_ref()
+                        .is_some_and(|(port, key, take)| {
+                            matches!(&self.notice_origin, Origin::Device(from) if from == port)
+                                && raw_key == Some(*key)
+                                && self.recording == Some((audio::SOURCE_MIC, *take))
+                        });
+                    if !owns_take {
+                        return;
+                    }
+                    self.midi_mic_hold = None;
+                }
+                let starting_mic = action == Action::RecordMic(true) && self.recording.is_none();
                 // quitting from a controller is not offered
                 let action = if self.path_picker.is_some()
                     && matches!(&self.notice_origin, Origin::Device(port) if port.contains("SMC-PAD-Master"))
@@ -2130,6 +2150,12 @@ impl App {
                     action
                 };
                 self.apply(action);
+                if starting_mic
+                    && let (Origin::Device(port), Some(key), Some((audio::SOURCE_MIC, take))) =
+                        (&self.notice_origin, raw_key, self.recording)
+                {
+                    self.midi_mic_hold = Some((port.clone(), key, take));
+                }
             }
             midi::Event::Step {
                 port,
@@ -3167,6 +3193,12 @@ impl App {
             self.input_sources.keyboard(Instant::now());
             self.acknowledge_notice();
         }
+        if kitty && let Some(take) = keys_down.release_microphone(&tracked) {
+            if self.recording == Some((audio::SOURCE_MIC, take)) {
+                self.apply(Action::RecordMic(false));
+            }
+            return false;
+        }
         if self.pad_naming.is_some() && self.pad_name_key(k) {
             return false;
         }
@@ -3271,6 +3303,32 @@ impl App {
         } else {
             action
         };
+        if kitty {
+            match action {
+                Action::RecordMic(false) => return false,
+                Action::RecordMic(true) => {
+                    let starting = self.recording.is_none();
+                    let quit = self.apply(action);
+                    if starting && let Some((audio::SOURCE_MIC, take)) = self.recording {
+                        keys_down.hold_microphone(&k, take);
+                    }
+                    return quit;
+                }
+                Action::PadPress { .. } if self.path_picker.is_some() => return false,
+                Action::PadRelease { pad } if self.path_picker.is_some() => {
+                    let held_key = held.is_held(pad);
+                    held.filter(action);
+                    let silent = std::mem::take(&mut self.silent_pad_keys[pad]);
+                    if held_key && !silent && self.pads.keyboard_pad_is_held(pad) {
+                        for cmd in self.pads.apply(action) {
+                            self.send(cmd);
+                        }
+                    }
+                    return false;
+                }
+                _ => {}
+            }
+        }
         let action = if kitty {
             held.filter(action)
         } else {

@@ -1804,6 +1804,154 @@ fn modes_85_folder_picker_consumes_actions_not_direct_midi_hits() {
     }
 }
 
+/// Scenario "A folder picker lets an earlier Gate end".
+#[test]
+fn a_folder_picker_lets_an_earlier_gate_end() {
+    use engine::checks::peak;
+
+    let mut drive = Drive::offline();
+    let sound = Arc::new(Sample::mono(vec![0.25; 96_000]));
+    drive.load_pad(2, sound.clone(), "Gate");
+    for command in [
+        Command::SetPadSound {
+            pad: 2,
+            sound: Some(sound),
+        },
+        Command::SetPadMode {
+            pad: 2,
+            mode: engine::PadMode::Gate,
+        },
+        Command::SetPadEnvelope {
+            pad: 2,
+            attack_ms: 0,
+            decay_ms: 0,
+            release_ms: 20,
+        },
+    ] {
+        drive.app.send(command);
+    }
+    drive.frame();
+    let files = TransitionFiles::new();
+    drive.app.paths.projects = files.0.clone();
+    assert_full_hit(&drive.pad_press(Source::Keyboard, 2), 2);
+    let mut left = [0.0; 128];
+    let mut right = [0.0; 128];
+    let rt = drive.audio_rt.as_mut().unwrap();
+    for _ in 0..8 {
+        rt.process(&mut left, &mut right);
+    }
+    assert!(peak(&left) > 0.01);
+    drive.tap(KeyCode::PageDown, M::NONE);
+    assert_eq!(drive.app.pads.bank, 1);
+    drive.tap(KeyCode::F(12), M::NONE);
+    for _ in 0..3 {
+        drive.tap(KeyCode::Tab, M::NONE);
+    }
+    drive.tap(KeyCode::Enter, M::NONE);
+    assert!(drive.app.path_picker.is_some());
+    assert!(drive.tap(KeyCode::Char('q'), M::NONE).commands().is_empty());
+    assert_only_release(&drive.pad_release(Source::Keyboard, 2), 2);
+    assert!(drive.app.path_picker.is_some());
+    let rt = drive.audio_rt.as_mut().unwrap();
+    for _ in 0..16 {
+        rt.process(&mut left, &mut right);
+    }
+    assert_eq!(peak(&left), 0.0);
+    assert_eq!(peak(&right), 0.0);
+}
+
+fn microphone_hold_drive() -> Drive {
+    let mut drive = Drive::smc_offline();
+    drive.midi().recorded_smc_setup();
+    drive.frame();
+    drive.app.routed.input = Some("test microphone".into());
+    drive.load_pad(0, Arc::new(Sample::mono(vec![0.25; 1024])), "keep");
+    drive
+}
+
+/// Scenario "A question lets the microphone hold end".
+#[test]
+fn a_question_lets_the_microphone_hold_end() {
+    use event::ModifierKeyCode;
+    const SMC: &str = "SMC-PAD-Master MIDI 1";
+    for alt_first in [true, false] {
+        let mut drive = microphone_hold_drive();
+        let alt = KeyCode::Modifier(ModifierKeyCode::LeftAlt);
+        drive.key(alt, M::ALT, KeyEventKind::Press);
+        drive.key(KeyCode::Char('r'), M::ALT, KeyEventKind::Press);
+        assert!(matches!(drive.app.recording, Some((audio::SOURCE_MIC, _))));
+        drive.tap(KeyCode::Backspace, M::NONE);
+        assert!(drive.app.ask.is_some());
+        let take = drive.app.recording;
+        let at = Instant::now();
+        drive
+            .midi()
+            .recorded_bytes_at(SMC, &[0xb0, 29, 127], &drive.project, at);
+        drive.midi().recorded_tick(at + Duration::from_millis(400));
+        drive.frame();
+        drive.midi().recorded_bytes_at(
+            SMC,
+            &[0xb0, 29, 0],
+            &drive.project,
+            at + Duration::from_millis(500),
+        );
+        drive.frame();
+        assert_eq!(drive.app.recording, take);
+        if alt_first {
+            drive.key(alt, M::NONE, KeyEventKind::Release);
+            assert!(drive.app.recording.is_some());
+        }
+        drive.key(
+            KeyCode::Char('r'),
+            if alt_first { M::NONE } else { M::ALT },
+            KeyEventKind::Release,
+        );
+        assert!(drive.app.recording.is_none());
+        assert!(drive.app.ask.is_some());
+        if !alt_first {
+            drive.key(alt, M::NONE, KeyEventKind::Release);
+        }
+        assert!(drive.frame().commands().is_empty());
+    }
+    let mut drive = microphone_hold_drive();
+    let port = "SMC-PAD-Master MIDI 1";
+    let at = Instant::now();
+    drive
+        .midi()
+        .recorded_bytes_at(port, &[0xb0, 29, 127], &drive.project, at);
+    drive.midi().recorded_tick(at + Duration::from_millis(400));
+    drive.frame();
+    assert!(matches!(drive.app.recording, Some((audio::SOURCE_MIC, _))));
+    drive.tap(KeyCode::Backspace, M::NONE);
+    assert!(drive.app.ask.is_some());
+    drive.midi().recorded_bytes_at(
+        port,
+        &[0xb0, 29, 0],
+        &drive.project,
+        at + Duration::from_millis(500),
+    );
+    drive.frame();
+    assert!(drive.app.recording.is_none());
+    assert!(drive.app.ask.is_some());
+}
+
+#[test]
+fn legacy_microphone_press_still_toggles() {
+    let mut drive = microphone_hold_drive();
+    let press = KeyEvent::new(KeyCode::Char('r'), M::ALT);
+    for running in [true, false] {
+        assert!(!drive.app.keyboard_event(
+            &drive.keymap,
+            &press,
+            false,
+            &mut drive.down,
+            &mut drive.held,
+            &mut drive.mods,
+        ));
+        assert_eq!(drive.app.recording.is_some(), running);
+    }
+}
+
 fn assert_both_pickers_confirm(source: Source) {
     let files = TransitionFiles::new();
     let mut drive = files.drive(false);

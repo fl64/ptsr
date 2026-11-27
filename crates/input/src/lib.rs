@@ -2802,26 +2802,50 @@ fn ru_to_us(c: char) -> Option<char> {
 /// auto-repeat as plain presses; with the kitty protocol a release comes when the key goes
 /// up, so a second press without a release is the repeat of a held key.
 #[derive(Default)]
-pub struct HeldKeys(std::collections::HashSet<KeyCode>);
+pub struct HeldKeys {
+    keys: std::collections::HashSet<KeyCode>,
+    microphone: Option<(KeyCode, std::time::Instant)>,
+}
 
 impl HeldKeys {
     /// The event as it is meant: a press of a key that is still down becomes a repeat.
     pub fn repeat(&mut self, e: &KeyEvent) -> KeyEvent {
-        let code = match e.code {
-            KeyCode::Char(c) => KeyCode::Char(normalize(c)),
-            c => c,
-        };
+        let code = physical_key(e);
         match e.kind {
             KeyEventKind::Release => {
-                self.0.remove(&code);
+                self.keys.remove(&code);
                 *e
             }
-            KeyEventKind::Press if !self.0.insert(code) => KeyEvent {
+            KeyEventKind::Press if !self.keys.insert(code) => KeyEvent {
                 kind: KeyEventKind::Repeat,
                 ..*e
             },
             _ => *e,
         }
+    }
+
+    /// Remember the key of the take that started from this keyboard.
+    pub fn hold_microphone(&mut self, e: &KeyEvent, take: std::time::Instant) {
+        self.microphone = Some((physical_key(e), take));
+    }
+
+    /// Read and clear the take when its key comes up, regardless of modifiers.
+    pub fn release_microphone(&mut self, e: &KeyEvent) -> Option<std::time::Instant> {
+        if e.kind == KeyEventKind::Release
+            && self
+                .microphone
+                .is_some_and(|(code, _)| code == physical_key(e))
+        {
+            return self.microphone.take().map(|(_, take)| take);
+        }
+        None
+    }
+}
+
+fn physical_key(e: &KeyEvent) -> KeyCode {
+    match e.code {
+        KeyCode::Char(c) => KeyCode::Char(normalize(c)),
+        c => c,
     }
 }
 

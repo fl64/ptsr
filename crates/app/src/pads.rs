@@ -1602,6 +1602,10 @@ impl Pads {
         vec![Command::PadPress { pad: abs, velocity }]
     }
 
+    pub(super) fn keyboard_pad_is_held(&self, pad: usize) -> bool {
+        self.pressed.get(pad).is_some_and(|&abs| self.held[abs])
+    }
+
     /// Applies a keyboard pad action; returns the engine commands to send.
     /// Non-pad actions are ignored.
     pub fn apply(&mut self, action: Action) -> Vec<Command> {
