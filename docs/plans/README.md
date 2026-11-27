@@ -73,7 +73,10 @@ checks in [LIVE-CHECKS.md](../LIVE-CHECKS.md). Planned names do not have OpenSpe
 | `repo-fast-checks` | Merged in [PR #15](https://github.com/fl64/ptsr/pull/15). `master` requires Rust for merge. | None for sampler behavior. |
 | 88 `ui-confirm` | Active on `88-ui-confirm`. Automated keyboard and MIDI checks pass. | Check Enter and a learned button on the physical controller. |
 | `denormals` | Planned in a separate branch | Review the silence render and callback measurements. Keep 94a open. |
-| `pattern-screen` | Planned | Check F5, view and edit, the step lane, and controller paths at both sizes. |
+| `pattern-screen-layout` | Planned, [pattern track](UI-UX.md#31-pattern-track) step 1 | Check the F5 screen, live record and the empty state at both sizes. |
+| `pattern-step-input` | Planned, pattern track step 2 | Check pads = steps, pads = sounds, the keys and one undo. Listen to the step render. |
+| `pattern-smc` | Planned, pattern track step 3 | Check the six pattern routes on the physical SMC-PAD. |
+| `help-tasks` | Planned, pattern track step 4 | Check that F1 opens on the tasks of the current screen. |
 | `pads-source-view` | Active as change 139. See [the Pads strip plan](UI-UX.md#32-pads-source-view-change-139). | Check positions, sample rows, and the rhythm strip at both sizes. |
 | `compact-help` | Planned | Check one-row help, full help, and the setting at both sizes. |
 | `key-consistency` | Planned | Check bank keys, Files folder-up, and moved-key notices. |
@@ -202,7 +205,7 @@ The owner hears clean pitched breaks, natural decays, real dynamics, and no clic
 ### Phase C — sequencing on screen
 
 9. [pads-source-view](UI-UX.md#32-pads-source-view-change-139): sample positions and the rhythm strip.
-10. [pattern-screen](UI-UX.md#31-pattern-screen): F5 screen, view and edit, F7 free, step lane.
+10. [pattern track](UI-UX.md#31-pattern-track): F5 screen, pads as steps, SMC-PAD model and Help by tasks, in four changes.
 11. [control-pages](ROADMAP-DETAILS.md#control-pages): one control table per screen and mode.
 12. [99 pattern slots](PATTERNS.md#change-99--99-pattern-slots): 16 slots with 4, 8, or 16 bar switches.
 13. [100 note repeat](PATTERNS.md#change-100--100-note-repeat): 1/32 and triplets.
@@ -381,6 +384,7 @@ answer, take the default and write the question into `design.md` under "Open que
 | 97 | What is one undo step of recording? | One recording pass, from record on to record off |
 | 97 | Stop: do one-shot tails ring out? | Yes. Gate notes get their release |
 | 98 | 32 steps per page, or a 1/16 ↔ 1/32 switch with 16 steps? | The switch, with two pages per bar at 1/32 |
+| Pattern track | The six pattern track questions: words, step edit, undo, Alt chords, knob 2 and Help | Yes to all six on 2026-11-27. The rows are in [UI-UX.md §6](UI-UX.md#6-owner-decisions-before-implementation). The metronome key is still open there |
 | 99 | How many patterns play at the same time before a launcher exists? | One |
 | 99 | Default slot switch boundary | 8 bars |
 | 102 | Pad fit default for a new slice | Off. The owner enables it |
