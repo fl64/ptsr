@@ -1143,10 +1143,37 @@ impl crate::App {
                 .is_some_and(|state| state.phase == Phase::CountIn)
     }
 
+    pub(super) fn a1_pass_label(&self, state: Snapshot) -> Option<&'static str> {
+        let before = self.audio.as_ref().and_then(|audio| {
+            let capture = &audio.pattern_capture;
+            capture
+                .pass
+                .as_ref()
+                .filter(|pass| pass.epoch == state.epoch && pass.id == state.pass)
+                .and_then(|pass| pass.before.as_ref())
+                .or_else(|| {
+                    capture
+                        .requested
+                        .as_ref()
+                        .filter(|(epoch, pass, _)| *epoch == state.epoch && *pass == state.pass)
+                        .map(|(_, _, before)| before)
+                })
+        });
+        before.map(|before| {
+            if before.pattern.hits.is_empty() {
+                "First pass"
+            } else {
+                "Overdub"
+            }
+        })
+    }
+
     pub(super) fn overview_next_step(
         &self,
         keymap: &input::Keymap,
         has_hits: bool,
+        recording: Option<Snapshot>,
+        clock: Option<engine::transport::Snapshot>,
     ) -> Option<String> {
         use input::Action;
 
@@ -1168,10 +1195,7 @@ impl crate::App {
         let Some(audio) = self.audio_alive() else {
             return Some("A1 needs audio".into());
         };
-        let Some(state) = self
-            .pattern_record_state()
-            .filter(|_| !self.restoring_project)
-        else {
+        let Some(state) = recording.filter(|_| !self.restoring_project) else {
             return Some("Wait for audio".into());
         };
         let capture = &audio.pattern_capture;
@@ -1213,7 +1237,8 @@ impl crate::App {
                 |key| control_cue(&key, text, short),
             )
         };
-        let playing = has_hits && self.transport_state().playing;
+        let transport = clock.unwrap_or_else(|| self.transport_state());
+        let playing = has_hits && transport.playing;
         let step = match state.phase {
             Phase::CountIn => {
                 let back = if smc {
@@ -1243,6 +1268,14 @@ impl crate::App {
                 format!("{pads}{end}")
             }
             _ if !has_hits => record_step("record A1", "record"),
+            _ if transport.paused && smc => "PLAY resume A1".into(),
+            _ if transport.paused => binding(Action::PlayContext)
+                .map(|key| control_cue(&key, "resume A1", "resume"))
+                .or_else(|| {
+                    binding(Action::TransportToggle)
+                        .map(|key| control_cue(&key, "restart A1", "restart"))
+                })
+                .unwrap_or_else(|| "No resume key".into()),
             _ if smc => if playing && self.panel.visible() {
                 "Close panel · STOP pause"
             } else if playing {

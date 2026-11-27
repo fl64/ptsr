@@ -243,6 +243,13 @@ impl App {
             let beats = (taps.len() - 1) as f64;
             let seconds = now.duration_since(*taps.front().unwrap()).as_secs_f64();
             self.apply_tempo(beats * 60.0 / seconds, true);
+            self.post_notice(
+                super::Level::Done,
+                (
+                    format!("Tempo {:.1} BPM", self.transport.bpm),
+                    Instant::now(),
+                ),
+            );
         }
     }
 

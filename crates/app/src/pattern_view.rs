@@ -586,8 +586,12 @@ impl super::App {
         keymap: &input::Keymap,
         width: u16,
     ) -> tui::PatternOverview {
+        use engine::capture::Phase;
+
+        let recording = self.pattern_record_state();
         let mut view = tui::PatternOverview {
             header: String::new(),
+            state_label: None,
             next: None,
             rows: vec![Vec::new(); super::PADS],
             names: (0..super::PADS)
@@ -613,7 +617,7 @@ impl super::App {
         };
         let Some(raw) = &self.pads.pattern else {
             view.header = "pattern A1 is empty".into();
-            view.next = self.overview_next_step(keymap, false);
+            view.next = self.overview_next_step(keymap, false, recording, None);
             return view;
         };
         let model = raw.checked().and_then(|raw| {
@@ -632,10 +636,11 @@ impl super::App {
             }
         };
         let spacing = model.division.spacing();
-        let tick = position(
-            self.pattern_snapshot(),
-            u32::from(model.bars) * TICKS_PER_BAR,
-        );
+        let loop_ticks = u32::from(model.bars) * TICKS_PER_BAR;
+        let clock = self
+            .pattern_snapshot()
+            .filter(|state| state.pattern_ticks == loop_ticks);
+        let tick = position(clock, loop_ticks);
         let quantize = if raw.quantize == "off" {
             "Off".to_string()
         } else {
@@ -680,7 +685,7 @@ impl super::App {
         let end = (view.first_cell + page).min(view.total_cells);
         (view.rows, view.active_pads) = model.overview_page_cells(view.first_cell, end);
         let has_hits = view.active_pads.iter().any(|&mask| mask != 0);
-        view.next = self.overview_next_step(keymap, has_hits);
+        view.next = self.overview_next_step(keymap, has_hits, recording, clock);
         if self.pattern_view.edit {
             let events = model.events_in_cell(self.pads.selected_abs(), cursor);
             if !events.is_empty() {
@@ -693,6 +698,25 @@ impl super::App {
                 view.event_choice = Some((index, events.len()));
                 view.event_velocity = (index > 0).then(|| events[index - 1].raw.velocity());
             }
+        } else {
+            view.state_label = match recording {
+                Some(state) if state.phase == Phase::Recording => {
+                    self.a1_pass_label(state).map(str::to_owned)
+                }
+                None
+                | Some(engine::capture::Snapshot {
+                    phase: Phase::Idle, ..
+                }) => clock.filter(|state| !state.playing).map(|mut state| {
+                    if state.paused {
+                        state.ticks %= f64::from(loop_ticks);
+                        let (bar, beat) = state.bar_beat();
+                        format!("Paused {bar}:{beat}")
+                    } else {
+                        "Stopped".into()
+                    }
+                }),
+                _ => None,
+            };
         }
         view
     }

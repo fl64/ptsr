@@ -148,7 +148,10 @@ The SMC-PAD counts give visible panel / PAD BANK held / reveal.
 | Start count-in | Ctrl+R (1) | Tap RECORD (1) |
 | Cancel count-in on A1 | Esc or Ctrl+R (1) | Hold PAD BANK and press P1 (2). With Hold panel off or unavailable, press P1 in the second bank (1). Tap RECORD to cancel from either bank (1). |
 | Finish a live pass | Ctrl+R (1) | Tap RECORD (1) |
-| Stop or play the loop | Space (1) | STOP or PLAY (1) |
+| Play or reset the loop | Space (1) | PLAY to start, STOP twice while playing to reset (1 / 2) |
+| Pause or resume A1 | Alt+Y or Alt+T (1) | STOP or PLAY (1) |
+| Restart from the beginning while paused | Space (1) | STOP, then PLAY (2) |
+| Set tempo from two taps | Alt+B twice (2) | Open the A1 action panel and press P8 Tap Tempo twice (2 after opening) |
 
 While A1 records, use the playing pads. Count those hits separately.
 

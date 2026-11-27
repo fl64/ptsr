@@ -904,6 +904,7 @@ impl Engine {
 
     pub fn transport(&self) -> transport::Snapshot {
         transport::Snapshot {
+            paused: self.context_paused && !self.transport.state.playing,
             pattern_ticks: if self.reset_pattern {
                 0
             } else {

@@ -318,6 +318,13 @@ Show the current playback position separately from the selected column.
 Keep the selected time when the owner enters Step Edit or returns to the overview.
 See [the keyboard and SMC-PAD routes](../CONTROLLER-PATHS.md#select-and-edit-an-a1-step).
 
+### A1 transport feedback (164)
+
+Show First pass or Overdub from the hits present at the start of the pass.
+Show the accepted pause position and name the control that resumes it.
+Show Stopped when the transport returns to the start.
+Put the new BPM from Tap Tempo in the notice row.
+
 ### Change 98 — `98-pattern-screen`
 
 Goal: the Pattern screen (F5) with the step grid and the step mode (TR-REC).

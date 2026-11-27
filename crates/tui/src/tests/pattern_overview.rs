@@ -12,7 +12,8 @@ fn overview_fixed_cells_align_every_division() {
             let mut rows = vec![vec![PatternCell::default(); page]; 128];
             rows[0][0].count = 1;
             let view = PatternOverview {
-                header: "view 1/16".into(),
+                header: "Grid 1/16 · Record quantize 1/8 70%".into(),
+                state_label: Some("Overdub".into()),
                 next: None,
                 rows,
                 names: vec!["sample".into(); 128],
@@ -36,6 +37,13 @@ fn overview_fixed_cells_align_every_division() {
             })
             .unwrap();
             let buffer = term.backend().buffer();
+            let row = |y| {
+                (0..width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            };
+            assert!(row(0).contains("step 1/") && row(0).contains("Overdub"));
+            assert!(row(1).contains("Record quantize 1/8 70%"));
             let mut x = label_width + 1;
             for cell in 0..page {
                 if cell > 0 && cell.is_multiple_of(beat_cells) {
@@ -82,6 +90,7 @@ fn overview_velocity_levels_keep_event_marks() {
         }
         let view = PatternOverview {
             header: "view 1/16".into(),
+            state_label: None,
             next: None,
             rows,
             names: vec!["sample".into(); 128],
@@ -135,6 +144,7 @@ fn step_cursor_shows_one_time_across_pad_rows() {
         rows[1][2].count = 1;
         let view = PatternOverview {
             header: "view 1/16".into(),
+            state_label: None,
             next: None,
             rows,
             names: vec!["sample".into(); 128],

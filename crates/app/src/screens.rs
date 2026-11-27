@@ -3445,6 +3445,15 @@ L="none"
                     .map(|row| row.iter().map(|cell| cell.symbol()).collect())
                     .collect();
                 assert!(rows[0].contains("Save failed"), "{}", rows[0]);
+                if let Some(label) = match mode {
+                    Some(Mode::PatternRecording) => Some("First pass"),
+                    Some(Mode::PatternStopped) => Some("Stopped"),
+                    _ => None,
+                } {
+                    assert!(rows[1].contains(label), "{label}: {}", rows[1]);
+                    assert!(rows[1].contains("step "), "{}", rows[1]);
+                    assert!(rows[2].contains("Record quantize"), "{}", rows[2]);
+                }
                 let bank_index = 2 + usize::from(has_steps);
                 assert!(rows[bank_index].contains("BANKS · pads with A1 hits"));
                 let ruler = &rows[bank_index + 1];
@@ -3756,6 +3765,46 @@ L="none"
                     1,
                     "{label}"
                 );
+            }
+        }
+    }
+
+    /// Scenario "A1 tap tempo uses the notice row".
+    #[test]
+    fn a1_tap_tempo_uses_the_notice_row() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::PatternOverviewStraight,
+                size,
+            };
+            for warning in [None, Some("Pattern warning")] {
+                let now = Instant::now();
+                let mut app = fixture(case, now);
+                if let Some(text) = warning {
+                    app.post_system_notice(Level::Warn, (text.into(), now));
+                }
+                app.transport.tap_input_at = Some(now - Duration::from_millis(400));
+                app.apply(Action::TapTempo);
+                app.transport.tap_input_at = Some(now);
+                app.apply(Action::TapTempo);
+                let after = Instant::now();
+                assert!(app.current_value_at(after).is_none());
+                let (_, buffer) = render_app(case, &keymap, app, after);
+                let rows: Vec<String> = buffer
+                    .content()
+                    .chunks(size.0 as usize)
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                assert!(rows[3].contains("BANKS · pads with A1 hits"), "{}", rows[3]);
+                assert!(
+                    rows[4].contains(" 1 ") && rows[4].contains(" 16"),
+                    "{}",
+                    rows[4]
+                );
+                let notice = warning.unwrap_or("Tempo 150.0 BPM");
+                assert!(rows[size.1 as usize - 4].contains(notice), "{rows:?}");
             }
         }
     }
