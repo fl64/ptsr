@@ -1569,10 +1569,11 @@ impl App {
         });
     }
 
-    /// One control of the run decided: it is learned for the current action and the run
-    /// moves on; it ends after the last one (28).
-    pub(super) fn midi_run_hit(&mut self, profile: String, key: input::midi::Key) {
+    pub(super) fn midi_run_confirm(&mut self) {
         let Some(r) = self.midi_run.as_mut() else {
+            return;
+        };
+        let Some((profile, key)) = r.learner.pending.take() else {
             return;
         };
         let infos = r.infos;
@@ -1591,15 +1592,33 @@ impl App {
         log::info!("MIDI learn: {profile} {key} -> {}", info.name);
     }
 
+    pub(super) fn midi_binding_pending(&self) -> bool {
+        self.screen_learn
+            .as_ref()
+            .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+            || self
+                .learning
+                .as_ref()
+                .is_some_and(|learn| learn.pending.is_some())
+            || self
+                .midi_run
+                .as_ref()
+                .is_some_and(|run| run.learner.pending.is_some())
+    }
+
     /// The line of the MIDI tab about waiting for a control: a single learn or a run (28).
     pub(super) fn learning_line(&self) -> Option<String> {
         if let Some(r) = &self.midi_run {
             let infos = r.infos;
-            return Some(format!(
-                " {} of {}: hit a control, Esc stops",
-                infos[r.at].label,
-                infos.len()
-            ));
+            let label = infos[r.at].label;
+            let count = infos.len();
+            return Some(match &r.learner.pending {
+                Some((profile, key)) => format!(
+                    " {label} of {count}: {} · Enter saves · Esc or P1 stops",
+                    control_name(&self.live_profiles(), profile, *key),
+                ),
+                None => format!(" {label} of {count}: hit a control, Esc stops"),
+            });
         }
         let Some(l) = self.learning.as_ref() else {
             if self.screen != Screen::Settings || self.settings_tab != 2 {

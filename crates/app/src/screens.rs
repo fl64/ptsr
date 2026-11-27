@@ -4420,6 +4420,53 @@ L="none"
     }
 
     #[test]
+    fn a_midi_run_keeps_the_pending_control_visible_after_scrolling() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::MidiTab,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            app.midi_open.push(input::Group::Global);
+            app.midi_row = app
+                .midi_list()
+                .iter()
+                .position(|row| {
+                    matches!(
+                        row,
+                        crate::learn::MidiListRow::Set {
+                            name: "pads 1–16",
+                            ..
+                        }
+                    )
+                })
+                .unwrap();
+            app.apply(Action::SettingsLearn);
+            app.midi_run
+                .as_mut()
+                .unwrap()
+                .learner
+                .hold("SMC-PAD".into(), input::midi::Key::Cc(84));
+            let hint = app.learning_line().unwrap();
+            let (_, buffer) = render_app(case, &keymap, app, now);
+            let text: String = buffer
+                .content()
+                .chunks(usize::from(size.0))
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>() + "\n")
+                .collect();
+            assert!(
+                hint.contains("Enter saves") && hint.contains("84"),
+                "{hint}"
+            );
+            assert!(text.contains(hint.trim()), "{size:?}\n{text}");
+            assert!(text.contains("▸  pads 1–16"), "{size:?}\n{text}");
+        }
+    }
+
+    #[test]
     fn the_strip_identifies_page_list_and_roles_at_both_sizes() {
         let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
         for size in SIZES {

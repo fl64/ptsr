@@ -2332,6 +2332,15 @@ fn learning_answer_keeps_its_chosen_control() {
         input::midi::Key::Note(55)
     );
     cell(&mut drive, 55);
+    assert!(drive.app.midi_binding_pending());
+    assert_eq!(drive.last_notice().text, dispatch::BINDINGS_BY_KEYS);
+    let unsaved = learn::group_bindings(&drive.app.learned, "SMC-PAD", input::Group::Pads);
+    assert!(
+        unsaved
+            .get(&input::midi::Key::Note(55))
+            .is_none_or(|b| b.primary() != "pad.copy")
+    );
+    drive.tap(KeyCode::Enter, M::NONE);
     assert!(drive.app.screen_learn.is_none());
     let bindings = learn::group_bindings(&drive.app.learned, "SMC-PAD", input::Group::Pads);
     assert_eq!(
@@ -4913,6 +4922,8 @@ fn canceled_or_refused_layout_updates_are_safe_to_retry() {
     drive.app.user_path = Some(files.0.join("A"));
     select_layout_master(&mut drive);
     cell(&mut drive, 55);
+    assert!(drive.app.ask.is_some());
+    drive.tap(KeyCode::Enter, M::NONE);
     assert!(drive.app.ask.is_none());
     assert_eq!(drive.app.notices.current().unwrap().level, Level::Error);
     assert_eq!(drive.app.learned, before);
@@ -4928,6 +4939,8 @@ fn canceled_or_refused_layout_updates_are_safe_to_retry() {
     drive.tap(KeyCode::F(12), M::NONE);
     select_layout_row(&mut drive, |row| matches!(row, MidiListRow::SmcLayoutApply));
     cell(&mut drive, 55);
+    assert!(drive.app.ask.is_some());
+    drive.tap(KeyCode::Enter, M::NONE);
     assert!(drive.app.ask.is_none());
     assert_eq!(drive.app.learned["X-Session Pro"], before["X-Session Pro"]);
     assert_eq!(

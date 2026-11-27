@@ -368,6 +368,15 @@ fn assignment_numbers_appear_on_target_pads() {
     }
 }
 
+fn open_screen_learn(drive: &mut Drive, source: Source, control: u8) {
+    if matches!(source, Source::Button) {
+        drive.registry_command(source, KeyCode::F(10), M::NONE, control);
+        assert!(drive.app.screen_learn.is_none());
+        assert_eq!(drive.last_notice().text, dispatch::BINDINGS_BY_KEYS);
+    }
+    drive.tap(KeyCode::F(10), M::NONE);
+}
+
 /// Scenarios "Learning and placement keep existing sound rules" and "Hidden grids retain visible mode identity".
 #[test]
 fn learning_and_hidden_grids_keep_existing_sound_rules() {
@@ -410,7 +419,7 @@ fn learning_and_hidden_grids_keep_existing_sound_rules() {
                 drive.app.pads.selected_abs(),
                 drive.app.notice()
             );
-            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            open_screen_learn(&mut drive, source, 96);
             assert!(pad_feedback(&drive).outline);
             assert!(pad_feedback(&drive).corners.iter().all(Option::is_none));
             assert_silent_target(&drive.pad_press(source, 4));
@@ -449,7 +458,7 @@ fn mode_badges_follow_keyboard_and_raw_midi() {
             drive.registry_command(source, KeyCode::Esc, M::NONE, 103);
             assert!(badge_labels(&drive).is_empty());
             if screen != Screen::Settings {
-                drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+                open_screen_learn(&mut drive, source, 96);
                 assert_eq!(badge_labels(&drive), ["LEARN"]);
                 // MIDI becomes a learning candidate. F10 keeps its existing keyboard exit.
                 drive.tap(KeyCode::F(10), M::NONE);
@@ -690,7 +699,12 @@ fn midi_list_learning_has_a_badge_without_muting_pads() {
             .iter()
             .position(|row| matches!(row, MidiListRow::Action { info } if info.name == "pad.copy"))
             .unwrap();
-        drive.registry_command(source, KeyCode::Enter, M::NONE, 108);
+        if matches!(source, Source::Button) {
+            drive.registry_command(source, KeyCode::Enter, M::NONE, 108);
+            assert!(badge_labels(&drive).is_empty());
+            assert_eq!(drive.last_notice().text, dispatch::BINDINGS_BY_KEYS);
+        }
+        drive.tap(KeyCode::Enter, M::NONE);
         assert_eq!(badge_labels(&drive), ["LEARN"]);
         assert_full_hit(&drive.pad_press(source, 0), 0);
         assert_eq!(badge_labels(&drive), ["LEARN"]);
@@ -987,7 +1001,7 @@ fn pads_play_badge_keeps_voice_identity_beside_pad_feedback() {
                         drive.registry_command(controls, KeyCode::Char('o'), M::CONTROL, 106);
                     }
                     if mode == "learn" {
-                        drive.registry_command(controls, KeyCode::F(10), M::NONE, 107);
+                        open_screen_learn(&mut drive, controls, 107);
                     }
                     assert_ne!(drive.app.pads.bank, 1, "the voice stays on another bank");
                     assert_eq!(drive.app.ui.hide_pads, hidden);

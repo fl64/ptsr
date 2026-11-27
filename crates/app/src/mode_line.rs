@@ -22,19 +22,23 @@ impl App {
                 "ASK · Enter retry save · Esc back".into()
             });
         }
-        if self.ask.is_some() {
-            return Some(if smc {
+        if let Some(ask) = &self.ask {
+            return Some(if smc && ask.changes_midi_binding() {
+                "ASK · Enter yes · pad 1 no".into()
+            } else if smc {
                 "ASK · pad 4 yes · pad 1 no".into()
             } else {
                 "ASK · Enter yes · Esc no".into()
             });
         }
-        if self.screen_learn.is_some() || self.learning.is_some() {
-            return Some(if smc {
-                "LEARN · touch a control · pad 4 save · pad 1 cancel".into()
+        if self.screen_learn.is_some() || self.learning.is_some() || self.midi_run.is_some() {
+            let step = if self.midi_binding_pending() {
+                "Enter saves"
             } else {
-                "LEARN · touch a control · Esc leave".into()
-            });
+                "touch a control"
+            };
+            let dismiss = if smc { "pad 1 cancel" } else { "Esc leave" };
+            return Some(format!("LEARN · {step} · {dismiss}"));
         }
         if smc && self.panel.panic_armed(now) {
             let cancel = if self.midi_gestures.smc_pad_bank_opens_panel {

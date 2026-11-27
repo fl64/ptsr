@@ -519,6 +519,10 @@ fn learned_confirm_answers_every_current_question() {
                 Source::Keyboard => unreachable!(),
             }
             drive.frame();
+            if kind == "profile" {
+                assert!(drive.app.ask.is_some(), "{source:?}");
+                drive.tap(KeyCode::Enter, M::NONE);
+            }
             assert_confirmed_question(&drive, kind);
         }
     }
@@ -587,6 +591,8 @@ fn confirm_cannot_consume_an_earlier_pad_release() {
     assert!(matches!(drive.app.ask, Some(Ask::ResetProfile { .. })));
     drive.bind_action(5, "ui.confirm");
     drive.registry_command(Source::Button, KeyCode::Enter, M::NONE, 5);
+    assert!(drive.app.ask.is_some());
+    drive.tap(KeyCode::Enter, M::NONE);
     assert!(drive.app.ask.is_none());
     assert_only_release(&drive.pad_release(Source::Button, 4), 4);
 }
@@ -625,11 +631,13 @@ fn questions_show_effective_working_answers() {
                     format!("KB Enter: {verb} · Esc: keep")
                 };
                 assert_eq!(snapshot.answers[0], keys, "{kind}/{route}");
+                let midi_answer = if kind == "profile" {
+                    "M1 ch1 cc 6: keep".into()
+                } else {
+                    format!("M1 ch1 cc 5: {verb} · ch1 cc 6: keep")
+                };
                 assert!(
-                    snapshot
-                        .answers
-                        .iter()
-                        .any(|row| row == &format!("M1 ch1 cc 5: {verb} · ch1 cc 6: keep")),
+                    snapshot.answers.contains(&midi_answer),
                     "{kind}: {:?}",
                     snapshot.answers
                 );
@@ -669,6 +677,10 @@ fn questions_show_effective_working_answers() {
                             M::NONE,
                             if confirm { 5 } else { 6 },
                         );
+                        if kind == "profile" && confirm {
+                            assert!(drive.app.ask.is_some());
+                            drive.tap(KeyCode::Enter, M::NONE);
+                        }
                     }
                     "override" => {
                         drive.tap(KeyCode::F(if confirm { 9 } else { 8 }), M::NONE);
@@ -746,7 +758,7 @@ fn missing_controller_confirmation_stays_honest() {
             .unwrap()
             .answers
             .iter()
-            .any(|row| row.contains("cc 5: reset"))
+            .all(|row| !row.contains("cc 5: reset"))
     );
     learn::assign(
         &mut drive.app.learned,
@@ -797,7 +809,7 @@ fn missing_controller_confirmation_stays_honest() {
 /// Scenario "Learned shared confirmation appears only when it works".
 #[test]
 fn learned_shared_confirmation_appears_only_when_it_works() {
-    let mut drive = working_question_drive("profile");
+    let mut drive = working_question_drive("reset");
     drive.bind_action(5, "ui.confirm");
     let view = drive.app.question_view(&drive.keymap).unwrap();
     assert!(view.answers[0].contains("Enter: reset"));
@@ -1300,7 +1312,11 @@ fn learning_keeps_safety_and_next_steps_visible() {
                 .unwrap()
                 .stopped
                 .store(true, Relaxed);
-            drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+            if matches!(source, Source::Button) {
+                drive.registry_command(source, KeyCode::F(10), M::NONE, 96);
+                assert!(drive.app.screen_learn.is_none());
+            }
+            drive.tap(KeyCode::F(10), M::NONE);
             assert!(drive.app.screen_learn.is_some());
             let picked = drive.tap(KeyCode::Char('q'), M::NONE);
             assert!(picked.commands().is_empty(), "screen learn stays silent");

@@ -194,6 +194,15 @@ impl App {
             }
             // a question waits for Enter (the key of the step itself) or Esc only
             a if self.ask.is_some() => match a {
+                action
+                    if matches!(self.notice_origin, Origin::Device(_))
+                        && self.ask.as_ref().is_some_and(|ask| {
+                            ask.changes_midi_binding()
+                                && super::view::question_answer(ask, action) == Some(true)
+                        }) =>
+                {
+                    self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
+                }
                 // the settings Enter answers the reset question (59)
                 Action::SettingsLearn | Action::Confirm
                     if matches!(&self.ask, Some(Ask::ResetProfile { .. })) =>
@@ -398,6 +407,9 @@ impl App {
             Action::HelpToggle => self.toggle_help(),
             Action::HelpPagePrev => self.help_page(false),
             Action::HelpPageNext => self.help_page(true),
+            Action::LearnToggle if matches!(self.notice_origin, Origin::Device(_)) => {
+                self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
+            }
             Action::LearnToggle if self.screen.rules().screen_learn => {
                 self.screen_learn = match self.screen_learn {
                     Some(_) => None,
@@ -1070,26 +1082,30 @@ impl App {
             }
             Action::SettingsLearn
                 if self.settings_tab == 2
+                    && matches!(self.notice_origin, Origin::Device(_))
+                    && (self.learning.is_some()
+                        || self.midi_run.is_some()
+                        || matches!(
+                            self.midi_list().get(self.midi_row),
+                            Some(
+                                MidiListRow::Action { .. }
+                                    | MidiListRow::Set { .. }
+                                    | MidiListRow::Reset { .. }
+                                    | MidiListRow::SmcLayoutApply
+                                    | MidiListRow::SmcLayoutSlot(_)
+                            )
+                        )) =>
+            {
+                self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
+            }
+            Action::SettingsLearn if self.settings_tab == 2 && self.midi_run.is_some() => {
+                self.midi_run_confirm()
+            }
+            Action::SettingsLearn
+                if self.settings_tab == 2
                     && self.learning.as_ref().is_some_and(|l| l.pending.is_some()) =>
             {
                 self.learned_save()
-            }
-            // Bindings change from the keyboard only (138): `choose` refuses binding rows.
-            Action::SettingsLearn
-                if self.settings_tab == 2
-                    && self.input_sources.last_is_smc()
-                    && matches!(
-                        self.midi_list().get(self.midi_row),
-                        Some(
-                            MidiListRow::Action { .. }
-                                | MidiListRow::Set { .. }
-                                | MidiListRow::Reset { .. }
-                                | MidiListRow::SmcLayoutApply
-                                | MidiListRow::SmcLayoutSlot(_)
-                        )
-                    ) =>
-            {
-                self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
             }
             Action::SettingsLearn if self.settings_tab == 2 => {
                 match self.midi_list().get(self.midi_row) {
@@ -1124,6 +1140,11 @@ impl App {
                     Some(MidiListRow::Disabled { .. }) => {}
                     None => {}
                 }
+            }
+            Action::SettingsClear
+                if self.settings_tab == 2 && matches!(self.notice_origin, Origin::Device(_)) =>
+            {
+                self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), Instant::now()));
             }
             Action::SettingsClear if self.settings_tab == 2 => match self.forgettable() {
                 // forgetting has no undo: it asks first (138)
@@ -1830,7 +1851,8 @@ impl App {
                             || matches!(
                                 self.ask,
                                 Some(Ask::Exit { .. } | Ask::ExitRecovery { .. })
-                            ))
+                            )
+                            || self.ask.as_ref().is_some_and(Ask::changes_midi_binding))
                     {
                         self.question_pads.insert((port.clone(), key));
                         self.apply(if cancel {
@@ -1838,11 +1860,11 @@ impl App {
                         } else {
                             Action::Confirm
                         });
-                    } else if second_bank
-                        && self
-                            .screen_learn
-                            .as_ref()
-                            .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
+                        answered_learning = true;
+                    } else if self
+                        .screen_learn
+                        .as_ref()
+                        .is_some_and(|learn| learn.pending.is_some() || learn.clearing)
                     {
                         self.question_pads.insert((port.clone(), key));
                         if cancel {
@@ -1851,40 +1873,48 @@ impl App {
                                 learn.clearing = false;
                             }
                         } else {
-                            self.learn_confirm();
+                            self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), now));
                         }
                         answered_learning = true;
-                    } else if second_bank
-                        && self
-                            .learning
+                    } else if self
+                        .learning
+                        .as_ref()
+                        .is_some_and(|learn| learn.pending.is_some())
+                        || self
+                            .midi_run
                             .as_ref()
-                            .is_some_and(|learn| learn.pending.is_some())
+                            .is_some_and(|run| run.learner.pending.is_some())
                     {
                         self.question_pads.insert((port.clone(), key));
                         if cancel {
                             self.learning = None;
+                            self.midi_run = None;
                         } else {
-                            self.learned_save();
+                            self.post_notice(Level::Info, (BINDINGS_BY_KEYS.into(), now));
                         }
                         answered_learning = true;
                     } else if key == input::midi::Key::Note(52)
-                        && (self.screen_learn.is_some() || self.learning.is_some())
+                        && (self.screen_learn.is_some()
+                            || self.learning.is_some()
+                            || self.midi_run.is_some())
                     {
                         // Device pad 1 is Back: with no choice pending it leaves learning (134).
                         self.question_pads.insert((port.clone(), key));
                         self.screen_learn = None;
                         self.learning = None;
+                        self.midi_run = None;
                         answered_learning = true;
                     }
                 }
                 self.help_overlay.controller.last_port = Some(port.clone());
                 // a run takes every new control for the next pad or bank; a control
                 // already taken in the run waits for another (28)
-                if let Some(r) = self.midi_run.as_mut()
+                if !answered_learning
+                    && let Some(r) = self.midi_run.as_mut()
                     && !r.taken.contains(&msg.key())
                     && let Some((profile, key)) = r.learner.feed(&profile, msg, now)
                 {
-                    self.midi_run_hit(profile, key);
+                    r.learner.hold(profile, key);
                 }
                 if !answered_learning
                     && let Some(l) = self.learning.as_mut()
