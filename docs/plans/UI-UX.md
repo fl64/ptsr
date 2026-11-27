@@ -135,6 +135,8 @@ setting that keeps the full band visible. Default to one row. Test both terminal
 mode changes, modifier release, and the setting. Name compact and full-band catalogue
 files and separate keyboard and controller checks in the proposal.
 
+Settings uses the active tab for its short hint and F1 keys (157). The folder picker names browse, choose, and cancel.
+
 ### 3.4 `key-consistency`
 
 Use U/O for banks on every screen with a pad grid. Keep PgUp/PgDn as a second bank path

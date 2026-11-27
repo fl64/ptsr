@@ -474,6 +474,7 @@ See [the layout plan](plans/SMC-PAD-INTEGRATION.md#2-the-layout) for the roles.
 SHIFT has no assigned ptsr shortcut without a measured host message. Its printed pad shortcuts can change the SMC-PAD preset or octave. Use PAD BANK to open the panel. Destructive cells ask a question through every panel path.
 
 **Visual control:** at one look the owner sees what the pads do now, what plays, what records, what waits and what the last press did. Badges in the title line show the modes (yellow: the pads do something other than sound; cyan: on or playing; magenta: records, waits or asks). Pads show small glyphs for the mode (target, planned slice, step, erase). Messages have levels (done, info, warning, error), and an error stays until the next action; F1 keeps the last messages. A knob change shows the value on every screen. The status line shows the transport, the recording, the connected devices and the audio state. The hints name the controls of the device that the owner used last.
+In Settings, the current tab gives the short hint and the F1 controls.
 
 **Stage protection:** destructive actions need a confirmation. Live mode blocks them fully.
 
