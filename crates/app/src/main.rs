@@ -1681,7 +1681,8 @@ fn main() -> std::io::Result<()> {
         let panel = app.panel_for_frame();
         let help = tui::Help {
             groups: &groups,
-            hint: hint_for(&app).filter(|_| !app.input_sources.last_is_smc()),
+            hint: hint_for(&app)
+                .filter(|_| app.screen == Screen::Settings || !app.input_sources.last_is_smc()),
             full: full
                 .as_deref()
                 .and_then(|rows| app.full_help_view(rows, &messages)),
@@ -1838,10 +1839,7 @@ fn hint_for(app: &App) -> Option<&'static str> {
         Screen::Files => {
             Some("Enter takes a file, a pad hit puts it there; Ctrl+Enter: the selected pad.")
         }
-        Screen::Settings => app
-            .path_picker
-            .is_none()
-            .then_some("Left/Right or SMC E2 changes and saves the selected value."),
+        Screen::Settings => Some(app.settings_hint()),
         Screen::Chop if app.plan.is_some() => Some(
             "Hit pads to plan where the slices go; J L pick the slice, PgUp/PgDn the bank; Enter applies.",
         ),

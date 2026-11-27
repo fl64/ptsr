@@ -771,6 +771,9 @@ impl App {
         if self.pattern_panel.is_some() {
             return self.setup_key_help(keymap, kitty);
         }
+        if self.screen == Screen::Settings {
+            return self.settings_key_help(keymap);
+        }
         let mut rows = super::full_help(keymap, self.screen, kitty);
         if self.pattern_view.overview {
             let pad_keys: std::collections::HashSet<_> = keymap
