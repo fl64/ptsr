@@ -325,6 +325,13 @@ Show the accepted pause position and name the control that resumes it.
 Show Stopped when the transport returns to the start.
 Put the first keyboard tap and the new BPM in the notice row.
 
+### Narrow A1 panel (163)
+
+Use the A1 grid area for the command panel at 80x26. Keep the title and status.
+Show full Help and the project picker above that panel.
+Give the controller status one row and short help two rows.
+Restore the grid when the panel closes.
+
 ### Change 98 — `98-pattern-screen`
 
 Goal: the Pattern screen (F5) with the step grid and the step mode (TR-REC).

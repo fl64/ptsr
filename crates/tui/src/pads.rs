@@ -240,6 +240,51 @@ pub fn command_panel_area(area: Rect) -> Rect {
     pad_frame(body, false).grid
 }
 
+/// Area used by the panel after the picker and Help take priority.
+pub fn panel_overlay_area(
+    content: Rect,
+    screen: &Screen<'_>,
+    help: &Help<'_>,
+    panel: Option<&CommandPanel>,
+) -> Option<Rect> {
+    panel?;
+    if content.width <= 80 && matches!(screen, Screen::ProjectPicker(_)) {
+        return None;
+    }
+    if super::pattern::compact_a1(content, screen) {
+        return help.full.is_none().then(|| compact_panel_area(content));
+    }
+    Some(command_panel_area(content))
+}
+
+fn compact_panel_area(content: Rect) -> Rect {
+    let [_, body, _, _] = frame_areas(content);
+    Rect::new(
+        body.x,
+        body.y.saturating_add(1),
+        body.width,
+        body.height.saturating_sub(1),
+    )
+}
+
+pub fn command_panel_for(
+    frame: &mut Frame,
+    content: Rect,
+    screen: &Screen<'_>,
+    panel: &CommandPanel,
+    help: &Help<'_>,
+) {
+    if panel_overlay_area(content, screen, help, Some(panel)).is_some() {
+        draw_command_panel(
+            frame,
+            content,
+            panel,
+            help.question,
+            super::pattern::compact_a1(content, screen),
+        );
+    }
+}
+
 pub fn command_panel(frame: &mut Frame, panel: &CommandPanel, question_view: Option<&Question>) {
     command_panel_in(frame, frame.area(), panel, question_view);
 }
@@ -250,11 +295,38 @@ pub fn command_panel_in(
     panel: &CommandPanel,
     question_view: Option<&Question>,
 ) {
+    draw_command_panel(frame, content, panel, question_view, false);
+}
+
+fn draw_command_panel(
+    frame: &mut Frame,
+    content: Rect,
+    panel: &CommandPanel,
+    question_view: Option<&Question>,
+    compact: bool,
+) {
     let [_, body, _, _] = frame_areas(content);
     let pad = pad_frame(body, false);
-    // The screen title and its badges stay; the header below names the panel (134).
-    // The bank strip under the header is wider than the header text.
-    frame.render_widget(Clear, pad.bank);
+    let (header, grid, rows, columns) = if compact {
+        let area = compact_panel_area(content);
+        frame.render_widget(Clear, area);
+        let [header, grid] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+        (
+            header,
+            grid,
+            [Constraint::Ratio(1, 4); 4],
+            [Constraint::Ratio(1, 4); 4],
+        )
+    } else {
+        (
+            pad.bank,
+            pad.grid,
+            [Constraint::Length(PAD_H + pad.waves); 4],
+            [Constraint::Length(pad.grid.width / 4); 4],
+        )
+    };
+    frame.render_widget(Clear, header);
     let accent = if panel.page == 0 && !panel.target {
         MAGENTA
     } else {
@@ -262,11 +334,11 @@ pub fn command_panel_in(
     };
     frame.render_widget(
         Line::from(panel_header(panel)).fg(accent).bg(BG).bold(),
-        pad.bank,
+        header,
     );
-    let rows = Layout::vertical([Constraint::Length(PAD_H + pad.waves); 4]).split(pad.grid);
+    let rows = Layout::vertical(rows).split(grid);
     for (row, area) in rows.iter().enumerate() {
-        let cells = Layout::horizontal([Constraint::Length(pad.grid.width / 4); 4]).split(*area);
+        let cells = Layout::horizontal(columns).split(*area);
         for (column, area) in cells.iter().enumerate() {
             let index = row * 4 + column;
             let label = panel.labels[index].as_deref().unwrap_or("");

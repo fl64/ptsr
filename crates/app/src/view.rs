@@ -1236,6 +1236,20 @@ impl App {
         }
     }
 
+    pub(super) fn hide_keyboard_help(&self) -> bool {
+        self.screen_learn.is_some()
+            || (self.input_sources.last_is_smc()
+                && (!self.pattern_view.overview || self.help_overlay.size.0 > 80))
+    }
+
+    fn compact_a1_help(&self) -> bool {
+        let (width, height) = self.help_overlay.size;
+        self.pattern_view.overview
+            && (72..=80).contains(&width)
+            && height >= 26
+            && self.midi_devices.iter().any(|(_, name)| name == "SMC-PAD")
+    }
+
     pub(super) fn pattern_help_groups(
         &self,
         keymap: &input::Keymap,
@@ -1314,15 +1328,20 @@ impl App {
                     },
                 ];
             }
-            return vec![
-                tui::HelpGroup {
-                    name: "PATTERN",
-                    items: vec![
-                        item(&[Action::ScreenPads, Action::Back], "Pads"),
-                        item(&[Action::PatternStepEdit], "edit"),
-                        item(&[Action::PatternViewPrev, Action::PatternViewNext], "view"),
-                    ],
-                },
+            let mut pattern = tui::HelpGroup {
+                name: "PATTERN",
+                items: vec![
+                    item(&[Action::ScreenPads, Action::Back], "Pads"),
+                    item(&[Action::PatternStepEdit], "edit"),
+                    item(&[Action::PatternViewPrev, Action::PatternViewNext], "view"),
+                ],
+            };
+            let compact = self.compact_a1_help();
+            if compact {
+                pattern.items.push(item(&[Action::HelpToggle], "marks"));
+            }
+            let mut overview = vec![
+                pattern,
                 tui::HelpGroup {
                     name: "BANK",
                     items: vec![
@@ -1337,8 +1356,11 @@ impl App {
                         ),
                     ],
                 },
-                clock,
             ];
+            if !compact {
+                overview.push(clock);
+            }
+            return overview;
         }
         if self.key_notice_blocked() {
             return groups;
