@@ -70,7 +70,7 @@ step and its cancel control. It stays after the PAD BANK release.
 | Move the bounds of a slice | Turn knobs 3 and 4 for slice start and end (`0/0`). | Steps follow the wave view. |
 | Bounds in edit mode | Chop `edit slice` (`1/3`). Turn knobs 3 and 4 for the slice. Turn knobs 5 and 6 for the trim (`0/0`). Slice edit `norm` on P5 sets the sound gain of the slice pads (`1/3`). | Read the bound indicator. |
 | Assign the slices to the pads | Chop `put on pads` on P9 (`1/3`). Select targets. Press P4 Apply. P16 shows the method, `by hand` or `in order`, and switches it (`1/3`). In order, Apply is grey until the start pad hit. One Undo on Pads restores all targets (`1/3`). | Count layer switches, target hits, and replacement answers separately. |
-| Assign mode ignores the rest | Chop Assign (`1/3`). Press P3 Menu. Try Cut from the Chop actions. | The refusal leaves the plan in place. |
+| Assign mode ignores the rest | Chop Assign (`1/3`). Press P3 Menu, then P14 `loop play` (`2/4`). | From the keyboard, try Alt+O, Alt+P or Ctrl+G in Assign (1 each). The hint names Apply and Back. The plan stays in place. |
 | Swap pads | Pads Take (`1/3`). From another screen, Screens Pads, then Take (`3/5`). Release PAD BANK and hit any of the 16 pads. | Count the target separately. |
 | Select file, copy and swap targets without a hit sound | Files Take or Pads Copy or Take (`1/3`). Release PAD BANK and hit any of the 16 pads. P1/P4 answer (`1/2`). | The target hit stays silent. |
 | Controller commands and the next pad hit | Use Take (`1/3`). With the panel hidden, use LEFT or RIGHT on Pads (`1/1`), then select a target pad. | Check input order and Gate release. |
