@@ -326,13 +326,13 @@ fn a1_distinguishes_pause_and_reset() {
         assert_eq!(paused.ticks, 0.0);
         for width in [80, 120] {
             let view = drive.app.pattern_overview_at(&drive.keymap, width);
-            assert_eq!(view.state_label.as_deref(), Some("Paused 1:1"));
+            assert_eq!(view.status.as_str(), "Paused 1.1");
             assert_eq!(
                 view.next.as_deref(),
                 Some(if midi {
-                    "PLAY resume A1"
+                    "PLAY resume pattern"
                 } else {
-                    "Alt+T resume A1"
+                    "Alt+T resume pattern"
                 })
             );
         }
@@ -343,7 +343,7 @@ fn a1_distinguishes_pause_and_reset() {
         let paused = drive.app.transport_state();
         assert!(paused.ticks > 960.0);
         let view = drive.app.pattern_overview(&drive.keymap);
-        assert_eq!(view.state_label.as_deref(), Some("Paused 1:2"));
+        assert_eq!(view.status.as_str(), "Paused 1.2");
         context(&mut drive, true);
         assert_eq!(drive.app.transport_state().ticks, paused.ticks);
         context(&mut drive, false);
@@ -353,20 +353,20 @@ fn a1_distinguishes_pause_and_reset() {
                 .overlay("[global]\n'Alt+T' = 'none'\n")
                 .unwrap();
             let view = drive.app.pattern_overview(&drive.keymap);
-            assert_eq!(view.next.as_deref(), Some("Space restart A1"));
+            assert_eq!(view.next.as_deref(), Some("Space restart pattern"));
         }
         context(&mut drive, false);
         let stopped = drive.app.transport_state();
         assert!(!stopped.paused && !stopped.playing, "{stopped:?}");
         assert_eq!(stopped.ticks, 0.0);
         let view = drive.app.pattern_overview(&drive.keymap);
-        assert_eq!(view.state_label.as_deref(), Some("Stopped"));
+        assert_eq!(view.status.as_str(), "Stopped");
         assert_eq!(
             view.next.as_deref(),
             Some(if midi {
-                "PLAY play A1"
+                "PLAY play pattern"
             } else {
-                "Space play A1"
+                "Space play pattern"
             })
         );
     }

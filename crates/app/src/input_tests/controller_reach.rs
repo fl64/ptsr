@@ -1690,7 +1690,7 @@ fn first_entry_and_repeated_commands_have_separate_counts() {
     cell(&mut later, panel_note(1));
     list_button(&mut later, false);
     assert_eq!(later.app.panel.page(), 0);
-    assert_eq!(later.app.panel.label(panel::View::Pads, 4), Some("A1"));
+    assert_eq!(later.app.panel.label(panel::View::Pads, 4), Some("pattern"));
     // PAD BANK, the reveal, LEFT and A1: four presses; visible: two.
 
     let mut knob = smc_drive();
@@ -2020,17 +2020,21 @@ fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
             drive.tap(KeyCode::F(5), M::NONE);
         }
         assert!(drive.app.pattern_view.overview);
-        cue(&drive, "Ctrl+R record A1", "RECORD record A1");
+        cue(&drive, "Ctrl+R record pattern", "RECORD record pattern");
 
         record(&mut drive);
-        cue(&drive, "Starting A1 · wait", "Starting A1 · wait");
+        cue(
+            &drive,
+            "Starting the pattern · wait",
+            "Starting the pattern · wait",
+        );
         app_capture_frames(&mut drive, 0);
         cue(&drive, "Esc cancel count", "PAD BANK+P1 cancel count");
         record(&mut drive);
         app_capture_frames(&mut drive, 0);
         drive.app.flush_audio();
         app_capture_frames(&mut drive, 0);
-        cue(&drive, "Ctrl+R record A1", "RECORD record A1");
+        cue(&drive, "Ctrl+R record pattern", "RECORD record pattern");
 
         record(&mut drive);
         app_capture_frames(&mut drive, 96_000);
@@ -2042,31 +2046,39 @@ fn a1_guides_a_first_recording_from_keyboard_and_smc_pad() {
         }
         app_capture_frames(&mut drive, 128);
         record(&mut drive);
-        cue(&drive, "Finishing A1 · wait", "Finishing A1 · wait");
+        cue(
+            &drive,
+            "Finishing the pattern · wait",
+            "Finishing the pattern · wait",
+        );
         app_capture_frames(&mut drive, 0);
-        cue(&drive, "Finishing A1 · wait", "Finishing A1 · wait");
+        cue(
+            &drive,
+            "Finishing the pattern · wait",
+            "Finishing the pattern · wait",
+        );
         drive.app.flush_audio();
         app_capture_frames(&mut drive, 128);
         assert_eq!(drive.app.pads.pattern.as_ref().unwrap().hits.len(), 1);
-        cue(&drive, "Space stop A1", "STOP pause A1");
+        cue(&drive, "Space stop pattern", "STOP pause pattern");
 
         if controller {
             hold(&mut drive, true);
-            cue(&drive, "Space stop A1", "Close panel · STOP pause");
+            cue(&drive, "Space stop pattern", "Close panel · STOP pause");
             hold(&mut drive, false);
             button(&mut drive, 28);
         } else {
             drive.tap(KeyCode::Char(' '), M::NONE);
         }
         app_capture_frames(&mut drive, 128);
-        cue(&drive, "Space play A1", "PLAY resume A1");
+        cue(&drive, "Space play pattern", "PLAY resume pattern");
         if controller {
             button(&mut drive, 27);
         } else {
             drive.tap(KeyCode::Char(' '), M::NONE);
         }
         app_capture_frames(&mut drive, 128);
-        cue(&drive, "Space stop A1", "STOP pause A1");
+        cue(&drive, "Space stop pattern", "STOP pause pattern");
     }
 }
 
@@ -5685,4 +5697,49 @@ fn copy_and_undo_preserve_the_pad_sound_shape() {
     drive.tap(KeyCode::Char('y'), M::CONTROL);
     assert_eq!(drive.app.pads.play_shape(1), original);
     assert_eq!(drive.app.pads.play_shape(0), original);
+}
+
+/// Scenario "Setup line shows the current settings".
+#[test]
+fn setup_line_shows_the_current_settings() {
+    let mut keyboard = smc_drive();
+    let mut controller = smc_drive();
+    keyboard.tap(KeyCode::F(5), M::NONE);
+    keyboard.tap(KeyCode::Char('n'), M::ALT);
+    keyboard.tap(KeyCode::Char('l'), M::NONE);
+    cell(&mut controller, 64);
+    list_button(&mut controller, false);
+    cell(&mut controller, panel_note(4));
+    cell(
+        &mut controller,
+        panel_note(slot_of(panel::View::Pattern, "A1 setup")),
+    );
+    keyboard.tap(KeyCode::Char('n'), M::ALT);
+    cell(
+        &mut controller,
+        panel_note(slot_of(panel::View::Pattern, "A1 setup")),
+    );
+    let setup = |drive: &Drive| drive.app.pattern_overview(&drive.keymap).setup;
+    assert!(
+        setup(&keyboard).contains("count-in 1 bar"),
+        "{}",
+        setup(&keyboard)
+    );
+    assert!(
+        setup(&keyboard).starts_with("bars "),
+        "{}",
+        setup(&keyboard)
+    );
+    let before = setup(&keyboard);
+    keyboard.tap(KeyCode::Up, M::CONTROL);
+    assert_ne!(setup(&keyboard), before);
+    assert!(
+        setup(&keyboard).contains("tempo 121"),
+        "{}",
+        setup(&keyboard)
+    );
+    assert_eq!(
+        controller.app.pattern_view.overview,
+        keyboard.app.pattern_view.overview
+    );
 }

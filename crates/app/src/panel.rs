@@ -25,7 +25,7 @@ const SCREENS: [(&str, Option<Action>); 12] = [
     ("pads", Some(Action::ScreenPads)),
     ("files", Some(Action::ScreenFiles)),
     ("chop", Some(Action::ScreenChop)),
-    ("A1", Some(Action::ScreenPattern)),
+    ("pattern", Some(Action::ScreenPattern)),
     ("fx", Some(Action::ScreenFx)),
     ("mixer", None),
     ("setup", Some(Action::ScreenSettings)),
@@ -663,6 +663,7 @@ mod tests {
         // One meaning per label (134); plain two-word action labels (138).
         let allowed = [
             "A1",
+            "pattern",
             "A1 setup",
             "pin sample",
             "strip view",

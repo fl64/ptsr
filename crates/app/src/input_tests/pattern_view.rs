@@ -161,7 +161,7 @@ fn overview_opens_absent_empty_and_playing_a1_without_mutation() {
     let dirty = drive.app.session_dirty;
     drive.tap(KeyCode::F(5), M::NONE);
     let absent = drive.app.pattern_overview(&drive.keymap);
-    assert!(absent.header.contains("No A1"));
+    assert!(absent.header.contains("No pattern yet"));
     assert_eq!(absent.rows.len(), 128);
     assert!(absent.rows.iter().all(Vec::is_empty));
     assert!(drive.app.pads.pattern.is_none());
@@ -462,9 +462,8 @@ fn pattern_view_empty_state_uses_effective_recording_keys_without_creation() {
     let before = drive.app.session_dirty;
     drive.tap(KeyCode::Up, M::ALT);
     let strip = drive.app.pattern_strip(&drive.keymap);
-    assert!(strip.header.contains("No A1"));
-    assert!(strip.header.contains("F9"));
-    assert!(!strip.header.contains("Ctrl+R"));
+    // Without a pattern, the lane points to the Pattern screen, where recording starts.
+    assert_eq!(strip.header, "F5 pattern");
     assert!(strip.cells.is_empty());
     assert!(strip.playhead.is_none());
     assert!(drive.app.pads.pattern.is_none());
@@ -483,7 +482,7 @@ fn a1_omits_unavailable_actions() {
     silent.tap(KeyCode::F(5), M::NONE);
     assert_eq!(
         silent.app.pattern_overview(&silent.keymap).next.as_deref(),
-        Some("A1 needs audio"),
+        Some("Pattern needs audio"),
     );
 
     let mut drive = Drive::offline();
@@ -498,7 +497,7 @@ fn a1_omits_unavailable_actions() {
         .keymap
         .overlay("[global]\n'Ctrl+Shift+F12' = 'pattern.record'\n")
         .unwrap();
-    assert_eq!(cue(&drive).as_deref(), Some("Ctrl+Shift+F12 record A1"));
+    assert_eq!(cue(&drive).as_deref(), Some("Ctrl+Shift+F12 record"));
     drive.tap(KeyCode::F(1), M::NONE);
     assert_eq!(cue(&drive), None);
     drive.tap(KeyCode::Esc, M::NONE);
@@ -514,7 +513,7 @@ fn a1_omits_unavailable_actions() {
         .unwrap()
         .stopped
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    assert_eq!(cue(&drive).as_deref(), Some("A1 needs audio"));
+    assert_eq!(cue(&drive).as_deref(), Some("Pattern needs audio"));
 }
 
 /// Scenario "Pattern view keys preserve owner input rules".
@@ -644,7 +643,7 @@ fn pattern_view_resets_on_session_change_without_entering_saved_data() {
             .app
             .pattern_strip(&drive.keymap)
             .header
-            .contains("No A1")
+            .contains("F5 pattern")
     );
 }
 

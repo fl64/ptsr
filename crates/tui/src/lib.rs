@@ -18,6 +18,7 @@ mod knob_strip;
 pub use knob_strip::KnobStrip;
 pub mod pads;
 mod pattern;
+mod pattern_screen;
 mod settings;
 mod status;
 mod wave;
@@ -44,8 +45,10 @@ pub use pads::{
     SourceVoice, command_panel, command_panel_area, command_panel_for, command_panel_in,
     device_number, panel_overlay_area,
 };
-pub use pattern::{PatternOverview, PatternStrip};
-use pattern::{overview_page_layout, pattern_overview, pattern_strip};
+pub use pattern::PatternStrip;
+use pattern::pattern_strip;
+use pattern_screen::pattern_overview;
+pub use pattern_screen::{PatternOverview, pattern_overview_page_cells, velocity_level};
 use status::*;
 use wave::{band_color, dot_peaks, grey};
 pub use wave::{braille, braille_abs};
@@ -512,10 +515,6 @@ pub fn pattern_page_cells(width: usize, beat_cells: usize, total: usize) -> usiz
     } else {
         beat_cells
     }
-}
-
-pub fn pattern_overview_page_cells(width: usize, beat_cells: usize, total: usize) -> usize {
-    overview_page_layout(width, beat_cells, total).0
 }
 
 pub struct Pads {

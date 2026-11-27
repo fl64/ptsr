@@ -1591,7 +1591,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternOverviewMultiple
         | Mode::PatternOverviewVelocity
         | Mode::PatternOverviewHiddenHit
-        | Mode::PatternOverviewSafety => require("PATTERN · A1"),
+        | Mode::PatternOverviewSafety => require("F5 PATTERN"),
         Mode::PatternStepEmpty
         | Mode::PatternStepStraight
         | Mode::PatternStepTriplet
@@ -1600,7 +1600,7 @@ fn check_frame(case: Case, buffer: &Buffer) {
         | Mode::PatternStepCursor
         | Mode::PatternStepTarget
         | Mode::PatternStepAdd
-        | Mode::PatternStepSafety => require("STEP EDIT · A1"),
+        | Mode::PatternStepSafety => require("[STEP EDIT]"),
         Mode::Help | Mode::Messages => {
             require("HELP");
             require("MESSAGES");
@@ -1762,23 +1762,23 @@ fn check_frame(case: Case, buffer: &Buffer) {
             require("xruns 3");
             require("~");
         }
-        Mode::PatternOverviewAbsent => require("No A1"),
-        Mode::PatternOverviewEmpty => require("Grid 1/16"),
-        Mode::PatternOverviewStraight => require("steps 1-"),
-        Mode::PatternOverviewTriplet => require("Grid 1/16T"),
+        Mode::PatternOverviewAbsent => require("records what you play"),
+        Mode::PatternOverviewEmpty => require("writes steps"),
+        Mode::PatternOverviewStraight => require("grid 1/16"),
+        Mode::PatternOverviewTriplet => require("grid 1/16T"),
         Mode::PatternOverviewOffGrid | Mode::PatternOverviewHiddenHit => require("~"),
         Mode::PatternOverviewMultiple => require(" 2"),
-        Mode::PatternOverviewVelocity => require("PATTERN · A1"),
+        Mode::PatternOverviewVelocity => require("velocity"),
         Mode::PatternOverviewSafety => {
             require("Save failed");
-            require("PATTERN · A1");
+            require("F5 PATTERN");
         }
-        Mode::PatternStepEmpty => require("empty cell"),
+        Mode::PatternStepEmpty => require("no hit"),
         Mode::PatternStepAdd => {
             require("vel 80");
             require("added one hit");
         }
-        Mode::PatternStepTriplet => require("Grid 1/16T"),
+        Mode::PatternStepTriplet => require("grid 1/16T"),
         Mode::PatternStepTarget => {
             assert!(
                 rows.iter()
@@ -2896,7 +2896,7 @@ L="none"
                     .map(|cell| cell.symbol())
                     .collect::<String>();
                 assert!(
-                    title.contains("A1"),
+                    title.contains("A1") || title.contains("F5 PATTERN"),
                     "{} loses pattern identity: {title}",
                     case.name()
                 );
@@ -3192,7 +3192,7 @@ L="none"
                 "{rows:?}"
             );
             match present {
-                None => assert!(rows[2].contains("No A1") && rows[2].contains("record A1")),
+                None => assert!(rows[2].contains("F5 pattern")),
                 Some(_) => {
                     assert!(rows[2].starts_with("Rhythm · A1"), "{rows:?}");
                     assert!(rows[3].starts_with("all"), "{rows:?}");
@@ -3315,14 +3315,11 @@ L="none"
                     .chunks(size.0 as usize)
                     .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
                     .collect::<Vec<_>>();
-                assert!(rows.iter().any(|row| row.contains("STEP EDIT · A1")));
-                assert!(
-                    rows.iter()
-                        .any(|row| row.contains("BANKS · pads with A1 hits"))
-                );
+                assert!(rows.iter().any(|row| row.contains("[STEP EDIT]")));
+                assert!(rows.iter().any(|row| row.contains("F5 PATTERN")));
                 if mode == Mode::PatternStepSafety {
                     assert!(
-                        rows.iter().any(|row| row.contains("Q rec-2026")),
+                        rows.iter().any(|row| row.contains("Q rec-202")),
                         "{}: {rows:#?}",
                         case.name()
                     );
@@ -3381,7 +3378,7 @@ L="none"
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(title.contains("PATTERN · A1"), "{title}");
+        assert!(title.contains("F5 PATTERN"), "{title}");
     }
 
     /// Scenario "Catalogue covers the overview without devices".
@@ -3434,18 +3431,12 @@ L="none"
                 .chunks(size.0 as usize)
                 .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
                 .collect::<Vec<_>>();
-            assert!(rows[1].contains("PATTERN · A1"));
-            assert!(rows[3].contains("BANKS · pads with A1 hits"));
-            assert!(rows[3].contains("8:0 all rows shown"), "{}", rows[3]);
-            for number in 10..16 {
-                assert!(rows[4].contains(&format!("{number} ")), "{}", rows[4]);
-            }
-            for (index, key) in "1234QWERASDFZXCV".chars().enumerate() {
-                assert!(
-                    rows[6 + index].contains(&format!(" {key} ")),
-                    "{key}: {}",
-                    rows[6 + index]
-                );
+            assert!(rows[1].contains("F5 PATTERN"), "{}", rows[1]);
+            let text = rows.join("\n");
+            // The selected row stays visible; rows that do not fit are counted.
+            assert!(text.contains("▶ 1 long w"), "{text}");
+            for line in ["velocity", "step 1.", " setup  bars"] {
+                assert!(text.contains(line), "{line}: {text}");
             }
             assert!(rows[0].contains("Save failed"));
             let help = rows[size.1 as usize - 3..].join("\n");
@@ -3490,9 +3481,9 @@ L="none"
                 (
                     &remapped,
                     Some(Mode::PatternFinishing),
-                    "Finishing A1 · wait",
+                    "Finishing the pattern · wait",
                 ),
-                (&remapped, Some(Mode::PatternStopped), "Space play A1"),
+                (&remapped, Some(Mode::PatternStopped), "Space play pattern"),
             ] {
                 let now = Instant::now();
                 let mut app = fixture(case, now);
@@ -3502,7 +3493,7 @@ L="none"
                     Some(mode) => add_recording(&mut app, mode),
                 }
                 app.session_write_error = Some("Save refused.".into());
-                let has_steps = app.pads.pattern.is_some();
+
                 let (_, buffer) = render_app(case, keys, app, now);
                 let rows: Vec<String> = buffer
                     .content()
@@ -3516,17 +3507,14 @@ L="none"
                     _ => None,
                 } {
                     assert!(rows[1].contains(label), "{label}: {}", rows[1]);
-                    assert!(rows[1].contains("step "), "{}", rows[1]);
-                    assert!(rows[2].contains("Record quantize"), "{}", rows[2]);
+                    assert!(rows.iter().any(|row| row.contains("step ")), "{rows:?}");
+                    assert!(
+                        rows.iter().any(|row| row.contains("record quantize")),
+                        "{rows:?}"
+                    );
                 }
-                let bank_index = 2 + usize::from(has_steps);
-                assert!(rows[bank_index].contains("BANKS · pads with A1 hits"));
-                let ruler = &rows[bank_index + 1];
-                assert!(ruler.starts_with(instruction), "{ruler}");
-                if has_steps {
-                    assert!(ruler[instruction.len()..].contains(" 1 "), "{ruler}");
-                }
-                assert!(rows[bank_index + 2].contains("BANK 1 / 8"));
+                assert!(rows[1].contains("F5 PATTERN"), "{}", rows[1]);
+                assert!(rows.iter().any(|row| row.contains(instruction)), "{rows:?}");
                 let help = rows[size.1 as usize - 3..].join("\n");
                 assert!(help.contains("F1"), "{help}");
             }
@@ -3560,16 +3548,19 @@ L="none"
                         .collect::<String>()
                 };
                 let title = row(1);
-                let settings = row(2);
+                let text = (0..usize::from(size.1))
+                    .map(row)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(title.contains(&format!("bar {bar}/2")), "{title}");
                 assert!(
-                    title.contains(&format!("bar {bar}/2 · step {}/32", step + 1)),
-                    "{title}"
+                    text.contains(&format!("step {bar}.{} ·", step % 16 + 1)),
+                    "{text}"
                 );
                 assert!(
-                    settings.contains("Grid 1/16 · 16 per bar · Record quantize 1/8 70%"),
-                    "{settings}"
+                    text.contains("grid 1/16 · record quantize 1/8 70%"),
+                    "{text}"
                 );
-                assert!(!settings.contains('…'), "{settings}");
             }
         }
     }
@@ -3589,17 +3580,18 @@ L="none"
             .chunks(case.size.0 as usize)
             .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
             .collect::<Vec<_>>();
+        // Cells grow past three columns when the terminal is wide.
+        let ruler = &rows[2];
+        let one = ruler.find(" 1 ").unwrap();
+        let two = ruler.find(" 2 ").unwrap();
+        assert!(two - one > 4 * 3, "{ruler}");
         assert!(
-            rows.iter()
-                .any(|row| row.contains("rec-20261031-200404 20 minute take"))
+            rows.iter().any(|row| row.contains(" Q rec-2026")),
+            "{rows:?}"
         );
         assert!(
-            (45..105).any(|x| matches!(buffer[(x, 6)].symbol(), "·" | "■" | "~")),
-            "fixed-width time cells must remain visible"
-        );
-        assert!(
-            (105..119).all(|x| buffer[(x, 6)].symbol() == " "),
-            "unused width stays blank"
+            rows.iter().any(|row| row.contains("step 1.1 · kick")),
+            "the detail line names the full selected pad"
         );
 
         let absent = Case {
@@ -3611,52 +3603,13 @@ L="none"
         let long_name = "rec-20261031-200404 20 minute take from the room";
         app.pads.custom_name[0] = Some(long_name.into());
         let (_, buffer) = render_app(absent, &keymap, app, now);
-        let title = buffer.content()[120..240]
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(title.contains(long_name), "{title}");
-        let row = buffer.content()[5 * 120..6 * 120]
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(row.contains('…'), "{row}");
-    }
-
-    /// Scenario "Overview bank borders show identity without color alone".
-    #[test]
-    fn overview_bank_borders_show_identity_without_color_alone() {
-        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
-        let case = Case {
-            screen: Screen::Pads,
-            mode: Mode::PatternOverviewStraight,
-            size: (120, 40),
-        };
-        let now = Instant::now();
-        let app = fixture(case, now);
-        let (_, buffer) = render_app(case, &keymap, app, now);
-        assert_eq!(buffer[(0, 5)].symbol(), "┏");
-        assert_eq!(buffer[(0, 5)].fg, tui::BANK_COLORS[0]);
-        let second = buffer
+        let text = buffer
             .content()
-            .chunks(case.size.0 as usize)
-            .position(|row| {
-                row.iter()
-                    .map(|cell| cell.symbol())
-                    .collect::<String>()
-                    .contains("BANK 2 / 8")
-            })
-            .expect("bank 2 remains visible");
-        assert_eq!(buffer[(0, second as u16)].symbol(), "╭");
-        assert_eq!(buffer[(0, second as u16)].fg, tui::BANK_COLORS[1]);
-        let index = buffer.content()[3 * 120..4 * 120]
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(index.contains("BANKS · pads with A1 hits"), "{index}");
-        for bank in 1..=8 {
-            assert!(index.contains(&format!("{bank}:")), "{index}");
-        }
+        assert!(text.contains("records what you play"), "{text}");
+        assert!(text.contains("opens setup"), "{text}");
     }
 
     /// Scenario "Overview hides empty banks without losing access".
@@ -3667,33 +3620,28 @@ L="none"
         let case = Case {
             screen: Screen::Pads,
             mode: Mode::PatternOverviewStraight,
-            size: (120, 80),
+            size: (120, 40),
         };
         let now = Instant::now();
+        let text = |app: App| screen_text(case, &keymap, app, now);
+        let used = text(fixture(case, now));
+        assert!(
+            used.contains("▶ 1 kick") && used.contains("  Q rec-"),
+            "{used}"
+        );
+        assert!(!used.contains(" 2 snare"), "empty rows stay hidden: {used}");
+        assert!(!used.contains("BANK 1 / 8"), "no bank frames: {used}");
         let mut app = fixture(case, now);
-        let text = |app: App| {
-            let (_, buffer) = render_app(case, &keymap, app, now);
-            buffer
-                .content()
-                .chunks(case.size.0 as usize)
-                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let hidden = text(fixture(case, now));
-        assert!(hidden.contains("BANK 1 / 8"));
-        assert!(hidden.contains("BANK 2 / 8"));
-        assert!(hidden.contains("BANK 4 / 8"));
-        assert!(!hidden.contains("BANK 3 / 8"));
-        assert!(hidden.contains("3:0"), "fixed index keeps the bank");
+        let before = app.pads.pattern.clone();
         app.pattern_view.hide_empty_banks = false;
         let all = text(app);
-        assert!(all.contains("BANK 3 / 8"), "Alt+H shows empty banks");
-
+        assert!(all.contains("  2 snare") && all.contains("  V "), "{all}");
         let mut selected = fixture(case, now);
         selected.pads.bank = 2;
+        selected.pads.selected = 15;
         let selected_text = text(selected);
-        assert!(selected_text.contains("BANK 3 / 8"));
+        assert!(selected_text.contains("▶ V "), "{selected_text}");
+        assert_eq!(fixture(case, now).pads.pattern, before);
     }
 
     /// Scenario "Overview shows occupied and selected pad rows".
@@ -3710,44 +3658,27 @@ L="none"
             let now = Instant::now();
             let mut app = fixture(case, now);
             app.pads.selected = 5;
-            let (_, filtered) = render_app(case, &keymap, app, now);
-            let text = filtered
-                .content()
-                .chunks(size.0 as usize)
-                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert!(text.contains(" 1 kick"), "{text}");
-            assert!(text.contains(" W empty"), "{text}");
+            let text = screen_text(case, &keymap, app, now);
+            assert!(text.contains("  1 kick"), "{text}");
+            assert!(text.contains("▶ W empty"), "{text}");
             assert!(!text.contains(" 2 snare"), "{text}");
-            assert!(text.contains("empty rows hidden"), "{text}");
+            assert!(text.contains(" ─"), "a rule separates two banks: {text}");
 
             let mut app = fixture(case, now);
             app.pattern_view.hide_empty_banks = false;
-            let (_, full) = render_app(case, &keymap, app, now);
-            let text = full
-                .content()
-                .chunks(size.0 as usize)
-                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert!(text.contains(" 2 snare"), "{text}");
-            assert!(text.contains("all rows shown"), "{text}");
-
-            let mut app = fixture(case, now);
-            app.pattern_view.hide_empty_banks = false;
-            app.pads.bank = 2;
-            app.pads.selected = 15;
-            let (_, full_selected) = render_app(case, &keymap, app, now);
-            let text = full_selected
-                .content()
-                .chunks(size.0 as usize)
-                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert!(text.contains("BANK 3 / 8"), "{text}");
-            assert!(text.contains(" V empty"), "{text}");
+            let text = screen_text(case, &keymap, app, now);
+            assert!(text.contains("  2 snare"), "{text}");
         }
+    }
+
+    fn screen_text(case: Case, keymap: &Keymap, app: App, now: Instant) -> String {
+        let (_, buffer) = render_app(case, keymap, app, now);
+        buffer
+            .content()
+            .chunks(case.size.0 as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Scenario "Pattern strip distinguishes subdivisions and event density".
@@ -3872,11 +3803,11 @@ L="none"
                     .chunks(size.0 as usize)
                     .map(|row| row.iter().map(|cell| cell.symbol()).collect())
                     .collect();
-                assert!(rows[3].contains("BANKS · pads with A1 hits"), "{}", rows[3]);
+                assert!(rows[1].contains("F5 PATTERN"), "{}", rows[1]);
                 assert!(
-                    rows[4].contains(" 1 ") && rows[4].contains(" 16"),
+                    rows[2].contains(" 1 ") && rows[2].contains(" 4 "),
                     "{}",
-                    rows[4]
+                    rows[2]
                 );
                 let notice = warning.unwrap_or(if second_tap {
                     "Tempo 150.0 BPM"
@@ -3912,7 +3843,7 @@ L="none"
             let mut absent = fixture(case, now);
             fixture_smc_knob_strip(&mut absent, now);
             let shown = render_text(absent);
-            for cue in ["No A1", "Alt+N", "setup", "F1"] {
+            for cue in ["no pattern yet", "Alt+N", "setup", "F1"] {
                 assert!(shown.contains(cue), "{cue}: {shown}");
             }
             assert!(!shown.contains("F7"), "{shown}");
@@ -4161,7 +4092,7 @@ L="none"
         let (_, open) = render_app(case, &keymap, make(), now);
         let shown = text(&open);
         assert!(
-            shown.contains("PATTERN · A1") && shown.contains("PATTERN actions"),
+            shown.contains("F5 PATTERN") && shown.contains("PATTERN actions"),
             "{shown}"
         );
         assert!(!shown.contains("BANKS · pads"), "{shown}");
@@ -4207,13 +4138,13 @@ L="none"
         closed.pattern_view.hide_empty_banks = false;
         let shown = text(&render_app(case, &keymap, closed, now).1);
         assert!(
-            shown.contains("BANKS · pads") && shown.contains("Record quantize"),
+            shown.contains("F5 PATTERN") && shown.contains("record quantize"),
             "{shown}"
         );
-        for (index, key) in "1234QWERASDFZXCV".chars().enumerate() {
-            let row = shown.lines().nth(6 + index).unwrap();
-            assert!(row.contains(&format!(" {key} ")), "{key}: {shown}");
-        }
+        assert!(
+            shown.contains("▶ 1 ") && shown.contains(" rows "),
+            "{shown}"
+        );
     }
 
     /// Scenario "Compact A1 keeps navigation help with MIDI".
@@ -4243,7 +4174,8 @@ L="none"
                 .iter()
                 .map(|cell| cell.symbol())
                 .collect();
-            assert!(title.contains("bar ") && title.contains("step "), "{title}");
+            let text: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+            assert!(title.contains("bar ") && text.contains("step "), "{title}");
             let footer: String = buffer.content()[23 * 80..]
                 .iter()
                 .map(|cell| cell.symbol())

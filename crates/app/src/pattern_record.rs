@@ -1204,7 +1204,7 @@ impl crate::App {
         }
 
         let Some(audio) = self.audio_alive() else {
-            return Some("A1 needs audio".into());
+            return Some("Pattern needs audio".into());
         };
         let Some(state) = recording.filter(|_| !self.restoring_project) else {
             return Some("Wait for audio".into());
@@ -1214,10 +1214,10 @@ impl crate::App {
             || (capture.end_requested
                 && (state.phase != Phase::Idle || capture.requested.is_some()))
         {
-            return Some("Finishing A1 · wait".into());
+            return Some("Finishing the pattern · wait".into());
         }
         if capture.requested.is_some() && state.phase == Phase::Idle {
-            return Some("Starting A1 · wait".into());
+            return Some("Starting the pattern · wait".into());
         }
 
         let binding = |action| {
@@ -1278,21 +1278,21 @@ impl crate::App {
                 };
                 format!("{pads}{end}")
             }
-            _ if !has_hits => record_step("record A1", "record"),
-            _ if transport.paused && smc => "PLAY resume A1".into(),
+            _ if !has_hits => record_step("record pattern", "record"),
+            _ if transport.paused && smc => "PLAY resume pattern".into(),
             _ if transport.paused => binding(Action::PlayContext)
-                .map(|key| control_cue(&key, "resume A1", "resume"))
+                .map(|key| control_cue(&key, "resume pattern", "resume"))
                 .or_else(|| {
                     binding(Action::TransportToggle)
-                        .map(|key| control_cue(&key, "restart A1", "restart"))
+                        .map(|key| control_cue(&key, "restart pattern", "restart"))
                 })
                 .unwrap_or_else(|| "No resume key".into()),
             _ if smc => if playing && self.panel.visible() {
                 "Close panel · STOP pause"
             } else if playing {
-                "STOP pause A1"
+                "STOP pause pattern"
             } else {
-                "PLAY play A1"
+                "PLAY play pattern"
             }
             .into(),
             _ => {
@@ -1315,7 +1315,7 @@ impl crate::App {
                         }
                         .into()
                     },
-                    |(key, action)| control_cue(&key, &format!("{action} A1"), action),
+                    |(key, action)| control_cue(&key, &format!("{action} pattern"), action),
                 )
             }
         };
