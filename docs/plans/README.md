@@ -86,7 +86,7 @@ These operations must be fast, clear and need few presses.
 Typed text stays on the keyboard: pad names, new project names and the file filter.
 Changes to control bindings also stay on the keyboard (change 138). These are F10 Learn,
 learn and forget in F12 MIDI, reset to profile and the SMC-PAD layout update. On 2026-11-20 the owner said that
-bindings with pads only are painful. The controller only gives the control to bind.
+bindings with pads only are painful. On SMC-PAD, select a control or press P1 to cancel (155).
 This is the only exception to the goal for actions without text.
 
 Measurable form of the goal:
