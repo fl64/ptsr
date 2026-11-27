@@ -7576,6 +7576,12 @@ fn global_pattern_undo_works_on_every_screen_and_preserves_local_chop_edits() {
 fn global_pattern_undo_refuses_a_newer_swap_until_normal_undo_restores_addresses() {
     for source in [Source::Keyboard, Source::Notes, Source::Button] {
         let mut drive = app_capture_drive(vec![[960, 0, 70, 0]]);
+        app_capture_sound(
+            &mut drive,
+            0,
+            Arc::new(Sample::mono(vec![0.02; 1024])),
+            false,
+        );
         pattern_undo_routes(&mut drive, source);
         let original = drive.app.pads.pattern.clone();
         app_capture_start(&mut drive, 1);
@@ -7584,6 +7590,7 @@ fn global_pattern_undo_refuses_a_newer_swap_until_normal_undo_restores_addresses
         drive.pad_release(source, 0);
         app_capture_finish(&mut drive, 1);
         drive.registry_command(source, KeyCode::Char('x'), M::CONTROL, 110);
+        assert_eq!(drive.app.pad_in_hand, Some(0));
         drive.pad_press(source, 15);
         drive.pad_release(source, 15);
         assert_eq!(drive.app.history.len(), 2);
