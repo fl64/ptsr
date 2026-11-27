@@ -1290,9 +1290,31 @@ fn render_app_layers(
     now: Instant,
     show_pattern_controls: bool,
 ) -> (Vec<u8>, Buffer) {
-    app.resize_help(case.size.0, case.size.1);
     let panel_view = app.panel_view();
     app.panel.sync_view(panel_view);
+    let feedback = tui::Feedback {
+        inputs: vec![
+            tui::InputSource {
+                normal: "KB".into(),
+                compact: "KB".into(),
+                active: false,
+            },
+            tui::InputSource {
+                normal: "M1".into(),
+                compact: if case.mode == Mode::Device {
+                    "M1"
+                } else {
+                    "  "
+                }
+                .into(),
+                active: case.mode == Mode::Device,
+            },
+        ]
+        .into(),
+        recording_seconds: app.recording.map(|_| 12),
+        knob_strip: app.smc_knob_strip(now),
+    };
+    app.resize_help_for_frame(Rect::new(0, 0, case.size.0, case.size.1), &feedback);
     let pattern_recording = app.pattern_record_state();
     let kitty = !matches!(
         case.mode,
@@ -1382,28 +1404,6 @@ fn render_app_layers(
             .flatten(),
         question: question.as_ref(),
         learn: learning.as_ref(),
-    };
-    let feedback = tui::Feedback {
-        inputs: vec![
-            tui::InputSource {
-                normal: "KB".into(),
-                compact: "KB".into(),
-                active: false,
-            },
-            tui::InputSource {
-                normal: "M1".into(),
-                compact: if case.mode == Mode::Device {
-                    "M1"
-                } else {
-                    "  "
-                }
-                .into(),
-                active: case.mode == Mode::Device,
-            },
-        ]
-        .into(),
-        recording_seconds: app.recording.map(|_| 12),
-        knob_strip: app.smc_knob_strip(now),
     };
     let status = tui::Status {
         badges: view::FrameText::default()
@@ -4008,6 +4008,62 @@ L="none"
             }
             assert!(!shown.contains("Bksp clear"), "{shown}");
             assert!(!shown.contains("mark: off"), "{shown}");
+        }
+    }
+
+    /// Scenario "Help pages follow the visible rows with MIDI".
+    #[test]
+    fn help_pages_follow_the_visible_rows_with_midi() {
+        let (keymap, _) = Keymap::from_toml(DEFAULT_KEYMAP).unwrap();
+        let now = Instant::now();
+        for (size, connected, height) in [
+            ((80, 26), false, 19),
+            ((80, 26), true, 18),
+            ((120, 40), false, 33),
+            ((120, 40), true, 32),
+        ] {
+            let case = Case {
+                screen: Screen::Pads,
+                mode: Mode::Help,
+                size,
+            };
+            let make = || {
+                let mut app = fixture(case, now);
+                if connected {
+                    fixture_smc_knob_strip(&mut app, now);
+                }
+                app
+            };
+            let title = |app| {
+                render_app(case, &keymap, app, now)
+                    .1
+                    .content()
+                    .chunks(usize::from(size.0))
+                    .nth(1)
+                    .unwrap()
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+            };
+            let first = title(make());
+            assert!(first.contains(&format!("1-{height}/")), "{first}");
+
+            let mut app = make();
+            app.apply(Action::HelpPageNext);
+            let next = title(app);
+            let expected = format!("{}-{}/", height + 1, height * 2);
+            assert!(next.contains(&expected), "{next}");
+
+            if connected {
+                let mut app = make();
+                app.help_panel_cell(10);
+                assert!(title(app).contains(&expected));
+
+                let mut app = make();
+                app.help_panel_cell(10);
+                app.help_panel_cell(9);
+                assert_eq!(title(app), first);
+            }
         }
     }
 

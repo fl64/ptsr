@@ -539,6 +539,19 @@ impl App {
         };
     }
 
+    pub(super) fn resize_help_for_frame(
+        &mut self,
+        area: ratatui::layout::Rect,
+        feedback: &tui::Feedback,
+    ) {
+        let area = if self.help_open {
+            feedback.content_area(area)
+        } else {
+            area
+        };
+        self.resize_help(area.width, area.height);
+    }
+
     pub(super) fn resize_help(&mut self, width: u16, height: u16) {
         self.help_overlay.size = (width, height);
         if self.help_open && self.help_overlay.messages() {

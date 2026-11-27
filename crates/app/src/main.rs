@@ -1493,7 +1493,6 @@ fn main() -> std::io::Result<()> {
             Ok(size) => size,
             Err(error) => break Err(error),
         };
-        app.resize_help(size.width, size.height);
         let fresh = app.window_title();
         if fresh != title {
             title = fresh;
@@ -1506,6 +1505,8 @@ fn main() -> std::io::Result<()> {
         let notice = app.frame_notice();
         let (buffer_size, sample_rate) = app.audio.as_ref().map_or((0, 0), |a| a.stats.format());
         let text_at = Instant::now();
+        let feedback = frame_text.feedback_at(&app, text_at);
+        app.resize_help_for_frame(size.into(), &feedback);
         let pattern_recording = app.pattern_record_state();
         let full = app.help_open.then(|| {
             let mut rows = app.full_help_recording_keys(&keymap, kitty, pattern_recording);
@@ -1678,7 +1679,6 @@ fn main() -> std::io::Result<()> {
         let messages = app.message_history();
         let learn_lines = app.learning_view(&keymap);
         let question = app.question_view(&keymap);
-        let feedback = frame_text.feedback_at(&app, text_at);
         let panel = app.panel_for_frame();
         let help = tui::Help {
             groups: &groups,
