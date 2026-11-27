@@ -937,7 +937,16 @@ fn fixture(case: Case, now: Instant) -> App {
                 .position(|row| matches!(row, crate::learn::MidiListRow::SmcPadBank))
                 .unwrap();
         }
-        Mode::PathsTab | Mode::FolderPicker => app.settings_tab = 3,
+        Mode::PathsTab => app.settings_tab = 3,
+        Mode::FolderPicker => {
+            app.settings_tab = 3;
+            app.path_picker = Some(PathPicker {
+                which: 0,
+                at: "/offline/projects".into(),
+                entries: vec!["..".into(), "beats".into()],
+                selected: 1,
+            });
+        }
         Mode::Slices128 => {
             let c = app.chop.as_mut().unwrap();
             for i in 1..128 {
@@ -1341,7 +1350,7 @@ fn render_app_layers(
     app.learn_grid(&mut chop.pads.pads);
     let learning = app.learning_view(keymap);
     let question = app.question_view(keymap);
-    let panel = app.panel_snapshot();
+    let panel = app.panel_for_frame();
     let groups = if app.screen_learn.is_some() {
         vec![]
     } else if app.project_picker.is_some() {
@@ -1492,11 +1501,7 @@ fn render_app_layers(
                 midi_row: app.midi_row,
                 learning: midi_learning.as_deref(),
                 paths: Some(("/offline/projects", "/offline/samples")),
-                picker: (case.mode == Mode::FolderPicker).then(|| tui::PathPickerView {
-                    title: " PICK THE PROJECTS ROOT ",
-                    entries: vec!["..".into(), "beats".into()],
-                    selected: 1,
-                }),
+                picker: app.path_picker.as_ref().map(PathPicker::view),
             }),
         }
     };
@@ -3790,6 +3795,38 @@ L="none"
                     assert!(rows[1].contains("· hit a pad ·"), "{text}");
                 }
             }
+        }
+    }
+
+    /// Scenario "The folder picker keeps the selection and controls visible" (controller-reach).
+    #[test]
+    fn the_folder_picker_keeps_the_selection_and_controls_visible() {
+        for size in SIZES {
+            let case = Case {
+                screen: Screen::Settings,
+                mode: Mode::FolderPicker,
+                size,
+            };
+            let now = Instant::now();
+            let mut app = fixture(case, now);
+            fixture_smc_knob_strip(&mut app, now);
+            app.panel.reveal("SMC-PAD-Master offline");
+            assert!(app.panel_snapshot().is_some());
+            let picker = app.path_picker.as_mut().unwrap();
+            picker.entries = (0..40)
+                .map(|index| format!("/offline/projects/folder-{index:02}").into())
+                .collect();
+            picker.selected = 39;
+            let rows = drawn_rows(case, app, now).join("\n");
+            for label in [
+                "PICK THE PROJECTS ROOT",
+                "folder-39",
+                "LEFT/RIGHT folder",
+                "Enter/P4 pick · Esc/P1 cancel",
+            ] {
+                assert!(rows.contains(label), "{size:?} {label}: {rows}");
+            }
+            assert!(!rows.contains("PANEL │ LIST"), "{size:?} {rows}");
         }
     }
 

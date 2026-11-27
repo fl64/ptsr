@@ -76,7 +76,7 @@ step and its cancel control. It stays after the PAD BANK release.
 | Controller commands and the next pad hit | Use Take (`1/3`). With the panel hidden, use LEFT or RIGHT on Pads (`1/1`), then select a target pad. | Check input order and Gate release. |
 | MIDI knobs | Screens Setup (`2/4`). With the panel hidden, RIGHT selects the MIDI tab (`1/1` per tab). Knob 1 selects a row and knob 2 changes a setting (`0/0`). Setup `choose` on P5 acts as Enter (`1/3`). | Enter opens the layout review for saved maps with legacy roles. |
 | Bind the controller directly on the screen | From the keyboard: F10 Learn or Enter on an F12 MIDI row. Touch a control. Enter saves, Esc cancels. | Keyboard-only binding change (change 138). This is the only planned exception to the controller goal. On an F12 MIDI binding row, `choose` says «Bindings: keyboard only (F10, Enter)». |
-| Record sound | Hold RECORD for microphone (`1/1`). Pads `record output` on P14 records the output (`1/3`). STOP ends it on any screen (`1/1`). When A1 plays, the first STOP stops A1 and the second saves (`2/2`). | Place recorded sounds using the playing layer. |
+| Record sound | Hold RECORD for microphone (`1/1`). Pads `record output` on P14 records the output (`1/3`). See [Stop an output recording](#stop-an-output-recording). | Place recorded sounds using the playing layer. |
 | Session | Screens Save (`2/4`). Screens Exit (`2/4`). P4 leaves or P1 stays (`1/2`). | Read the save state. |
 
 ## Set or delete a Chop bound with a pad cell
@@ -139,6 +139,20 @@ The SMC-PAD counts give visible panel / PAD BANK held / reveal.
 
 While A1 records, use the playing pads. Count those hits separately.
 
+## Stop an output recording
+
+Start with an active output recording. Close the command panel before you press STOP on SMC-PAD.
+
+| Starting state | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Preview and A1 are idle | Alt+Y (1) | STOP (1) |
+| Preview plays and A1 is idle | Alt+Y twice (2) | STOP twice (2) |
+| A1 plays and preview is idle | Alt+Y twice (2) | STOP twice (2) |
+| Preview and A1 play | Alt+Y three times (3) | STOP three times (3) |
+
+The first press stops the preview if a preview plays. The next press pauses A1 if A1 plays.
+The last press saves the take. A press to save before A1 pauses takes effect after the pause.
+
 ## Stop all sound
 
 | Action | Keyboard | SMC-PAD |
@@ -162,6 +176,17 @@ Release PAD BANK to cancel the first press. With the panel closed, use STOP for 
 | Open Audio settings from Pads | F12 (1). Use Tab if needed. | Hold PAD BANK, LEFT, P11 Setup (3). Release PAD BANK. Use LEFT or RIGHT if needed. |
 | Select Click level from the first row | Down four times (4) | E1 turns (0 presses) |
 | Change Click level by 5 percent | Left or Right (1 per step) | E2 turns (0 presses) |
+
+## Select a root folder in Settings
+
+Start on Paths with the root row selected.
+
+| Action | Keyboard | SMC-PAD |
+| --- | --- | --- |
+| Open the folder picker | Enter (1) | P5 Choose (1 with the panel visible, 3 with reveal) |
+| Move the selection | Up or Down (1 per step) | E1 turn (0 presses) |
+| Enter a folder or go to its parent | Right or Left (1) | RIGHT or LEFT (1) |
+| Save the current folder or cancel | Enter or Esc (1) | P4 or P1 (1) |
 
 ## Open owner checks
 

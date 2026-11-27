@@ -196,3 +196,12 @@ The Audio settings SHALL save a click level from 0 to 100 percent. It SHALL star
 - **WHEN** the owner changes Click level during playback with the keyboard or a controller
 - **THEN** only the click level changes and the next beat is on time
 - **AND** the new level stays after restart
+
+### Requirement: STOP cancels a Files preview load while saving a take
+
+On Files, STOP SHALL cancel a pending preview load before it saves the output recording.
+
+#### Scenario: Saving the take cancels the pending preview
+- **WHEN** A1 is idle, the output recording runs and a Files preview load is pending
+- **THEN** STOP saves the recording and cancels the load
+- **AND** a late load result does not play the preview

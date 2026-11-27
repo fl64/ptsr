@@ -977,6 +977,7 @@ impl App {
             {
                 self.turn_slice_page(action)
             }
+            Action::SettingsRow(_) if self.settings_tab == 1 => {}
             Action::SettingsRow(step) if self.settings_tab == 2 => {
                 self.midi_row = (self.midi_row as isize + step as isize)
                     .clamp(0, self.midi_list().len() as isize - 1)
@@ -992,6 +993,7 @@ impl App {
                     .clamp(0, SETTINGS_ROWS as isize - 1)
                     as usize
             }
+            Action::SettingsValue(_) if self.screen != Screen::Settings => {}
             Action::SettingsValue(step)
                 if self.settings_tab == 2
                     && self
@@ -1117,12 +1119,11 @@ impl App {
             },
             Action::Confirm | Action::SettingsLearn | Action::SettingsClear => {}
             Action::SmcList { next } => self.smc_list(next),
-            Action::SettingsValue(step) => self.change(self.settings_row, step as isize),
-            Action::SettingsTab => {
-                self.settings_tab = (self.settings_tab + 1) % 4;
-                self.learning = None;
-                self.midi_run = None;
+            Action::SettingsValue(step) if self.settings_tab == 0 => {
+                self.change(self.settings_row, step as isize)
             }
+            Action::SettingsValue(_) => {}
+            Action::SettingsTab => self.move_settings_tab(true),
             // a file in hand: the list keys choose the pad it goes to
             Action::BrowserHold
                 if self.screen == Screen::Files && self.browser.in_hand.is_some() =>
@@ -2702,6 +2703,15 @@ impl App {
         self.say_changed(changed, false);
     }
 
+    fn move_settings_tab(&mut self, next: bool) {
+        self.settings_tab = (self.settings_tab + if next { 1 } else { 3 }) % 4;
+        if self.settings_tab == 3 {
+            self.settings_row = self.settings_row.min(1);
+        }
+        self.learning = None;
+        self.midi_run = None;
+    }
+
     fn smc_list(&mut self, next: bool) {
         // A visible panel takes LEFT and RIGHT for its views (127); a question and the
         // target view keep their own cells.
@@ -2769,9 +2779,7 @@ impl App {
                 return;
             }
             Screen::Settings => {
-                self.settings_tab = (self.settings_tab + if next { 1 } else { 3 }) % 4;
-                self.learning = None;
-                self.midi_run = None;
+                self.move_settings_tab(next);
                 return;
             }
         };

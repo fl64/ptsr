@@ -64,7 +64,7 @@ The knob strip and one-row help name the list that the buttons move.
 | Pattern | Previous and next bar page | Step in the selected row |
 | Chop and Chop edit | Previous and next slice | Cursor |
 | Files | Parent folder and enter the selected folder | File or folder in the list |
-| Settings | Tabs | Row in the tab |
+| Settings | Tabs | Row on Audio, MIDI or Paths |
 | FX | Effect slots | Parameter in the slot |
 
 On Files, RIGHT acts only on a folder. Turn knob 1 to select a file. Use the existing

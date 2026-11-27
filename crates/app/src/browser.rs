@@ -258,6 +258,29 @@ impl Browser {
 
 use crate::*;
 
+impl PathPicker {
+    pub(super) fn view(&self) -> tui::PathPickerView {
+        tui::PathPickerView {
+            title: if self.which == 0 {
+                " PICK THE PROJECTS ROOT "
+            } else {
+                " PICK THE SAMPLES ROOT "
+            },
+            entries: self
+                .entries
+                .iter()
+                .map(|entry| {
+                    entry.file_name().map_or_else(
+                        || entry.display().to_string(),
+                        |name| name.to_string_lossy().into_owned(),
+                    )
+                })
+                .collect(),
+            selected: self.selected,
+        }
+    }
+}
+
 impl App {
     pub(super) fn hold_file_for_placement(&mut self, path: PathBuf) {
         self.pad_in_hand = None;
