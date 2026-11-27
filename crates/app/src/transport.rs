@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering::Acquire;
 use std::time::{Duration, Instant};
 
 pub(super) const TEMPO_TARGET: u64 = u64::MAX - 1;
+const TAP_WINDOW: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputStop {
@@ -218,6 +219,16 @@ impl App {
         self.screen == Screen::Pads && (self.pattern_view.overview || self.pattern_panel.is_some())
     }
 
+    pub(super) fn tap_tempo_hint_at(&self, now: Instant) -> Option<&'static str> {
+        let taps = &self.transport.taps;
+        (taps.len() == 1
+            && self.pattern_tempo_available()
+            && taps
+                .back()
+                .is_some_and(|at| now.saturating_duration_since(*at) <= TAP_WINDOW))
+        .then_some("TAP · 1 hit · tap again")
+    }
+
     pub(super) fn tap_pattern_tempo(&mut self) {
         if !self.pattern_tempo_available() || self.transport_input_blocked() || self.help_open {
             return;
@@ -231,7 +242,7 @@ impl App {
             if gap < Duration::from_millis(200) {
                 return;
             }
-            if gap > Duration::from_secs(2) {
+            if gap > TAP_WINDOW {
                 taps.clear();
             }
         }

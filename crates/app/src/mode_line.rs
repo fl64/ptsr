@@ -4,10 +4,7 @@
 
 use super::{App, PADS_PER_BANK, audio, chop, pad_name};
 use engine::capture::Phase;
-use std::time::{Duration, Instant};
-
-/// A first tap waits this long for the second one (transport, "Pattern accepts taps").
-const TAP_WAIT: Duration = Duration::from_secs(2);
+use std::time::Instant;
 
 impl App {
     pub(super) fn mode_line(&self, now: Instant) -> Option<String> {
@@ -135,13 +132,8 @@ impl App {
             let marked = self.pads.marked.len();
             return Some(format!("MARK · hit pads · {marked} marked · {drop}"));
         }
-        let taps = &self.transport.taps;
-        if taps.len() == 1
-            && taps
-                .back()
-                .is_some_and(|at| now.saturating_duration_since(*at) <= TAP_WAIT)
-        {
-            return Some("TAP · 1 hit · tap again".into());
+        if smc && let Some(cue) = self.tap_tempo_hint_at(now) {
+            return Some(cue.into());
         }
         (smc && self.panel.visible()).then(|| "STOP twice · stop all sound".into())
     }
