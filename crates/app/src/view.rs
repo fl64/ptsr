@@ -1451,7 +1451,7 @@ impl App {
                     .unwrap_or("none");
                 items.push(("Enter".into(), format!("clear · {back} close")));
             } else {
-                items.push((close, "close".into()));
+                items.push((close, "close controls".into()));
             }
             return vec![tui::HelpGroup {
                 name: "A1 SETUP",
