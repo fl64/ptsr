@@ -1988,7 +1988,9 @@ impl App {
                     }
                     match choice {
                         super::panel::Choice::Action(action) => {
-                            self.apply(action);
+                            if action != Action::ScreenSettings || self.screen != Screen::Settings {
+                                self.apply(action);
+                            }
                             // A screen hit, even on the current screen, shows its actions.
                             if matches!(
                                 action,

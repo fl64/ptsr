@@ -176,7 +176,7 @@ pub(super) fn describe(a: Action) -> String {
         ),
         Action::SettingsRow(_) => "select row".into(),
         Action::SettingsValue(_) => "change value".into(),
-        Action::SettingsTab => "switch tab: audio / input / MIDI".into(),
+        Action::SettingsTab => "Switch tab: Audio / Input / MIDI / Paths".into(),
         Action::SettingsLearn => "MIDI tab: learn a control for the action".into(),
         Action::SettingsClear => "MIDI tab: clear the learned control".into(),
     }

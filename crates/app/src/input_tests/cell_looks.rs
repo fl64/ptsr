@@ -11,6 +11,42 @@ fn at(view: panel::View, label: &str) -> usize {
     usize::from(slot_of(view, label) - 1)
 }
 
+/// Scenario "Setup keeps Settings open on a second selection" (command-panel).
+#[test]
+fn setup_keeps_settings_open_on_a_second_selection() {
+    let mut drive = hold_drive();
+    for selection in 0..2 {
+        hold(&mut drive, true);
+        list_button(&mut drive, false);
+        assert_eq!(looks(&drive).labels[6].as_deref(), Some("setup"));
+        cell(&mut drive, panel_note(7));
+        assert_eq!(drive.app.screen, Screen::Settings);
+        assert_eq!(looks(&drive).labels[8].as_deref(), Some("choose"));
+        hold(&mut drive, false);
+        if selection == 0 {
+            for _ in 0..3 {
+                drive.tap(KeyCode::Tab, M::NONE);
+            }
+        }
+        assert_eq!(drive.app.settings_tab, 3);
+    }
+    drive.tap(KeyCode::F(12), M::NONE);
+    assert_eq!(drive.app.screen, Screen::Pads);
+}
+
+/// Scenario "Settings help names Paths" (screen-help).
+#[test]
+fn settings_help_names_paths() {
+    let mut drive = hold_drive();
+    drive.tap(KeyCode::F(12), M::NONE);
+    drive.tap(KeyCode::F(1), M::NONE);
+    assert!(drive.app.help_open);
+    let rows = drive.app.full_help_keys(&drive.keymap, true);
+    assert!(rows.iter().any(|(keys, description)| {
+        keys == "Tab" && description == "Switch tab: Audio / Input / MIDI / Paths"
+    }));
+}
+
 fn tone() -> Arc<Sample> {
     Arc::new(Sample::mono(vec![0.2; 48_000]))
 }
@@ -392,7 +428,7 @@ fn loop_play_shows_its_state_at_80x26() {
     let on = looks(&drive).states[listen];
     cell(&mut drive, panel_note(slot_of(Files, "listen file")));
     assert_ne!(looks(&drive).states[listen], on, "listen file turns");
-    assert!(looks(&drive).states[at(Files, "star file")].is_some());
+    assert!(looks(&drive).states[at(Files, "star folder")].is_some());
 }
 
 /// Scenario "Every state cell shows one of its states" (command-panel): each cell of the
@@ -414,7 +450,7 @@ fn every_state_cell_shows_one_of_its_states() {
         (PadEdit, "pin sample", &["on", "off"]),
         (Pattern, "hide empty", &["shown", "hidden"]),
         (Files, "listen file", &["on", "off"]),
-        (Files, "star file", &["on", "off"]),
+        (Files, "star folder", &["on", "off"]),
     ];
     for view in [Chop, ChopEdit, Pads, PadEdit, Pattern, Files] {
         let mut drive = reach_drive_from(hold_drive(), view, tone());
