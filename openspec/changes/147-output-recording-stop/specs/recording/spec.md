@@ -6,7 +6,9 @@ During output recording, STOP SHALL first stop an active preview.
 With no preview, STOP SHALL pause A1 if it plays. The recording SHALL keep the tail.
 With both stopped, STOP SHALL save the recording at the current position.
 This order SHALL apply on every work screen, including Assign.
-After the pause the mode line SHALL say «● REC OUTPUT 0:12 · STOP end rec».
+If the next STOP arrives before A1 pauses, the app SHALL save the take when A1 pauses.
+If the recording continues after the pause, the mode line SHALL say
+«● REC OUTPUT 0:12 · STOP end rec».
 `record output` on Pads SHALL also end a running recording.
 
 #### Scenario: STOP on A1 pauses A1 and keeps the recording
@@ -22,6 +24,12 @@ After the pause the mode line SHALL say «● REC OUTPUT 0:12 · STOP end rec».
 - **WHEN** the output recording and A1 run on Files, Chop or Assign without a preview
 - **THEN** the first STOP pauses A1 and the next STOP saves the take with its tail
 - **AND** the paused position and any Assign plan stay in place
+
+#### Scenario: Two STOP presses before the A1 pause save the take
+- **WHEN** A1 plays during output recording without a preview
+- **AND** the owner presses STOP twice before A1 pauses
+- **THEN** A1 pauses at the current position
+- **AND** the app saves the take and puts it in hand at that position
 
 #### Scenario: STOP handles preview A1 and capture in order
 - **WHEN** a preview and A1 play on Chop during output recording
