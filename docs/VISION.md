@@ -300,6 +300,8 @@ A pattern is the content of a MIDI track clip. Resolution is 960 ppqn. The audio
 - **Step mode (like TR-REC):** a step grid. A pad adds or deletes a hit.
 - The A1 overview and Step Edit show the same selected time. They show the loop length,
   view grid, and recording quantize. Playback has a separate mark.
+- Planned: the [pattern track](plans/UI-UX.md#31-pattern-track) makes F5 one Pattern screen.
+  In step edit, the 16 pads can be the 16 steps of the selected row.
 - **Substeps (ratchets):** 2, 3, 4, 6, 8 hits in a step, with decreasing or increasing volume.
 - **Per-step parameters:** velocity, pitch, gate length, reverse, sample start point, trigger probability, off-grid shift (microtiming).
 - **Parameter locks:** any pad parameter can have its own value on one step: filter, cutoff, decay, drive, sends, the slice. The step plays with this value, and the next step returns to the pad value. You set a lock in step mode: hold a step and turn a knob.
@@ -415,6 +417,8 @@ The A1 title shows the position, First pass or Overdub during recording, and Pau
 Tap tempo shows the first keyboard tap and the new BPM in the notice row.
 At 80x26, the A1 command panel takes the grid area. Help and the project picker take priority.
 An absent A1 names the Setup control. Setup shows its own keys and controller actions.
+Planned: the [pattern track](plans/PATTERNS.md#pattern-track-owner-review-2026-11-27) replaces the A1 overview,
+F7 and the `Alt+N` panel with one F5 Pattern screen.
 The keys in use are in `config/keymap.toml`. The table below is historical.
 
 | Key | Screen | Content |
