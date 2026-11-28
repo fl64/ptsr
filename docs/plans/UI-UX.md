@@ -5,7 +5,7 @@ Requirements come from `openspec/specs/` and the active OpenSpec change. This do
 Keep the current dark palette, state accents, text badges, bank tints, fixed zones, and context strip.
 
 Use one OpenSpec change at a time. Give each behavior change the next free number, its own branch, and its own PR.
-Write its proposal, design, spec deltas, and tasks before code. Start the next change only after owner acceptance.
+Write its proposal, design, spec deltas, and tasks before code. The owner checks a batch of changes later (decision of 2026-11-28).
 For each changed view, add catalogue fixtures at 120×40 and 80×26. Name the exact files in its proposal.
 Use the sequence in section 5. The documentation split can run between two changes.
 
@@ -60,7 +60,7 @@ Pads. The owner accepted change 123, which addresses the overview rows, step wid
 velocity levels, and empty-step input. Do the structural changes after 123 and before
 `screen-layouts`, `mixer-view`, and the 0.4b glitch kit. Give each change its own next free
 OpenSpec number, branch, PR, specifications, scenario
-tests, and catalogue fixtures at 120×40 and 80×26. Accept one change before the next.
+tests, and catalogue fixtures at 120×40 and 80×26. The owner checks the batch later.
 
 Keep the current visual language, fixed zones, key-shaped pad grid, right pad inspector,
 Chop screen, question layout, and filter curve. Files and FX still leave much of the body

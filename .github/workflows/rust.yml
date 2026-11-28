@@ -4,12 +4,15 @@ on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  # PR branches need not hold the newest master, so master is checked after each merge.
+  push:
+    branches: [master]
 
 permissions:
   contents: read
 
 concurrency:
-  group: rust-${{github.event.pull_request.number}}
+  group: rust-${{github.event.pull_request.number || github.sha}}
   cancel-in-progress: true
 
 jobs:
@@ -21,7 +24,7 @@ jobs:
       - name: Read the pull request head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{github.event.pull_request.head.sha}}
+          ref: ${{github.event.pull_request.head.sha || github.sha}}
           fetch-depth: 0
           persist-credentials: false
       - name: Find the paths that need Rust checks
@@ -31,6 +34,7 @@ jobs:
           HEAD_SHA: ${{github.event.pull_request.head.sha}}
         run: |
           python3 -B -m unittest discover -s scripts -p test_ci_code_changed.py
+          if [ -z "$BASE_SHA" ]; then echo rust=true >> "$GITHUB_OUTPUT"; exit 0; fi
           python3 -B scripts/ci_code_changed.py --base "$BASE_SHA" --head "$HEAD_SHA"
       - name: Install Rust system libraries
         if: steps.scope.outputs.rust == 'true'
@@ -65,7 +69,7 @@ jobs:
         if: steps.scope.outputs.rust == 'true'
         run: task screens
       - name: Compare callback benchmark
-        if: steps.scope.outputs.rust == 'true'
+        if: steps.scope.outputs.rust == 'true' && github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{github.event.pull_request.base.sha}}
           HEAD_SHA: ${{github.event.pull_request.head.sha}}
