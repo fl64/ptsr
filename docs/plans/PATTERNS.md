@@ -555,7 +555,7 @@ keyboard and SMC-PAD path until a later change replaces it.
 
 Do them in this order. Each change gets the next free OpenSpec number, its own branch and its own PR.
 Write the specifications first. Add catalogue fixtures at 120×40 and 80×26, and keyboard and raw MIDI tests.
-Start the next change only after owner acceptance.
+The owner checks the batch later (decision of 2026-11-28).
 
 1. `pattern-screen-layout` (174): F5 as its own screen with the layout above. The setup line
    only shows values. The old overview goes. The `Alt+N` panel, the SMC-PAD setup cell, F7 step edit,

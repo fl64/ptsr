@@ -9,8 +9,8 @@ plan does not change the roadmap order. Requirements come from OpenSpec, not the
 
 The owner checks each phase by ear and by eye. Each item gets one OpenSpec change,
 number, branch, and PR. A phase ends with the owner's listening and controller or
-keyboard checks. Do not start the next phase while an item waits for owner checks,
-unless the owner allows it. Move an item from Later into a phase only by an owner
+keyboard checks. The owner checks a batch later. The next phase can start before
+those checks (decision of 2026-11-28). Move an item from Later into a phase only by an owner
 decision recorded in the decisions table.
 
 The quality, export, and release changes retain numbers 110–120. Change 109 is
